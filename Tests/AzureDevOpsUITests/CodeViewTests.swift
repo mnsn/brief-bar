@@ -42,6 +42,42 @@ import Testing
         #expect(CodeTextView.oneLine("\tlet a = 1") == "\tlet a = 1")
     }
 
+    /// VoiceOver reads the code from a list of its rows, each with what the gutter shows of it, and then its text, which
+    /// is copied as it is.
+    @Test func voiceOverReadsEachRowWithItsNumbersAndHowItChanged() throws {
+        _ = NSApplication.shared
+        let view = CodeNSView()
+        view.update(rows: rows, metrics: CodeMetrics(scale: 1), showsOldNumbers: true, label: "Code of Cart.cs", onOverflow: nil)
+        let children = view.accessibilityChildren()?.compactMap { $0 as? NSView } ?? []
+        let list = try #require(children.first { $0.accessibilityRole() == .list })
+        #expect(list.isAccessibilityElement())
+        #expect(list.accessibilityLabel() == "Code of Cart.cs")
+        let spoken = (list.accessibilityChildren() ?? []).compactMap { ($0 as? NSAccessibilityElement)?.accessibilityLabel() }
+        #expect(spoken == rows.map(ThreadCode.spoken))
+        #expect(spoken.last == "Line 88, added, commented: delay *= 2;")
+        // The text, to select and copy, says none of it.
+        #expect(view.text == "if (attempt == MaxAttempts)\n\tthrow;\n⋯ 12 lines\n    delay *= 2;")
+        // Other rows, other words.
+        view.update(rows: Array(rows.prefix(1)), metrics: CodeMetrics(scale: 1), showsOldNumbers: true, label: "Code", onOverflow: nil)
+        let again = (list.accessibilityChildren() ?? []).compactMap { ($0 as? NSAccessibilityElement)?.accessibilityLabel() }
+        #expect(again == ["Line 80, 79 before the change: if (attempt == MaxAttempts)"])
+    }
+
+    /// Rows that differ only in how a letter is written, as "é" in one character and in two, are other rows: what's
+    /// copied is what shows.
+    @Test func rowsThatLookTheSameButDifferInTheirBytesShowAsTheyAre() {
+        _ = NSApplication.shared
+        let composed = [CodeRow(.line(.added), "let caf\u{E9} = 1", new: 1)]
+        let decomposed = [CodeRow(.line(.added), "let cafe\u{301} = 1", new: 1)]
+        #expect(composed == decomposed)
+        #expect(!CodeNSView.same(composed, decomposed))
+        #expect(CodeNSView.same(composed, composed))
+        let view = CodeNSView()
+        view.update(rows: composed, metrics: CodeMetrics(scale: 1), showsOldNumbers: false, label: "Code", onOverflow: nil)
+        view.update(rows: decomposed, metrics: CodeMetrics(scale: 1), showsOldNumbers: false, label: "Code", onOverflow: nil)
+        #expect(view.text.utf8.elementsEqual("let cafe\u{301} = 1".utf8))
+    }
+
     @Test func itsTextCopiesWithoutTheNumbers() {
         _ = NSApplication.shared
         let view = CodeNSView()

@@ -26,15 +26,27 @@ import BriefBarCore
             CodeRow(.gap, "3 more lines it's on, above"),
             CodeRow(.line(.unchanged), "let a = 1", old: 40, new: 41),
             CodeRow(.line(.removed), "let b = 2", old: 41),
-            CodeRow(.gap, "12 lines"),
+            CodeRow(.gap, "12 lines left out"),
             CodeRow(.line(.removed), "let c = 3", old: 54),
             CodeRow(.line(.added), "let b = 4", new: 42, isMarked: true),
-            CodeRow(.gap, "1 line"),
+            CodeRow(.gap, "1 line left out"),
             CodeRow(.line(.unchanged), "}", old: 56, new: 44),
         ])
         var one = excerpt
         one.hiddenCommentedLines = 1
         #expect(ThreadCode.rows(of: one).first == CodeRow(.gap, "1 more line it's on, above"))
+    }
+
+    /// VoiceOver says what the gutter shows of each row, which its text, as copied, doesn't have.
+    @Test func voiceOverSaysEachRowsNumbersHowItChangedAndItsText() {
+        #expect(ThreadCode.spoken(CodeRow(.line(.added), "    delay *= 2;", new: 88, isMarked: true)) == "Line 88, added, commented: delay *= 2;")
+        // Without its indentation, tabs too, which VoiceOver would only say.
+        #expect(ThreadCode.spoken(CodeRow(.line(.removed), "\tthrow;", old: 46)) == "Line 46 before the change, removed: throw;")
+        #expect(ThreadCode.spoken(CodeRow(.line(.unchanged), "}", old: 89, new: 90)) == "Line 90, 89 before the change: }")
+        #expect(ThreadCode.spoken(CodeRow(.line(.unchanged), "}", old: 90, new: 90)) == "Line 90: }")
+        #expect(ThreadCode.spoken(CodeRow(.line(.unchanged), "   ", old: 12, new: 12)) == "Line 12: blank")
+        #expect(ThreadCode.spoken(CodeRow(.gap, "12 lines left out")) == "12 lines left out")
+        #expect(ThreadCode.spoken(CodeRow(.gap, "3 more lines it's on, above")) == "3 more lines it's on, above")
     }
 
     @Test func codeLosesTheIndentationAllItsLinesShare() {
@@ -97,6 +109,33 @@ import BriefBarCore
 
         #expect(ThreadCode.linesName(88...88) == "Line 88")
         #expect(ThreadCode.linesName(86...88) == "Lines 86–88")
+    }
+
+    /// The trail names a thread by where its card shows it, where it was made, rather than where a push moved it since.
+    @Test func aThreadIsNamedWhereItsCodeShowsIt() {
+        let followed = ReviewThread(id: 3, filePath: "/src/Cart.cs", line: 30, comments: [], location: .init(
+            path: "/src/Cart.cs", right: .init(lines: 30...31), madeOn: .init(base: 1),
+            tracking: .init(to: .init(first: 1, second: 2), originalRight: .init(lines: 20...21))
+        ))
+        #expect(ThreadCode.place(of: followed) == "Cart.cs:20")
+        #expect(ThreadCode.placeHelp(of: followed) == "/src/Cart.cs, lines 20 to 21")
+        // Where it is now, as the list says it.
+        #expect(PullRequestPanel.Thread(thread: followed, waitsOnYou: false, isNew: false).place == "Cart.cs:30")
+
+        let removed = ReviewThread(id: 2, filePath: "/src/Cart.cs", line: 46, comments: [], location: .init(
+            path: "/src/Cart.cs", left: .init(lines: 46...49), madeOn: .init(base: 1)
+        ))
+        #expect(ThreadCode.place(of: removed) == "Cart.cs:46")
+        #expect(ThreadCode.placeHelp(of: removed) == "/src/Cart.cs, lines 46 to 49 before the change")
+        let demo = ReviewThread(id: 1, filePath: "/src/Cart.cs", line: 88, comments: [])
+        #expect(ThreadCode.place(of: demo) == "Cart.cs:88")
+        #expect(ThreadCode.placeHelp(of: demo) == "/src/Cart.cs, line 88")
+        let wholeFile = ReviewThread(id: 6, filePath: "/src/Cart.cs", comments: [], location: .init(path: "/src/Cart.cs"))
+        #expect(ThreadCode.place(of: wholeFile) == "Cart.cs")
+        #expect(ThreadCode.placeHelp(of: wholeFile) == "/src/Cart.cs")
+        let general = ReviewThread(id: 5, comments: [])
+        #expect(ThreadCode.place(of: general) == nil)
+        #expect(ThreadCode.placeHelp(of: general) == "A comment on the whole pull request")
     }
 
     // MARK: Problems

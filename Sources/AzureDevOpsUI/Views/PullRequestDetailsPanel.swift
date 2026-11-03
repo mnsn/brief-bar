@@ -261,13 +261,13 @@ struct PullRequestDetailsPanel: View {
                     .font(size: 8.5, weight: .semibold)
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
-                Text(thread.place ?? "Comment")
+                // Where its card says it is, where it was made.
+                Text(ThreadCode.place(of: thread.thread) ?? "Comment")
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .help(thread.thread.filePath.map { path in thread.thread.line.map { "\(path), line \($0)" } ?? path }
-                          ?? "A comment on the whole pull request")
+                    .help(ThreadCode.placeHelp(of: thread.thread))
             }
             .font(size: 12, weight: .medium).monospacedDigit()
         } else if pages.isEmpty {

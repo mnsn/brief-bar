@@ -9,13 +9,15 @@ import SwiftUI
 /// comment thread's card shows the code it's on with it; it's meant for whole files too.
 ///
 /// AppKit draws it, an `NSTextView` beside a gutter, so that every row is exactly as tall as the others, its text
-/// selectable across rows, and a long file costs only the rows on screen.
+/// selectable across rows, and a long file costs only the rows on screen. VoiceOver reads it a row at a time, from a
+/// list of its rows, each with its numbers, how the change left it and whether the comment is on it (`ThreadCode.spoken`),
+/// and then the text, as it's copied, to select.
 struct CodeView: NSViewRepresentable {
     let rows: [CodeRow]
     /// Whether the gutter numbers each line before the change too, beside its number after it: for code with lines
     /// removed, or a comment on the code before the change. Otherwise each line has its number after the change.
     var showsOldNumbers = true
-    /// What VoiceOver says the code is: "Code of PaymentsClient.cs, lines 85 to 91".
+    /// What VoiceOver says the list of its rows is: "Code of PaymentsClient.cs, lines 85 to 91".
     var label = "Code"
     /// Told how much wider than the room it has its longest line is, in points, as that changes: 0 once they all fit.
     var onOverflow: ((CGFloat) -> Void)? = nil
@@ -134,7 +136,6 @@ final class CodeNSView: NSView {
         scrollView.horizontalScrollElasticity = .automatic
         addSubview(gutter)
         addSubview(scrollView)
-        gutter.setAccessibilityElement(false)
     }
 
     @available(*, unavailable)
@@ -150,10 +151,20 @@ final class CodeNSView: NSView {
     /// Its text, as selecting all of it copies it: the code, without the numbers.
     var text: String { textView.string }
 
+    /// What VoiceOver says its text is, after the list of its rows, which says more of each.
+    static let textLabel = "The code's text, to select and copy"
+
+    /// Whether two lists of rows are the same, their text byte for byte: Swift's strings are equal when they look the
+    /// same, as "é" written in one character and in two, but a diff tells those apart, and so must what's copied.
+    static func same(_ lhs: [CodeRow], _ rhs: [CodeRow]) -> Bool {
+        lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0 == $1 && $0.text.utf8.elementsEqual($1.text.utf8) }
+    }
+
     func update(rows: [CodeRow], metrics: CodeMetrics, showsOldNumbers: Bool, label: String, onOverflow: ((CGFloat) -> Void)?) {
         self.onOverflow = onOverflow
-        textView.setAccessibilityLabel(label)
-        guard rows != self.rows || metrics != self.metrics || showsOldNumbers != gutter.showsOldNumbers else { return }
+        gutter.setAccessibilityLabel(label)
+        textView.setAccessibilityLabel(Self.textLabel)
+        guard !Self.same(rows, self.rows) || metrics != self.metrics || showsOldNumbers != gutter.showsOldNumbers else { return }
         self.rows = rows
         self.metrics = metrics
         gutter.update(rows: rows, metrics: metrics, showsOldNumbers: showsOldNumbers)
@@ -268,12 +279,15 @@ final class CodeTextView: NSTextView {
 }
 
 /// Each row's numbers, before and after the change, and + or −, in front of its color; and a bar in the accent color
-/// beside the lines a comment is on.
+/// beside the lines a comment is on. For VoiceOver, it's the list of the rows, each saying its numbers, how the change left
+/// it, whether a comment is on it, and its text (`ThreadCode.spoken`), which the text, as copied, doesn't have.
 final class CodeGutterView: NSView {
     private var rows: [CodeRow] = []
     private var metrics = CodeMetrics(scale: 1)
     private(set) var showsOldNumbers = true
     private var digits = 2
+    /// The rows, for VoiceOver: made as they're first asked for after the rows change.
+    private var rowElements: [CodeRowElement]?
 
     /// The bar, and the room before the numbers.
     private static let bar: CGFloat = 3
@@ -296,6 +310,29 @@ final class CodeGutterView: NSView {
         let largest = rows.compactMap { max($0.oldNumber ?? 0, $0.newNumber ?? 0) }.max() ?? 0
         digits = max(2, String(largest).count)
         needsDisplay = true
+        if rowElements != nil {
+            rowElements = nil
+            NSAccessibility.post(element: self, notification: .layoutChanged)
+        }
+    }
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .list }
+
+    override func accessibilityChildren() -> [Any]? {
+        if rowElements == nil {
+            rowElements = rows.indices.map { CodeRowElement(index: $0, label: ThreadCode.spoken(rows[$0]), gutter: self) }
+        }
+        return rowElements
+    }
+
+    /// Where a row is on screen: across the code beside the gutter too.
+    func screenFrame(ofRow index: Int) -> NSRect {
+        let rect = NSRect(
+            x: 0, y: CGFloat(index) * metrics.lineHeight, width: superview?.bounds.width ?? bounds.width, height: metrics.lineHeight
+        )
+        return NSAccessibility.screenRect(fromView: self, rect: rect)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -336,6 +373,25 @@ final class CodeGutterView: NSView {
                 (sign.0 as NSString).draw(at: NSPoint(x: x, y: y), withAttributes: [.font: metrics.numberFont, .foregroundColor: sign.1])
             }
         }
+    }
+}
+
+/// A row of code, for VoiceOver: what `ThreadCode.spoken` says of it, where it is on screen.
+final class CodeRowElement: NSAccessibilityElement {
+    private let index: Int
+    private weak var gutter: CodeGutterView?
+
+    init(index: Int, label: String, gutter: CodeGutterView) {
+        self.index = index
+        self.gutter = gutter
+        super.init()
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel(label)
+        setAccessibilityParent(gutter)
+    }
+
+    override func accessibilityFrame() -> NSRect {
+        gutter?.screenFrame(ofRow: index) ?? .zero
     }
 }
 

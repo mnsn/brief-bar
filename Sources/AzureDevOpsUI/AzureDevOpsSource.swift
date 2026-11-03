@@ -72,10 +72,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var details: WorkItemDetailsStore?
     /// The pull request whose details show beside the window's list.
     private var pullRequestDetails: PullRequestDetailsStore?
-    /// The code its comment threads are on, read as they come on screen in its details.
+    /// The code that pull requests' comment threads are on, read as they come on screen in their details.
     private var pullRequestCode: PullRequestCodeStore?
-    /// For `--render`: the code of the threads of the pull requests whose details it draws, read before it draws them.
-    private var renderedCode: [PRKey: PullRequestCodeStore] = [:]
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     private let changes = PassthroughSubject<Void, Never>()
@@ -303,7 +301,6 @@ package final class AzureDevOpsSource: BriefBarSource {
         details = nil
         pullRequestDetails = nil
         pullRequestCode = nil
-        renderedCode = [:]
         services.fullDiskAccess.unregister(.azureDevOps)
     }
 
@@ -495,6 +492,11 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     package func sectionVisibilityChanged(_ section: SectionID, isShowing: Bool, by viewer: SectionViewer) {
+        // A pull request's details show on a window's Pull Requests page, and over a work item's details on its Sprint
+        // page: the code their comments are on is read only while a window shows one of those on screen.
+        if viewer.kind == .window, section == .azureDevOpsPullRequests || section == .azureDevOpsSprint {
+            pullRequestCode?.setVisible(isShowing, for: "\(section.rawValue).\(viewer.name)")
+        }
         // The sprint and pipelines are read only while something shows them.
         switch section {
         case .azureDevOpsSprint:
@@ -724,7 +726,6 @@ package final class AzureDevOpsSource: BriefBarSource {
             for (suffix, size) in sizes {
                 let view = PullRequestsPage()
                     .environmentObject(details)
-                    .environmentObject(renderedCode[item.key] ?? PullRequestCodeStore(demo: true, client: store.client))
                     .environment(\.panelStyle, .page)
                     .textSize(from: services)
                     .frame(width: size.width, height: size.height)
@@ -747,17 +748,21 @@ extension AzureDevOpsSource {
         return [yours, failing].compactMap { $0 }
     }
 
-    /// Reads the code of their threads before `--render` draws them, as it would read as they came on screen: the open
-    /// ones', and, in the demo, the resolved ones' too.
+    /// Reads the code of their threads before `--render` draws them, as it would read as they came on screen in a window
+    /// that shows them: the open ones', and, in the demo, the resolved ones' too, and those of every pull request whose page
+    /// a work item's details can show.
     func loadCodeForRendering(store: PRStore) async {
-        renderedCode = [:]
-        for item in renderedPullRequests(store) where renderedCode[item.key] == nil {
-            guard let record = store.record(for: item.key) else { continue }
-            let code = PullRequestCodeStore(demo: store.mode == .demo, client: store.client)
-            code.use(item.key)
-            let threads = (record.details?.threads ?? []).filter { !$0.isResolved || store.mode == .demo }
+        guard let code = pullRequestCode else { return }
+        code.setVisible(true, for: "render")
+        let items = store.mode == .demo ? store.items : renderedPullRequests(store)
+        for item in items {
+            guard let record = store.record(for: item.key),
+                  let threads = record.details?.threads.filter({ !$0.isResolved || store.mode == .demo }),
+                  threads.contains(where: ThreadCode.isOnLines)
+            else { continue }
+            // Held while `--render` draws.
+            _ = code.hold(item.key)
             await code.readAll(threads, of: record.pullRequest)
-            renderedCode[item.key] = code
         }
     }
 
@@ -765,11 +770,11 @@ extension AzureDevOpsSource {
     /// its threads with code, as from elsewhere, and in a narrow window; and to the first of its resolved threads whose
     /// code changed since, which unfolds them.
     func pullRequestThreadRenderings() -> [(name: String, view: AnyView)] {
-        guard let store, let item = renderedPullRequests(store).first, let code = renderedCode[item.key] else { return [] }
+        guard let store, let code = pullRequestCode, let item = renderedPullRequests(store).first else { return [] }
         let threads = PullRequestPanel(item, record: store.record(for: item.key)).threads
         let open = (threads.waitingOnYou + threads.open).first { ThreadCode.isOnLines($0.thread) }
         let changed = threads.resolved.first { thread in
-            if case .read(let excerpt)? = code.state(of: thread.id) { excerpt.changedSince == true } else { false }
+            if case .read(let excerpt)? = code.state(of: thread.id, in: item.key) { excerpt.changedSince == true } else { false }
         }
         let shown: [(name: String, thread: PullRequestPanel.Thread?, sizes: [(suffix: String, size: CGSize)])] = [
             ("pull-requests-details-thread", open, [("", CGSize(width: 1_000, height: 720)), ("-narrow", CGSize(width: 560, height: 720))]),
@@ -786,7 +791,6 @@ extension AzureDevOpsSource {
                 details.show(item, at: .thread(thread.id))
                 let view = PullRequestsPage()
                     .environmentObject(details)
-                    .environmentObject(code)
                     .environment(\.panelStyle, .page)
                     .textSize(from: services)
                     .frame(width: size.width, height: size.height)

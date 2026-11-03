@@ -21,6 +21,7 @@ struct PullRequestCommentsSection: View {
     let highlighted: PullRequestDetailsStore.Anchor?
 
     @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var code: PullRequestCodeStore
     @LocalState private var showsResolved = false
 
     var body: some View {
@@ -72,11 +73,19 @@ struct PullRequestCommentsSection: View {
                 showsResolved = true
             }
         }
+        // Its threads' code is read, and kept, while it shows: in the panel's details, or on a pull request's page.
+        .task(id: item.key) {
+            let hold = code.hold(item.key)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3_600))
+            }
+            code.release(hold)
+        }
     }
 
     private func files(_ files: [PullRequestPanel.FileThreads]) -> some View {
         ForEach(files) { file in
-            FileThreadsView(file: file) { thread in
+            FileThreadsView(file: file, key: item.key) { thread in
                 ThreadCard(
                     thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now,
                     isHighlighted: highlighted == .thread(thread.id)
@@ -90,6 +99,8 @@ struct PullRequestCommentsSection: View {
 /// by its ID, and to the first with the file's name above it.
 private struct FileThreadsView<Card: View>: View {
     let file: PullRequestPanel.FileThreads
+    /// Its pull request, whose threads' code is read.
+    let key: PRKey
     @ViewBuilder var card: (PullRequestPanel.Thread) -> Card
 
     @EnvironmentObject private var code: PullRequestCodeStore
@@ -146,7 +157,7 @@ private struct FileThreadsView<Card: View>: View {
     /// "Deleted", "Renamed from RetryPolicy.cs".
     private var change: String? {
         let read = file.threads.lazy.compactMap { thread -> ThreadExcerpt? in
-            if case .read(let excerpt)? = code.state(of: thread.id) { excerpt } else { nil }
+            if case .read(let excerpt)? = code.state(of: thread.id, in: key) { excerpt } else { nil }
         }.first
         guard let read, let kind = read.change else { return nil }
         if kind.contains(.add) { return "Added" }
@@ -349,8 +360,9 @@ private struct ThreadCard: View {
     }
 }
 
-/// The code a thread is on, read as it comes on screen and called off as it leaves before it's read: what's read, a
-/// stand-in as tall as it's likely to be until then, or why it can't show.
+/// The code a thread is on, read as it comes on screen, in a window that shows it, and called off as it leaves, or as the
+/// window is minimized, hidden or covered, before it's read: what's read, a stand-in as tall as it's likely to be until
+/// then, or why it can't show.
 private struct ThreadCodeArea: View {
     let thread: ReviewThread
     let item: PRSnapshot
@@ -361,9 +373,11 @@ private struct ThreadCodeArea: View {
     @Environment(\.textScale) private var textScale
     @LocalState private var isOnScreen = false
 
-    /// What its code is read again for, while it's on screen: a push, or the thread followed to other lines.
+    /// What its code is read again for, while it's on screen: a push, or the thread followed to other lines; and a window
+    /// showing it on screen again, after none did.
     private struct Reading: Equatable {
         var isOnScreen: Bool
+        var visibilityChanges: Int
         var ask: PullRequestCodeStore.Ask
     }
 
@@ -381,9 +395,12 @@ private struct ThreadCodeArea: View {
             // Outside a scroll view, it's on screen.
             proxy.bounds(of: .scrollView).map { $0.intersects(CGRect(origin: .zero, size: proxy.size)) } ?? true
         } action: { isOnScreen = $0 }
-        .task(id: Reading(isOnScreen: isOnScreen, ask: PullRequestCodeStore.Ask(thread, pullRequest))) {
-            guard isOnScreen else {
-                code.hide(thread.id)
+        .task(id: Reading(
+            isOnScreen: isOnScreen, visibilityChanges: code.visibilityChanges, ask: PullRequestCodeStore.Ask(thread, pullRequest)
+        )) {
+            // In the details' scroll view, and in a window that shows it: a minimized, hidden or covered one doesn't.
+            guard isOnScreen, code.isVisible else {
+                code.hide(thread.id, of: pullRequest.key)
                 return
             }
             // Not for a thread scrolled past.
@@ -391,18 +408,24 @@ private struct ThreadCodeArea: View {
             guard !Task.isCancelled else { return }
             code.show(thread, of: pullRequest)
         }
-        .onDisappear { code.hide(thread.id) }
+        .onDisappear { code.hide(thread.id, of: pullRequest.key) }
+    }
+
+    /// What's read of its code, of its pull request's: another's thread with the same ID, as the details move from one to
+    /// another, has its own.
+    private var state: PullRequestCodeStore.State? {
+        code.state(of: thread.id, in: pullRequest.key)
     }
 
     /// Its code, why it can't show, or a stand-in until it's read: nothing for a thread that turns out not to be on lines.
     private var showsSomething: Bool {
-        guard case .failed(let problem)? = code.state(of: thread.id) else { return true }
+        guard case .failed(let problem)? = state else { return true }
         return ThreadCode.sentence(for: problem) != nil
     }
 
     @ViewBuilder
     private var content: some View {
-        switch code.state(of: thread.id) {
+        switch state {
         case .read(let excerpt)?:
             VStack(alignment: .leading, spacing: 0) {
                 CodeView(
@@ -550,11 +573,28 @@ private struct CommentLine: View {
                         .help(comment.publishedAt.formatted(date: .complete, time: .shortened))
                 }
                 .accessibilityElement(children: .combine)
-                RichTextView(text: RichText(markdown: comment.markdown), size: 12.5)
-                    .foregroundStyle(isQuiet ? .secondary : .primary)
+                // Parsed once for what it says, not again each time "ago" changes.
+                CommentBody(markdown: comment.markdown, isQuiet: isQuiet)
+                    .equatable()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// What a comment says, formatted as its author wrote it. It's drawn again only when that changes, byte for byte, or how
+/// quiet it reads: not as the time beside it moves on, which would parse its Markdown again each time.
+struct CommentBody: View, Equatable {
+    let markdown: String
+    let isQuiet: Bool
+
+    var body: some View {
+        RichTextView(text: RichText(markdown: markdown), size: 12.5)
+            .foregroundStyle(isQuiet ? .secondary : .primary)
+    }
+
+    nonisolated static func == (lhs: CommentBody, rhs: CommentBody) -> Bool {
+        lhs.isQuiet == rhs.isQuiet && lhs.markdown.utf8.elementsEqual(rhs.markdown.utf8)
     }
 }

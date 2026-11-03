@@ -33,7 +33,7 @@ public struct CodeRow: Sendable, Equatable, Hashable {
 /// (`ThreadExcerpt`): its rows, the lines it's on, and, when it can't be read, why.
 public enum ThreadCode {
     /// The rows of the code a thread is on: a note first when its first lines are left out, then the lines, with a note
-    /// wherever lines are left out between them.
+    /// wherever lines are left out between them, "12 lines left out".
     public static func rows(of excerpt: ThreadExcerpt) -> [CodeRow] {
         var rows: [CodeRow] = []
         if excerpt.hiddenCommentedLines > 0 {
@@ -43,7 +43,7 @@ public enum ThreadCode {
         for line in excerpt.lines {
             rows.append(CodeRow(.line(line.kind), line.text, old: line.oldNumber, new: line.newNumber, isMarked: line.isCommented))
             if line.omittedAfter > 0 {
-                rows.append(CodeRow(.gap, line.omittedAfter == 1 ? "1 line" : "\(line.omittedAfter) lines"))
+                rows.append(CodeRow(.gap, line.omittedAfter == 1 ? "1 line left out" : "\(line.omittedAfter) lines left out"))
             }
         }
         return rows
@@ -89,6 +89,46 @@ public enum ThreadCode {
         if let right = spans.right { return (right.lines, .right) }
         if let left = spans.left { return (left.lines, .left) }
         return nil
+    }
+
+    /// What VoiceOver says of a row, which its text, as copied, doesn't have: its numbers, how the change left it, whether
+    /// a comment is on it, then its text. "Line 88, added, commented: delay *= 2;", "Line 46 before the change, removed:
+    /// throw;", "Line 90, 89 before the change: }", "Line 12: blank"; a note, as it says: "12 lines left out".
+    public static func spoken(_ row: CodeRow) -> String {
+        guard case .line(let kind) = row.kind else { return row.text }
+        var parts: [String] = []
+        switch (row.newNumber, row.oldNumber) {
+        case (let new?, let old?) where old != new: parts.append("Line \(new), \(old) before the change")
+        case (let new?, _): parts.append("Line \(new)")
+        case (nil, let old?): parts.append("Line \(old) before the change")
+        case (nil, nil): parts.append("Line")
+        }
+        switch kind {
+        case .added: parts.append("added")
+        case .removed: parts.append("removed")
+        case .unchanged: break
+        }
+        if row.isMarked { parts.append("commented") }
+        let text = row.text.trimmingCharacters(in: .whitespaces)
+        return parts.joined(separator: ", ") + ": " + (text.isEmpty ? "blank" : text)
+    }
+
+    /// Where a thread is, as its code shows it: its file's name and the first of its lines where it was made,
+    /// "PaymentsClient.cs:88", which a push may have moved since; its file's name for one on a whole file; nil for one on
+    /// the pull request.
+    public static func place(of thread: ReviewThread) -> String? {
+        guard let path = thread.filePath, !path.isEmpty else { return nil }
+        let name = (path as NSString).lastPathComponent
+        return span(of: thread).map { "\(name):\($0.lines.lowerBound)" } ?? name
+    }
+
+    /// The same in full: "/src/PaymentsClient.cs, line 88", "/src/PaymentsClient.cs, lines 46 to 49 before the change",
+    /// "/src/PaymentsClient.cs", "A comment on the whole pull request".
+    public static func placeHelp(of thread: ReviewThread) -> String {
+        guard let path = thread.filePath, !path.isEmpty else { return "A comment on the whole pull request" }
+        guard let (lines, side) = span(of: thread) else { return path }
+        let numbers = lines.count == 1 ? "line \(lines.lowerBound)" : "lines \(lines.lowerBound) to \(lines.upperBound)"
+        return "\(path), \(numbers)" + (side == .left ? " before the change" : "")
     }
 
     /// Whether a thread is on lines of a file, so that its code shows above it.

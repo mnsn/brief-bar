@@ -1305,14 +1305,15 @@ Something else can ask the details to show a pull request at a place (`PullReque
 which unfolds the resolved ones when it's one of them, a build by its run, a check by its name (the first of that
 name), or a part, such as its comments, which What's Left does. They scroll there once it shows, and point a
 thread, a build or a check out for a moment. Taken to a thread, the header names it after the pull request, `!4102
-› PaymentsClient.cs:88` (`PullRequestDetailsStore.trailThread`), until they go elsewhere in them or over them; the
-pull request's number there takes them back to their top (`Place.top`). `reveal(_:at:)` shows them on the window's
-page and opens it there, unless no window has that page. A pull request the list doesn't have anymore, such as a
-review that merged, stays as it was last, with what the list had read of it, until you close it: it says so, and
-its menu loses the row's actions. The list reads a pull request's threads and policies only while it's open, so
-one of yours that completes while its details show, which stays under Done, keeps the threads, builds and checks
-they read last; for one that had closed before, they say BriefBar reads those only while a pull request is open.
-Someone else signing in to the Azure CLI closes it.
+› PaymentsClient.cs:88` (`PullRequestDetailsStore.trailThread`), at the line its card shows, where it was made
+(`ThreadCode.place`), until they go elsewhere in them or over them; the pull request's number there takes them
+back to their top (`Place.top`). `reveal(_:at:)` shows them on the window's page and opens it there, unless no
+window has that page. A pull request the list doesn't have anymore, such as a review that merged, stays as it was
+last, with what the list had read of it, until you close it: it says so, and its menu loses the row's actions. The
+list reads a pull request's threads and policies only while it's open, so one of yours that completes while its
+details show, which stays under Done, keeps the threads, builds and checks they read last; for one that had closed
+before, they say BriefBar reads those only while a pull request is open. Someone else signing in to the Azure CLI
+closes it.
 
 #### Its comment threads
 
@@ -1329,39 +1330,49 @@ mentions that BriefBar can name, else the pull request's author when someone els
 spoke last; nobody once it's resolved, when only you spoke, when the latest comment asks only people BriefBar
 can't name, and when it asks you, though it doesn't wait on you anymore, as when you removed it from Needs You:
 then it's your turn, not someone else's. Each comment shows in full, its Markdown drawn by BriefBar
-(`ReviewComment.markdown`, `RichText`, `RichTextView`), mentions as names; a thread of more than three shows its
-first and latest until you ask for the rest.
+(`ReviewComment.markdown`, `RichText`, `RichTextView`), mentions as names, parsed again only when it changes, not
+as the time beside it moves on (`CommentBody`); a thread of more than three shows its first and latest until you
+ask for the rest.
 
 #### The code comments are on
 
 A thread on lines of a file shows the code it's on, as its reviewer saw it: in the diff it was made on
 (`ThreadCode.span`), before Azure DevOps followed it to later ones, with three lines before and after, the lines
 it's on marked, and the removed and added lines among them (`ThreadExcerpt`). `PullRequestCode` reads it, one
-reader for the pull request whose details show, with GETs, four at a time: the pull request's updates, the files
+reader for each pull request whose details show, with GETs, four at a time: the pull request's updates, the files
 the diff it was made on changed, and its file before and after that change, by their object IDs, up to 1 MB each,
 each read once for every thread on it, which it compares a line at a time (`LineDiff`); and whether the file
 changed since, from the diff of that update with the latest. `PullRequestCodeStore` asks for a thread's code only
 once it comes on screen, as the details scroll, after a moment, so a thread scrolled past isn't read; it calls the
-read off when the thread leaves the screen first. What's read is kept in memory only, while the details show that
-pull request, and forgotten when they show another one, or none. A thread is read again only on screen, after a
-push or a move to another target branch, or when Azure DevOps followed it to other lines; until that's read, it
-shows the code it showed. A read that failed in a way reading again may fix, offline, throttled or signed out, is
-tried again when the thread comes on screen half a minute later, or at once with **↻**, and so is code read
-without whether it changed since, which couldn't be read: it shows meanwhile, and since what was read of it is
-kept, reading it again is one request at most; one that can't be read, such as a file that isn't text, longer than
-1 MB, or that Azure DevOps doesn't have, says why in a few words (`ThreadCode.sentence`), with ↗ to the thread.
+read off when the thread leaves the screen first. It reads only while a window shows, on screen, a page where a
+pull request's details can show, the Pull Requests page or the Sprint page (`sectionVisibilityChanged`): once each
+such window is minimized, hidden or covered, what's being read is called off, and read once one shows again.
+What's read is kept in memory only, while something shows that pull request's details: the panel beside the list,
+pages over it included, or a page of it elsewhere, which holds it while it shows (`hold`); once nothing does, it's
+forgotten. Each pull request's threads are its own, as Azure DevOps numbers each pull request's threads from 1:
+one that fades away as the details move to another doesn't touch the next one's thread of the same number. A
+thread is read again only on screen, after a push or a move to another target branch, or when Azure DevOps
+followed it to other lines; until that's read, it shows the code it showed. A read that failed in a way reading
+again may fix, offline, throttled or signed out, is tried again when the thread comes on screen half a minute
+later, or at once with **↻**, and so is code read without whether it changed since, which couldn't be read: it
+shows meanwhile, and since what was read of it is kept, reading it again is one request at most; one that can't be
+read, such as a file that isn't text, longer than 1 MB, or that Azure DevOps doesn't have, says why in a few words
+(`ThreadCode.sentence`), with ↗ to the thread.
 
 `CodeView` draws code, for the threads and, later, whole files: AppKit's text system, so each row is as tall as
-the others, its text selectable across rows and copied without the numbers, and only the rows on screen drawn. Its
-gutter numbers each line after the change, and before it too when lines were removed or the thread is on the code
-before the change; added lines are green with +, removed ones red with −, the lines a thread is on in the accent
-color with a bar, and lines left out in a run of removed or added ones are a row that says how many
-(`ThreadCode.rows`). It drops the indentation every line shares (`ThreadCode.outdented`), follows the text size on
-windows' pages, and scrolls sideways a gesture that starts sideways, leaving up and down to the details. While the
-details are beside the list, **⟷** makes them wide enough for a thread's longest line (`DetailsWidening`). When
-the file changed after the comment, it says so, or that it may have, when that couldn't be read though the pull
-request changed since, with ↗ to the pull request's Files page at that file, from the update the comment was made
-on to the latest (`PRSnapshot.filePageURL`).
+the others, its text selectable across rows and copied without the numbers, and only the rows on screen drawn.
+VoiceOver reads it a row at a time from its gutter, a list of its rows, each saying its numbers, how the change
+left it, whether the comment is on it, and its text, "Line 88, added, commented: delay *= 2;"
+(`ThreadCode.spoken`), then the text, as it's copied, to select. Its gutter numbers each line after the change,
+and before it too when lines were removed or the thread is on the code before the change; added lines are green
+with +, removed ones red with −, the lines a thread is on in the accent color with a bar, and lines left out in a
+run of removed or added ones are a row that says how many (`ThreadCode.rows`). It drops the indentation every line
+shares (`ThreadCode.outdented`), tells rows apart by their text's bytes, as the diff does, follows the text size
+on windows' pages, and scrolls sideways a gesture that starts sideways, leaving up and down to the details. While
+the details are beside the list, **⟷** makes them wide enough for a thread's longest line (`DetailsWidening`).
+When the file changed after the comment, it says so, or that it may have, when that couldn't be read though the
+pull request changed since, with ↗ to the pull request's Files page at that file, from the update the comment was
+made on to the latest (`PRSnapshot.filePageURL`).
 
 ### What counts as new
 
