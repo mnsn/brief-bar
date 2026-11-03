@@ -21,6 +21,16 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
     /// Azure DevOps redirected the request to another host, where BriefBar doesn't go (`RedirectGuard`). Which host isn't
     /// said: problem messages go to the log, and a host can carry an organization's name.
     case redirected
+    /// Azure DevOps refused a change BriefBar asked it to make (`ADOWrite`): why, when it says so in a way BriefBar knows,
+    /// and what it said, which BriefBar shows on the thread but never logs.
+    case refused(Refusal?, message: String?)
+
+    /// Why Azure DevOps refused a change, as BriefBar tells it from its answer.
+    public enum Refusal: Sendable, Equatable {
+        /// The pull request is completed or abandoned, and takes no change anymore: TF401181,
+        /// `GitPullRequestNotEditableException`.
+        case notEditable
+    }
 
     public var description: String {
         switch self {
@@ -36,12 +46,16 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
         case .network(let message): return message
         case .decoding(let message): return "Unexpected response from Azure DevOps (\(message))."
         case .redirected: return "Azure DevOps redirected BriefBar to another host, which it doesn't connect to."
+        // Without what it said, which can quote the change: this goes to the log.
+        case .refused(.notEditable?, _): return "Azure DevOps refused the change: the pull request is completed or abandoned."
+        case .refused(nil, _): return "Azure DevOps refused the change."
         }
     }
 }
 
-/// Reads from Azure DevOps. It only ever sends GET requests: BriefBar never changes anything there. Each goes only where
-/// it's sent: it follows no redirect (`RedirectGuard`).
+/// Reads from Azure DevOps, with GET requests only, but for the changes `ADOWrite` lists, which `send(_:)` alone makes, when
+/// you click them with Make Changes in Azure DevOps on. Each request goes only where it's sent: it follows no redirect
+/// (`RedirectGuard`).
 public struct ADOClient: Sendable {
     public let tokens: any AccessTokenProvider
     let session: URLSession
@@ -89,7 +103,7 @@ public struct ADOClient: Sendable {
 
     /// A JSON answer's bytes.
     func data(_ url: URL) async throws -> Data {
-        try await answer(url, accept: "application/json", isAnswer: Self.isJSON) { request, redirects in
+        try await answer(url, request: { Self.request(url, token: $0) }, isAnswer: Self.isJSON) { request, redirects in
             let (data, response) = try await session.data(for: request, delegate: redirects)
             return (data, response, true)
         }.data
@@ -99,20 +113,46 @@ public struct ADOClient: Sendable {
     /// the rest isn't read, and they aren't complete.
     func file(_ url: URL, limit: Int) async throws -> FileBytes {
         // Any type of file is an answer: 203 is what says it's a sign-in page instead.
-        let read = try await answer(url, accept: "application/octet-stream", isAnswer: { _ in true }) { request, redirects in
+        let read = try await answer(
+            url, request: { Self.request(url, token: $0, accept: "application/octet-stream") }, isAnswer: { _ in true }
+        ) { request, redirects in
             let (bytes, response) = try await session.bytes(for: request, delegate: redirects)
             return try await Self.read(bytes, response, limit: limit)
         }
         return FileBytes(data: read.data, isComplete: read.isComplete)
     }
 
-    /// The only way requests are made: GET, with a bearer token for the organization's directory, retried with a fresh
-    /// token once for each directory whose token is rejected, and once with a token for the organization's own directory
-    /// if Azure DevOps names another one than the token's, following no redirect. `isAnswer` tells what was asked for from
-    /// a sign-in page, and `send` sends the request with the guard against redirects it's given, and gets the answer's
-    /// body, and whether that's all of it.
+    /// Makes one of the changes `ADOWrite` lists, the only requests BriefBar sends that aren't GETs, and returns Azure
+    /// DevOps' answer. It goes once: a failure isn't tried again, but for a sign-in Azure DevOps didn't take, which it
+    /// didn't act on. When Azure DevOps refuses it, the error says why, as it said it (`ADOError.refused`); and when it made
+    /// the change but its answer can't be read, the answer says so (`Answer.unreadable`), rather than that it failed.
+    public func send(_ write: ADOWrite) async throws -> ADOWrite.Answer {
+        let data = try await answer(write.url, request: { Self.request(write, token: $0) }, isAnswer: Self.isJSON, refusal: Self.refusal) {
+            request, redirects in
+            let (data, response) = try await session.data(for: request, delegate: redirects)
+            return (data, response, true)
+        }.data
+        do {
+            switch write.kind {
+            case .reply: return .comment(try ADOJSON.decoder().decode(ADOComment.self, from: data))
+            case .setStatus: return .thread(try ADOJSON.decoder().decode(ADOThread.self, from: data))
+            }
+        } catch {
+            return .unreadable(Self.describe(error))
+        }
+    }
+
+    /// The only way requests are made: a GET (`request(_:token:accept:)`), or one of the changes `ADOWrite` lists
+    /// (`request(_:token:)`), which `makeRequest` makes with a token: with a bearer token for the organization's directory,
+    /// retried with a fresh token once for each directory whose token is rejected, and once with a token for the
+    /// organization's own directory if Azure DevOps names another one than the token's, following no redirect. Azure DevOps
+    /// acts on no request it rejects the token of, so a change is retried only then. `isAnswer` tells what was asked for
+    /// from a sign-in page; `refusal` tells, for a change, why Azure DevOps refused it, from its status and its answer; and
+    /// `send` sends the request with the guard against redirects it's given, and gets the answer's body, and whether that's
+    /// all of it.
     private func answer(
-        _ url: URL, accept: String, isAnswer: (HTTPURLResponse) -> Bool,
+        _ url: URL, request makeRequest: (String) -> URLRequest, isAnswer: (HTTPURLResponse) -> Bool,
+        refusal: ((Int, Data) -> ADOError?)? = nil,
         _ send: (URLRequest, RedirectGuard) async throws -> (Data, URLResponse, Bool)
     ) async throws -> (data: Data, isComplete: Bool) {
         if let wait = await gate.remainingWait(), wait > 0 {
@@ -138,7 +178,7 @@ public struct ADOClient: Sendable {
             let redirects = RedirectGuard()
             let (data, response, isComplete): (Data, URLResponse, Bool)
             do {
-                (data, response, isComplete) = try await send(Self.request(url, token: token.value, accept: accept), redirects)
+                (data, response, isComplete) = try await send(makeRequest(token.value), redirects)
             } catch {
                 // A refused redirect ends the request, however URLSession ends it.
                 if let redirect = redirects.refused { throw Self.error(refusing: redirect) }
@@ -185,7 +225,9 @@ public struct ADOClient: Sendable {
                 let wait = Self.retryAfter(http) ?? Self.retryAfterUnsaid
                 await gate.hold(for: wait)
                 throw ADOError.throttled(retryAfter: wait)
-            default: throw ADOError.http(http.statusCode)
+            default:
+                if let refused = refusal?(http.statusCode, data) { throw refused }
+                throw ADOError.http(http.statusCode)
             }
         }
         throw ADOError.unauthorized
@@ -243,6 +285,30 @@ public struct ADOClient: Sendable {
         (response.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("json")
     }
 
+    /// A change's request: its method, its URL and its JSON body, with a GET's sign-in and headers.
+    static func request(_ write: ADOWrite, token: String) -> URLRequest {
+        var request = request(write.url, token: token)
+        request.httpMethod = write.method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = write.body
+        return request
+    }
+
+    /// Why Azure DevOps refused a change, from its answer, which says why in JSON: TF401181,
+    /// `GitPullRequestNotEditableException`, for a pull request that's completed or abandoned. Nil for a status that isn't
+    /// a refusal, but an error like any other: a server's, say.
+    static func refusal(status: Int, data: Data) -> ADOError? {
+        guard (400..<500).contains(status) else { return nil }
+        struct Said: Decodable {
+            var message: String?
+            var typeKey: String?
+        }
+        let said = try? JSONDecoder().decode(Said.self, from: data)
+        let message = said?.message?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notEditable = said?.typeKey == "GitPullRequestNotEditableException" || message?.hasPrefix("TF401181") == true
+        return .refused(notEditable ? .notEditable : nil, message: message.flatMap { $0.isEmpty ? nil : String($0.prefix(300)) })
+    }
+
     /// The organization a request reads, by name: the first part of a dev.azure.com path. Nil for one that reads no
     /// organization, such as finding yours.
     static func organization(of url: URL) -> String? {
@@ -279,11 +345,15 @@ public struct ADOClient: Sendable {
     /// How long to wait when Azure DevOps asks to slow down without saying for how long.
     static let retryAfterUnsaid: TimeInterval = 60
 
+    /// What a request that Azure DevOps didn't answer in time fails with (`ADOError.network`): a change may have been made
+    /// all the same.
+    public static let unansweredMessage = "Azure DevOps didn't answer in time."
+
     static func map(_ error: URLError) -> ADOError {
         switch error.code {
         case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff:
             return .offline
-        case .timedOut: return .network("Azure DevOps didn't answer in time.")
+        case .timedOut: return .network(unansweredMessage)
         case .cannotFindHost, .dnsLookupFailed: return .network("Can't reach Azure DevOps.")
         default: return .network(error.localizedDescription)
         }

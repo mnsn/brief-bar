@@ -31,9 +31,7 @@ public struct PRDetails: Sendable, Codable, Equatable {
 
     /// `evaluations` is nil when the policies couldn't be read.
     public init(fetchedAt: Date, pullRequest: PullRequest, evaluations: [ADOPolicyEvaluation]?, threads: [ADOThread]) {
-        var names: [String: String] = [:]
-        for reviewer in pullRequest.reviewers { names[reviewer.person.id] = reviewer.person.name }
-        names[pullRequest.author.id] = pullRequest.author.name
+        let names = Self.names(of: pullRequest)
 
         var reviewThreads: [ReviewThread] = []
         var activity: [Activity] = []
@@ -63,6 +61,15 @@ public struct PRDetails: Sendable, Codable, Equatable {
     /// Whether a check is still going, so the details are worth refreshing more often.
     public var hasChecksInProgress: Bool {
         checks.contains { $0.isBlocking && ($0.state == .running || $0.state == .queued) }
+    }
+
+    /// The names of the pull request's people, its reviewers and its author, by their lowercased IDs, for mentions in its
+    /// comments to say.
+    static func names(of pullRequest: PullRequest) -> [String: String] {
+        var names: [String: String] = [:]
+        for reviewer in pullRequest.reviewers { names[reviewer.person.id] = reviewer.person.name }
+        names[pullRequest.author.id] = pullRequest.author.name
+        return names
     }
 }
 
@@ -232,19 +239,7 @@ public struct ReviewThread: Sendable, Codable, Equatable {
         for comment in thread.comments ?? [] {
             if let author = comment.author { names[author.id.lowercased()] = author.displayName }
         }
-        let comments = (thread.comments ?? []).compactMap { comment -> ReviewComment? in
-            guard comment.isDeleted != true, comment.commentType != "system", let author = comment.author,
-                  let content = comment.content, !content.isEmpty
-            else { return nil }
-            return ReviewComment(
-                id: comment.id,
-                author: Person(author),
-                text: CommentText.plain(content, names: names),
-                markdown: CommentText.naming(content, names: names),
-                mentions: CommentText.mentionedIds(content),
-                publishedAt: comment.publishedDate ?? thread.publishedDate ?? .distantPast
-            )
-        }
+        let comments = (thread.comments ?? []).compactMap { ReviewComment($0, names: names, published: thread.publishedDate) }
         guard !comments.isEmpty else { return nil }
         self.init(
             id: thread.id,
@@ -288,6 +283,24 @@ public struct ReviewComment: Sendable, Codable, Equatable {
         self.markdown = markdown ?? text
         self.mentions = mentions.map { $0.lowercased() }
         self.publishedAt = publishedAt
+    }
+
+    /// Nil for a deleted or system comment, or one without an author or anything to say.
+    /// - Parameters:
+    ///   - names: names by lowercased IDs, for its mentions.
+    ///   - published: when its thread was, for a comment that doesn't say when it was.
+    init?(_ comment: ADOComment, names: [String: String], published: Date?) {
+        guard comment.isDeleted != true, comment.commentType != "system", let author = comment.author,
+              let content = comment.content, !content.isEmpty
+        else { return nil }
+        self.init(
+            id: comment.id,
+            author: Person(author),
+            text: CommentText.plain(content, names: names),
+            markdown: CommentText.naming(content, names: names),
+            mentions: CommentText.mentionedIds(content),
+            publishedAt: comment.publishedDate ?? published ?? .distantPast
+        )
     }
 }
 
