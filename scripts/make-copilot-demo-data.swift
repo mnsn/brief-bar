@@ -633,6 +633,30 @@ checkpoints[savedItemsTask] = [
         """),
 ]
 
+// On the branches of the Azure DevOps demo's pull requests, for the line under their heading in their details, idle: the
+// one that wrote !4102's backoff; and two on !4079's branch, which go with it as well as each other, so its details ask
+// which is its.
+session("2f8a4c6e-1b3d-4e5f-8a7b-9c0d1e2f3a14", "Retry backoff", prompt: """
+        Add retry with exponential backoff to the payments client: start at 200 ms and double each time.
+        """, project: "payments-api", branch: "payments-retry",
+        started: ago(27 * hour), updated: ago(26 * hour), context: (64_000, 200_000)) { log in
+    log.tool("view", ["path": "src/PaymentsClient.cs"], at: ago(27 * hour - 5 * minute))
+    log.tool("bash", ["command": "dotnet test --filter PaymentsClientTests", "description": "Run the payments client's tests"],
+             at: ago(26 * hour + 20 * minute))
+    log.finish("Added exponential backoff to `PaymentsClient`, from 200 ms, doubling each retry, with tests, and pushed payments-retry.",
+               at: ago(26 * hour))
+}
+session("7b1c9d3e-5f2a-4b8c-9d6e-0a1b2c3d4e15", "Rename the order status enum", project: "payments-api", branch: "rename-order-status",
+        started: ago(4 * day + hour), updated: ago(4 * day), context: (88_000, 200_000)) { log in
+    log.tool("grep", ["pattern": "OrderStatus"], at: ago(4 * day + 50 * minute))
+    log.finish("Renamed `OrderStatus` to `OrderState` everywhere in payments-api, and pushed rename-order-status.", at: ago(4 * day))
+}
+session("9e4d2c1b-8a7f-4e6d-b5c4-3a2b1c0d9e16", "Migrate stored order statuses", project: "payments-api", branch: "rename-order-status",
+        started: ago(2 * day + 2 * hour), updated: ago(2 * day + hour), context: (52_000, 200_000)) { log in
+    log.tool("view", ["path": "migrations"], at: ago(2 * day + 110 * minute))
+    log.finish("Added a migration that maps the stored orders' old status names to the new ones.", at: ago(2 * day + hour))
+}
+
 // MARK: - Files
 
 for (id, log) in sessions.map({ (id: $0.id, log: $0.log) }) + sentTasks {

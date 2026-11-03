@@ -30,6 +30,14 @@ struct CopilotTaskEntry: Identifiable, Equatable {
     func isOn(_ key: PRKey) -> Bool {
         onPullRequest?.matches(organization: key.organization, id: key.number) == true
     }
+
+    /// The Azure DevOps pull request it works on, or the one it opened.
+    var pullRequestKey: PRKey? {
+        if let onPullRequest { return PRKey(onPullRequest.organization, onPullRequest.id) }
+        guard let ref = pullRequest.flatMap({ ItemRef.from(link: $0.absoluteString) }), ref.kind == .pullRequest, let number = ref.number
+        else { return nil }
+        return PRKey(ref.scope, number)
+    }
 }
 
 extension CopilotTaskEntry {
@@ -99,6 +107,10 @@ final class CopilotTasksStore: ObservableObject {
     var handedOff: (CommentHandOff, _ prompt: String) -> Void = { _, _ in }
     /// The sessions Show Links links to a work item or a pull request, and why: nothing while it's off.
     var linkedSessions: (ItemRef) -> [LinkedSession] = { _ in [] }
+    /// Whether a pull request a task names can show in its details, on the window's Pull Requests page, and showing it
+    /// there: whether it could. The source's.
+    var canShowPullRequest: (PRKey) -> Bool = { _ in false }
+    var showPullRequest: (PRKey) -> Bool = { _ in false }
     /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
     var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
     /// Stands in for copying a prompt and opening a session in the Copilot app, in tests: whether it opened.
@@ -438,6 +450,10 @@ final class CopilotTasksStore: ObservableObject {
                     settings.copilotRuns[index] = run
                 } else {
                     settings.copilotRuns.append(run)
+                }
+                // On a pull request, in another session than the one you chose for its work: it takes that one's place.
+                if case .pullRequest(let pullRequest, _) = subject {
+                    settings.forgetChosenSession(for: PRKey(pullRequest.organization, pullRequest.id), supersededBy: run)
                 }
                 Log.app.info("Sent a task to Copilot\(continuing == nil ? "" : ", going on with its session", privacy: .public)")
                 if let handOff { handedOff(handOff, prompt) }
@@ -807,6 +823,16 @@ final class CopilotTasksStore: ObservableObject {
         guard let run = entry.run, run.isValid else { return }
         Task {
             let environment = await environment()
+            // Copilot may have started working in it, or in its checkout, meanwhile: going on with it then would fork its
+            // history or mix their work.
+            if isWorking(inSession: run.id) || isWorking(inFolder: run.worktree) {
+                let alert = NSAlert()
+                alert.messageText = "The session didn't open in Terminal"
+                alert.informativeText = "Copilot is working in it, or in its checkout, now. Continue in Terminal once that's done."
+                NSApp.activate()
+                alert.runModal()
+                return
+            }
             let isOpen = AppSessions.isOpen(run.id, home: CopilotCLI.home(environment: environment)) || AppSessions.isOpen(run.id, home: appHome)
             if run.isAppSession == true || isOpen {
                 Self.openInAppOrSay(run.id)

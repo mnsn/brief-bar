@@ -20,8 +20,12 @@ struct PullRequestDetailsContent: View {
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
+    @EnvironmentObject private var sessions: PullRequestSessions
     @EnvironmentObject private var services: AppServices
     @Environment(\.itemNavigation) private var navigation
+    /// The window's page it's on, which its Copilot session is read only while the window shows on screen.
+    @Environment(\.shownSection) private var section
+    @Environment(\.shownWindow) private var window
 
     /// The thread, the build or the check it just went to, pointed out for a moment.
     @LocalState private var highlighted: PullRequestDetailsStore.Anchor?
@@ -84,11 +88,16 @@ struct PullRequestDetailsContent: View {
                     .id(PullRequestDetailsStore.Anchor.section(.checks))
                 PullRequestReviewersSection(panel: panel)
                     .id(PullRequestDetailsStore.Anchor.section(.reviewers))
-                WhereItStandsSection(subject: ref, excluding: Set(trail), title: "Also Linked", hidesWhenEmpty: true, showsSummary: false)
+                // Its own session is on its line, under its heading.
+                WhereItStandsSection(
+                    subject: ref, excluding: Set(trail).union(ownSession), title: "Also Linked", hidesWhenEmpty: true, showsSummary: false
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: details.place, initial: true) { go(in: panel) }
+        // Its Copilot session, kept up to date while it shows on screen.
+        .task(id: SessionFollowing(key: item.key, page: page)) { await sessions.follow(item, record: record, on: page) }
         .tellsStory(of: ref)
         // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details.
         .writesSummary(of: ref)
@@ -100,6 +109,24 @@ struct PullRequestDetailsContent: View {
               let connection = services.links.connections(of: previous).first(where: { $0.item.ref == item.key.linkRef })
         else { return nil }
         return WhereItStandsSection.linkFact(connection, from: services.links.describe(previous))
+    }
+
+    /// The session its work goes to, which its line shows (`PullRequestSessionLine`), rather than Also Linked.
+    private var ownSession: Set<ItemRef> {
+        guard let id = sessions.session(for: item.key)?.session?.id, let ref = ItemRef.session(id) else { return [] }
+        return [ref]
+    }
+
+    /// The window's page it's on (`PullRequestCodeStore.page`): nil outside one, where its session isn't read.
+    private var page: String? {
+        guard let section, let window else { return nil }
+        return PullRequestCodeStore.page(section, window: window)
+    }
+
+    /// What its session is followed for: the pull request, on the window's page it's on.
+    private struct SessionFollowing: Equatable {
+        let key: PRKey
+        let page: String?
     }
 
     /// What the task Copilot is at work on for the pull request does, while Send Work to Copilot is on.
