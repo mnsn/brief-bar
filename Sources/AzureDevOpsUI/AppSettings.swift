@@ -153,6 +153,17 @@ final class AppSettings: ObservableObject {
         get { defaults.string(forKey: Key.accountOrigin) }
         set { defaults.set(newValue, forKey: Key.accountOrigin) }
     }
+    /// Your sign-in's directory, as BriefBar last read with it, whichever section did: so that after a restart, signing in
+    /// to another directory, which makes that one the Azure CLI's default, doesn't read you there instead.
+    var accountDirectory: String? {
+        get { defaults.string(forKey: Key.accountDirectory) }
+        set { defaults.set(newValue, forKey: Key.accountDirectory) }
+    }
+    /// The directory to ask the Azure CLI for your tokens in: the one kept, or, from builds that kept none, the directory
+    /// of the account that saw your pull requests.
+    var pinnedDirectory: String? {
+        accountDirectory ?? seen.account.flatMap(AccessToken.tenant(ofAccount:))
+    }
     /// When you last looked at each pull request that's listed only because someone sent it to you (`SeenState.name(of:)`),
     /// in memory only, like the links: in the preferences, it would say which pull requests people sent you.
     @Published private(set) var seenSentInChats: [String: Date] = [:]
@@ -215,12 +226,14 @@ final class AppSettings: ObservableObject {
         persistSeen()
     }
 
-    /// Forgets what you've seen, with every account, where that account is from, and the pull requests people sent you,
-    /// when Azure DevOps is turned off. Your organizations, and whether to look for pull requests sent in chats, stay.
+    /// Forgets what you've seen, with every account, where that account is from and its directory, and the pull requests
+    /// people sent you, when Azure DevOps is turned off. Your organizations, and whether to look for pull requests sent in
+    /// chats, stay.
     func forgetSeen() {
         defaults.removeObject(forKey: Key.seen)
         defaults.removeObject(forKey: Key.otherSeen)
         defaults.removeObject(forKey: Key.accountOrigin)
+        defaults.removeObject(forKey: Key.accountDirectory)
         hasSavedSeen = false
         seen = SeenState.firstRun()
         otherSeen = [:]
@@ -501,6 +514,8 @@ enum SettingsKey {
     /// Where the account BriefBar last read your pull requests with is from (`AccessToken.accountTenant`): a directory's
     /// ID, or an identity provider such as live.com.
     static let accountOrigin = "ado.accountOrigin"
+    /// Your sign-in's directory, as BriefBar last read with it (`AccessToken.tenant`): a directory's ID.
+    static let accountDirectory = "ado.accountDirectory"
     static let chatLinksEnabled = "ado.chatLinksEnabled"
     /// Where earlier builds kept the links sent in chats. Nothing writes it now: the app removes it at launch.
     static let chatLinks = "ado.chatLinks"

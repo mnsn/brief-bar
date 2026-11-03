@@ -585,9 +585,10 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
                 return null;
             }
             accessChecks.Remove(key: name);
-            if (access.Watches && !settings.IsWatching(name: name))
+            if (access.Watches)
             {
-                settings.ToggleOrganization(name: name);
+                // In one step: you may have switched it on yourself meanwhile, in Settings, which this mustn't undo.
+                settings.SetWatching(name: name, watching: true);
             }
         }
         Log.Write(line: $"azureDevOps: checked an organization you added: {access.Kind}");

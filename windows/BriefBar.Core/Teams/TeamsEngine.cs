@@ -1,3 +1,4 @@
+using BriefBar.Core.ChromiumIndexedDB;
 using BriefBar.Core.Logging;
 
 namespace BriefBar.Core.Teams;
@@ -9,8 +10,10 @@ namespace BriefBar.Core.Teams;
 /// write is read `reloadDelay` later, combining bursts, from where the last read stopped. A folder is read again from
 /// scratch when its log is replaced or its databases change, and every `safetyInterval`, which also finds Teams' folders
 /// once you sign in. Of Teams' message cache, it reads only the messages of the chats that may be unread, again when one
-/// gets a message. A table that can't be read counts only once it has stayed so, unchanged, for `confirmationDelay`:
-/// LevelDB writes a table where it'll stay, so one being written reads as broken until it's done.
+/// gets a message. A file that can't be read counts only once it has stayed so for `confirmationDelay`. A table must
+/// stay unchanged for that long: LevelDB writes a table where it'll stay, so one being written reads as broken until it's
+/// done. The MANIFEST, CURRENT and logs only grow by whole records, or are replaced, so LevelDB writing to one doesn't
+/// make it readable, and doesn't start the wait over.
 ///
 /// All its state is guarded by one lock, and the handler it was made with is called with that lock held, one snapshot at
 /// a time: the handler mustn't call the engine.
@@ -37,7 +40,7 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
     /// Chats that may be unread with a message whose blob entry hadn't been written when they were last read: still
     /// waiting the next time they're read, they count as partly read.
     readonly HashSet<string> awaitingBlobEntry = new(comparer: StringComparer.Ordinal);
-    /// Tables that couldn't be read, by path: as they were then, and since when.
+    /// Files that couldn't be read, by path: as they were when last read, and since when they couldn't be.
     readonly Dictionary<string, (FileStamp? File, DateTimeOffset Since)> suspectTables = new(comparer: StringComparer.Ordinal);
     int unreadableFolders;
     int unreadableTables;
@@ -302,7 +305,7 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
         .OrderBy(keySelector: chat => chat.Id, comparer: StringComparer.Ordinal)
         .ToList();
 
-    /// Counts tables unchanged and unreadable for `confirmationDelay`; checks the others again then.
+    /// Counts files unreadable for `confirmationDelay`, tables unchanged for as long; checks the others again then.
     void ConfirmUnreadableTables(bool confirmAtOnce)
     {
         var now = time.GetUtcNow();
@@ -311,7 +314,11 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
         suspectTables.Clear();
         foreach (var (path, file) in current)
         {
-            suspectTables[path] = known.TryGetValue(key: path, value: out var seen) && seen.File == file ? seen : (file, now);
+            // A table that changed may only have been being written; LevelDB writing more to another file doesn't make
+            // it readable. Either way, the file as it is now is what a change is checked against.
+            suspectTables[path] = known.TryGetValue(key: path, value: out var seen) && (seen.File == file || !LevelDBFolder.IsTable(name: path))
+                ? (file, seen.Since)
+                : (file, now);
         }
         unreadableTables = suspectTables.Values.Count(predicate: table => confirmAtOnce || now - table.Since >= confirmationDelay);
         if (isActive && suspectTables.Count > unreadableTables && !confirmationScheduled)
