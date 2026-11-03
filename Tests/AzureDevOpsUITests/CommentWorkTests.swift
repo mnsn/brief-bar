@@ -159,6 +159,25 @@ import Testing
         #expect(store.readyFixes(of: key, among: [11, 12]).map(\.session) == [fork])
     }
 
+    /// Once a Push & Reply that shipped a thread finished, and its session went on, the thread still says it's pushed: an
+    /// older fix of it, by a prompt sent to the session or in another session, isn't its latest again.
+    @Test func aThreadShippedStaysPushedAsItsSessionGoesOn() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let first = now.addingTimeInterval(-900), shipped = now.addingTimeInterval(-300)
+        settings.copilotSentPrompts = [try #require(SentPrompt(about(), session: task, sentAt: first, copied: false, ended: .finished))]
+        settings.copilotRuns = [
+            run(fork, startedAt: first, ended: .finished, threads: [TakenThread(id: 11, since: first)]),
+            run(task, startedAt: now, threads: [
+                TakenThread(id: 11, since: shipped, ended: .finished, ships: true), TakenThread(id: 12, since: now),
+            ]),
+        ]
+        let eleven = try #require(store.commentWork(on: 11, of: key))
+        #expect(eleven.sentence(name: "Retry backoff", forkOf: nil) == "Pushed and replied from ‘Retry backoff’")
+        #expect(eleven.since == shipped)
+        #expect(store.readyFixes(of: key, among: [11]).isEmpty)
+    }
+
     /// A task keeps the threads it takes on with its run; going on with its session keeps those it took on before.
     @Test func sendingKeepsTheThreadsWithTheRun() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())

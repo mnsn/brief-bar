@@ -397,11 +397,18 @@ import Testing
         #expect(CopilotRun.threads(goingOnWith: fixed, on: pullRequest.reference, taking: [], for: .pushAndReply, at: second) == [
             TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: first, ended: .finished),
         ])
-        // Once it's done, a later task keeps those it had and didn't list, still not pushed, and not those it shipped.
+        // Once it's done, a later task keeps those it had and didn't list, still not pushed, and those it shipped, pushed, for
+        // an older fix of one of them, elsewhere, not to be its latest again.
         #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .finished, threads: shipping), on: pullRequest.reference, taking: [13], for: .fixComments, at: second)
-            == [TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 13, since: second)])
+            == [
+                TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ended: .finished, ships: true),
+                TakenThread(id: 13, since: second),
+            ])
         #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .finished, threads: shipping), on: pullRequest.reference, taking: [11], for: .fixComments, at: second)
-            == [TakenThread(id: 11, since: second)])
+            == [
+                TakenThread(id: 12, since: second, ended: .finished, ships: true), TakenThread(id: 13, since: second, ended: .finished, ships: true),
+                TakenThread(id: 11, since: second),
+            ])
         // One that failed didn't push them: those it shipped say so, and a fix of one of them takes it on again.
         #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .failed, threads: shipping), on: pullRequest.reference, taking: [13], for: .fixComments, at: second) == [
             TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ended: .failed, ships: true),

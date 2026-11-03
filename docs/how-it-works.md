@@ -2259,8 +2259,9 @@ that took it on. A task of BriefBar's keeps the threads it took on with its run,
 (`CopilotRun.threads`); going on with a session whose changes aren't pushed, on the same pull request, keeps those it took
 on before, with how that ended. Push & Reply takes on those its prompt lists, to reply on (`TakenThread.ships`): the others
 the session fixed stay as they were, fixed and not pushed, with when, since it doesn't reply on them, and a thread that
-another session fixed since stays that one's. Once it's done, those it listed are pushed, and a later task in the session
-keeps only the others (`CopilotRun.threads(goingOnWith:on:taking:for:at:)`). A
+another session fixed since stays that one's. Once it's done, those it listed say they're pushed and replied, and a later
+task in the session keeps them so, for an older fix of one of them, elsewhere, not to say it's ready again
+(`CopilotRun.threads(goingOnWith:on:taking:for:at:)`). A
 prompt sent to one of the Copilot app's sessions, or copied for you to paste there, is kept by references only, never what
 it says: the pull request, the session that took it and the one it forked, the threads, what for, and when (`SentPrompt`,
 `ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows it from the session's log

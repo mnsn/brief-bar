@@ -121,12 +121,12 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     }
 
     /// The threads a task keeps once it goes on with `previous`'s session, or starts in a session of its own when that's
-    /// nil, for `action`, at `now`: those `previous` had whose changes aren't pushed, with how it ended, and only on the same
-    /// pull request, since a thread's ID is its pull request's own; then `taken`, which it takes on now, in their place.
-    /// After a fix, or a Push & Reply that didn't finish, that's all it had; after one that finished, which pushed and
-    /// replied on those it took on, only those it had from before and didn't list. Push & Reply takes on those its prompt
-    /// lists, to reply on (`TakenThread.ships`), whether its runs or prompts sent to the session fixed them; the others stay
-    /// as they were, since it doesn't reply on them. Nil when it keeps none.
+    /// nil, for `action`, at `now`: those `previous` had, with how it ended, and only on the same pull request, since a
+    /// thread's ID is its pull request's own; then `taken`, which it takes on now, in their place. After a fix, those whose
+    /// changes aren't pushed; after a Push & Reply, those too, and those it took on, which once it finished say they're
+    /// pushed, for an older fix of one of them, elsewhere, not to be taken as its latest again. Push & Reply takes on those
+    /// its prompt lists, to reply on (`TakenThread.ships`), whether its runs or prompts sent to the session fixed them; the
+    /// others stay as they were, since it doesn't reply on them. Nil when it keeps none.
     /// - Parameter pullRequest: the pull request it's on, if it's on one.
     public static func threads(
         goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?, taking taken: [Int], for action: PullRequestAction?,
@@ -135,10 +135,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         var kept: [TakenThread] = []
         if let previous, let before = previous.threads, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true,
            previous.action?.changesCode == true || previous.action == .pushAndReply {
-            // Those a run had from before ended as it started (below); those it took on itself, once a Push & Reply
-            // finished, are pushed.
-            let shipped = previous.action == .pushAndReply && previous.ended == .finished
-            kept = before.filter { !shipped || $0.ended != nil }.map { thread in
+            kept = before.map { thread in
                 var thread = thread
                 // Gone on with, it ended: one BriefBar didn't see end, it stopped.
                 if thread.ended == nil { thread.ended = previous.ended ?? .stopped }
