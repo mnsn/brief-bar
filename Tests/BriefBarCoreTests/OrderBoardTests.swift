@@ -108,6 +108,10 @@ import Testing
         #expect(top.notes == [.showsAgainst(Self.gh(212))])
         #expect(OrderText.note(top.notes[0], of: top.ref) == "Its changes show against #212's branch, which may still change")
         #expect(OrderText.origin(top.prerequisites[0].origins[0], earlier: Self.gh(212), later: top.ref) == "GitHub stack 41, 4 of 4")
+        #expect(mission.steps.map(\.standing.marker) == [.merged, .merged, .next, .waiting])
+        #expect(mission.steps.map { OrderText.capsule($0) } == ["Merged", "Merged", "Next to merge", "After #212 · stacked"])
+        #expect(top.comesRightAfter(Self.gh(212)) && top.standing.waitsForOthers)
+        #expect(OrderText.progress(mission) == "2 of 4 merged")
     }
 
     // MARK: A session's order
@@ -184,6 +188,71 @@ import Testing
         #expect(try second(Self.ado(4101, from: "users/robin/rounding")) == "Merge after !4101")
     }
 
+    // MARK: By Mission
+
+    @Test func aRailJoinsARowOnlyToTheOneRightAboveItWhenItComesRightAfterIt() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderPlansTests.userExample, now: t(0), newID: planID)
+        let mission = try #require(
+            OrderBoard.missions(facts: Self.userExampleFacts(), orders: orders, evidence: OrderEvidence(), now: t(60)).first
+        )
+        let steps = mission.steps
+        // !4101 to !4102, !4102 to !4103 and !4105 to !4106; that !4105 comes after !4102 is said in words.
+        #expect(zip(steps, steps.dropFirst()).map { upper, lower in lower.comesRightAfter(upper.ref) } == [true, true, false, true, false])
+        #expect(steps.map(\.standing.marker) == [.merged, .next, .waiting, .waiting, .waiting, .anyTime])
+        #expect(steps.map { OrderText.capsule($0) } == ["Merged", "Next to merge", "After !4102", "After !4102", "After !4105", "Any time"])
+        #expect(mission.mergedCount == 1 && mission.pullRequestCount == 6)
+        #expect(OrderText.progress(mission) == "1 of 6 merged")
+        #expect(mission.contains(Self.pr(4104)) && !mission.contains(Self.pr(4199)))
+    }
+
+    @Test func onlyTheNearestOfWhatItWaitsForIsNamed() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [
+            .init(link: OrderPlansTests.link(4102)),
+            .init(link: OrderPlansTests.link(4103), after: ["4102"]),
+            .init(link: OrderPlansTests.link(4106), after: ["4102", "4103"]),
+        ]), now: t(0), newID: planID)
+        func last(_ states: [Int: PullRequestState]) throws -> OrderStep {
+            let facts = OrderFacts(pullRequests: [4102, 4103, 4106].map {
+                Self.ado($0, from: "users/robin/part-\($0)", state: states[$0] ?? .open)
+            })
+            let mission = try #require(OrderBoard.missions(facts: facts, orders: orders, evidence: OrderEvidence(), now: t(60)).first)
+            return try #require(mission.steps.last)
+        }
+        var step = try last([:])
+        #expect(step.standing == .waiting(open: [Self.pr(4103)], unknown: []))
+        #expect(OrderText.capsule(step) == "After !4103")
+        #expect(OrderText.standing(step) == "Merge after !4103")
+        #expect(step.directPrerequisites == [Self.pr(4103)])
+        step = try last([4103: .merged])
+        #expect(OrderText.capsule(step) == "After !4102")
+        #expect(step.directPrerequisites == [Self.pr(4103)])
+        step = try last([4102: .merged, 4103: .merged])
+        #expect(OrderText.capsule(step) == "Next to merge")
+    }
+
+    @Test func aCapsuleSaysStackedWhenTheOrderNeedsCheckingAndWhatBriefBarCantSee() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [
+            .init(link: OrderPlansTests.link(4101)), .init(link: OrderPlansTests.link(4102), after: ["4101"]),
+        ]), now: t(0), newID: planID)
+        func second(_ first: OrderPullRequest?) throws -> OrderStep {
+            let pullRequests = [first, Self.ado(4102, from: "users/robin/cart", into: "users/robin/rounding")].compactMap { $0 }
+            let facts = OrderFacts(pullRequests: pullRequests)
+            let mission = try #require(OrderBoard.missions(facts: facts, orders: orders, evidence: OrderEvidence(), now: t(60)).first)
+            return mission.steps[1]
+        }
+        var step = try second(Self.ado(4101, from: "users/robin/rounding"))
+        #expect(OrderText.capsule(step) == "After !4101 · stacked")
+        step = try second(nil)
+        #expect(OrderText.capsule(step) == "After !4101 · can't see it")
+        #expect(step.standing.marker == .waiting && step.standing.waitsForOthers && !step.standing.needsChecking)
+        step = try second(Self.ado(4101, from: "users/robin/rounding", into: "release/2.3", state: .merged))
+        #expect(OrderText.capsule(step) == "Check the order")
+        #expect(step.standing.marker == .check && step.standing.needsChecking && !step.standing.waitsForOthers)
+    }
+
     @Test func whereBriefBarSeesAnOrderTheSessionsOrderDoesntItSaysSoAndTheOrderDecides() throws {
         var orders = DeclaredOrders()
         try orders.apply(OrderRequest(entries: [
@@ -225,6 +294,7 @@ import Testing
         #expect(attached.allSatisfy { $0.standing == .notInOrder && $0.number == nil && OrderText.standing($0) == nil })
         #expect(attached[0].notes.map { OrderText.note($0, of: Self.pr(4109)) } == ["Targets !4102's branch", "!4111 targets its branch"])
         #expect(attached[1].notes.map { OrderText.note($0, of: Self.pr(4111)) } == ["Targets !4109's branch"])
+        #expect(attached.map { OrderText.capsule($0) } == ["Stacked on !4102", "Stacked on !4109"])
     }
 
     @Test func ordersThatShareAPullRequestStayApartAndEachSaysSo() throws {
@@ -270,8 +340,10 @@ import Testing
         )
         let missions = OrderBoard.missions(facts: facts, orders: orders, evidence: OrderEvidence(), now: t(60))
         #expect(missions.map(\.key) == [.plan(planID), .family(coordinator)])
+        #expect(missions.first?.sessions == [cart])
         let family = try #require(missions.last)
         #expect(family.kind == .family(session: coordinator))
+        #expect(family.sessions == [coordinator, cart, giftCards])
         #expect(family.steps.map(\.ref) == [Self.pr(4120), Self.pr(4121)])
         #expect(family.steps.allSatisfy { $0.number == nil && $0.standing == .unordered && OrderText.standing($0) == nil })
         #expect(family.attention == .needsYou)
@@ -332,7 +404,7 @@ import Testing
         }
         #expect(try reviews(.open) == [
             nil,
-            "Review after !4102: it builds on !4102's changes, which may still change",
+            "Review after !4102: builds on its changes",
             "‘Cart totals’ says it can be reviewed now",
         ])
         #expect(try reviews(.merged) == [nil, nil, "‘Cart totals’ says it can be reviewed now"])
@@ -346,7 +418,7 @@ import Testing
             == "Merge after !4102 and !4107 · BriefBar can't see whether !4107 merged")
         #expect(OrderText.standing(.notVisible(.sourceOff), of: Self.gh(212)) == "GitHub is off in BriefBar")
         #expect(OrderText.review(.after([Self.pr(4102), Self.pr(4103)], .stackedDiff), of: Self.pr(4105))
-            == "Review after !4102 and !4103: its changes include theirs until they merge")
+            == "Review after !4102 and !4103: includes their changes until they merge")
         #expect(OrderText.review(.now, of: Self.pr(4105)) == "Its order says it can be reviewed now")
         let beforeIt = OrderNote.stackedWith(Self.gh(212), comesAfter: false, .gitHubStack(number: 41, position: 3, size: 4))
         #expect(OrderText.note(beforeIt, of: Self.gh(211))

@@ -258,7 +258,7 @@ public struct DeclaredOrders: Equatable, Sendable {
     public static let mostPullRequests = 50
     /// How long an order stays once BriefBar saw the last of its pull requests merge or close.
     public static let finishedFor: TimeInterval = 14 * 86_400
-    /// How long an order that hasn't finished goes without its session telling it again before the page says so. It
+    /// How long an order that hasn't finished goes without its session telling it again before By Mission says so. It
     /// stays all the same.
     public static let staleAfter: TimeInterval = 30 * 86_400
 
@@ -713,7 +713,7 @@ public struct OrderEvidence: Equatable, Sendable {
 
 // MARK: - Focus
 
-/// The mission you keep on top of the Order page, kept in the preferences by its key.
+/// The mission you keep on top of the Pull Requests pages listed By Mission, kept in the preferences by its key.
 public enum OrderFocus {
     public static let defaultsKey = "order.focus"
 
