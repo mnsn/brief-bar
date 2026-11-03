@@ -78,21 +78,30 @@ import BriefBarCore
             .contains("The file changed since: look at it as it is now before you change it:"))
     }
 
+    /// Applied as it's written, to the lines the thread is on, which Copilot finds in the file as it is now: their numbers
+    /// are from when the thread was written, and a push since may have moved them.
     @Test func fixAppliesASuggestionAsItsWritten() throws {
         let suggestion = CommentSuggestion(author: People.priya, commentId: 3, code: "    public TimeSpan MaxDelay { get; set; }")
         let prompt = PullRequestPrompt.fixThread(record(), thread: backoff, code: nil, how: "Default it to 30 s.", applying: suggestion)
         #expect(prompt.contains("""
-            Apply the change Priya Shah suggested, exactly as it's written: replace line 88 of src/PaymentsClient.cs with
+            Apply the change Priya Shah suggested, exactly as it's written: replace the lines the thread is on, line 88 of \
+            src/PaymentsClient.cs when it was written, with
 
             ```
                 public TimeSpan MaxDelay { get; set; }
             ```
+
+            Those numbers are from when it was written: find the lines in the file as it is now, since they may have moved; \
+            if you can't tell which they are, say so rather than change anything else.
             """))
         #expect(prompt.contains("And, in my own words:\n\n> Default it to 30 s."))
+        // With the code it's on shown, by that code.
+        #expect(PullRequestPrompt.fixThread(record(), thread: backoff, code: excerpt, how: nil, applying: suggestion)
+            .contains("Find those lines in the file as it is now by their code, marked > above, since they may have moved"))
         // One that removes the lines; and code with a fence of its own in it, inside a longer one.
         let removal = CommentSuggestion(author: People.sam, commentId: 2, code: "")
         #expect(PullRequestPrompt.fixThread(record(), thread: backoff, code: nil, how: nil, applying: removal)
-            .contains("Apply the change Sam Rivera suggested, as it's written: remove line 88 of src/PaymentsClient.cs."))
+            .contains("Apply the change Sam Rivera suggested, as it's written: remove the lines the thread is on, line 88 of src/PaymentsClient.cs when it was written. Those numbers"))
         let fenced = CommentSuggestion(author: People.sam, commentId: 2, code: "// ```")
         #expect(PullRequestPrompt.fixThread(record(), thread: backoff, code: nil, how: nil, applying: fenced).contains("~~~~\n// ```\n~~~~"))
     }
@@ -205,6 +214,10 @@ import BriefBarCore
         // An empty one removes the lines.
         let removal = try #require(CommentSuggestion.latest(in: thread([markdown(1, People.sam, "```suggestion\n```")]), me: nil))
         #expect(removal.code.isEmpty)
+        // Its fence's info in any case, as the comment shows it.
+        #expect(CommentSuggestion.latest(in: thread([markdown(1, People.sam, "~~~ Suggestion\nx\n~~~")]), me: nil)?.code == "x")
+        // Blank lines at its ends are part of what the lines become.
+        #expect(CommentSuggestion.latest(in: thread([markdown(1, People.sam, "```suggestion\n\nx\n\n```")]), me: nil)?.code == "\nx\n")
     }
 }
 

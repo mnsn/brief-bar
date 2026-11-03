@@ -913,12 +913,13 @@ private enum MarkdownReader {
                     code.append(Self.droppingIndentation(raw[index], columns: indent))
                     index += 1
                 }
-                let text = code.joined(separator: "\n").trimmingCharacters(in: .newlines)
-                // An empty suggestion suggests removing the lines.
+                let joined = code.joined(separator: "\n")
                 if suggests {
-                    blocks.append(.suggestion(text))
-                } else if !text.isEmpty {
-                    blocks.append(.code(text))
+                    // What the lines become, blank lines at its ends and all; an empty one suggests removing them.
+                    blocks.append(.suggestion(joined))
+                } else {
+                    let text = joined.trimmingCharacters(in: .newlines)
+                    if !text.isEmpty { blocks.append(.code(text)) }
                 }
                 continue
             }

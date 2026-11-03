@@ -36,13 +36,17 @@ public struct SessionTurn: Sendable, Equatable {
         }
     }
 
-    /// How a prompt sent at `sentAt` stands, as the session's log says, and the app or the CLI that has it open.
+    /// How a prompt sent at `sentAt` stands, as the session's log says, and the app or the CLI that has it open: only once
+    /// the session got a message since, the prompt itself, sent or pasted, as the earliest it can be. Until then, whatever it
+    /// does, such as a turn that ends after it was sent, is an earlier message's.
     /// - Parameters:
     ///   - isRunning: the Copilot app says a turn runs in the session now.
     ///   - isOpen: something has the session open (`AppSessions.isOpen`): a turn its log says runs isn't cut off.
     public static func of(sentAt: Date, log: SessionLogState?, isRunning: Bool, isOpen: Bool) -> SessionTurn {
-        guard let log, let last = log.lastEventAt, last >= sentAt else { return SessionTurn(phase: .waiting, since: sentAt) }
-        let started = log.phaseSince.map { max($0, sentAt) } ?? sentAt
+        guard let log, let taken = log.lastUserMessageAt, taken >= sentAt, let last = log.lastEventAt else {
+            return SessionTurn(phase: .waiting, since: sentAt)
+        }
+        let started = log.phaseSince.map { max($0, taken) } ?? taken
         switch log.activity {
         case .needsAnswer, .needsPermission, .needsPlanApproval:
             return SessionTurn(phase: .needsYou, since: started)
@@ -52,8 +56,8 @@ public struct SessionTurn: Sendable, Equatable {
         if isRunning || (log.phase == .running && isOpen) {
             return SessionTurn(phase: .working(step: log.phase == .running ? log.currentStep : nil), since: started)
         }
-        // A phase from before it was sent is the session's history: nothing has happened since.
-        guard let setAt = log.phaseSetAt, setAt >= sentAt else { return SessionTurn(phase: .waiting, since: sentAt) }
+        // A phase from before it got the message is an earlier turn's: nothing has happened since.
+        guard let setAt = log.phaseSetAt, setAt >= taken else { return SessionTurn(phase: .waiting, since: sentAt) }
         switch log.phase {
         case .finished: return SessionTurn(phase: .finished(summary: log.summary), since: setAt)
         case .failed: return SessionTurn(phase: .failed(log.errorMessage), since: setAt)

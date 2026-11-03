@@ -208,6 +208,19 @@ import Testing
         // Turning Azure DevOps off forgets them.
         settings.forgetCopilotRuns()
         #expect(AppSettings(defaults: defaults, now: now).copilotSentPrompts.isEmpty)
+        // And a delivery that ends after it stopped keeps nothing.
+        store.stop()
+        store.keep(about(), sentTo: .sent, from: session, forking: false, at: now)
+        #expect(settings.copilotSentPrompts.isEmpty)
+    }
+
+    /// A prompt copied as `/fork` follows the fork the Copilot app made of its session since, when it made one: with more,
+    /// any could be another's, so it follows none.
+    @Test func followsAForkOnlyWhenThereIsJustOne() {
+        #expect(SentPrompt.onlyFork([fork]) == fork)
+        #expect(SentPrompt.onlyFork([fork, task]) == nil)
+        #expect(SentPrompt.onlyFork([]) == nil)
+        #expect(SentPrompt.onlyFork(nil) == nil)
     }
 
     /// Any program running as you can write the preferences: what isn't a session's, or a pull request's, is left out, and

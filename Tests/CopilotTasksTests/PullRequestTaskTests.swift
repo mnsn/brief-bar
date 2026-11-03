@@ -375,28 +375,33 @@ import Testing
         }
         let first = Date(timeIntervalSince1970: 100), second = Date(timeIntervalSince1970: 200)
         // A new session takes on what it's sent for; one that takes on none keeps none.
-        #expect(CopilotRun.threads(goingOnWith: nil, taking: [11], for: .fixComments, at: first) == [TakenThread(id: 11, since: first)])
-        #expect(CopilotRun.threads(goingOnWith: nil, taking: [], for: .fixComments, at: first) == nil)
+        #expect(CopilotRun.threads(goingOnWith: nil, on: pullRequest.reference, taking: [11], for: .fixComments, at: first) == [TakenThread(id: 11, since: first)])
+        #expect(CopilotRun.threads(goingOnWith: nil, on: pullRequest.reference, taking: [], for: .fixComments, at: first) == nil)
         // Going on with a fix, it keeps the threads it took on, with how that ended, and takes the new one on in its place.
         let fixed = run(.fixComments, ended: .finished, threads: [TakenThread(id: 11, since: first), TakenThread(id: 12, since: first)])
-        #expect(CopilotRun.threads(goingOnWith: fixed, taking: [12], for: .fixComments, at: second) == [
+        #expect(CopilotRun.threads(goingOnWith: fixed, on: pullRequest.reference, taking: [12], for: .fixComments, at: second) == [
             TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second),
         ])
         // One BriefBar didn't see end stopped.
         let unseen = run(.fixBuild, ended: nil, threads: [TakenThread(id: 11, since: first)])
-        #expect(CopilotRun.threads(goingOnWith: unseen, taking: [], for: .fixComments, at: second) == [
+        #expect(CopilotRun.threads(goingOnWith: unseen, on: pullRequest.reference, taking: [], for: .fixComments, at: second) == [
             TakenThread(id: 11, since: first, ended: .stopped),
         ])
         // Push & Reply ships them, taking none on; once it's done, they're pushed, and a later fix starts afresh.
-        let shipping = try #require(CopilotRun.threads(goingOnWith: fixed, taking: [13], for: .pushAndReply, at: second))
+        let shipping = try #require(CopilotRun.threads(goingOnWith: fixed, on: pullRequest.reference, taking: [13], for: .pushAndReply, at: second))
         #expect(shipping.map(\.id) == [11, 12])
-        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .finished, threads: shipping), taking: [13], for: .fixComments, at: second)
+        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .finished, threads: shipping), on: pullRequest.reference, taking: [13], for: .fixComments, at: second)
             == [TakenThread(id: 13, since: second)])
         // One that failed didn't push them.
-        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .failed, threads: shipping), taking: [], for: .fixComments, at: second)?
+        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .failed, threads: shipping), on: pullRequest.reference, taking: [], for: .fixComments, at: second)?
             .map(\.id) == [11, 12])
         // A review changed nothing to push.
-        #expect(CopilotRun.threads(goingOnWith: run(.review, ended: .finished, threads: shipping), taking: [], for: .fixComments, at: second) == nil)
+        #expect(CopilotRun.threads(goingOnWith: run(.review, ended: .finished, threads: shipping), on: pullRequest.reference, taking: [], for: .fixComments, at: second) == nil)
+        // A session that goes on with another pull request keeps none of this one's, whose IDs are this one's own.
+        var other = pullRequest.reference
+        other.id += 1
+        #expect(CopilotRun.threads(goingOnWith: fixed, on: other, taking: [11], for: .fixComments, at: second) == [TakenThread(id: 11, since: second)])
+        #expect(CopilotRun.threads(goingOnWith: fixed, on: nil, taking: [], for: nil, at: second) == nil)
         // Kept as IDs and dates, never what the threads say.
         let kept = run(.fixComments, ended: .finished, threads: [TakenThread(id: 11, since: first, ended: .failed)])
         let text = String(decoding: try JSONEncoder().encode(kept), as: UTF8.self)

@@ -53,7 +53,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     public var forkedFrom: String?
     /// The comment threads of its pull request it took on, by their IDs, each with when: one at a time with Fix, or those
     /// that waited on you, with Fix Comments. Going on with a session whose changes aren't pushed keeps those it took on
-    /// before, with how that went (`threads(goingOnWith:taking:for:at:)`), so each thread can say what became of it. Nil
+    /// before, with how that went (`threads(goingOnWith:on:taking:for:at:)`), so each thread can say what became of it. Nil
     /// for a task that took on none, and for runs that BriefBar kept before it had this.
     public var threads: [TakenThread]?
 
@@ -121,13 +121,16 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
 
     /// The threads a task keeps once it goes on with `previous`'s session, or starts in a session of its own when that's
     /// nil, for `action`, at `now`: those `previous` took on, with how it ended, while its changes aren't pushed, as after a
-    /// fix, or a Push & Reply that didn't finish; then `taken`, which it takes on now, in their place. Push & Reply takes
-    /// none on: it ships what's there. Nil when it keeps none.
+    /// fix, or a Push & Reply that didn't finish, and only on the same pull request, since a thread's ID is its pull
+    /// request's own; then `taken`, which it takes on now, in their place. Push & Reply takes none on: it ships what's
+    /// there. Nil when it keeps none.
+    /// - Parameter pullRequest: the pull request it's on, if it's on one.
     public static func threads(
-        goingOnWith previous: CopilotRun?, taking taken: [Int], for action: PullRequestAction?, at now: Date
+        goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?, taking taken: [Int], for action: PullRequestAction?,
+        at now: Date
     ) -> [TakenThread]? {
         var kept: [TakenThread] = []
-        if let previous, let before = previous.threads,
+        if let previous, let before = previous.threads, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true,
            previous.action?.changesCode == true || (previous.action == .pushAndReply && previous.ended != .finished) {
             // Gone on with, it ended: one BriefBar didn't see end, it stopped.
             kept = before.map { thread in

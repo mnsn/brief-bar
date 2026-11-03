@@ -2165,10 +2165,11 @@ details it's in (`InlineComposerOpen`). VoiceOver hears what's sent, and what be
 **Fix** (`PullRequestPrompt.fixThread`) addresses that thread alone: its entry as Fix Comments lists it, each comment in
 full as its author wrote it, the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
 what was added, removed and commented, and what you wrote, quoted as yours; then it builds and tests, without
-committing, pushing or replying. A ```` ```suggestion ```` fence is a suggested change (`RichText.Block.suggestion`),
-which the comment shows labeled; **Apply ‹name›'s suggestion as written** has the prompt quote the latest that someone
-else suggested in the thread (`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on.
-The box is checked when the suggestion is the thread's last comment. Once a session answered Explain on the thread,
+committing, pushing or replying. A ```` ```suggestion ```` fence, in any case, is a suggested change
+(`RichText.Block.suggestion`), blank lines at its ends and all, which the comment shows labeled; **Apply ‹name›'s
+suggestion as written** has the prompt quote the latest that someone else suggested in the thread
+(`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on, which Copilot finds in the
+file as it is now by their code, since their numbers are from when the thread was written. The box is checked when the suggestion is the thread's last comment. Once a session answered Explain on the thread,
 **Include the answer above** quotes what it answered (`ThreadAnswer`, cut to 6,000 characters) before your words, which
 can point to it. Its hand-off is that thread's comments that wait on you
 (`CommentHandOff.init(_:thread:dismissedCutoff:account:)`), and since a pull request has one cutoff, a comment that waits
@@ -2187,15 +2188,18 @@ makes its answers up (`DemoData.explanation`), and runs nothing.
 
 **What Copilot does about a thread** is said on it, in a sentence (`CommentWork`, `CopilotWorkLine`), from the latest work
 that took it on. A task of BriefBar's keeps the threads it took on with its run, by their IDs, each with when
-(`CopilotRun.threads`); going on with a session whose changes aren't pushed keeps those it took on before, with how that
-ended, and Push & Reply ships them, after which a fix starts afresh (`CopilotRun.threads(goingOnWith:taking:for:at:)`). A
+(`CopilotRun.threads`); going on with a session whose changes aren't pushed, on the same pull request, keeps those it took
+on before, with how that ended, and Push & Reply ships them, after which a fix starts afresh
+(`CopilotRun.threads(goingOnWith:on:taking:for:at:)`). A
 prompt sent to one of the Copilot app's sessions, or copied for you to paste there, is kept by references only, never what
 it says: the pull request, the session that took it and the one it forked, the threads, what for, and when (`SentPrompt`,
 `ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows it from the session's log
-since it began to send it, so that a turn that's over before BriefBar hears the prompt went counts too (`SessionTurn`),
-read as a task's is, every three seconds, with which sessions the app runs a turn in and whether something has the
-session open, only while one hasn't ended and Send Work to Copilot is on: a turn that's over twice in a row, a few seconds
-apart, ended, which its record keeps; one copied as `/fork` follows the fork the app records as made since. One you
+since it began to send it, so that a turn that's over before BriefBar hears the prompt went counts too, but only from the
+first message the session got since, the prompt itself as the earliest, sent or pasted: a turn that was under way as it
+was sent, or copied, is an earlier message's (`SessionTurn`). It's read as a task's is, every three seconds, with which
+sessions the app runs a turn in and whether something has the session open, only while one hasn't ended and Send Work to
+Copilot is on and Azure DevOps hasn't stopped: a turn that's over twice in a row, a few seconds apart, ended, which its
+record keeps; one copied as `/fork` follows the fork the app records as made since, when it made just one. One you
 didn't paste goes after half an hour, and one whose turn hasn't ended after twelve hours. A fix that's done and not
 pushed, on a thread that's still open, counts in the bar at the details' foot (`ReadyFixesBar`,
 `CopilotTasksStore.readyFixes`), whose sentence takes the details to the first thread they fixed, and whose **Push &

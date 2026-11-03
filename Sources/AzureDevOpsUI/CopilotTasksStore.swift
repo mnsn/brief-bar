@@ -433,7 +433,7 @@ final class CopilotTasksStore: ObservableObject {
         }
         // The threads it keeps, with those the session it goes on with took on before, as that session is kept now.
         let previous = continuing.map { continuing in settings.copilotRuns.first { $0.id == continuing.id } ?? continuing }
-        let kept = CopilotRun.threads(goingOnWith: previous, taking: threads, for: action, at: now)
+        let kept = CopilotRun.threads(goingOnWith: previous, on: entry.onPullRequest, taking: threads, for: action, at: now)
         entry.threads = kept
         entry.forkedFrom = forking?.id ?? continuing?.forkedFrom
         pending.removeAll { $0.id == id }

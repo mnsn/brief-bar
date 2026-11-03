@@ -24,6 +24,22 @@ import Testing
         #expect(SessionTurn.of(sentAt: at(100), log: log(earlier), isRunning: false, isOpen: true).phase == .waiting)
     }
 
+    /// A turn that ran as the prompt was sent, or copied for you to paste, is an earlier message's: its end isn't the
+    /// prompt's, until the session gets a message since, the prompt itself as the earliest.
+    @Test func aTurnUnderWayAsItWasSentIsntIts() {
+        let running = [Line.userMessage(at: 50), Line.toolStart("bash", id: "c1", description: "Build", at: 60)]
+        let endedSince = log(running + [Line.taskComplete("Built it", at: 130)])
+        #expect(SessionTurn.of(sentAt: at(100), log: endedSince, isRunning: false, isOpen: true) == SessionTurn(phase: .waiting, since: at(100)))
+        #expect(SessionTurn.of(sentAt: at(100), log: log(running), isRunning: true, isOpen: true).phase == .waiting)
+        // Pasted once it ended: the turn it starts is the prompt's.
+        let pasted = log(running + [Line.taskComplete("Built it", at: 130), Line.userMessage(at: 140), Line.taskComplete("Capped it", at: 170)])
+        #expect(SessionTurn.of(sentAt: at(100), log: pasted, isRunning: false, isOpen: true)
+            == SessionTurn(phase: .finished(summary: "Capped it"), since: at(170)))
+        // Pasted while it ran, the turn takes it in, and its end is the prompt's too.
+        let steered = log(running + [Line.userMessage(at: 110), Line.taskComplete("Built it and capped it", at: 150)])
+        #expect(SessionTurn.of(sentAt: at(100), log: steered, isRunning: false, isOpen: true).phase == .finished(summary: "Built it and capped it"))
+    }
+
     @Test func worksWhileATurnRunsAndEndsAsTheLogSays() {
         let working = log(earlier + [Line.userMessage(at: 110), Line.toolStart("bash", id: "c1", description: "Run the tests", at: 120)])
         #expect(SessionTurn.of(sentAt: at(100), log: working, isRunning: true, isOpen: true)

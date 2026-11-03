@@ -21,8 +21,8 @@ public struct CommentSuggestion: Sendable, Equatable {
     /// - Parameter me: your identity ID in its organization (`PRRecord.me`).
     public static func latest(in thread: ReviewThread, me: String?) -> CommentSuggestion? {
         for comment in thread.comments.reversed() where !PullRequestPrompt.isMine(comment, me: me) {
-            // Read only where one may be: a fence says what's in it on its first line.
-            guard comment.markdown.contains("suggestion") else { continue }
+            // Read only where one may be: a fence says what's in it on its first line, in any case, as `RichText` reads it.
+            guard comment.markdown.range(of: "suggestion", options: .caseInsensitive) != nil else { continue }
             let suggested = RichText(markdown: comment.markdown).blocks.compactMap { block -> String? in
                 if case .suggestion(let code) = block { code } else { nil }
             }
@@ -68,7 +68,7 @@ extension PullRequestPrompt {
         if let code { parts.append(codeSection(code, thread: thread, record: record)) }
         if let answer { parts.append(earlier(answer)) }
         if let suggestion {
-            parts.append(applying(suggestion, to: thread))
+            parts.append(applying(suggestion, to: thread, codeShown: code != nil))
         }
         if let how = yours(how) {
             parts.append((suggestion == nil ? "How I want it fixed, in my own words:" : "And, in my own words:") + "\n\n" + how)
@@ -194,25 +194,35 @@ extension PullRequestPrompt {
         }.joined(separator: "\n")
     }
 
-    /// Applying a suggested change as it's written, to the lines the thread is on.
-    static func applying(_ suggestion: CommentSuggestion, to thread: ReviewThread) -> String {
-        var place = "the lines the thread is on"
+    /// Applying a suggested change as it's written, to the lines the thread is on, which Copilot finds in the file as it is
+    /// now: their numbers are from when the thread was written, and a push since may have moved them.
+    /// - Parameter codeShown: the prompt shows them, as its reviewer saw them, above.
+    static func applying(_ suggestion: CommentSuggestion, to thread: ReviewThread, codeShown: Bool = false) -> String {
+        // ", line 88 of src/PaymentsClient.cs when it was written"
+        var when = ""
         if let span = ThreadCode.span(of: thread), span.side == .right, let path = thread.filePath {
             let file = path.hasPrefix("/") ? String(path.dropFirst()) : path
-            place = span.lines.count == 1
-                ? "line \(span.lines.lowerBound) of \(file)"
-                : "lines \(span.lines.lowerBound) to \(span.lines.upperBound) of \(file)"
+            let lines = span.lines.count == 1
+                ? "line \(span.lines.lowerBound)"
+                : "lines \(span.lines.lowerBound) to \(span.lines.upperBound)"
+            when = ", \(lines) of \(file) when it was written"
         }
+        let find = codeShown
+            ? "Find those lines in the file as it is now by their code, marked > above, since they may have moved; if they aren't there as they were, say so rather than change anything else."
+            : "Those numbers are from when it was written: find the lines in the file as it is now, since they may have moved; if you can't tell which they are, say so rather than change anything else."
         guard !suggestion.code.isEmpty else {
-            return "Apply the change \(suggestion.author.name) suggested, as it's written: remove \(place)."
+            return "Apply the change \(suggestion.author.name) suggested, as it's written: remove the lines the thread is on\(when). " + find
         }
         let fence = suggestion.code.contains("```") ? "~~~~" : "```"
+        let place = when.isEmpty ? "the lines the thread is on" : "the lines the thread is on\(when),"
         return """
             Apply the change \(suggestion.author.name) suggested, exactly as it's written: replace \(place) with
 
             \(fence)
             \(suggestion.code)
             \(fence)
+
+            \(find)
             """
     }
 

@@ -45,6 +45,13 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
 
     var id: String { "\(session)/\(sentAt.timeIntervalSince1970)" }
 
+    /// The fork that took a prompt copied as `/fork`: the one fork the Copilot app made of its session since, as
+    /// `SessionSender` finds one. With more, any could be another fork's, so none is.
+    static func onlyFork(_ forks: [String]?) -> String? {
+        guard let forks, forks.count == 1 else { return nil }
+        return forks[0]
+    }
+
     /// Nil when a session's ID isn't one.
     init?(
         _ about: About, session: String, forkedFrom: String? = nil, awaitsFork: Bool = false, sentAt: Date, copied: Bool,
@@ -349,8 +356,10 @@ extension CopilotTasksStore {
     }
 
     /// Keeps a prompt about a pull request's threads that went to one of the Copilot app's sessions, to follow its turn
-    /// there from its log: sent as it says, or copied for you to paste.
+    /// there from its log: sent as it says, or copied for you to paste. Not once Azure DevOps stopped, or Send Work to
+    /// Copilot is off, which forgot what it kept, as a delivery that took a while may end after.
     func keep(_ about: SentPrompt.About, sentTo outcome: SessionDelivery, from session: String, forking: Bool, at date: Date = Date()) {
+        guard canSend, isOn, !hasStopped else { return }
         let prompt: SentPrompt?
         switch outcome {
         case .sent:
@@ -378,7 +387,7 @@ extension CopilotTasksStore {
     /// and one whose turn hasn't ended after `SentPrompt.followLimit`, goes. Only while Send Work to Copilot is on, never in
     /// the demo.
     func followSentPrompts(now: Date = Date()) {
-        guard mode == .live, canSend, isOn, !isFollowingPrompts else { return }
+        guard mode == .live, canSend, isOn, !hasStopped, !isFollowingPrompts else { return }
         let open = settings.copilotSentPrompts.filter { $0.ended == nil }
         guard !open.isEmpty else { return }
         isFollowingPrompts = true
@@ -392,7 +401,7 @@ extension CopilotTasksStore {
                     var session: String? = prompt.session
                     var fork: String?
                     if prompt.awaitsFork {
-                        fork = AppSessions.forks(of: prompt.session, since: prompt.sentAt, home: home)?.first
+                        fork = SentPrompt.onlyFork(AppSessions.forks(of: prompt.session, since: prompt.sentAt, home: home))
                         session = fork
                     }
                     guard let session, let events = AppSessions.events(of: session, home: home) else {
@@ -408,8 +417,8 @@ extension CopilotTasksStore {
                 return read
             }.value
             isFollowingPrompts = false
-            // Turned off meanwhile: nothing more of it is kept.
-            guard canSend, isOn else { return }
+            // Turned off, or stopped, meanwhile: nothing more of it is kept.
+            guard canSend, isOn, !hasStopped else { return }
             applyTurns(read, now: now)
         }
     }
