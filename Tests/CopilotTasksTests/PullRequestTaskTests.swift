@@ -359,6 +359,49 @@ import Testing
         #expect(decoded.workItem?.id == 7)
         #expect(decoded.onPullRequest == nil)
         #expect(decoded.isValid)
+        #expect(decoded.threads == nil)
+    }
+
+    /// Each thread a task took on, by its ID only, with when, and how that went once a later task went on with its session:
+    /// kept while the changes aren't pushed, so that each thread can say what became of it.
+    @Test func keepsTheThreadsItTookOnUntilTheyrePushed() throws {
+        func run(_ action: PullRequestAction, ended: RunPhase?, threads: [TakenThread]?) -> CopilotRun {
+            CopilotRun(
+                id: "8c3f2e4d-5d0e-4f1a-8d6b-4a5b6c7d8e9f", workItem: nil, onPullRequest: pullRequest.reference, action: action,
+                options: CopilotModel.standard, repository: URL(fileURLWithPath: "/r"), worktree: URL(fileURLWithPath: "/w"),
+                startedAt: Date(timeIntervalSince1970: 0), process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: ended,
+                threads: threads
+            )
+        }
+        let first = Date(timeIntervalSince1970: 100), second = Date(timeIntervalSince1970: 200)
+        // A new session takes on what it's sent for; one that takes on none keeps none.
+        #expect(CopilotRun.threads(goingOnWith: nil, taking: [11], for: .fixComments, at: first) == [TakenThread(id: 11, since: first)])
+        #expect(CopilotRun.threads(goingOnWith: nil, taking: [], for: .fixComments, at: first) == nil)
+        // Going on with a fix, it keeps the threads it took on, with how that ended, and takes the new one on in its place.
+        let fixed = run(.fixComments, ended: .finished, threads: [TakenThread(id: 11, since: first), TakenThread(id: 12, since: first)])
+        #expect(CopilotRun.threads(goingOnWith: fixed, taking: [12], for: .fixComments, at: second) == [
+            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second),
+        ])
+        // One BriefBar didn't see end stopped.
+        let unseen = run(.fixBuild, ended: nil, threads: [TakenThread(id: 11, since: first)])
+        #expect(CopilotRun.threads(goingOnWith: unseen, taking: [], for: .fixComments, at: second) == [
+            TakenThread(id: 11, since: first, ended: .stopped),
+        ])
+        // Push & Reply ships them, taking none on; once it's done, they're pushed, and a later fix starts afresh.
+        let shipping = try #require(CopilotRun.threads(goingOnWith: fixed, taking: [13], for: .pushAndReply, at: second))
+        #expect(shipping.map(\.id) == [11, 12])
+        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .finished, threads: shipping), taking: [13], for: .fixComments, at: second)
+            == [TakenThread(id: 13, since: second)])
+        // One that failed didn't push them.
+        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .failed, threads: shipping), taking: [], for: .fixComments, at: second)?
+            .map(\.id) == [11, 12])
+        // A review changed nothing to push.
+        #expect(CopilotRun.threads(goingOnWith: run(.review, ended: .finished, threads: shipping), taking: [], for: .fixComments, at: second) == nil)
+        // Kept as IDs and dates, never what the threads say.
+        let kept = run(.fixComments, ended: .finished, threads: [TakenThread(id: 11, since: first, ended: .failed)])
+        let text = String(decoding: try JSONEncoder().encode(kept), as: UTF8.self)
+        #expect(text.contains(#""threads":[{"#))
+        #expect(try JSONDecoder().decode(CopilotRun.self, from: Data(text.utf8)) == kept)
     }
 }
 
