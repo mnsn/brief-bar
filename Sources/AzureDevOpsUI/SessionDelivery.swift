@@ -234,6 +234,10 @@ extension CopilotTasksStore {
         // Sent as delivering it starts: what the session does from then on is its turn, even one over before BriefBar heard
         // it went. It's free then, or nothing goes.
         let sentAt = Date()
+        // Until it's known whether it went, the turns of the prompts sent the session before aren't followed: it may reach
+        // the session, and its turn end, before BriefBar hears it went (`pauseFollowing`). A fork's goes to the fork.
+        if !forking { pauseFollowing(choice.id) }
+        defer { if !forking { resumeFollowing(choice.id) } }
         let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff)
         keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt)
         return outcome

@@ -2277,7 +2277,9 @@ session another prompt, about threads or not, or goes on with it with the CLI, b
 the session's log can't tell their turns apart: BriefBar stops following the earlier one, whose thread says **Sent to
 ‘Retry backoff’ · see the session**, or **Copied for ‘Retry backoff’ · see the session** for one it copied, rather than
 how the later turn went, and leaves it out of the bar below; it's kept as long as one that ended
-(`SentPrompt.overlapped`, `CopilotTasksStore.overlap(promptsIn:before:)`). A turn seen over just once isn't taken as its
+(`SentPrompt.overlapped`, `CopilotTasksStore.overlap(promptsIn:before:)`). While BriefBar is sending the session another
+prompt, or starting the CLI on it, the earlier one isn't followed, since the new one's turn may end before BriefBar hears
+it went; once nothing went, it's followed again (`CopilotTasksStore.pauseFollowing`). A turn seen over just once isn't taken as its
 end, since it may be the end of the turn that ran as it was sent. A fix that's done and not pushed, on a thread that's
 still open, counts in the bar at the details' foot (`ReadyFixesBar`, `CopilotTasksStore.readyFixes`), the pull request's
 own or, under its page over the details on the Pull Requests or Sprint page, the linked one's, and so does one

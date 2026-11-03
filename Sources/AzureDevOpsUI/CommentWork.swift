@@ -424,15 +424,27 @@ extension CopilotTasksStore {
         if prompts != settings.copilotSentPrompts { settings.copilotSentPrompts = prompts }
     }
 
+    /// Another prompt is being sent to a session: until `resumeFollowing`, the turns of the prompts sent it before aren't
+    /// followed, since the new one may reach it, and its turn end, before BriefBar hears it went. Once it's known to have
+    /// gone, `overlap` says their outcome isn't known; once nothing went, they're followed again.
+    func pauseFollowing(_ session: String) {
+        followingPaused[session, default: 0] += 1
+    }
+
+    func resumeFollowing(_ session: String) {
+        guard let sends = followingPaused[session] else { return }
+        followingPaused[session] = sends > 1 ? sends - 1 : nil
+    }
+
     /// Follows the turns of the prompts sent to the Copilot app's sessions about pull requests' threads that haven't ended,
     /// from their sessions' logs since each was sent, off the main thread: which sessions the app runs a turn in, which
     /// something has open, the fork made for one copied as `/fork`, and their logs. A turn that's over twice in a row, a few
     /// seconds apart, ended: its prompt keeps how. One copied and not pasted, or whose fork isn't made, after half an hour,
     /// and one whose turn hasn't ended after `SentPrompt.followLimit`, goes. Only while Send Work to Copilot is on, never in
-    /// the demo.
+    /// the demo, and not while another prompt is being sent to its session (`pauseFollowing`).
     func followSentPrompts(now: Date = Date()) {
         guard mode == .live, canSend, isOn, !hasStopped, !isFollowingPrompts else { return }
-        let open = settings.copilotSentPrompts.filter(\.isFollowed)
+        let open = settings.copilotSentPrompts.filter { $0.isFollowed && followingPaused[$0.session] == nil }
         guard !open.isEmpty else { return }
         isFollowingPrompts = true
         let home = appHome
@@ -486,8 +498,11 @@ extension CopilotTasksStore {
     private func applyTurns(_ read: [(prompt: SentPrompt, fork: String?, turn: SessionTurn?)], now: Date) {
         var prompts = settings.copilotSentPrompts
         for (prompt, fork, turn) in read {
-            // Gone, or overlapped by another since it was read: what it read isn't its.
-            guard let index = prompts.firstIndex(where: { $0.id == prompt.id }), !prompts[index].overlapped else { continue }
+            // Gone, or overlapped by another since it was read: what it read isn't its. Nor while another prompt is being
+            // sent to its session, since it was read: what it read may be that one's turn.
+            guard let index = prompts.firstIndex(where: { $0.id == prompt.id }), !prompts[index].overlapped,
+                  followingPaused[prompts[index].session] == nil
+            else { continue }
             if let fork {
                 prompts[index].session = fork
                 prompts[index].forkedFrom = prompt.session

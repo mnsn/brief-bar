@@ -348,6 +348,43 @@ import Testing
         #expect(store.readyFixes(of: key, among: [11]).map(\.session) == [session])
     }
 
+    /// While another prompt is being sent to its session, a prompt's turn isn't followed: what the log says may be that
+    /// one's turn. Once nothing went, it's followed again.
+    @Test func followsNoPromptWhileAnotherIsSentToItsSession() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let folder = home.appendingPathComponent("session-state/\(session)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        store.appHomeForTests = home
+        let sent = Date()
+        settings.copilotSentPrompts = [try #require(SentPrompt(about(), session: session, sentAt: sent, copied: false))]
+        let stamp = { (seconds: TimeInterval) in sent.addingTimeInterval(seconds).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
+        let lines = [
+            #"{"type":"user.message","data":{"content":"Fix it"},"id":"a","timestamp":"\#(stamp(1))","parentId":null}"#,
+            #"{"type":"session.task_complete","data":{"summary":"Capped it","success":true},"id":"b","timestamp":"\#(stamp(2))","parentId":null}"#,
+        ]
+        try (lines.joined(separator: "\n") + "\n").write(to: folder.appendingPathComponent("events.jsonl"), atomically: true, encoding: .utf8)
+        func follow(at date: Date) async throws {
+            store.followSentPrompts(now: date)
+            try await settle { !store.isFollowingPrompts }
+        }
+        // Two sends at once: until both are done, nothing's followed.
+        store.pauseFollowing(session)
+        store.pauseFollowing(session)
+        try await follow(at: sent.addingTimeInterval(3))
+        store.resumeFollowing(session)
+        try await follow(at: sent.addingTimeInterval(6))
+        #expect(settings.copilotSentPrompts.first?.ended == nil)
+        #expect(store.commentWork(on: 11, of: key)?.state == .waiting(copied: false))
+        store.resumeFollowing(session)
+        #expect(store.followingPaused.isEmpty)
+        try await follow(at: sent.addingTimeInterval(7))
+        try await follow(at: sent.addingTimeInterval(10))
+        #expect(settings.copilotSentPrompts.first?.ended == .finished)
+    }
+
     /// One pasted in a terminal where the Copilot CLI has the session, in the CLI's own folder rather than the app's, is
     /// followed there.
     @Test func followsAPromptInTheCLIsFolder() async throws {

@@ -152,6 +152,9 @@ final class CopilotTasksStore: ObservableObject {
     /// When each of those turns was first seen over, to tell an ended turn from one that only paused.
     var promptsOver: [String: Date] = [:]
     var isFollowingPrompts = false
+    /// The sessions another prompt is being sent to, by how many sends: the turns of the prompts sent them before aren't
+    /// followed meanwhile (`pauseFollowing`).
+    var followingPaused: [String: Int] = [:]
     /// Reads the sessions' logs those prompts went to, only what's new each time.
     let promptMonitor = RunMonitor()
 
@@ -457,7 +460,11 @@ final class CopilotTasksStore: ObservableObject {
             worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }, continuing: continuing,
             forking: forking
         )
+        // Going on with a session, its next turn may end before the run is known to have started: the turns of the prompts
+        // sent it before aren't followed until then (`pauseFollowing`).
+        if let continuing { pauseFollowing(continuing.id) }
         Task { [self] in
+            defer { if let continuing { resumeFollowing(continuing.id) } }
             do {
                 // Again, as it starts: another of the app's sessions may have started a turn in the same checkout since the
                 // window looked. The launcher looks once more right before Copilot starts, after its git commands.

@@ -265,6 +265,43 @@ private final class TakenAt: Sendable {
         #expect(kept.sentAt <= tookIt)
     }
 
+    /// While a prompt is being sent to a session, the turns of the prompts sent it before aren't followed: it may reach the
+    /// session, and its turn end, before BriefBar hears it went. Once it went, their outcome isn't known; once nothing went,
+    /// they're followed again.
+    @Test func followsNoEarlierPromptWhileSendingAnother() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var pausedAsItShowed: [Int?] = []
+        store.showForTests = { [session] _ in
+            pausedAsItShowed.append(store.followingPaused[session])
+            return true
+        }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        ext.start()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        let key = PRKey("contoso", 4071)
+        let earlier = try #require(SentPrompt(
+            SentPrompt.About(pullRequest: key, purpose: .fix, threads: [11]), session: session, sentAt: Date().addingTimeInterval(-60), copied: false
+        ))
+        store.settings.copilotSentPrompts = [earlier]
+        let about = SentPrompt.About(pullRequest: key, purpose: .fix, threads: [12])
+
+        // Nothing went: it's followed again.
+        store.delivering.insert(session)
+        #expect(await store.deliver("Fix this comment", to: choice(session), about: about) == .notSent("BriefBar is sending it a prompt already."))
+        store.delivering.remove(session)
+        #expect(store.followingPaused.isEmpty)
+        #expect(store.settings.copilotSentPrompts.map(\.isFollowed) == [true])
+
+        #expect(await store.deliver("Fix this comment", to: choice(session), about: about) == .sent)
+        #expect(pausedAsItShowed == [1])
+        #expect(store.followingPaused.isEmpty)
+        #expect(store.settings.copilotSentPrompts.first { $0.threads == [11] }?.overlapped == true)
+        #expect(store.settings.copilotSentPrompts.first { $0.threads == [12] }?.isFollowed == true)
+    }
+
     /// A session that nothing has open loads as the app opens it, with BriefBar's extension, which takes the request that
     /// was waiting for it; it isn't opened again once it's sent.
     @Test func loadsASessionThatNothingHasOpen() async throws {
