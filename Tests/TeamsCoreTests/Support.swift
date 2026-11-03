@@ -22,6 +22,12 @@ struct TestError: Error, CustomStringConvertible {
     }
 }
 
+/// How long a test waits for something before it fails. `make test` runs every test on one thread
+/// (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), where a test may get its turn only after most of the others. On CI's busy
+/// runner, tests waited half a minute or more, about as long as the whole run takes. A wait that's answered still
+/// returns as soon as it is: only a test that fails takes this long.
+let waitLimit: Duration = .seconds(60)
+
 // MARK: - Made-up people and chats
 
 /// Made-up conversations. Never put real names, messages or IDs in tests.
@@ -268,7 +274,7 @@ final class SnapshotCollector: Sendable {
     /// Waits until the latest snapshot satisfies `predicate`.
     @discardableResult
     func wait(
-        _ what: String, timeout: Duration = .seconds(10), until predicate: (EngineSnapshot) -> Bool
+        _ what: String, timeout: Duration = waitLimit, until predicate: (EngineSnapshot) -> Bool
     ) async throws -> EngineSnapshot {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)

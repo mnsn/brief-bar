@@ -419,7 +419,7 @@ private struct Timeout: Error, CustomStringConvertible {
 /// Lets the store take what it's told until `condition` holds.
 @MainActor
 private func until(_ what: String, _ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+    let deadline = ContinuousClock.now.advanced(by: waitLimit)
     while !condition() {
         guard ContinuousClock.now < deadline else { throw Timeout(description: "Timed out waiting for \(what)") }
         try await Task.sleep(for: .milliseconds(2))
