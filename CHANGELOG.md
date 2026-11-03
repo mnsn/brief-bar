@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.1 - 2026-11-03
 
 - **Send a prompt straight to one of the Copilot app's sessions, or to a fork of it.** In the Send to Copilot
   window, for a session that's already there, **Send to Session** sends the prompt to the session in the Copilot
