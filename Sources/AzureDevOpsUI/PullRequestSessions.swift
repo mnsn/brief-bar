@@ -26,6 +26,9 @@ final class PullRequestSessions: ObservableObject {
     var refreshEvery: Duration = .seconds(10)
     /// Hears of each session whose way there is checked, in tests.
     var deliveryCheckedForTests: ((_ sessionId: String) -> Void)?
+    /// Hears of each read of a pull request's sessions, once they're read and before they're kept, in tests, which may hold
+    /// it up there, as a slow read would be.
+    var sessionsReadForTests: (@MainActor (PRKey) async -> Void)?
 
     /// How long what the search for mentions found is kept: it reads up to 40 sessions' logs, so opening the same details
     /// again doesn't read them again.
@@ -61,8 +64,6 @@ final class PullRequestSessions: ObservableObject {
     private var hasStopped = false
     /// The pages where a pull request's details can show that windows show on screen (`PullRequestCodeStore.page`).
     private var visiblePages: Set<String> = []
-    /// For pictures (`prepare`): read once, without the search for mentions or how work would reach a session.
-    private var isForPictures = false
     /// The pull requests read for now, and those whose session's way there is checked now: one at a time, each.
     private var reading: Set<PRKey> = []
     private var checking: Set<PRKey> = []
@@ -118,12 +119,13 @@ final class PullRequestSessions: ObservableObject {
     }
 
     /// Reads these pull requests' sessions once, for pictures, as they stand now: pictures follow nothing, and show neither
-    /// the guess nor how work would reach a session, so neither the logs are searched for mentions nor that is checked.
+    /// the guess nor how work would reach a session, so neither the logs are searched for mentions nor that is checked. What
+    /// follows them meanwhile, as on no window's page, reads nothing.
     func prepare(_ items: [PRSnapshot]) async {
-        isForPictures = true
-        for item in items {
+        var prepared: Set<PRKey> = []
+        for item in items where prepared.insert(item.key).inserted {
             start(following: item.key, record: record(item.key), createdAt: item.createdAt, by: UUID(), on: nil)
-            await read(item.key)
+            await read(item.key, forPictures: true)
         }
     }
 
@@ -142,6 +144,9 @@ final class PullRequestSessions: ObservableObject {
         state.followers.removeValue(forKey: follower)
         if !state.followers.isEmpty {
             followed[key] = state
+            // What still follows it is on pages no window shows on screen: what's being read or checked for it is called
+            // off, as when they went off screen (`setVisible`).
+            if !isOnScreen(state) { spawned[key]?.values.forEach { $0.cancel() } }
         } else {
             followed[key] = nil
             spawned.removeValue(forKey: key)?.values.forEach { $0.cancel() }
@@ -250,10 +255,10 @@ final class PullRequestSessions: ObservableObject {
     // MARK: Reading
 
     /// Whether a followed pull request's sessions can be read now: Send Work to Copilot is on, outside the demo, it's open,
-    /// and a window shows its details on screen, or pictures are being drawn.
-    private func isReadable(_ key: PRKey) -> Bool {
+    /// and a window shows its details on screen, unless it's read for pictures (`prepare`).
+    private func isReadable(_ key: PRKey, forPictures: Bool = false) -> Bool {
         guard !hasStopped, !Task.isCancelled, copilot.mode == .live, copilot.canSend, copilot.isOn, let state = followed[key],
-              isForPictures || isOnScreen(state), let record = current(state, key)
+              forPictures || isOnScreen(state), let record = current(state, key)
         else { return false }
         return record.pullRequest.status == .active
     }
@@ -267,9 +272,9 @@ final class PullRequestSessions: ObservableObject {
     /// off the main thread; which of the app's sessions mention it, once, and only when none goes with it; and how work
     /// would reach its session. Only while Send Work to Copilot is on and it's open, never in the demo; for pictures, only
     /// its sessions.
-    private func read(_ key: PRKey) async {
+    private func read(_ key: PRKey, forPictures: Bool = false) async {
         guard !reading.contains(key) else { return }
-        guard isReadable(key), let state = followed[key], let record = current(state, key) else {
+        guard isReadable(key, forPictures: forPictures), let state = followed[key], let record = current(state, key) else {
             update(key)
             return
         }
@@ -280,11 +285,12 @@ final class PullRequestSessions: ObservableObject {
         }
         let subject = TaskSubject.pullRequest(PullRequestTasks.task(for: record), .fixComments)
         let found = await copilot.sessionChoices(for: subject)
+        await sessionsReadForTests?(key)
         // Cancelled meanwhile, as when its details closed, what was read is left out: whatever still follows it reads again.
         guard !Task.isCancelled, followed[key] != nil, copilot.isOn else { return }
         followed[key]?.found = found
         update(key)
-        guard !isForPictures else { return }
+        guard !forPictures else { return }
         if case .newSession(chosenByYou: false)? = sessions[key]?.pick, followed[key]?.mentioned == nil {
             if let known = mentionsRead[key], Date().timeIntervalSince(known.at) < Self.mentionsFreshFor {
                 followed[key]?.mentioned = known.ids
@@ -364,7 +370,7 @@ final class PullRequestSessions: ObservableObject {
         }
         let session = make(state, key)
         if sessions[key] != session { sessions[key] = session }
-        guard isReadable(key), !isForPictures else { return }
+        guard isReadable(key) else { return }
         if state.found == nil {
             // One under way may be one called off, as its details closed and showed again: then once it ends.
             if reading.contains(key) {

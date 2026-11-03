@@ -327,9 +327,84 @@ import Testing
         #expect(checked == 2)
     }
 
-    /// Shown again while a read that going off screen called off is still ending, it's read again as that read ends, rather
-    /// than at the next turn.
+    /// Shown again while a read that going off screen called off is still ending, as when its window is covered and
+    /// uncovered while the sessions are read: it's read again as that read ends, rather than at the next turn.
     @Test func readsAgainWhenShownWhileAReadWasCalledOff() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        // Between reads, an hour: only reading again as the read under way ends reads again.
+        sessions.refreshEvery = .seconds(3_600)
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        // The second read is held up once it has the sessions, as a slow one would be.
+        var reads = 0
+        var held: CheckedContinuation<Void, Never>?
+        sessions.sessionsReadForTests = { _ in
+            reads += 1
+            if reads == 2 { await withCheckedContinuation { held = $0 } }
+        }
+        let following = followOnScreen(sessions, item, record: record)
+        defer { following.cancel() }
+        try await until { sessions.session(for: item.key)?.delivery != nil }
+        #expect(reads == 1)
+
+        // Covered and shown again: read again, and held up.
+        sessions.setVisible(false, for: page)
+        try await Task.sleep(for: .milliseconds(100))
+        sessions.setVisible(true, for: page)
+        try await until { held != nil }
+        // Covered meanwhile, which calls it off, though it's still ending, and what the follower reads meanwhile finds it
+        // under way; then shown again before it ends.
+        sessions.setVisible(false, for: page)
+        try await Task.sleep(for: .milliseconds(200))
+        sessions.setVisible(true, for: page)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(reads == 2)
+        held?.resume()
+        try await until { reads == 3 }
+        #expect(reads == 3)
+    }
+
+    /// Open again while a read that closing its details called off is still ending: it's read again as that read ends.
+    @Test func readsAgainWhenTheDetailsOpenAgainWhileAReadWasCalledOff() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        sessions.refreshEvery = .seconds(3_600)
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        // The first read is held up once it has the sessions.
+        var reads = 0
+        var held: CheckedContinuation<Void, Never>?
+        sessions.sessionsReadForTests = { _ in
+            reads += 1
+            if reads == 1 { await withCheckedContinuation { held = $0 } }
+        }
+        let first = followOnScreen(sessions, item, record: record)
+        try await until { held != nil }
+        // Closed, which calls it off, though it's still ending; then open again.
+        first.cancel()
+        await first.value
+        let again = followOnScreen(sessions, item, record: record)
+        defer { again.cancel() }
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(reads == 1)
+        #expect(sessions.session(for: item.key) == nil)
+        held?.resume()
+        try await until { sessions.session(for: item.key) != nil }
+        #expect(sessions.session(for: item.key)?.session?.id == onBranch)
+        #expect(reads == 2)
+    }
+
+    /// What's being read for a pull request is called off once all that still follows it is on pages no window shows on
+    /// screen, as when you choose another pull request in the window that showed it while a minimized one shows it too: a
+    /// search of the logs doesn't run on. Shown again, it's read again.
+    @Test func readsNothingMoreOnceWhatFollowsItIsOffScreen() async throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
         // Sessions on other branches, whose logs are searched since none goes with it.
@@ -341,23 +416,37 @@ import Testing
             try Data("{}\n".utf8).write(to: state.appendingPathComponent("events.jsonl"))
         }
         let store = copilot(home: home)
+        var searched = 0
+        store.mentionReadForTests = { _ in searched += 1 }
         let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
         sessions.refreshEvery = .seconds(3_600)
         let (item, record) = try await pullRequest()
         sessions.record = { $0 == item.key ? record : nil }
-        var searched = 0
-        store.mentionReadForTests = { _ in
-            searched += 1
-            // Covered, then shown again, as the first log is read.
-            if searched == 1 {
-                sessions.setVisible(false, for: self.page)
-                sessions.setVisible(true, for: self.page)
-            }
+        var reads = 0
+        var held: CheckedContinuation<Void, Never>?
+        sessions.sessionsReadForTests = { _ in
+            reads += 1
+            if reads == 1 { await withCheckedContinuation { held = $0 } }
         }
-        let following = followOnScreen(sessions, item, record: record)
-        defer { following.cancel() }
-        try await until { searched >= 1 + ids.count }
-        #expect(searched == 1 + ids.count)
+        // Its details in a window on screen, and in a minimized one.
+        let minimized = PullRequestCodeStore.page(.azureDevOpsPullRequests, window: "2")
+        let shown = followOnScreen(sessions, item, record: record)
+        let hidden = Task { await sessions.follow(item, record: record, on: minimized) }
+        defer { hidden.cancel() }
+        try await until { held != nil }
+        // Another pull request in the window on screen: only the minimized one shows it.
+        shown.cancel()
+        await shown.value
+        held?.resume()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(sessions.session(for: item.key) == nil)
+        #expect(searched == 0)
+        #expect(reads == 1)
+
+        // Shown again: read, and its sessions' logs searched.
+        sessions.setVisible(true, for: minimized)
+        try await until { searched > 0 }
+        #expect(reads == 2)
     }
 
     /// Two pull requests whose work goes to the same session each say how work would reach it.
@@ -610,12 +699,19 @@ import Testing
         sessions.record = { records[$0] }
         var checked = 0
         sessions.deliveryCheckedForTests = { _ in checked += 1 }
-        await sessions.prepare([onIt, none])
+        var reads = 0
+        sessions.sessionsReadForTests = { _ in reads += 1 }
+        await sessions.prepare([onIt, none, onIt])
+        #expect(reads == 2)
         #expect(sessions.session(for: onIt.key)?.session?.id == onBranch)
         #expect(sessions.session(for: onIt.key)?.delivery == nil)
         #expect(sessions.session(for: none.key)?.pick == .newSession(chosenByYou: false))
+        // What follows them meanwhile on no window's page, as a picture's details would, reads nothing more.
+        let drawn = Task { await sessions.follow(onIt, record: onItRecord, on: nil) }
         sessions.updateAll()
-        try await Task.sleep(for: .milliseconds(300))
+        try await Task.sleep(for: .milliseconds(1_000))
+        drawn.cancel()
+        #expect(reads == 2)
         #expect(checked == 0 && searched == 0)
 
         // As its details show it, its sessions' logs are searched.
@@ -627,23 +723,43 @@ import Testing
         #expect(searched > 0)
     }
 
-    /// A session opens in the Copilot app only while no task of BriefBar's works in it; with Send Work to Copilot off, as
-    /// far as BriefBar knows without reading Copilot's files.
+    /// A session opens in the Copilot app only while no task of BriefBar's works in it, or in its checkout; with Send Work
+    /// to Copilot off, as far as BriefBar knows without reading Copilot's files, such as where one of the app's sessions
+    /// works.
     @Test func opensASessionInCopilotOnlyWhileNoTaskWorksInIt() throws {
-        let store = copilot(home: nil)
-        store.settings.copilotEnabled = false
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let checkout = home.appendingPathComponent("checkouts/shop-web", isDirectory: true)
+        try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
+        // The app's session works in that checkout, as its state says, which BriefBar hasn't read for it.
+        let state = home.appendingPathComponent("session-state/\(onBranch)", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try Data("cwd: \(checkout.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
+        let store = copilot(home: home)
         let app = AppSession(id: onBranch, name: "Retry backoff", lastActive: now)
         let choice = SessionChoice(kind: .app(app), name: "Retry backoff", place: nil, lastActive: now, reasons: [.linkedByYou])
         #expect(PullRequestSessionMenu.busyReason(for: choice, copilot: store) == nil)
-        // A task that went on with it, in a process that runs: this test's own stands in for it.
-        let worktree = URL(fileURLWithPath: "/tmp/pr-4088")
-        var run = CopilotRun(
-            id: onBranch, workItem: nil, onPullRequest: nil, action: .fixComments, options: CopilotModel.standard,
-            repository: worktree.deletingLastPathComponent(), worktree: worktree, startedAt: now,
-            process: DetachedProgram.Handle(pid: getpid(), startedAt: nil), ended: nil, pullRequest: nil
-        )
-        run.isAppSession = true
-        store.settings.copilotRuns = [run]
+        // A task in a process that runs: this test's own stands in for it.
+        func running(_ id: String, in worktree: URL) -> CopilotRun {
+            CopilotRun(
+                id: id, workItem: nil, onPullRequest: nil, action: .fixComments, options: CopilotModel.standard,
+                repository: worktree.deletingLastPathComponent(), worktree: worktree, startedAt: now,
+                process: DetachedProgram.Handle(pid: getpid(), startedAt: nil), ended: nil, pullRequest: nil
+            )
+        }
+
+        // A task of BriefBar's works in that checkout, for another session: as the session's state says where it works.
+        store.settings.copilotRuns = [running(task, in: checkout)]
+        let checkoutBusy = "Copilot is working in its checkout for another task BriefBar sent. Try again once that's done."
+        #expect(PullRequestSessionMenu.busyReason(for: choice, copilot: store) == checkoutBusy)
+        // Send Work to Copilot off: the session's state isn't read, so BriefBar can't tell, and it opens.
+        store.settings.copilotEnabled = false
+        #expect(PullRequestSessionMenu.busyReason(for: choice, copilot: store) == nil)
+
+        // A task that went on with it, which BriefBar knows of: not then.
+        var goingOn = running(onBranch, in: URL(fileURLWithPath: "/tmp/pr-4088"))
+        goingOn.isAppSession = true
+        store.settings.copilotRuns = [goingOn]
         #expect(PullRequestSessionMenu.busyReason(for: choice, copilot: store) == "Copilot is still working in it. Try again once it's done.")
     }
 
