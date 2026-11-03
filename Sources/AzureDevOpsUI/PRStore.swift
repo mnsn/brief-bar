@@ -770,17 +770,27 @@ final class PRStore: ObservableObject {
     }
 
     /// Writes the prompts for what Copilot should do with a pull request, then opens the composer with them: for a failed
-    /// build, once each failed build's errors have been read.
-    func composeCopilot(_ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore) {
+    /// build, once each failed build's errors have been read. Fix Comments takes on the threads its prompt lists, for each
+    /// to say what became of it.
+    /// - Parameters:
+    ///   - start: where it goes to begin with, rather than BriefBar's suggestion, such as the session whose fixes Push &
+    ///     Reply ships.
+    ///   - threads: the threads it takes on, for Push & Reply, those whose fixes it ships.
+    func composeCopilot(
+        _ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore, start: ComposerStart? = nil, threads: [Int] = []
+    ) {
         guard let record = record(for: item.key) else { return }
         let pr = record.pullRequest
         let task = PullRequestTasks.task(for: record)
         let client = mode == .live ? client : nil
         let handOff = commentHandOff(action, for: record)
+        let threads = action == .fixComments
+            ? PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map(\.id) : threads
         Task {
             let prompts = await PullRequestTasks.prompts(action, for: record, client: client)
             copilot.compose(
-                task, action: action, prompt: prompts.worktree, sessionPrompt: prompts.session, createdAt: pr.createdAt, handOff: handOff
+                task, action: action, prompt: prompts.worktree, sessionPrompt: prompts.session, createdAt: pr.createdAt, handOff: handOff,
+                start: start, threads: threads
             )
         }
     }

@@ -79,7 +79,8 @@ import Testing
         // By its link, and with its comment threads, word for word. You've opened it since Sam replied: his reply still
         // waits on you, but isn't new.
         let linked = try await call("pull_request", ["pull_request": .string("https://dev.azure.com/contoso/Storefront/_git/payments-api/pullrequest/4102?discussionId=11")])
-        #expect(linked.contains("## Unresolved comment threads (1)"))
+        // Sam's reply, and Priya's suggested change, which you said you'd take.
+        #expect(linked.contains("## Unresolved comment threads (2)"))
         #expect(linked.contains("Could we cap the backoff at 30 seconds?"))
         #expect(linked.contains("## Seen, still waiting on you\n- Sam Rivera replied"))
         #expect(!linked.contains("## New for you"))

@@ -179,18 +179,23 @@ struct CommentWork: Equatable {
         return false
     }
 
-    /// Where it is, in a sentence's middle: "‘Retry backoff’", "a fork of ‘Retry backoff’".
-    static func place(_ name: String, fork: String?) -> String {
-        fork.map { "a fork of ‘\($0)’" } ?? "‘\(name)’"
+    /// Where it is, in a sentence's middle: "‘Retry backoff’", "a fork of ‘Retry backoff’", "its session".
+    /// - Parameters:
+    ///   - name: the session's name; nil when it isn't known.
+    ///   - forkOf: for a fork, the name of the session it forked, when that's known.
+    static func place(_ name: String?, isFork: Bool, forkOf: String?) -> String {
+        guard isFork else { return name.map { "‘\($0)’" } ?? "its session" }
+        return "a fork of " + (forkOf.map { "‘\($0)’" } ?? "its session")
     }
 
     /// What it says on its thread, in a sentence: "Copilot is fixing this in ‘Retry backoff’", "Fixing this in a fork of
     /// ‘Retry backoff’", "Fixed in ‘Retry backoff’, not pushed", "Couldn't fix it: …".
     /// - Parameters:
-    ///   - name: the session's name, the fork's for a fork, which says it's one.
-    ///   - fork: the name of the session it forked, for a fork.
-    func sentence(name: String, fork: String?) -> String {
-        let place = Self.place(name, fork: fork)
+    ///   - name: the session's name; nil when it isn't known.
+    ///   - forkOf: for a fork, the name of the session it forked.
+    func sentence(name: String?, forkOf: String?) -> String {
+        let fork = forkedFrom != nil
+        let place = Self.place(name, isFork: fork, forkOf: forkOf)
         switch (purpose, state) {
         case (_, .waiting(copied: true)):
             return "Copied for \(place): paste it there"
@@ -201,9 +206,9 @@ struct CommentWork: Equatable {
         case (_, .needsYou):
             return "\(place.prefix(1).uppercased() + place.dropFirst()) is waiting for your answer"
         case (.fix, .working):
-            return fork == nil ? "Copilot is fixing this in \(place)" : "Fixing this in \(place)"
+            return fork ? "Fixing this in \(place)" : "Copilot is fixing this in \(place)"
         case (.explain, .working):
-            return fork == nil ? "Copilot is explaining this in \(place)" : "Explaining this in \(place)"
+            return fork ? "Explaining this in \(place)" : "Copilot is explaining this in \(place)"
         case (.fix, .done):
             return "Fixed in \(place), not pushed"
         case (.explain, .done):

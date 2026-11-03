@@ -48,6 +48,8 @@ import Testing
     /// Its comments, as its details or its page show them, in a window off screen.
     private func comments(of record: PRRecord, list: PRStore, code: PullRequestCodeStore) throws -> AnyView {
         let item = try row(record)
+        let copilot = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .live, notifier: nil)
+        let sessions = PullRequestSessions(copilot: copilot, links: Links(defaults: MemoryDefaults(), isDemo: false))
         return AnyView(
             PullRequestCommentsSection(
                 item: item, panel: PullRequestPanel(item, record: record), pullRequest: record.pullRequest, me: record.me,
@@ -55,6 +57,10 @@ import Testing
             )
             .environmentObject(list)
             .environmentObject(code)
+            // Copilot's part in its threads, which Send Work to Copilot, off, leaves out.
+            .environmentObject(copilot)
+            .environmentObject(sessions)
+            .environmentObject(CommentQuestions(copilot: copilot))
             // On a window's Pull Requests page, as `WindowView` says.
             .environment(\.shownSection, .azureDevOpsPullRequests)
             .environment(\.shownWindow, "test")
@@ -115,7 +121,8 @@ import Testing
         let (window, host) = window(showing: try comments(of: pageRecord, list: list, code: code))
         try await settle { self.code(in: host).contains("// the code of !4999") }
         #expect(code.shows(pageRecord.id))
-        #expect(self.code(in: host) == ["// the code of !4999"])
+        // Each of its threads on code, as the stand-in reads them all: only !4999's.
+        #expect(Set(self.code(in: host)) == ["// the code of !4999"])
         #expect(isRead(code, 11, of: pageRecord.id, as: "// the code of !4999"))
         #expect(isRead(code, 11, of: panelRecord.id, as: "// the code of !4102"))
 
@@ -153,7 +160,7 @@ import Testing
         // Shown on screen: it's read.
         code.setVisible(true, for: page)
         try await settle { self.code(in: host).contains("// the code of !4999") }
-        #expect(self.code(in: host) == ["// the code of !4999"])
+        #expect(Set(self.code(in: host)) == ["// the code of !4999"])
         window.contentView = nil
     }
 }

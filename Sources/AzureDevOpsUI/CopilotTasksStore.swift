@@ -377,14 +377,17 @@ final class CopilotTasksStore: ObservableObject {
     ///   - sessionPrompt: for a session that works wherever it is, such as one of the Copilot app's.
     ///   - createdAt: when the pull request was created, to tell which sessions were there before.
     ///   - handOff: what the prompt takes off Needs You once it's sent, as it was written.
+    ///   - start: where it goes to begin with, rather than BriefBar's suggestion.
+    ///   - threads: the pull request's comment threads it takes on, for each to say what became of it.
     func compose(
         _ pullRequest: TaskPullRequest, action: PullRequestAction, prompt: String, sessionPrompt: String? = nil, createdAt: Date? = nil,
-        handOff: CommentHandOff? = nil
+        handOff: CommentHandOff? = nil, start: ComposerStart? = nil, threads: [Int] = []
     ) {
         let key = PRKey(pullRequest.organization, pullRequest.id)
         CopilotComposer.shared.show(
             subject: .pullRequest(pullRequest, action), prompt: prompt, sessionPrompt: sessionPrompt, createdAt: createdAt,
-            options: settings.copilotOptions, continuing: continuable(forPullRequest: key), handOff: handOff, store: self
+            options: settings.copilotOptions, continuing: continuable(forPullRequest: key), handOff: handOff, session: start,
+            threads: threads, store: self
         )
     }
 

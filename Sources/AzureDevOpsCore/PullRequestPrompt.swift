@@ -27,7 +27,7 @@ public struct FailedBuildReport: Sendable, Equatable {
 /// agent is: each prompt says what it may change, and only Push & Reply pushes or writes on the pull request.
 public enum PullRequestPrompt {
     /// The most comment threads, and errors per build, a prompt quotes.
-    static let threadLimit = 30
+    public static let threadLimit = 30
     static let errorLimit = 10
 
     /// Where Copilot works on the pull request.

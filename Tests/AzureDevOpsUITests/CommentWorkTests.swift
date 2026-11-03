@@ -64,8 +64,8 @@ import Testing
 
     @Test func saysWhatCopilotDoesInASentence() {
         func said(_ purpose: CommentWork.Purpose, _ state: CommentWork.State, fork: String? = nil) -> String {
-            CommentWork(purpose: purpose, state: state, session: session, forkedFrom: nil, isTask: false, since: now)
-                .sentence(name: fork == nil ? "Retry backoff" : "Retry backoff (fork)", fork: fork)
+            CommentWork(purpose: purpose, state: state, session: session, forkedFrom: fork == nil ? nil : task, isTask: false, since: now)
+                .sentence(name: fork == nil ? "Retry backoff" : "Retry backoff (fork)", forkOf: fork)
         }
         #expect(said(.explain, .working(nil)) == "Copilot is explaining this in ‘Retry backoff’")
         #expect(said(.fix, .working("Run the tests")) == "Copilot is fixing this in ‘Retry backoff’")
@@ -81,6 +81,11 @@ import Testing
         #expect(said(.pushAndReply, .working(nil)) == "Pushing and replying from ‘Retry backoff’")
         #expect(said(.pushAndReply, .done(nil)) == "Pushed and replied from ‘Retry backoff’")
         #expect(said(.explain, .failed("No session")) == "Couldn't explain it: No session")
+        // Without names it knows.
+        let unnamed = CommentWork(purpose: .fix, state: .done(nil), session: session, forkedFrom: task, isTask: true, since: now)
+        #expect(unnamed.sentence(name: nil, forkOf: nil) == "Fixed in a fork of its session, not pushed")
+        #expect(CommentWork(purpose: .fix, state: .working(nil), session: session, forkedFrom: nil, isTask: true, since: now)
+            .sentence(name: nil, forkOf: nil) == "Copilot is fixing this in its session")
     }
 
     // MARK: Tasks of BriefBar's

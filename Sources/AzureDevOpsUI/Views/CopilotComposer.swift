@@ -31,9 +31,12 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
     ///   - createdAt: when the pull request was created.
     ///   - continuing: an earlier run whose session it goes on with, unless you choose another.
     ///   - handOff: what a pull request's prompt takes off Needs You once it's sent, as it was written.
+    ///   - start: where it goes to begin with, as a composer in place chose it, rather than BriefBar's suggestion.
+    ///   - threads: the pull request's comment threads it takes on, by their IDs, for each to say what became of it.
     func show(
         subject: TaskSubject, prompt: String?, sessionPrompt: String? = nil, createdAt: Date? = nil, options: CopilotRunOptions,
-        continuing: CopilotRun?, handOff: CommentHandOff? = nil, store: CopilotTasksStore
+        continuing: CopilotRun?, handOff: CommentHandOff? = nil, session start: ComposerStart? = nil, threads: [Int] = [],
+        store: CopilotTasksStore
     ) {
         // Another task in its place stops the last one's prompt, which may be on its way to a session.
         stopSending()
@@ -41,7 +44,7 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
         shown = task
         let view = CopilotComposerView(
             subject: subject, options: options, template: store.settings.copilotPromptTemplate, prompt: prompt,
-            sessionPrompt: sessionPrompt, createdAt: createdAt, continuing: continuing, handOff: handOff,
+            sessionPrompt: sessionPrompt, createdAt: createdAt, continuing: continuing, handOff: handOff, start: start, threads: threads,
             sending: { [weak self] sending in
                 guard self?.shown == task else { return sending.cancel() }
                 self?.sending = sending
@@ -91,6 +94,13 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
     }
 }
 
+/// Where the Send to Copilot window's prompt goes to begin with, for one opened from a composer in place: a session that's
+/// there already, or a fork of it, or a new session.
+enum ComposerStart {
+    case session(SessionChoice, forking: Bool)
+    case newSession
+}
+
 struct CopilotComposerView: View {
     /// How a task goes to a session that's there already: where Copilot takes it up, and whether in the session itself or
     /// in a fork of it, a new session with its history.
@@ -113,6 +123,8 @@ struct CopilotComposerView: View {
         static let fork = Delivery(place: .app, forks: true)
         /// Run with the CLI.
         static let cli = Delivery(place: .cli)
+        /// Fork with the CLI: one of BriefBar's own sessions, into a worktree of its own.
+        static let cliFork = Delivery(place: .cli, forks: true)
     }
 
     let subject: TaskSubject
@@ -121,6 +133,8 @@ struct CopilotComposerView: View {
     /// What the prompt takes off Needs You once it's sent: the comments it quoted when it was written, in the threads it
     /// still quotes when you send it.
     let handOff: CommentHandOff?
+    /// The pull request's comment threads it takes on, by their IDs: what each says Copilot does about it.
+    let threads: [Int]
     /// A work item's prompt for a new session, with placeholders, from Settings.
     let template: String
     /// A pull request's prompts: for a worktree of BriefBar's, and for a session that works wherever it is.
@@ -180,15 +194,18 @@ struct CopilotComposerView: View {
     ///   - sessionPrompt: a pull request's prompt for a session that works wherever it is.
     ///   - session: where it goes to begin with, rather than `continuing`'s session, and how the prompt would reach it: for
     ///     `--render`, which finds nothing.
+    ///   - start: where it goes to begin with, as a composer in place chose it, which BriefBar's suggestions don't change.
+    ///   - threads: the pull request's comment threads it takes on, by their IDs.
     init(
         subject: TaskSubject, options: CopilotRunOptions, template: String, prompt: String? = nil, sessionPrompt: String? = nil,
         createdAt: Date? = nil, continuing: CopilotRun? = nil, handOff: CommentHandOff? = nil,
-        session: (choice: SessionChoice, reach: SessionReach?)? = nil, sending: @escaping (Task<Void, Never>) -> Void = { _ in },
-        close: @escaping () -> Void
+        session: (choice: SessionChoice, reach: SessionReach?)? = nil, start: ComposerStart? = nil, threads: [Int] = [],
+        sending: @escaping (Task<Void, Never>) -> Void = { _ in }, close: @escaping () -> Void
     ) {
         self.subject = subject
         self.continuing = continuing
         self.handOff = handOff
+        self.threads = threads
         self.template = template
         self.createdAt = createdAt
         self.sending = sending
@@ -200,17 +217,33 @@ struct CopilotComposerView: View {
         }
         worktreePrompt = prompts.worktree
         self.sessionPrompt = prompts.session
-        // Until the sessions are found: the last task's, as it was kept, with the prompt for where it works, and sent to it
-        // in the Copilot app if it's one of the app's sessions.
-        let initial = session?.choice ?? continuing.map { run in
+        // Until the sessions are found: where a composer in place chose; else the last task's, as it was kept, with the
+        // prompt for where it works, and sent to it in the Copilot app if it's one of the app's sessions.
+        var initial = session?.choice ?? continuing.map { run in
             SessionChoice(kind: .task(run), name: run.action?.title ?? "Its last task", place: nil, lastActive: run.startedAt, reasons: [.earlierTask])
+        }
+        var delivery: Delivery = initial?.opensInApp == true ? .session : .cli
+        switch start {
+        case .session(let choice, let forking)?:
+            initial = choice
+            if forking {
+                delivery = CommentDestinations.forksWithTheCLI(choice) ? .cliFork : .fork
+            } else {
+                delivery = choice.opensInApp ? .session : .cli
+            }
+        case .newSession?:
+            initial = nil
+            delivery = .cli
+        case nil:
+            break
         }
         let filledIn = CopilotComposerView.writtenPrompt(
             for: initial, subject: subject, template: template, worktreePrompt: prompts.worktree, sessionPrompt: prompts.session,
-            baseBranch: nil
+            baseBranch: nil, forks: delivery.forks
         )
         _target = LocalState(wrappedValue: initial)
-        _delivery = LocalState(wrappedValue: initial?.opensInApp == true ? .session : .cli)
+        _choseTarget = LocalState(wrappedValue: start != nil)
+        _delivery = LocalState(wrappedValue: delivery)
         _reach = LocalState(wrappedValue: session?.reach)
         _prompt = LocalState(wrappedValue: filledIn)
         _filledIn = LocalState(wrappedValue: filledIn)
@@ -223,9 +256,10 @@ struct CopilotComposerView: View {
     /// it works first. A pull request's: for a worktree of BriefBar's, detached at its latest commit, for a new session or
     /// an earlier task's in such a worktree; or for wherever the session works otherwise, as the Copilot app's sessions
     /// and the work item's task that opened it do.
+    /// - Parameter forks: it goes to a fork of the session, which works in a checkout of its own, wherever that is.
     static func writtenPrompt(
         for choice: SessionChoice?, subject: TaskSubject, template: String, worktreePrompt: String?, sessionPrompt: String?,
-        baseBranch: String?
+        baseBranch: String?, forks: Bool = false
     ) -> String {
         switch subject {
         case .workItem(let item):
@@ -234,7 +268,7 @@ struct CopilotComposerView: View {
         case .pullRequest:
             let worktree = worktreePrompt ?? ""
             guard let choice, let sessionPrompt else { return worktree }
-            if let run = choice.run, run.worksInPullRequestWorktree { return worktree }
+            if let run = choice.run, run.worksInPullRequestWorktree, !forks { return worktree }
             return sessionPrompt
         }
     }
@@ -261,6 +295,12 @@ struct CopilotComposerView: View {
     /// worktree of its own, and leave them uncommitted where they are.
     static func offersFork(_ target: SessionChoice?, mustContinue: Bool) -> Bool {
         target?.canFork == true && !mustContinue
+    }
+
+    /// Fork with the CLI is there for the session: one of BriefBar's own, and not for Push & Reply, which ships what its last
+    /// task changed only in that task's session and worktree.
+    static func offersCLIFork(_ target: SessionChoice?, mustContinue: Bool) -> Bool {
+        target.map(CommentDestinations.forksWithTheCLI) == true && !mustContinue
     }
 
     /// Runs with the CLI, rather than going to the session in the Copilot app: a new session, or the CLI going on with one.
@@ -513,6 +553,14 @@ struct CopilotComposerView: View {
                     choose(.cli)
                 }
                 .disabled(cliProblem != nil || checkingSession != nil || target?.isUnavailable == true)
+                if Self.offersCLIFork(target, mustContinue: mustContinue) {
+                    ComposerChoice(
+                        symbol: "arrow.triangle.branch", title: "Fork with the CLI",
+                        detail: "Copilot works in a fork, with its history, in a worktree of its own.", isSelected: delivery == .cliFork
+                    ) {
+                        choose(.cliFork)
+                    }
+                }
             }
             .fixedSize(horizontal: false, vertical: true)
             ForEach(notes, id: \.self) { note in
@@ -536,8 +584,11 @@ struct CopilotComposerView: View {
     }
 
     private func choose(_ way: Delivery) {
+        let forked = delivery.forks
         delivery = way
         deliveryProblem = nil
+        // A fork works in a checkout of its own, wherever that is: its prompt says so.
+        if way.forks != forked { refreshPrompt() }
     }
 
     /// What keeps a way of sending from working as it says, under the choices: why BriefBar can't send it to the session
@@ -740,6 +791,7 @@ struct CopilotComposerView: View {
         let place: String
         switch target?.kind {
         case nil: place = "in a new worktree"
+        case _ where delivery == .cliFork: place = "in a fork of the session, with its history, in a worktree of its own"
         case .task(let run)?: place = run.isAppSession == true ? "in its session, in the folder it works in" : "in the same session and worktree as before"
         case .app?: place = "in its session, in the folder it works in"
         }
@@ -810,6 +862,8 @@ struct CopilotComposerView: View {
         guard !target.isUnavailable else { return false }
         switch delivery.place {
         case .app: return appProblem == nil && (!delivery.forks || Self.offersFork(target, mustContinue: mustContinue))
+        // A fork works in a worktree of its own, so the session's own checkout and state don't matter.
+        case .cli where delivery.forks: return hasModel && Self.offersCLIFork(target, mustContinue: mustContinue)
         case .cli: return !isBusy && hasModel && cliProblem == nil && checkingSession == nil
         }
     }
@@ -916,7 +970,7 @@ struct CopilotComposerView: View {
     private func refreshPrompt() {
         let written = Self.writtenPrompt(
             for: target, subject: subject, template: template, worktreePrompt: worktreePrompt, sessionPrompt: sessionPrompt,
-            baseBranch: repository?.baseBranch
+            baseBranch: repository?.baseBranch, forks: delivery.forks
         )
         (prompt, filledIn) = Self.rewritten(prompt: prompt, filledIn: filledIn, written: written)
     }
@@ -930,6 +984,10 @@ struct CopilotComposerView: View {
     /// Goes the way that works when only one does: in the Copilot app when the CLI can't go on with the session, with the
     /// CLI when nothing opens the app's sessions; and to the session itself when it can't go to a fork (`offersFork`).
     private func fixDelivery() {
+        if delivery == .cliFork {
+            if !Self.offersCLIFork(target, mustContinue: mustContinue) { delivery = .cli }
+            return
+        }
         if delivery.forks, !Self.offersFork(target, mustContinue: mustContinue) { delivery = .session }
         if delivery.place == .cli, cliProblem != nil, appProblem == nil { delivery = .session }
         if delivery.place == .app, appProblem != nil, cliProblem == nil { delivery = .cli }
@@ -1033,12 +1091,31 @@ struct CopilotComposerView: View {
 
     // MARK: Sending
 
+    /// What a prompt sent to one of the Copilot app's sessions is about, for its threads to say what became of it: a fix
+    /// of some of them, or Push & Reply.
+    private var aboutThreads: SentPrompt.About? {
+        guard !threads.isEmpty, case .pullRequest(let pullRequest, let action) = subject else { return nil }
+        let purpose: SentPrompt.Purpose
+        switch action {
+        case .fixComments: purpose = .fix
+        case .pushAndReply: purpose = .pushAndReply
+        case .fixBuild, .resolveConflicts, .review: return nil
+        }
+        return SentPrompt.About(pullRequest: PRKey(pullRequest.organization, pullRequest.id), purpose: purpose, threads: threads)
+    }
+
     private func send() {
         guard canSend else { return }
         let options = CopilotRunOptions(model: model.trimmingCharacters(in: .whitespaces), effort: effort)
         guard let target else {
             guard let folder = repository?.root else { return }
-            store.send(subject, prompt: prompt, options: options, repository: folder, handOff: handOff)
+            store.send(subject, prompt: prompt, options: options, repository: folder, threads: threads, handOff: handOff)
+            close()
+            return
+        }
+        // A fork of one of BriefBar's own sessions, which works in a worktree of its own, however the session stands.
+        if delivery == .cliFork, case .task(let run) = target.kind {
+            store.send(subject, prompt: prompt, options: options, repository: run.repository, forking: run, threads: threads, handOff: handOff)
             close()
             return
         }
@@ -1055,14 +1132,14 @@ struct CopilotComposerView: View {
         case .cli:
             switch target.kind {
             case .task(let run):
-                store.send(subject, prompt: prompt, options: options, repository: run.repository, continuing: run, handOff: handOff)
+                store.send(subject, prompt: prompt, options: options, repository: run.repository, continuing: run, threads: threads, handOff: handOff)
             case .app(let session):
                 guard let run = store.appRun(for: session, subject: subject, options: options) else {
                     cliProblem = "BriefBar can't tell which folder it works in."
                     fixDelivery()
                     return
                 }
-                store.send(subject, prompt: prompt, options: options, repository: run.repository, continuing: run, handOff: handOff)
+                store.send(subject, prompt: prompt, options: options, repository: run.repository, continuing: run, threads: threads, handOff: handOff)
             }
         }
         close()
@@ -1080,8 +1157,9 @@ struct CopilotComposerView: View {
         let forking = delivery.forks
         // What the window said it would do as you sent it.
         let saidItWouldCopy = reach?.sends(forking: forking) == false
+        let about = aboutThreads
         sending(Task {
-            let result = await store.deliver(text, to: target, forking: forking, handOff: handOff)
+            let result = await store.deliver(text, to: target, forking: forking, handOff: handOff, about: about)
             // The window closed, or shows another task: it was stopped.
             guard !Task.isCancelled else { return }
             isDelivering = false

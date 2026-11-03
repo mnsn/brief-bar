@@ -27,7 +27,8 @@ struct PullRequestCommentsSection: View {
     var body: some View {
         let threads = panel.threads
         VStack(alignment: .leading, spacing: 8) {
-            PageSectionHeader(title: "Comments", count: threads.unresolvedCount > 0 ? threads.unresolvedCount : nil)
+            // With Fix All, while comments wait on you on your pull request.
+            CommentsHeader(item: item, count: threads.unresolvedCount > 0 ? threads.unresolvedCount : nil)
             if !panel.hasDetails {
                 Text(panel.isClosed ? "BriefBar reads a pull request's comments only while it's open."
                     : "BriefBar hasn't read its comments.")
@@ -207,6 +208,8 @@ private struct ThreadCard: View {
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
                 .padding(.bottom, 10)
+            // What Copilot does about it, and, on an open one, Explain and Fix.
+            ThreadCopilotActions(thread: thread, item: item, now: now)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.04)))
