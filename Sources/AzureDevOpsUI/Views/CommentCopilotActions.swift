@@ -219,19 +219,16 @@ struct ThreadCopilotActions: View {
 
     private func buttons(hasAnswer: Bool) -> some View {
         let nobody = hasNobodyToAsk
+        let explainTitle: String = hasAnswer ? "Ask More" : "Explain"
         return HStack(spacing: 6) {
             Button {
                 open(.explain)
             } label: {
-                Label(hasAnswer ? "Ask More" : "Explain", systemImage: CommentAsk.explain.symbol)
+                Label(explainTitle, systemImage: CommentAsk.explain.symbol)
             }
             .focused($focused, equals: .explain)
             .disabled(nobody)
-            .help(
-                nobody ? "No Copilot session goes with this pull request to ask why you got it" + (canFix ? ". Fix starts one." : ".")
-                    : hasAnswer ? "Ask the session more about this comment, with what it answered in mind"
-                    : "Ask the Copilot session that worked on it why you got this comment, what it wants, and how to address it"
-            )
+            .help(explainHelp(nobody: nobody, hasAnswer: hasAnswer))
             if canFix {
                 Button {
                     open(.fix)
@@ -239,15 +236,28 @@ struct ThreadCopilotActions: View {
                     Label("Fix", systemImage: CommentAsk.fix.symbol)
                 }
                 .focused($focused, equals: .fix)
-                .help(
-                    hasAnswer ? "Have Copilot address this comment, as you say, with what the session answered: it doesn't commit, push or reply"
-                        : "Have Copilot address this comment, as you say: it doesn't commit, push or reply"
-                )
+                .help(fixHelp(hasAnswer: hasAnswer))
             }
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
         .font(size: 11.5, weight: .medium)
+    }
+
+    private func explainHelp(nobody: Bool, hasAnswer: Bool) -> String {
+        if nobody {
+            let then: String = canFix ? ". Fix starts one." : "."
+            return "No Copilot session goes with this pull request to ask why you got it" + then
+        }
+        if hasAnswer { return "Ask the session more about this comment, with what it answered in mind" }
+        return "Ask the Copilot session that worked on it why you got this comment, what it wants, and how to address it"
+    }
+
+    private func fixHelp(hasAnswer: Bool) -> String {
+        if hasAnswer {
+            return "Have Copilot address this comment, as you say, with what the session answered: it doesn't commit, push or reply"
+        }
+        return "Have Copilot address this comment, as you say: it doesn't commit, push or reply"
     }
 
     /// Opens its composer, closing any other in the comments, whose words stay for when it opens again.
@@ -1077,7 +1087,7 @@ struct ReadyFixesBar: View {
                         Text(sentence(first, names: names))
                             .font(size: 12.5, weight: .semibold)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text(ready.count > 1 ? "Not pushed, and more in \(ready.count - 1 == 1 ? "another session" : "\(ready.count - 1) other sessions")" : "Not pushed yet")
+                        Text(Self.subtitle(more: ready.count - 1))
                             .font(size: 11)
                             .foregroundStyle(.secondary)
                     }
@@ -1113,6 +1123,15 @@ struct ReadyFixesBar: View {
             .padding(.vertical, 9)
             .background(ItemState.done.color.opacity(0.08))
             .accessibilityElement(children: .contain)
+        }
+    }
+
+    /// "Not pushed yet", or, with fixes in other sessions too, "Not pushed, and more in another session".
+    static func subtitle(more: Int) -> String {
+        switch more {
+        case ..<1: return "Not pushed yet"
+        case 1: return "Not pushed, and more in another session"
+        default: return "Not pushed, and more in \(more) other sessions"
         }
     }
 

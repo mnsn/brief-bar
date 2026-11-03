@@ -495,7 +495,8 @@ final class CopilotTasksStore: ObservableObject {
                 if case .pullRequest(let pullRequest, _) = subject {
                     settings.forgetChosenSession(for: PRKey(pullRequest.organization, pullRequest.id), supersededBy: run)
                 }
-                Log.app.info("Sent a task to Copilot\(continuing == nil ? forking == nil ? "" : ", in a fork of a session" : ", going on with its session", privacy: .public)")
+                let how: String = continuing != nil ? ", going on with its session" : forking != nil ? ", in a fork of a session" : ""
+                Log.app.info("Sent a task to Copilot\(how, privacy: .public)")
                 if let handOff { handedOff(handOff, prompt) }
                 refresh()
             } catch {
