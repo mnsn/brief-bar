@@ -621,6 +621,26 @@ import Testing
         #expect(searched > 0)
     }
 
+    /// A session opens in the Copilot app only while no task of BriefBar's works in it; with Send Work to Copilot off, as
+    /// far as BriefBar knows without reading Copilot's files.
+    @Test func opensASessionInCopilotOnlyWhileNoTaskWorksInIt() throws {
+        let store = copilot(home: nil)
+        store.settings.copilotEnabled = false
+        let app = AppSession(id: onBranch, name: "Retry backoff", lastActive: now)
+        let choice = SessionChoice(kind: .app(app), name: "Retry backoff", place: nil, lastActive: now, reasons: [.linkedByYou])
+        #expect(PullRequestSessionMenu.busyReason(for: choice, copilot: store) == nil)
+        // A task that went on with it, in a process that runs: this test's own stands in for it.
+        let worktree = URL(fileURLWithPath: "/tmp/pr-4088")
+        var run = CopilotRun(
+            id: onBranch, workItem: nil, onPullRequest: nil, action: .fixComments, options: CopilotModel.standard,
+            repository: worktree.deletingLastPathComponent(), worktree: worktree, startedAt: now,
+            process: DetachedProgram.Handle(pid: getpid(), startedAt: nil), ended: nil, pullRequest: nil
+        )
+        run.isAppSession = true
+        store.settings.copilotRuns = [run]
+        #expect(PullRequestSessionMenu.busyReason(for: choice, copilot: store) == "Copilot is still working in it. Try again once it's done.")
+    }
+
     // MARK: How the line says it
 
     @Test func saysWhyAndHowEachStands() throws {

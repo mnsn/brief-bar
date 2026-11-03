@@ -609,7 +609,7 @@ struct PullRequestSessionMenu: View {
     /// else by its link. Not while Copilot works in it, or in its checkout, for a task BriefBar sent, as things are when you
     /// click, since opening it then would fork its history or mix their work: then it says so.
     static func openInCopilot(_ choice: SessionChoice, links: Links, copilot: CopilotTasksStore) {
-        if let reason = copilot.busyReason(for: choice) {
+        if let reason = busyReason(for: choice, copilot: copilot) {
             let alert = NSAlert()
             alert.messageText = "The session didn't open in Copilot"
             alert.informativeText = reason
@@ -622,6 +622,15 @@ struct PullRequestSessionMenu: View {
         } else {
             CopilotTasksStore.openInAppOrSay(choice.id)
         }
+    }
+
+    /// Why a session mustn't open in the Copilot app now: Copilot works in it, or in its checkout, for a task BriefBar sent.
+    /// With Send Work to Copilot off, from what BriefBar knows of it, reading nothing of Copilot's, such as the folder one
+    /// of the app's sessions works in.
+    static func busyReason(for choice: SessionChoice, copilot: CopilotTasksStore) -> String? {
+        if copilot.isOn { return copilot.busyReason(for: choice) }
+        if let folder = choice.folder { return copilot.busyReason(for: choice, in: folder) }
+        return copilot.isWorking(inSession: choice.id) ? "Copilot is still working in it. Try again once it's done." : nil
     }
 
     /// How work would reach a session, in a sentence.
