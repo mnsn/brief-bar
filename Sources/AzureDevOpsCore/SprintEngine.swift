@@ -289,27 +289,41 @@ public actor SprintEngine {
         }
         let date = now()
         try await loadTeams(configuration.organizations, at: date, choosing: configuration.team == nil)
-        let chosen = try await chosenTeam(configuration, at: date)
-        // Shown with the sprint, or without one: its team may be there. The organizations whose teams couldn't be read
-        // otherwise are named with them.
-        let elsewhere = teamsElsewhere.isEmpty ? nil : PulseProblem.organizations(teamsElsewhere + teamsFailed)
-        guard let team = chosen else {
-            board = nil
-            // No team's sprint could be read, for want of a sign-in to their directory: as when no teams could be, it's
-            // looked at again within a minute.
-            if allTeams.isEmpty, let elsewhere { throw TeamsUnread(problem: elsewhere) }
-            return elsewhere
+        // Each team found for you whose organization turns out to wait on a sign-in is set aside, with its organization's
+        // teams: at most one pass per organization.
+        while true {
+            let chosen = try await chosenTeam(configuration, at: date)
+            // Shown with the sprint, or without one: the organizations whose teams couldn't be read are named, those in a
+            // directory to sign in to first, since one of theirs may be yours.
+            let unread = teamsElsewhere + teamsFailed
+            let teamsProblem = unread.isEmpty ? nil : PulseProblem.organizations(unread)
+            guard let team = chosen else {
+                board = nil
+                // No team's sprint could be read, for want of a sign-in to their directory: as when no teams could be, it's
+                // looked at again within a minute.
+                if allTeams.isEmpty, !teamsElsewhere.isEmpty, let teamsProblem { throw TeamsUnread(problem: teamsProblem) }
+                return teamsProblem
+            }
+            // Another team's board, such as one just set aside, isn't shown in its stead if this one's can't be read.
+            if board?.team.id != team.id { board = nil }
+            do {
+                try await readBoard(of: team, at: date)
+                return teamsProblem
+            } catch let error as ADOError where configuration.team == nil && PulseProblem.isOtherDirectory(error) {
+                // The team found for you is in a directory to sign in to now: its organization waits on that sign-in, and
+                // another of yours is looked for, rather than this one shown, or kept as your choice, meanwhile. Its board
+                // goes, even if the next one can't be read.
+                waitForSignIn(to: team.organization, error)
+                foundTeam = nil
+                board = nil
+            } catch let error as ADOError where !teamsElsewhere.isEmpty {
+                // The team's sprint couldn't be read: said with the organizations whose teams wait on a sign-in, rather than
+                // in their stead, unless Azure DevOps asked to slow down, which comes first.
+                if case .throttled = error { throw error }
+                let failed = unread + [(organization: team.organization, error: error)]
+                throw TeamsUnread(problem: PulseProblem.organizations(failed) ?? PulseProblem.from(error))
+            }
         }
-        do {
-            try await readBoard(of: team, at: date)
-        } catch let error as ADOError where elsewhere != nil {
-            // The team's sprint couldn't be read: said with the organizations whose teams wait on a sign-in, rather than in
-            // their stead, unless Azure DevOps asked to slow down, which comes first.
-            if case .throttled = error { throw error }
-            let unread = teamsElsewhere + teamsFailed + [(organization: team.organization, error: error)]
-            throw TeamsUnread(problem: PulseProblem.organizations(unread) ?? PulseProblem.from(error))
-        }
-        return elsewhere
     }
 
     /// Reads the team's sprint going on today, with its work items, for the board; without one, there's no board.
@@ -430,6 +444,9 @@ public actor SprintEngine {
                 }
             }
         }
+        // A team whose sprint was known, from an organization that turned out to wait on a sign-in while the rest of its
+        // teams were looked at, isn't one either.
+        candidates.removeAll { Self.names(teamsElsewhere).contains($0.team.organization.lowercased()) }
         guard candidates.count > 1 else {
             foundTeam = candidates.first?.team
             foundWithout = missingTeams()

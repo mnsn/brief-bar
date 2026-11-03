@@ -31,8 +31,9 @@ internal sealed class TeamsCacheFolder(string path)
     /// Where reading the log stopped.
     public LevelDBLogPosition? Log { get; private set; }
 
-    /// The tables that couldn't be read, by path, as they were then. LevelDB writes a table where it'll stay, so one being
-    /// written reads as broken until it's done.
+    /// The tables that couldn't be read, by path, as they were then, with the MANIFEST or CURRENT if they couldn't. A table
+    /// LevelDB is still writing isn't listed yet, so isn't read, but without the MANIFEST every table is, and LevelDB
+    /// writes a table where it'll stay, so one being written reads as broken until it's done.
     public IReadOnlyDictionary<string, FileStamp?> UnreadableTables => unreadableTables;
 
     /// Files vanished as the folder was last read from scratch, on every attempt: what they held may be missing.
