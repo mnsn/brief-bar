@@ -383,29 +383,35 @@ help, as when you were offline, **↻** to try again.
 **Ask Copilot about a comment.** With Send Work to Copilot on, each open thread ends with
 **✨ Explain** and **Fix**, side by side. Each opens a small composer under the comment, rather than a window: a field for
 what you want in your own words, where it goes, and its button, which Return presses, so a plain explanation or fix takes
-two clicks. **Explain** asks the session that worked on the thread, or else the pull request's own (its Copilot session,
-above), what you want to know, or else why you got the comment: why the reviewer wrote it, what they want, how the code
-relates, and a few ways to address it, with what each would change. The answer shows under the comment, with **↗** to
-the session. It's asked aside, in a copy of the session's conversation that the Copilot CLI makes with no tools and
-deletes after, so it changes no file and the session's history stays as it was; it sends the conversation, with the
-comment and its code, to GitHub Copilot, as one premium request, and needs the Copilot CLI 1.0.95 or later. When the CLI
+two clicks. One composer is open at a time, and each keeps what you wrote until you send it. **Explain** asks the session
+that worked on the thread, or else the pull request's own (its Copilot session, above), what you want to know, or else
+why you got the comment: why the reviewer wrote it, what they want, how the code relates, and a few ways to address it,
+with what each would change. The answer shows under the comment, with **↗** to the session. It's asked aside, in a copy
+of the session's conversation that the Copilot CLI makes with no tools and deletes after, so it changes no file and the
+session's history stays as it was; it sends the conversation, with the comment and its code, to GitHub Copilot, as one
+premium request, and needs the Copilot CLI 1.0.95 or later. Once it answered, **Ask More** follows up on what it said,
+and **Fix** takes the answer along (**Include the answer above**), so you can say which way, such as "the second way,
+with 45 seconds". Without a session that goes with the pull request, Explain has nobody to ask, and says so. When the CLI
 can't ask aside, or doesn't have the session, the thread says why, and **Ask in the Session** sends the question to the
 session as a prompt instead, the way Fix sends its own, where it stays in the session's history. **Fix**, on your own
 pull request, has Copilot address that thread alone, as you say in **Tell Copilot how (optional)**, which it quotes as
 yours, then build and test; it doesn't commit, push or reply, and the thread leaves Needs You as with Fix Comments,
 below. A comment can suggest a change, which shows as **Suggested change**: **Apply ‹name›'s suggestion as written** has
-Copilot make it as it's written. Where it goes is one **▾** away: the session that worked on the thread, if one did,
-else the pull request's, first and chosen; for a fix, a fork of it, with its history, in a worktree of its own, while it
-stays as it is, and a new session; then the other sessions that go with the pull request, and the rest of the Copilot
-app's. Each says how a prompt would get there, with the CLI or in Copilot, to paste when BriefBar can't send it itself,
-or that it's busy, and the composer says what happens once you send it, as the Send to Copilot window would send it
-([below](#sending-to-a-session-thats-already-there)). **Edit the Whole Prompt…** opens that window with it, for the
-whole prompt, the model and more. **Fix All**, at the top of the comments, is Fix Comments, through the same composer.
-Once Copilot works on a thread, a line above its buttons says so, in its state's color, with since when: **Copilot is
+Copilot make it as it's written, and is checked when the suggestion is the thread's last word. Where it goes is one
+**▾** away: the session that worked on the thread, if one did, else the pull request's, first and chosen; for a fix, a
+fork of it, with its history, in a worktree of its own, while it stays as it is, which goes first while one of
+BriefBar's tasks is busy, and a new session; then the other sessions that go with the pull request, and the rest of the
+Copilot app's. Each says how a prompt would get there, with the CLI or in Copilot, to paste when BriefBar can't send it
+itself, or that it's busy, and the composer says what happens once you send it, as the Send to Copilot window would send
+it ([below](#sending-to-a-session-thats-already-there)). **Edit the Whole Prompt…**, last in **▾**, opens that window
+with it, for the whole prompt, the model and more. **Fix All**, at the top of the comments, is Fix Comments, through the
+same composer; it says **Fix 1 Comment** when others wait on someone else, which it leaves. Once Copilot works on a
+thread, a line above its buttons says so, in its state's color, with since when and the step it's at: **Copilot is
 explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Retry backoff’ · 2m**, **Fixed in ‘Retry
 backoff’, not pushed** or **Couldn't fix it: …**; click it to see the session. Once fixes are done, a bar at the foot of
-the details says **2 fixes ready in ‘Retry backoff’**, with **Push & Reply…**, which opens the Send to Copilot window to
-commit them, push and reply from that session. **Esc** closes a composer, then the details.
+the details says **2 fixes ready in ‘Retry backoff’**, which takes you to the threads, with **Push & Reply…**, which
+opens the Send to Copilot window to commit them, push and reply from that session. **Esc** closes a composer, then the
+details, and VoiceOver hears what becomes of each.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but

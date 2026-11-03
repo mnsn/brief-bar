@@ -950,6 +950,16 @@ extension AzureDevOpsSource {
                     state: .answered(DemoData.explanation(ofThread: waiting.id, pullRequest: item.key.number)), endedAt: now.addingTimeInterval(-90)
                 ),
             ]), [("", CGSize(width: 1_000, height: 1_100))]),
+            // Fix, building on what the session answered.
+            ("pull-requests-comment-fix-answer", waiting.id, CommentActionsPreview(
+                composers: [.init(thread: waiting.id, ask: .fix, text: "The second way, with 45 seconds by default", destination: .session(session))],
+                questions: [
+                    waiting.id: .init(
+                        session: session, asked: question, askedAt: now.addingTimeInterval(-150),
+                        state: .answered(DemoData.explanation(ofThread: waiting.id, pullRequest: item.key.number)), endedAt: now.addingTimeInterval(-90)
+                    ),
+                ]
+            ), [("", CGSize(width: 1_000, height: 1_500))]),
             ("pull-requests-comment-fix", waiting.id, CommentActionsPreview(composers: [
                 .init(thread: waiting.id, ask: .fix, text: how, destination: .session(session)),
             ]), [("", CGSize(width: 1_000, height: 900)), ("-narrow", CGSize(width: 560, height: 900))]),

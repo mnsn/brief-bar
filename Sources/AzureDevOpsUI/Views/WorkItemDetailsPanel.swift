@@ -44,6 +44,8 @@ struct WorkItemDetailsPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         // A pull request or a session linked to it opens its page here, a work item its details.
                         .environment(\.itemNavigation, ItemNavigation(trail: [item.linkRef] + details.pages) { ref in navigate(to: ref) })
+                        // A composer in place, on a pull request's page, scrolls itself into view as it opens.
+                        .environment(\.detailsScroll, proxy)
                     }
                     .scrollBounceBehavior(.basedOnSize)
                     // Each work item, and each page, from the top, but where you came back to.

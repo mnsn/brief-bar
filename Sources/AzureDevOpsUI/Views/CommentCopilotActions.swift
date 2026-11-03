@@ -65,7 +65,7 @@ extension CommentWork {
         switch state {
         case .waiting(copied: true): ("doc.on.clipboard", .needsYou)
         case .waiting(copied: false): ("paperplane", .running)
-        case .working: (purpose == .explain ? "sparkles" : purpose == .pushAndReply ? "arrow.up.circle" : "wrench.and.screwdriver", .running)
+        case .working: (purpose == .explain ? "sparkles" : purpose == .pushAndReply ? "arrow.up.circle" : "arrow.triangle.2.circlepath", .running)
         case .needsYou: ("questionmark.circle.fill", .needsYou)
         case .done: ("checkmark.circle.fill", .done)
         case .failed: ("exclamationmark.triangle.fill", .failing)
@@ -73,26 +73,59 @@ extension CommentWork {
         }
     }
 
-    /// What Copilot said, for the line's tooltip.
+    /// The step it's at, under its sentence, while Copilot says.
+    var step: String? {
+        if case .working(let step) = state { return step }
+        return nil
+    }
+
+    /// What Copilot said when it ended, for the line's tooltip.
     var said: String? {
         switch state {
-        case .working(let step): step
         case .done(let summary): summary
         case .failed(let reason): reason
-        case .waiting, .needsYou, .stopped: nil
+        case .waiting, .working, .needsYou, .stopped: nil
         }
     }
+}
+
+extension CommentQuestions.Question {
+    /// What the session answered, once it did, for a fix or another question to build on.
+    var answer: ThreadAnswer? {
+        if case .answered(let text) = state { return ThreadAnswer(question: asked, answer: text) }
+        return nil
+    }
+}
+
+/// Which composer in place is open in a pull request's comments: one at a time, so Esc, Return and the keyboard's focus are
+/// its own.
+struct CommentComposing: Hashable {
+    /// The thread; nil for Fix All.
+    var thread: Int?
+    var ask: CommentAsk
+
+    static let fixAll = CommentComposing(thread: nil, ask: .fixAll)
+}
+
+/// What you wrote in each composer in place in a pull request's comments, kept as you open another, until you send it. Not
+/// observed: what you type redraws its own composer only.
+@MainActor
+final class CommentDrafts {
+    var texts: [CommentComposing: String] = [:]
 }
 
 // MARK: - A thread's
 
 /// Copilot's part in a comment thread, at its foot, while Send Work to Copilot is on: what Copilot does about it, in a
-/// sentence; what a session said of it with Explain; and, on an open thread, ✨ Explain and Fix side by side, each opening a
-/// small composer in place.
+/// sentence; what a session said of it with Explain; and, on an open thread, ✨ Explain, or Ask More once it answered, and
+/// Fix side by side, each opening a small composer in place, one at a time in the comments.
 struct ThreadCopilotActions: View {
     let thread: PullRequestPanel.Thread
     let item: PRSnapshot
     let now: Date
+    /// The composer in place that's open in the comments.
+    @Binding var composing: CommentComposing?
+    let drafts: CommentDrafts
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
@@ -101,14 +134,18 @@ struct ThreadCopilotActions: View {
     @EnvironmentObject private var code: PullRequestCodeStore
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.commentActionsPreview) private var preview
+    @Environment(\.textScale) private var textScale
 
-    /// The composer in place that's open, if one is.
-    @LocalState private var asking: CommentAsk?
     /// What BriefBar said once it copied a prompt for you to paste, until you close it.
     @LocalState private var copied: String?
     @LocalState private var isAskingInSession = false
+    /// Explain or Fix, for the keyboard's focus to go back to once its composer closes.
+    @FocusState private var focused: CommentAsk?
 
     private var record: PRRecord? { store.record(for: item.key) }
+
+    /// The composer in place that's open on it, if one is.
+    private var asking: CommentAsk? { composing?.thread == thread.id ? composing?.ask : nil }
 
     /// Whether you can ask Copilot about it now: it's open, on an open pull request, with Send Work to Copilot on; in the
     /// demo too, which answers Explain with made-up answers.
@@ -133,6 +170,12 @@ struct ThreadCopilotActions: View {
         preview?.question(on: thread.id) ?? questions.question(on: thread.id, of: item.key)
     }
 
+    /// No Copilot session goes with the pull request, as its line found them: Explain has nobody to ask.
+    private var hasNobodyToAsk: Bool {
+        guard preview == nil, let session = sessions.session(for: item.key) else { return false }
+        return CommentDestinations.make(session, worked: work?.session, ask: .explain).all.isEmpty
+    }
+
     var body: some View {
         let work = work
         let question = question
@@ -150,42 +193,56 @@ struct ThreadCopilotActions: View {
                 if canAct {
                     if let asking {
                         CommentComposer(
-                            ask: asking, thread: thread.thread, item: item, worked: work?.session,
-                            preview: preview?.composer(on: thread.id), fixInstead: canFix ? { self.asking = .fix } : nil
+                            ask: asking, thread: thread.thread, item: item, worked: work?.session, drafts: drafts, answer: question?.answer,
+                            preview: preview?.composer(on: thread.id), fixInstead: canFix ? { open(.fix) } : nil
                         ) { result in
                             if case .copied(let note)? = result { copied = note }
-                            self.asking = nil
+                            close(asking)
                         }
                         // A new composer for each, with its own words and where it goes.
                         .id(asking)
                     } else {
-                        buttons
+                        buttons(hasAnswer: question?.answer != nil)
                     }
                 }
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
             .onAppear {
-                if let composer = preview?.composer(on: thread.id) { asking = composer.ask }
+                if let composer = preview?.composer(on: thread.id) { composing = CommentComposing(thread: thread.id, ask: composer.ask) }
             }
+            // VoiceOver hears what became of it as it happens, wherever it is.
+            .onChange(of: question?.state) { _, state in announce(state) }
+            .onChange(of: work?.state) { _, state in announce(state) }
         }
     }
 
-    private var buttons: some View {
-        HStack(spacing: 6) {
+    private func buttons(hasAnswer: Bool) -> some View {
+        let nobody = hasNobodyToAsk
+        return HStack(spacing: 6) {
             Button {
                 open(.explain)
             } label: {
-                Label("Explain", systemImage: CommentAsk.explain.symbol)
+                Label(hasAnswer ? "Ask More" : "Explain", systemImage: CommentAsk.explain.symbol)
             }
-            .help("Ask the Copilot session that worked on it why you got this comment, what it wants, and how to address it")
+            .focused($focused, equals: .explain)
+            .disabled(nobody)
+            .help(
+                nobody ? "No Copilot session goes with this pull request to ask why you got it" + (canFix ? ". Fix starts one." : ".")
+                    : hasAnswer ? "Ask the session more about this comment, with what it answered in mind"
+                    : "Ask the Copilot session that worked on it why you got this comment, what it wants, and how to address it"
+            )
             if canFix {
                 Button {
                     open(.fix)
                 } label: {
                     Label("Fix", systemImage: CommentAsk.fix.symbol)
                 }
-                .help("Have Copilot address this comment, as you say: it doesn't commit, push or reply")
+                .focused($focused, equals: .fix)
+                .help(
+                    hasAnswer ? "Have Copilot address this comment, as you say, with what the session answered: it doesn't commit, push or reply"
+                        : "Have Copilot address this comment, as you say: it doesn't commit, push or reply"
+                )
             }
         }
         .buttonStyle(.bordered)
@@ -193,16 +250,24 @@ struct ThreadCopilotActions: View {
         .font(size: 11.5, weight: .medium)
     }
 
+    /// Opens its composer, closing any other in the comments, whose words stay for when it opens again.
     private func open(_ ask: CommentAsk) {
         copied = nil
-        asking = ask
+        composing = CommentComposing(thread: thread.id, ask: ask)
+    }
+
+    /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
+    private func close(_ ask: CommentAsk) {
+        guard composing == CommentComposing(thread: thread.id, ask: ask) else { return }
+        composing = nil
+        Task { @MainActor in focused = ask == .fixAll ? nil : ask }
     }
 
     private func workLine(_ work: CommentWork) -> some View {
         let look = work.look
         return CopilotWorkLine(
-            symbol: look.symbol, text: names.sentence(work), state: look.state, since: work.since, now: now, detail: work.said,
-            open: names.opener(work.session, isTask: work.isTask, navigation: navigation)
+            symbol: look.symbol, text: names.sentence(work), state: look.state, since: work.since, now: now, subtitle: work.step,
+            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation)
         )
     }
 
@@ -214,19 +279,15 @@ struct ThreadCopilotActions: View {
         case .asking:
             CopilotWorkLine(
                 symbol: "sparkles", text: "Copilot is explaining this in \(place)", state: .running, since: question.askedAt, now: now,
-                detail: question.asked.map { "You asked: \($0)" }
+                subtitle: question.asked.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "You asked: \($0)" }
             ) {
-                Button {
+                Button("Stop") {
                     questions.stop(on: thread.id, of: item.key)
-                } label: {
-                    Image(systemName: "stop.circle")
-                        .font(size: 11.5, weight: .medium)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
-                .help("Stop asking")
-                .accessibilityLabel("Stop Asking")
+                .font(size: 11.5, weight: .medium)
+                .fixedSize()
+                .help("Stop asking: nothing changes in the session")
             }
         case .answered(let answer):
             CommentAnswerCard(
@@ -286,6 +347,40 @@ struct ThreadCopilotActions: View {
         }
     }
 
+    /// What VoiceOver hears as Explain ends: who answered, or why it couldn't.
+    private func announce(_ state: CommentQuestions.Question.State?) {
+        guard let question else { return }
+        switch state {
+        case .answered?:
+            let place = CommentWork.place(names.name(question.session), isFork: false, forkOf: nil)
+            Self.announce("\(spokenThread): \(SpokenText.unquoted(place)) answered")
+        case .failed(let failure)?:
+            Self.announce("\(spokenThread): couldn't explain it. \(failure.message(model: nil))")
+        case .asking?, nil:
+            break
+        }
+    }
+
+    /// What VoiceOver hears as Copilot's work on it ends, or waits for you.
+    private func announce(_ state: CommentWork.State?) {
+        guard let work, let state else { return }
+        switch state {
+        case .done, .failed, .stopped, .needsYou:
+            Self.announce("\(spokenThread): \(SpokenText.unquoted(names.sentence(work)))")
+        case .waiting, .working:
+            break
+        }
+    }
+
+    /// "The comment on PaymentsClient.cs", for an announcement to say which.
+    private var spokenThread: String {
+        thread.thread.filePath.map { "The comment on " + ($0 as NSString).lastPathComponent } ?? "The comment on the pull request"
+    }
+
+    static func announce(_ text: String) {
+        AccessibilityNotification.Announcement(text).post()
+    }
+
     private func copiedNote(_ note: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "doc.on.clipboard")
@@ -309,7 +404,7 @@ struct ThreadCopilotActions: View {
         Button(action: dismiss) {
             Image(systemName: "xmark")
                 .font(size: 9.5, weight: .semibold)
-                .frame(width: 18, height: 18)
+                .frame(width: 18 * textScale, height: 18 * textScale)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
@@ -318,8 +413,9 @@ struct ThreadCopilotActions: View {
     }
 }
 
-/// What a session said of a thread with Explain, under its comments: in full, formatted as Copilot wrote it, with what you
-/// asked, Copy, ↗ to the session, and ✕ to dismiss it.
+/// What a session said of a thread with Explain, under its comments, as BriefBar shows what a model wrote: "Answer from
+/// ‘Retry backoff’ · 2m ago", what you asked, the answer in full, formatted as Copilot wrote it, Copy, ↗ to the session,
+/// and ✕ to dismiss it. Ask More and Fix, under it, build on it.
 private struct CommentAnswerCard: View {
     let answer: String
     let asked: String?
@@ -330,60 +426,44 @@ private struct CommentAnswerCard: View {
     let open: (perform: () -> Void, help: String)?
     let dismiss: () -> Void
 
+    @Environment(\.textScale) private var textScale
+    @Environment(\.interfaceOptions) private var options
+
+    /// What you asked, when you asked something.
+    private var question: String? {
+        guard let asked = asked?.trimmingCharacters(in: .whitespacesAndNewlines), !asked.isEmpty else { return nil }
+        return asked
+    }
+
     var body: some View {
+        let colorful = !options.quietAppearance
         VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: "sparkles")
                     .font(size: 11, weight: .semibold)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(colorful ? AnyShapeStyle(BriefContainer<EmptyView>.gradient) : AnyShapeStyle(Color.secondary))
                     .accessibilityHidden(true)
-                Text("\(place.prefix(1).uppercased() + place.dropFirst()) explains")
-                    .font(size: 12, weight: .semibold)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .accessibilityAddTraits(.isHeader)
-                Text(WorkItemDetailsPanel.ago(answeredAt, now: now))
-                    .font(size: 11)
+                // Whole, wrapping beside the buttons when it must, the time never cut short.
+                (Text("Answer from \(place)") + Text(" · " + WorkItemDetailsPanel.ago(answeredAt, now: now)))
+                    .font(size: 11, weight: .semibold)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .layoutPriority(-1)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Answer from \(SpokenText.unquoted(place)), \(WorkItemDetailsPanel.ago(answeredAt, now: now))")
+                    .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 4)
-                Button {
+                iconButton("doc.on.doc", help: "Copy the answer", label: "Copy the Answer") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(answer, forType: .string)
-                    AccessibilityNotification.Announcement("Copied the answer").post()
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(size: 10.5, weight: .medium)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
+                    ThreadCopilotActions.announce("Copied the answer")
                 }
-                .buttonStyle(.borderless)
-                .help("Copy the answer")
-                .accessibilityLabel("Copy the Answer")
                 if let open {
-                    Button(action: open.perform) {
-                        Image(systemName: "arrow.up.forward.app")
-                            .font(size: 11, weight: .medium)
-                            .frame(width: 18, height: 18)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                    .help(open.help)
-                    .accessibilityLabel("Open Its Session")
+                    iconButton("arrow.up.forward.app", help: open.help, label: "Open Its Session", action: open.perform)
                 }
-                Button(action: dismiss) {
-                    Image(systemName: "xmark")
-                        .font(size: 9.5, weight: .semibold)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help("Dismiss the answer")
-                .accessibilityLabel("Dismiss the Answer")
+                iconButton("xmark", size: 9.5, weight: .semibold, help: "Dismiss the answer", label: "Dismiss the Answer", action: dismiss)
             }
-            if let asked {
-                Text("You asked: \(asked)")
+            .frame(minHeight: 18 * textScale)
+            if let question {
+                Text("You asked: \(question)")
                     .font(size: 11.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -391,24 +471,46 @@ private struct CommentAnswerCard: View {
             // Parsed once for what it says, as a comment is.
             CommentBody(markdown: answer, isQuiet: false)
                 .equatable()
-            Text("Asked aside, in a copy of the session that's deleted after: nothing changed.")
+            Text("Asked aside: the session's history didn't change.")
                 .font(size: 10.5)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.accentColor.opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 1))
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(colorful ? AnyShapeStyle(BriefContainer<EmptyView>.gradient.opacity(0.07)) : AnyShapeStyle(Color.primary.opacity(0.04)))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(colorful ? AnyShapeStyle(BriefContainer<EmptyView>.gradient.opacity(0.28)) : AnyShapeStyle(Color.primary.opacity(0.1)), lineWidth: 1)
+        )
         .accessibilityElement(children: .contain)
+    }
+
+    private func iconButton(
+        _ symbol: String, size: CGFloat = 10.5, weight: Font.Weight = .medium, help: String, label: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(size: size, weight: weight)
+                .frame(width: 18 * textScale, height: 18 * textScale)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .accessibilityLabel(label)
     }
 }
 
 // MARK: - The composer in place
 
 /// The composer in place for what you ask about a pull request's comments: Explain or Fix on a thread, or Fix All. Your
-/// words, where it goes, one ▾ away, preselecting the session that worked on the thread, else the pull request's, and the
-/// button, which Return presses. It says how it would go, as the Send to Copilot window would send it, or why it can't.
+/// words, where it goes, one ▾ away, preselecting the session that worked on the thread, else the pull request's, or a fork
+/// of it while it's busy, and the button, which Return presses. It says how it would go, as the Send to Copilot window would
+/// send it, or why it can't. Once a session answered Explain, Ask More follows up on that, and Fix builds on it.
 struct CommentComposer: View {
     let ask: CommentAsk
     /// The thread; nil for Fix All.
@@ -416,6 +518,10 @@ struct CommentComposer: View {
     let item: PRSnapshot
     /// The session that worked on the thread, by its ID, which it goes to first.
     let worked: String?
+    /// What you wrote in it before, kept as you open another.
+    let drafts: CommentDrafts
+    /// What a session answered about the thread with Explain, while it shows: Ask More follows up on it, and Fix builds on it.
+    var answer: ThreadAnswer?
     /// For `--render`: what it shows.
     var preview: CommentActionsPreview.Composer?
     /// Explain had no session to ask: Fix opens instead.
@@ -434,6 +540,8 @@ struct CommentComposer: View {
     @LocalState private var text = ""
     @LocalState private var chosen: CommentDestination?
     @LocalState private var appliesSuggestion = false
+    /// A fix quotes what a session answered with Explain, for what you say to point to.
+    @LocalState private var includesAnswer = true
     @LocalState private var isSending = false
     @LocalState private var problem: String?
     /// How it would reach where it goes, once checked.
@@ -459,15 +567,34 @@ struct CommentComposer: View {
         return CommentSuggestion.latest(in: thread, me: record?.me)
     }
 
+    /// Where its words are kept as you open another.
+    private var draftKey: CommentComposing { CommentComposing(thread: thread?.id, ask: ask) }
+
+    /// "Explain", "Ask More" once a session answered, "Fix", "Fix All" or "Fix 1 Comment".
+    private var title: String {
+        switch ask {
+        case .explain: answer == nil ? ask.title : "Ask More"
+        case .fix: ask.title
+        case .fixAll: fixAllTitle
+        }
+    }
+
+    /// Fix All's, which says what it takes on (`CommentAsk.fixAllTitle`).
+    private var fixAllTitle: String {
+        guard let record else { return CommentAsk.fixAll.title }
+        let open = (record.details?.threads ?? []).filter { !$0.isResolved }.count
+        return CommentAsk.fixAllTitle(waiting: PullRequestPrompt.waitingThreads(record).count, open: open)
+    }
+
     var body: some View {
         let destinations = destinations
         let target = target
         let choice = destinations.choice(for: target)
         let note = problem.map { (text: Optional($0), isWarning: true) } ?? self.note(target, choice: choice)
         CopilotAskComposer(
-            symbol: ask.symbol, title: ask.title, placeholder: ask.placeholder, text: $text,
-            destination: destinationTitle(target, choice: choice),
-            destinationHelp: ask == .explain ? "Choose the session to ask" : "Choose where Copilot fixes it",
+            symbol: ask.symbol, title: title, placeholder: ask.placeholder(followingUp: ask == .explain && answer != nil), text: $text,
+            destination: destinationTitle(target, choice: choice), destinationSymbol: Self.symbol(of: target, ask: ask),
+            destinationHelp: ask == .explain ? "Choose the session to ask" : "Choose where Copilot fixes it: in the session, a fork of it, or a new one",
             destinations: {
                 CommentDestinationMenu(destinations: destinations, chosen: target, ask: ask, names: names, session: session) {
                     chosen = $0
@@ -476,12 +603,15 @@ struct CommentComposer: View {
             },
             options: { options(choice: choice) },
             note: note.text, noteIsWarning: note.isWarning,
-            sendTitle: ask.sendTitle, canSend: canSend(target, choice: choice), isSending: isSending,
+            sendTitle: ask == .fixAll ? fixAllTitle : ask.sendTitle, canSend: canSend(target, choice: choice), isSending: isSending,
             send: { send(to: target, choice: choice) },
             editWholePrompt: ask == .explain ? nil : { openWindow(target, choice: choice) },
+            // In a thread's card, under a hairline; Fix All's under the comments' heading, in a box of its own.
+            isFramed: ask == .fixAll,
             close: { done(nil) }
         )
         .task(id: target) { await check(target, choice: choice) }
+        .onChange(of: text) { if preview == nil { drafts.texts[draftKey] = text } }
         .onAppear {
             guard !hasAppeared else { return }
             hasAppeared = true
@@ -489,7 +619,11 @@ struct CommentComposer: View {
                 text = preview.text
                 chosen = preview.destination
                 appliesSuggestion = preview.appliesSuggestion
+                return
             }
+            text = drafts.texts[draftKey] ?? ""
+            // A suggestion that's the thread's last word is what it asks for: Fix applies it, unless you say otherwise.
+            if let suggestion, suggestion.commentId == thread?.comments.last?.id { appliesSuggestion = true }
         }
     }
 
@@ -502,6 +636,14 @@ struct CommentComposer: View {
             }
             .toggleStyle(.checkbox)
             .help("Copilot replaces the lines the thread is on with the change \(suggestion.author.name) suggested, as it's written, then builds and tests")
+        }
+        if ask == .fix, answer != nil {
+            Toggle(isOn: $includesAnswer) {
+                Text("Include the answer above")
+                    .font(size: 11.5)
+            }
+            .toggleStyle(.checkbox)
+            .help("Copilot gets what the session answered, so what you say can point to it, such as “the second way”")
         }
         // Explain asks a session that knows the change: without one, Fix can still go.
         if ask == .explain, destinations.preselected == nil, !isAsking(session), let fixInstead {
@@ -520,18 +662,33 @@ struct CommentComposer: View {
 
     // MARK: Where it goes
 
-    /// "Ask ‘Retry backoff’", "In ‘Retry backoff’", "In a fork of ‘Retry backoff’", "In a new session", "Choose a Session".
+    /// "Ask ‘Retry backoff’", "In ‘Retry backoff’", "In a fork of ‘Retry backoff’", "In a new session", "Choose a Session":
+    /// a name a paragraph long cut short in its middle, which ▾'s tooltip and menu say in full.
     private func destinationTitle(_ target: CommentDestination?, choice: SessionChoice?) -> String {
+        let name = "‘\(Self.short(choice.map(PullRequestSession.name) ?? "Session"))’"
         switch target {
-        case .session?:
-            let name = "‘\(choice.map(PullRequestSession.name) ?? "Session")’"
-            return ask == .explain ? "Ask \(name)" : "In \(name)"
-        case .fork?:
-            return "In a fork of ‘\(choice.map(PullRequestSession.name) ?? "Session")’"
-        case .newSession?:
-            return "In a new session"
-        case nil:
-            return "Choose a Session"
+        case .session?: return ask == .explain ? "Ask \(name)" : "In \(name)"
+        case .fork?: return "In a fork of \(name)"
+        case .newSession?: return "In a new session"
+        case nil: return "Choose a Session"
+        }
+    }
+
+    /// A session's name, cut short in its middle past `nameLimit` characters.
+    static func short(_ name: String) -> String {
+        guard name.count > nameLimit else { return name }
+        let half = (nameLimit - 1) / 2
+        return String(name.prefix(half)).trimmingCharacters(in: .whitespaces) + "…" + String(name.suffix(half)).trimmingCharacters(in: .whitespaces)
+    }
+
+    static let nameLimit = 32
+
+    /// ▾'s symbol, for where it goes: a session, a fork of one, or a new one.
+    static func symbol(of target: CommentDestination?, ask: CommentAsk) -> String {
+        switch target {
+        case .fork?: "arrow.triangle.branch"
+        case .newSession?: "plus.circle"
+        case .session?, nil: ask == .explain ? "bubble.left.and.text.bubble.right" : "arrow.turn.down.right"
         }
     }
 
@@ -549,7 +706,7 @@ struct CommentComposer: View {
                     ? ("No Copilot session goes with this pull request yet, so none can say why you got it.", true)
                     : ("No Copilot session goes with this pull request yet: choose one of the app's sessions to ask.", false)
             }
-            return ("Asks \(name) aside, in a copy of its conversation that's deleted after: nothing changes. It sends the conversation to GitHub Copilot, as one premium request.", false)
+            return ("Asks a copy of \(name) that's deleted after, so nothing changes, and sends its conversation to GitHub Copilot: one premium request.", false)
         }
         guard isLive else { return ("The demo doesn't send anything.", false) }
         let does = ask == .fixAll ? "the comments that wait on you" : "this comment"
@@ -560,27 +717,27 @@ struct CommentComposer: View {
             if checked?.destination == target, checked?.hasClone == false {
                 return ("Choose its local clone in the Send to Copilot window, which \(ask.sendTitle) opens.", false)
             }
-            return ("Copilot starts a new session, in a worktree at the pull request's latest commit, and addresses \(does) with \(copilot.settings.copilotOptions.title). It doesn't commit, push or reply.", false)
+            return ("A new session, in a worktree at the latest commit, addresses \(does) with \(copilot.settings.copilotOptions.title): no commit, push or reply.", false)
         case .fork?:
             guard let choice else { return (CommentSending.gone, true) }
             if CommentDestinations.forksWithTheCLI(choice) {
-                return ("Copilot forks \(name) with its history into a worktree of its own, and addresses \(does) there with the CLI. \(name) stays as it is.", false)
+                return ("The CLI forks \(name), with its history, into a worktree of its own, to address \(does): \(name) stays as it is.", false)
             }
             let reach = checked?.destination == target ? checked?.forkReach : nil
             if let why = reach?.whyNot(forking: true) {
                 return ("BriefBar copies /fork and the prompt, and opens \(name) in the Copilot app, for you to paste. " + why, false)
             }
-            return ("The Copilot app forks \(name), with its history, and BriefBar sends the fork the prompt, as yours. \(name) stays as it is.", false)
+            return ("The Copilot app forks \(name), and BriefBar sends the fork the prompt, as yours: \(name) stays as it is.", false)
         case .session?:
             guard let choice else { return (CommentSending.gone, true) }
             switch delivery(for: target, choice: choice) {
             case .cli:
-                return ("Copilot goes on with \(name) with the CLI, on its own, addresses \(does), then builds and tests. It doesn't commit, push or reply.", false)
+                return ("Copilot goes on with \(name) with the CLI, on its own, then builds and tests: no commit, push or reply.", false)
             case .app(let reach, let reason):
                 var parts: [String]
                 switch reach {
                 case .listening?, .loads?, nil:
-                    parts = ["BriefBar sends it to \(name) in the Copilot app, as yours. Copilot doesn't commit, push or reply."]
+                    parts = ["Sends it to \(name) in the Copilot app, as yours: no commit, push or reply."]
                 case .noListener?, .notInApp?, .off?:
                     parts = ["BriefBar copies it and opens \(name) in the Copilot app, for you to paste."]
                 }
@@ -652,9 +809,11 @@ struct CommentComposer: View {
         if ask == .explain {
             guard let thread, let id = target.sessionID else { return }
             questions.ask(
-                PullRequestPrompt.explainThread(record, thread: thread, code: excerpt, question: text), asked: text, session: id,
-                on: thread.id, of: item.key
+                PullRequestPrompt.explainThread(record, thread: thread, code: excerpt, question: text, earlier: answer), asked: text,
+                session: id, on: thread.id, of: item.key
             )
+            drafts.texts[draftKey] = nil
+            ThreadCopilotActions.announce("Asking \(choice.map(PullRequestSession.name) ?? "the session")")
             done(.sent)
             return
         }
@@ -663,18 +822,27 @@ struct CommentComposer: View {
         let sending = CommentSending(item: item, record: record, store: store, copilot: copilot, session: session)
         let how = text
         let suggestion = appliesSuggestion ? suggestion : nil
+        let answer = includesAnswer ? answer : nil
         let excerpt = excerpt
         let thread = ask == .fix ? thread : nil
+        let key = draftKey
         Task {
-            let outcome = await sending.fix(thread, how: how, suggestion: suggestion, excerpt: excerpt, to: target, choice: choice)
+            let outcome = await sending.fix(thread, how: how, suggestion: suggestion, answer: answer, excerpt: excerpt, to: target, choice: choice)
             isSending = false
             switch outcome {
-            case .sent, .copied:
+            case .sent:
+                drafts.texts[key] = nil
+                ThreadCopilotActions.announce("Sent to Copilot")
+                done(outcome)
+            case .copied(let note):
+                drafts.texts[key] = nil
+                ThreadCopilotActions.announce(note)
                 done(outcome)
             case .notSent(let why):
                 problem = why
+                ThreadCopilotActions.announce(why)
             case .needsWindow:
-                sending.openWindow(thread, how: how, suggestion: suggestion, excerpt: excerpt, destination: target, choice: choice)
+                sending.openWindow(thread, how: how, suggestion: suggestion, answer: answer, excerpt: excerpt, destination: target, choice: choice)
                 done(nil)
             }
         }
@@ -684,8 +852,8 @@ struct CommentComposer: View {
         guard let record else { return }
         let sending = CommentSending(item: item, record: record, store: store, copilot: copilot, session: session)
         sending.openWindow(
-            ask == .fix ? thread : nil, how: text, suggestion: appliesSuggestion ? suggestion : nil, excerpt: excerpt, destination: target,
-            choice: choice
+            ask == .fix ? thread : nil, how: text, suggestion: appliesSuggestion ? suggestion : nil, answer: includesAnswer ? answer : nil,
+            excerpt: excerpt, destination: target, choice: choice
         )
         done(nil)
     }
@@ -755,12 +923,15 @@ private struct CommentDestinationMenu: View {
         }
     }
 
-    /// How a fix would go there, in a word or two: "with the CLI", "in Copilot", "busy".
+    /// How a fix would go there, in a word or two, unless its title says so already ("open in Copilot"): "with the CLI",
+    /// "in Copilot", "to paste in Copilot", "busy".
     private func how(_ choice: SessionChoice) -> String? {
         let delivery = session?.session?.id == choice.id ? session?.delivery : nil
         switch delivery ?? PullRequestSession.delivery(for: choice, cliProblem: nil, reach: nil, canOpenInApp: copilot.canOpenInApp) {
         case .cli: return "with the CLI"
-        case .app(let reach, _): return reach?.sends(forking: false) == false ? "in Copilot, to paste" : "in Copilot"
+        case .app(let reach, _):
+            if reach?.sends(forking: false) == false { return "to paste in Copilot" }
+            return choice.isOpenInApp && !choice.isUnavailable ? nil : "in Copilot"
         case .busy: return "busy"
         case .unavailable: return "can't now"
         }
@@ -770,23 +941,35 @@ private struct CommentDestinationMenu: View {
 // MARK: - The comments' header
 
 /// The Comments header, with Fix All on your pull request while comments wait on you: Fix Comments, through the same
-/// composer in place as a thread's Fix, under it.
+/// composer in place as a thread's Fix, under it. It says what it takes on: "Fix 1 Comment" while others wait on someone
+/// else.
 struct CommentsHeader: View {
     let item: PRSnapshot
     let count: Int?
+    /// The composer in place that's open in the comments.
+    @Binding var composing: CommentComposing?
+    let drafts: CommentDrafts
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
     @Environment(\.commentActionsPreview) private var preview
-    @LocalState private var isFixing = false
+    @Environment(\.textScale) private var textScale
     @LocalState private var copied: String?
+    @FocusState private var isFocused: Bool
+
+    private var record: PRRecord? { store.record(for: item.key) }
+    private var isFixing: Bool { composing == .fixAll }
 
     /// Fix Comments applies: your open pull request, with threads that wait on you, and Send Work to Copilot on.
     private var canFixAll: Bool {
-        guard copilot.isOn, copilot.canSend || copilot.mode == .demo, let record = store.record(for: item.key),
-              record.pullRequest.status == .active
-        else { return false }
+        guard copilot.isOn, copilot.canSend || copilot.mode == .demo, let record, record.pullRequest.status == .active else { return false }
         return PullRequestTasks.actions(for: record, canShip: false).contains(.fixComments)
+    }
+
+    /// "Fix All", or "Fix 1 Comment" while others wait on someone else.
+    private var title: String {
+        guard let record else { return CommentAsk.fixAll.title }
+        return CommentAsk.fixAllTitle(waiting: PullRequestPrompt.waitingThreads(record).count, open: count ?? 0)
     }
 
     var body: some View {
@@ -797,20 +980,23 @@ struct CommentsHeader: View {
                 if canFixAll, !isFixing {
                     Button {
                         copied = nil
-                        isFixing = true
+                        composing = .fixAll
                     } label: {
-                        Label("Fix All", systemImage: CommentAsk.fixAll.symbol)
+                        Label(title, systemImage: CommentAsk.fixAll.symbol)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .font(size: 11.5, weight: .medium)
+                    .focused($isFocused)
                     .help("Have Copilot address every comment that waits on you, as Fix Comments does: it doesn't commit, push or reply")
                 }
             }
             if canFixAll, isFixing {
-                CommentComposer(ask: .fixAll, thread: nil, item: item, worked: nil, preview: preview?.fixAll) { result in
+                CommentComposer(ask: .fixAll, thread: nil, item: item, worked: nil, drafts: drafts, preview: preview?.fixAll) { result in
                     if case .copied(let note)? = result { copied = note }
-                    isFixing = false
+                    guard composing == .fixAll else { return }
+                    composing = nil
+                    Task { @MainActor in isFocused = true }
                 }
             }
             if let copied {
@@ -829,7 +1015,7 @@ struct CommentsHeader: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(size: 9.5, weight: .semibold)
-                            .frame(width: 18, height: 18)
+                            .frame(width: 18 * textScale, height: 18 * textScale)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.borderless)
@@ -838,18 +1024,20 @@ struct CommentsHeader: View {
                 }
             }
         }
-        .onAppear { if preview?.fixAll != nil { isFixing = true } }
+        .onAppear { if preview?.fixAll != nil { composing = .fixAll } }
     }
 }
 
 // MARK: - Fixes ready to push
 
 /// At the foot of a pull request's details, once fixes of its comments are done and not pushed: "2 fixes ready in
-/// ‘Retry backoff’", with **Push & Reply…**, which opens the Send to Copilot window to commit them, push and reply, in that
-/// session. While Send Work to Copilot is on, on an open pull request of yours.
+/// ‘Retry backoff’", which takes the details to the threads they fixed, with **Push & Reply…**, which opens the Send to
+/// Copilot window to commit them, push and reply, in that session. While Send Work to Copilot is on, on an open pull
+/// request of yours.
 struct ReadyFixesBar: View {
     let item: PRSnapshot
 
+    @EnvironmentObject private var details: PullRequestDetailsStore
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
     @EnvironmentObject private var sessions: PullRequestSessions
@@ -873,16 +1061,25 @@ struct ReadyFixesBar: View {
                     .font(size: 13, weight: .semibold)
                     .foregroundStyle(ItemState.done.color)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(sentence(first, names: names))
-                        .font(size: 12.5, weight: .semibold)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(ready.count > 1 ? "Not pushed, and more in \(ready.count - 1 == 1 ? "another session" : "\(ready.count - 1) other sessions")" : "Not pushed yet")
-                        .font(size: 11)
-                        .foregroundStyle(.secondary)
+                // To the first thread they fixed, pointed out for a moment.
+                Button {
+                    if let thread = first.threads.first { details.go(to: .thread(thread)) }
+                } label: {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(sentence(first, names: names))
+                            .font(size: 12.5, weight: .semibold)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(ready.count > 1 ? "Not pushed, and more in \(ready.count - 1 == 1 ? "another session" : "\(ready.count - 1) other sessions")" : "Not pushed yet")
+                            .font(size: 11)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .buttonStyle(.plain)
+                .help(first.threads.count == 1 ? "Show the comment it fixed" : "Show the comments they fixed")
                 .accessibilityElement(children: .combine)
+                .accessibilityHint(first.threads.count == 1 ? "Shows the comment it fixed" : "Shows the first comment they fixed")
                 if ready.count > 1 {
                     Menu("Push & Reply") {
                         ForEach(ready) { group in

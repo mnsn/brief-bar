@@ -13,5 +13,15 @@ import Testing
 
     @Test func elapsedTimeOfNothingIsEmpty() {
         #expect(Elapsed.short(since: nil, now: t(0)) == "")
+        #expect(Elapsed.spoken(since: nil, now: t(0)) == "")
+    }
+
+    /// As VoiceOver says it, in words rather than letters it would read as units of length.
+    @Test(arguments: [
+        (0.0, "less than a minute"), (60, "1 minute"), (180, "3 minutes"), (3_600, "1 hour"), (3_660, "1 hour 1 minute"),
+        (7_500, "2 hours 5 minutes"), (86_400, "1 day"), (200_000, "2 days"), (-5, "less than a minute"),
+    ])
+    func saysElapsedTimeInWords(_ seconds: TimeInterval, _ expected: String) {
+        #expect(Elapsed.spoken(since: t(0), now: t(seconds)) == expected)
     }
 }

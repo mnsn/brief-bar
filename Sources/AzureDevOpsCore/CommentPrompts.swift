@@ -32,6 +32,22 @@ public struct CommentSuggestion: Sendable, Equatable {
     }
 }
 
+/// What a session said of a comment thread when you asked it with Explain, which a fix, or another question, can build on:
+/// asked aside, the session itself never saw it.
+public struct ThreadAnswer: Sendable, Equatable {
+    /// What you asked; nil for why you got it.
+    public var question: String?
+    public var answer: String
+
+    public init(question: String?, answer: String) {
+        self.question = question
+        self.answer = answer
+    }
+
+    /// As long as a prompt quotes an answer, which Explain asks to keep brief.
+    public static let limit = 6_000
+}
+
 /// The prompts about one comment thread: Fix's, which addresses it alone, and Explain's, which asks why it was written and
 /// what it wants. Each quotes the thread in full, the code it's on as its reviewer saw it when that's read, and what you
 /// wrote, as yours.
@@ -43,12 +59,14 @@ extension PullRequestPrompt {
     ///   - code: the lines it's on, as its reviewer saw them, once read.
     ///   - how: what you want, in your words; nothing for nil or blank.
     ///   - suggestion: a suggested change to apply as it's written.
+    ///   - answer: what a session said of it with Explain, which what you want may point to, such as "the second way".
     public static func fixThread(
         _ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, how: String?, applying suggestion: CommentSuggestion? = nil,
-        workplace: Workplace = .worktree
+        answer: ThreadAnswer? = nil, workplace: Workplace = .worktree
     ) -> String {
         var parts = [header(record, workplace: workplace), "Address this review comment thread, and only this one:", quoted(thread, record: record)]
         if let code { parts.append(codeSection(code, thread: thread, record: record)) }
+        if let answer { parts.append(earlier(answer)) }
         if let suggestion {
             parts.append(applying(suggestion, to: thread))
         }
@@ -66,22 +84,28 @@ extension PullRequestPrompt {
     /// What a session is asked, aside, about a thread (`SessionQuestions`): why its reviewer wrote it, what they want, how
     /// the code relates to it, and ways to address it, from what the session knows of the change. Asked of a throwaway fork
     /// with no tools, it reads nothing more, so the thread and its code are quoted in full.
-    /// - Parameter question: what you want to know, in your words; nil or blank for why you got it.
-    public static func explainThread(_ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, question: String?) -> String {
+    /// - Parameters:
+    ///   - question: what you want to know, in your words; nil or blank for why you got it.
+    ///   - earlier: what it answered before, which a throwaway fork never saw: a question then follows up on it.
+    public static func explainThread(
+        _ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, question: String?, earlier: ThreadAnswer? = nil
+    ) -> String {
         let pr = record.pullRequest
         var parts = [
             "Pull request !\(pr.key.number) “\(pr.title)” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch), has this review comment thread:",
             quoted(thread, record: record),
         ]
         if let code { parts.append(codeSection(code, thread: thread, record: record)) }
-        parts += explanationAsk(thread, record: record, question: question)
+        parts += explanationAsk(thread, record: record, question: question, earlier: earlier)
         parts.append("Answer from what you know of this change in this conversation. Be brief and concrete, and don't change anything.")
         return parts.joined(separator: "\n\n")
     }
 
     /// The same question as a prompt the session takes up itself, as Fix's is, for when it can't be asked aside: in its own
     /// history, where it can read the code too, but changes nothing.
-    public static func askAboutThread(_ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, question: String?) -> String {
+    public static func askAboutThread(
+        _ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, question: String?, earlier: ThreadAnswer? = nil
+    ) -> String {
         let pr = record.pullRequest
         var parts = [
             "Pull request !\(pr.key.number) “\(pr.title)” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch):\n\(pr.webURL.absoluteString)",
@@ -89,7 +113,7 @@ extension PullRequestPrompt {
             quoted(thread, record: record),
         ]
         if let code { parts.append(codeSection(code, thread: thread, record: record)) }
-        parts += explanationAsk(thread, record: record, question: question)
+        parts += explanationAsk(thread, record: record, question: question, earlier: earlier)
         parts.append("""
             Answer from what you know of this change, and read its code if that helps. Don't change any file, and don't \
             commit, push or reply on the pull request: only answer.
@@ -99,16 +123,34 @@ extension PullRequestPrompt {
 
     // MARK: Parts
 
-    /// What Explain asks: your question, as yours, then what to answer.
-    private static func explanationAsk(_ thread: ReviewThread, record: PRRecord, question: String?) -> [String] {
+    /// What Explain asks: what it answered before, if anything, and your question, as yours; then what to answer: why the
+    /// thread was written, what it wants and ways to address it, or, following up, just your question.
+    private static func explanationAsk(_ thread: ReviewThread, record: PRRecord, question: String?, earlier: ThreadAnswer?) -> [String] {
         let reviewer = reviewer(of: thread, me: record.me)?.name ?? "the reviewer"
         var parts: [String] = []
-        if let question = yours(question) { parts.append("My question, in my own words:\n\n" + question) }
-        parts.append("""
-            Explain why \(reviewer) wrote this, what they want, how the code relates to it, and two or three ways to \
-            address it, with what each would change.
-            """)
+        if let earlier { parts.append(Self.earlier(earlier)) }
+        let question = yours(question)
+        if let question { parts.append((earlier == nil ? "My question" : "My next question") + ", in my own words:\n\n" + question) }
+        if earlier != nil, question != nil {
+            parts.append("Answer it, with what you answered before in mind.")
+        } else {
+            parts.append("""
+                Explain why \(reviewer) wrote this, what they want, how the code relates to it, and two or three ways to \
+                address it, with what each would change.
+                """)
+        }
         return parts
+    }
+
+    /// What a session answered about the thread before, quoted: what you asked, then its answer, cut to `ThreadAnswer.limit`.
+    static func earlier(_ answer: ThreadAnswer) -> String {
+        var text = answer.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.count > ThreadAnswer.limit { text = String(text.prefix(ThreadAnswer.limit)) + "…" }
+        let quotedAnswer = text.split(separator: "\n", omittingEmptySubsequences: false).map { $0.isEmpty ? ">" : "> " + $0 }.joined(separator: "\n")
+        guard let question = yours(answer.question) else {
+            return "Earlier I asked Copilot why I got this thread. It answered:\n\n" + quotedAnswer
+        }
+        return "Earlier I asked Copilot about this thread, in my own words:\n\n" + question + "\n\nIt answered:\n\n" + quotedAnswer
     }
 
     /// The thread as Fix Comments lists it, its entry then its comments, but each comment in full, as its author wrote it.

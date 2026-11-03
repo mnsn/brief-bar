@@ -23,12 +23,18 @@ struct PullRequestCommentsSection: View {
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var code: PullRequestCodeStore
     @LocalState private var showsResolved = false
+    /// The composer in place that's open in them, one at a time, so Esc, Return and the keyboard's focus are its own; and
+    /// what you wrote in each.
+    @LocalState private var composing: CommentComposing?
+    @LocalState private var drafts = CommentDrafts()
 
     var body: some View {
         let threads = panel.threads
         VStack(alignment: .leading, spacing: 8) {
             // With Fix All, while comments wait on you on your pull request.
-            CommentsHeader(item: item, count: threads.unresolvedCount > 0 ? threads.unresolvedCount : nil)
+            CommentsHeader(
+                item: item, count: threads.unresolvedCount > 0 ? threads.unresolvedCount : nil, composing: $composing, drafts: drafts
+            )
             if !panel.hasDetails {
                 Text(panel.isClosed ? "BriefBar reads a pull request's comments only while it's open."
                     : "BriefBar hasn't read its comments.")
@@ -89,7 +95,7 @@ struct PullRequestCommentsSection: View {
             FileThreadsView(file: file, key: item.key) { thread in
                 ThreadCard(
                     thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now,
-                    isHighlighted: highlighted == .thread(thread.id)
+                    isHighlighted: highlighted == .thread(thread.id), composing: $composing, drafts: drafts
                 )
             }
         }
@@ -179,6 +185,9 @@ private struct ThreadCard: View {
     let me: String?
     let now: Date
     let isHighlighted: Bool
+    /// The composer in place that's open in the comments, and what you wrote in each.
+    @Binding var composing: CommentComposing?
+    let drafts: CommentDrafts
 
     @Environment(\.detailsWidening) private var widening
     /// The comments folded between the first and the latest show.
@@ -209,7 +218,7 @@ private struct ThreadCard: View {
                 .padding(.top, 8)
                 .padding(.bottom, 10)
             // What Copilot does about it, and, on an open one, Explain and Fix.
-            ThreadCopilotActions(thread: thread, item: item, now: now)
+            ThreadCopilotActions(thread: thread, item: item, now: now, composing: $composing, drafts: drafts)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.04)))

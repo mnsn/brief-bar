@@ -1,5 +1,4 @@
 import AzureDevOpsCore
-import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
@@ -45,11 +44,11 @@ struct RichTextView: View {
         case .code(let code):
             codeBlock(code)
         case .suggestion(let code):
-            // Labeled, so it doesn't read as the reviewer's own code.
+            // Labeled, so it doesn't read as the reviewer's own code, in no state's color: nothing's done yet.
             VStack(alignment: .leading, spacing: 0) {
                 Label(code.isEmpty ? "Suggests removing these lines" : "Suggested change", systemImage: "text.badge.checkmark")
                     .font(size: size - 1.5, weight: .semibold)
-                    .foregroundStyle(ItemState.done.textColor)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
                     .padding(.top, 6)
                     .padding(.bottom, code.isEmpty ? 6 : 0)
@@ -58,9 +57,9 @@ struct RichTextView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(ItemState.done.color.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(ItemState.done.color.opacity(0.3), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.primary.opacity(0.14), lineWidth: 1)
             )
             .accessibilityElement(children: .combine)
         case .table(let rows):

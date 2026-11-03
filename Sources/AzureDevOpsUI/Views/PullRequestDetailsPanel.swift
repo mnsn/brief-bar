@@ -45,6 +45,8 @@ struct PullRequestDetailsPanel: View {
                         .environment(\.itemNavigation, ItemNavigation(trail: [item.key.linkRef] + details.pages) { ref in
                             navigate(to: ref)
                         })
+                        // A composer in place scrolls itself into view as it opens.
+                        .environment(\.detailsScroll, proxy)
                     }
                     .scrollBounceBehavior(.basedOnSize)
                     // Each pull request, and each page, from the top, but where you came back to.
