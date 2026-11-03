@@ -15,6 +15,15 @@
   and who it waits on: you, or someone else, such as **Waiting on Sam**. BriefBar reads a comment's code
   only as it comes on screen, and keeps it in memory only while those details show. Since Azure DevOps
   now reads this, it asks you to look at what it reads once more after the update.
+- **Review the whole change, file by file, without opening Azure DevOps.** Under its comments, a pull
+  request's details list the files it changes, folder by folder, each with what happened to it, how many
+  lines it adds and removes, and how many comments are on it. Click one to see its changes, with a few
+  lines around each and the rest folded, to unfold as you need, and its comments at their lines. **‹** and
+  **›**, or **⌥⌘↑** and **⌥⌘↓**, go from file to file, and **⌃⌘↑** and **⌃⌘↓** from comment to comment, on
+  to the next file's. **⤢** lets a file's changes fill the page, for long lines. Once you've looked at a
+  pull request before, its files can show only what changed since. BriefBar reads which files changed, and
+  each file, only as they come on screen or you open one, one file at a time, and keeps them in memory
+  only while those details show; Azure DevOps' description says so.
 
 ## 0.11.1 - 2026-11-03
 

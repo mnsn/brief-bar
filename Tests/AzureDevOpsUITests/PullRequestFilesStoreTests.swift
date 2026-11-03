@@ -84,6 +84,8 @@ import Testing
     )
     private var key: PRKey { pullRequest.key }
     private let viewer = UUID()
+    /// The window's page the views are on.
+    private let page = PullRequestCodeStore.page(.azureDevOpsPullRequests, window: "1")
 
     /// A store whose code store a window shows, with the pull request held, as its details hold it; and how many readers
     /// were made.
@@ -95,13 +97,17 @@ import Testing
             made += 1
             return reader
         }
-        code.setVisible(true, for: "window.1")
+        code.setVisible(true, for: page)
         let hold = code.hold(key)
         return (PullRequestFilesStore(code: code, now: now), code, hold, { made })
     }
 
+    /// Waits for the store's reads, which finish on the main actor between this test's awaits. `make test` runs every test
+    /// on one thread, which a long test can keep for many seconds on a busy runner: it gives up only after a minute, and
+    /// returns as soon as they're done.
     private func settle(until done: () async -> Bool) async throws {
-        for _ in 0..<150 {
+        let deadline = ContinuousClock.now + .seconds(60)
+        while ContinuousClock.now < deadline {
             if await done() { return }
             try await Task.sleep(for: .milliseconds(10))
         }
@@ -116,13 +122,13 @@ import Testing
         let reader = Reader()
         let (store, code, hold, made) = makeStores(reader)
         #expect(store.list(of: key, .whole) == nil)
-        store.showList(of: pullRequest, scope: .whole)
+        store.showList(of: pullRequest, scope: .whole, on: page)
         #expect(store.list(of: key, .whole) == .reading)
         try await settle { readFiles(store) != nil }
         #expect(readFiles(store)?.files.count == 5)
         // On screen again: read already, and with the same reader as the threads' code.
-        store.showList(of: pullRequest, scope: .whole)
-        code.show(ReviewThread(id: 11, filePath: "/src/A.cs", line: 1, comments: []), of: pullRequest, by: viewer)
+        store.showList(of: pullRequest, scope: .whole, on: page)
+        code.show(ReviewThread(id: 11, filePath: "/src/A.cs", line: 1, comments: []), of: pullRequest, by: viewer, on: page)
         try await settle { await reader.asked.count == 2 }
         #expect(await reader.asked == ["files c1", "excerpt 11"])
         #expect(made() == 1)
@@ -130,9 +136,9 @@ import Testing
         // Nothing for a pull request nothing shows, or while no window shows the page.
         var other = pullRequest
         other.key = PRKey("contoso", 8)
-        store.showList(of: other, scope: .whole)
-        code.setVisible(false, for: "window.1")
-        store.showList(of: pullRequest, scope: .since(1))
+        store.showList(of: other, scope: .whole, on: page)
+        code.setVisible(false, for: page)
+        store.showList(of: pullRequest, scope: .since(1), on: page)
         try await Task.sleep(for: .milliseconds(50))
         #expect(await reader.asked.count == 2)
         #expect(store.list(of: other.key, .whole) == nil && store.list(of: key, .since(1)) == nil)
@@ -142,12 +148,12 @@ import Testing
     @Test func readsTheFilesAgainAfterAPushShowingTheOldOnesMeanwhile() async throws {
         let reader = Reader()
         let (store, _, _, _) = makeStores(reader)
-        store.showList(of: pullRequest, scope: .whole)
+        store.showList(of: pullRequest, scope: .whole, on: page)
         try await settle { readFiles(store) != nil }
         await reader.hold(true)
         var pushed = pullRequest
         pushed.sourceCommit = "c2"
-        store.showList(of: pushed, scope: .whole)
+        store.showList(of: pushed, scope: .whole, on: page)
         try await settle { await reader.isHolding("files c2") }
         #expect(readFiles(store)?.files.first?.objectId == "A-c1")
         await reader.release("files c2")
@@ -162,7 +168,7 @@ import Testing
         let file = files.files[0]
         let version = PullRequestFilesStore.Version(file, in: files)
         await reader.hold(true)
-        store.showDiff(of: file, in: files, of: pullRequest, by: viewer)
+        store.showDiff(of: file, in: files, of: pullRequest, by: viewer, on: page)
         #expect(store.diff(of: version, in: key) == .reading)
         try await settle { await reader.isHolding("diff A.cs") }
         // It went before it was read: called off, and its answer shows nothing.
@@ -174,7 +180,7 @@ import Testing
 
         // Back, it's read, and counted with it.
         await reader.hold(false)
-        store.showDiff(of: file, in: files, of: pullRequest, by: viewer)
+        store.showDiff(of: file, in: files, of: pullRequest, by: viewer, on: page)
         try await settle { if case .read? = store.diff(of: version, in: key) { true } else { false } }
         guard case .read(let diff)? = store.diff(of: version, in: key) else {
             Issue.record("The file's diff wasn't read")
@@ -191,7 +197,7 @@ import Testing
         let files = Self.files(head: "c1")
         await reader.hold(true)
         for file in files.files.prefix(3) {
-            store.count(file, in: files, of: pullRequest, by: viewer)
+            store.count(file, in: files, of: pullRequest, by: viewer, on: page)
         }
         try await settle { await reader.isHolding("diff A.cs") }
         // One at a time: B waits for A.
@@ -209,7 +215,7 @@ import Testing
         #expect(store.counts(of: PullRequestFilesStore.Version(files.files[2], in: files), in: key) == nil)
         // Counted once: on screen again, it isn't read again.
         await reader.hold(false)
-        store.count(files.files[0], in: files, of: pullRequest, by: viewer)
+        store.count(files.files[0], in: files, of: pullRequest, by: viewer, on: page)
         try await Task.sleep(for: .milliseconds(30))
         #expect(await reader.asked.count == 2)
     }
@@ -221,20 +227,20 @@ import Testing
         let files = Self.files(head: "c1")
         await reader.failDiff("A.cs", .binary)
         await reader.failDiff("B.cs", .unreadable(.offline))
-        store.count(files.files[0], in: files, of: pullRequest, by: viewer)
-        store.count(files.files[1], in: files, of: pullRequest, by: viewer)
+        store.count(files.files[0], in: files, of: pullRequest, by: viewer, on: page)
+        store.count(files.files[1], in: files, of: pullRequest, by: viewer, on: page)
         let b = PullRequestFilesStore.Version(files.files[1], in: files)
         try await settle { store.counts(of: b, in: key) != nil }
         #expect(store.counts(of: PullRequestFilesStore.Version(files.files[0], in: files), in: key) == .failure(.binary))
         #expect(store.counts(of: b, in: key) == .failure(.unreadable(.offline)))
         // On screen again: a picture stays one; offline, it's read again half a minute later.
         await reader.failDiff("B.cs", nil)
-        store.count(files.files[0], in: files, of: pullRequest, by: viewer)
-        store.count(files.files[1], in: files, of: pullRequest, by: viewer)
+        store.count(files.files[0], in: files, of: pullRequest, by: viewer, on: page)
+        store.count(files.files[1], in: files, of: pullRequest, by: viewer, on: page)
         try await Task.sleep(for: .milliseconds(30))
         #expect(await reader.asked == ["diff A.cs", "diff B.cs"])
         now = now.addingTimeInterval(PullRequestCodeStore.retryInterval)
-        store.count(files.files[1], in: files, of: pullRequest, by: viewer)
+        store.count(files.files[1], in: files, of: pullRequest, by: viewer, on: page)
         try await settle { store.counts(of: b, in: key) == .success(LineCounts(added: 2, removed: 1)) }
         #expect(store.counts(of: b, in: key) == .success(LineCounts(added: 2, removed: 1)))
     }
@@ -244,21 +250,21 @@ import Testing
         var now = Date()
         let (store, _, _, _) = makeStores(reader) { now }
         await reader.failList(.unreadable(.offline))
-        store.showList(of: pullRequest, scope: .whole)
+        store.showList(of: pullRequest, scope: .whole, on: page)
         try await settle { store.list(of: key, .whole) == .failed(.unreadable(.offline)) }
         await reader.failList(nil)
-        store.showList(of: pullRequest, scope: .whole)
+        store.showList(of: pullRequest, scope: .whole, on: page)
         try await Task.sleep(for: .milliseconds(30))
         #expect(await reader.asked.count == 1)
-        store.showList(of: pullRequest, scope: .whole, again: true)
+        store.showList(of: pullRequest, scope: .whole, on: page, again: true)
         try await settle { readFiles(store) != nil }
         #expect(await reader.asked.count == 2)
         // What isn't there stays so.
         await reader.failList(.unreadable(.notFound))
-        store.showList(of: pullRequest, scope: .since(1))
+        store.showList(of: pullRequest, scope: .since(1), on: page)
         try await settle { store.list(of: key, .since(1)) == .failed(.unreadable(.notFound)) }
         now = now.addingTimeInterval(PullRequestCodeStore.retryInterval)
-        store.showList(of: pullRequest, scope: .since(1), again: true)
+        store.showList(of: pullRequest, scope: .since(1), on: page, again: true)
         try await Task.sleep(for: .milliseconds(30))
         #expect(await reader.asked.count == 3)
     }
@@ -269,7 +275,7 @@ import Testing
         let files = Self.files(head: "c1")
         let versions = files.files.map { PullRequestFilesStore.Version($0, in: files) }
         for (file, version) in zip(files.files, versions) {
-            store.showDiff(of: file, in: files, of: pullRequest, by: viewer)
+            store.showDiff(of: file, in: files, of: pullRequest, by: viewer, on: page)
             try await settle { if case .read? = store.diff(of: version, in: key) { true } else { false } }
             store.hideDiff(version, of: key, by: viewer)
         }
@@ -283,12 +289,12 @@ import Testing
         let (store, code, _, _) = makeStores(reader)
         let files = Self.files(head: "c1")
         await reader.hold(true)
-        store.showList(of: pullRequest, scope: .whole)
-        store.showDiff(of: files.files[0], in: files, of: pullRequest, by: viewer)
-        store.count(files.files[1], in: files, of: pullRequest, by: viewer)
-        store.count(files.files[2], in: files, of: pullRequest, by: viewer)
+        store.showList(of: pullRequest, scope: .whole, on: page)
+        store.showDiff(of: files.files[0], in: files, of: pullRequest, by: viewer, on: page)
+        store.count(files.files[1], in: files, of: pullRequest, by: viewer, on: page)
+        store.count(files.files[2], in: files, of: pullRequest, by: viewer, on: page)
         try await settle { await reader.asked.count == 3 }
-        code.setVisible(false, for: "window.1")
+        code.setVisible(false, for: page)
         #expect(store.list(of: key, .whole) == nil)
         #expect(store.diff(of: PullRequestFilesStore.Version(files.files[0], in: files), in: key) == nil)
         await reader.release("files c1")
@@ -301,23 +307,47 @@ import Testing
         #expect(await reader.asked.sorted() == ["diff A.cs", "diff B.cs", "files c1"])
         // Shown again, they're read again.
         await reader.hold(false)
-        code.setVisible(true, for: "window.1")
-        store.showList(of: pullRequest, scope: .whole)
+        code.setVisible(true, for: page)
+        store.showList(of: pullRequest, scope: .whole, on: page)
         try await settle { readFiles(store) != nil }
         #expect(readFiles(store) != nil)
+    }
+
+    @Test func keepsReadingWhatAViewInAnotherWindowShows() async throws {
+        let reader = Reader()
+        let (store, code, _, _) = makeStores(reader)
+        let other = PullRequestCodeStore.page(.azureDevOpsSprint, window: "2")
+        code.setVisible(true, for: other)
+        let files = Self.files(head: "c1")
+        let version = PullRequestFilesStore.Version(files.files[0], in: files)
+        await reader.hold(true)
+        store.showDiff(of: files.files[0], in: files, of: pullRequest, by: viewer, on: page)
+        store.showDiff(of: files.files[0], in: files, of: pullRequest, by: UUID(), on: other)
+        store.count(files.files[1], in: files, of: pullRequest, by: viewer, on: page)
+        try await settle { await reader.isHolding("diff A.cs") }
+        try await settle { await reader.isHolding("diff B.cs") }
+        // The first window hides: the diff the other shows goes on; the count only it asked for is called off.
+        code.setVisible(false, for: page)
+        #expect(store.diff(of: version, in: key) == .reading)
+        await reader.hold(false)
+        await reader.release("diff A.cs")
+        await reader.release("diff B.cs")
+        try await settle { if case .read? = store.diff(of: version, in: key) { true } else { false } }
+        #expect(store.diff(of: version, in: key) != .reading)
+        #expect(store.counts(of: PullRequestFilesStore.Version(files.files[1], in: files), in: key) == nil)
     }
 
     @Test func forgetsAPullRequestOnceNothingShowsIt() async throws {
         let reader = Reader()
         let (store, code, hold, _) = makeStores(reader)
         let files = Self.files(head: "c1")
-        store.showList(of: pullRequest, scope: .whole)
-        store.count(files.files[0], in: files, of: pullRequest, by: viewer)
+        store.showList(of: pullRequest, scope: .whole, on: page)
+        store.count(files.files[0], in: files, of: pullRequest, by: viewer, on: page)
         try await settle { readFiles(store) != nil && !store.counts.isEmpty }
         code.release(hold)
         #expect(store.lists.isEmpty && store.counts.isEmpty && store.diffs.isEmpty)
         // And reads nothing more of it.
-        store.showList(of: pullRequest, scope: .whole)
+        store.showList(of: pullRequest, scope: .whole, on: page)
         try await Task.sleep(for: .milliseconds(30))
         #expect(store.lists.isEmpty)
     }
@@ -340,7 +370,8 @@ import Testing
         try #require(items.first { $0.key.number == number })
     }
 
-    private let file = FileChange.ID(path: "/src/PaymentsClient.cs")
+    private let path = "/src/PaymentsClient.cs"
+    private var file: FileChange.ID { FileChange.ID(path: path) }
     private let workItem = ItemRef.workItem(organization: DemoData.organization, id: 5160)
 
     @Test func opensAFilesPageAndComesBackToItsRow() throws {
@@ -348,11 +379,11 @@ import Testing
         store.itemsChanged(items)
         store.show(try item(4102), at: .thread(11))
         #expect(!store.canGoBack)
-        store.open(file: file, at: 11)
-        #expect(store.file == .init(id: file, thread: 11))
+        store.open(file: path, at: 11)
+        #expect(store.file == .init(path: path, thread: 11))
         #expect(store.place == nil && store.trailThread == nil && store.canGoBack)
         store.reachedThread(11)
-        #expect(store.file == .init(id: file, thread: nil))
+        #expect(store.file == .init(path: path, thread: nil))
         // A page over it, then back to it, then back to the details at its row.
         store.open(page: workItem)
         #expect(store.pages == [workItem] && store.file?.id == file)
@@ -367,16 +398,16 @@ import Testing
         let store = PullRequestDetailsStore()
         store.itemsChanged(items)
         store.show(try item(4102))
-        store.open(file: file)
+        store.open(file: path)
         store.go(to: .section(.checks))
         #expect(store.file == nil)
-        store.open(file: file)
+        store.open(file: path)
         store.open(page: try item(4102).key.linkRef)
         #expect(store.file == nil)
 
         // Which change the Files show, and the room a file's page takes, stay with the pull request until another shows or
         // the details close.
-        store.open(file: file)
+        store.open(file: path)
         store.scope = .since(1)
         store.fillsPage = true
         store.show(try item(4102))
@@ -386,7 +417,7 @@ import Testing
         store.close()
         #expect(store.scope == .whole && !store.fillsPage && store.file == nil)
         // Without a pull request, nothing opens.
-        store.open(file: file)
+        store.open(file: path)
         #expect(store.file == nil)
     }
 

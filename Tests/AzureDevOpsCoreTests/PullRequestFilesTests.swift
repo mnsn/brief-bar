@@ -92,6 +92,9 @@ private enum ChangeFixture {
         #expect(files.isComplete)
         #expect(files.iterations.map(\.id) == [1, 2])
         #expect(files.file(FileChange.ID(path: "/src/Billing.cs"))?.originalPath == "/src/Invoices.cs")
+        // By its path before the rename too.
+        #expect(files.file(atPath: "/src/Invoices.cs")?.path == "/src/Billing.cs")
+        #expect(files.file(atPath: "/src/None.cs") == nil)
         #expect(files.index(of: FileChange.ID(path: "/README.md")) == 4)
         #expect(ChangeFixture.requests(server) == ["/iterations", "/iterations/2/changes 0"])
 

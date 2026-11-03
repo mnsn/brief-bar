@@ -315,16 +315,17 @@ BriefBar, or over it when the window is narrow: where it stands and since when, 
 it, and **✨ Summarize**; **What's Left**, as its row's line says it, each item saying when it's **Your
 turn**, and taking you to its comments, builds or reviewers; its comment threads, by file, in the order
 its change lists them, those on the pull request itself first, and in each file the ones that wait on you
-first, the resolved ones behind **Show Resolved**; its builds and checks, what failed first, with where a
-build failed and its first error; who reviews it, which reviewers it requires and how each voted; and,
-with [Show Links](#links) on, the work items, Copilot sessions and pull requests linked to it, which open
-in the details too, one of your pull requests with the same details as its own, **‹**, **⌘[** or **Esc**
-going back. **↗** opens the pull request in Azure DevOps, at the comment that needs you, as **Open in
-Azure DevOps** in its menu does, and ↗ on a thread or a build opens that one; **⋯** has the row's menu,
-with Copilot's actions while Send Work to Copilot is on. The details show what BriefBar already read, and
-read nothing more but the code that comments are on (below), and showing them sees the pull request, as
-opening it does: while they show it, what was new in its threads stays new, and where it was, rather than
-folding away as you read it, until you remove it from Needs You. Drag their left edge to make them wider
+first, the resolved ones behind **Show Resolved**; the files its change touched (below); its builds and
+checks, what failed first, with where a build failed and its first error; who reviews it, which reviewers
+it requires and how each voted; and, with [Show Links](#links) on, the work items, Copilot sessions and
+pull requests linked to it, which open in the details too, one of your pull requests with the same details
+as its own, **‹**, **⌘[** or **Esc** going back. **↗** opens the pull request in Azure DevOps, at the
+comment that needs you, as **Open in Azure DevOps** in its menu does, and ↗ on a thread or a build opens
+that one; **⋯** has the row's menu, with Copilot's actions while Send Work to Copilot is on. The details
+show what BriefBar already read, and read nothing more but the code that comments are on and its files
+(below), and showing them sees the pull request, as opening it does: while they show it, what was new in
+its threads stays new, and where it was, rather than folding away as you read it, until you remove it from
+Needs You. Drag their left edge to make them wider
 or narrower: BriefBar keeps the width, separately from the Sprint page's details, and double-clicking the
 edge brings back the usual one. **✕** or **Esc** closes them.
 
@@ -357,6 +358,26 @@ show that pull request. VoiceOver reads the code a line at a time, with each lin
 added or removed, and whether the comment is on it. When it can't show a thread's code, such as a file that
 isn't text, it says why in a few words, with **↗** to see it in Azure DevOps, and, when reading it again may
 help, as when you were offline, **↻** to try again.
+
+**See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
+changes, folder by folder as Azure DevOps' Files page lists them, a click on a folder folding it: each with
+what happened to it, added, edited, renamed or deleted, how many lines it adds and removes, and how many
+comment threads are on it, the open ones in your color while one waits on you. Once you've looked at the
+pull request before and it changed since, the menu beside **Files** shows only what changed since you last
+looked. Click a file to see its changes in place of the details, as their trail says, **!4102 ›
+PaymentsClient.cs**: what changed, with three lines around each change and the rest folded, **⌃ 20**,
+**⌄ 20** and **All** unfolding more; its comment threads under the lines they're on, the resolved ones
+folded to a line; and, above, those on the whole file, and those on an earlier version that Azure DevOps
+didn't follow to this one, with the code they were made on. **‹** and **›**, or **⌥⌘↑** and **⌥⌘↓**, go to
+the files before and after it, **4 of 9** lists them all, and **⌃⌘↑** and **⌃⌘↓** go through its open
+comments, on to the next file's. While the details are beside the list, **⤢** makes them fill the page,
+for long lines, until you go back to the details or click **⤡**. A file that isn't text, or is longer than
+1 MB, says so, with **↗** to see it in Azure DevOps, as **↗** on each file's page does. **‹**, **⌘[** or
+**Esc** go back to the details, at the file's row; a pull request's page over a work item's details shows
+its files the same way, **Bug 5110 › !4091 › Rounding.cs**. BriefBar reads which files changed as **Files**
+comes on screen, and each file before and after the change, one file at a time, as its row comes on screen,
+to count its lines, or as you open it, and keeps them in memory only, while the details show that pull
+request.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
@@ -931,7 +952,9 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 - **The code a pull request's comments are on** is read only in its details, for each thread on code
   as it comes on screen: the file it's on, before and after the change the comment was made on, up to
   1 MB, and which files each of the pull request's updates changed, with the same sign-in and GET
-  requests. It's kept in memory only, while those details show that pull request.
+  requests. So are its **Files**: which files its change touched, as they come on screen, and each file
+  before and after the change, up to 1 MB, one file at a time, as its row comes on screen or you open it.
+  All of it is kept in memory only, while those details show that pull request.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
   and chat, and when, never the messages, and only in memory, as it does which of those pull requests

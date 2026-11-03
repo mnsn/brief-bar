@@ -1156,9 +1156,9 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `_apis/git/pullrequests?searchCriteria.creatorId=…&status=completed&minTime=…` | every refresh | yours completed in the Done window |
 | `{project}/_apis/policy/evaluations?artifactId=vstfs:///CodeReview/CodeReviewId/{project}/{id}` | per pull request | builds, status checks, reviewer and other policies |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads` | per pull request | comment threads, and activity: pushes, votes, reviewer changes |
-| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/iterations?includeCommits=false` | only in a pull request's details, as the first thread on code comes on screen; again after a push or a move to another target branch, and once for a thread on an update it hadn't read | its updates, and the commits each one's diff compares |
-| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/iterations/{n}/changes?$top=2000&$skip=…&$compareTo=…` | with them: once for each diff a thread on screen was made on, and once for the diff of that update with the latest; up to five pages of 2,000 files | the files it changed, with their object IDs before and after |
-| `{project}/_apis/git/repositories/{repo}/blobs/{objectId}?$format=octetstream` | with them: once for each version of a file that a thread on screen is on, up to 1 MB of it; four of these requests at a time | the file's text |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/iterations?includeCommits=false` | only in a pull request's details, as the first thread on code or its Files come on screen; again after a push or a move to another target branch, and once for a thread on an update it hadn't read | its updates, and the commits each one's diff compares |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/iterations/{n}/changes?$top=2000&$skip=…&$compareTo=…` | with them: once for each diff a thread on screen was made on, and once for the diff of that update with the latest; for the Files, once for the latest update's diff with the base, and, once you've looked at the pull request before, once for its diff with the update you'd seen; up to five pages of 2,000 files | the files it changed, with their object IDs before and after |
+| `{project}/_apis/git/repositories/{repo}/blobs/{objectId}?$format=octetstream` | with them: once for each version of a file that a thread on screen is on, and, in the Files, of each file whose row comes on screen, one file at a time, or whose page you open, up to 1 MB of it; four of these requests at a time | the file's text |
 | `{project}/_apis/git/repositories/{repo}/items?path=…&versionDescriptor.version={commit}&versionDescriptor.versionType=commit` | instead, for a file that the diff didn't change, or without its object ID | the file's text at that commit |
 | `{project}/_apis/build/builds/{id}/timeline` | once for each failed build of your pull requests, and again if it's retried and fails again: four a refresh; one that can't be read is tried again on the next refresh, then less and less often | where the build failed, and the first error there |
 | `{project}/_apis/build/builds?repositoryId=…&branchName=…&minTime=…` | after you merge a pull request (below): every refresh for half an hour, while one of its runs hasn't finished, and for a quarter of an hour after the last one did; five merges a refresh, the newest first | its target branch's runs, among them those on its merge commit |
@@ -1319,12 +1319,13 @@ details' menu above it, for the pull request the page shows. A pull request your
 keeps the page Show Links tells (`ItemPageView`).
 
 They show what the list read already, so nothing more is read for them but the code that comment threads are on
-([below](#the-code-comments-are-on)), and they follow the list as it refreshes (`PullRequestPanel` in
-`Sources/AzureDevOpsCore` puts it in order): what it is and where, its title, its row's sentence, its opening
-words in its state's color, and since when; its branch and who wrote it; ✨ **Summarize** and its summary, as a
-pull request's page has them; then **What's Left**, its `PRReadiness` items, what's left first, each saying **Your
-turn** when it waits on you or failed, and those about its comments, its builds and checks or its reviewers taking
-you there; its comment threads, by file, as below; its builds and status checks, as its page's pipelines say them
+([below](#the-code-comments-are-on)) and the files the change touched ([below](#its-files)), and they follow the list
+as it refreshes (`PullRequestPanel` in `Sources/AzureDevOpsCore` puts it in order): what it is and where, its
+title, its row's sentence, its opening words in its state's color, and since when; its branch and who wrote it; ✨
+**Summarize** and its summary, as a pull request's page has them; then **What's Left**, its `PRReadiness` items,
+what's left first, each saying **Your turn** when it waits on you or failed, and those about its comments, its
+builds and checks or its reviewers taking you there; its comment threads, by file, as below; the files its change
+touched, as below; its builds and status checks, as its page's pipelines say them
 (`PullRequestStory.run`), what failed first, the required one first, with where a build failed, its first error
 and its run, or, once it merged, the pipelines that ran after; who reviews it, the ones it requires first, with
 how each voted; and **Also Linked**, as on a page, whose work items, sessions and pull requests open as pages over
@@ -1408,6 +1409,45 @@ the details are beside the list, **⟷** makes them wide enough for a thread's l
 When the file changed after the comment, it says so, or that it may have, when that couldn't be read though the
 pull request changed since, with ↗ to the pull request's Files page at that file, from the update the comment was
 made on to the latest (`PRSnapshot.filePageURL`).
+
+#### Its files
+
+Under its comments, the details list the files the pull request's change touched (`PullRequestFilesSection`), read
+as they come on screen (`PullRequestFilesStore`): all of the change, the latest update's diff with the base, as Azure
+DevOps' Files page shows it, or, once you've looked at the pull request before (`SeenState.seenAt`, as the details
+had it before they showed it, `PullRequestDetailsStore.lastLooked`) and an update came after, what changed since the
+update you'd seen (`ChangedFiles.lastSeenUpdate`, `ChangeScope`). `PullRequestCode` reads them
+(`changedFiles(of:scope:)`), through the same reader as the threads' code, so what one reads the other doesn't read
+again, and with the same rules: only for a view in a window that shows its page on screen, called off once none
+does, and forgotten once nothing shows the pull request. They go by folder, as the Files page lists them
+(`ChangedFiles.folders`, `PullRequestPanel.listsFirst`), a folder whose only content is another folder named with it,
+`src/Payments/Retry`; each says what happened to it (`FileChange.what`), how many lines it adds and removes, and
+how many threads are on it (`PullRequestPanel.Threads.comments(on:)`): those Azure DevOps tracks on it, or else those
+on its path, after the change or before it, the open ones counted first. A file's lines are counted
+(`LineCounts`) as its row comes on screen, one file at a time, in the order the rows came, by comparing its two
+versions (`PullRequestCode.diff(of:in:of:)`), each read once, by its object ID, up to 1 MB; a row that leaves the
+screen before its turn isn't counted, and a file that isn't text, or is longer, says so. What's counted is kept,
+by the versions it compares, for as long as the pull request is: the same file changed the same way, in all of the
+change and since an update, is counted once.
+
+A file opens in place of the details' parts (`PullRequestFilePage`, `PullRequestDetailsStore.file`), the header's
+trail saying so, `!4102 › PaymentsClient.cs`, or `Bug 5110 › !4091 › Rounding.cs` on a pull request's page over a
+work item's details; **‹**, **⌘[** or Esc go back to the details, at its row (`Place.file`). Its diff is the two
+versions compared a line at a time (`LineDiff`), its changes with three lines around each, and the lines its threads
+are on with three around them, the rest folded, to unfold twenty lines at a time, up from the code below a fold or
+down from the code above it, or all of it (`DiffLayout`). A thread shows under the line it ends on
+(`FileDiff.row(of:in:)`): where Azure DevOps followed it to, or else where it was made, when that's the version the
+diff shows after the change, or, before it, the same diff; its lines marked in the accent color. Those on the whole
+file, and those on lines of a version it doesn't show, as one made on an earlier update that Azure DevOps didn't follow
+since, show above it, the latter with the code they were made on, as in the comments; resolved ones fold to a line.
+Its code is drawn by `CodeView`, two hundred lines to a view in a lazy stack, so that only those on screen are laid
+out, each with room for the file's longest number, so the code lines up from one part to the next. **‹** and **›**,
+or ⌥⌘↑ and ⌥⌘↓, go to the files before and after it, and ⌃⌘↑ and ⌃⌘↓ through its open threads, then on to another
+file's. While the details are beside the list, **⤢** asks the page for all of it (`DetailsFillsPageKey`): the
+details then cover the list, as in a narrow window, without being made again, so nothing in them starts over, until
+the file's page goes or **⤡**; the details remember it for their files' pages until they close. A diff is read as the
+page shows it, and called off as it goes before it's read; the last few read are kept, besides those that show. ↗
+opens the file on the pull request's Files page, with what that change changed in it (`ChangedFiles.filePageURL`).
 
 ### What counts as new
 

@@ -6,10 +6,11 @@ import Foundation
 /// A pull request's whole change, for its details' Files: the files it touched, read as its Files come on screen; each
 /// file's diff, as its page shows it; and how many lines each adds and removes, counted as its row comes on screen, one
 /// file at a time. It reads through the reader `PullRequestCodeStore` reads threads' code with, so a file is read once for
-/// both, and only as that store allows: while something shows the pull request, and a window shows, on screen, a page
-/// where its details can show. What's read stays in memory only, until nothing shows the pull request: a few files' diffs,
-/// and every file's count. It never reads by itself: the files again only after a push, as they show, and what couldn't be
-/// read because Azure DevOps couldn't be reached, at most every half minute, or when you ask.
+/// both, and only as that store allows: while something shows the pull request, and only for a view in a window that
+/// shows its page on screen (`PullRequestCodeStore.isVisible`); once none does, what only it asked for is called off.
+/// What's read stays in memory only, until nothing shows the pull request: a few files' diffs, and every file's count. It
+/// never reads by itself: the files again only after a push, as they show, and what couldn't be read because Azure DevOps
+/// couldn't be reached, at most every half minute, or when you ask.
 @MainActor
 final class PullRequestFilesStore: ObservableObject {
     /// What's read of something, as far as it's read.
@@ -79,16 +80,20 @@ final class PullRequestFilesStore: ObservableObject {
     private struct Reads {
         var listAsked: [ChangeScope: Head] = [:]
         var listTasks: [ChangeScope: Task<Void, Never>] = [:]
+        /// The windows' pages that asked for each list being read: it's called off once no window shows any of them.
+        var listPages: [ChangeScope: Set<String>] = [:]
         var listFailedAt: [ChangeScope: Date] = [:]
         var diffTasks: [Version: Task<Void, Never>] = [:]
-        /// The views on screen that show each diff: a read is called off only once none does.
-        var diffViewers: [Version: Set<UUID>] = [:]
+        /// The views on screen that show each diff, by the token each has, with the page each is on: a read is called off
+        /// once none does, or none whose window shows its page on screen.
+        var diffViewers: [Version: [UUID: String]] = [:]
         var diffFailedAt: [Version: Date] = [:]
         /// The diffs read, the latest last.
         var diffOrder: [Version] = []
-        /// The files whose rows are on screen, to count in the order they came, and the views that show each.
+        /// The files whose rows are on screen, to count in the order they came, and the views that show each, with the
+        /// page each is on.
         var countQueue: [Count] = []
-        var countViewers: [Version: Set<UUID>] = [:]
+        var countViewers: [Version: [UUID: String]] = [:]
         var counting: (version: Version, task: Task<Void, Never>)?
         var countFailedAt: [Version: Date] = [:]
     }
@@ -103,11 +108,10 @@ final class PullRequestFilesStore: ObservableObject {
         self.code = code
         self.now = now
         code.forgot = { [weak self] in self?.forgetWhatNothingShows() }
-        // Nothing is read while no window shows a page where the details can show: each view asks again once one does.
-        subscription = code.$isVisible.removeDuplicates().sink { [weak self] isVisible in
-            MainActor.assumeIsolated {
-                if !isVisible { self?.callOffEverything() }
-            }
+        // What only views on a page that no window shows on screen anymore asked for is called off: each view asks again
+        // once its window shows it.
+        subscription = code.$visibilityChanges.dropFirst().sink { [weak self] _ in
+            MainActor.assumeIsolated { self?.callOffWhatNoWindowShows() }
         }
     }
 
@@ -118,15 +122,21 @@ final class PullRequestFilesStore: ObservableObject {
     }
 
     /// The pull request's Files came on screen: the files the change touched are read, unless they're read for this
-    /// version of the pull request already, or being read. Read again after a push, the files read before show meanwhile.
-    /// - Parameter again: read them again even if they failed less than half a minute ago, as when you ask.
-    func showList(of pullRequest: PullRequest, scope: ChangeScope, again: Bool = false) {
+    /// version of the pull request already, or being read, or nothing shows the pull request, or its window doesn't show
+    /// its page on screen. Read again after a push, the files read before show meanwhile.
+    /// - Parameters:
+    ///   - page: the window's page they're on (`PullRequestCodeStore.page`): nil outside one, where nothing is read.
+    ///   - again: read them again even if they failed less than half a minute ago, as when you ask.
+    func showList(of pullRequest: PullRequest, scope: ChangeScope, on page: String?, again: Bool = false) {
         let key = pullRequest.key
-        guard code.isVisible, let reader = code.reader(for: pullRequest) else { return }
+        guard let page, code.isVisible(page), let reader = code.reader(for: pullRequest) else { return }
         let head = Head(pullRequest)
         var pullRequestReads = reads[key] ?? Reads()
         if pullRequestReads.listAsked[scope] == head {
-            if pullRequestReads.listTasks[scope] != nil { return }
+            if pullRequestReads.listTasks[scope] != nil {
+                reads[key]?.listPages[scope, default: []].insert(page)
+                return
+            }
             switch lists[key]?[scope] {
             case .read?:
                 return
@@ -138,6 +148,7 @@ final class PullRequestFilesStore: ObservableObject {
         }
         pullRequestReads.listTasks[scope]?.cancel()
         pullRequestReads.listAsked[scope] = head
+        pullRequestReads.listPages[scope] = [page]
         pullRequestReads.listTasks[scope] = Task { [weak self] in
             let result = await reader.changedFiles(of: pullRequest, scope: scope)
             guard !Task.isCancelled else { return }
@@ -151,6 +162,7 @@ final class PullRequestFilesStore: ObservableObject {
         // Unless it was asked for again since, or its pull request forgotten.
         guard reads[key]?.listAsked[scope] == head else { return }
         reads[key]?.listTasks[scope] = nil
+        reads[key]?.listPages[scope] = nil
         switch result {
         case .success(let files):
             reads[key]?.listFailedAt[scope] = nil
@@ -169,15 +181,19 @@ final class PullRequestFilesStore: ObservableObject {
         diffs[key]?[version]
     }
 
-    /// A file's page came on screen: its diff is read, unless it's read or being read.
+    /// A file's page came on screen: its diff is read, unless it's read or being read, or its window doesn't show its page
+    /// on screen.
     /// - Parameters:
     ///   - viewer: the view that shows it, which says so again with `hideDiff` once it goes.
+    ///   - page: the window's page it's on (`PullRequestCodeStore.page`): nil outside one, where nothing is read.
     ///   - again: read it again even if it failed less than half a minute ago, as when you ask.
-    func showDiff(of file: FileChange, in files: ChangedFiles, of pullRequest: PullRequest, by viewer: UUID, again: Bool = false) {
+    func showDiff(
+        of file: FileChange, in files: ChangedFiles, of pullRequest: PullRequest, by viewer: UUID, on page: String?, again: Bool = false
+    ) {
         let key = pullRequest.key
-        guard code.isVisible, let reader = code.reader(for: pullRequest) else { return }
+        guard let page, code.isVisible(page), let reader = code.reader(for: pullRequest) else { return }
         let version = Version(file, in: files)
-        reads[key, default: Reads()].diffViewers[version, default: []].insert(viewer)
+        reads[key, default: Reads()].diffViewers[version, default: [:]][viewer] = page
         guard reads[key]?.diffTasks[version] == nil else { return }
         switch diffs[key]?[version] {
         case .read?:
@@ -198,14 +214,18 @@ final class PullRequestFilesStore: ObservableObject {
     /// The view that showed a file's diff doesn't anymore: once none does, what's being read of it is called off.
     func hideDiff(_ version: Version, of key: PRKey, by viewer: UUID) {
         guard reads[key] != nil else { return }
-        reads[key]?.diffViewers[version]?.remove(viewer)
+        reads[key]?.diffViewers[version]?[viewer] = nil
         guard reads[key]?.diffViewers[version]?.isEmpty ?? true else { return }
         reads[key]?.diffViewers[version] = nil
-        if let task = reads[key]?.diffTasks.removeValue(forKey: version) {
-            task.cancel()
-            if diffs[key]?[version] == .reading { diffs[key]?[version] = nil }
-        }
+        callOffDiff(version, of: key)
         trimDiffs(of: key)
+    }
+
+    /// Calls off what's being read of a diff, to be read when it's asked for again.
+    private func callOffDiff(_ version: Version, of key: PRKey) {
+        guard let task = reads[key]?.diffTasks.removeValue(forKey: version) else { return }
+        task.cancel()
+        if diffs[key]?[version] == .reading { diffs[key]?[version] = nil }
     }
 
     private func finishDiff(_ version: Version, of key: PRKey, _ result: Result<FileDiff, ThreadExcerpt.Problem>) {
@@ -249,12 +269,14 @@ final class PullRequestFilesStore: ObservableObject {
 
     /// A file's row came on screen: how many lines it adds and removes is counted, unless it is, after the files whose rows
     /// came before it, one file at a time, by reading its two versions.
-    /// - Parameter viewer: the view that shows it, which says so again with `stopCounting` once it leaves the screen.
-    func count(_ file: FileChange, in files: ChangedFiles, of pullRequest: PullRequest, by viewer: UUID) {
+    /// - Parameters:
+    ///   - viewer: the view that shows it, which says so again with `stopCounting` once it leaves the screen.
+    ///   - page: the window's page it's on (`PullRequestCodeStore.page`): nil outside one, where nothing is read.
+    func count(_ file: FileChange, in files: ChangedFiles, of pullRequest: PullRequest, by viewer: UUID, on page: String?) {
         let key = pullRequest.key
-        guard code.isVisible, code.shows(key) else { return }
+        guard let page, code.isVisible(page), code.shows(key) else { return }
         let version = Version(file, in: files)
-        reads[key, default: Reads()].countViewers[version, default: []].insert(viewer)
+        reads[key, default: Reads()].countViewers[version, default: [:]][viewer] = page
         switch counts[key]?[version] {
         case .success?:
             return
@@ -273,9 +295,14 @@ final class PullRequestFilesStore: ObservableObject {
     /// off.
     func stopCounting(_ version: Version, of key: PRKey, by viewer: UUID) {
         guard reads[key] != nil else { return }
-        reads[key]?.countViewers[version]?.remove(viewer)
+        reads[key]?.countViewers[version]?[viewer] = nil
         guard reads[key]?.countViewers[version]?.isEmpty ?? true else { return }
         reads[key]?.countViewers[version] = nil
+        callOffCount(version, of: key)
+    }
+
+    /// Takes a file off what's to count, and calls off counting it, for the next one.
+    private func callOffCount(_ version: Version, of key: PRKey) {
         reads[key]?.countQueue.removeAll { $0.version == version }
         if let counting = reads[key]?.counting, counting.version == version {
             counting.task.cancel()
@@ -284,17 +311,23 @@ final class PullRequestFilesStore: ObservableObject {
         }
     }
 
-    /// Counts the next file waiting, unless one is being counted.
+    /// Counts the next file waiting, unless one is being counted: the next whose row is in a window that shows its page on
+    /// screen.
     private func countNext(of key: PRKey) {
-        guard code.isVisible, reads[key]?.counting == nil, let next = reads[key]?.countQueue.first else { return }
-        reads[key]?.countQueue.removeFirst()
-        guard let reader = code.reader(for: next.pullRequest) else { return }
-        let task = Task { [weak self] in
-            let result = await reader.diff(of: next.file, in: next.files, of: next.pullRequest)
-            guard !Task.isCancelled else { return }
-            self?.finishCount(next.version, of: key, result)
+        guard reads[key]?.counting == nil else { return }
+        while let next = reads[key]?.countQueue.first {
+            reads[key]?.countQueue.removeFirst()
+            guard (reads[key]?.countViewers[next.version] ?? [:]).values.contains(where: { code.isVisible($0) }),
+                  let reader = code.reader(for: next.pullRequest)
+            else { continue }
+            let task = Task { [weak self] in
+                let result = await reader.diff(of: next.file, in: next.files, of: next.pullRequest)
+                guard !Task.isCancelled else { return }
+                self?.finishCount(next.version, of: key, result)
+            }
+            reads[key]?.counting = (next.version, task)
+            return
         }
-        reads[key]?.counting = (next.version, task)
     }
 
     private func finishCount(_ version: Version, of key: PRKey, _ result: Result<FileDiff, ThreadExcerpt.Problem>) {
@@ -318,32 +351,68 @@ final class PullRequestFilesStore: ObservableObject {
 
     // MARK: Forgetting
 
+    /// Reads a pull request's change, the counts of its first files, as many as `counting`, and the diffs of the files at
+    /// `paths`, and returns once they're read: for `--render`, which draws them only then, for a pull request something
+    /// holds, whether a window shows it or not.
+    func readAll(of pullRequest: PullRequest, scopes: [ChangeScope] = [.whole], diffs paths: [String] = [], counting: Int = .max) async {
+        let key = pullRequest.key
+        guard let reader = code.reader(for: pullRequest) else { return }
+        for scope in scopes {
+            let head = Head(pullRequest)
+            reads[key, default: Reads()].listAsked[scope] = head
+            let result = await reader.changedFiles(of: pullRequest, scope: scope)
+            finishList(scope, of: key, head, result)
+            guard case .success(let changes) = result else { continue }
+            for (index, file) in changes.files.enumerated() {
+                let shows = paths.contains { FileChange.ID(path: $0) == file.id }
+                guard index < counting || shows else { continue }
+                let version = Version(file, in: changes)
+                let diff = await reader.diff(of: file, in: changes, of: pullRequest)
+                counted(version, of: key, diff.map(\.counts))
+                guard shows else { continue }
+                switch diff {
+                case .success(let read):
+                    diffs[key, default: [:]][version] = .read(read)
+                    reads[key]?.diffOrder.append(version)
+                case .failure(let problem):
+                    diffs[key, default: [:]][version] = .failed(problem)
+                }
+            }
+        }
+    }
+
     /// Whether what failed in a way that may pass is read again: half a minute after it failed.
     private func isDue(_ failed: Date?) -> Bool {
         guard let failed else { return true }
         return now().timeIntervalSince(failed) >= PullRequestCodeStore.retryInterval
     }
 
-    /// No window shows a page where the details can show: what's being read is called off, to be read once one does again,
-    /// as the views showing it ask.
-    private func callOffEverything() {
+    /// A window started or stopped showing a page on screen: what only views on pages that no window shows asked for is
+    /// called off, to be read once a window shows them again, as they ask. What a view in a window on screen still asks for
+    /// goes on.
+    private func callOffWhatNoWindowShows() {
         for key in reads.keys {
-            for (scope, task) in reads[key]?.listTasks ?? [:] {
+            guard let pullRequestReads = reads[key] else { continue }
+            for (scope, task) in pullRequestReads.listTasks
+            where !(pullRequestReads.listPages[scope] ?? []).contains(where: { code.isVisible($0) }) {
                 task.cancel()
+                reads[key]?.listTasks[scope] = nil
                 reads[key]?.listAsked[scope] = nil
+                reads[key]?.listPages[scope] = nil
                 if lists[key]?[scope] == .reading { lists[key]?[scope] = nil }
             }
-            reads[key]?.listTasks = [:]
-            for (version, task) in reads[key]?.diffTasks ?? [:] {
-                task.cancel()
-                if diffs[key]?[version] == .reading { diffs[key]?[version] = nil }
+            for (version, viewers) in pullRequestReads.diffViewers {
+                let left = viewers.filter { code.isVisible($0.value) }
+                guard left.count < viewers.count else { continue }
+                reads[key]?.diffViewers[version] = left.isEmpty ? nil : left
+                if left.isEmpty { callOffDiff(version, of: key) }
             }
-            reads[key]?.diffTasks = [:]
-            reads[key]?.diffViewers = [:]
-            reads[key]?.counting?.task.cancel()
-            reads[key]?.counting = nil
-            reads[key]?.countQueue = []
-            reads[key]?.countViewers = [:]
+            for (version, viewers) in pullRequestReads.countViewers {
+                let left = viewers.filter { code.isVisible($0.value) }
+                guard left.count < viewers.count else { continue }
+                reads[key]?.countViewers[version] = left.isEmpty ? nil : left
+                if left.isEmpty { callOffCount(version, of: key) }
+            }
         }
     }
 

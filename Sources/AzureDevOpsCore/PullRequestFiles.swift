@@ -127,6 +127,12 @@ public struct ChangedFiles: Sendable, Equatable {
         files.first { $0.id == id }
     }
 
+    /// The file at a path after the change, or else the one renamed from it, as a thread made before the rename names it.
+    public func file(atPath path: String) -> FileChange? {
+        let id = FileChange.ID(path: path)
+        return file(id) ?? files.first { $0.originalPath.map(FileChange.ID.init(path:)) == id }
+    }
+
     public func index(of id: FileChange.ID) -> Int? {
         files.firstIndex { $0.id == id }
     }

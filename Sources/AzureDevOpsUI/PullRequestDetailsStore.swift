@@ -20,6 +20,8 @@ final class PullRequestDetailsStore: ObservableObject {
         /// A check without a run, such as a status another service posts, by its name: the first of that name.
         case check(String)
         case section(PullRequestPanel.Section)
+        /// Its Files, the files its change touched.
+        case files
         /// A file of its change, in its Files: its row.
         case file(FileChange.ID)
         /// Their top, where the pull request's title is.
@@ -36,6 +38,7 @@ final class PullRequestDetailsStore: ObservableObject {
             switch self {
             case .thread(let id): .thread(id)
             case .section(let section): .section(section)
+            case .files: .files
             case .file(let id): .file(id)
             case .top: .top
             case .run, .check: checks.first { Place.of($0) == self }.map { .check($0.id) }
@@ -48,6 +51,7 @@ final class PullRequestDetailsStore: ObservableObject {
             switch self {
             case .thread(let id): panel.threads.contains(id) ? .thread(id) : .section(.comments)
             case .section(let section): .section(section)
+            case .files: .files
             case .file(let id): .file(id)
             case .top: .top
             case .run, .check: anchor(in: panel.checks) ?? .section(.checks)
@@ -99,10 +103,20 @@ final class PullRequestDetailsStore: ObservableObject {
     }
 
     /// A file of the pull request's change whose page shows in its details, in place of their parts, and where on it to
-    /// go: one of its comment threads.
+    /// go: one of its comment threads. Files are told apart as Git tells them, by their paths' bytes.
     struct OpenFile: Equatable {
-        var id: FileChange.ID
+        /// Such as "/src/PaymentsClient.cs".
+        var path: String
         var thread: Int?
+
+        var id: FileChange.ID { FileChange.ID(path: path) }
+
+        /// "PaymentsClient.cs".
+        var name: String { (path as NSString).lastPathComponent }
+
+        static func == (lhs: OpenFile, rhs: OpenFile) -> Bool {
+            lhs.id == rhs.id && lhs.thread == rhs.thread
+        }
     }
 
     /// The pull request that shows, as the list has it now, or had it last once it's not listed; nil while none does.
@@ -299,12 +313,18 @@ final class PullRequestDetailsStore: ObservableObject {
 
     /// Shows a file's page in the details, in place of their parts: from their Files, or from another file's page. At one
     /// of its comment threads, to scroll to.
-    func open(file id: FileChange.ID, at thread: Int? = nil) {
+    func open(file path: String, at thread: Int? = nil) {
         guard selected != nil else { return }
         pages = []
         trailThread = nil
         place = nil
-        file = OpenFile(id: id, thread: thread)
+        file = OpenFile(path: path, thread: thread)
+    }
+
+    /// Whether it shows a file's page of the pull request a page shows, by its reference: for whatever the page is over to go
+    /// back from it first.
+    func showsFile(of ref: ItemRef) -> Bool {
+        file != nil && selected?.key.linkRef == ref
     }
 
     /// Back from a file's page to the details, at its row in their Files.
