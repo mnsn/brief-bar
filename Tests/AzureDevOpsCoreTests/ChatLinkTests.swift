@@ -229,7 +229,7 @@ import Testing
     }
 }
 
-private func waitFor(_ what: String, timeout: Duration = .seconds(10), until condition: () -> Bool) async throws {
+private func waitFor(_ what: String, timeout: Duration = waitLimit, until condition: () -> Bool) async throws {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: timeout)
     while clock.now < deadline {
