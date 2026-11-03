@@ -94,16 +94,21 @@ import Testing
     private func reader(
         home: URL, sending: Bool = true, links: LinkEdits? = nil, chosen: (session: String?, at: Date)? = nil
     ) -> AzureDevOpsReader {
+        // As the app keeps it: Use for This Pull Request, in the line's menu; in preferences of their own, as what the main
+        // actor's settings hold can't go to the reader's actor.
+        var kept: Data?
+        if let chosen {
+            let app = MemoryDefaults()
+            AppSettings(defaults: app).choose(session: chosen.session, for: PRKey("contoso", 4088), at: chosen.at)
+            kept = app.data(forKey: SettingsKey.copilotPullRequestSessions)
+        }
         let defaults = MemoryDefaults()
         defaults.set(sending, forKey: SettingsKey.copilotEnabled)
         if let links {
             links.save(to: defaults)
             defaults.set(true, forKey: Links.enabledKey)
         }
-        if let chosen {
-            // As the app keeps it: Use for This Pull Request, in the line's menu.
-            AppSettings(defaults: defaults).choose(session: chosen.session, for: PRKey("contoso", 4088), at: chosen.at)
-        }
+        if let kept { defaults.set(kept, forKey: SettingsKey.copilotPullRequestSessions) }
         return AzureDevOpsReader(demo: false, organizations: ["contoso"], defaults: defaults, appHome: home)
     }
 
