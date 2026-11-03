@@ -181,6 +181,34 @@ import Testing
         #expect(await PullRequestTasks.reports(for: record, client: nil, investigations: [204_417: another]).first?.tests.isEmpty == true)
     }
 
+    /// Push & Reply from the pull request's menu lists the threads that wait on you; it takes along the builds and
+    /// conflicts whose fixes are done in the session it goes on with, which its push ships, so each says it's pushed.
+    @Test func pushAndReplyTakesAlongTheSessionsOtherFixes() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let first = now.addingTimeInterval(-600)
+        settings.copilotRuns = [run(task, .fixBuild, startedAt: first, ended: .finished, taken: [TakenPart(.build(31), since: first)])]
+        #expect(store.unpushedParts(of: key, in: task) == [.build(31)])
+        #expect(store.unpushedParts(of: key, in: session).isEmpty)
+        #expect(store.unpushedParts(of: PRKey("contoso", 4099), in: task).isEmpty)
+        // And those that prompts to one of the app's sessions fixed there.
+        let resolved = try #require(SentPrompt(
+            SentPrompt.About(pullRequest: key, purpose: .fix, parts: [.conflicts, .thread(11)]), session: session, sentAt: first, copied: false,
+            ended: .finished
+        ))
+        settings.copilotSentPrompts = [resolved]
+        #expect(store.unpushedParts(of: key, in: session) == [.conflicts])
+        // Shipped, it's pushed: there's nothing left to take along.
+        let shipping = CopilotRun.taken(
+            goingOnWith: settings.copilotRuns[0], on: pullRequest.reference, taking: store.unpushedParts(of: key, in: task), for: .pushAndReply,
+            at: now
+        )
+        settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, ended: .finished, taken: shipping)]
+        #expect(store.work(on: .build(31), of: key)?.sentence(name: "Fix the Build", forkOf: nil) == "Pushed from ‘Fix the Build’")
+        #expect(store.unpushedParts(of: key, in: task).isEmpty)
+        #expect(store.readyFixes(of: key, among: [.build(31)]).isEmpty)
+    }
+
     /// What each action takes on, as its prompt does: Fix the Build its builds that failed, Resolve Conflicts the
     /// conflicts, Push & Reply what it ships, with its threads alone.
     @Test func eachActionTakesOnWhatItsPromptDoes() throws {

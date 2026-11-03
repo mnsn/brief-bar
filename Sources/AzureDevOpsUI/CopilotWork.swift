@@ -442,6 +442,20 @@ extension CopilotTasksStore {
         return groups.values.sorted { ($0.latest, $0.session) > ($1.latest, $1.session) }
     }
 
+    /// The builds and conflicts of a pull request whose fixes are done in a session and not pushed, as each says
+    /// (`work(on:of:for:)`): a Push & Reply there pushes them along with the threads its prompt lists, though it replies on
+    /// none of them.
+    func unpushedParts(of key: PRKey, in session: String) -> [PullRequestPart] {
+        var parts: [PullRequestPart] = []
+        let taken = entries.filter { $0.isOn(key) }.flatMap { ($0.taken ?? []).map(\.part) }
+        let prompted = settings.copilotSentPrompts.filter { $0.isFor(key) }.flatMap(\.parts)
+        for part in taken + prompted where part.thread == nil && !parts.contains(part) {
+            guard let work = work(on: part, of: key, for: [.fix, .pushAndReply]), work.session == session, work.waitsToBePushed else { continue }
+            parts.append(part)
+        }
+        return parts
+    }
+
     /// Keeps a prompt that went to one of the Copilot app's sessions, sent as it says or copied for you to paste: about some
     /// of a pull request, to follow its turn there from its log; about anything, as the session's next turn, which
     /// the turns of the prompts sent it before aren't told from (`overlap`). Not once Azure DevOps stopped, or Send Work to
