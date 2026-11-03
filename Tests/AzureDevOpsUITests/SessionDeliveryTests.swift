@@ -12,9 +12,9 @@ import Testing
 /// BriefBar's extension in one of the Copilot app's sessions, as far as these tests need it: it says it listens, claims its
 /// session's requests, and answers each as it's told. `CopilotOutboxTests` holds it to the contract.
 private final class ExtensionStandIn: Sendable {
-    /// How often it looks for requests, and BriefBar at the outbox, in these tests. Every look reads the outbox's folders, on
-    /// the one thread that `make test` leaves the tests' async work, so many tests looking every few milliseconds at once held
-    /// up other suites' tests until they ran out of time.
+    /// How often it looks for requests, and BriefBar at the outbox, in these tests, as do the tests' own waits. Each look
+    /// reads the outbox's folders, in many tests at once: looking every 25 ms rather than every 5, these tests use about a
+    /// quarter less CPU, and take about as long.
     static let lookEvery: Duration = .milliseconds(25)
 
     let outbox: URL

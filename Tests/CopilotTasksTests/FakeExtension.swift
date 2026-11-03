@@ -9,9 +9,9 @@ import Synchronization
 /// it says it listens, claims its own session's requests by renaming them, acts only on those that pass the contract's
 /// checks, and says how each went, removing what it claimed.
 final class FakeExtension: Sendable {
-    /// How often it looks for requests, and BriefBar's side of these tests at the outbox (`Timing.patient`). Every look reads
-    /// the outbox's folders, on the one thread that `make test` leaves the tests' async work, so many tests looking every few
-    /// milliseconds at once held up other suites' tests until they ran out of time.
+    /// How often it looks for requests, and BriefBar's side of these tests at the outbox (`Timing.patient`), as do these
+    /// tests' own waits. Each look reads the outbox's folders, in many tests at once: looking every 25 ms rather than every 5,
+    /// these tests use about a quarter less CPU, and take about as long.
     static let lookEvery: Duration = .milliseconds(25)
 
     /// How it answers a request it claimed.
