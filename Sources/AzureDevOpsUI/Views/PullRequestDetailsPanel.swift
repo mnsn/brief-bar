@@ -23,7 +23,8 @@ struct PullRequestDetailsPanel: View {
     var body: some View {
         if let item = details.selected {
             VStack(spacing: 0) {
-                topBar(item)
+                // Drawn again as the pull request a page shows changes too, such as when its file's page opens.
+                Observing(pageDetails) { topBar(item) }
                 Divider()
                     .opacity(0.6)
                 ScrollViewReader { proxy in
@@ -73,21 +74,36 @@ struct PullRequestDetailsPanel: View {
         }
     }
 
-    /// "Details of pull request 4102", or, on a page, "Work item 5160, from pull request 4102".
+    /// "Details of pull request 4102", or, on a page, "Work item 5160, from pull request 4102", or, on a file's page,
+    /// "PaymentsClient.cs, from pull request 4102".
     private func accessibilityName(_ item: PRSnapshot) -> String {
-        guard let page = details.pages.last else { return "Details of pull request \(item.key.number)" }
+        guard let page = details.pages.last else {
+            guard let file = details.file else { return "Details of pull request \(item.key.number)" }
+            return "\(file.name), from pull request \(item.key.number)"
+        }
         return "\(ItemPageView.spokenName(of: services.links.describe(page))), from pull request \(item.key.number)"
     }
 
     private func goBack() {
+        // From a file's page in the pull request's page on top, to that pull request's details.
+        if let page = details.pages.last, pageDetails.showsFile(of: page) {
+            withAnimation(.easeOut(duration: 0.15)) { pageDetails.closeFile() }
+            return
+        }
         returnTo = details.pages.last
         withAnimation(.easeOut(duration: 0.15)) { details.back() }
     }
 
-    /// "Back to Work Item 5160 · Retry payments", or to the pull request under the pages.
+    /// "Back to Work Item 5160 · Retry payments", to the pull request under the pages, or to a file's page under them.
     private func backHelp(_ item: PRSnapshot) -> String {
+        if let page = details.pages.last, pageDetails.showsFile(of: page) {
+            return "Back to \(services.links.describe(page).menuTitle)"
+        }
         if details.pages.count > 1, let previous = details.pages.dropLast().last {
             return "Back to \(services.links.describe(previous).menuTitle)"
+        }
+        if !details.pages.isEmpty, let file = details.file {
+            return "Back to " + file.name
         }
         return "Back to " + Self.name(of: item)
     }
@@ -166,16 +182,16 @@ struct PullRequestDetailsPanel: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            // On a page, Esc goes back to what's under it.
-            .keyboardShortcut(details.pages.isEmpty ? .cancelAction : nil)
-            .help(details.pages.isEmpty ? "Close (Esc)" : "Close")
+            // On a page, or a file's, Esc goes back to what's under it.
+            .keyboardShortcut(details.canGoBack ? nil : .cancelAction)
+            .help(details.canGoBack ? "Close" : "Close (Esc)")
             .accessibilityLabel("Close Details")
         }
         .padding(.leading, 12)
         .padding(.trailing, 10)
         .frame(height: 44)
         .background {
-            if !details.pages.isEmpty {
+            if details.canGoBack {
                 Button("Back", action: goBack)
                     .keyboardShortcut(.cancelAction)
                     .opacity(0)
@@ -192,7 +208,8 @@ struct PullRequestDetailsPanel: View {
     private func openButton(_ item: PRSnapshot) -> some View {
         if let page = details.pages.last {
             PullRequestPageOpener(ref: page, details: pageDetails)
-        } else {
+        } else if details.file == nil {
+            // A file's page has its own, for the file.
             PullRequestOpenButton(item: item)
         }
     }
@@ -207,85 +224,69 @@ struct PullRequestDetailsPanel: View {
     }
 
     /// "!4102", which the heading under it names in full; the thread they were taken to after it, "!4102 ›
-    /// PaymentsClient.cs:41", the pull request going back to their top; or, on a page, the way there: "!4102 › 5160", the
-    /// pull request and each page but the last one going back to it.
+    /// PaymentsClient.cs:41", the pull request going back to their top; a file's page, "!4102 › PaymentsClient.cs", the pull
+    /// request going back to its row; or, on a page, the way there: "!4102 › 5160", the pull request and each page but the
+    /// last one going back to it, and a file's page of the pull request a page shows after it, "!4102 › !4091 › Rounding.cs".
     @ViewBuilder
     private func crumbs(_ item: PRSnapshot) -> some View {
         let pages = details.pages
-        if pages.isEmpty, let thread = trailThread(item) {
-            HStack(spacing: 5) {
-                Button {
+        let number = "!\(item.key.number)"
+        if pages.isEmpty, let file = details.file {
+            DetailsTrail(crumbs: [
+                .init(title: number, help: "Back to " + Self.name(of: item)) {
+                    withAnimation(.easeOut(duration: 0.15)) { details.closeFile() }
+                },
+                .init(title: file.name, help: file.path),
+            ])
+        } else if pages.isEmpty, let thread = trailThread(item) {
+            DetailsTrail(crumbs: [
+                .init(title: number, help: "Back to the top of " + Self.name(of: item)) {
                     withAnimation(.easeOut(duration: 0.15)) { details.goToTop() }
-                } label: {
-                    Text(verbatim: "!\(item.key.number)")
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Back to the top of " + Self.name(of: item))
-                .layoutPriority(1)
-                Image(systemName: "chevron.right")
-                    .font(size: 8.5, weight: .semibold)
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
+                },
                 // Where its card says it is, where it was made.
-                Text(ThreadCode.place(of: thread.thread) ?? "Comment")
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(ThreadCode.placeHelp(of: thread.thread))
-            }
-            .font(size: 12, weight: .medium).monospacedDigit()
+                .init(title: ThreadCode.place(of: thread.thread) ?? "Comment", help: ThreadCode.placeHelp(of: thread.thread)),
+            ])
         } else if pages.isEmpty {
-            Text(verbatim: "!\(item.key.number)")
+            Text(verbatim: number)
                 .font(size: 12, weight: .medium).monospacedDigit()
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .textSelection(.enabled)
         } else {
-            HStack(spacing: 5) {
-                Button {
-                    returnTo = pages.first
-                    withAnimation(.easeOut(duration: 0.15)) { details.back(toPage: nil) }
-                } label: {
-                    Text(verbatim: "!\(item.key.number)")
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Back to " + Self.name(of: item))
-                .layoutPriority(1)
-                ForEach(Array(pages.enumerated()), id: \.offset) { index, page in
-                    let linked = services.links.describe(page)
-                    Image(systemName: "chevron.right")
-                        .font(size: 8.5, weight: .semibold)
-                        .foregroundStyle(.tertiary)
-                        .accessibilityHidden(true)
-                    if index == pages.count - 1 {
-                        Text(ItemPageView.crumb(of: linked))
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .help(linked.menuTitle)
-                            .layoutPriority(1)
-                    } else {
-                        Button {
-                            returnTo = pages[index + 1]
-                            withAnimation(.easeOut(duration: 0.15)) { details.back(toPage: index) }
-                        } label: {
-                            Text(ItemPageView.crumb(of: linked))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .help("Back to \(linked.menuTitle)")
-                    }
-                }
-            }
-            .font(size: 12, weight: .medium).monospacedDigit()
+            DetailsTrail(crumbs: pageCrumbs(item, number: number))
         }
+    }
+
+    /// The trail to the page on top: the pull request, a file's page under the pages, and each page.
+    private func pageCrumbs(_ item: PRSnapshot, number: String) -> [DetailsTrail.Crumb] {
+        let pages = details.pages
+        var crumbs: [DetailsTrail.Crumb] = [
+            .init(title: number, help: "Back to " + Self.name(of: item)) {
+                returnTo = pages.first
+                withAnimation(.easeOut(duration: 0.15)) {
+                    details.back(toPage: nil)
+                    details.closeFile()
+                }
+            },
+        ]
+        if let file = details.file {
+            crumbs.append(.init(title: file.name, help: "Back to " + file.path) {
+                returnTo = pages.first
+                withAnimation(.easeOut(duration: 0.15)) { details.back(toPage: nil) }
+            })
+        }
+        for (index, page) in pages.enumerated() {
+            let linked = services.links.describe(page)
+            if index < pages.count - 1 {
+                crumbs.append(.init(title: ItemPageView.crumb(of: linked), help: "Back to \(linked.menuTitle)") {
+                    returnTo = pages[index + 1]
+                    withAnimation(.easeOut(duration: 0.15)) { details.back(toPage: index) }
+                })
+            } else {
+                crumbs += DetailsTrail.lastPage(linked, details: pageDetails, ref: page)
+            }
+        }
+        return crumbs
     }
 
     /// The thread the details were taken to, which the trail names, while they have it.

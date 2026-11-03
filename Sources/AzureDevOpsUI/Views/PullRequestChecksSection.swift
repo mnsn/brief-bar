@@ -68,7 +68,7 @@ struct PullRequestChecksSection: View {
         guard let place, let pullRequest else { return }
         switch place {
         case .run, .check: break
-        case .thread, .section, .top: return
+        case .thread, .section, .files, .file, .top: return
         }
         guard let line = panel.checks.first(where: { PullRequestDetailsStore.Place.of($0) == place }), line.canInvestigate,
               let buildId = line.buildId

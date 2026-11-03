@@ -73,17 +73,57 @@ import Testing
     @Test func stopsLookingForTheFewestPastTheLimit() {
         let old = (1...50).map { "old \($0)" }.joined(separator: "\n")
         let new = (1...50).map { "new \($0)" }.joined(separator: "\n")
-        // Shared lines at both ends stay, and everything between is removed, then added.
-        let lines = LineDiff.compare("first\n" + old + "\nshared\n" + old + "\nlast", "first\n" + new + "\nshared\n" + new + "\nlast",
-                                     maxChanges: 10)
-        #expect(lines.first == DiffLine(.unchanged, "first", old: 1, new: 1))
-        #expect(lines.last == DiffLine(.unchanged, "last", old: 103, new: 103))
-        #expect(lines.filter { $0.kind == .removed }.count == 101)
-        #expect(lines.filter { $0.kind == .added }.count == 101)
-        #expect(lines.dropFirst().prefix(101).allSatisfy { $0.kind == .removed })
-        // Under the limit, the shared line between is found.
-        let found = LineDiff.compare("first\n" + old + "\nshared\n" + old + "\nlast", "first\n" + new + "\nshared\n" + new + "\nlast")
-        #expect(found.contains(DiffLine(.unchanged, "shared", old: 52, new: 52)))
+        // Past it, the shared lines at both ends stay, and it lines the rest up at the line each version has once, "shared":
+        // everything else, which each has twice, is removed, then added.
+        let past = LineDiff.comparison(
+            "first\n" + old + "\nshared\n" + old + "\nlast", "first\n" + new + "\nshared\n" + new + "\nlast", maxChanges: 10
+        )
+        #expect(!past.isLinedUp)
+        #expect(past.lines.first == DiffLine(.unchanged, "first", old: 1, new: 1))
+        #expect(past.lines.last == DiffLine(.unchanged, "last", old: 103, new: 103))
+        #expect(past.lines.contains(DiffLine(.unchanged, "shared", old: 52, new: 52)))
+        #expect(past.lines.filter { $0.kind == .removed }.count == 100)
+        #expect(past.lines.filter { $0.kind == .added }.count == 100)
+        #expect(past.lines.dropFirst().prefix(50).allSatisfy { $0.kind == .removed })
+        // Without a line each has once, everything between the ends is removed, then added.
+        let repeated = LineDiff.comparison("first\n" + old + "\n" + old + "\nlast", "first\n" + new + "\n" + new + "\nlast", maxChanges: 10)
+        #expect(!repeated.isLinedUp)
+        #expect(repeated.lines.filter { $0.kind == .removed }.count == 100)
+        #expect(repeated.lines.dropFirst().prefix(100).allSatisfy { $0.kind == .removed })
+        // Under the limit, the fewest, and it says so.
+        let found = LineDiff.comparison("first\n" + old + "\nshared\n" + old + "\nlast", "first\n" + new + "\nshared\n" + new + "\nlast")
+        #expect(found.isLinedUp)
+        #expect(found.lines.contains(DiffLine(.unchanged, "shared", old: 52, new: 52)))
+        #expect(LineDiff.compare("a\nb", "a\nc") == LineDiff.comparison("a\nb", "a\nc").lines)
+    }
+
+    @Test func linesUpAFileChangedInManyPlacesAtTheLinesEachVersionHasOnce() {
+        // Every third of 300 lines changed: past a limit of 10, lined up as the fewest changes would be.
+        let old = (1...300).map { Substring("line \($0)") }
+        var new = old
+        for index in stride(from: 1, to: 300, by: 3) { new[index] = Substring("changed \(index)") }
+        let past = LineDiff.comparison(old, new, maxChanges: 10)
+        #expect(!past.isLinedUp)
+        #expect(past.lines == LineDiff.compare(old, new))
+        #expect(past.lines.filter { $0.kind == .removed }.count == 100)
+        #expect(past.lines.filter { $0.kind == .added }.count == 100)
+    }
+
+    @Test(arguments: 0..<200)
+    func takesTheOldVersionToTheNewOnePastTheLimit(seed: Int) {
+        var random = SeededRandom(seed: UInt64(seed) + 10_000)
+        let old = (0..<Int.random(in: 0...14, using: &random)).map { _ in String(Int.random(in: 0...6, using: &random)) }
+        let new = (0..<Int.random(in: 0...14, using: &random)).map { _ in String(Int.random(in: 0...6, using: &random)) }
+        let maxChanges = Int.random(in: 0...3, using: &random)
+        let past = LineDiff.comparison(old.map { Substring($0) }, new.map { Substring($0) }, maxChanges: maxChanges)
+        #expect(past.lines.filter { $0.kind != .added }.map(\.text) == old)
+        #expect(past.lines.filter { $0.kind != .removed }.map(\.text) == new)
+        #expect(past.lines.compactMap(\.oldNumber) == Array(1..<(old.count + 1)))
+        #expect(past.lines.compactMap(\.newNumber) == Array(1..<(new.count + 1)))
+        // Never fewer changes than the fewest, and the fewest when it says they're lined up.
+        let changes = past.lines.filter { $0.kind != .unchanged }.count
+        let fewest = old.count + new.count - 2 * Self.longestCommonSubsequence(old, new)
+        #expect(past.isLinedUp ? changes == fewest : changes >= fewest)
     }
 
     @Test func comparesLargeFilesWithAFewChangesQuickly() {

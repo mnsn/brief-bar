@@ -4,11 +4,12 @@ import BriefBarUI
 import CopilotTasks
 import SwiftUI
 
-/// A pull request's details: what it is and where it stands, what's left before it can complete, its comment threads, its
-/// builds and checks, who reviews it and what else is linked to it, all from what the list read. Beside the list on the
-/// window's Pull Requests page (`PullRequestDetailsPanel`), and as the page of a pull request linked to a work item or
-/// to another pull request (`LinkedItemPage`), so it reads the same wherever it opens. It goes where it's asked to
-/// (`PullRequestDetailsStore.place`), pointing a thread, a build or a check out for a moment.
+/// A pull request's details: what it is and where it stands, what's left before it can complete, its comment threads, the
+/// files its change touched, its builds and checks, who reviews it and what else is linked to it, all from what the list
+/// read but its files. Beside the list on the window's Pull Requests page (`PullRequestDetailsPanel`), and as the page of a
+/// pull request linked to a work item or to another pull request (`LinkedItemPage`), so it reads the same wherever it
+/// opens. It goes where it's asked to (`PullRequestDetailsStore.place`), pointing a thread, a file, a build or a check out
+/// for a moment; and shows a file's page in place of its parts while one is open (`PullRequestDetailsStore.file`).
 struct PullRequestDetailsContent: View {
     /// What shows it: the panel's, or a page's own.
     @ObservedObject var details: PullRequestDetailsStore
@@ -21,6 +22,7 @@ struct PullRequestDetailsContent: View {
     @EnvironmentObject private var copilot: CopilotTasksStore
     @EnvironmentObject private var sessions: PullRequestSessions
     @EnvironmentObject private var services: AppServices
+    @EnvironmentObject private var files: PullRequestFilesStore
     @Environment(\.itemNavigation) private var navigation
     /// The window's page it's on, which its Copilot session is read only while the window shows on screen.
     @Environment(\.shownSection) private var section
@@ -50,28 +52,48 @@ struct PullRequestDetailsContent: View {
         let panel = PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record))
         let ref = item.key.linkRef
         VStack(alignment: .leading, spacing: 20) {
-            PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact)
-                .id(PullRequestDetailsStore.Anchor.top)
-            PullRequestSessionLine(item: item)
-            // Its summary, of it and what's linked to it, under what it is.
-            PageSummary(ref: ref)
-            if let readiness = panel.readiness, !readiness.items.isEmpty {
-                PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction) { left in
-                    if let place = PullRequestDetailsStore.Place.of(left, in: panel) { details.go(to: place) }
+            if let file = isShown ? details.file : nil {
+                PullRequestFilePage(
+                    details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, me: record?.me, open: file,
+                    scroll: scroll
+                )
+            } else {
+                PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact)
+                    .id(PullRequestDetailsStore.Anchor.top)
+                PullRequestSessionLine(item: item)
+                // Its summary, of it and what's linked to it, under what it is.
+                PageSummary(ref: ref)
+                if let readiness = panel.readiness, !readiness.items.isEmpty {
+                    PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction) { left in
+                        if let place = PullRequestDetailsStore.Place.of(left, in: panel) { details.go(to: place) }
+                    }
                 }
+                PullRequestCommentsSection(
+                    item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place,
+                    highlighted: highlighted
+                )
+                    .id(PullRequestDetailsStore.Anchor.section(.comments))
+                    // A thread's file opens here, at the thread, in all of the change, which has it whatever the Files show.
+                    .environment(\.changedFileOpener, ChangedFileOpener { path, thread in
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            details.open(file: path, at: thread, from: thread.map(PullRequestDetailsStore.Place.thread), scope: .whole)
+                        }
+                    })
+                PullRequestFilesSection(
+                    details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, highlighted: highlighted
+                )
+                    .id(PullRequestDetailsStore.Anchor.files)
+                PullRequestChecksSection(
+                    item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted
+                )
+                    .id(PullRequestDetailsStore.Anchor.section(.checks))
+                PullRequestReviewersSection(panel: panel)
+                    .id(PullRequestDetailsStore.Anchor.section(.reviewers))
+                // Its own session is on its line, under its heading.
+                WhereItStandsSection(
+                    subject: ref, excluding: Set(trail).union(ownSession), title: "Also Linked", hidesWhenEmpty: true, showsSummary: false
+                )
             }
-            PullRequestCommentsSection(
-                item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place, highlighted: highlighted
-            )
-                .id(PullRequestDetailsStore.Anchor.section(.comments))
-            PullRequestChecksSection(item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted)
-                .id(PullRequestDetailsStore.Anchor.section(.checks))
-            PullRequestReviewersSection(panel: panel)
-                .id(PullRequestDetailsStore.Anchor.section(.reviewers))
-            // Its own session is on its line, under its heading.
-            WhereItStandsSection(
-                subject: ref, excluding: Set(trail).union(ownSession), title: "Also Linked", hidesWhenEmpty: true, showsSummary: false
-            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: details.place, initial: true) { go(in: panel) }
@@ -114,18 +136,21 @@ struct PullRequestDetailsContent: View {
         return entry.action
     }
 
-    /// To where they were asked to go, once it shows, pointing out a thread, a build or a check for a moment: to their
-    /// comments, or their builds and checks, for one they don't have.
+    /// To where they were asked to go, once it shows, pointing out a thread, a file's row, a build or a check for a moment:
+    /// to their comments, or their builds and checks, for one they don't have.
     private func go(in panel: PullRequestPanel) {
-        guard let place = details.place, details.pages.isEmpty, isShown else { return }
-        let anchor = place.anchor(in: panel)
+        guard let place = details.place, details.pages.isEmpty, details.file == nil, isShown else { return }
+        let listed: ChangedFiles? = if case .read(let changes)? = files.list(of: item.key, details.scope) { changes } else { nil }
+        let anchor = place.anchor(in: panel, files: listed)
         Task { @MainActor in
             // Once what's there shows, such as a resolved thread unfolded for it.
             try? await Task.sleep(for: .milliseconds(60))
             details.reached(place)
-            withAnimation(isRendering ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(anchor, anchor: .top) }
+            // A file's row, which they come back to from its page, in the middle, with the files around it.
+            let position: UnitPoint = if case .file = anchor { .center } else { .top }
+            withAnimation(isRendering ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(anchor, anchor: position) }
             if case .section = anchor { return }
-            if anchor == .top { return }
+            if anchor == .top || anchor == .files { return }
             withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { highlighted = anchor }
             try? await Task.sleep(for: .seconds(1.6))
             if highlighted == anchor {
@@ -187,7 +212,8 @@ struct PullRequestPageOpener: View {
     @EnvironmentObject private var store: PRStore
 
     var body: some View {
-        if let item = LinkedItemPage.pullRequest(ref, in: store.items, kept: details) {
+        // A file's page has its own, for the file.
+        if let item = LinkedItemPage.pullRequest(ref, in: store.items, kept: details), !details.showsFile(of: ref) {
             PullRequestOpenButton(item: item)
         }
     }

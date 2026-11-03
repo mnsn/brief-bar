@@ -324,7 +324,7 @@ public actor PullRequestCode {
     /// Lets two comparisons run at a time.
     private let comparisons = RequestLimiter(limit: 2)
     /// How it compares two versions: `LineDiff`'s way, but in tests.
-    private let comparison: @Sendable (String, String) async -> [DiffLine]
+    private let comparison: @Sendable (String, String) async -> LineDiff.Comparison
     /// How many comparisons it keeps once made.
     static let keptComparisons = 4
 
@@ -335,7 +335,8 @@ public actor PullRequestCode {
 
     init(
         _ pullRequest: PullRequest, source: any CodeSource, concurrency: Int = 4, fileLimit: Int = FileText.limit,
-        memoryLimit: Int = 32 << 20, comparison: @escaping @Sendable (String, String) async -> [DiffLine] = { LineDiff.compare($0, $1) }
+        memoryLimit: Int = 32 << 20,
+        comparison: @escaping @Sendable (String, String) async -> LineDiff.Comparison = { LineDiff.comparison($0, $1) }
     ) {
         key = pullRequest.key
         self.comparison = comparison
@@ -388,18 +389,86 @@ public actor PullRequestCode {
         }
     }
 
+    // MARK: The whole change
+
+    /// The files the pull request's change touched, as its details list them (`PullRequestPanel.listsFirst`): all of it,
+    /// its latest update against where its branch left its target, as Azure DevOps' Files page shows it; or what its
+    /// updates after one of them changed. With its updates, to tell which. Read as a thread's code is, and shared with it.
+    /// - Parameter pullRequest: its pull request, as it was last read, so that a push it doesn't know of yet, or a move to
+    ///   another branch, makes it read the iterations again.
+    public func changedFiles(of pullRequest: PullRequest, scope: ChangeScope = .whole) async -> Result<ChangedFiles, ThreadExcerpt.Problem> {
+        guard pullRequest.key == key else { return .failure(.otherPullRequest) }
+        update(pullRequest)
+        do {
+            let since: Int? = if case .since(let id) = scope { id } else { nil }
+            let iterations = try await iterations(including: since)
+            guard let latest = iterations.last else { throw ThreadExcerpt.Problem.noIterations }
+            // Since an update it doesn't have, the whole change; since the latest, none of it.
+            guard let first = since, iterations.contains(where: { $0.id == first }) else {
+                let changes = try await changes(iteration: latest.id, comparedTo: 0)
+                try Task.checkCancellation()
+                return .success(ChangedFiles(
+                    scope: .whole, comparison: ReviewThread.Comparison(base: latest.id), iterations: iterations, files: changes.files,
+                    isComplete: changes.isComplete
+                ))
+            }
+            guard first < latest.id else {
+                return .success(ChangedFiles(
+                    scope: .since(first), comparison: ReviewThread.Comparison(base: latest.id), iterations: iterations, files: []
+                ))
+            }
+            let changes = try await changes(iteration: latest.id, comparedTo: first)
+            try Task.checkCancellation()
+            return .success(ChangedFiles(
+                scope: .since(first), comparison: ReviewThread.Comparison(first: first, second: latest.id), iterations: iterations,
+                files: changes.files, isComplete: changes.isComplete
+            ))
+        } catch {
+            return .failure(Self.problem(error))
+        }
+    }
+
+    /// A file's change, as `changes` compares it: its two versions, read once for every thread and file on them, a line at
+    /// a time. Each version is read up to 1 MB, as a thread's is: one that isn't text, or is longer, says so.
+    public func diff(of file: FileChange, in changes: ChangedFiles, of pullRequest: PullRequest) async -> Result<FileDiff, ThreadExcerpt.Problem> {
+        guard pullRequest.key == key else { return .failure(.otherPullRequest) }
+        update(pullRequest)
+        do {
+            let comparison = changes.comparison
+            guard let right = changes.iterations.first(where: { $0.id == comparison.second }) else {
+                throw ThreadExcerpt.Problem.noIterations
+            }
+            let leftCommit = comparison.isWithBase
+                ? right.commonCommit : changes.iterations.first { $0.id == comparison.first }?.sourceCommit
+            let newFile = file.kind.contains(.delete) ? nil : try Self.file(file.objectId, file.path, at: right.sourceCommit)
+            let oldFile = file.kind.contains(.add) ? nil : try Self.file(file.originalObjectId, file.originalPath ?? file.path, at: leftCommit)
+            let newText = try await text(newFile)
+            let oldText = try await text(oldFile)
+            let compared = try await compare(oldFile, oldText, newFile, newText)
+            try Task.checkCancellation()
+            return .success(FileDiff(file: file, lines: compared.lines, isLinedUp: compared.isLinedUp))
+        } catch {
+            return .failure(Self.problem(error))
+        }
+    }
+
     // MARK: Reading
 
     private func excerpt(of thread: ReviewThread, context: Int) async -> Result<ThreadExcerpt, ThreadExcerpt.Problem> {
         guard let anchor = Anchor(thread) else { return .failure(.notOnLines) }
         do {
             return .success(try await excerpt(of: thread.id, at: anchor, context: context))
-        } catch let problem as ThreadExcerpt.Problem {
-            return .failure(problem)
-        } catch let error as ADOError {
-            return .failure(.unreadable(error))
         } catch {
-            return .failure(.unreadable(.network(error.localizedDescription)))
+            return .failure(Self.problem(error))
+        }
+    }
+
+    /// Why what it read can't be shown: as it said, or because Azure DevOps couldn't be read, or the ask stopped waiting.
+    private static func problem(_ error: Error) -> ThreadExcerpt.Problem {
+        switch error {
+        case let problem as ThreadExcerpt.Problem: problem
+        case let error as ADOError: .unreadable(error)
+        default: .unreadable(.network(error.localizedDescription))
         }
     }
 
@@ -430,7 +499,7 @@ public actor PullRequestCode {
         }
         let newText = try await text(newFile)
         let oldText = try await text(oldFile)
-        let diff = try await compare(oldFile, oldText, newFile, newText)
+        let diff = try await compare(oldFile, oldText, newFile, newText).lines
         guard let window = ThreadExcerpt.window(of: diff, side: anchor.side, lines: anchor.lines, context: context) else {
             throw ThreadExcerpt.Problem.linesNotFound
         }
@@ -469,12 +538,12 @@ public actor PullRequestCode {
 
     /// Two versions, by what each is read as, compared off the actor, so that other threads' reads go on meanwhile: once
     /// for all the threads on them, two comparisons at a time, and called off like a read when they all give up on it.
-    private func compare(_ old: ReadKey?, _ oldText: String, _ new: ReadKey?, _ newText: String) async throws -> [DiffLine] {
+    private func compare(_ old: ReadKey?, _ oldText: String, _ new: ReadKey?, _ newText: String) async throws -> LineDiff.Comparison {
         let (comparisons, comparison) = (comparisons, comparison)
         let read = try await read(.diff(old, new)) {
             Task { try await comparisons.run { .diff(await comparison(oldText, newText)) } }
         }
-        guard case .diff(let diff) = read else { return [] }
+        guard case .diff(let diff) = read else { return LineDiff.Comparison(lines: []) }
         return diff
     }
 
@@ -668,7 +737,7 @@ public actor PullRequestCode {
         case iterations([PRIteration])
         case changes(FileChanges)
         case file(FileText)
-        case diff([DiffLine])
+        case diff(LineDiff.Comparison)
     }
 
     struct ExcerptKey: Hashable {
