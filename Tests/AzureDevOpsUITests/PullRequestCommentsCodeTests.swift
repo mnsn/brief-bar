@@ -98,7 +98,7 @@ import Testing
     @Test func aPullRequestsPageReadsItsOwnThreadsCodeWhateverThePanelShows() async throws {
         _ = NSApplication.shared
         let (panelRecord, pageRecord) = try records()
-        let list = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        let list = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         let code = PullRequestCodeStore { _ in Reader() }
         code.setVisible(true, for: page)
         let details = PullRequestDetailsStore()
@@ -137,7 +137,7 @@ import Testing
     @Test func aPageReadsNothingWhileNoWindowShowsIt() async throws {
         _ = NSApplication.shared
         let (_, pageRecord) = try records()
-        let list = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        let list = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         let code = PullRequestCodeStore { _ in Reader() }
         let (window, host) = window(showing: try comments(of: pageRecord, list: list, code: code))
         try await settle { code.shows(pageRecord.id) }

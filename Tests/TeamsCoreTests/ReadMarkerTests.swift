@@ -115,7 +115,7 @@ final class MarkerCollector: Sendable {
     }
 
     @discardableResult
-    func wait(_ what: String, timeout: Duration = .seconds(10), until predicate: (ReadMarkerSnapshot) -> Bool) async throws
+    func wait(_ what: String, timeout: Duration = waitLimit, until predicate: (ReadMarkerSnapshot) -> Bool) async throws
         -> ReadMarkerSnapshot {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
