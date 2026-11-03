@@ -280,7 +280,9 @@ import BriefBarCore
         let retry = try panel(4102)
         #expect(retry.threads.waitingOnYou.map(\.id) == [11])
         #expect(retry.threads.waitingOnYou.first?.place == "PaymentsClient.cs:88")
-        #expect(retry.threads.open.isEmpty)
+        // Priya's suggested change, which you said you'd take: open, and not waiting on you.
+        #expect(retry.threads.open.map(\.id) == [18])
+        #expect(retry.threads.open.first?.place == "RetryOptions.cs:12")
         #expect(retry.threads.resolved.map(\.id) == [17, 14, 16, 13, 15])
         #expect(retry.threads.resolved.map(\.place)
             == ["PaymentsClientTests.cs:13", "RetryPolicy.cs:12", "PaymentsClient.cs:46", "PaymentsClient.cs:41", nil])

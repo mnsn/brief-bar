@@ -367,7 +367,7 @@ import BriefBarCore
         func row(_ number: Int) throws -> PRSnapshot { try #require(rows.first { $0.key.number == number }) }
         #expect(said(try #require(try row(4091).readiness)) == ["✓ Approved", "✓ Build passed", "✓ Comments resolved"])
         #expect(said(try #require(try row(4102).readiness))
-            == ["✋ Resolve 1 comment", "◷ 1 of 2 approvals", "◷ Waiting on Sam", "✓ Build passed"])
+            == ["✋ Resolve 2 comments", "◷ 1 of 2 approvals", "◷ Waiting on Sam", "✓ Build passed"])
         #expect(said(try #require(try row(4088).readiness)) == ["✕ Build failed", "✓ Approved"])
         #expect(said(try #require(try row(4079).readiness)) == ["✕ Merge conflicts", "◷ Not approved yet", "✓ Build passed"])
         #expect(said(try #require(try row(4099).readiness)) == ["↻ Build running", "◷ 0 of 2 approvals"])

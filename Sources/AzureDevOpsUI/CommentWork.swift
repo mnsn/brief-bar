@@ -318,6 +318,12 @@ extension CopilotTasksStore {
         for prompt in settings.copilotSentPrompts where prompt.isFor(key) && prompt.threads.contains(thread) {
             consider(prompt.sentAt, CommentWork.from(prompt, turn: promptTurns[prompt.id]))
         }
+        // The demo's, made up.
+        if mode == .demo {
+            for (prompt, turn) in SentPrompt.demo(now: Date()) where prompt.isFor(key) && prompt.threads.contains(thread) {
+                consider(prompt.sentAt, CommentWork.from(prompt, turn: turn))
+            }
+        }
         return latest?.work
     }
 
