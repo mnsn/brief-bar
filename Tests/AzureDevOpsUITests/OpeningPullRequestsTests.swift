@@ -147,7 +147,7 @@ import Testing
     /// Opening one of your pull requests in Azure DevOps from the Pipelines page sees it, as opening it from its row does: a
     /// comment that came since you last looked isn't new at the next refresh, though it still waits on you there.
     @Test func openingItFromThePipelinesPageSeesIt() async throws {
-        let list = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        let list = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         var opened: [URL] = []
         list.openLink = { opened.append($0) }
         // What `loadOnce` makes the demo up as of.
@@ -208,7 +208,7 @@ import Testing
         let defaults = MemoryDefaults()
         let settings = AppSettings(defaults: defaults)
         #expect(!settings.opensPullRequestsInBriefBar)
-        let list = PRStore(settings: settings, mode: .demo)
+        let list = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         let details = PullRequestDetailsStore()
         details.use(list)
         #expect(!details.opensInBriefBar())
@@ -233,7 +233,7 @@ import Testing
     /// One under Done that you hadn't seen leaves the list once its page sees it: the page keeps it, with what was read of
     /// it, until you go elsewhere, rather than turning into what Show Links knows of it.
     @Test func aPagesPullRequestStaysOnceItLeavesTheList() async throws {
-        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         // What `loadOnce` makes the demo up as of.
         let now = store.now
         await store.loadOnce()
@@ -274,7 +274,7 @@ import Testing
         var opened: [SectionID?] = []
         services.hasPage = { $0 == .azureDevOpsPullRequests }
         services.openWindow = { opened.append($0) }
-        let source = AzureDevOpsSource(services: services)
+        let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
         source.start()
         defer { source.stop() }
         let details = try #require(source.pullRequestDetails)

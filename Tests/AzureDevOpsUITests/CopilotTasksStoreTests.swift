@@ -492,7 +492,7 @@ import Testing
     /// it off, or Azure DevOps stops.
     @Test func tellsCopilotsListTheTasksWhileItRuns() async throws {
         let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
-        let source = AzureDevOpsSource(services: services)
+        let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
         source.start()
         defer { source.stop() }
         #expect(services.sentTasks.tasks.map(\.stage) == [.working, .working, .finished])
@@ -522,7 +522,7 @@ import Testing
         services.showPanel = { panels.append($0); return true }
         services.hasPage = { _ in true }
         services.openWindow = { windows.append($0) }
-        let source = AzureDevOpsSource(services: services)
+        let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
         source.openNotification([CopilotTasksStore.taskKey: first, "url": pullRequest.url.absoluteString])
         #expect(panels == [.copilotSessions])
         #expect(windows.isEmpty)

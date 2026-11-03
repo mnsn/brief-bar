@@ -224,7 +224,7 @@ import Testing
     @Test func theListKeepsWhatYouveSeenOfPullRequestsSentInChatsInMemory() async throws {
         let defaults = preferences(enabled: false)
         let settings = AppSettings(defaults: defaults)
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         await store.loadOnce()
         let needsYou = store.items(in: .needsYou)
         let sent = try #require(needsYou.first { $0.role == .linked })
