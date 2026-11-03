@@ -21,9 +21,10 @@ public struct GitHubLoad: Sendable, Equatable {
 }
 
 public enum GitHubReader {
-    /// Reads your pull requests from GitHub, in one request.
-    public static func load(client: GitHubClient) async throws -> GitHubLoad {
-        let result = try await client.pullRequests()
+    /// Reads your pull requests from GitHub, in one request; two when GitHub can't answer the order's query.
+    /// - Parameter order: while Pull Request Order is on: with what an order needs, when GitHub answers that.
+    public static func load(client: GitHubClient, order: Bool = false) async throws -> GitHubLoad {
+        let result = try await client.pullRequests(order: order)
         return load(from: result.data, errors: result.errors)
     }
 

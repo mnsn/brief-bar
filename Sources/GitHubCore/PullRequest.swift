@@ -60,11 +60,13 @@ public struct GitHubPullRequest: Sendable, Codable, Equatable, Identifiable {
     public var reviews: [Review]
     /// The branch it merges, such as `robin/tax-rounding`.
     public var branch: String?
+    /// What an order needs of it, which only the order's query reads, while Pull Request Order is on; nil otherwise.
+    public var order: OrderFields?
 
     public init(
         id: String, number: Int, title: String, url: URL, repository: String, author: String?, isDraft: Bool = false,
         createdAt: Date, updatedAt: Date, reviewDecision: ReviewDecision? = nil, hasConflicts: Bool = false,
-        checks: Checks? = nil, reviews: [Review] = [], branch: String? = nil
+        checks: Checks? = nil, reviews: [Review] = [], branch: String? = nil, order: OrderFields? = nil
     ) {
         self.id = id
         self.number = number
@@ -80,6 +82,7 @@ public struct GitHubPullRequest: Sendable, Codable, Equatable, Identifiable {
         self.checks = checks
         self.reviews = reviews
         self.branch = branch
+        self.order = order
     }
 
     /// From what the query read. Values BriefBar doesn't know count as unknown.
@@ -93,7 +96,8 @@ public struct GitHubPullRequest: Sendable, Codable, Equatable, Identifiable {
             reviews: (api.latestOpinionatedReviews?.nodes ?? []).compactMap { review in
                 Review.State(rawValue: review.state).map { Review(reviewer: review.author?.login, state: $0) }
             },
-            branch: api.headRefName
+            branch: api.headRefName,
+            order: OrderFields(api)
         )
     }
 

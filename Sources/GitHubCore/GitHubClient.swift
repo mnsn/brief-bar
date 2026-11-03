@@ -40,16 +40,34 @@ public enum GitHubError: Error, Sendable, Equatable, CustomStringConvertible {
 public struct PullRequestQueryResult: Sendable, Equatable {
     public var data: PullRequestQueryData
     public var errors: [GraphQLError]
+    /// Whether it's the order's answer (`PullRequestQuery.orderText`), with what an order needs.
+    public var hasOrder: Bool
 
-    public init(data: PullRequestQueryData, errors: [GraphQLError] = []) {
+    public init(data: PullRequestQueryData, errors: [GraphQLError] = [], hasOrder: Bool = false) {
         self.data = data
         self.errors = errors
+        self.hasOrder = hasOrder
     }
 }
 
-/// Reads your pull requests from GitHub. It sends one request, always the same query (`PullRequestQuery`), so it can
-/// only read: GitHub's GraphQL API takes queries as POST requests, and BriefBar never sends a mutation. It connects to
-/// api.github.com only, and follows no redirect (`RedirectGuard`).
+/// Whether GitHub answers the order's query, as far as a client found: once it said the query asks for a field it doesn't
+/// have, the usual query goes instead, for as long as the client is used.
+final class OrderQueryAvailability: Sendable {
+    private let available = Mutex(true)
+
+    var isAvailable: Bool {
+        available.withLock { $0 }
+    }
+
+    func markUnavailable() {
+        available.withLock { $0 = false }
+    }
+}
+
+/// Reads your pull requests from GitHub. It sends one request, always a fixed query (`PullRequestQuery`): the usual one,
+/// or while Pull Request Order is on the order's, which reads more of each pull request, with the usual one in its place
+/// when GitHub can't answer it. So it can only read: GitHub's GraphQL API takes queries as POST requests, and BriefBar
+/// never sends a mutation. It connects to api.github.com only, and follows no redirect (`RedirectGuard`).
 public struct GitHubClient: Sendable {
     public static let endpoint = URL(string: "https://api.github.com/graphql")!
 
@@ -57,6 +75,8 @@ public struct GitHubClient: Sendable {
     let session: URLSession
     let gate: RateLimitGate
     let now: @Sendable () -> Date
+    /// Whether GitHub answers the order's query.
+    let orderQuery: OrderQueryAvailability
 
     /// With its own session. The app's code makes clients with this, so that only this module and
     /// AzureDevOpsCore use networking APIs (scripts/check-boundaries.sh).
@@ -69,6 +89,7 @@ public struct GitHubClient: Sendable {
         self.session = session
         self.now = now
         gate = RateLimitGate(now: now)
+        orderQuery = OrderQueryAvailability()
     }
 
     /// No cookies, no cache and no credentials kept: every request carries its own token.
@@ -88,8 +109,23 @@ public struct GitHubClient: Sendable {
     }
 
     /// Who you are, the pull requests that request your review and your own, as GitHub answers `PullRequestQuery`.
-    public func pullRequests() async throws -> PullRequestQueryResult {
-        let (data, response) = try await send(PullRequestQuery.body())
+    /// - Parameter order: while Pull Request Order is on: the order's query instead (`PullRequestQuery.orderText`). When
+    ///   GitHub can't answer it, the usual query goes, in its place; and from then on, once GitHub said it asks for a
+    ///   field it doesn't have.
+    public func pullRequests(order: Bool = false) async throws -> PullRequestQueryResult {
+        if order, orderQuery.isAvailable {
+            do {
+                return try await read(PullRequestQuery.body(order: true), hasOrder: true)
+            } catch GitHubError.graphQL(let message) {
+                if Self.isMissingField(message) { orderQuery.markUnavailable() }
+            }
+        }
+        return try await read(PullRequestQuery.body(), hasOrder: false)
+    }
+
+    /// GitHub's answer to a query's body: what it could read, or why it couldn't.
+    private func read(_ body: Data, hasOrder: Bool) async throws -> PullRequestQueryResult {
+        let (data, response) = try await send(body)
         let decoded: GraphQLResponse<PullRequestQueryData>
         do {
             decoded = try GitHubJSON.decoder().decode(GraphQLResponse<PullRequestQueryData>.self, from: data)
@@ -105,7 +141,15 @@ public struct GitHubClient: Sendable {
         guard let payload = decoded.data else {
             throw GitHubError.graphQL(String((errors.first?.message ?? "no data").prefix(300)))
         }
-        return PullRequestQueryResult(data: payload, errors: errors)
+        // An order's field GitHub couldn't read leaves it out of the order; the list isn't missing anything.
+        let listErrors = hasOrder ? errors.filter { !$0.isAboutAnOrderField } : errors
+        return PullRequestQueryResult(data: payload, errors: listErrors, hasOrder: hasOrder)
+    }
+
+    /// Whether GitHub refused a query for asking for a field it doesn't have: "Field 'stackEntry' doesn't exist on type
+    /// 'PullRequest'".
+    static func isMissingField(_ message: String) -> Bool {
+        message.localizedCaseInsensitiveContains("doesn't exist on type") || message.localizedCaseInsensitiveContains("undefinedField")
     }
 
     /// The only way requests are made: the query, with the token, retried once with a fresh token if it's rejected.

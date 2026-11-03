@@ -20,8 +20,8 @@ public enum PullRequestState: String, Codable, Sendable, CaseIterable {
 
 /// A GitHub stack, as one of its pull requests shows it: its pull requests by their place in it, from the bottom, with
 /// where each stands, the ones that merged or closed included.
-public struct GitHubStack: Equatable, Sendable {
-    public struct Member: Equatable, Sendable {
+public struct GitHubStack: Equatable, Sendable, Codable {
+    public struct Member: Equatable, Sendable, Codable {
         /// Its place in the stack, from 1 at the bottom.
         public var position: Int
         public var ref: ItemRef
