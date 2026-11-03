@@ -183,7 +183,8 @@ struct PullRequestPageOpener: View {
     @EnvironmentObject private var store: PRStore
 
     var body: some View {
-        if let item = LinkedItemPage.pullRequest(ref, in: store.items, kept: details) {
+        // A file's page has its own, for the file.
+        if let item = LinkedItemPage.pullRequest(ref, in: store.items, kept: details), !details.showsFile(of: ref) {
             PullRequestOpenButton(item: item)
         }
     }

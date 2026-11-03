@@ -370,7 +370,8 @@ PaymentsClient.cs**: what changed, with three lines around each change and the r
 folded to a line; and, above, those on the whole file, and those on an earlier version that Azure DevOps
 didn't follow to this one, with the code they were made on. **‹** and **›**, or **⌥⌘↑** and **⌥⌘↓**, go to
 the files before and after it, **4 of 9** lists them all, and **⌃⌘↑** and **⌃⌘↓** go through its open
-comments, on to the next file's. While the details are beside the list, **⤢** makes them fill the page,
+comments, on to the next file's, from a bar that stays at the top as you scroll. While the details are
+beside the list, **⤢** makes them fill the page,
 for long lines, until you go back to the details or click **⤡**. A file that isn't text, or is longer than
 1 MB, says so, with **↗** to see it in Azure DevOps, as **↗** on each file's page does. A file's comments
 open its page too, with **🔍** beside its name in the comments, at the first of them, or **Show in Its

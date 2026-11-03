@@ -185,7 +185,7 @@ struct PullRequestFilesSection: View {
                     case .file(let file):
                         ChangedFileRow(
                             file: file, changes: changes, item: item, pullRequest: pullRequest, comments: threads.comments(on: file),
-                            isHighlighted: highlighted == .file(file.id)
+                            isHighlighted: highlighted == .file(file.id), reservesComments: hasComments(changes)
                         ) {
                             withAnimation(.easeOut(duration: 0.15)) { details.open(file: file.path) }
                         }
@@ -209,6 +209,11 @@ struct PullRequestFilesSection: View {
             case .file(let file): AnyHashable(PullRequestDetailsStore.Anchor.file(file.id))
             }
         }
+    }
+
+    /// Whether any of the files has comments: then each row keeps room for them, so the counts line up.
+    private func hasComments(_ changes: ChangedFiles) -> Bool {
+        changes.files.contains { !threads.comments(on: $0).isEmpty }
     }
 
     /// Each folder's heading, and its files' rows unless you folded it.
@@ -366,9 +371,17 @@ private struct ChangedFileRow: View {
     let pullRequest: PullRequest
     let comments: PullRequestPanel.FileComments
     let isHighlighted: Bool
+    /// Keep room for the comments' count, for the counts to line up with other rows'.
+    var reservesComments = false
     let open: () -> Void
 
+    /// The room the comments' count takes, up to 99 of them, at the default text size.
+    private static let commentsWidth: CGFloat = 30
+
     @EnvironmentObject private var files: PullRequestFilesStore
+    @Environment(\.textScale) private var textScale
+    /// VoiceOver goes to it as the details come back to it from its page.
+    @AccessibilityFocusState private var isFocused: Bool
     @EnvironmentObject private var code: PullRequestCodeStore
     @Environment(\.shownSection) private var section
     @Environment(\.shownWindow) private var window
@@ -410,8 +423,9 @@ private struct ChangedFileRow: View {
                         Text(file.what)
                             .font(size: 11)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .lineLimit(2)
                             .truncationMode(.middle)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .layoutPriority(1)
@@ -422,7 +436,15 @@ private struct ChangedFileRow: View {
                 if !comments.isEmpty {
                     FileCommentsBadge(comments: comments)
                         .fixedSize()
+                        .frame(minWidth: Self.commentsWidth * textScale, alignment: .trailing)
+                } else if reservesComments {
+                    Color.clear
+                        .frame(width: Self.commentsWidth * textScale, height: 1)
                 }
+                Image(systemName: "chevron.right")
+                    .font(size: 9, weight: .semibold)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -445,6 +467,12 @@ private struct ChangedFileRow: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Shows its changes")
         .accessibilityAddTraits(.isButton)
+        .accessibilityFocused($isFocused)
+        // Also as it's made, once the details scrolled to it.
+        .onAppear { if isHighlighted { isFocused = true } }
+        .onChange(of: isHighlighted) {
+            if isHighlighted { isFocused = true }
+        }
         .onGeometryChange(for: Bool.self) { proxy in
             proxy.bounds(of: .scrollView).map { $0.intersects(CGRect(origin: .zero, size: proxy.size)) } ?? true
         } action: { isOnScreen = $0 }
@@ -535,7 +563,7 @@ struct FileCountsText: View {
     private func note(_ text: String, help: String) -> some View {
         Text(text)
             .font(size: 11)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .help(help)
     }
 }
@@ -553,8 +581,7 @@ struct FileCommentsBadge: View {
             Text(verbatim: String(isOpen ? comments.open : comments.resolved))
                 .font(size: 11, weight: .semibold).monospacedDigit()
         }
-        .foregroundStyle(comments.waitingOnYou > 0 ? AnyShapeStyle(ItemState.needsYou.textColor)
-            : isOpen ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
+        .foregroundStyle(comments.waitingOnYou > 0 ? AnyShapeStyle(ItemState.needsYou.textColor) : AnyShapeStyle(.secondary))
         .help(comments.spoken)
     }
 }

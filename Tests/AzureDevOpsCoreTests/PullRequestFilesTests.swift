@@ -351,6 +351,24 @@ private enum ChangeFixture {
         #expect(PullRequestPanel.FileComments(threads: [threads.resolved[0]]).spoken == "1 resolved comment")
     }
 
+    @Test func findsTheFilesWithOpenThreadsToGoThrough() {
+        let other = FileChange(path: "/src/Other.cs", kind: .edit, objectId: "o")
+        let none = FileChange(path: "/src/None.cs", kind: .add, objectId: "n")
+        let changes = ChangedFiles(scope: .whole, comparison: ReviewThread.Comparison(base: 2), iterations: [], files: [other, none, file])
+        let threads = PullRequestPanel.Threads(
+            waitingOnYou: [PullRequestPanel.Thread(thread: thread(1, line: 30), waitsOnYou: true, isNew: false)],
+            open: [PullRequestPanel.Thread(thread: thread(2, line: 4), waitsOnYou: false, isNew: false),
+                   PullRequestPanel.Thread(thread: thread(3, path: "/src/Other.cs"), waitsOnYou: false, isNew: false)],
+            resolved: [PullRequestPanel.Thread(thread: thread(4, path: "/src/None.cs", status: "fixed"), waitsOnYou: false, isNew: false)]
+        )
+        let found = threads.openOnFiles(of: changes)
+        // As the change lists its files, but not the one whose only thread is resolved; each file's from its top down,
+        // whoever they wait on.
+        #expect(found.map { changes.files[$0.index].path } == ["/src/Other.cs", "/src/Payments.cs"])
+        #expect(found.map { $0.threads.map(\.id) } == [[3], [2, 1]])
+        #expect(PullRequestPanel.Threads(waitingOnYou: [], open: [], resolved: threads.resolved).openOnFiles(of: changes).isEmpty)
+    }
+
     /// The diff of CodeFixture's file, from the base to the second update.
     private var diff: FileDiff {
         FileDiff(file: FileChange(path: "/src/Payments.cs", kind: .edit, objectId: "second", originalObjectId: "base", changeTrackingId: 1),

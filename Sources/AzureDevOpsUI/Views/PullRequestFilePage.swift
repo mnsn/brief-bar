@@ -41,10 +41,16 @@ struct PullRequestFilePage: View {
     @LocalState private var highlighted: Int?
     /// The resolved threads you unfolded.
     @LocalState private var unfoldedResolved: Set<Int> = []
+    /// VoiceOver goes to the file's name as its page opens, and as it goes to another file.
+    @AccessibilityFocusState private var isNameFocused: Bool
+    /// Its toolbar is at the details' top, where it stays as the code scrolls under it.
+    @LocalState private var isToolbarPinned = false
 
     /// How many rows of code one view draws at most: past that, the next view does, so that only those on screen are laid
     /// out.
     static let rowsPerView = 200
+    /// How wide a thread's card gets, on a page the details fill: as wide as reads well.
+    static let widestThread: CGFloat = 720
 
     /// The window's page it's on: nil outside one, where nothing is read.
     private var page: String? {
@@ -61,26 +67,40 @@ struct PullRequestFilePage: View {
 
     var body: some View {
         let state = pullRequest.flatMap { files.list(of: $0.key, details.scope) }
-        VStack(alignment: .leading, spacing: 14) {
-            if let pullRequest, case .read(let changes)? = state, let file = changes.file(atPath: open.path) {
-                let shown = Shown(file: file, changes: changes, threads: threads, diff: diff(of: file, in: changes, pullRequest))
-                header(shown)
-                content(shown, pullRequest)
-                footer(shown)
-            } else if case .read(let changes)? = state {
-                gone(changes)
-            } else if case .failed(let problem)? = state {
-                headerPlaceholder
-                notice(
-                    "BriefBar can't list the pull request's files. " + (ThreadCode.sentence(for: problem) ?? problem.description),
-                    symbol: "eye.slash", url: PullRequestFilesSection.filesPage(item),
-                    again: ThreadCode.mayPass(problem) ? { pullRequest.map { files.showList(of: $0, scope: details.scope, on: page, again: true) } } : nil
-                )
-            } else {
-                headerPlaceholder
-                codePlaceholder
+        let shown: Shown? = if let pullRequest, case .read(let changes)? = state, let file = changes.file(atPath: open.path) {
+            Shown(file: file, changes: changes, threads: threads, diff: diff(of: file, in: changes, pullRequest))
+        } else {
+            nil
+        }
+        // Its toolbar stays at the top as its diff scrolls.
+        LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
+            Section {
+                if let pullRequest, let shown {
+                    heading(shown)
+                    content(shown, pullRequest)
+                    footer(shown)
+                } else if case .read(let changes)? = state {
+                    gone(changes)
+                } else if case .failed(let problem)? = state {
+                    headerPlaceholder
+                    notice(
+                        "BriefBar can't list the pull request's files. " + (ThreadCode.sentence(for: problem) ?? problem.description),
+                        symbol: "eye.slash", url: PullRequestFilesSection.filesPage(item),
+                        again: ThreadCode.mayPass(problem)
+                            ? { pullRequest.map { files.showList(of: $0, scope: details.scope, on: page, again: true) } } : nil
+                    )
+                } else {
+                    headerPlaceholder
+                    codePlaceholder
+                }
+            } header: {
+                if let shown {
+                    toolbar(shown)
+                }
             }
         }
+        // Its top, over its toolbar, is where the details go as it opens.
+        .id(PullRequestDetailsStore.Anchor.top)
         .frame(maxWidth: .infinity, alignment: .leading)
         // It asks for the whole page while it shows, once you made it fill it.
         .preference(key: DetailsFillsPageKey.self, value: details.fillsPage)
@@ -106,6 +126,8 @@ struct PullRequestFilePage: View {
         .onChange(of: open.id) {
             current = nil
             unfoldedResolved = []
+            // For VoiceOver to go to the next file's name, though it was on this one's.
+            isNameFocused = false
             scrollToTop()
         }
         .onDisappear {
@@ -118,11 +140,14 @@ struct PullRequestFilePage: View {
         files.diff(of: PullRequestFilesStore.Version(file, in: changes), in: pullRequest.key)
     }
 
+    /// To its top, and VoiceOver to the file's name, unless it goes to one of its threads, which VoiceOver goes to then.
     private func scrollToTop() {
         guard open.thread == nil else { return }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(30))
             scroll.scrollTo(PullRequestDetailsStore.Anchor.top, anchor: .top)
+            try? await Task.sleep(for: .milliseconds(120))
+            isNameFocused = true
         }
     }
 
@@ -175,11 +200,13 @@ struct PullRequestFilePage: View {
         var hasPrevious: Bool { index > 0 }
     }
 
-    // MARK: Header
+    // MARK: Heading and toolbar
 
-    private func header(_ shown: Shown) -> some View {
+    /// The file's name, what happened to it, and its comments, which scroll with its diff.
+    private func heading(_ shown: Shown) -> some View {
         let file = shown.file
         let kind = FileKindStyle(file.kind)
+        let comments = threads.comments(on: file)
         return VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: kind.symbol)
@@ -188,49 +215,91 @@ struct PullRequestFilePage: View {
                     .accessibilityHidden(true)
                 Text(file.name)
                     .font(size: 14.5, weight: .semibold)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .truncationMode(.middle)
-                    .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .help(file.path)
                     .accessibilityAddTraits(.isHeader)
-                    .layoutPriority(1)
-                Spacer(minLength: 6)
-                fileNavigation(shown)
-                roomButton
-                Button {
-                    AzureDevOps.open(shown.changes.filePageURL(of: file, in: item))
-                } label: {
-                    Image(systemName: "arrow.up.forward.app")
-                        .font(size: 12, weight: .medium)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help("Open this file's changes in Azure DevOps")
-                .accessibilityLabel("Open in Azure DevOps")
+                    .accessibilityFocused($isNameFocused)
             }
-            FlowLayout(spacing: 8, lineSpacing: 4) {
-                // "src · Edited", or the repository's name for a file at its top.
-                Text([file.folder ?? pullRequest?.repositoryName, file.what].compactMap { $0 }.joined(separator: " · "))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                if case .read(let diff)? = shown.diff, diff.counts.added > 0 || diff.counts.removed > 0 {
-                    FileCountsText(counts: .success(diff.counts))
-                }
-                if details.scope != .whole {
-                    Chip(text: "Since you last looked", color: ItemState.running.textColor)
-                }
-                // Its comments, and a way through the open ones, on to another file's.
-                let comments = threads.comments(on: file)
-                if !comments.isEmpty || shown.changes.files.contains(where: { threads.comments(on: $0).open > 0 }) {
-                    commentNavigation(shown, comments)
+            // "src · Edited · +51 −8", wrapping as one text would.
+            facts(shown)
+                .font(size: 12)
+                .fixedSize(horizontal: false, vertical: true)
+            if !comments.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: comments.open > 0 ? "bubble.left.fill" : "checkmark.bubble")
+                        .font(size: 10, weight: .semibold)
+                        .foregroundStyle(comments.waitingOnYou > 0 ? AnyShapeStyle(ItemState.needsYou.textColor) : AnyShapeStyle(.secondary))
+                        .accessibilityHidden(true)
+                    Text(comments.spoken)
+                        .font(size: 12)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .font(size: 12)
         }
-        .id(PullRequestDetailsStore.Anchor.top)
+    }
+
+    /// Its folder, or its repository's name at the top, what happened to it, how many lines it adds and removes, in their
+    /// colors, and, since you last looked, that it's what changed since.
+    private func facts(_ shown: Shown) -> Text {
+        let file = shown.file
+        var text = Text([file.folder ?? pullRequest?.repositoryName, file.what].compactMap { $0 }.joined(separator: " · "))
+            .foregroundStyle(.secondary)
+        if case .read(let diff)? = shown.diff, diff.counts.added > 0 || diff.counts.removed > 0 {
+            text = text + Text(" · ").foregroundStyle(.tertiary)
+            if diff.counts.added > 0 {
+                text = text + Text(verbatim: "+\(diff.counts.added)").foregroundStyle(ItemState.done.textColor).fontWeight(.medium)
+            }
+            if diff.counts.added > 0 && diff.counts.removed > 0 { text = text + Text(" ") }
+            if diff.counts.removed > 0 {
+                text = text + Text(verbatim: "−\(diff.counts.removed)").foregroundStyle(ItemState.failing.textColor).fontWeight(.medium)
+            }
+        }
+        if details.scope != .whole {
+            text = text + Text(" · ").foregroundStyle(.tertiary) + Text("since you last looked").foregroundStyle(ItemState.running.textColor)
+        }
+        return text
+    }
+
+    /// ‹ 4 of 9 ›, from file to file; ⌃ ⌄, from open comment to open comment; ⤢, the whole page; ↗, the file in Azure
+    /// DevOps. It stays at the top as the diff scrolls.
+    private func toolbar(_ shown: Shown) -> some View {
+        HStack(spacing: 8) {
+            fileNavigation(shown)
+            commentNavigation(shown)
+            Spacer(minLength: 4)
+            roomButton
+            Button {
+                AzureDevOps.open(shown.changes.filePageURL(of: shown.file, in: item))
+            } label: {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(size: 12, weight: .medium)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Open \(shown.file.name)'s changes in Azure DevOps")
+            .accessibilityLabel("Open \(shown.file.name) in Azure DevOps")
+        }
+        .padding(.vertical, 5)
+        .background {
+            // Once it stays at the top, over the code that scrolls under it, from edge to edge of the details.
+            if isToolbarPinned {
+                Rectangle()
+                    .fill(Color(nsColor: .windowBackgroundColor))
+                    .overlay(alignment: .bottom) {
+                        Divider()
+                            .opacity(0.6)
+                    }
+                    .padding(.horizontal, -16)
+            }
+        }
+        .onGeometryChange(for: Bool.self) { proxy in
+            // The details' top, as it reaches it.
+            (proxy.bounds(of: .scrollView)?.minY ?? -1) > -1
+        } action: { isToolbarPinned = $0 }
     }
 
     /// ‹ and ›, the files before and after it, and where it is among them, which lists them all to go to.
@@ -244,7 +313,7 @@ struct PullRequestFilePage: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(size: 11.5, weight: .semibold)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
@@ -274,7 +343,7 @@ struct PullRequestFilePage: View {
             } label: {
                 Image(systemName: "chevron.right")
                     .font(size: 11.5, weight: .semibold)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
@@ -282,6 +351,61 @@ struct PullRequestFilePage: View {
             .keyboardShortcut(.downArrow, modifiers: [.option, .command])
             .help(next.map { "Next file: \($0.name) (⌥⌘↓)" } ?? "This is the last file")
             .accessibilityLabel("Next File")
+        }
+        .padding(.horizontal, 2)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
+    }
+
+    /// ⌃ and ⌄, through the open threads, on to another file's, while the change has any: each off when there's none that
+    /// way.
+    @ViewBuilder
+    private func commentNavigation(_ shown: Shown) -> some View {
+        let onFiles = threads.openOnFiles(of: shown.changes)
+        let previous = commentTarget(-1, shown, onFiles)
+        let next = commentTarget(1, shown, onFiles)
+        if !onFiles.isEmpty || !shown.openThreads.isEmpty {
+            HStack(spacing: 0) {
+                Button {
+                    if let previous { go(to: previous) }
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(size: 10.5, weight: .semibold)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(previous == nil)
+                .keyboardShortcut(.upArrow, modifiers: [.control, .command])
+                .help(Self.help(previous, "Previous open comment") + " (⌃⌘↑)")
+                .accessibilityLabel("Previous Comment")
+                Image(systemName: "bubble.left")
+                    .font(size: 10.5, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Button {
+                    if let next { go(to: next) }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(size: 10.5, weight: .semibold)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(next == nil)
+                .keyboardShortcut(.downArrow, modifiers: [.control, .command])
+                .help(Self.help(next, "Next open comment") + " (⌃⌘↓)")
+                .accessibilityLabel("Next Comment")
+            }
+            .padding(.horizontal, 2)
+            .background(Capsule().fill(Color.primary.opacity(0.06)))
+        }
+    }
+
+    /// "Next open comment", or, on another file, "Next open comment, on RetryOptions.cs".
+    private static func help(_ target: CommentTarget?, _ what: String) -> String {
+        switch target {
+        case .here?, nil: what
+        case .file(let file, _)?: "\(what), on \(file.name)"
         }
     }
 
@@ -295,51 +419,12 @@ struct PullRequestFilePage: View {
             } label: {
                 Image(systemName: fills ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                     .font(size: 11.5, weight: .medium)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help(fills ? "Show the list beside the details again" : "Make the details fill the page, for long lines")
             .accessibilityLabel(fills ? "Show the List Again" : "Fill the Page")
-        }
-    }
-
-    /// "2 open comments", or "No comments" on a file without any, and ⌃ ⌄, through the open ones, on to another file's.
-    private func commentNavigation(_ shown: Shown, _ comments: PullRequestPanel.FileComments) -> some View {
-        HStack(spacing: 2) {
-            Image(systemName: comments.open > 0 ? "bubble.left.fill" : comments.isEmpty ? "bubble.left" : "checkmark.bubble")
-                .font(size: 10, weight: .semibold)
-                .foregroundStyle(comments.waitingOnYou > 0 ? AnyShapeStyle(ItemState.needsYou.textColor) : AnyShapeStyle(.secondary))
-                .padding(.trailing, 3)
-                .accessibilityHidden(true)
-            Text(comments.spoken)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Button {
-                goToComment(-1, shown)
-            } label: {
-                Image(systemName: "chevron.up")
-                    .font(size: 10, weight: .semibold)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut(.upArrow, modifiers: [.control, .command])
-            .help("Previous open comment (⌃⌘↑)")
-            .accessibilityLabel("Previous Comment")
-            Button {
-                goToComment(1, shown)
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(size: 10, weight: .semibold)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut(.downArrow, modifiers: [.control, .command])
-            .help("Next open comment (⌃⌘↓)")
-            .accessibilityLabel("Next Comment")
         }
     }
 
@@ -353,7 +438,6 @@ struct PullRequestFilePage: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .id(PullRequestDetailsStore.Anchor.top)
     }
 
     // MARK: Going places
@@ -362,33 +446,35 @@ struct PullRequestFilePage: View {
         withAnimation(.easeOut(duration: 0.15)) { details.open(file: file.path) }
     }
 
-    /// The next open thread, or the previous, from the one you went to last; past the file's first or last, the next file's
-    /// first, or the previous file's last, that has one.
-    private func goToComment(_ step: Int, _ shown: Shown) {
+    /// Where the next open thread is, or the previous, from the one you went to last: on this file, or, past its first or
+    /// last, the next file's first, or the previous file's last, that has one. Nil when there's none that way.
+    private enum CommentTarget: Equatable {
+        case here(Int)
+        case file(FileChange, Int)
+    }
+
+    private func commentTarget(
+        _ step: Int, _ shown: Shown, _ onFiles: [(index: Int, threads: [PullRequestPanel.Thread])]
+    ) -> CommentTarget? {
         let ids = shown.openThreads
         let at = current.flatMap { ids.firstIndex(of: $0) }
         let target = at.map { $0 + step } ?? (step > 0 ? 0 : ids.count - 1)
-        if ids.indices.contains(target) {
-            reach(ids[target])
-            return
-        }
-        let others = step > 0 ? Array(shown.changes.files.dropFirst(shown.index + 1))
-            : Array(shown.changes.files.prefix(shown.index).reversed())
-        for other in others {
-            let open = threads.comments(on: other).threads.filter(Shown.isOpen).sorted { line(of: $0) < line(of: $1) }
-            if let thread = step > 0 ? open.first : open.last {
-                withAnimation(.easeOut(duration: 0.15)) { details.open(file: other.path, at: thread.id) }
-                return
-            }
-        }
-        NSSound.beep()
+        if ids.indices.contains(target) { return .here(ids[target]) }
+        let other = step > 0 ? onFiles.first { $0.index > shown.index } : onFiles.last { $0.index < shown.index }
+        guard let other, let thread = step > 0 ? other.threads.first : other.threads.last else { return nil }
+        return .file(shown.changes.files[other.index], thread.id)
     }
 
-    private func line(of thread: PullRequestPanel.Thread) -> Int {
-        ThreadCode.span(of: thread.thread)?.lines.lowerBound ?? thread.thread.line ?? 0
+    private func go(to target: CommentTarget) {
+        switch target {
+        case .here(let thread):
+            reach(thread)
+        case .file(let file, let thread):
+            withAnimation(.easeOut(duration: 0.15)) { details.open(file: file.path, at: thread) }
+        }
     }
 
-    /// Scrolls to a thread and points it out for a moment.
+    /// Scrolls to a thread and points it out for a moment, which takes VoiceOver to it (`ThreadCard`).
     private func reach(_ thread: Int) {
         current = thread
         withAnimation(isRendering ? nil : .easeOut(duration: 0.25)) {
@@ -544,6 +630,7 @@ struct PullRequestFilePage: View {
                             }
                         case .thread(let thread):
                             threadView(thread, showsCode: false)
+                                .frame(maxWidth: Self.widestThread, alignment: .leading)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 8)
                         }
@@ -584,6 +671,7 @@ struct PullRequestFilePage: View {
                 apartHeading("On the Whole File")
                 ForEach(whole) { thread in
                     threadView(thread, showsCode: false)
+                        .frame(maxWidth: Self.widestThread, alignment: .leading)
                         .id(PullRequestDetailsStore.Anchor.thread(thread.id))
                 }
             }
@@ -793,7 +881,7 @@ private struct ResolvedThreadLine: View {
                 if let first = thread.comments.first {
                     Text("\(first.author.name): \(first.text)")
                         .font(size: 11.5)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }

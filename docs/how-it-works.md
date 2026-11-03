@@ -1451,7 +1451,8 @@ since, show above it, the latter with the code they were made on, as in the comm
 Its code is drawn by `CodeView`, two hundred lines to a view in a lazy stack, so that only those on screen are laid
 out, each with room for the file's longest number, so the code lines up from one part to the next. **‹** and **›**,
 or ⌥⌘↑ and ⌥⌘↓, go to the files before and after it, and ⌃⌘↑ and ⌃⌘↓ through its open threads, then on to another
-file's. While the details are beside the list, **⤢** asks the page for all of it (`DetailsFillsPageKey`): the
+file's (`PullRequestPanel.Threads.openOnFiles(of:)`), from a toolbar that's the lazy stack's pinned header, so it
+stays at the top as the diff scrolls. While the details are beside the list, **⤢** asks the page for all of it (`DetailsFillsPageKey`): the
 details then cover the list, as in a narrow window, without being made again, so nothing in them starts over, until
 the file's page goes or **⤡**; the details remember it for their files' pages until they close. A diff is read as the
 page shows it, and called off as it goes before it's read; the last few read are kept, besides those that show. ↗

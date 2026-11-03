@@ -205,6 +205,8 @@ struct ThreadCard: View {
     @Environment(\.changedFileOpener) private var opener
     /// The comments folded between the first and the latest show.
     @LocalState private var isUnfolded = false
+    /// VoiceOver goes to it as the details point it out, going to it or coming back to it.
+    @AccessibilityFocusState private var isFocused: Bool
     /// How much wider its code's longest line is than the room it has.
     @LocalState private var codeOverflow: CGFloat = 0
 
@@ -247,6 +249,12 @@ struct ThreadCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityFocused($isFocused)
+        // Also as it's made, once the details scrolled to it.
+        .onAppear { if isHighlighted { isFocused = true } }
+        .onChange(of: isHighlighted) {
+            if isHighlighted { isFocused = true }
+        }
     }
 
     // MARK: Header

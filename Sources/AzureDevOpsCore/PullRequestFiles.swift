@@ -241,16 +241,29 @@ extension PullRequestPanel.Threads {
     /// before it. Those that wait on you first, then the other open ones, then the resolved ones; in each, from the top of
     /// the file down.
     public func comments(on file: FileChange) -> PullRequestPanel.FileComments {
+        func onFile(_ threads: [PullRequestPanel.Thread]) -> [PullRequestPanel.Thread] {
+            threads.filter { Self.isOn(file, $0.thread) }.sorted(by: Self.fromTheTop)
+        }
+        return PullRequestPanel.FileComments(threads: onFile(waitingOnYou) + onFile(open) + onFile(resolved))
+    }
+
+    /// The change's files with open threads, by their places among its files, each with its open threads from the top of
+    /// the file down: those to go through, from one file's comments on to another's.
+    public func openOnFiles(of changes: ChangedFiles) -> [(index: Int, threads: [PullRequestPanel.Thread])] {
+        let open = all.filter { $0.waitsOnYou || !$0.isResolved }
+        guard !open.isEmpty else { return [] }
+        return changes.files.indices.compactMap { index in
+            let onFile = open.filter { Self.isOn(changes.files[index], $0.thread) }.sorted(by: Self.fromTheTop)
+            return onFile.isEmpty ? nil : (index, onFile)
+        }
+    }
+
+    /// From the top of a file down: by the first line each is on, then in the order they were made.
+    static func fromTheTop(_ lhs: PullRequestPanel.Thread, _ rhs: PullRequestPanel.Thread) -> Bool {
         func line(_ thread: PullRequestPanel.Thread) -> Int {
             ThreadCode.span(of: thread.thread)?.lines.lowerBound ?? thread.thread.line ?? 0
         }
-        func onFile(_ threads: [PullRequestPanel.Thread]) -> [PullRequestPanel.Thread] {
-            threads.filter { Self.isOn(file, $0.thread) }.sorted { lhs, rhs in
-                if line(lhs) != line(rhs) { return line(lhs) < line(rhs) }
-                return lhs.id < rhs.id
-            }
-        }
-        return PullRequestPanel.FileComments(threads: onFile(waitingOnYou) + onFile(open) + onFile(resolved))
+        return line(lhs) != line(rhs) ? line(lhs) < line(rhs) : lhs.id < rhs.id
     }
 
     /// Whether a thread is on a file: its tracking ID, when both have one, says; else its path, as the file is now or as

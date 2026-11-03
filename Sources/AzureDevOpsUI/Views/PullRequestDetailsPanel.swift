@@ -208,7 +208,8 @@ struct PullRequestDetailsPanel: View {
     private func openButton(_ item: PRSnapshot) -> some View {
         if let page = details.pages.last {
             PullRequestPageOpener(ref: page, details: pageDetails)
-        } else {
+        } else if details.file == nil {
+            // A file's page has its own, for the file.
             PullRequestOpenButton(item: item)
         }
     }
