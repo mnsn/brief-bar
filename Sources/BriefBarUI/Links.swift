@@ -36,11 +36,14 @@ package struct LinkedItem {
     /// How many parts it has that aren't linked to it, such as a story's or a bug's tasks: something to sum up besides
     /// what's linked to it.
     package var parts: Int
+    /// Shows it in BriefBar's window, such as one of your pull requests in its details on the Pull Requests page: whether
+    /// it could, for the caller to open it where it lives instead. Nil for what has nowhere to show there.
+    package var show: (() -> Bool)?
 
     package init(
         ref: ItemRef, label: String, title: String, symbol: String, color: Color, state: ItemState? = nil, status: String? = nil,
         sharedStatus: String? = nil, place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil,
-        menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil, url: URL? = nil, parts: Int = 0
+        menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil, url: URL? = nil, parts: Int = 0, show: (() -> Bool)? = nil
     ) {
         self.ref = ref
         self.label = label
@@ -58,6 +61,7 @@ package struct LinkedItem {
         self.sent = sent
         self.url = url
         self.parts = parts
+        self.show = show
     }
 
     /// Its link, for Copy Link: its page, or what its reference says, a GitHub pull request's page or a session's link in
@@ -118,6 +122,7 @@ extension LinkedItem: Equatable {
             && lhs.color == rhs.color && lhs.state == rhs.state && lhs.status == rhs.status && lhs.sharedStatus == rhs.sharedStatus
             && lhs.place == rhs.place && lhs.hint == rhs.hint && lhs.date == rhs.date && (lhs.menu == nil) == (rhs.menu == nil)
             && (lhs.open == nil) == (rhs.open == nil) && lhs.sent == rhs.sent && lhs.url == rhs.url && lhs.parts == rhs.parts
+            && (lhs.show == nil) == (rhs.show == nil)
     }
 }
 
@@ -291,6 +296,12 @@ package final class Links: ObservableObject {
             if let item = described[source]?[ref] { return item }
         }
         return Self.fallback(ref)
+    }
+
+    /// What one source says something is, when it says: for something two say, such as the session of a task BriefBar
+    /// sent, which the task's source tells as the task, and Copilot's as the session it goes on as.
+    package func describe(_ ref: ItemRef, by source: SourceID) -> LinkedItem? {
+        described[source]?[ref]
     }
 
     /// Whether a source says what it is, rather than only its reference.

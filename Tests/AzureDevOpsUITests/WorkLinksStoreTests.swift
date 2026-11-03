@@ -84,6 +84,47 @@ import Testing
         #expect(workLinks.inputs().workItemLookups.isEmpty)
     }
 
+    /// One of your pull requests, in the lists, shows in BriefBar's window from a link to it, as the source says; a
+    /// teammate's, which the lists don't have, opens only where it lives.
+    @Test func yourPullRequestsShowInBriefBarFromALink() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        var shown: [PRKey] = []
+        var shows = true
+        workLinks.showPullRequest = { key in
+            shown.append(key)
+            return shows
+        }
+        await workLinks.loadOnce()
+
+        let coupon = links.describe(.pullRequest(organization: organization, number: 4091))
+        let show = try #require(coupon.show)
+        #expect(show())
+        #expect(shown == [PRKey(organization, 4091)])
+        // Where it can't show, its caller opens it where it lives.
+        shows = false
+        #expect(!show())
+        #expect(links.describe(.pullRequest(organization: organization, number: 4120)).show == nil)
+        #expect(links.describe(.workItem(organization: organization, id: 5101)).show == nil)
+    }
+
+    /// The pull request a task names: the one it works on, or the one it opened, in Azure DevOps.
+    @Test func aTaskNamesThePullRequestItWorksOnOrOpened() throws {
+        let entries = CopilotTaskEntry.demo(now: Date())
+        #expect(entries.map(\.pullRequestKey) == [PRKey(organization, 4091), nil, PRKey(organization, 4088)])
+        var onGitHub = try #require(entries.first)
+        onGitHub.pullRequest = URL(string: "https://github.com/octo/shop-web/pull/12")
+        #expect(onGitHub.pullRequestKey == nil)
+    }
+
     @Test func itTellsWhatItKnowsOfItsPullRequestsAndTasksWithoutReadingMore() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)

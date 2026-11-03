@@ -339,12 +339,14 @@ actor AzureDevOpsReader {
     /// How often the app's Send Work to Copilot is read again while the session a pull request's work goes to is found.
     static let recheckEvery = Duration.milliseconds(100)
 
-    /// The Copilot session BriefBar sends an open pull request's work to unless you choose another, as Send to Copilot
-    /// suggests it (`CopilotTasksStore.suggestedSession`), and whether the Copilot app has it: only while Send Work to
-    /// Copilot is on, which is when its window reads sessions, and never in the demo, whose window reads none. Turned off
-    /// meanwhile, it reads nothing more of Copilot's, as the window's search stops, and names none. Nil when there's none.
+    /// The Copilot session BriefBar sends an open pull request's work to, as its details show it (`PullRequestSession`,
+    /// through `CopilotTasksStore.pullRequestSession`), with the session you chose for it in the app's settings, and
+    /// whether the Copilot app has it; or that its work goes to a new session, as you chose; or the sessions BriefBar asks
+    /// you to choose from; or, when none goes with it, one that may have opened it. Only while Send Work to Copilot is on,
+    /// which is when the app reads sessions, and never in the demo, whose window reads none. Turned off meanwhile, it reads
+    /// nothing more of Copilot's, as the window's search stops, and names none. Nil when there's nothing to say.
     /// - Parameter tasks: the tasks sent to Copilot, as `copilotTasks` found them.
-    func session(for record: PRRecord, tasks: [CopilotTaskEntry], now: Date = Date()) async -> SuggestedSession? {
+    func session(for record: PRRecord, tasks: [CopilotTaskEntry], now: Date = Date()) async -> AgentSession? {
         guard !demo, record.pullRequest.status == .active, sendsToCopilot else { return nil }
         let home = appHome ?? CopilotCLI.home(environment: Attribution.environment)
         var runs: [CopilotRun] = []
@@ -369,7 +371,10 @@ actor AzureDevOpsReader {
         }
         guard sendsToCopilot else { return nil }
         let pullRequest = PullRequestTasks.task(for: record)
-        let store = await Self.store(for: pullRequest, runs: runs, links: yourLinks(now: now), workItems: workItemTitles(now: now), appHome: appHome)
+        let chosen = PullRequestSessionChoice.load(from: defaults, now: now)
+        let store = await Self.store(
+            for: pullRequest, runs: runs, chosen: chosen, links: yourLinks(now: now), workItems: workItemTitles(now: now), appHome: appHome
+        )
         // The store has a copy of the app's setting: it stops reading once the app's is off, as the app's store does.
         let watch = Task {
             while !Task.isCancelled, sendsToCopilot {
@@ -378,18 +383,27 @@ actor AzureDevOpsReader {
             guard !Task.isCancelled else { return }
             await MainActor.run { store.settings.copilotEnabled = false }
         }
-        let found = await store.suggestedSession(for: pullRequest, createdAt: record.pullRequest.createdAt)
+        let found = await store.pullRequestSession(for: pullRequest, createdAt: record.pullRequest.createdAt)
         watch.cancel()
         guard let found, sendsToCopilot else { return nil }
-        var isInApp = found.appSession != nil || found.run?.isAppSession == true
-        if !isInApp {
-            // A task's session that you opened in the app, which its database lists now, whether the app has it open or not.
-            let home = await MainActor.run { store.appHome }
-            isInApp = await Task.detached { ((try? AppSessions.load(home: home)) ?? []).contains { $0.id == found.id } }.value
+        switch found.pick {
+        case .session(let choice, let basis):
+            var isInApp = choice.appSession != nil || choice.run?.isAppSession == true
+            if !isInApp {
+                // A task's session that you opened in the app, which its database lists now, whether the app has it open or not.
+                let home = await MainActor.run { store.appHome }
+                isInApp = await Task.detached { ((try? AppSessions.load(home: home)) ?? []).contains { $0.id == choice.id } }.value
+            }
+            // Once more, after the last read: turned off meanwhile, it names none.
+            guard sendsToCopilot else { return nil }
+            return .session(SuggestedSession(choice: choice, basis: basis, isInApp: isInApp))
+        case .newSession(chosenByYou: true):
+            return .newSession
+        case .newSession(chosenByYou: false):
+            return found.guess.map(AgentSession.guess)
+        case .ask(let choices):
+            return .undecided(choices)
         }
-        // Once more, after the last read: turned off meanwhile, it names none.
-        guard sendsToCopilot else { return nil }
-        return SuggestedSession(choice: found, isInApp: isInApp)
     }
 
     /// The links you made in Show Links, while it's on, as it keeps them in the app's settings. The ones Copilot records and
@@ -401,16 +415,19 @@ actor AzureDevOpsReader {
         return LinkGraph(edits: edits)
     }
 
-    /// A store to find the session with, as the window's store does, that reads as the app's does: over these tasks, in
-    /// memory, so nothing it does is saved; with the environment `--mcp` started with, rather than your login shell's,
-    /// which it would have to run; and with the links you made. It starts and follows nothing.
+    /// A store to find the session with, as the window's store does, that reads as the app's does: over these tasks and the
+    /// sessions you chose for pull requests' work, in memory, so nothing it does is saved; with the environment `--mcp`
+    /// started with, rather than your login shell's, which it would have to run; and with the links you made. It starts and
+    /// follows nothing.
     @MainActor
     private static func store(
-        for pullRequest: TaskPullRequest, runs: [CopilotRun], links: LinkGraph, workItems: [Int: String], appHome: URL?
+        for pullRequest: TaskPullRequest, runs: [CopilotRun], chosen: [PullRequestSessionChoice], links: LinkGraph,
+        workItems: [Int: String], appHome: URL?
     ) -> CopilotTasksStore {
         let settings = AppSettings(defaults: MemoryDefaults())
         settings.copilotEnabled = true
         settings.copilotRuns = runs
+        settings.copilotPullRequestSessions = chosen
         let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
         store.appHomeForTests = appHome
         // The Copilot CLI's files are where the test put the app's.
@@ -520,13 +537,26 @@ actor AzureDevOpsReader {
     }
 }
 
-/// The session BriefBar sends a pull request's work to unless you choose another, for `pull_request`
-/// (`AzureDevOpsReader.session`).
+/// The session BriefBar sends a pull request's work to, for `pull_request` (`AzureDevOpsReader.session`).
 struct SuggestedSession: Sendable, Equatable {
     var choice: SessionChoice
+    /// Why it's the pull request's.
+    var basis: PullRequestSession.Basis
     /// The Copilot app has it, so an agent there can send it a message: one of the app's own sessions, one a task of
     /// BriefBar's went on with, or a task's that you opened there, which the app's database lists. Not whether it's open.
     var isInApp: Bool
+}
+
+/// What `pull_request` says of a pull request's Copilot session, as its details show it (`PullRequestSession`).
+enum AgentSession: Sendable, Equatable {
+    /// The session BriefBar sends its work to.
+    case session(SuggestedSession)
+    /// You chose a new session for its work.
+    case newSession
+    /// Two or more go with it as well as each other, the most recently active first: BriefBar asks you which.
+    case undecided([SessionChoice])
+    /// None goes with it; this one, whose log has a link to it and that was there before it was created, may have opened it.
+    case guess(SessionChoice)
 }
 
 /// The tools `--mcp` gives agents for Azure DevOps.
@@ -1018,9 +1048,9 @@ enum AgentText {
     }
 
     /// One pull request, for the `pull_request` tool.
-    /// - Parameter session: the session BriefBar sends its work to unless you choose another, if there's one.
+    /// - Parameter session: its Copilot session, as its details show it, if there's something to say.
     static func details(
-        _ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], session: SuggestedSession? = nil,
+        _ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], session: AgentSession? = nil,
         now: Date
     ) -> String {
         let pr = record.pullRequest
@@ -1097,33 +1127,66 @@ enum AgentText {
         return lines.joined(separator: "\n")
     }
 
-    /// The session BriefBar sends a pull request's work to unless you choose another (`CopilotTasksStore.suggestedSession`),
-    /// for `pull_request`: its name, where it is and why; then where it works, and its ID. One the Copilot app has, or a
-    /// task BriefBar runs with the Copilot CLI, which the app doesn't have unless you opened it there.
+    /// A pull request's Copilot session, for `pull_request`, as its details show it (`PullRequestSession`): the session
+    /// BriefBar sends its work to; a new session, which you chose; the sessions BriefBar asks you to choose from, since they
+    /// go with it as well as each other; or, when none goes with it, one that may have opened it.
+    static func session(_ session: AgentSession, now: Date) -> String {
+        switch session {
+        case .session(let suggested):
+            return Self.session(suggested, now: now)
+        case .newSession:
+            return "Its session: a new one. The user chose in BriefBar that its work goes to a new Copilot session, rather than one that's there."
+        case .undecided(let choices):
+            let sessions = choices.map { "“\($0.name)” (\(names($0.reasons.map(\.phrase))), session \($0.id))" }
+            return "Its session isn't settled: \(names(sessions)) go with it as well as each other, so BriefBar asks the user "
+                + "which before it sends its work to one. Ask them which, too."
+        case .guess(let choice):
+            return "It has no Copilot session of its own: BriefBar sends its work to a new session unless the user chooses one. "
+                + "“\(choice.name)”, in the Copilot app, has a link to it and was there before it was created, so it may have "
+                + "opened it.\n  " + (appFacts(choice, now: now) + ["session \(choice.id)"]).joined(separator: " · ")
+        }
+    }
+
+    /// The session BriefBar sends a pull request's work to, for `pull_request`: its name, where it is and why, and whether
+    /// Copilot works in it now; then where it works, and its ID. One the Copilot app has, or a task BriefBar runs with the
+    /// Copilot CLI, which the app doesn't have unless you opened it there.
     static func session(_ session: SuggestedSession, now: Date) -> String {
         let choice = session.choice
         var why: String
         var facts: [String] = []
         switch choice.kind {
         case .task(let run):
-            why = choice.reasons.contains(.openedIt) ? "the session of the work item's task that opened it" : "the session of its last task"
-            facts.append("worktree \(run.worktree.path)")
-        case .app(let app):
-            if choice.reasons == [.mentionsIt] {
-                why = "which has a link to it and was there before it was created: it likely opened it"
-            } else {
-                why = names(choice.reasons.map(\.phrase))
+            switch session.basis {
+            case .chosenByYou: why = "which the user chose for it"
+            case .openedIt: why = "the session of the work item's task that opened it"
+            default: why = "the session of its last task"
             }
-            if let place = choice.place { facts.append(place) }
-            if app.isRunning { facts.append("working now") }
-            let active = ago(choice.lastActive, now: now)
-            if !active.isEmpty { facts.append("active \(active)") }
+            facts.append("worktree \(run.worktree.path)")
+        case .app:
+            why = session.basis == .chosenByYou ? "which the user chose for it" : names(choice.reasons.map(\.phrase))
+            facts += appFacts(choice, now: now)
         }
         let place = session.isInApp ? "in the Copilot app" : "which BriefBar runs with the Copilot CLI and the Copilot app doesn't have"
         let parts = choice.appSession != nil ? [place, why] : [why, place]
         facts.append("session \(choice.id)")
-        return "Its session, where BriefBar sends its work unless you choose another: “\(choice.name)”, "
-            + parts.filter { !$0.isEmpty }.joined(separator: ", ") + ".\n  " + facts.joined(separator: " · ")
+        var text = "Its session, where BriefBar sends its work unless you choose another: “\(choice.name)”, "
+            + parts.filter { !$0.isEmpty }.joined(separator: ", ") + "."
+        if choice.isBusy {
+            text += " Copilot is still working in it, for a task BriefBar sent: nothing more goes to it until that's done."
+        } else if choice.isFolderBusy {
+            text += " Copilot is working in its checkout for another task BriefBar sent: nothing goes to it until that's done."
+        }
+        return text + "\n  " + facts.joined(separator: " · ")
+    }
+
+    /// Where one of the Copilot app's sessions works, whether it runs a turn now, and when it was last active.
+    private static func appFacts(_ choice: SessionChoice, now: Date) -> [String] {
+        var facts: [String] = []
+        if let place = choice.place { facts.append(place) }
+        if choice.appSession?.isRunning == true { facts.append("working now") }
+        let active = ago(choice.lastActive, now: now)
+        if !active.isEmpty { facts.append("active \(active)") }
+        return facts
     }
 
     static func vote(_ vote: Vote) -> String {
