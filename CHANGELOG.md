@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.1 - 2026-11-03
 
 - **Send a prompt straight to one of the Copilot app's sessions, or to a fork of it.** In the Send to Copilot
   window, for a session that's already there, **Send to Session** sends the prompt to the session in the Copilot
@@ -29,6 +29,9 @@
   **Bug 5110 › !4091**. **Open Pull Requests in BriefBar**, off by default in Azure DevOps' settings, does the
   same for the menu bar's list, widgets and notifications, rather than opening Azure DevOps. Either way, a pull
   request's menu has both **Show in BriefBar** and **Open in Azure DevOps**.
+- **Opening a pull request in Azure DevOps from the Pipelines page sees it**, as opening it anywhere else in
+  BriefBar does, so what was new on it isn't anymore. It opens where its row does: at the comment that needs you,
+  or the run after its merge.
 
 ## 0.11.0 - 2026-11-02
 
