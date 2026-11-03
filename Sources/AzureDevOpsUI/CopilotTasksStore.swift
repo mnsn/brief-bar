@@ -483,6 +483,8 @@ final class CopilotTasksStore: ObservableObject {
                 }
                 rekey(id, to: run.id)
                 run.threads = kept
+                // Going on with one of the Copilot app's sessions: its turn is the next, after any prompt sent it before.
+                if let continuing { overlap(promptsIn: continuing.id, before: now) }
                 startedHere.insert(run.id)
                 pending.removeAll { $0.id == run.id }
                 continuingFolders[id] = nil
@@ -668,7 +670,7 @@ final class CopilotTasksStore: ObservableObject {
     private func scheduleIfNeeded() {
         let busy = mode == .live && isOn
             && (settings.copilotRuns.contains { $0.isValid && $0.ended == nil } || pending.contains { $0.status.phase.isActive }
-                || settings.copilotSentPrompts.contains { $0.ended == nil })
+                || settings.copilotSentPrompts.contains(where: \.isFollowed))
         if busy, timer == nil {
             let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refresh() }

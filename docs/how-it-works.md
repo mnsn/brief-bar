@@ -2222,7 +2222,11 @@ is the CLI's, which picks the fork's ID, so the send goes by one of BriefBar's u
 fork's; a fork of one of the app's is the app's, through the extension; and a new session gets a worktree of the clone
 BriefBar knows, or else the Send to Copilot window opens, to choose one. **Edit the Whole Prompt…**, last in ▾, opens
 that window with the prompts, at the place you chose (`ComposerStart`). **Esc** closes a composer in place before the
-details it's in (`InlineComposerOpen`). VoiceOver hears what's sent, and what becomes of it, as it happens.
+details it's in (`InlineComposerOpen`). What a composer sends is called off as it closes, with ✕ or **Esc**, as another
+opens, or as its page goes, with the details or for another pull request, file or page, though not as its card scrolls
+out of sight in a file's diff (`CommentDrafts.sends`): a prompt no session took yet is taken back, as when the Send to
+Copilot window closes, and nothing starts or opens after. VoiceOver hears what's sent, and what becomes of it, as it
+happens.
 
 **Fix** (`PullRequestPrompt.fixThread`) addresses that thread alone: its entry as Fix Comments lists it, each comment in
 full as its author wrote it, the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
@@ -2264,9 +2268,16 @@ or, for one pasted in a terminal, the CLI's, as a task's is, every three seconds
 sessions the app runs a turn in and whether something has the session open, only while one hasn't ended and Send Work to
 Copilot is on and Azure DevOps hasn't stopped: a turn that's over twice in a row, a few seconds apart, ended, which its
 record keeps; one copied as `/fork` follows the fork the app records as made since, when it made just one. One you
-didn't paste goes after half an hour, and one whose turn hasn't ended after twelve hours. A fix that's done and not
-pushed, on a thread that's still open, counts in the bar at the details' foot (`ReadyFixesBar`,
-`CopilotTasksStore.readyFixes`), even once a question was asked about the thread since, whose sentence takes the details
+didn't paste goes after half an hour, and one whose turn hasn't ended after twelve hours. Once BriefBar sends the
+session another prompt, about threads or not, or goes on with it with the CLI, before a prompt's turn was seen to end,
+the session's log can't tell their turns apart: BriefBar stops following the earlier one, whose thread says **Sent to
+‘Retry backoff’ · see the session**, or **Copied for ‘Retry backoff’ · see the session** for one it copied, rather than
+how the later turn went, and leaves it out of the bar below; it's kept as long as one that ended
+(`SentPrompt.overlapped`, `CopilotTasksStore.overlap(promptsIn:before:)`). A turn seen over just once isn't taken as its
+end, since it may be the end of the turn that ran as it was sent. A fix that's done and not pushed, on a thread that's
+still open, counts in the bar at the details' foot (`ReadyFixesBar`, `CopilotTasksStore.readyFixes`), and so does one
+whose Push & Reply failed or stopped, to try again (`CommentWork.waitsToBePushed`), even once a question was asked about
+the thread since, whose sentence takes the details
 to the first thread they fixed, and whose **Push & Reply…** opens the Send to Copilot window in the session the fixes are
 in, for those threads alone: its prompt lists them and replies on them alone, and hands off what waits on you in them
 alone (`PullRequestPrompt.pushAndReply(_:workplace:threads:)`, `PullRequestPrompt.shippedThreads`), and the task that

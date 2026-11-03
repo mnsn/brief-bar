@@ -88,6 +88,10 @@ struct PullRequestCommentsSection: View {
             }
             code.release(hold)
         }
+        // What a composer sends is called off as it closes, with ✕ or Esc, or another opens; and all of it as the comments
+        // go, with the details, or for another pull request or page.
+        .onChange(of: composing) { old, _ in if let old { drafts.callOff(old) } }
+        .onDisappear { drafts.callOffAll() }
     }
 
     private func files(_ files: [PullRequestPanel.FileThreads]) -> some View {

@@ -104,8 +104,15 @@ import Testing
         #expect(answer.contains("Sam wants a ceiling"))
     }
 
-    private func settle(until done: () -> Bool) async throws {
-        for _ in 0..<500 where !done() {
+    /// Waits for the store's work, which runs on the main actor between this test's awaits, for as long as a busy machine
+    /// could need (`waitLimit`), failing the test if it doesn't happen.
+    private func settle(until done: () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !done() {
+            guard ContinuousClock.now < deadline else {
+                Issue.record("Timed out waiting", sourceLocation: sourceLocation)
+                return
+            }
             try await Task.sleep(for: .milliseconds(10))
         }
     }

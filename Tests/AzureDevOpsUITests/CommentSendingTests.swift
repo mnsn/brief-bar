@@ -1,5 +1,6 @@
 import AzureDevOpsCore
 import BriefBarCore
+import BriefBarUI
 import CopilotTasks
 import Foundation
 import Testing
@@ -43,6 +44,26 @@ import Testing
 
     /// The session that worked on the thread leads, then a fork of it and a new session for a fix; then the pull request's
     /// other sessions, then the app's others. Explain asks sessions only.
+    /// A fix called off before it goes, as when its composer closes, starts nothing: no task, and no prompt.
+    @Test func aFixCalledOffBeforeItGoesStartsNothing() async throws {
+        let prs = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        await prs.loadOnce()
+        let item = try #require(prs.items.first { prs.record(for: $0.key)?.role == .author })
+        let record = try #require(prs.record(for: item.key))
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        copilot.useEnvironment(["COPILOT_HOME": "/nonexistent"])
+        copilot.appHomeForTests = URL(fileURLWithPath: "/nonexistent/copilot-app", isDirectory: true)
+        let sending = CommentSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
+        let fix = Task { await sending.fix(nil, how: nil, suggestion: nil, excerpt: nil, to: .newSession, choice: nil) }
+        fix.cancel()
+        let outcome = await fix.value
+        #expect(outcome == CommentSending.Outcome.notSent(CommentSending.calledOff))
+        #expect(copilot.pending.isEmpty)
+        #expect(settings.copilotRuns.isEmpty)
+    }
+
     @Test func theSessionThatWorkedOnItLeadsThenItsForkAndANewSession() {
         let picked = appChoice(app)
         let pullRequest = session(picked, candidates: [picked, taskChoice()], others: [appChoice(elsewhere, reasons: [])])

@@ -42,8 +42,14 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
     var copied: Bool
     /// How its turn ended, as the session's log said once it did.
     var ended: RunPhase?
+    /// Another prompt went to its session before its turn was seen to end: which turn's end is its, BriefBar can't tell
+    /// from the session's log, so it says it doesn't know rather than take the later one's.
+    var overlapped = false
 
     var id: String { "\(session)/\(sentAt.timeIntervalSince1970)" }
+
+    /// BriefBar follows its turn: it hasn't been seen to end, and no other prompt went to its session before it was.
+    var isFollowed: Bool { ended == nil && !overlapped }
 
     /// The fork that took a prompt copied as `/fork`: the one fork the Copilot app made of its session since, as
     /// `SessionSender` finds one. With more, any could be another fork's, so none is.
@@ -81,6 +87,7 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
         sentAt = try container.decode(Date.self, forKey: .sentAt)
         copied = try container.decodeIfPresent(Bool.self, forKey: .copied) ?? false
         ended = try container.decodeIfPresent(RunPhase.self, forKey: .ended)
+        overlapped = try container.decodeIfPresent(Bool.self, forKey: .overlapped) ?? false
         guard pullRequest.kind == .pullRequest, AppSessions.isSessionID(session), forkedFrom.map(AppSessions.isSessionID) ?? true else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Not a prompt to a session"))
         }
@@ -100,7 +107,7 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
     static let followLimit: TimeInterval = 12 * 3_600
 
     /// The ones kept in the preferences, the oldest first: without what can't be read, such as what another program wrote
-    /// there, those older than `lifetime`, and those still waiting for their turn to end after `followLimit`.
+    /// there, those older than `lifetime`, and those still followed after `followLimit`.
     static func load(from defaults: UserDefaults, now: Date = Date()) -> [SentPrompt] {
         guard let data = defaults.data(forKey: SettingsKey.copilotSentPrompts),
               let records = try? JSONDecoder().decode([Lossy].self, from: data)
@@ -125,7 +132,7 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
         let cutoff = now.addingTimeInterval(-lifetime)
         let kept = prompts.filter { prompt in
             guard prompt.sentAt >= cutoff, prompt.sentAt <= now.addingTimeInterval(60) else { return false }
-            return prompt.ended != nil || now.timeIntervalSince(prompt.sentAt) < followLimit
+            return !prompt.isFollowed || now.timeIntervalSince(prompt.sentAt) < followLimit
         }
         return Array(kept.sorted { $0.sentAt < $1.sentAt }.suffix(limit))
     }
@@ -159,6 +166,9 @@ struct CommentWork: Equatable {
         case done(String?)
         case failed(String?)
         case stopped
+        /// Sent, or copied for you to paste, but another prompt went to the session before its turn was seen to end: how
+        /// it went isn't known.
+        case unknown(copied: Bool)
     }
 
     var purpose: Purpose
@@ -176,7 +186,7 @@ struct CommentWork: Equatable {
     var isActive: Bool {
         switch state {
         case .waiting, .working, .needsYou: true
-        case .done, .failed, .stopped: false
+        case .done, .failed, .stopped, .unknown: false
         }
     }
 
@@ -184,6 +194,15 @@ struct CommentWork: Equatable {
     var isReadyFix: Bool {
         if purpose == .fix, case .done = state { return true }
         return false
+    }
+
+    /// What was changed for it isn't pushed: a fix that's done, or a Push & Reply of it that failed or stopped, to try
+    /// again.
+    var waitsToBePushed: Bool {
+        switch (purpose, state) {
+        case (.fix, .done), (.pushAndReply, .failed), (.pushAndReply, .stopped): true
+        default: false
+        }
     }
 
     /// Where it is, in a sentence's middle: "‘Retry backoff’", "a fork of ‘Retry backoff’", "its session".
@@ -229,6 +248,8 @@ struct CommentWork: Equatable {
         case (_, .stopped):
             let what = purpose == .explain ? "answered" : purpose == .pushAndReply ? "pushed it" : "fixed it"
             return "Stopped in \(place) before it \(what)"
+        case (_, .unknown(let copied)):
+            return copied ? "Copied for \(place) · see the session" : "Sent to \(place) · see the session"
         }
     }
 
@@ -295,6 +316,7 @@ struct CommentWork: Equatable {
             case .stopped, .preparing, .working: .stopped
             }
         }
+        if prompt.overlapped { state = .unknown(copied: prompt.copied) }
         return CommentWork(purpose: purpose, state: state, session: prompt.session, forkedFrom: prompt.forkedFrom, isTask: false, since: since)
     }
 }
@@ -343,12 +365,12 @@ extension CopilotTasksStore {
     }
 
     /// The fixes of a pull request's threads that are done and not pushed, by the session they're in, the latest first:
-    /// only those of `threads`, the ones still open. A question asked about a thread since, as its line says, doesn't
-    /// push its fix.
+    /// only those of `threads`, the ones still open, and those a Push & Reply that failed or stopped didn't push. A
+    /// question asked about a thread since, as its line says, doesn't push its fix.
     func readyFixes(of key: PRKey, among threads: [Int]) -> [ReadyFixes] {
         var groups: [String: ReadyFixes] = [:]
         for thread in threads {
-            guard let work = commentWork(on: thread, of: key, for: [.fix, .pushAndReply]), work.isReadyFix else { continue }
+            guard let work = commentWork(on: thread, of: key, for: [.fix, .pushAndReply]), work.waitsToBePushed else { continue }
             var group = groups[work.session] ?? ReadyFixes(
                 session: work.session, forkedFrom: work.forkedFrom, isTask: work.isTask, threads: [], latest: work.since
             )
@@ -359,29 +381,51 @@ extension CopilotTasksStore {
         return groups.values.sorted { ($0.latest, $0.session) > ($1.latest, $1.session) }
     }
 
-    /// Keeps a prompt about a pull request's threads that went to one of the Copilot app's sessions, to follow its turn
-    /// there from its log: sent as it says, or copied for you to paste. Not once Azure DevOps stopped, or Send Work to
+    /// Keeps a prompt that went to one of the Copilot app's sessions, sent as it says or copied for you to paste: about a
+    /// pull request's threads, to follow its turn there from its log; about anything, as the session's next turn, which
+    /// the turns of the prompts sent it before aren't told from (`overlap`). Not once Azure DevOps stopped, or Send Work to
     /// Copilot is off, which forgot what it kept, as a delivery that took a while may end after.
-    func keep(_ about: SentPrompt.About, sentTo outcome: SessionDelivery, from session: String, forking: Bool, at date: Date = Date()) {
+    func keep(_ about: SentPrompt.About?, sentTo outcome: SessionDelivery, from session: String, forking: Bool, at date: Date = Date()) {
         guard canSend, isOn, !hasStopped else { return }
         let prompt: SentPrompt?
         switch outcome {
         case .sent:
-            prompt = SentPrompt(about, session: session, sentAt: date, copied: false)
+            overlap(promptsIn: session, before: date)
+            prompt = about.flatMap { SentPrompt($0, session: session, sentAt: date, copied: false) }
         case .forkedAndSent(let fork):
-            prompt = SentPrompt(about, session: fork, forkedFrom: session, sentAt: date, copied: false)
+            prompt = about.flatMap { SentPrompt($0, session: fork, forkedFrom: session, sentAt: date, copied: false) }
         case .fellBack(let fallback):
             if let fork = fallback.fork {
-                prompt = SentPrompt(about, session: fork, forkedFrom: session, sentAt: date, copied: true)
+                overlap(promptsIn: fork, before: date)
+                prompt = about.flatMap { SentPrompt($0, session: fork, forkedFrom: session, sentAt: date, copied: true) }
             } else {
-                prompt = SentPrompt(about, session: session, awaitsFork: forking, sentAt: date, copied: true)
+                // Copied as `/fork <prompt>`, it goes to a fork that isn't made yet, rather than to the session.
+                if !forking { overlap(promptsIn: session, before: date) }
+                prompt = about.flatMap { SentPrompt($0, session: session, awaitsFork: forking, sentAt: date, copied: true) }
             }
         case .notSent:
             prompt = nil
         }
         guard let prompt else { return }
-        settings.copilotSentPrompts = SentPrompt.kept(settings.copilotSentPrompts + [prompt], now: date)
+        // As things are now, not as the delivery started, which may be minutes ago: a prompt sent since, faster, stays.
+        settings.copilotSentPrompts = SentPrompt.kept(settings.copilotSentPrompts + [prompt], now: Date())
         refresh()
+    }
+
+    /// Another prompt went to a session at `date`, from BriefBar: the session's log can't tell the turns of the prompts
+    /// sent it before, whose ends weren't seen yet, from its turn, so BriefBar stops following them, and says so
+    /// (`SentPrompt.overlapped`). One seen over only once may be the end of the turn that ran as it was sent, so it isn't
+    /// taken as its own.
+    func overlap(promptsIn session: String, before date: Date) {
+        guard canSend, isOn, !hasStopped else { return }
+        var prompts = settings.copilotSentPrompts
+        for index in prompts.indices where prompts[index].session == session && prompts[index].isFollowed
+            && !prompts[index].awaitsFork && prompts[index].sentAt < date {
+            prompts[index].overlapped = true
+            promptTurns[prompts[index].id] = nil
+            promptsOver[prompts[index].id] = nil
+        }
+        if prompts != settings.copilotSentPrompts { settings.copilotSentPrompts = prompts }
     }
 
     /// Follows the turns of the prompts sent to the Copilot app's sessions about pull requests' threads that haven't ended,
@@ -392,7 +436,7 @@ extension CopilotTasksStore {
     /// the demo.
     func followSentPrompts(now: Date = Date()) {
         guard mode == .live, canSend, isOn, !hasStopped, !isFollowingPrompts else { return }
-        let open = settings.copilotSentPrompts.filter { $0.ended == nil }
+        let open = settings.copilotSentPrompts.filter(\.isFollowed)
         guard !open.isEmpty else { return }
         isFollowingPrompts = true
         let home = appHome
@@ -441,14 +485,16 @@ extension CopilotTasksStore {
     private func applyTurns(_ read: [(prompt: SentPrompt, fork: String?, turn: SessionTurn?)], now: Date) {
         var prompts = settings.copilotSentPrompts
         for (prompt, fork, turn) in read {
-            guard let index = prompts.firstIndex(where: { $0.id == prompt.id }) else { continue }
+            // Gone, or overlapped by another since it was read: what it read isn't its.
+            guard let index = prompts.firstIndex(where: { $0.id == prompt.id }), !prompts[index].overlapped else { continue }
             if let fork {
                 prompts[index].session = fork
                 prompts[index].forkedFrom = prompt.session
                 prompts[index].awaitsFork = false
             }
             let id = prompts[index].id
-            if let turn { promptTurns[id] = turn }
+            // Only once it changed: what shows it redraws as it does.
+            if let turn, promptTurns[id] != turn { promptTurns[id] = turn }
             let waited = now.timeIntervalSince(prompt.sentAt)
             if turn?.isOver == true {
                 // Over twice in a row: not the end of a turn that ran as it was sent, which the prompt's own follows.

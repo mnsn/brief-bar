@@ -202,6 +202,7 @@ struct CommentSending {
         to destination: CommentDestination, choice: SessionChoice?
     ) async -> Outcome {
         guard copilot.canSend, copilot.isOn else { return .notSent(CopilotTasksStore.cantSendNow) }
+        guard !Task.isCancelled else { return .notSent(Self.calledOff) }
         let prompts = fixPrompts(thread, how: how, suggestion: suggestion, answer: answer, excerpt: excerpt)
         let threads = threads(of: thread)
         let handOff = handOff(of: thread)
@@ -218,6 +219,8 @@ struct CommentSending {
             } else {
                 delivery = await copilot.delivery(to: choice, for: task, checksRepository: true)
             }
+            // Called off while it looked, as its composer closed: nothing starts.
+            guard !Task.isCancelled else { return .notSent(Self.calledOff) }
             switch delivery {
             case .cli:
                 guard let run = choice.run ?? choice.appSession.flatMap({ copilot.appRun(for: $0, subject: subject, options: options) }) else {
@@ -242,7 +245,9 @@ struct CommentSending {
             }
             return Self.outcome(await copilot.deliver(prompts.session, to: choice, forking: true, handOff: handOff, about: about))
         case .newSession:
-            guard let repository = try? await copilot.repository(for: task, using: copilot.git()) else { return .needsWindow }
+            let repository = try? await copilot.repository(for: task, using: copilot.git())
+            guard !Task.isCancelled else { return .notSent(Self.calledOff) }
+            guard let repository else { return .needsWindow }
             copilot.send(subject, prompt: prompts.worktree, options: options, repository: repository.root, threads: threads, handOff: handOff)
             return .sent
         }
@@ -278,6 +283,8 @@ struct CommentSending {
     }
 
     static let gone = "BriefBar can't find that session now. Choose another."
+    /// Its composer closed before it went.
+    static let calledOff = "It was called off before it went."
 
     static func outcome(_ delivery: SessionDelivery) -> Outcome {
         switch delivery {

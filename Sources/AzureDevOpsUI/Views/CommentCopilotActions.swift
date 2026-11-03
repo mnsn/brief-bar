@@ -70,6 +70,7 @@ extension CommentWork {
         case .done: ("checkmark.circle.fill", .done)
         case .failed: ("exclamationmark.triangle.fill", .failing)
         case .stopped: ("stop.circle", nil)
+        case .unknown(let copied): (copied ? "doc.on.clipboard" : "paperplane", nil)
         }
     }
 
@@ -84,7 +85,7 @@ extension CommentWork {
         switch state {
         case .done(let summary): summary
         case .failed(let reason): reason
-        case .waiting, .working, .needsYou, .stopped: nil
+        case .waiting, .working, .needsYou, .stopped, .unknown: nil
         }
     }
 }
@@ -107,11 +108,27 @@ struct CommentComposing: Hashable {
     static let fixAll = CommentComposing(thread: nil, ask: .fixAll)
 }
 
-/// What you wrote in each composer in place in a pull request's comments, kept as you open another, until you send it. Not
-/// observed: what you type redraws its own composer only.
+/// What you wrote in each composer in place in a pull request's comments, kept as you open another, until you send it; and
+/// what each sends, until it's done. Not observed: what you type redraws its own composer only.
 @MainActor
 final class CommentDrafts {
     var texts: [CommentComposing: String] = [:]
+    /// What a composer sends, until it's done: called off as it closes or another opens (`callOff`), and as its page goes
+    /// (`callOffAll`), when a prompt no session took yet is taken back; not as its card scrolls out of sight, as a lazy
+    /// stack's do.
+    var sends: [CommentComposing: Task<Void, Never>] = [:]
+    /// What asks a session about a thread as a prompt, by the thread, until it's done: called off as its page goes.
+    var asks: [Int: Task<Void, Never>] = [:]
+
+    func callOff(_ composer: CommentComposing) {
+        sends.removeValue(forKey: composer)?.cancel()
+    }
+
+    func callOffAll() {
+        for task in Array(sends.values) + Array(asks.values) { task.cancel() }
+        sends = [:]
+        asks = [:]
+    }
 }
 
 // MARK: - A thread's
@@ -340,10 +357,14 @@ struct ThreadCopilotActions: View {
         let excerpt: ThreadExcerpt? = if case .read(let excerpt)? = code.state(of: thread.id, in: item.key) { excerpt } else { nil }
         let sending = CommentSending(item: item, record: record, store: store, copilot: copilot, session: sessions.session(for: item.key))
         isAskingInSession = true
-        Task {
+        let id = thread.id
+        drafts.asks[id]?.cancel()
+        drafts.asks[id] = Task {
             let outcome = await sending.explainAsPrompt(
                 thread.thread, question: question.asked, earlier: question.earlier, excerpt: excerpt, to: choice
             )
+            guard !Task.isCancelled else { return }
+            drafts.asks[id] = nil
             isAskingInSession = false
             switch outcome {
             case .sent:
@@ -377,7 +398,7 @@ struct ThreadCopilotActions: View {
     static func isOngoing(_ state: CommentWork.State) -> Bool {
         switch state {
         case .waiting, .working, .needsYou: true
-        case .done, .failed, .stopped: false
+        case .done, .failed, .stopped, .unknown: false
         }
     }
 
@@ -387,7 +408,7 @@ struct ThreadCopilotActions: View {
         switch state {
         case .done, .failed, .stopped, .needsYou:
             Self.announce("\(spokenThread): \(SpokenText.unquoted(names.sentence(work)))")
-        case .waiting, .working:
+        case .waiting, .working, .unknown:
             break
         }
     }
@@ -846,8 +867,13 @@ struct CommentComposer: View {
         let excerpt = excerpt
         let thread = ask == .fix ? thread : nil
         let key = draftKey
-        Task {
+        // Kept with the page's composers, to be called off as this one closes, however it does: a prompt no session took
+        // yet is taken back, and nothing starts for a composer that's gone.
+        drafts.callOff(key)
+        drafts.sends[key] = Task {
             let outcome = await sending.fix(thread, how: how, suggestion: suggestion, answer: answer, excerpt: excerpt, to: target, choice: choice)
+            guard !Task.isCancelled else { return }
+            drafts.sends[key] = nil
             isSending = false
             switch outcome {
             case .sent:

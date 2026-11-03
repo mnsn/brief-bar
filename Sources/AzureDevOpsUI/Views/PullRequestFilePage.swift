@@ -136,12 +136,18 @@ struct PullRequestFilePage: View {
         .onChange(of: open.id) {
             current = nil
             unfoldedResolved = []
+            // Its threads' composers go with it.
+            composing = nil
             // For VoiceOver to go to the next file's name, though it was on this one's.
             isNameFocused = false
             scrollToTop()
         }
+        // What a composer sends is called off as it closes, with ✕ or Esc, or another opens; and all of it as the page goes.
+        // Not as its card scrolls out of sight, as its diff's do.
+        .onChange(of: composing) { old, _ in if let old { drafts.callOff(old) } }
         .onDisappear {
             if let shownVersion, let key = pullRequest?.key { files.hideDiff(shownVersion, of: key, by: viewer) }
+            drafts.callOffAll()
         }
         .accessibilityElement(children: .contain)
     }

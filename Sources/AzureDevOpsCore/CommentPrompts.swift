@@ -213,7 +213,7 @@ extension PullRequestPrompt {
         guard !suggestion.code.isEmpty else {
             return "Apply the change \(suggestion.author.name) suggested, as it's written: remove the lines the thread is on\(when). " + find
         }
-        let fence = suggestion.code.contains("```") ? "~~~~" : "```"
+        let fence = fence(for: suggestion.code)
         let place = when.isEmpty ? "the lines the thread is on" : "the lines the thread is on\(when),"
         return """
             Apply the change \(suggestion.author.name) suggested, exactly as it's written: replace \(place) with
@@ -224,6 +224,18 @@ extension PullRequestPrompt {
 
             \(find)
             """
+    }
+
+    /// A backtick fence that nothing in `code` closes, so all of it stays code, whatever it says: one longer than its longest
+    /// run of backticks, and at least three, as CommonMark has it.
+    static func fence(for code: String) -> String {
+        var longest = 0
+        var run = 0
+        for character in code {
+            run = character == "`" ? run + 1 : 0
+            longest = max(longest, run)
+        }
+        return String(repeating: "`", count: max(3, longest + 1))
     }
 
     /// What you wrote, quoted line by line as yours; nil when there's nothing.

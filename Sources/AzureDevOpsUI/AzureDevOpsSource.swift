@@ -1006,7 +1006,7 @@ extension AzureDevOpsSource {
     /// that waits on you, with what you can ask Copilot about it, in each state: Explain and Fix on it, with what Copilot did
     /// about another thread above them, and the fixes ready to push at the foot; Explain's composer open, then asking, then
     /// answered; Fix's composer open, on it and on a thread with a suggested change; Copilot fixing it, in its session and in
-    /// a fork of it; fixed; failing; and Fix All's composer open. In a narrow window too, for the first two. Each from made-up
+    /// a fork of it; fixed; failing; sent, how it went unknown; and Fix All's composer open. In a narrow window too, for the first two. Each from made-up
     /// states, through `CommentActionsPreview`: nothing's sent or asked.
     func commentActionRenderings() -> [(name: String, view: AnyView)] {
         guard let store, store.mode == .demo, let item = renderedPullRequests(store).first, let record = store.record(for: item.key) else {
@@ -1015,7 +1015,8 @@ extension AzureDevOpsSource {
         let threads = PullRequestPanel(item, record: record).threads
         guard let waiting = threads.waitingOnYou.first(where: { ThreadCode.isOnLines($0.thread) }) else { return [] }
         let suggested = threads.open.first { CommentSuggestion.latest(in: $0.thread, me: record.me) != nil }
-        let now = Date()
+        // As of the demo's now, which the threads' lines count from, however long rendering takes.
+        let now = store.now
         let session = SentPrompt.demoSession
         let fork = "5c1e7a90-3b2d-4f68-9a1c-2e8d7b6f4a05"
         func work(_ state: CommentWork.State, ago minutes: Double, forkedFrom: String? = nil) -> CommentWork {
@@ -1065,6 +1066,9 @@ extension AzureDevOpsSource {
             ("pull-requests-comment-failed", waiting.id, CommentActionsPreview(
                 work: [waiting.id: work(.failed("The build failed: CS0103 The name 'MaxDelay' does not exist in the current context."), ago: 3)]
             ), [("", CGSize(width: 1_000, height: 900))]),
+            // Another prompt went to the session before its turn ended: how it went isn't known.
+            ("pull-requests-comment-unknown", waiting.id, CommentActionsPreview(work: [waiting.id: work(.unknown(copied: false), ago: 6)], ready: []),
+             [("", CGSize(width: 1_000, height: 900))]),
         ]
         if let suggested {
             shown.append(("pull-requests-comment-suggestion", suggested.id, CommentActionsPreview(

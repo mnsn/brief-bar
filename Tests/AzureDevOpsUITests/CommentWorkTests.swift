@@ -92,7 +92,7 @@ import Testing
 
     /// A task's thread says how the task stands; once a later task goes on with its session, how it ended then; and while
     /// Push & Reply ships it, how that stands.
-    @Test func aTasksThreadsSayHowItStands() {
+    @Test func aTasksThreadsSayHowItStands() throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = store(settings)
         let first = now.addingTimeInterval(-600), second = now.addingTimeInterval(-60)
@@ -118,11 +118,20 @@ import Testing
         settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, threads: [
             TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ended: .finished),
         ])]
-        #expect(store.commentWork(on: 11, of: key).map { [$0.purpose == .pushAndReply, $0.state == .working(nil)] } == [true, true])
+        let shipping = try #require(store.commentWork(on: 11, of: key))
+        #expect(shipping.purpose == .pushAndReply)
+        #expect(shipping.state == .working(nil))
         #expect(store.readyFixes(of: key, among: [11, 12]).isEmpty)
+        // One that failed, or stopped, didn't push them: they're still ready, for Push & Reply again.
+        settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, ended: .failed, threads: [
+            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ended: .finished),
+        ])]
+        #expect(store.readyFixes(of: key, among: [11, 12]).map(\.threads) == [[11, 12]])
         // And those it took on that prompts to the session fixed, rather than its runs: once it's done, they're pushed.
         settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, ended: .finished, threads: [TakenThread(id: 13, since: now)])]
-        #expect(store.commentWork(on: 13, of: key).map { [$0.purpose == .pushAndReply, $0.isReadyFix] } == [true, false])
+        let shipped = try #require(store.commentWork(on: 13, of: key))
+        #expect(shipped.purpose == .pushAndReply)
+        #expect(!shipped.isReadyFix)
         #expect(store.readyFixes(of: key, among: [13]).isEmpty)
         // Nothing while Send Work to Copilot is off.
         settings.copilotEnabled = false
@@ -149,7 +158,28 @@ import Testing
         store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 12", options: CopilotModel.standard,
                    repository: URL(fileURLWithPath: "/tmp/payments-api"), continuing: settings.copilotRuns[0], threads: [12])
         try await settle { settings.copilotRuns.first?.threads?.count == 2 }
-        #expect(settings.copilotRuns.first?.threads?.map { [$0.id: $0.ended] } == [[11: .finished], [12: nil]])
+        let kept: [[Int: RunPhase?]]? = settings.copilotRuns.first?.threads?.map { [$0.id: $0.ended] }
+        #expect(kept == [[11: .finished], [12: nil]])
+    }
+
+    /// Going on with a session with the Copilot CLI is its next turn: a prompt sent it before, whose turn wasn't seen to
+    /// end, isn't followed after, once the run started.
+    @Test func goingOnWithASessionOverlapsThePromptsSentItBefore() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        store.launchForTests = { request, id, now in
+            guard case .pullRequest(_, let action) = request.subject else { throw CancellationError() }
+            return Self.makeRun(id, action, startedAt: now)
+        }
+        store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 11", options: CopilotModel.standard,
+                   repository: URL(fileURLWithPath: "/tmp/payments-api"), threads: [11])
+        try await settle { !settings.copilotRuns.isEmpty }
+        settings.copilotRuns[0].ended = .finished
+        store.keep(about(threads: [12]), sentTo: .sent, from: settings.copilotRuns[0].id, forking: false, at: Date().addingTimeInterval(-5))
+        #expect(settings.copilotSentPrompts.first?.isFollowed == true)
+        store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 13", options: CopilotModel.standard,
+                   repository: URL(fileURLWithPath: "/tmp/payments-api"), continuing: settings.copilotRuns[0], threads: [13])
+        try await settle { settings.copilotSentPrompts.first?.overlapped == true }
     }
 
     /// Nothing starts once Azure DevOps stopped, as it may while an inline Fix looks for where to send it.
@@ -337,6 +367,69 @@ import Testing
         #expect(store.readyFixes(of: key, among: [11]).map(\.threads) == [[11]])
     }
 
+    /// A delivery that took a while, as one that waits for a session to load can, keeps the prompts sent meanwhile, faster.
+    @Test func aSlowDeliveryKeepsThePromptsSentMeanwhile() {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let other = "2f8a4c6e-1b3d-4e5f-8a7b-9c0d1e2f3a15"
+        store.keep(about(threads: [12]), sentTo: .sent, from: other, forking: false, at: Date())
+        store.keep(about(), sentTo: .sent, from: session, forking: false, at: Date().addingTimeInterval(-100))
+        #expect(Set(settings.copilotSentPrompts.map(\.threads)) == [[11], [12]])
+    }
+
+    /// A prompt sent to one of the Copilot app's sessions about pull requests' threads, when another went to that session
+    /// before its turn was seen to end: which turn's end is its, the session's log can't tell, so it says so, stops being
+    /// followed, and leaves the ready-fixes bar alone. Kept so after BriefBar restarts, and past `followLimit`.
+    @Test func aPromptOverlappedByAnotherSaysItsOutcomeIsntKnown() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        store.keep(about(), sentTo: .sent, from: session, forking: false, at: now.addingTimeInterval(-60))
+        let first = try #require(settings.copilotSentPrompts.first)
+        // Seen over once only: that may be the end of the turn that ran as it was sent.
+        store.promptTurns[first.id] = SessionTurn(phase: .finished(summary: "Done"), since: now.addingTimeInterval(-10))
+        store.keep(about(threads: [12]), sentTo: .sent, from: session, forking: false, at: now)
+        #expect(settings.copilotSentPrompts.first { $0.threads == [11] }?.overlapped == true)
+        #expect(settings.copilotSentPrompts.first { $0.threads == [12] }?.isFollowed == true)
+        #expect(store.promptTurns[first.id] == nil)
+        let work = try #require(store.commentWork(on: 11, of: key))
+        #expect(work.state == .unknown(copied: false))
+        #expect(!work.isActive)
+        #expect(work.sentence(name: "Retry backoff", forkOf: nil) == "Sent to ‘Retry backoff’ · see the session")
+        #expect(store.readyFixes(of: key, among: [11]).isEmpty)
+        let restarted = SentPrompt.load(from: settings.defaults, now: now.addingTimeInterval(SentPrompt.followLimit + 60))
+        #expect(restarted.first { $0.threads == [11] }?.overlapped == true)
+        #expect(!restarted.contains { $0.threads == [12] })
+    }
+
+    /// What another prompt does to the ones sent before: any prompt BriefBar sends the session, about threads or not, or
+    /// one it copied for you to paste there; not one that ended, one sent elsewhere, or one copied as `/fork <prompt>`,
+    /// which goes to a fork. One copied says it was.
+    @Test func whatOverlapsAPrompt() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let other = "2f8a4c6e-1b3d-4e5f-8a7b-9c0d1e2f3a15"
+        store.keep(about(), sentTo: .fellBack(SessionFallback(reason: "Off", session: session)), from: session, forking: false,
+                   at: now.addingTimeInterval(-90))
+        store.keep(about(threads: [12]), sentTo: .sent, from: other, forking: false, at: now.addingTimeInterval(-80))
+        let ended = try #require(settings.copilotSentPrompts.firstIndex { $0.threads == [12] })
+        settings.copilotSentPrompts[ended].ended = .finished
+        store.keep(about(threads: [13]), sentTo: .sent, from: other, forking: false, at: now.addingTimeInterval(-70))
+        // A `/fork` copy, and an ended one, overlap nothing, and aren't.
+        store.keep(about(threads: [14]), sentTo: .fellBack(SessionFallback(reason: "Off", pastesFork: true, session: session)),
+                   from: session, forking: true, at: now.addingTimeInterval(-60))
+        store.keep(nil, sentTo: .sent, from: other, forking: false, at: now.addingTimeInterval(-50))
+        let overlapped = Dictionary(uniqueKeysWithValues: settings.copilotSentPrompts.map { ($0.threads, $0.overlapped) })
+        let expected: [[Int]: Bool] = [[11]: false, [12]: false, [13]: true, [14]: false]
+        #expect(overlapped == expected)
+        #expect(settings.copilotSentPrompts.first { $0.threads == [12] }?.ended == .finished)
+        store.keep(nil, sentTo: .sent, from: session, forking: false, at: now)
+        #expect(settings.copilotSentPrompts.first { $0.threads == [11] }?.overlapped == true)
+        #expect(settings.copilotSentPrompts.first { $0.threads == [14] }?.overlapped == false)
+        #expect(settings.copilotSentPrompts.count == 4)
+        let copied = try #require(store.commentWork(on: 11, of: key))
+        #expect(copied.sentence(name: "Retry backoff", forkOf: nil) == "Copied for ‘Retry backoff’ · see the session")
+    }
+
     /// One copied for you to paste that you didn't paste goes after half an hour.
     @Test func forgetsAPromptYouDidntPaste() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
@@ -362,9 +455,15 @@ import Testing
         #expect(store.commentWork(on: 11, of: key)?.isTask == false)
     }
 
-    /// Waits for the store's work, which runs on the main actor between this test's awaits.
-    private func settle(until done: () -> Bool) async throws {
-        for _ in 0..<500 where !done() {
+    /// Waits for the store's work, which runs on the main actor between this test's awaits, for as long as a busy machine
+    /// could need (`waitLimit`), failing the test if it doesn't happen.
+    private func settle(until done: () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !done() {
+            guard ContinuousClock.now < deadline else {
+                Issue.record("Timed out waiting", sourceLocation: sourceLocation)
+                return
+            }
             try await Task.sleep(for: .milliseconds(10))
         }
     }
