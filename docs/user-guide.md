@@ -412,11 +412,11 @@ thread, a line above its buttons says so, in its state's color, with since when 
 explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Retry backoff’ · 2m**, **Fixed in ‘Retry
 backoff’, not pushed** or **Couldn't fix it: …**; click it to see the session. When you send a session something else
 before it's done with what you sent it, BriefBar can't tell from the session which of them ended how, so the earlier
-thread says **Sent to ‘Retry backoff’ · see the session** instead. Once fixes are done, a bar at the foot of the details,
-or of a pull request's page over a work item's or another pull request's, says **2 fixes ready in ‘Retry backoff’**,
-which takes you to the threads, with **Push & Reply…**, which opens the Send
-to Copilot window to commit them, push and reply from that session; they stay in the bar when Push & Reply fails or is
-stopped, to try again. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
+thread says **Sent to ‘Retry backoff’ · see the session** instead. Once fixes are done, of comments or of a build
+(below), a bar at the foot of the details, or of a pull request's
+page over a work item's or another pull request's, says **2 fixes ready in ‘Retry backoff’**, which takes you to what
+they fixed, with **Push & Reply…**, which opens the Send to Copilot window to commit them, push, and reply on the threads
+they fixed, from that session; they stay in the bar when Push & Reply fails or is stopped, to try again. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
 off, unless the session has it already. VoiceOver hears what becomes of each.
 
 **See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
@@ -453,13 +453,27 @@ passed on this commit before the target branch changed, or that the pipeline's l
 failed too or passed, each opening the run it names. Then its errors, the tests that failed, with what each said,
 all of it with **Show More** when it's long, and its stack trace when you ask, and the last lines of the failed
 step's log, which you can select and scroll sideways, all of the 200 BriefBar read with **Show All**. **Open Run**,
-**Open Log** and **Open Tests** open the rest in Azure DevOps, and, while Send Work to Copilot is on,
-**Fix the Build with Copilot…** sends it to Copilot, as the pull request's menu does, or says Copilot's on it. A
-build that's still going opens the same way, to show its stages as they are and what it runs now. **↻**, beside
+**Open Log** and **Open Tests** open the rest in Azure DevOps. A build that's still going opens the same way, to show
+its stages as they are and what it runs now. **↻**, beside
 when it was read, reads it again, as BriefBar does once it finished or runs again, or once someone pushes to the
 pull request or retargets it; it keeps what it read in memory, so opening it again soon after reads little. When it
 can't read it again, what it read stays, with why, unless the run ran again since, or it's gone or no longer yours
 to read.
+
+**Ask Copilot about a failed build, where you read it.** With Send Work to Copilot on, a build that failed has
+**✨ Explain the Failure** and **Fix** under where it failed, beside **Open Run**, and each opens a small composer there,
+as a comment's do: your words, where it goes, one **▾** away, and its button,
+which Return presses. **Explain the Failure** asks the Copilot session that worked on the build, or else the pull
+request's own, what you want to know, or else what failed and why, and whether it's this change, a flaky test, the
+target branch or the build's infrastructure, from what BriefBar read of the run: where it failed, its errors, the tests
+that failed with what each said, the last 40 lines of the failed step's log, and what tells whether it's this change.
+Its answer shows under the run, asked aside as a comment's is, so nothing changes; **Ask More** follows up on it.
+**Fix**, on your own pull request, has Copilot reproduce the failure and fix it, as you say in **Tell Copilot how
+(optional)**, building on the answer if you like, in the pull request's session by default, a fork of it, a new
+session or another; it doesn't commit, push or touch pipelines. The build's row then says what Copilot does about it,
+in its state's color, open or not, such as **Copilot is fixing this build in ‘Retry backoff’ · 2m** or **Fixed in
+‘Retry backoff’, not pushed**, and the fix counts in the bar at the details' foot, whose **Push & Reply…** pushes it;
+a rerun, or a push, that passes ends it.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
@@ -618,7 +632,7 @@ With it on, **your pull requests' menus send them to Copilot too** (right-click 
 | Action | On | What Copilot does |
 |---|---|---|
 | **Fix Comments with Copilot…** | your pull request with unresolved comments | addresses each one that waits on you, quoted word for word, with its file and line, then builds and tests; it doesn't commit, push or reply |
-| **Fix the Build with Copilot…** | your pull request whose build failed | reproduces the failure, from where it failed and the run's errors, and fixes it, or says it's infrastructure or flaky; it doesn't push, or touch pipelines |
+| **Fix the Build with Copilot…** | your pull request whose build failed | reproduces the failure, from where it failed and the run's errors, and, for a build you opened in its details, the tests that failed and the end of its log, and fixes it, or says it's infrastructure or flaky; it doesn't push, or touch pipelines |
 | **Resolve Conflicts with Copilot…** | your pull request with merge conflicts | merges the target branch in and resolves the conflicts; it doesn't push |
 | **Push & Reply with Copilot…** | your pull request, once one of those is done | goes on in the same session: commits, pushes the branch (never with force), replies on the threads it addressed and resolves them |
 | **Pre-review with Copilot…** | a pull request you review | reads the change and drafts your review, with each comment's file, line and how much it matters; it changes and posts nothing |
@@ -1029,12 +1043,13 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   or, when they can't, put it on the clipboard too. To say how a prompt would reach a session, the window and a
   pull request's details read which sessions the extension listens in, while the option is on. **Explain**
   sends a session's conversation, which the Copilot CLI copies into a fork it deletes after, with the comment
-  and its code, to GitHub Copilot, and keeps the answer in memory only. For a prompt about a pull request's
-  comments sent to one of the Copilot app's sessions, BriefBar reads that session's log, from then until Copilot
-  is done with it. In its preferences, it keeps which work items you sent, where, with which model, and the link to
+  and its code, or with what BriefBar read of a failed build (its errors, the tests that failed with what each
+  said, and the last lines of its log), to GitHub Copilot, and keeps the answer in memory only; a build's **Fix**
+  quotes the same in its prompt. For a prompt about a pull request's comments or builds sent to one of the Copilot
+  app's sessions, BriefBar reads that session's log, from then until Copilot is done with it. In its preferences, it keeps which work items you sent, where, with which model, and the link to
   the pull request, not their titles; the session you choose for a pull request's work, by its ID only; the comment
-  threads each task or prompt took on, and which session a prompt about comments went to and when, by their IDs only;
-  the IDs of the forks it made to ask a session about a comment, until they're deleted;
+  threads, builds and conflicts each task or prompt took on, and which session a prompt about them went to and when, by
+  their IDs only; the IDs of the forks it made to ask a session about a comment or a build, until they're deleted;
   and, in a file only you can read, what Copilot printed when it ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same

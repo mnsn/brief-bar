@@ -1896,7 +1896,9 @@ remain available by right-clicking, including in the menu-bar popover and widget
 BriefBar writes the prompt from what it read of the pull request
 (`PullRequestPrompt`): the unresolved comment threads, those that wait on you first, word for word,
 each with its file, line and thread; for a failed build, each run's link, where it failed and its
-errors, read again from its timeline (one GET a build, when you ask); for a review, the threads already
+errors, read again from its timeline (one GET a build, when you ask), or, for one that's open in the pull request's
+details, what they read of it there, with its failed tests and the end of its log, and nothing is read again
+([below](#about-a-failed-build)); for a review, the threads already
 there, and when you last voted or commented. The prompts say what Copilot may do: fixing comments, a
 build or conflicts changes files but never commits, pushes or replies; a review changes and posts
 nothing; only **Push & Reply** commits, pushes the pull request's branch without force
@@ -2173,8 +2175,8 @@ Neither source reads anything more for it.
 
 **What's kept.** Which work items and pull requests you sent, what for, with which model, in which
 repository and worktree, whether you stopped it, whether it went on with one of the Copilot app's sessions,
-which comment threads it took on, by their IDs, and the pull request's link go to the preferences (`ado.copilot.runs`),
-without their titles; and so are the prompts about comments sent to the app's sessions, by references only
+which comment threads, builds and conflicts it took on, by their IDs, and the pull request's link go to the preferences
+(`ado.copilot.runs`), without their titles; and so are the prompts about them sent to the app's sessions, by references only
 (`ado.copilot.sentPrompts`); and so
 do your choices and the repository of each project, and the forks BriefBar hasn't deleted yet, by their sessions' IDs
 and their CLI's folder (`ado.copilot.forksToDelete`), which turning Azure DevOps off keeps, to delete them once it's on
@@ -2298,6 +2300,40 @@ say they're pushed once it's done, though prompts fixed them rather than its run
 takes on what its action is for (`PullRequestTasks.parts`): the threads whose entries are still in it as you send it
 (`PullRequestPrompt.threadsListed`), the builds that failed for Fix the Build, the conflicts for Resolve Conflicts. The
 demo's are made up (`SentPrompt.demo`).
+
+#### About a failed build
+
+In a pull request's details, while Send Work to Copilot is on, a build that failed and is open under its row
+(`BuildInvestigationView`) has **✨ Explain the Failure** and **Fix** (`BuildCopilotActions`) before **Open Run**, each
+opening a composer in place under them (`BuildComposer`, over `CopilotPartComposer`), one at a time in the details with
+the comments' and the conflicts'. Copilot takes the build on by the pipeline its policy runs (`PullRequestPart.build`,
+from `Check.definitionId`, which the policy's settings say, else its run's): each of its runs, as it runs again or after a
+push, is the same build. Where it goes is as for a comment: the session that last worked on the build, else the pull
+request's, and, for Fix, a fork of it and a new session; then the rest (`CopilotDestinations`).
+
+**Explain the Failure** (`PullRequestPrompt.explainBuild`) quotes what the details read of the run as it opened
+(`FailedBuildReport.init(_:name:)`): where it failed, from its stage to its task, its first ten errors with where each
+is, the first five tests that failed, each with the first twelve lines of what it said and six of its stack trace, at
+most 1,000 and 800 characters, and how many more failed, the last 40 lines of the failed step's log, each cut to 300
+characters, in a fence nothing in it closes, and what tells whether it's the change's doing (`BuildHint`); and it asks the
+session, aside, what failed and why, and whether it's the change, a flaky test, the target branch or the build's
+infrastructure (`CopilotQuestions`, over `SessionQuestions`). What it answers is kept with the run it's about, so it
+doesn't show with another run of the build. **Ask in the Session** sends `PullRequestPrompt.askAboutBuild` instead,
+which can read the run's whole log with the session's Azure DevOps tools. The demo makes its answer up
+(`DemoData.buildExplanation`).
+
+**Fix** (`PullRequestPrompt.fixBuild(_:failures:workplace:how:answer:alone:)`) quotes the same, then your words, as yours,
+and the answer if you include it, and keeps to that build. It's Fix the Build, whose `deniedTools` refuse commits and
+pushes, and hands nothing off, since a build waits on nobody. The pull request's own **Fix the Build** quotes what its
+details read of each failed build that's open there (`PRStore.investigation`, `PullRequestTasks.reports`), else its
+timeline's errors, as before, and takes on each of its failed builds (`PullRequestTasks.parts`).
+
+What Copilot does about the build is said on its row, open or not (`BuildWorkLine`), as on a thread (`CopilotWork`):
+**Copilot is fixing this build in ‘Retry backoff’**, **Fixed in ‘Retry backoff’, not pushed**, **Pushed from ‘Retry
+backoff’**. Once the build passes, as when it ran again or after a push, or doesn't apply, its line goes, unless Copilot
+is still at it (`CopilotWork.shows(onBuild:)`), and its fix isn't counted in the bar at the details' foot any more
+(`PRRecord.partsToFix`). Push & Reply ships it with the threads its session fixed, or alone, replying on no thread then
+(`PullRequestPrompt.pushAndReply(_:workplace:threads:)`).
 
 ### Notifications
 
@@ -2688,7 +2724,8 @@ It's a command-line mode like `--json`, with the same rules:
 worktree: fetch the branch and check it out, or ask where to work if that isn't a clone of the
 repository or has changes of its own. Push & Reply, for one of yours, first checks that HEAD contains
 the pull request's branch and that everything it would push was made for it, stops and asks if not,
-and never rebases. For a failed build, it reads each run's timeline first, with a GET. The Copilot
+and never rebases. For a failed build, it reads each run's timeline first, with a GET, rather than what the details read
+of it. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 
 While **Send Work to Copilot** is on, `pull_request` also names an open pull request's session: the
