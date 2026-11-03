@@ -24,7 +24,7 @@
 	<string>APPL</string>
 	<!-- The build sets CFBundleShortVersionString and CFBundleVersion to BriefBar's version. -->
 	<key>LSMinimumSystemVersion</key>
-	<string>15.0</string>
+	<string>26.0</string>
 	<!-- No Dock icon or menus: only Sparkle's windows. -->
 	<key>LSUIElement</key>
 	<true/>

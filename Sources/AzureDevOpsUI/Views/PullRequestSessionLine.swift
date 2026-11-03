@@ -220,7 +220,7 @@ private struct SessionLineRow: View {
             // The sentence on one line where it fits; else its name, then why and how it stands, rather than a phrase
             // broken in two.
             ViewThatFits(in: .horizontal) {
-                line(tail.map { head + Text(" · ").foregroundStyle(.tertiary) + $0 } ?? head)
+                line(tail.map { Text("\(head)\(Text(" · ").foregroundStyle(.tertiary))\($0)") } ?? head)
                     .lineLimit(1)
                 VStack(alignment: .leading, spacing: 1) {
                     line(head)
@@ -253,9 +253,10 @@ private struct SessionLineRow: View {
 
     /// "Copilot · ‘Retry backoff’".
     private var head: Text {
-        Text("Copilot").fontWeight(.semibold).foregroundStyle(.secondary)
-            + Text("\u{00A0}· ").foregroundStyle(.tertiary)
-            + Text(name).fontWeight(.medium).foregroundStyle(choice == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+        let copilot = Text("Copilot").fontWeight(.semibold).foregroundStyle(.secondary)
+        let dot = Text("\u{00A0}· ").foregroundStyle(.tertiary)
+        let named = Text(name).fontWeight(.medium).foregroundStyle(choice == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+        return Text("\(copilot)\(dot)\(named)")
     }
 
     /// "on its branch · Finished", how it stands in its state's color; wrapping only between the two, and the dot staying
@@ -269,7 +270,7 @@ private struct SessionLineRow: View {
             parts.append(Text(Self.unbroken(standing.text)).fontWeight(.medium).foregroundStyle(color))
         }
         guard let first = parts.first else { return nil }
-        return parts.dropFirst().reduce(first) { $0 + Text("\u{00A0}· ").foregroundStyle(.tertiary) + $1 }
+        return parts.dropFirst().reduce(first) { Text("\($0)\(Text("\u{00A0}· ").foregroundStyle(.tertiary))\($1)") }
     }
 
     /// A few words that don't break across lines.
@@ -419,7 +420,7 @@ private struct QuestionRow: View {
             parts.append(Text(phrase).foregroundStyle(standing.state.map { AnyShapeStyle($0.textColor) } ?? AnyShapeStyle(.secondary)))
         }
         guard let first = parts.first else { return Text("") }
-        return parts.dropFirst().reduce(first) { $0 + Text(" · ").foregroundStyle(.tertiary) + $1 }
+        return parts.dropFirst().reduce(first) { Text("\($0)\(Text(" · ").foregroundStyle(.tertiary))\($1)") }
     }
 
     /// The same, for VoiceOver.

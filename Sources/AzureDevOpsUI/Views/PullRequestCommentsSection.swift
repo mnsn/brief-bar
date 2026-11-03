@@ -328,7 +328,7 @@ struct ThreadCard: View {
         let status = thread.status.map { Text($0).foregroundStyle(Self.color(of: thread)) }
         let waiting = waitingOn.map { Text("Waiting on \($0)").foregroundStyle(.secondary) }
         let separator = status != nil && waiting != nil ? Text(" · ").foregroundStyle(.tertiary) : nil
-        return ([status, separator, waiting].compactMap { $0 }.reduce(Text(""), +))
+        return ([status, separator, waiting].compactMap { $0 }.reduce(Text("")) { Text("\($0)\($1)") })
             .font(size: 11.5)
             .lineLimit(1)
     }
