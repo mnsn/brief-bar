@@ -275,6 +275,53 @@ import Testing
         #expect(store.counts(of: b, in: key) == .success(LineCounts(added: 2, removed: 1)))
     }
 
+    @Test func addsUpTheLinesOnceEachTextFileIsCounted() async throws {
+        let reader = Reader()
+        let (store, _, _, _) = makeStores(reader)
+        let files = Self.files(head: "c1")
+        await reader.failDiff("A.cs", .binary)
+        await reader.failDiff("C.cs", .tooLarge)
+        for file in files.files where file.name != "C.cs" {
+            store.count(file, in: files, of: pullRequest, by: viewer, on: page)
+        }
+        try await settle { files.files.allSatisfy { $0.name == "C.cs" || store.counts(of: .init($0, in: files), in: key) != nil } }
+        // Not until C is counted, and then not either: it's text, longer than BriefBar reads.
+        #expect(store.totals(of: files, in: key) == nil)
+        store.count(files.files[2], in: files, of: pullRequest, by: viewer, on: page)
+        try await settle { store.counts(of: .init(files.files[2], in: files), in: key) != nil }
+        #expect(store.totals(of: files, in: key) == nil)
+        // A picture adds no lines.
+        let others = ChangedFiles(scope: .whole, comparison: files.comparison, iterations: files.iterations, files: [files.files[0], files.files[1]])
+        #expect(store.totals(of: others, in: key) == LineCounts(added: 2, removed: 1))
+    }
+
+    @Test func readsAFailedDiffAgainHalfAMinuteLaterIfThatMayHelp() async throws {
+        let reader = Reader()
+        var now = Date()
+        let (store, _, _, _) = makeStores(reader) { now }
+        let files = Self.files(head: "c1")
+        let a = PullRequestFilesStore.Version(files.files[0], in: files)
+        let b = PullRequestFilesStore.Version(files.files[1], in: files)
+        await reader.failDiff("A.cs", .unreadable(.offline))
+        await reader.failDiff("B.cs", .tooLarge)
+        store.showDiff(of: files.files[0], in: files, of: pullRequest, by: viewer, on: page)
+        store.showDiff(of: files.files[1], in: files, of: pullRequest, by: viewer, on: page)
+        try await settle { store.diff(of: a, in: key) != .reading && store.diff(of: b, in: key) != .reading }
+        #expect(store.diff(of: a, in: key) == .failed(.unreadable(.offline)))
+        // Its page asks again as it goes on showing: not before half a minute, and then only what may pass.
+        await reader.failDiff("A.cs", nil)
+        await reader.failDiff("B.cs", nil)
+        store.showDiff(of: files.files[0], in: files, of: pullRequest, by: viewer, on: page)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await reader.asked == ["diff A.cs", "diff B.cs"])
+        now = now.addingTimeInterval(PullRequestCodeStore.retryInterval)
+        store.showDiff(of: files.files[0], in: files, of: pullRequest, by: viewer, on: page)
+        store.showDiff(of: files.files[1], in: files, of: pullRequest, by: viewer, on: page)
+        try await settle { if case .read? = store.diff(of: a, in: key) { true } else { false } }
+        #expect(store.diff(of: b, in: key) == .failed(.tooLarge))
+        #expect(await reader.asked == ["diff A.cs", "diff B.cs", "diff A.cs"])
+    }
+
     @Test func triesTheFilesAgainWhenYouAskOrHalfAMinuteLater() async throws {
         let reader = Reader()
         var now = Date()
@@ -434,6 +481,20 @@ import Testing
         #expect(store.file?.from == .thread(11))
         store.back()
         #expect(store.file == nil && store.place == .thread(11))
+    }
+
+    @Test func goesOnToAnotherFilesFirstOrLastComment() throws {
+        let store = PullRequestDetailsStore()
+        store.itemsChanged(items)
+        store.show(try item(4102))
+        store.open(file: path, at: 11, from: .thread(11))
+        store.open(file: "/src/RetryOptions.cs", comment: .first)
+        #expect(store.file == .init(path: "/src/RetryOptions.cs", thread: nil, from: .thread(11), comment: .first))
+        // Once its page went there, it doesn't again.
+        store.reachedComment(.last)
+        #expect(store.file?.comment == .first)
+        store.reachedComment(.first)
+        #expect(store.file?.comment == nil && store.file?.from == .thread(11))
     }
 
     @Test func goingElsewhereClosesTheFile() throws {

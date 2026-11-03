@@ -137,6 +137,12 @@ public struct ChangedFiles: Sendable, Equatable {
         files.firstIndex { $0.id == id }
     }
 
+    /// The file a comment thread is on, as `PullRequestPanel.Threads.comments(on:)` puts it there: the one Azure DevOps
+    /// tracks it on, though another took the path it names since, or else the one at its path, after the change or before.
+    public func file(of thread: ReviewThread) -> FileChange? {
+        files.first { PullRequestPanel.Threads.isOn($0, thread) }
+    }
+
     /// The files in a folder, as the details list them: those right in it, under its path.
     public struct Folder: Sendable, Equatable, Identifiable {
         /// "src/Payments"; nil at the top of the repository.

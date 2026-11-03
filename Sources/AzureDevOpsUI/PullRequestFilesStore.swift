@@ -269,6 +269,24 @@ final class PullRequestFilesStore: ObservableObject {
         counts[key]?[version]
     }
 
+    /// How many lines a change's files add and remove, all together, once each is counted, but those that aren't text, such
+    /// as a picture; nil until then, and while one that is text can't be counted, as one longer than BriefBar reads.
+    func totals(of changes: ChangedFiles, in key: PRKey) -> LineCounts? {
+        var total = LineCounts(added: 0, removed: 0)
+        for file in changes.files {
+            switch counts[key]?[Version(file, in: changes)] {
+            case .success(let counts)?:
+                total.added += counts.added
+                total.removed += counts.removed
+            case .failure(.binary)?:
+                continue
+            default:
+                return nil
+            }
+        }
+        return total
+    }
+
     /// A file's row came on screen: how many lines it adds and removes is counted, unless it is, after the files whose rows
     /// came before it, one file at a time, by reading its two versions.
     /// - Parameters:

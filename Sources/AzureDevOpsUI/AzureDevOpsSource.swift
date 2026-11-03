@@ -969,8 +969,21 @@ extension AzureDevOpsSource {
         else { return }
         // Held while `--render` draws.
         _ = code.hold(item.key)
-        let paths = store.mode == .demo ? Self.renderedFiles : (record.details?.threads.compactMap(\.filePath).prefix(1).map { $0 } ?? [])
-        await files.readAll(of: record.pullRequest, scopes: store.mode == .demo ? [.whole, .since(1)] : [.whole], diffs: paths, counting: 20)
+        let isDemo = store.mode == .demo
+        await files.readAll(
+            of: record.pullRequest, scopes: isDemo ? [.whole, .since(1)] : [.whole], diffs: isDemo ? Self.renderedFiles : [], counting: 20
+        )
+        // From your own, the file its pictures show, which takes its files to choose.
+        guard !isDemo, case .read(let changes)? = files.list(of: item.key, .whole), let file = renderedFile(in: changes, of: item, store)
+        else { return }
+        await files.readAll(of: record.pullRequest, diffs: [file.path], counting: 0)
+    }
+
+    /// The file whose page `--render` draws: the demo's, or else the first with a thread on it, or else the first.
+    private func renderedFile(in changes: ChangedFiles, of item: PRSnapshot, _ store: PRStore) -> FileChange? {
+        changes.files.first { FileChange.ID(path: Self.renderedFiles[0]) == $0.id }
+            ?? changes.files.first { file in store.record(for: item.key)?.details?.threads.contains { $0.filePath == file.path } == true }
+            ?? changes.files.first
     }
 
     /// The Pull Requests page with the details of the first of your pull requests that needs you at their Files, all of the
@@ -980,9 +993,7 @@ extension AzureDevOpsSource {
         guard let store, let files = pullRequestFiles, let item = renderedPullRequests(store).first,
               case .read(let changes)? = files.list(of: item.key, .whole)
         else { return [] }
-        let page = changes.files.first { FileChange.ID(path: Self.renderedFiles[0]) == $0.id }
-            ?? changes.files.first { file in store.record(for: item.key)?.details?.threads.contains { $0.filePath == file.path } == true }
-            ?? changes.files.first
+        let page = renderedFile(in: changes, of: item, store)
         let binary = changes.files.first { FileChange.ID(path: Self.renderedFiles[1]) == $0.id }
         // The thread on it that waits on you, for its page to go to.
         let thread = page.flatMap { page in

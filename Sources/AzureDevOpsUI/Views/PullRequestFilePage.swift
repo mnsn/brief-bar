@@ -67,7 +67,9 @@ struct PullRequestFilePage: View {
 
     var body: some View {
         let state = pullRequest.flatMap { files.list(of: $0.key, details.scope) }
-        let shown: Shown? = if let pullRequest, case .read(let changes)? = state, let file = changes.file(atPath: open.path) {
+        let threadFile = threadFile(state)
+        let shown: Shown? = if let pullRequest, case .read(let changes)? = state,
+            let file = threadFile ?? changes.file(atPath: open.path) {
             Shown(file: file, changes: changes, threads: threads, diff: diff(of: file, in: changes, pullRequest))
         } else {
             nil
@@ -123,6 +125,10 @@ struct PullRequestFilePage: View {
             code.release(hold)
         }
         .onAppear { scrollToTop() }
+        // Opened at a thread on a file renamed since, whose old path another file took: the file it's on now, for good.
+        .onChange(of: threadFile?.id, initial: true) {
+            if let threadFile, threadFile.id != open.id { details.open(file: threadFile.path, at: open.thread) }
+        }
         .onChange(of: open.id) {
             current = nil
             unfoldedResolved = []
@@ -136,13 +142,24 @@ struct PullRequestFilePage: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// While it goes to a thread, the file Azure DevOps tracks it on, which the path it opened at may not be.
+    private func threadFile(_ state: PullRequestFilesStore.State<ChangedFiles>?) -> FileChange? {
+        guard case .read(let changes)? = state, let id = open.thread, let thread = threads.all.first(where: { $0.id == id })
+        else { return nil }
+        return changes.file(of: thread.thread)
+    }
+
     private func diff(of file: FileChange, in changes: ChangedFiles, _ pullRequest: PullRequest) -> PullRequestFilesStore.State<FileDiff>? {
         files.diff(of: PullRequestFilesStore.Version(file, in: changes), in: pullRequest.key)
     }
 
     /// To its top, and VoiceOver to the file's name, unless it goes to one of its threads, which VoiceOver goes to then.
     private func scrollToTop() {
-        guard open.thread == nil else { return }
+        guard open.thread == nil, open.comment == nil else { return }
+        toTop()
+    }
+
+    private func toTop() {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(30))
             scroll.scrollTo(PullRequestDetailsStore.Anchor.top, anchor: .top)
@@ -163,9 +180,12 @@ struct PullRequestFilePage: View {
         var diff: PullRequestFilesStore.State<FileDiff>?
         /// By the line they show under.
         var placed: [Int: [PullRequestPanel.Thread]] = [:]
+        /// Those on the whole file first, then those on lines, as they show.
         var apart: [PullRequestPanel.Thread] = []
         /// The lines its open threads are on.
         var marked = IndexSet()
+        /// The lines the threads it places are on, all of which show.
+        var spans = IndexSet()
         /// Its open threads, in the order it shows them, to go through.
         var openThreads: [Int] = []
 
@@ -176,20 +196,29 @@ struct PullRequestFilePage: View {
             self.diff = diff
             let onFile = threads.comments(on: file).threads
             guard case .read(let read)? = diff else {
-                apart = onFile
-                openThreads = onFile.filter(Self.isOpen).map(\.id)
+                apart = Self.asApart(onFile)
+                openThreads = apart.filter(Self.isOpen).map(\.id)
                 return
             }
             for thread in onFile {
                 if let row = read.row(of: thread.thread, in: changes) {
                     placed[row, default: []].append(thread)
-                    if Self.isOpen(thread), let rows = read.rows(of: thread.thread, in: changes) { marked.insert(integersIn: rows) }
+                    if let rows = read.rows(of: thread.thread, in: changes) {
+                        spans.insert(integersIn: rows)
+                        if Self.isOpen(thread) { marked.insert(integersIn: rows) }
+                    }
                 } else {
                     apart.append(thread)
                 }
             }
+            apart = Self.asApart(apart)
             openThreads = apart.filter(Self.isOpen).map(\.id)
                 + placed.keys.sorted().flatMap { placed[$0, default: []].filter(Self.isOpen).map(\.id) }
+        }
+
+        /// Those on the whole file, then those on lines, as they show above the diff.
+        private static func asApart(_ threads: [PullRequestPanel.Thread]) -> [PullRequestPanel.Thread] {
+            threads.filter { !ThreadCode.isOnLines($0.thread) } + threads.filter { ThreadCode.isOnLines($0.thread) }
         }
 
         static func isOpen(_ thread: PullRequestPanel.Thread) -> Bool {
@@ -447,10 +476,11 @@ struct PullRequestFilePage: View {
     }
 
     /// Where the next open thread is, or the previous, from the one you went to last: on this file, or, past its first or
-    /// last, the next file's first, or the previous file's last, that has one. Nil when there's none that way.
+    /// last, the next file's first, or the previous file's last, that has one, as its page shows them. Nil when there's none
+    /// that way.
     private enum CommentTarget: Equatable {
         case here(Int)
-        case file(FileChange, Int)
+        case file(FileChange, PullRequestDetailsStore.OpenFile.Edge)
     }
 
     private func commentTarget(
@@ -461,16 +491,16 @@ struct PullRequestFilePage: View {
         let target = at.map { $0 + step } ?? (step > 0 ? 0 : ids.count - 1)
         if ids.indices.contains(target) { return .here(ids[target]) }
         let other = step > 0 ? onFiles.first { $0.index > shown.index } : onFiles.last { $0.index < shown.index }
-        guard let other, let thread = step > 0 ? other.threads.first : other.threads.last else { return nil }
-        return .file(shown.changes.files[other.index], thread.id)
+        guard let other else { return nil }
+        return .file(shown.changes.files[other.index], step > 0 ? .first : .last)
     }
 
     private func go(to target: CommentTarget) {
         switch target {
         case .here(let thread):
             reach(thread)
-        case .file(let file, let thread):
-            withAnimation(.easeOut(duration: 0.15)) { details.open(file: file.path, at: thread) }
+        case .file(let file, let edge):
+            withAnimation(.easeOut(duration: 0.15)) { details.open(file: file.path, comment: edge) }
         }
     }
 
@@ -504,7 +534,7 @@ struct PullRequestFilePage: View {
             switch shown.diff {
             case .read(let diff)?:
                 if !shown.apart.isEmpty {
-                    apartThreads(shown.apart, pullRequest)
+                    apartThreads(shown.apart, pullRequest, diffShows: true)
                 }
                 diffView(diff, shown, version)
             case .failed(let problem)?:
@@ -515,7 +545,7 @@ struct PullRequestFilePage: View {
                         ? { files.showDiff(of: shown.file, in: shown.changes, of: pullRequest, by: viewer, on: page, again: true) } : nil
                 )
                 if !shown.apart.isEmpty {
-                    apartThreads(shown.apart, pullRequest)
+                    apartThreads(shown.apart, pullRequest, diffShows: false)
                 }
             case .reading?, nil:
                 codePlaceholder
@@ -528,28 +558,47 @@ struct PullRequestFilePage: View {
                 files.hideDiff(version, of: pullRequest.key, by: viewer)
                 return
             }
-            files.showDiff(of: shown.file, in: shown.changes, of: pullRequest, by: viewer, on: page)
+            // Asked for again every half minute while it shows, for a diff that couldn't be read in a way that may pass,
+            // which the store reads again then.
+            while !Task.isCancelled {
+                files.showDiff(of: shown.file, in: shown.changes, of: pullRequest, by: viewer, on: page)
+                try? await Task.sleep(for: .seconds(PullRequestCodeStore.retryInterval))
+            }
         }
-        // Asked to go to one of its threads, once it shows: also on another file whose diff was read already.
-        .task(id: ThreadReaching(version: version, isRead: diffIsRead(shown), thread: open.thread)) {
-            guard diffIsRead(shown), let thread = open.thread else { return }
+        // Asked to go to one of its threads, or to its first or last open one, once its diff shows or says why it can't:
+        // also on another file whose diff was read already.
+        .task(id: ThreadReaching(version: version, isSettled: isSettled(shown), thread: open.thread, comment: open.comment)) {
+            guard isSettled(shown), open.thread != nil || open.comment != nil else { return }
             try? await Task.sleep(for: .milliseconds(60))
             guard !Task.isCancelled else { return }
-            reach(thread)
-            details.reachedThread(thread)
+            if let thread = open.thread {
+                reach(thread)
+                details.reachedThread(thread)
+            } else if let edge = open.comment {
+                details.reachedComment(edge)
+                if let thread = edge == .first ? shown.openThreads.first : shown.openThreads.last {
+                    reach(thread)
+                } else {
+                    toTop()
+                }
+            }
         }
     }
 
-    /// What it goes to a thread again for: another file, its diff read, or another thread.
+    /// What it goes to a thread again for: another file, its diff read or failing, or another thread.
     private struct ThreadReaching: Equatable {
         var version: PullRequestFilesStore.Version
-        var isRead: Bool
+        var isSettled: Bool
         var thread: Int?
+        var comment: PullRequestDetailsStore.OpenFile.Edge?
     }
 
-    private func diffIsRead(_ shown: Shown) -> Bool {
-        if case .read? = shown.diff { return true }
-        return false
+    /// Its diff is read, or can't be: its threads show, either way.
+    private func isSettled(_ shown: Shown) -> Bool {
+        switch shown.diff {
+        case .read?, .failed?: true
+        case .reading?, nil: false
+        }
     }
 
     /// Why its diff can't show, in a sentence.
@@ -598,7 +647,9 @@ struct PullRequestFilePage: View {
 
     private func diffView(_ diff: FileDiff, _ shown: Shown, _ version: PullRequestFilesStore.Version) -> some View {
         let revealed = revealedOf == version ? self.revealed : IndexSet()
-        let blocks = DiffLayout.blocks(of: diff.lines, anchors: Array(shown.placed.keys), revealed: revealed, breaks: Set(shown.placed.keys))
+        // All the lines each thread is on show, with a few around them; a thread's card goes under the last.
+        let anchors = shown.spans.union(IndexSet(shown.placed.keys))
+        let blocks = DiffLayout.blocks(of: diff.lines, anchors: Array(anchors), revealed: revealed, breaks: Set(shown.placed.keys))
         let digits = String(max(diff.lines.last { $0.oldNumber != nil }?.oldNumber ?? 0, diff.lines.last { $0.newNumber != nil }?.newNumber ?? 0)).count
         let showsOldNumbers = !shown.file.kind.contains(.add)
         return VStack(alignment: .leading, spacing: 6) {
@@ -663,7 +714,9 @@ struct PullRequestFilePage: View {
     }
 
     /// The threads on the whole file, and those on lines of a version the diff doesn't show, with the code they were made on.
-    private func apartThreads(_ threads: [PullRequestPanel.Thread], _ pullRequest: PullRequest) -> some View {
+    /// - Parameter diffShows: its diff shows, so that those on lines are on a version it doesn't show; else they're all
+    ///   apart, on its lines.
+    private func apartThreads(_ threads: [PullRequestPanel.Thread], _ pullRequest: PullRequest, diffShows: Bool) -> some View {
         let whole = threads.filter { !ThreadCode.isOnLines($0.thread) }
         let earlier = threads.filter { ThreadCode.isOnLines($0.thread) }
         return VStack(alignment: .leading, spacing: 8) {
@@ -676,8 +729,12 @@ struct PullRequestFilePage: View {
                 }
             }
             if !earlier.isEmpty {
-                apartHeading("On an Earlier Version")
-                    .help("Made on an update before the one this shows, and not followed to it since: with the code it was made on")
+                if diffShows {
+                    apartHeading("On an Earlier Version")
+                        .help("Made on an update before the one this shows, and not followed to it since: with the code it was made on")
+                } else {
+                    apartHeading("On Its Lines")
+                }
                 ForEach(earlier) { thread in
                     threadView(thread, showsCode: true)
                         .id(PullRequestDetailsStore.Anchor.thread(thread.id))

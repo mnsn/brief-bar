@@ -351,6 +351,18 @@ private enum ChangeFixture {
         #expect(PullRequestPanel.FileComments(threads: [threads.resolved[0]]).spoken == "1 resolved comment")
     }
 
+    @Test func findsTheFileAThreadIsTrackedOnThoughAnotherTookItsPath() {
+        // Pay.cs renamed to Payments.cs, tracked as 4, and a new Pay.cs, tracked as 8.
+        let replacement = FileChange(path: "/src/Pay.cs", kind: .add, objectId: "p", changeTrackingId: 8)
+        let changes = ChangedFiles(
+            scope: .whole, comparison: ReviewThread.Comparison(base: 2), iterations: [], files: [replacement, file]
+        )
+        #expect(changes.file(of: thread(1, path: "/src/Pay.cs", tracking: 4))?.path == "/src/Payments.cs")
+        #expect(changes.file(of: thread(2, path: "/src/Pay.cs", tracking: 8))?.path == "/src/Pay.cs")
+        #expect(changes.file(of: thread(3, path: "/src/Payments.cs"))?.path == "/src/Payments.cs")
+        #expect(changes.file(of: thread(4, path: "/src/None.cs")) == nil)
+    }
+
     @Test func findsTheFilesWithOpenThreadsToGoThrough() {
         let other = FileChange(path: "/src/Other.cs", kind: .edit, objectId: "o")
         let none = FileChange(path: "/src/None.cs", kind: .add, objectId: "n")

@@ -119,6 +119,12 @@ final class PullRequestDetailsStore: ObservableObject {
         var thread: Int?
         /// Where in the details it opened from, such as a thread in their comments; nil for its row in their Files.
         var from: Place? = nil
+        /// Or the first or the last of its open threads, as its page shows them, going on to them from another file's.
+        var comment: Edge? = nil
+
+        enum Edge: Equatable {
+            case first, last
+        }
 
         var id: FileChange.ID { FileChange.ID(path: path) }
 
@@ -126,7 +132,7 @@ final class PullRequestDetailsStore: ObservableObject {
         var name: String { (path as NSString).lastPathComponent }
 
         static func == (lhs: OpenFile, rhs: OpenFile) -> Bool {
-            lhs.id == rhs.id && lhs.thread == rhs.thread && lhs.from == rhs.from
+            lhs.id == rhs.id && lhs.thread == rhs.thread && lhs.from == rhs.from && lhs.comment == rhs.comment
         }
     }
 
@@ -322,15 +328,16 @@ final class PullRequestDetailsStore: ObservableObject {
         if self.place == place { self.place = nil }
     }
 
-    /// Shows a file's page in the details, in place of their parts: from their Files, from another file's page, or, at one
-    /// of its comment threads, to scroll to, from that thread in their comments, to go back to.
-    func open(file path: String, at thread: Int? = nil, from origin: Place? = nil) {
+    /// Shows a file's page in the details, in place of their parts: from their Files, from another file's page, at the first
+    /// or last of its open threads (`comment`) going on to them from another file's, or, at one of its comment threads, to
+    /// scroll to, from that thread in their comments, to go back to.
+    func open(file path: String, at thread: Int? = nil, from origin: Place? = nil, comment: OpenFile.Edge? = nil) {
         guard selected != nil else { return }
         pages = []
         trailThread = nil
         place = nil
         // From another file's page, back goes where that one would have.
-        file = OpenFile(path: path, thread: thread, from: origin ?? file?.from)
+        file = OpenFile(path: path, thread: thread, from: origin ?? file?.from, comment: comment)
     }
 
     /// Whether it shows a file's page of the pull request a page shows, by its reference: for whatever the page is over to go
@@ -349,6 +356,11 @@ final class PullRequestDetailsStore: ObservableObject {
     /// The file's page went to the thread it was asked to.
     func reachedThread(_ thread: Int) {
         if file?.thread == thread { file?.thread = nil }
+    }
+
+    /// The file's page went to its first or last open thread, as it was asked to: it doesn't again.
+    func reachedComment(_ edge: OpenFile.Edge) {
+        if file?.comment == edge { file?.comment = nil }
     }
 
     /// Shows the page of something linked to the pull request over its details, to come back from: one that shows

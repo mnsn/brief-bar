@@ -226,22 +226,9 @@ struct PullRequestFilesSection: View {
     /// "9 files changed, 128 lines added and 46 removed"; "What the 2 updates since you last looked, 3h ago, changed: 4 files".
     private func summary(_ changes: ChangedFiles) -> String {
         let count = changes.files.count
-        // Once every file is counted, or can't be, as a picture: how many lines they add and remove.
-        let total = changes.files.reduce(into: (added: 0, removed: 0, counted: 0)) { total, file in
-            switch files.counts(of: PullRequestFilesStore.Version(file, in: changes), in: pullRequest?.key ?? item.key) {
-            case .success(let counts)?:
-                total.added += counts.added
-                total.removed += counts.removed
-                total.counted += 1
-            case .failure(let problem)? where !ThreadCode.mayPass(problem):
-                total.counted += 1
-            default:
-                break
-            }
-        }
         let filesText = count == 1 ? "1 file" : "\(count) files"
-        let lines = total.counted == count && count > 0
-            ? ", " + LineCounts(added: total.added, removed: total.removed).spoken.lowercased() : ""
+        let total = count > 0 ? files.totals(of: changes, in: pullRequest?.key ?? item.key) : nil
+        let lines = total.map { ", " + $0.spoken.lowercased() } ?? ""
         guard case .since(let update) = changes.scope else {
             return count == 0 ? "No files changed." : "\(filesText) changed\(lines)."
         }
@@ -389,6 +376,8 @@ private struct ChangedFileRow: View {
     @LocalState private var isHovered = false
     /// What it tells the store it is, so that the same file's row elsewhere goes on being counted once this one leaves.
     @LocalState private var viewer = UUID()
+    /// The version of the file it asked to count last, to let go of once a push changes it.
+    @LocalState private var countedVersion: PullRequestFilesStore.Version?
 
     private var version: PullRequestFilesStore.Version { PullRequestFilesStore.Version(file, in: changes) }
 
@@ -477,16 +466,22 @@ private struct ChangedFileRow: View {
             proxy.bounds(of: .scrollView).map { $0.intersects(CGRect(origin: .zero, size: proxy.size)) } ?? true
         } action: { isOnScreen = $0 }
         .task(id: Counting(isOnScreen: isOnScreen, visibilityChanges: code.visibilityChanges, version: version)) {
+            if let countedVersion, countedVersion != version { files.stopCounting(countedVersion, of: pullRequest.key, by: viewer) }
+            countedVersion = version
             guard isOnScreen, code.isVisible(page) else {
                 files.stopCounting(version, of: pullRequest.key, by: viewer)
                 return
             }
             // Not for a row scrolled past.
             try? await Task.sleep(for: .milliseconds(150))
-            guard !Task.isCancelled else { return }
-            files.count(file, in: changes, of: pullRequest, by: viewer, on: page)
+            // Asked again every half minute while it shows, for a count that failed in a way that may pass, which the
+            // store tries again then.
+            while !Task.isCancelled {
+                files.count(file, in: changes, of: pullRequest, by: viewer, on: page)
+                try? await Task.sleep(for: .seconds(PullRequestCodeStore.retryInterval))
+            }
         }
-        .onDisappear { files.stopCounting(version, of: pullRequest.key, by: viewer) }
+        .onDisappear { files.stopCounting(countedVersion ?? version, of: pullRequest.key, by: viewer) }
     }
 
     /// "PaymentsClient.cs, in src, edited, 12 lines added, 3 removed, 2 open comments".

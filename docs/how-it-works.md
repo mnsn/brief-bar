@@ -1433,29 +1433,35 @@ how many threads are on it (`PullRequestPanel.Threads.comments(on:)`): those Azu
 on its path, after the change or before it, the open ones counted first. A file's lines are counted
 (`LineCounts`) as its row comes on screen, one file at a time, in the order the rows came, by comparing its two
 versions (`PullRequestCode.diff(of:in:of:)`), each read once, by its object ID, up to 1 MB; a row that leaves the
-screen before its turn isn't counted, and a file that isn't text, or is longer, says so. What's counted is kept,
-by the versions it compares, for as long as the pull request is: the same file changed the same way, in all of the
-change and since an update, is counted once.
+screen before its turn isn't counted, and a file that isn't text, or is longer, says so; a row on screen asks again
+every half minute, for a count that failed in a way that may pass. What's counted is kept, by the versions it
+compares, for as long as the pull request is: the same file changed the same way, in all of the change and since an
+update, is counted once. Their lines are added up once each file is counted, but for those that aren't text, and not
+while one that is text can't be (`PullRequestFilesStore.totals(of:in:)`).
 
 A file opens in place of the details' parts (`PullRequestFilePage`, `PullRequestDetailsStore.file`), the header's
 trail saying so, `!4102 › PaymentsClient.cs`, or `Bug 5110 › !4091 › Rounding.cs` on a pull request's page over a
 work item's details; **‹**, **⌘[** or Esc go back to the details, at its row (`Place.file`), or at the thread it
-opened from in their comments, whose file's heading, or its menu, opens it at that thread (`ChangedFileOpener`). Its
-diff is the two versions compared a line at a time (`LineDiff`), its changes with three lines around each, and the
-lines its threads are on with three around them, the rest folded, to unfold twenty lines at a time, up from the code
-below a fold or down from the code above it, or all of it (`DiffLayout`). A thread shows under the line it ends on
+opened from in their comments, whose file's heading, or its menu, opens it at that thread (`ChangedFileOpener`): on
+the file Azure DevOps tracks it on (`ChangedFiles.file(of:)`), though another file took the path it names since. Its
+diff is the two versions compared a line at a time (`LineDiff`), its changes with three lines around each, and all
+the lines its threads are on with three around them, the rest folded, to unfold twenty lines at a time, up from the
+code below a fold or down from the code above it, or all of it (`DiffLayout`). A thread shows under the line it ends on
 (`FileDiff.row(of:in:)`): where Azure DevOps followed it to, or else where it was made, when that's the version the
 diff shows after the change, or, before it, the same diff; its lines marked in the accent color. Those on the whole
 file, and those on lines of a version it doesn't show, as one made on an earlier update that Azure DevOps didn't follow
-since, show above it, the latter with the code they were made on, as in the comments; resolved ones fold to a line.
+since, show above it, the latter with the code they were made on, as in the comments, as do all its threads when its
+diff can't show; resolved ones fold to a line.
 Its code is drawn by `CodeView`, two hundred lines to a view in a lazy stack, so that only those on screen are laid
 out, each with room for the file's longest number, so the code lines up from one part to the next. **‹** and **›**,
-or ⌥⌘↑ and ⌥⌘↓, go to the files before and after it, and ⌃⌘↑ and ⌃⌘↓ through its open threads, then on to another
-file's (`PullRequestPanel.Threads.openOnFiles(of:)`), from a toolbar that's the lazy stack's pinned header, so it
-stays at the top as the diff scrolls. While the details are beside the list, **⤢** asks the page for all of it (`DetailsFillsPageKey`): the
-details then cover the list, as in a narrow window, without being made again, so nothing in them starts over, until
-the file's page goes or **⤡**; the details remember it for their files' pages until they close. A diff is read as the
-page shows it, and called off as it goes before it's read; the last few read are kept, besides those that show. ↗
+or ⌥⌘↑ and ⌥⌘↓, go to the files before and after it, and ⌃⌘↑ and ⌃⌘↓ through its open threads, as it shows them,
+then on to another file's (`PullRequestPanel.Threads.openOnFiles(of:)`), at its first or last as that one's page shows
+them once its diff shows, or can't (`OpenFile.comment`): from a toolbar that's the lazy stack's pinned header, so it
+stays at the top as the diff scrolls. While the details are beside the list, **⤢** asks the page for all of it
+(`DetailsFillsPageKey`): the details then cover the list, as in a narrow window, without being made again, so nothing
+in them starts over, until the file's page goes or **⤡**; the details remember it for their files' pages until they
+close. A diff is read as the page shows it, asked for again every half minute while it shows, for one that failed in a
+way that may pass, and called off as it goes before it's read; the last few read are kept, besides those that show. ↗
 opens the file on the pull request's Files page, with what that change changed in it (`ChangedFiles.filePageURL`).
 
 #### Its builds
