@@ -1679,7 +1679,10 @@ Cards disappear when the PR is merged or abandoned. This does not pin those pipe
 pipeline counts or widgets, or affect **After Your Merges**. A card's title shows the pull request's details on
 the Pull Requests page, at the first run that failed, or else at its builds and checks, and each of its runs
 shows them at that run ([A pull request's details](#a-pull-requests-details)); right-click it to open it in Azure
-DevOps instead.
+DevOps instead. **Open in Azure DevOps**, in its menu or an **After Your Merges** card's, and a click when the
+details can't show, open the pull request as its row does (`PullRequestDetailsStore.openInAzureDevOps(_:link:)`,
+through `PRStore.open`): at the comment that needs you or the run after its merge, which sees it. One the list
+doesn't have, such as a merge it no longer lists, opens at its page.
 The authored PR list carries the account that supplied it. When the pipeline reader detects another
 sign-in, it clears the old runs and suspends PR cards and validation requests until the pull request
 reader supplies a list for that account, even when both accounts can read the same repository.

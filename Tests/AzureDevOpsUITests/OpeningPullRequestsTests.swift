@@ -35,6 +35,7 @@ import Testing
     private final class Openings {
         var pages = 0
         var azureDevOps: [Int] = []
+        var links: [URL] = []
         var seen: [Int] = []
     }
 
@@ -47,6 +48,7 @@ import Testing
         store.readRecord = { key in records.first { $0.id == key } }
         store.markSeen = { openings.seen.append($0.key.number) }
         store.openInAzureDevOps = { openings.azureDevOps.append($0.key.number) }
+        store.openLink = { openings.links.append($0) }
         store.opensInBriefBar = { inBriefBar }
         store.hasPage = { hasPage }
         store.openPage = { openings.pages += 1 }
@@ -124,6 +126,52 @@ import Testing
         pageless.showDetails(try item(4102))
         #expect(pageless.selected == nil)
         #expect(withoutPage.azureDevOps == [4102])
+    }
+
+    /// The Pipelines page names a pull request by its key and its page: one the list has opens in Azure DevOps as its row
+    /// does, however its organization is spelled; one it doesn't, such as a merge it no longer lists, at that page.
+    @Test func thePipelinesPageOpensAPullRequestAsItsRowDoes() throws {
+        let (store, openings) = makeStore()
+        let failing = try item(4088)
+        store.openInAzureDevOps(failing.key, link: failing.pageURL())
+        store.openInAzureDevOps(PRKey("CONTOSO", 4085), link: try item(4085).pageURL())
+        #expect(openings.azureDevOps == [4088, 4085] && openings.links.isEmpty)
+
+        let gone = ADOEndpoint.pullRequestPage(organization: DemoData.organization, project: "Storefront", repository: "shop-web", id: 1)
+        store.openInAzureDevOps(PRKey(DemoData.organization, 1), link: gone)
+        #expect(openings.azureDevOps == [4088, 4085] && openings.links == [gone])
+        // Nothing shows in BriefBar's window for it.
+        #expect(store.selected == nil && openings.pages == 0)
+    }
+
+    /// Opening one of your pull requests in Azure DevOps from the Pipelines page sees it, as opening it from its row does: a
+    /// comment that came since you last looked isn't new at the next refresh, though it still waits on you there.
+    @Test func openingItFromThePipelinesPageSeesIt() async throws {
+        let list = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        var opened: [URL] = []
+        list.openLink = { opened.append($0) }
+        // What `loadOnce` makes the demo up as of.
+        let now = list.now
+        await list.loadOnce()
+        // Priya asks for a test on the one that was ready.
+        let update = DemoData.update(DemoData.snapshot(now: now), at: Date())
+        list.receive(update)
+        let asked = try #require(list.items.first { $0.key.number == 4091 })
+        #expect(asked.role == .author && asked.group == .needsYou && asked.hasNews)
+
+        let details = PullRequestDetailsStore()
+        details.use(list)
+        details.openInAzureDevOps(asked.key, link: asked.pageURL())
+        // Where its row opens it: at her comment.
+        #expect(opened.map(PullRequestPlace.init(link:)) == [.thread(63)])
+        list.receive(update)
+        let seen = try #require(list.items.first { $0.key.number == 4091 })
+        #expect(seen.group == .needsYou && !seen.hasNews)
+
+        // One the list doesn't have: its page, and nothing's seen.
+        let gone = ADOEndpoint.pullRequestPage(organization: DemoData.organization, project: "Storefront", repository: "shop-web", id: 1)
+        details.openInAzureDevOps(PRKey(DemoData.organization, 1), link: gone)
+        #expect(opened.last == gone && opened.count == 2)
     }
 
     /// A notification shows its own thread or run, rather than the one its row is about; one about the pull request itself,

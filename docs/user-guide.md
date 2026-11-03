@@ -337,7 +337,8 @@ the same details for each of your pull requests, the way there in their header, 
 and notifications, a click opens a pull request in Azure DevOps, unless you turn on **Open Pull Requests in
 BriefBar** in Azure DevOps' settings: then those show its details in BriefBar's window too, at what it's
 about, while a window shows the Pull Requests page. Either way, its menu has both: **Show in BriefBar**, or
-**Show Details** in the window, and **Open in Azure DevOps**.
+**Show Details** in the window, and **Open in Azure DevOps**, which opens it where its row does, at the comment
+that needs you or the run after its merge, from the Pipelines page's cards too.
 
 **Each comment thread shows as its reviewer saw it in Azure DevOps.** A thread on code shows the lines it's
 on, with a few around them, as they were in the update it was made on: their numbers, before and after the
