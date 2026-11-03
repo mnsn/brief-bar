@@ -54,6 +54,11 @@ import Testing
         try await settle { questions.question(on: 11, of: key)?.isAsking == false }
         #expect(questions.question(on: 11, of: key)?.state == .failed(.unsupported(version: "1.0.80")))
         #expect(questions.question(on: 11, of: key)?.asked == nil)
+        // A follow-up keeps what it followed up on, for the session to have it when it's asked there instead.
+        let earlier = ThreadAnswer(question: "Why 30 s?", answer: "Sam wants a ceiling.")
+        questions.ask("Which?", asked: "Which is smallest?", earlier: earlier, session: session, on: 11, of: key)
+        try await settle { questions.question(on: 11, of: key)?.isAsking == false }
+        #expect(questions.question(on: 11, of: key)?.earlier == earlier)
     }
 
     /// Stopping it, asking again, or turning Send Work to Copilot off, stops what's being asked: its answer isn't wanted.

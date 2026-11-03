@@ -341,7 +341,9 @@ struct ThreadCopilotActions: View {
         let sending = CommentSending(item: item, record: record, store: store, copilot: copilot, session: sessions.session(for: item.key))
         isAskingInSession = true
         Task {
-            let outcome = await sending.explainAsPrompt(thread.thread, question: question.asked, excerpt: excerpt, to: choice)
+            let outcome = await sending.explainAsPrompt(
+                thread.thread, question: question.asked, earlier: question.earlier, excerpt: excerpt, to: choice
+            )
             isAskingInSession = false
             switch outcome {
             case .sent:
@@ -828,7 +830,7 @@ struct CommentComposer: View {
             guard let thread, let id = target.sessionID else { return }
             questions.ask(
                 PullRequestPrompt.explainThread(record, thread: thread, code: excerpt, question: text, earlier: answer), asked: text,
-                session: id, on: thread.id, of: item.key
+                earlier: answer, session: id, on: thread.id, of: item.key
             )
             drafts.texts[draftKey] = nil
             ThreadCopilotActions.announce("Asking \(choice.map(PullRequestSession.name) ?? "the session")")

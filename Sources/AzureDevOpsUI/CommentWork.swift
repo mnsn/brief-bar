@@ -237,14 +237,15 @@ struct CommentWork: Equatable {
     static func from(_ entry: CopilotTaskEntry, taken: TakenThread) -> CommentWork {
         let isTask = entry.run?.isAppSession != true
         let ended = entry.status.phase.isActive ? nil : entry.status.since
-        // Taken on by an earlier task in the session: Push & Reply ships it now, or another fix went on with the session.
+        // Push & Reply ships every thread it has: those an earlier task in the session took on, and those prompts to it fixed.
+        if entry.action == .pushAndReply {
+            return CommentWork(
+                purpose: .pushAndReply, state: state(of: entry.status), session: entry.id, forkedFrom: entry.forkedFrom,
+                isTask: isTask, since: ended ?? entry.startedAt
+            )
+        }
+        // Taken on by an earlier task in the session, which another fix went on with.
         if let before = taken.ended {
-            if entry.action == .pushAndReply {
-                return CommentWork(
-                    purpose: .pushAndReply, state: state(of: entry.status), session: entry.id, forkedFrom: entry.forkedFrom,
-                    isTask: isTask, since: ended ?? entry.startedAt
-                )
-            }
             let state: State = switch before {
             case .finished: .done(nil)
             case .failed: .failed(nil)

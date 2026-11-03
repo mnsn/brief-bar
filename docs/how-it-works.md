@@ -2181,8 +2181,8 @@ the session you chose, aside, why the reviewer wrote it, what they want, how the
 (`CommentQuestions`, over `SessionQuestions`): in a fork with no tools, deleted after, with the session's own model. The
 answer stays in memory only, until you dismiss it, BriefBar quits, or Send Work to Copilot or Azure DevOps is turned off,
 which stops a question that's being asked, and deletes its fork. When the CLI can't ask aside, or doesn't have the
-session, **Ask in the Session** sends `PullRequestPrompt.askAboutThread` to the session as a prompt, as a fix goes, which
-changes nothing but joins its history. Once it answered, **Ask More** quotes the question and the answer, which the next
+session, **Ask in the Session** sends `PullRequestPrompt.askAboutThread` to the session as a prompt, as a fix goes, with
+what it answered before for a follow-up, which changes nothing but joins its history. Once it answered, **Ask More** quotes the question and the answer, which the next
 throwaway fork never saw, and asks your next question with them in mind, or, without one, why you got it again. The demo
 makes its answers up (`DemoData.explanation`), and runs nothing.
 
@@ -2196,7 +2196,8 @@ it says: the pull request, the session that took it and the one it forked, the t
 `ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows it from the session's log
 since it began to send it, so that a turn that's over before BriefBar hears the prompt went counts too, but only from the
 first message the session got since, the prompt itself as the earliest, sent or pasted: a turn that was under way as it
-was sent, or copied, is an earlier message's (`SessionTurn`). It's read where the session is, in the Copilot app's folder
+was sent, or copied, is an earlier message's, and a question it asks you counts while something runs the session or has
+it open, as one it ended with stopped (`SessionTurn`). It's read where the session is, in the Copilot app's folder
 or, for one pasted in a terminal, the CLI's, as a task's is, every three seconds, with which
 sessions the app runs a turn in and whether something has the session open, only while one hasn't ended and Send Work to
 Copilot is on and Azure DevOps hasn't stopped: a turn that's over twice in a row, a few seconds apart, ended, which its

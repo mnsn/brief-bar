@@ -401,7 +401,8 @@ final class CopilotTasksStore: ObservableObject {
         _ subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, continuing: CopilotRun? = nil,
         forking: CopilotRun? = nil, threads: [Int] = [], handOff: CommentHandOff? = nil
     ) {
-        guard canSend, isOn, continuing == nil || forking == nil else { return }
+        // Not once Azure DevOps stopped, as it may have while an inline Fix looked for where to send it.
+        guard canSend, isOn, !hasStopped, continuing == nil || forking == nil else { return }
         // A second run in a session Copilot still works in would fork its history; one in a checkout it works in, for another
         // session, would mix their work up, as when two of the Copilot app's sessions share one. A fork works in a worktree
         // of its own, so the session it forks may be busy.

@@ -67,5 +67,7 @@ import Testing
         let turn = SessionTurn.of(sentAt: at(100), log: asking, isRunning: true, isOpen: true)
         #expect(turn.phase == .needsYou)
         #expect(!turn.isOver)
+        // With nothing running it or holding it, it ended with the question pending: it stopped.
+        #expect(SessionTurn.of(sentAt: at(100), log: asking, isRunning: false, isOpen: false) == SessionTurn(phase: .stopped, since: at(115)))
     }
 }

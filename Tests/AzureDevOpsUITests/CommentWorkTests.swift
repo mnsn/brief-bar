@@ -120,6 +120,10 @@ import Testing
         ])]
         #expect(store.commentWork(on: 11, of: key).map { [$0.purpose == .pushAndReply, $0.state == .working(nil)] } == [true, true])
         #expect(store.readyFixes(of: key, among: [11, 12]).isEmpty)
+        // And those it took on that prompts to the session fixed, rather than its runs: once it's done, they're pushed.
+        settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, ended: .finished, threads: [TakenThread(id: 13, since: now)])]
+        #expect(store.commentWork(on: 13, of: key).map { [$0.purpose == .pushAndReply, $0.isReadyFix] } == [true, false])
+        #expect(store.readyFixes(of: key, among: [13]).isEmpty)
         // Nothing while Send Work to Copilot is off.
         settings.copilotEnabled = false
         #expect(store.commentWork(on: 11, of: key) == nil)
@@ -146,6 +150,17 @@ import Testing
                    repository: URL(fileURLWithPath: "/tmp/payments-api"), continuing: settings.copilotRuns[0], threads: [12])
         try await settle { settings.copilotRuns.first?.threads?.count == 2 }
         #expect(settings.copilotRuns.first?.threads?.map { [$0.id: $0.ended] } == [[11: .finished], [12: nil]])
+    }
+
+    /// Nothing starts once Azure DevOps stopped, as it may while an inline Fix looks for where to send it.
+    @Test func sendsNothingOnceStopped() {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        store.stop()
+        store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 11", options: CopilotModel.standard,
+                   repository: URL(fileURLWithPath: "/tmp/payments-api"), threads: [11])
+        #expect(store.pending.isEmpty)
+        #expect(settings.copilotRuns.isEmpty)
     }
 
     /// A fork's ID is the CLI's: its send goes by BriefBar's until the fork is made, then by the fork's, which its run keeps,

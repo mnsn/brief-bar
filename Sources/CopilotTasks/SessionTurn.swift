@@ -49,7 +49,8 @@ public struct SessionTurn: Sendable, Equatable {
         let started = log.phaseSince.map { max($0, taken) } ?? taken
         switch log.activity {
         case .needsAnswer, .needsPermission, .needsPlanApproval:
-            return SessionTurn(phase: .needsYou, since: started)
+            // While something runs it, or has it open, to answer in; one that ended with it pending stopped.
+            if isRunning || isOpen { return SessionTurn(phase: .needsYou, since: started) }
         default:
             break
         }

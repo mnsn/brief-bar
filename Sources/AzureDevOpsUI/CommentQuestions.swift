@@ -34,6 +34,8 @@ final class CommentQuestions: ObservableObject {
         var state: State
         /// When it was answered, or failed.
         var endedAt: Date?
+        /// What the session answered before, which it follows up on: asked in the session instead, it goes along.
+        var earlier: ThreadAnswer?
 
         var isAsking: Bool { state == .asking }
     }
@@ -77,12 +79,15 @@ final class CommentQuestions: ObservableObject {
     /// - Parameters:
     ///   - prompt: the question in full (`PullRequestPrompt.explainThread`).
     ///   - asked: what you asked, in your words, to show with the answer.
-    func ask(_ prompt: String, asked: String?, session: String, on thread: Int, of key: PRKey) {
+    ///   - earlier: what the session answered before, which it follows up on.
+    func ask(_ prompt: String, asked: String?, earlier: ThreadAnswer? = nil, session: String, on thread: Int, of key: PRKey) {
         guard canAsk else { return }
         let id = Key(pullRequest: key, thread: thread)
         asking.removeValue(forKey: id)?.cancel()
         let words = asked?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let question = Question(session: session, asked: words?.isEmpty == false ? words : nil, askedAt: Date(), state: .asking)
+        let question = Question(
+            session: session, asked: words?.isEmpty == false ? words : nil, askedAt: Date(), state: .asking, earlier: earlier
+        )
         questions[id] = question
         Log.app.info("Asked a Copilot session about a comment thread")
         asking[id] = Task { [weak self] in
