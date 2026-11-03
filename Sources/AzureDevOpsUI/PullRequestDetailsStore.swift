@@ -97,6 +97,8 @@ final class PullRequestDetailsStore: ObservableObject {
     var markSeen: (PRSnapshot) -> Void = { _ in }
     /// Opens a pull request in Azure DevOps, which sees it too, at the comment its row says: the source's.
     var openInAzureDevOps: (PRSnapshot) -> Void = { _ in }
+    /// Opens a link in Azure DevOps, such as the page of a pull request the list doesn't have: the source's.
+    var openLink: (URL) -> Void = { _ in }
     /// Whether a pull request opens in BriefBar's window from the menu bar, a widget or a notification, rather than in Azure
     /// DevOps: Open Pull Requests in BriefBar, the source's.
     var opensInBriefBar: () -> Bool = { false }
@@ -123,6 +125,7 @@ final class PullRequestDetailsStore: ObservableObject {
     func use(_ list: PRStore) {
         markSeen = { [weak list] item in list?.markSeen(item) }
         openInAzureDevOps = { [weak list] item in list?.open(item) }
+        openLink = { [weak list] link in list?.openLink(link) }
         opensInBriefBar = { [weak list] in list?.settings.opensPullRequestsInBriefBar ?? false }
         readRecord = { [weak list] key in list?.record(for: key) }
         cutoffs = { [weak list] key in
@@ -195,6 +198,17 @@ final class PullRequestDetailsStore: ObservableObject {
         let item = current(item)
         if reveal(item, at: about(item)) { return }
         openInAzureDevOps(item)
+    }
+
+    /// From a page that names a pull request by its key, such as the Pipelines page: opens it in Azure DevOps as its row
+    /// does, at the comment that needs you or the run after its merge, which sees it, while the list has it; or else its
+    /// link.
+    func openInAzureDevOps(_ key: PRKey, link: URL) {
+        if let item = listed.first(where: { $0.key == key }) {
+            openInAzureDevOps(item)
+        } else {
+            openLink(link)
+        }
     }
 
     /// What a notification is about, from Notification Center or the window's Notifications page: the details of its pull
