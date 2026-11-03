@@ -76,7 +76,7 @@ struct PullRequestDetailsContent: View {
                 }
                 // While Azure DevOps says its merge conflicts: the files, where What's Left's Merge conflicts leads.
                 if panel.hasConflicts, let pullRequest = record?.pullRequest {
-                    PullRequestConflictsSection(details: details, item: item, pullRequest: pullRequest)
+                    PullRequestConflictsSection(details: details, item: item, pullRequest: pullRequest, composing: $composing, drafts: drafts)
                         .id(PullRequestDetailsStore.Anchor.section(.conflicts))
                 }
                 PullRequestCommentsSection(

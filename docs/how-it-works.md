@@ -2337,8 +2337,9 @@ demo's are made up (`SentPrompt.demo`).
 
 Under a pull request's merge conflicts ([above](#its-merge-conflicts)), while Send Work to Copilot is on, **✨ Explain**
 and, on your own pull request, **Resolve** (`ConflictsCopilotActions`) open the same composer in place
-(`ConflictsComposer`, over `CopilotPartComposer`, for `PullRequestPart.conflicts`), in a box of its own, one at a time,
-going where a thread's would, first the session that last worked on the conflicts, else the pull request's. Its prompts
+(`ConflictsComposer`, over `CopilotPartComposer`, for `PullRequestPart.conflicts`), in a box of its own, one at a time
+with the comments' and builds' (`CopilotComposing`), going where a thread's would: first the session that last worked on
+the conflicts, else the pull request's. Its prompts
 list the files that conflict, each with how, as the details read them for the pull request as it is now, the first 50
 (`PullRequestPrompt.conflictList`): sent while they're read, it waits for that read (`PullRequestConflictsStore.waitForRead`),
 and without them, as when they couldn't be read, it goes without, for Copilot to find them as it merges. **Resolve**
