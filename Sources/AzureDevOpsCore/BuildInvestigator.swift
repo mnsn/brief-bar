@@ -697,11 +697,14 @@ public actor BuildInvestigator {
         // It started before this was asked for: once more, now, when the run got further since, as its check says, or ran
         // again since, or went, as a look at it finds.
         var readAgain = phase.map { read.investigation.run.status.phase < $0 } ?? false
-        if !readAgain, readTheRunBefore, read.investigation.run.status.isFinished,
-           await !stillTheRun(key, as: read.build, after: asked, pullRequest: pullRequest) {
+        if !readAgain, readTheRunBefore, read.investigation.run.status.isFinished {
+            let isStill = await stillTheRun(key, as: read.build, after: asked, pullRequest: pullRequest)
+            // Stopped while it looked, which a canceled look can't tell from a run it couldn't read.
             try checkStopped()
-            readAgain = true
-            replaced = true
+            if !isStill {
+                readAgain = true
+                replaced = true
+            }
         }
         guard readAgain else { return read.revised(for: pullRequest) }
         return try await investigation(

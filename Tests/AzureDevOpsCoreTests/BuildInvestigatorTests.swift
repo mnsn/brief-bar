@@ -1198,6 +1198,26 @@ private actor GatedTokens: AccessTokenProvider {
         }
     }
 
+    @Test func stoppingWhileItLooksAtTheRunAJoinedReadFoundStopsIt() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The read's first request, for the run, is answered and its next waits; after its eight, the look at the run.
+        let tokens = GatedTokens(server.id, holding: [2, 9])
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+        let first = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        let held = (try? await waitUntil("the read") { await tokens.isHolding(2) }) != nil
+        let joined = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        let bothWait = (try? await waitUntil("both to wait for the read") { await investigator.waiting == 2 }) != nil
+        await tokens.release(2)
+        let looking = (try? await waitUntil("the look at the run") { await tokens.isHolding(9) }) != nil
+        #expect(try await first.value.run.status == .failed)
+        // Azure DevOps is turned off while the one that joined the read looks at the run: it says so, rather than answer.
+        await investigator.stop()
+        await tokens.releaseAll()
+        #expect(held && bothWait && looking)
+        await #expect(throws: CancellationError.self) { try await joined.value }
+    }
+
     @Test func stoppingWhileItLooksAtAKeptRunReadsNothingInstead() async throws {
         let server = StubServer()
         FailedRun.serve(server)
