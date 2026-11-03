@@ -307,22 +307,23 @@ final class PullRequestCodeStore: ObservableObject {
         }
     }
 
-    /// The code of a thread, for a prompt about it, as it's read for this version of the pull request; else read now, as
-    /// you open a composer on a thread that doesn't show its own, on its file's page, and kept as one that shows is. Nil
-    /// for a thread that isn't on lines, or can't be read, or while nothing shows its pull request.
-    func excerpt(of thread: ReviewThread, in pullRequest: PullRequest) async -> ThreadExcerpt? {
+    /// The code of a thread, for a prompt about it, from a view on screen that doesn't show the code itself, such as a
+    /// composer on a thread on its file's page: as it's read, once the read under way ends, whichever view asked for it.
+    /// It's read as a thread that comes on screen is (`show`), by `viewer`, only while a window shows `page` on screen, and
+    /// called off as one is once that window hides; the view lets go of it with `hide`. Nil for a thread that isn't on
+    /// lines or can't be read, and for one that isn't read, as while no window shows its page on screen.
+    func excerpt(of thread: ReviewThread, in pullRequest: PullRequest, by viewer: UUID, on page: String?) async -> ThreadExcerpt? {
         let key = pullRequest.key
-        let ask = Ask(thread, pullRequest)
-        let asked = reads[key]?.asked[thread.id]
-        if case .read(let excerpt)? = state(of: thread.id, in: key), asked == ask { return excerpt }
-        guard ThreadCode.isOnLines(thread), let reader = reader(for: pullRequest) else { return nil }
-        let result = await reader.excerpt(of: thread, in: pullRequest, context: ThreadExcerpt.context)
-        // Kept unless its pull request was forgotten meanwhile, or a thread that shows it asked for it since.
-        if shows(key), reads[key]?.tasks[thread.id] == nil, reads[key]?.asked[thread.id] == asked {
-            reads[key, default: Reads()].asked[thread.id] = ask
-            finish(thread.id, of: key, ask, result)
+        show(thread, of: pullRequest, by: viewer, on: page)
+        // To the end of the read under way: one called off, as its window hid, ends too, and one a push started in its
+        // place is waited for in turn.
+        while let task = reads[key]?.tasks[thread.id] {
+            await task.value
+            // Not again for one that's over but still there.
+            if reads[key]?.tasks[thread.id] == task { break }
         }
-        return try? result.get()
+        guard case .read(let excerpt)? = state(of: thread.id, in: key) else { return nil }
+        return excerpt
     }
 
     private func finish(_ id: Int, of key: PRKey, _ ask: Ask, _ result: Result<ThreadExcerpt, ThreadExcerpt.Problem>) {

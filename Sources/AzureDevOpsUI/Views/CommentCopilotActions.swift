@@ -152,14 +152,25 @@ struct ThreadCopilotActions: View {
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.commentActionsPreview) private var preview
     @Environment(\.textScale) private var textScale
+    /// The window's page it's on, which the code of its thread is read only while the window shows on screen.
+    @Environment(\.shownSection) private var section
+    @Environment(\.shownWindow) private var window
 
     /// What BriefBar said once it copied a prompt for you to paste, until you close it.
     @LocalState private var copied: String?
     @LocalState private var isAskingInSession = false
+    /// What it tells the code store it is, for its thread's code to be read for Ask in the Session.
+    @LocalState private var viewer = UUID()
     /// Explain or Fix, for the keyboard's focus to go back to once its composer closes.
     @FocusState private var focused: CommentAsk?
 
     private var record: PRRecord? { store.record(for: item.key) }
+
+    /// The window's page it's on: nil outside one, where nothing is read.
+    private var page: String? {
+        guard let section, let window else { return nil }
+        return PullRequestCodeStore.page(section, window: window)
+    }
 
     /// The composer in place that's open on it, if one is.
     private var asking: CommentAsk? { composing?.thread == thread.id ? composing?.ask : nil }
@@ -357,9 +368,13 @@ struct ThreadCopilotActions: View {
         let sending = CommentSending(item: item, record: record, store: store, copilot: copilot, session: sessions.session(for: item.key))
         isAskingInSession = true
         let id = thread.id
+        let viewer = viewer
+        let page = page
         drafts.asks[id]?.cancel()
         drafts.asks[id] = Task {
-            let excerpt = await code.excerpt(of: thread.thread, in: record.pullRequest)
+            let excerpt = await code.excerpt(of: thread.thread, in: record.pullRequest, by: viewer, on: page)
+            // Read for this question alone.
+            code.hide(id, of: record.pullRequest.key, by: viewer)
             guard !Task.isCancelled else { return }
             let outcome = await sending.explainAsPrompt(
                 thread.thread, question: question.asked, earlier: question.earlier, excerpt: excerpt, to: choice
@@ -486,7 +501,7 @@ private struct CommentAnswerCard: View {
                     .foregroundStyle(colorful ? AnyShapeStyle(BriefContainer<EmptyView>.gradient) : AnyShapeStyle(Color.secondary))
                     .accessibilityHidden(true)
                 // Whole, wrapping beside the buttons when it must, the time never cut short.
-                (Text("Answer from \(place)") + Text(" · " + WorkItemDetailsPanel.ago(answeredAt, now: now)))
+                Text("Answer from \(place) · \(WorkItemDetailsPanel.ago(answeredAt, now: now))")
                     .font(size: 11, weight: .semibold)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -578,6 +593,9 @@ struct CommentComposer: View {
     @EnvironmentObject private var code: PullRequestCodeStore
     /// `--render` draws it as it is outside the demo, which sends nothing.
     @Environment(\.isRendering) private var isRendering
+    /// The window's page it's on, which the code of its thread is read only while the window shows on screen.
+    @Environment(\.shownSection) private var section
+    @Environment(\.shownWindow) private var window
 
     @LocalState private var text = ""
     @LocalState private var chosen: CommentDestination?
@@ -589,6 +607,8 @@ struct CommentComposer: View {
     /// How it would reach where it goes, once checked.
     @LocalState private var checked: Check?
     @LocalState private var hasAppeared = false
+    /// What it tells the code store it is, as a view that shows its thread's code does, for the code to be read for it.
+    @LocalState private var viewer = UUID()
 
     /// What's known of how a prompt would reach where it goes.
     struct Check: Equatable {
@@ -596,6 +616,25 @@ struct CommentComposer: View {
         var delivery: PullRequestSession.Delivery?
         var forkReach: SessionReach?
         var hasClone: Bool?
+    }
+
+    /// What its thread's code is read again for, while it shows: a window showing it on screen again, after none did, or
+    /// a push.
+    private struct CodeReading: Equatable {
+        var visibilityChanges: Int
+        var ask: PullRequestCodeStore.Ask?
+    }
+
+    /// The window's page it's on: nil outside one, where nothing is read.
+    private var page: String? {
+        guard let section, let window else { return nil }
+        return PullRequestCodeStore.page(section, window: window)
+    }
+
+    /// What its thread's code is asked for as, as the pull request is now.
+    private var codeAsk: PullRequestCodeStore.Ask? {
+        guard let thread, let record else { return nil }
+        return PullRequestCodeStore.Ask(thread, record.pullRequest)
     }
 
     private var record: PRRecord? { store.record(for: item.key) }
@@ -653,10 +692,14 @@ struct CommentComposer: View {
             close: { done(nil) }
         )
         .task(id: target) { await check(target, choice: choice) }
-        // The code it's on, for the prompt, read as it opens where the thread doesn't show its own, as on its file's page.
-        .task(id: thread?.id) {
+        // The code it's on, for the prompt, read as a thread that comes on screen reads it, where the thread doesn't show its
+        // own, as on its file's page: only while its window shows on screen, and again once it shows after it hid.
+        .task(id: CodeReading(visibilityChanges: code.visibilityChanges, ask: codeAsk)) {
             guard preview == nil, let thread, let record else { return }
-            _ = await code.excerpt(of: thread, in: record.pullRequest)
+            code.show(thread, of: record.pullRequest, by: viewer, on: page)
+        }
+        .onDisappear {
+            if let thread { code.hide(thread.id, of: item.key, by: viewer) }
         }
         .onChange(of: text) { if preview == nil { drafts.texts[draftKey] = text } }
         .onAppear {
@@ -857,14 +900,16 @@ struct CommentComposer: View {
         // Kept with the page's composers, to be called off as this one closes, however it does: a prompt no session took
         // yet is taken back, and nothing starts for a composer that's gone.
         drafts.callOff(key)
+        // The code it's on, once the read under way ends: on its file's page, it's read as the composer opens.
+        let viewer = viewer
+        let page = page
         if ask == .explain {
             guard let thread, let id = target.sessionID else { return }
             let question = text
             let earlier = answer
-            // With the code it's on, once it's read: on its file's page, it's read as the composer opens.
             isSending = excerpt == nil && ThreadCode.isOnLines(thread)
             drafts.sends[key] = Task {
-                let excerpt = await code.excerpt(of: thread, in: record.pullRequest)
+                let excerpt = await code.excerpt(of: thread, in: record.pullRequest, by: viewer, on: page)
                 guard !Task.isCancelled else { return }
                 drafts.sends[key] = nil
                 isSending = false
@@ -886,7 +931,11 @@ struct CommentComposer: View {
         let answer = includesAnswer ? answer : nil
         let thread = ask == .fix ? thread : nil
         drafts.sends[key] = Task {
-            let excerpt = if let thread { await code.excerpt(of: thread, in: record.pullRequest) } else { ThreadExcerpt?.none }
+            let excerpt: ThreadExcerpt? = if let thread {
+                await code.excerpt(of: thread, in: record.pullRequest, by: viewer, on: page)
+            } else {
+                nil
+            }
             let outcome = await sending.fix(thread, how: how, suggestion: suggestion, answer: answer, excerpt: excerpt, to: target, choice: choice)
             guard !Task.isCancelled else { return }
             drafts.sends[key] = nil

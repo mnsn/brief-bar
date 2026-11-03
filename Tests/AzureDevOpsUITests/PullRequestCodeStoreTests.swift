@@ -534,46 +534,85 @@ import Testing
         #expect(await reader.asked == [11, 12])
     }
 
-    /// For a prompt about a thread whose code doesn't show, as on its file's page: what's read is used, else it's read
-    /// then, and kept, and read again after a push.
-    @Test func aPromptsCodeIsReadWhenItIsntYet() async throws {
+    /// For a prompt about a thread whose code doesn't show, as from a composer on its file's page: it's read as a thread on
+    /// screen is, by the composer, and kept, and read again after a push; what's read is used.
+    @Test func aPromptsCodeIsReadAsAThreadOnScreenIs() async throws {
         let reader = Reader()
         let store = makeStore(reader)
-        #expect(await store.excerpt(of: onLine, in: pullRequest) == Self.excerpt(onLine.id, head: "c1"))
+        let composer = UUID()
+        #expect(await store.excerpt(of: onLine, in: pullRequest, by: composer, on: page) == Self.excerpt(onLine.id, head: "c1"))
         #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c1")))
         // Read, it isn't read again.
-        #expect(await store.excerpt(of: onLine, in: pullRequest) == Self.excerpt(onLine.id, head: "c1"))
+        #expect(await store.excerpt(of: onLine, in: pullRequest, by: composer, on: page) == Self.excerpt(onLine.id, head: "c1"))
         #expect(await reader.asked == [11])
         // After a push, it is.
         var pushed = pullRequest
         pushed.sourceCommit = "c2"
-        #expect(await store.excerpt(of: onLine, in: pushed) == Self.excerpt(onLine.id, head: "c2"))
+        #expect(await store.excerpt(of: onLine, in: pushed, by: composer, on: page) == Self.excerpt(onLine.id, head: "c2"))
         #expect(await reader.asked == [11, 11])
         // Nothing for one that isn't on lines, can't be read, or whose pull request nothing shows.
         await reader.answer(onOther.id, .failure(.tooLarge))
-        #expect(await store.excerpt(of: onFile, in: pullRequest) == nil)
-        #expect(await store.excerpt(of: onOther, in: pullRequest) == nil)
+        #expect(await store.excerpt(of: onFile, in: pullRequest, by: composer, on: page) == nil)
+        #expect(await store.excerpt(of: onOther, in: pullRequest, by: composer, on: page) == nil)
         #expect(store.state(of: onOther.id, in: key) == .failed(.tooLarge))
         var other = pullRequest
         other.key = PRKey("contoso", 8)
-        #expect(await store.excerpt(of: onLine, in: other) == nil)
+        #expect(await store.excerpt(of: onLine, in: other, by: composer, on: page) == nil)
+        #expect(await reader.asked == [11, 11, 12])
+        // While its window doesn't show it on screen, nothing's read, and what was read is used.
+        store.setVisible(false, for: page)
+        let onNext = ReviewThread(id: 15, filePath: "/src/Cart.cs", line: 60, comments: [])
+        #expect(await store.excerpt(of: onNext, in: pushed, by: composer, on: page) == nil)
+        #expect(await store.excerpt(of: onLine, in: pushed, by: composer, on: page) == Self.excerpt(onLine.id, head: "c2"))
+        #expect(await store.excerpt(of: onNext, in: pushed, by: composer, on: nil) == nil)
         #expect(await reader.asked == [11, 11, 12])
     }
 
-    /// One read for a prompt doesn't take the place of what a thread that shows asked for meanwhile, as after a push.
-    @Test func aPromptsCodeLeavesWhatAShowingThreadReadSince() async throws {
+    /// A prompt's read is called off as its window hides, as a thread's on screen is, and the prompt goes without the
+    /// code; it's read again once the window shows.
+    @Test func aPromptsReadIsCalledOffAsItsWindowHides() async throws {
         let reader = Reader()
         await reader.hold(true)
         let store = makeStore(reader)
-        let asking = Task { await store.excerpt(of: onLine, in: pullRequest) }
+        let composer = UUID()
+        let asking = Task { await store.excerpt(of: onLine, in: pullRequest, by: composer, on: page) }
+        try await waitFor { await reader.isHolding(onLine.id) }
+        store.setVisible(false, for: page)
+        #expect(store.state(of: onLine.id, in: key) == nil)
+        await reader.release(onLine.id)
+        #expect(await asking.value == nil)
+        #expect(store.state(of: onLine.id, in: key) == nil)
+        // Shown again, it's read.
+        await reader.hold(false)
+        store.setVisible(true, for: page)
+        #expect(await store.excerpt(of: onLine, in: pullRequest, by: composer, on: page) == Self.excerpt(onLine.id, head: "c1"))
+        #expect(await reader.asked == [11, 11])
+        // Once the composer lets go, and nothing else shows the thread, a read after a push is called off.
+        await reader.hold(true)
+        var pushed = pullRequest
+        pushed.sourceCommit = "c2"
+        store.show(onLine, of: pushed, by: composer, on: page)
+        try await waitFor { await reader.isHolding(onLine.id) }
+        store.hide(onLine.id, of: key, by: composer)
+        await reader.release(onLine.id)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c1")))
+    }
+
+    /// A prompt waits for the read under way, whichever view asked for it, as when a push started one in its place, and
+    /// gets what that one read.
+    @Test func aPromptsCodeIsTheLatestReadOfIt() async throws {
+        let reader = Reader()
+        await reader.hold(true)
+        let store = makeStore(reader)
+        let asking = Task { await store.excerpt(of: onLine, in: pullRequest, by: UUID(), on: page) }
         try await waitFor { await reader.isHolding(onLine.id) }
         var pushed = pullRequest
         pushed.sourceCommit = "c2"
         store.show(onLine, of: pushed, by: viewer, on: page)
         try await waitFor { await reader.asked.count == 2 }
         await reader.release(onLine.id)
-        #expect(await asking.value == Self.excerpt(onLine.id, head: "c1"))
-        try await waitFor { isRead(store, onLine.id) }
+        #expect(await asking.value == Self.excerpt(onLine.id, head: "c2"))
         #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c2")))
     }
 }

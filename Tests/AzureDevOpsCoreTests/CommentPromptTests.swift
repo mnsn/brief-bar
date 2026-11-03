@@ -78,6 +78,26 @@ import BriefBarCore
             .contains("The file changed since: look at it as it is now before you change it:"))
     }
 
+    /// On lines the change removed, each line has its number: a removed or unchanged one as it was before the change, and
+    /// an added one, around them, as it is after it.
+    @Test func codeOnRemovedLinesNumbersEachLine() {
+        let removed = ThreadExcerpt(
+            threadId: 11, path: "/src/PaymentsClient.cs", side: .left, lines: [
+                ThreadExcerpt.Line(kind: .unchanged, text: "var delay = FirstDelay;", oldNumber: 80, newNumber: 86),
+                ThreadExcerpt.Line(kind: .removed, text: "delay += 100;", oldNumber: 81, newNumber: nil, isCommented: true),
+                ThreadExcerpt.Line(kind: .added, text: "delay *= 2;", oldNumber: nil, newNumber: 88),
+                ThreadExcerpt.Line(kind: .unchanged, text: "}", oldNumber: 82, newNumber: 89),
+            ],
+            reachesStart: false, reachesEnd: false, iteration: 2, latestIteration: 2
+        )
+        #expect(PullRequestPrompt.codeLines(removed) == """
+              80   var delay = FirstDelay;
+            > 81 - delay += 100;
+              88 + delay *= 2;
+              82   }
+            """)
+    }
+
     /// Applied as it's written, to the lines the thread is on, which Copilot finds in the file as it is now: their numbers
     /// are from when the thread was written, and a push since may have moved them.
     @Test func fixAppliesASuggestionAsItsWritten() throws {

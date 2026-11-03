@@ -176,8 +176,14 @@ extension PullRequestPrompt {
 
     /// Each line of an excerpt: whether the thread is on it, its number, how the change left it, and its text.
     static func codeLines(_ excerpt: ThreadExcerpt) -> String {
+        // An added line has only its new number, and a removed one its old; an unchanged one is numbered in the version the
+        // thread is on.
         func number(_ line: ThreadExcerpt.Line) -> Int? {
-            excerpt.side == .left || line.kind == .removed ? line.oldNumber : line.newNumber
+            switch line.kind {
+            case .added: line.newNumber
+            case .removed: line.oldNumber
+            case .unchanged: excerpt.side == .left ? line.oldNumber : line.newNumber
+            }
         }
         let width = excerpt.lines.compactMap(number).map { String($0).count }.max() ?? 1
         return excerpt.lines.map { line in

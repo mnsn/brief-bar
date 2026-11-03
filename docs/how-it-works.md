@@ -2227,9 +2227,11 @@ happens.
 **Fix** (`PullRequestPrompt.fixThread`) addresses that thread alone: its entry as Fix Comments lists it, each comment in
 full as its author wrote it, the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
 what was added, removed and commented, and what you wrote, quoted as yours; then it builds and tests, without
-committing, pushing or replying. On a file's page, whose threads don't show their own code, a composer reads it as it
-opens, and Explain and Fix wait for it as they go (`PullRequestCodeStore.excerpt(of:in:)`), through the reader the
-page's diff was read with. A ```` ```suggestion ```` fence, in any case, is a suggested change
+committing, pushing or replying. On a file's page, whose threads don't show their own code, a composer has it read as it
+opens, as a thread that comes on screen does, through the reader the page's diff was read with: only while its window
+shows on screen, called off as it hides, and read again once it shows. Explain, Fix and **Ask in the Session** wait for a
+read that's under way as they go, and go without the code when it isn't read
+(`PullRequestCodeStore.excerpt(of:in:by:on:)`). A ```` ```suggestion ```` fence, in any case, is a suggested change
 (`RichText.Block.suggestion`), blank lines at its ends and all, which the comment shows labeled; **Apply ‹name›'s
 suggestion as written** has the prompt quote the latest that someone else suggested in the thread
 (`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on, which Copilot finds in the
@@ -2257,8 +2259,8 @@ that took it on. A task of BriefBar's keeps the threads it took on with its run,
 (`CopilotRun.threads`); going on with a session whose changes aren't pushed, on the same pull request, keeps those it took
 on before, with how that ended. Push & Reply takes on those its prompt lists, to reply on (`TakenThread.ships`): the others
 the session fixed stay as they were, fixed and not pushed, with when, since it doesn't reply on them, and a thread that
-another session fixed since stays that one's. Once it's done, a fix starts afresh
-(`CopilotRun.threads(goingOnWith:on:taking:for:at:)`). A
+another session fixed since stays that one's. Once it's done, those it listed are pushed, and a later task in the session
+keeps only the others (`CopilotRun.threads(goingOnWith:on:taking:for:at:)`). A
 prompt sent to one of the Copilot app's sessions, or copied for you to paste there, is kept by references only, never what
 it says: the pull request, the session that took it and the one it forked, the threads, what for, and when (`SentPrompt`,
 `ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows it from the session's log
