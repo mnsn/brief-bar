@@ -365,7 +365,8 @@ private enum ChangeFixture {
         // As the change lists its files, but not the one whose only thread is resolved; each file's from its top down,
         // whoever they wait on.
         #expect(found.map { changes.files[$0.index].path } == ["/src/Other.cs", "/src/Payments.cs"])
-        #expect(found.map { $0.threads.map(\.id) } == [[3], [2, 1]])
+        let ids: [[Int]] = found.map { $0.threads.map(\.id) }
+        #expect(ids == [[3], [2, 1]])
         #expect(PullRequestPanel.Threads(waitingOnYou: [], open: [], resolved: threads.resolved).openOnFiles(of: changes).isEmpty)
     }
 
