@@ -500,12 +500,12 @@ final class AppModel: ObservableObject {
     }
 
     /// Opens what a notification on the Notifications page is about, as clicking it in Notification Center does, which
-    /// then has no need to keep it.
+    /// then has no need to keep it; in BriefBar's window, when it shows there, as a pull request's details do.
     func open(_ entry: NotificationHistory.Entry) {
         services.recentNotifications.markSeen(entry.id)
         services.notifier.removeDelivered(entry.id)
         guard state(of: entry.source) == .on else { return }
-        source(entry.source)?.openNotification(entry.userInfo)
+        source(entry.source)?.openNotificationInWindow(entry.userInfo)
     }
 
     /// Whether a window has a page for `section`: not once you've hidden it from windows.

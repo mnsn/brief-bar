@@ -2,23 +2,23 @@ import AppKit
 import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
-import CopilotTasks
 import SwiftUI
 
 /// A pull request's details, beside the list on the window's Pull Requests page: what it is and where it stands, what's
 /// left before it can complete, its comment threads, its builds and checks, who reviews it and what's linked to it, all
-/// from what the list read. The work items and Copilot sessions linked to it open as pages over it, ‹ going back, and ↗
-/// opens it in Azure DevOps, for what BriefBar doesn't do.
+/// from what the list read (`PullRequestDetailsContent`). The work items, Copilot sessions and pull requests linked to it
+/// open as pages over it, a pull request's the same as its own details, ‹ going back, and ↗ opens it in Azure DevOps, for
+/// what BriefBar doesn't do.
 struct PullRequestDetailsPanel: View {
     @EnvironmentObject private var details: PullRequestDetailsStore
     @EnvironmentObject private var store: PRStore
-    @EnvironmentObject private var copilot: CopilotTasksStore
     @EnvironmentObject private var services: AppServices
 
     /// What you went back from, to show its row again where you return.
     @LocalState private var returnTo: ItemRef?
-    /// The thread, the build or the check the details just went to, pointed out for a moment.
-    @LocalState private var highlighted: PullRequestDetailsStore.Anchor?
+    /// The pull request a page over the details shows, which the page, ↗ and ⋯ share, and which keeps it while the page
+    /// shows, once the list doesn't have it.
+    @LocalState private var pageDetails = PullRequestDetailsStore()
 
     var body: some View {
         if let item = details.selected {
@@ -30,9 +30,9 @@ struct PullRequestDetailsPanel: View {
                     ScrollView {
                         Group {
                             if let page = details.pages.last {
-                                ItemPageView(ref: page)
+                                LinkedItemPage(ref: page, scroll: proxy, details: pageDetails)
                             } else {
-                                content(item)
+                                PullRequestDetailsContent(details: details, item: item, scroll: proxy)
                             }
                         }
                         .padding(.horizontal, 16)
@@ -48,7 +48,6 @@ struct PullRequestDetailsPanel: View {
                     // Each pull request, and each page, from the top, but where you came back to.
                     .id(scrollKey(item))
                     .onChange(of: scrollKey(item)) { scrollBack(proxy) }
-                    .onChange(of: details.place, initial: true) { go(proxy) }
                 }
             }
             // Pages come from Show Links: without it, they go.
@@ -71,25 +70,6 @@ struct PullRequestDetailsPanel: View {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(30))
             proxy.scrollTo(target, anchor: .center)
-        }
-    }
-
-    /// To where the details were asked to go, once they show it, pointing out a thread, a build or a check for a moment.
-    private func go(_ proxy: ScrollViewProxy) {
-        guard let place = details.place, details.pages.isEmpty, let item = details.selected else { return }
-        let anchor = place.anchor(in: panel(for: item).checks)
-        Task { @MainActor in
-            // Once what's there shows, such as a resolved thread unfolded for it.
-            try? await Task.sleep(for: .milliseconds(60))
-            details.reached(place)
-            guard let anchor else { return }
-            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(anchor, anchor: .top) }
-            if case .section = anchor { return }
-            withAnimation(.easeOut(duration: 0.2)) { highlighted = anchor }
-            try? await Task.sleep(for: .seconds(1.6))
-            if highlighted == anchor {
-                withAnimation(.easeOut(duration: 0.4)) { highlighted = nil }
-            }
         }
     }
 
@@ -165,9 +145,9 @@ struct PullRequestDetailsPanel: View {
             openButton(item)
             Menu {
                 if let page = details.pages.last {
-                    pageMenuItems(page)
+                    PageMenuItems(ref: page, details: pageDetails)
                 } else {
-                    menuItems(item)
+                    PullRequestDetailsMenuItems(item: item, isListed: details.isListed)
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -206,25 +186,15 @@ struct PullRequestDetailsPanel: View {
         }
     }
 
-    /// ↗: the pull request in Azure DevOps, at the comment that needs you, as its row opens it.
+    /// ↗: the pull request in Azure DevOps, at the comment that needs you, as its row opens it; on a pull request's page,
+    /// that one. A page of anything else has its own, beside its title.
     @ViewBuilder
     private func openButton(_ item: PRSnapshot) -> some View {
-        if let opener = opener(item) {
-            Button(action: opener.open) {
-                Image(systemName: "arrow.up.forward.app")
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help(opener.help)
-            .accessibilityLabel(opener.title)
+        if let page = details.pages.last {
+            PullRequestPageOpener(ref: page, details: pageDetails)
+        } else {
+            PullRequestOpenButton(item: item)
         }
-    }
-
-    /// The pull request's, while its details show: a page over them has its own, beside its title.
-    private func opener(_ item: PRSnapshot) -> (title: String, help: String, open: () -> Void)? {
-        guard details.pages.isEmpty else { return nil }
-        return ("Open in Azure DevOps", Self.openHelp(item), { store.open(item) })
     }
 
     /// What ↗ opens: the pull request, or, as its row opens it, the comment that needs you or that you answered, or the
@@ -292,96 +262,8 @@ struct PullRequestDetailsPanel: View {
         }
     }
 
-    /// The pull request's own: opening it, copying it, and what its row's menu has, Copilot's actions among them while
-    /// Send Work to Copilot is on.
-    @ViewBuilder
-    private func menuItems(_ item: PRSnapshot) -> some View {
-        Button("Open in Azure DevOps") { store.open(item) }
-        Button("Copy Link") { Self.copy(item.pageURL().absoluteString) }
-        Button("Copy Number and Title") { Self.copy("!\(item.key.number) \(item.title)") }
-        // The row's own, while there's a row.
-        if details.isListed {
-            rowMenuItems(item)
-        } else {
-            LinkMenuItems(item.key.linkRef)
-        }
-    }
-
-    private func rowMenuItems(_ item: PRSnapshot) -> some View {
-        PullRequestMenuItems(
-            item: item,
-            openSource: item.chatSource == nil ? nil : { store.openSource(item) },
-            dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil,
-            stopWatching: item.isWatched ? { store.stopWatching(item) } : nil
-        )
-    }
-
-    /// The page's own: opening it, copying it, and linking it to more.
-    @ViewBuilder
-    private func pageMenuItems(_ ref: ItemRef) -> some View {
-        let item = services.links.describe(ref)
-        if let menu = item.menu {
-            menu()
-            Divider()
-        } else if let open = item.open {
-            Button(ref.kind.openTitle, action: open)
-        }
-        if let link = item.link {
-            Button("Copy Link") { Self.copy(link.absoluteString) }
-        }
-        if ref.kind == .session {
-            Button("Copy Name") { Self.copy(item.label) }
-        } else {
-            Button("Copy Number and Title") { Self.copy("\(item.label) \(item.title)") }
-        }
-        LinkMenuItems(ref)
-    }
-
     static func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-    }
-
-    // MARK: Content
-
-    /// What the task Copilot is at work on for the pull request does, while Send Work to Copilot is on.
-    private func copilotAction(_ item: PRSnapshot) -> PullRequestAction? {
-        guard copilot.isOn, let entry = copilot.latest(forPullRequest: item.key), entry.status.phase.isActive else { return nil }
-        return entry.action
-    }
-
-    /// What they show of it, from what the list read of it as they keep it (`PullRequestDetailsStore.record`), with what
-    /// waits on you in its threads as when they showed it.
-    private func panel(for item: PRSnapshot) -> PullRequestPanel {
-        let record = details.record
-        return PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record))
-    }
-
-    private func content(_ item: PRSnapshot) -> some View {
-        let record = details.record
-        let panel = panel(for: item)
-        let ref = item.key.linkRef
-        return VStack(alignment: .leading, spacing: 20) {
-            PullRequestPanelHeading(item: item, panel: panel, isListed: details.isListed)
-            PullRequestSessionLine(item: item)
-            // Its summary, of it and what's linked to it, under what it is.
-            PageSummary(ref: ref)
-            if let readiness = panel.readiness, !readiness.items.isEmpty {
-                PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction(item)) { section in
-                    details.go(to: .section(section))
-                }
-            }
-            PullRequestCommentsSection(item: item, panel: panel, me: record?.me, place: details.place, highlighted: highlighted)
-                .id(PullRequestDetailsStore.Anchor.section(.comments))
-            PullRequestChecksSection(item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted)
-                .id(PullRequestDetailsStore.Anchor.section(.checks))
-            PullRequestReviewersSection(panel: panel)
-                .id(PullRequestDetailsStore.Anchor.section(.reviewers))
-            WhereItStandsSection(subject: ref, title: "Also Linked", hidesWhenEmpty: true, showsSummary: false)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .tellsStory(of: ref)
-        // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details.
-        .writesSummary(of: ref)
     }
 }

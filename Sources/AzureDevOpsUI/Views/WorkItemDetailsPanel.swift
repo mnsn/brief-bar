@@ -17,6 +17,9 @@ struct WorkItemDetailsPanel: View {
 
     /// What you went back from, to show its row again where you return.
     @LocalState private var returnTo: ItemRef?
+    /// The pull request a page over the details shows, which the page, ↗ and ⋯ share, and which keeps it while the page
+    /// shows, once the list doesn't have it.
+    @LocalState private var pageDetails = PullRequestDetailsStore()
 
     var body: some View {
         if let item = details.selected {
@@ -28,7 +31,7 @@ struct WorkItemDetailsPanel: View {
                     ScrollView {
                         Group {
                             if let page = details.pages.last {
-                                ItemPageView(ref: page)
+                                LinkedItemPage(ref: page, scroll: proxy, details: pageDetails)
                             } else {
                                 content(item)
                             }
@@ -160,9 +163,12 @@ struct WorkItemDetailsPanel: View {
                 .buttonStyle(.borderless)
                 .help("Read it again")
             }
+            if let page = details.pages.last {
+                PullRequestPageOpener(ref: page, details: pageDetails)
+            }
             Menu {
                 if let page = details.pages.last {
-                    pageMenuItems(page)
+                    PageMenuItems(ref: page, details: pageDetails)
                 } else {
                     menuItems(item)
                 }
@@ -256,27 +262,6 @@ struct WorkItemDetailsPanel: View {
             }
             .font(size: 12, weight: .medium).monospacedDigit()
         }
-    }
-
-    /// The page's own: opening it, copying it, and linking it to more.
-    @ViewBuilder
-    private func pageMenuItems(_ ref: ItemRef) -> some View {
-        let item = services.links.describe(ref)
-        if let menu = item.menu {
-            menu()
-            Divider()
-        } else if let open = item.open {
-            Button(ref.kind.openTitle, action: open)
-        }
-        if let link = item.link {
-            Button("Copy Link") { Self.copy(link.absoluteString) }
-        }
-        if ref.kind == .session {
-            Button("Copy Name") { Self.copy(item.label) }
-        } else {
-            Button("Copy Number and Title") { Self.copy("\(item.label) \(item.title)") }
-        }
-        LinkMenuItems(ref)
     }
 
     @ViewBuilder
