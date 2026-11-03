@@ -114,6 +114,9 @@ public actor PipelinesEngine {
     private var pullRequestBuilds: [PRKey: [ADOBuild]] = [:]
     private var stages: [RunKey: Stages] = [:]
     private var attempts: [RunKey: Attempts] = [:]
+    /// Runs whose stages wait on a sign-in to their organization's directory, and why: said at every refresh, whether
+    /// they're read then or not, until one of their organization's timelines answers or they're no longer shown.
+    private var timelinesWaiting: [RunKey: ADOError] = [:]
     private var problem: PulseProblem?
     private var refreshedAt: Date?
     private var hasLoaded = false
@@ -296,6 +299,7 @@ public actor PipelinesEngine {
             pullRequestBuilds = [:]
             stages = [:]
             attempts = [:]
+            timelinesWaiting = [:]
         }
         account = token.account
         if configuration.pullRequestAccount != account {
@@ -388,7 +392,17 @@ public actor PipelinesEngine {
                     < (lastTouched(rhs.key), rhs.run.status.isFinished ? 1 : 0, rhs.key.organization, rhs.run.id)
             }
             .prefix(Self.timelinesPerRefresh)
-        for item in due where throttled == nil && !waiting.contains(item.key.organization.lowercased()) {
+        // Why each organization found waiting on a sign-in while timelines were read this refresh waits.
+        var directoryErrors: [String: ADOError] = [:]
+        for item in due where throttled == nil {
+            let organization = item.key.organization.lowercased()
+            // Its organization was found waiting on a sign-in this refresh: it waits too, and its turn comes round again
+            // behind the others', with no backoff of its own, so signing in there reads it at the next one.
+            guard !waiting.contains(organization) else {
+                attempts[item.key] = Attempts(last: startedAt, failures: 0)
+                if let error = directoryErrors[organization] { timelinesWaiting[item.key] = error }
+                continue
+            }
             let state = RunState(item.run)
             do {
                 let timeline = try await get(
@@ -401,41 +415,63 @@ public actor PipelinesEngine {
                     readFor: state, readAt: startedAt, isFinal: item.run.status.isFinished
                 )
                 attempts[item.key] = nil
+                stopWaiting(in: organization)
             } catch ADOError.notFound {
                 // A run that hasn't started has no timeline yet (Azure DevOps answers with no content).
                 stages[item.key] = Stages(stages: [], failure: nil, readFor: state, readAt: startedAt, isFinal: item.run.status.isFinished)
                 attempts[item.key] = nil
+                stopWaiting(in: organization)
             } catch ADOError.forbidden {
                 // You may see the run but not its timeline: don't ask again until the run changes.
                 stages[item.key] = Stages(stages: [], failure: nil, readFor: state, readAt: startedAt, isFinal: true)
                 attempts[item.key] = nil
+                stopWaiting(in: organization)
             } catch ADOError.throttled(let seconds) {
                 throttled = .throttled(retryAfter: seconds)
-            } catch let error as ADOError {
-                // Its stages stay as they were, and are tried again later; its organization's, once you've signed in to
-                // its directory.
-                if case .otherDirectory = error { waiting.insert(item.key.organization.lowercased()) }
+            } catch ADOError.otherDirectory(let name, let tenant) {
+                // Its stages stay as they were, and wait on a sign-in to its directory, which is said until one of its
+                // organization's timelines answers: not a timeline that keeps failing, it's tried again at the next refresh,
+                // behind the others, so signing in there reads it then.
+                let error = ADOError.otherDirectory(organization: name, tenant: tenant)
+                waiting.insert(organization)
+                directoryErrors[organization] = error
+                timelinesWaiting[item.key] = error
+                attempts[item.key] = Attempts(last: startedAt, failures: 0)
+            } catch is ADOError {
+                // Its stages stay as they were, and are tried again later. Its organization answered: it doesn't wait on a
+                // sign-in.
                 let failures = (attempts[item.key]?.failures ?? 0) + 1
                 attempts[item.key] = Attempts(last: startedAt, failures: failures)
+                stopWaiting(in: organization)
             }
         }
         // Keep only what's about runs still shown as the latest.
         let latestKeys = Set(latest.map(\.key))
         stages = stages.filter { latestKeys.contains($0.key) }
         attempts = attempts.filter { latestKeys.contains($0.key) }
+        timelinesWaiting = timelinesWaiting.filter { latestKeys.contains($0.key) }
 
         // Signing in to a directory comes first, after waiting for Azure DevOps: it's the one thing you can do about it.
-        let elsewhere = errors.contains { if case .otherDirectory = $0.error { true } else { false } }
+        let stagesWaiting = timelinesWaiting
+            .sorted { lhs, rhs in
+                (lhs.key.organization.lowercased(), lhs.key.projectId, lhs.key.buildId)
+                    < (rhs.key.organization.lowercased(), rhs.key.projectId, rhs.key.buildId)
+            }
+            .map { (organization: $0.key.organization, error: $0.value) }
+        let reported = errors + stagesWaiting
+        let elsewhere = reported.contains { PulseProblem.isOtherDirectory($0.error) }
         if let throttled {
             problem = PulseProblem.from(throttled)
             failures += 1
         } else if let first = errors.first, errors.count == attemptedLists {
-            problem = elsewhere ? PulseProblem.organizations(errors) : PulseProblem.from(first.error)
+            problem = elsewhere ? PulseProblem.organizations(reported) : PulseProblem.from(first.error)
             failures += 1
-        } else if let first = errors.first {
+        } else if elsewhere {
             // The other pipelines show.
-            problem = elsewhere
-                ? PulseProblem.organizations(errors) : PulseProblem.unreachable("Couldn't read some pipelines: \(first.error.description)")
+            problem = PulseProblem.organizations(reported)
+            failures = 0
+        } else if let first = errors.first {
+            problem = PulseProblem.unreachable("Couldn't read some pipelines: \(first.error.description)")
             failures = 0
         } else {
             problem = nil
@@ -446,6 +482,12 @@ public actor PipelinesEngine {
     /// When a run's timeline was last read or tried; never, first.
     private func lastTouched(_ key: RunKey) -> Date {
         max(stages[key]?.readAt ?? .distantPast, attempts[key]?.last ?? .distantPast)
+    }
+
+    /// An organization one of whose timelines answered, by lowercased name: none of its runs waits on a sign-in to its
+    /// directory any more.
+    private func stopWaiting(in organization: String) {
+        timelinesWaiting = timelinesWaiting.filter { $0.key.organization.lowercased() != organization }
     }
 
     private func snapshot() -> PipelinesSnapshot {

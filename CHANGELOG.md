@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Send a prompt straight to one of the Copilot app's sessions, or to a fork of it.** In the Send to Copilot
+  window, for a session that's already there, **Send to Session** sends the prompt to the session in the Copilot
+  app, as your own message, instead of copying it for you to paste. **Send to a Fork** forks the session, with
+  its history and the changes it hasn't committed, into a worktree of its own, and sends the fork the prompt,
+  while the session stays as it is. Both need **Send Prompts to Copilot Sessions**, which you turn on in
+  Settings › Agents. Until then, and whenever BriefBar can't send it, it copies the prompt and opens the session
+  for you to paste, as **Open in Copilot** did, or for a fork `/fork` and the prompt. The window says which
+  before you send it.
 - **Send Prompts to Copilot Sessions, in Settings › Agents.** Turn it on, and BriefBar installs a small
   extension in the GitHub Copilot app's sessions, so that Send to Copilot can send a prompt to a session
   itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's

@@ -165,7 +165,7 @@ public sealed class AzureDevOpsSettingsViewModel : Observable
         var add = ++addsMade;
         if (!addOrganization(arg1: name, arg2: access => queue.TryEnqueue(callback: () => ShowAccess(name: name, add: add, access: access))))
         {
-            settings.ToggleOrganization(name: name);
+            settings.SetWatching(name: name, watching: true);
             return;
         }
         checking[name] = add;
@@ -243,7 +243,7 @@ public sealed class AzureDevOpsSettingsViewModel : Observable
             items: Organizations,
             values: names,
             matches: (item, name) => string.Equals(a: item.Name, b: name, comparisonType: StringComparison.Ordinal),
-            create: name => new OrganizationViewModel(name: name, isWatched: settings.IsWatching(name: name), toggle: settings.ToggleOrganization),
+            create: name => new OrganizationViewModel(name: name, isWatched: settings.IsWatching(name: name), watch: settings.SetWatching),
             update: (item, name) => item.Show(watched: settings.IsWatching(name: name)));
         HasNoOrganizations = names.Count == 0;
         var watched = settings.WatchedPullRequests;
