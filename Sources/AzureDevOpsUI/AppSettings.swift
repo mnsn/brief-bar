@@ -143,6 +143,11 @@ final class AppSettings: ObservableObject {
     @Published var copilotPullRequestSessions: [PullRequestSessionChoice] {
         didSet { Self.store(copilotPullRequestSessions.isEmpty ? nil : copilotPullRequestSessions, in: defaults, forKey: Key.copilotPullRequestSessions) }
     }
+    /// The prompts about pull requests' comment threads sent to the Copilot app's sessions, or copied for you to paste
+    /// there: which session, which threads, what for and when, references only, never what they say (`SentPrompt`).
+    @Published var copilotSentPrompts: [SentPrompt] {
+        didSet { Self.store(copilotSentPrompts.isEmpty ? nil : copilotSentPrompts, in: defaults, forKey: Key.copilotSentPrompts) }
+    }
     /// The tasks sent to Copilot: which work item, where and with which model, not titles or what Copilot wrote.
     @Published var copilotRuns: [CopilotRun] {
         didSet { Self.store(copilotRuns, in: defaults, forKey: Key.copilotRuns) }
@@ -214,6 +219,10 @@ final class AppSettings: ObservableObject {
         // fork's.
         copilotRuns = (Self.load([CopilotRun].self, from: defaults, forKey: Key.copilotRuns) ?? []).filter(\.isValid)
         copilotForksToDelete = (Self.load([LeftoverFork].self, from: defaults, forKey: Key.copilotForksToDelete) ?? []).filter(\.isValid)
+        let sentPrompts = SentPrompt.load(from: defaults, now: now)
+        // Those that are done with, or that another program wrote there, leave the preferences too.
+        SentPrompt.prune(to: sentPrompts, in: defaults)
+        copilotSentPrompts = sentPrompts
         chatLinks = ChatLinkState()
         // Where earlier builds kept the links, which any program running as you could read: gone, whatever the setting.
         defaults.removeObject(forKey: Key.chatLinks)
@@ -262,8 +271,9 @@ final class AppSettings: ObservableObject {
     func forgetCopilotRuns() {
         copilotRuns = []
         copilotRepositories = [:]
-        // And the sessions you chose for pull requests' work.
+        // And the sessions you chose for pull requests' work, and the prompts sent to sessions about their threads.
         copilotPullRequestSessions = []
+        copilotSentPrompts = []
     }
 
     private static func load<T: Decodable>(_ type: T.Type, from defaults: UserDefaults, forKey key: String) -> T? {
@@ -553,6 +563,7 @@ enum SettingsKey {
     static let copilotWorktreesFolder = "ado.copilot.worktreesFolder"
     static let copilotRuns = "ado.copilot.runs"
     static let copilotForksToDelete = "ado.copilot.forksToDelete"
+    static let copilotSentPrompts = "ado.copilot.sentPrompts"
 }
 
 /// The forks BriefBar couldn't delete yet are kept with its runs, so that none is left behind when it quits first.

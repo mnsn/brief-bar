@@ -48,6 +48,9 @@ public struct SessionLogState: Sendable, Equatable {
     /// `phaseSince` then.
     public private(set) var phaseSetAt: Date?
     public private(set) var lastEventAt: Date?
+    /// When the session last got a message, yours or one sent as yours, which starts or steers a turn: what happens from
+    /// then on is that message's doing.
+    public private(set) var lastUserMessageAt: Date?
     public private(set) var errorMessage: String?
     public private(set) var summary: String?
     /// Short description of the latest main-agent tool call, e.g. a bash command's description.
@@ -73,6 +76,7 @@ public struct SessionLogState: Sendable, Equatable {
 
         switch event.kind {
         case .userMessage:
+            if let at { lastUserMessageAt = max(at, lastUserMessageAt ?? at) }
             // Anything still pending from a previous, already-ended interaction is stale.
             if phase != .running {
                 clearPending()

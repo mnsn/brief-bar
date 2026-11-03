@@ -49,6 +49,21 @@
   pull request before, its files can show only what changed since. BriefBar reads which files changed, and
   each file, only as they come on screen or you open one, one file at a time, and keeps them in memory
   only while those details show; Azure DevOps' description says so.
+- **Ask Copilot about a comment, right where you read it.** With Send Work to Copilot on, each open comment
+  thread in a pull request's details has **✨ Explain** and **Fix**, which open a small composer under the comment:
+  say what you want, or just press Return. **Explain** asks the Copilot session that worked on it, or the pull
+  request's own, why you got the comment, what the reviewer wants and how to address it, and shows the answer under
+  the comment: it's asked aside, so it changes nothing, and the session's history stays as it was. **Ask More**
+  follows up on its answer. **Fix** has Copilot address that comment alone, as you say, building on the answer if you
+  like ("the second way"), or apply a reviewer's **Suggested change** as it's written, then build and test, without
+  committing, pushing or replying. Choose where it goes in **▾**: the session, a fork of it, a new session, or
+  another, each saying how it would go there; **Edit the Whole Prompt…** there opens the Send to Copilot window.
+  Each thread then says what Copilot does about it, such as **Fixing this in a fork of ‘Retry backoff’ · 2m** or
+  **Fixed in ‘Retry backoff’, not pushed**; **Fix All** sits at the top of the comments; and once fixes are done, a
+  bar at the foot of the details takes you to them and offers **Push & Reply**. The Send to Copilot window can also
+  fork BriefBar's own sessions, with **Fork with the CLI**. Explain sends the session's conversation, with the
+  comment and its code, to GitHub Copilot, so Azure DevOps asks you to look at what it reads once more after the
+  update.
 
 ## 0.11.1 - 2026-11-03
 

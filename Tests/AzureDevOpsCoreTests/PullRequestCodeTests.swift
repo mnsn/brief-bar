@@ -1079,9 +1079,9 @@ private actor LaterCode: CodeSource {
                 shown[thread.id] = excerpt
             }
         }
-        // 4102's backoff, attempts, retry policy, old check and tests, 4088's delivery estimate, and 4091's rounding and
-        // coupons.
-        #expect(Set(shown.keys) == [11, 13, 14, 16, 17, 43, 63, 67])
+        // 4102's backoff, attempts, retry policy, old check, tests and retry options, 4088's delivery estimate, and 4091's
+        // rounding and coupons.
+        #expect(Set(shown.keys) == [11, 13, 14, 16, 17, 18, 43, 63, 67])
         #expect(shown[16]?.changedSince == true)
         func commented(_ id: Int) -> String? {
             shown[id]?.lines.first { $0.isCommented }?.text
@@ -1093,6 +1093,7 @@ private actor LaterCode: CodeSource {
         #expect(backoff.latestIteration == 2)
         #expect(commented(13)?.contains("retryOptions.Value.MaxAttempts") == true)
         #expect(commented(14)?.contains("class RetryPolicy") == true)
+        #expect(commented(18)?.contains("MaxAttempts") == true)
         #expect(shown[14]?.change == .add)
         #expect(commented(43)?.contains("warehouse.TimeZone") == true)
         #expect(commented(63)?.contains("MidpointRounding.AwayFromZero") == true)
