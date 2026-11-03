@@ -211,9 +211,9 @@ struct ThreadCopilotActions: View {
             .onAppear {
                 if let composer = preview?.composer(on: thread.id) { composing = CommentComposing(thread: thread.id, ask: composer.ask) }
             }
-            // VoiceOver hears what became of it as it happens, wherever it is.
-            .onChange(of: question?.state) { _, state in announce(state) }
-            .onChange(of: work?.state) { _, state in announce(state) }
+            // VoiceOver hears what became of it as it happens, wherever it is: not what shows as it's read.
+            .onChange(of: question?.state) { old, state in if old == .asking { announce(state) } }
+            .onChange(of: work?.state) { old, state in if let old, Self.isOngoing(old) { announce(state) } }
         }
     }
 
@@ -358,6 +358,14 @@ struct ThreadCopilotActions: View {
             Self.announce("\(spokenThread): couldn't explain it. \(failure.message(model: nil))")
         case .asking?, nil:
             break
+        }
+    }
+
+    /// Copilot is at it, or waits for you, rather than done with it.
+    static func isOngoing(_ state: CommentWork.State) -> Bool {
+        switch state {
+        case .waiting, .working, .needsYou: true
+        case .done, .failed, .stopped: false
         }
     }
 
