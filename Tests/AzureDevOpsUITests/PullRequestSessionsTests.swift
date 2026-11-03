@@ -181,16 +181,26 @@ import Testing
         #expect(open.allSatisfy { sessions.session(for: $0.key) == nil })
     }
 
-    /// How work would reach its session, kept up to date while its details show: with the CLI while it's free; in the
-    /// Copilot app once the app opens it; busy while a task of BriefBar's works in its checkout for another session.
+    /// How work would reach its session, kept up to date while its details show, as the Send to Copilot window would send
+    /// it: its last task's session with the CLI while it's free; in the Copilot app once the app opens it, as BriefBar's
+    /// extension can reach it; busy while another task of BriefBar's works in its checkout; and, once there's no task, the
+    /// app's session on its branch in the app.
     @Test func saysHowWorkWouldReachItAsThatChanges() async throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
         try database(at: home)
-        let checkout = home.appendingPathComponent("shop-web", isDirectory: true)
-        try FileManager.default.createDirectory(at: checkout.appendingPathComponent(".git"), withIntermediateDirectories: true)
-        try sessionState(onBranch, home: home, folder: checkout)
+        let worktree = home.appendingPathComponent("copilot-worktrees/shop-web/pr-4088", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree.appendingPathComponent(".git"), withIntermediateDirectories: true)
         let store = copilot(home: home)
+        let reference = PullRequestReference(
+            organization: "contoso", project: "Storefront", repository: "shop-web", id: 4088, sourceBranch: "delivery-estimates"
+        )
+        let lastTask = CopilotRun(
+            id: task, workItem: nil, onPullRequest: reference, action: .fixBuild, options: CopilotModel.standard,
+            repository: worktree.deletingLastPathComponent(), worktree: worktree, startedAt: now.addingTimeInterval(-3_600),
+            process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: .finished
+        )
+        store.settings.copilotRuns = [lastTask]
         let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
         sessions.refreshEvery = .milliseconds(50)
         let (item, record) = try await pullRequest()
@@ -199,24 +209,31 @@ import Testing
         defer { following.cancel() }
 
         try await until { sessions.session(for: key)?.delivery == .cli }
+        #expect(sessions.session(for: key)?.basis == .lastTask)
         #expect(sessions.session(for: key)?.delivery == .cli)
 
-        // The Copilot app opens it: this test's process stands in for it.
-        let lock = home.appendingPathComponent("session-state/\(onBranch)/inuse.\(getpid()).lock")
+        // The Copilot app opens it: this test's process stands in for it. Send Prompts to Copilot Sessions is off, so the
+        // prompt would be copied for you to paste there.
+        let state = home.appendingPathComponent("session-state/\(task)", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        let lock = state.appendingPathComponent("inuse.\(getpid()).lock")
         try Data().write(to: lock)
-        let opened = PullRequestSession.Delivery.app(reason: "The Copilot app has it open: Copilot can go on with it only there, where its history is.")
+        let opened = PullRequestSession.Delivery.app(
+            reach: .off, reason: "The Copilot app has it open: Copilot can go on with it only there, where its history is."
+        )
         try await until { sessions.session(for: key)?.delivery == opened }
         #expect(sessions.session(for: key)?.delivery == opened)
         try FileManager.default.removeItem(at: lock)
         try await until { sessions.session(for: key)?.delivery == .cli }
+        #expect(sessions.session(for: key)?.delivery == .cli)
 
         // A task BriefBar sent for another pull request works in the same checkout.
-        let worktree = checkout.appendingPathComponent("src", isDirectory: true)
-        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
-        store.settings.copilotRuns = [CopilotRun(
-            id: task, workItem: nil,
+        let elsewhere = worktree.appendingPathComponent("src", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        store.settings.copilotRuns = [lastTask, CopilotRun(
+            id: other, workItem: nil,
             onPullRequest: PullRequestReference(organization: "contoso", project: "Storefront", repository: "shop-web", id: 5000, sourceBranch: "other"),
-            action: .fixComments, options: CopilotModel.standard, repository: checkout, worktree: worktree, startedAt: now,
+            action: .fixComments, options: CopilotModel.standard, repository: worktree, worktree: elsewhere, startedAt: now,
             process: DetachedProgram.Handle(pid: getpid(), startedAt: nil)
         )]
         let busy = PullRequestSession.Delivery.busy("Copilot is working in its checkout for another task BriefBar sent.")
@@ -224,9 +241,14 @@ import Testing
         #expect(sessions.session(for: key)?.session?.isFolderBusy == true)
         #expect(sessions.session(for: key)?.delivery == busy)
         // It's done.
-        store.settings.copilotRuns = []
+        store.settings.copilotRuns = [lastTask]
         try await until { sessions.session(for: key)?.delivery == .cli }
         #expect(sessions.session(for: key)?.delivery == .cli)
+
+        // No task: the app's session on its branch, in the app.
+        store.settings.copilotRuns = []
+        try await until { sessions.session(for: key)?.session?.id == onBranch && sessions.session(for: key)?.delivery != nil }
+        #expect(sessions.session(for: key)?.delivery == .app(reach: .off, reason: nil))
     }
 
     /// How work would reach its session is checked once, then with each read: not again and again as it's kept.

@@ -340,21 +340,25 @@ about, while a window shows the Pull Requests page. Either way, its menu has bot
 **Show Details** in the window, and **Open in Azure DevOps**.
 
 **Its Copilot session.** With Send Work to Copilot on, a line under the heading, in its details and on its
-page over a work item's, names the Copilot session the pull request's work goes to, why it's its, and how it stands, in its state's color, such as **Copilot ·
-‘Retry backoff’ · on its branch · Finished 1d ago**: the session you chose for it; else its last task's;
-else the session of the work item's task that opened it; else the Copilot app's session that Copilot
-recorded with it, that you linked to it with Show Links, or that's on its branch. When two of those go with
-it as well as each other, the line asks **Which session is this pull request's?** instead of guessing, and
-its work goes to the one you choose. One whose log only has a link to it may have opened it, but that's a
-guess, so it's offered in the line's menu, never chosen for you. Click the line to see the session's page in
-the details, with Show Links on, or else to open one of the app's sessions in Copilot; while it waits for your
-answer, the line is orange, and a click opens it in the Copilot app, where you answer it. While Copilot works in it, or in its checkout, for a task BriefBar sent, nothing more
-goes there until that's done. **⌄** opens it in Copilot, or **Continue in Terminal** for a task BriefBar runs
-with the Copilot CLI; and, under **Use for This Pull Request**, lists the sessions that go with it, each
-with why and how it stands, the app's other sessions, and **New Session**: the one you check is where the
-pull request's work goes from then on, in the Send to Copilot window too, until a task starts on it in
-another session. **Let BriefBar Choose** goes back to BriefBar's choice. Without Send Work to Copilot, the
-line shows only the sessions Show Links links to it, to look at.
+page over a work item's, names the Copilot session the pull request's work goes to, why it's its, and how it
+stands, in its state's color, such as **Copilot · ‘Retry backoff’ · on its branch · Finished 1d ago**: the
+session you chose for it; else its last task's; else the session of the work item's task that opened it;
+else the Copilot app's session that Copilot recorded with it, that you linked to it with Show Links, or
+that's on its branch. When two of those go with it as well as each other, the line asks **Which session is
+this pull request's?** instead of guessing, and its work goes to the one you choose. One whose log only has
+a link to it may have opened it, but that's a guess, so it's offered in the line's menu, never chosen for
+you. Click the line to see the session's page in the details, with Show Links on, or else to open one of the
+app's sessions in Copilot; while it waits for your answer, the line is orange, and a click opens it in the
+Copilot app, where you answer it. While Copilot works in it, or in its checkout, for a task BriefBar sent,
+nothing more goes there until that's done. **⌄** says first how work would get there, as the Send to Copilot
+window would send it: with the Copilot CLI, for a task BriefBar runs; or in the Copilot app, where BriefBar
+sends the prompt itself with [Send Prompts to Copilot Sessions](#agents) on, or copies it for you to paste.
+It opens the session in Copilot, or **Continue in Terminal** for a task BriefBar runs with the Copilot CLI;
+and, under **Use for This Pull Request**, lists the sessions that go with it, each with why and how it
+stands, the app's other sessions, and **New Session**: the one you check is where the pull request's work
+goes from then on, in the Send to Copilot window too, until a task starts on it in another session. **Let
+BriefBar Choose** goes back to BriefBar's choice. Without Send Work to Copilot, the line shows only the
+sessions Show Links links to it, to look at.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but

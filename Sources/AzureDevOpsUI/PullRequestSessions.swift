@@ -335,7 +335,7 @@ final class PullRequestSessions: ObservableObject {
         )
         if let choice = session.session {
             if choice.isUnavailable {
-                session.delivery = PullRequestSession.delivery(for: choice, cliProblem: nil, canOpenInApp: copilot.canOpenInApp)
+                session.delivery = PullRequestSession.delivery(for: choice, cliProblem: nil, reach: nil, canOpenInApp: copilot.canOpenInApp)
             } else if copilot.mode == .demo {
                 session.delivery = demoDelivery(choice)
             } else if let known = state.delivery, known.id == choice.id {
@@ -439,11 +439,9 @@ final class PullRequestSessions: ObservableObject {
         return copilot.availability(of: tasks + linkedChoices(key).filter { !ids.contains($0.id) })
     }
 
-    /// How the demo says work would reach a session: in the Copilot app for one that's at work or waits for you there,
-    /// which the app has open; with the CLI otherwise. It sends nothing.
+    /// How the demo says work would reach a session: in the Copilot app for one of its sessions, with the CLI for a task of
+    /// BriefBar's, unless Copilot works in it, as for one that isn't made up. It sends nothing, and reads nothing.
     private func demoDelivery(_ choice: SessionChoice) -> PullRequestSession.Delivery {
-        if choice.isUnavailable { return PullRequestSession.delivery(for: choice, cliProblem: nil, canOpenInApp: true) }
-        guard choice.appSession?.isRunning == true else { return .cli }
-        return .app(reason: "The Copilot app has it open: Copilot can go on with it only there, where its history is.")
+        PullRequestSession.delivery(for: choice, cliProblem: nil, reach: nil, canOpenInApp: true)
     }
 }

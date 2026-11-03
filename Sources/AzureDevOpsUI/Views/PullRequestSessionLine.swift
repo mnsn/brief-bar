@@ -491,6 +491,10 @@ struct PullRequestSessionMenu: View {
 
     var body: some View {
         if let choice = session.session {
+            // How work would get there, first, as the line's tooltip says it.
+            if session.canChoose, let delivery = session.delivery {
+                Text(Self.summary(delivery))
+            }
             actions(for: choice)
         }
         if session.canChoose {
@@ -584,9 +588,36 @@ struct PullRequestSessionMenu: View {
     static func sentence(_ delivery: PullRequestSession.Delivery) -> String {
         switch delivery {
         case .cli: return "Work goes to it with the Copilot CLI, which goes on with it on its own."
-        case .app(let reason): return "Work opens it in the Copilot app, with the prompt copied for you to paste: \(reason)"
+        case .app(let reach, let reason):
+            var parts: [String] = []
+            switch reach {
+            case .listening?: parts.append("Work goes to it in the Copilot app, where BriefBar's extension sends it the prompt, as yours.")
+            case .loads?: parts.append("Work goes to it in the Copilot app, which loads it, and BriefBar's extension then sends it the prompt, as yours.")
+            case nil: parts.append("Work goes to it in the Copilot app.")
+            case .noListener?, .notInApp?, .off?: parts.append("Work opens it in the Copilot app, with the prompt copied for you to paste.")
+            }
+            if let why = reach?.whyNot(forking: false) { parts.append(why) }
+            if let reason { parts.append(reason) }
+            return parts.joined(separator: " ")
         case .busy(let reason): return "Busy: \(reason) Nothing more goes to it until then."
         case .unavailable(let reason): return "Work can't go to it now: \(reason)"
+        }
+    }
+
+    /// The same, briefly, for the first line of its menu: "Work goes to it with the Copilot CLI".
+    static func summary(_ delivery: PullRequestSession.Delivery) -> String {
+        switch delivery {
+        case .cli: return "Work goes to it with the Copilot CLI"
+        case .app(let reach, _):
+            switch reach {
+            case .listening?: return "Work goes to it in Copilot: BriefBar sends the prompt"
+            case .loads?: return "Work goes to it in Copilot: BriefBar sends the prompt once it loads"
+            case nil: return "Work goes to it in the Copilot app"
+            case .noListener?, .notInApp?, .off?: return "Work opens it in Copilot, with the prompt to paste"
+            }
+        case .busy(let reason):
+            return "Busy: " + (reason.hasSuffix(".") ? String(reason.dropLast()) : reason)
+        case .unavailable: return "Work can't go to it now"
         }
     }
 }

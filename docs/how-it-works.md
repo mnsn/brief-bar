@@ -1364,10 +1364,13 @@ they said is kept for a quarter of an hour. The sessions are those the Send to C
 seconds while they do (`PullRequestSessions`), so the line follows the app's sessions as they start, end, open and
 close; the last eight it showed are kept a while, to show at once as their details show again, until they're read
 again; BriefBar's tasks, your choice and Show Links' links as they change. How work would reach the session
-(`PullRequestSession.Delivery`) is worked out as the window does (`CopilotTasksStore.cliProblem`, without its git
-check, which the window still makes): with the Copilot CLI while it can go on with it, in the Copilot app, with the
-prompt copied, when the app has it open or the CLI can't, or busy while a task of BriefBar's works in it or in its
-checkout. How it stands is what Copilot's list says of it through Show Links, or what BriefBar follows of its own
+(`PullRequestSession.Delivery`), which its menu says first, is the way the window would send it unless you choose
+otherwise, worked out as the window does: a task of BriefBar's with the Copilot CLI while it can go on with it
+(`CopilotTasksStore.cliProblem`, without its git check, which the window still makes); the Copilot app's sessions, and
+a task the app has open or the CLI can't go on with, in the app, where BriefBar's extension in the session sends it the
+prompt, now or once the app loads it, or else BriefBar copies the prompt for you to paste there, as
+`CopilotTasksStore.reach(of:)` says, which reads which sessions the extension listens in only while Send Prompts to
+Copilot Sessions is on; or busy while a task of BriefBar's works in it or in its checkout. How it stands is what Copilot's list says of it through Show Links, or what BriefBar follows of its own
 task. While it waits for your answer, the line is orange, and opens the session in the Copilot app, where you answer
 it, as Copilot's list does; otherwise it shows the session's page in the details, and it isn't under **Also
 Linked**. **Use for This Pull Request**, in its menu, keeps your choice in the preferences

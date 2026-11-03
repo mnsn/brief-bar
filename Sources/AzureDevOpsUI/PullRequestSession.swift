@@ -133,18 +133,29 @@ struct PullRequestSession: Equatable, Sendable {
         case ask([SessionChoice])
     }
 
-    /// How work would reach the session now.
+    /// How work would reach the session now, as the Send to Copilot window sends it unless you choose otherwise.
     enum Delivery: Equatable, Sendable {
-        /// The Copilot CLI goes on with it now, on its own, in the folder it works in.
+        /// The Copilot CLI goes on with it now, on its own, in the folder it works in: a task of BriefBar's, while it can.
         case cli
-        /// It opens in the Copilot app with the prompt copied, for you to paste and send: the app has it open, or the CLI
-        /// can't go on with it, as `reason` says. (With Send Prompts to Copilot Sessions, BriefBar's extension in the
-        /// session may take the prompt itself: `CopilotTasksStore.reach(of:)` says how, once it's there.)
-        case app(reason: String)
+        /// In the Copilot app, as Send to Session sends it: BriefBar's extension in the session sends it the prompt, now or
+        /// once the app loads it, as `reach` says (`CopilotTasksStore.reach(of:)`); or, when it can't
+        /// (`SessionReach.whyNot`), BriefBar copies the prompt and opens the session, for you to paste it there; nil while
+        /// that isn't known. The Copilot app's sessions go there, and a task of BriefBar's that the app has open or that
+        /// the CLI can't go on with, as `reason` says.
+        case app(reach: SessionReach?, reason: String?)
         /// Nothing goes to it until Copilot is done working in it, or in its checkout: why.
         case busy(String)
         /// Nothing can go to it from here: why.
         case unavailable(String)
+
+        /// BriefBar hands it the prompt itself: the CLI, or BriefBar's extension in the session.
+        var sendsItself: Bool {
+            switch self {
+            case .cli: return true
+            case .app(let reach, _): return reach?.sends(forking: false) == true
+            case .busy, .unavailable: return false
+            }
+        }
     }
 
     var pick: Pick
@@ -254,14 +265,27 @@ struct PullRequestSession: Equatable, Sendable {
         .min { ($0.appSession?.createdAt ?? .distantFuture) < ($1.appSession?.createdAt ?? .distantFuture) }
     }
 
-    /// How work would reach a session: not while Copilot works in it or in its checkout, for a task BriefBar sent; with the
-    /// Copilot CLI when it can go on with it (`cliProblem` is nil); else in the Copilot app, with the prompt copied, when an
-    /// app opens its sessions.
-    static func delivery(for choice: SessionChoice, cliProblem: String?, canOpenInApp: Bool) -> Delivery {
+    /// How work would reach a session, as the Send to Copilot window sends it unless you choose otherwise: not while Copilot
+    /// works in it or in its checkout, for a task BriefBar sent; a task of BriefBar's with the Copilot CLI while it can go
+    /// on with it (`cliProblem` is nil) and the app doesn't have it open; the rest in the Copilot app, as `reach` says,
+    /// while an app opens the app's sessions; without one, with the CLI, while it can.
+    @MainActor
+    static func delivery(for choice: SessionChoice, cliProblem: String?, reach: SessionReach?, canOpenInApp: Bool) -> Delivery {
         if choice.isBusy { return .busy("Copilot is still working in it.") }
         if choice.isFolderBusy { return .busy("Copilot is working in its checkout for another task BriefBar sent.") }
-        guard let cliProblem else { return .cli }
-        return canOpenInApp ? .app(reason: cliProblem) : .unavailable(cliProblem)
+        let isAppsOwn = isAppsOwn(choice)
+        if !isAppsOwn, !choice.isOpenInApp, cliProblem == nil { return .cli }
+        guard canOpenInApp else {
+            guard let cliProblem else { return .cli }
+            return .unavailable(isAppsOwn ? CopilotTasksStore.cantOpenInApp : cliProblem)
+        }
+        return .app(reach: reach, reason: isAppsOwn ? nil : cliProblem)
+    }
+
+    /// Whether it goes to the Copilot app as one of its own: one of the app's sessions, or a task of BriefBar's that went on
+    /// with one.
+    static func isAppsOwn(_ choice: SessionChoice) -> Bool {
+        choice.appSession != nil || choice.run?.isAppSession == true
     }
 
     /// What a session is called where the pull request's details say it: one of the app's by its name; a task BriefBar
@@ -330,16 +354,20 @@ extension CopilotTasksStore {
     }
 
     /// How work for a pull request would reach a session now (`PullRequestSession.delivery`), as the Copilot app's database
-    /// and the sessions' state say now (`cliProblem`).
+    /// and the sessions' state say now (`cliProblem`), and, for one that goes to the Copilot app, BriefBar's extension in it
+    /// (`reach(of:)`), which is read only while Send Prompts to Copilot Sessions is on.
     /// - Parameter checksRepository: whether the folder it works in has to be a clone of the pull request's repository,
     ///   which runs git there; without it, what's read is what the Send to Copilot window reads as it opens.
     func delivery(to choice: SessionChoice, for pullRequest: TaskPullRequest, checksRepository: Bool) async -> PullRequestSession.Delivery {
         if choice.isUnavailable {
-            return PullRequestSession.delivery(for: choice, cliProblem: nil, canOpenInApp: canOpenInApp)
+            return PullRequestSession.delivery(for: choice, cliProblem: nil, reach: nil, canOpenInApp: canOpenInApp)
         }
         let problem = await cliProblem(for: choice, subject: .pullRequest(pullRequest, .fixComments), checksRepository: checksRepository)
+        // How a prompt would reach it in the Copilot app, for one that goes there, as the window says it.
+        let goesToApp = PullRequestSession.isAppsOwn(choice) || choice.isOpenInApp || problem != nil
+        let reach = goesToApp && canOpenInApp ? await reach(of: choice) : nil
         // Copilot may have started working in it, or its checkout, meanwhile.
         let current = availability(of: [choice]).first ?? choice
-        return PullRequestSession.delivery(for: current, cliProblem: problem, canOpenInApp: canOpenInApp)
+        return PullRequestSession.delivery(for: current, cliProblem: problem, reach: reach, canOpenInApp: canOpenInApp)
     }
 }

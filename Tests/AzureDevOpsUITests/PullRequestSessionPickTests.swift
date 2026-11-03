@@ -80,7 +80,7 @@ import Testing
         #expect(PullRequestSession.pick(choices, chosen: nil, lastTask: last(working)) == .session(working, .lastTask))
         let session = PullRequestSession.make(choices, chosen: nil, lastTask: last(working), createdAt: nil, canChoose: true)
         #expect(session.session?.isBusy == true)
-        #expect(PullRequestSession.delivery(for: working, cliProblem: nil, canOpenInApp: true) == .busy("Copilot is still working in it."))
+        #expect(PullRequestSession.delivery(for: working, cliProblem: nil, reach: nil, canOpenInApp: true) == .busy("Copilot is still working in it."))
     }
 
     @Test func goesToTheSessionYouChoseUnlessATaskStartedSince() {
@@ -154,16 +154,56 @@ import Testing
 
     // MARK: How work gets there
 
-    @Test func goesWithTheCLIWhenItsFreeElseInTheCopilotApp() {
-        let session = app(onBranch, [.onItsBranch], active: 0)
-        #expect(PullRequestSession.delivery(for: session, cliProblem: nil, canOpenInApp: true) == .cli)
+    /// As the Send to Copilot window sends it unless you choose otherwise: a task of BriefBar's with the CLI while it can,
+    /// and in the Copilot app once the app has it open or the CLI can't; the app's sessions in the app, as BriefBar's
+    /// extension can reach them; with the CLI when nothing opens the app's sessions; and nothing while Copilot works in it
+    /// or in its checkout.
+    @Test func goesTheWayTheWindowSendsIt() {
+        let ownTask = task(fixing, startedAgo: 60)
         let open = "The Copilot app has it open: Copilot can go on with it only there, where its history is."
-        #expect(PullRequestSession.delivery(for: session, cliProblem: open, canOpenInApp: true) == .app(reason: open))
-        #expect(PullRequestSession.delivery(for: session, cliProblem: open, canOpenInApp: false) == .unavailable(open))
+        #expect(PullRequestSession.delivery(for: ownTask, cliProblem: nil, reach: nil, canOpenInApp: true) == .cli)
+        #expect(PullRequestSession.delivery(for: ownTask, cliProblem: open, reach: .off, canOpenInApp: true) == .app(reach: .off, reason: open))
+        #expect(PullRequestSession.delivery(for: ownTask, cliProblem: open, reach: nil, canOpenInApp: false) == .unavailable(open))
+        var opened = ownTask
+        opened.isOpenInApp = true
+        #expect(PullRequestSession.delivery(for: opened, cliProblem: nil, reach: .notInApp, canOpenInApp: true) == .app(reach: .notInApp, reason: nil))
+
+        let session = app(onBranch, [.onItsBranch], active: 0)
+        let listening = SessionReach.listening(canFork: true)
+        #expect(PullRequestSession.delivery(for: session, cliProblem: nil, reach: listening, canOpenInApp: true) == .app(reach: listening, reason: nil))
+        #expect(PullRequestSession.delivery(for: session, cliProblem: open, reach: .loads, canOpenInApp: true) == .app(reach: .loads, reason: nil))
+        // Nothing opens the app's sessions: with the CLI, while it can.
+        #expect(PullRequestSession.delivery(for: session, cliProblem: nil, reach: nil, canOpenInApp: false) == .cli)
+        #expect(PullRequestSession.delivery(for: session, cliProblem: open, reach: nil, canOpenInApp: false) == .unavailable(CopilotTasksStore.cantOpenInApp))
+
         var shared = session
         shared.isFolderBusy = true
-        #expect(PullRequestSession.delivery(for: shared, cliProblem: nil, canOpenInApp: true)
+        #expect(PullRequestSession.delivery(for: shared, cliProblem: nil, reach: listening, canOpenInApp: true)
             == .busy("Copilot is working in its checkout for another task BriefBar sent."))
+
+        // BriefBar hands it the prompt itself: the CLI, or its extension in the session; otherwise you paste it.
+        #expect(PullRequestSession.Delivery.cli.sendsItself)
+        #expect(PullRequestSession.Delivery.app(reach: listening, reason: nil).sendsItself)
+        #expect(PullRequestSession.Delivery.app(reach: .loads, reason: nil).sendsItself)
+        #expect(!PullRequestSession.Delivery.app(reach: .off, reason: nil).sendsItself)
+        #expect(!PullRequestSession.Delivery.app(reach: nil, reason: nil).sendsItself)
+    }
+
+    /// What its line's tooltip and its menu's first line say of it.
+    @Test func saysHowWorkWouldGetThere() {
+        #expect(PullRequestSessionMenu.summary(.cli) == "Work goes to it with the Copilot CLI")
+        #expect(PullRequestSessionMenu.summary(.app(reach: .listening(canFork: false), reason: nil)) == "Work goes to it in Copilot: BriefBar sends the prompt")
+        #expect(PullRequestSessionMenu.summary(.app(reach: .off, reason: nil)) == "Work opens it in Copilot, with the prompt to paste")
+        #expect(PullRequestSessionMenu.summary(.busy("Copilot is still working in it.")) == "Busy: Copilot is still working in it")
+        let off = PullRequestSessionMenu.sentence(.app(reach: .off, reason: nil))
+        #expect(off.hasPrefix("Work opens it in the Copilot app, with the prompt copied for you to paste. To have BriefBar send prompts"))
+        let folder = "BriefBar can't tell which folder it works in."
+        #expect(PullRequestSessionMenu.sentence(.app(reach: .notInApp, reason: folder)) == """
+            Work opens it in the Copilot app, with the prompt copied for you to paste. It isn't one of the Copilot app's \
+            sessions, so BriefBar can't send it prompts there. \(folder)
+            """)
+        #expect(PullRequestSessionMenu.sentence(.app(reach: .loads, reason: nil))
+            == "Work goes to it in the Copilot app, which loads it, and BriefBar's extension then sends it the prompt, as yours.")
     }
 
     @Test func callsTasksByWhatTheyreFor() {
