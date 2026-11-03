@@ -401,6 +401,51 @@ import Testing
         #expect(reads == 2)
     }
 
+    /// Its details show in a window on screen and in a minimized one. While its sessions are read, you choose another pull
+    /// request in the one on screen, which calls the read off, and open these details there again before it ends: they're
+    /// read again as it ends, though they were read before, rather than at the next turn.
+    @Test func readsAgainWhenOpenAgainWhileOnlyAWindowOffScreenFollowedIt() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        sessions.refreshEvery = .seconds(3_600)
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        // The second read is held up once it has the sessions.
+        var reads = 0
+        var held: CheckedContinuation<Void, Never>?
+        sessions.sessionsReadForTests = { _ in
+            reads += 1
+            if reads == 2 { await withCheckedContinuation { held = $0 } }
+        }
+        // In a minimized window, then in one on screen, where it's read.
+        let minimized = PullRequestCodeStore.page(.azureDevOpsPullRequests, window: "2")
+        let hidden = Task { await sessions.follow(item, record: record, on: minimized) }
+        defer { hidden.cancel() }
+        try await Task.sleep(for: .milliseconds(100))
+        let shown = followOnScreen(sessions, item, record: record)
+        try await until { sessions.session(for: item.key)?.delivery != nil }
+        #expect(reads == 1)
+
+        // Read again as the window on screen is covered and shown again, and held up.
+        sessions.setVisible(false, for: page)
+        sessions.setVisible(true, for: page)
+        try await until { held != nil }
+        // Another pull request there: only the minimized window follows it, so the read is called off.
+        shown.cancel()
+        await shown.value
+        // These details again, on the page on screen, before that read ends.
+        let again = followOnScreen(sessions, item, record: record)
+        defer { again.cancel() }
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(reads == 2)
+        held?.resume()
+        try await until { reads == 3 }
+        #expect(reads == 3)
+    }
+
     /// What's being read for a pull request is called off once all that still follows it is on pages no window shows on
     /// screen, as when you choose another pull request in the window that showed it while a minimized one shows it too: a
     /// search of the logs doesn't run on. Shown again, it's read again.

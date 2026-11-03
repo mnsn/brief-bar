@@ -146,7 +146,7 @@ final class PullRequestSessions: ObservableObject {
             followed[key] = state
             // What still follows it is on pages no window shows on screen: what's being read or checked for it is called
             // off, as when they went off screen (`setVisible`).
-            if !isOnScreen(state) { spawned[key]?.values.forEach { $0.cancel() } }
+            if !isOnScreen(state) { callOff(key) }
         } else {
             followed[key] = nil
             spawned.removeValue(forKey: key)?.values.forEach { $0.cancel() }
@@ -189,9 +189,18 @@ final class PullRequestSessions: ObservableObject {
         } else {
             guard visiblePages.remove(page) != nil else { return }
             for (key, state) in followed where state.followers.values.contains(page) && !isOnScreen(state) {
-                spawned[key]?.values.forEach { $0.cancel() }
+                callOff(key)
             }
         }
+    }
+
+    /// Calls off what's being read or checked for a followed pull request, as nothing that follows it is on screen
+    /// anymore. A read under way is read again as it ends, which reads only if something on screen follows it by then:
+    /// as when its details open again on a page a window shows, whose sessions, read before, would otherwise wait for
+    /// the next turn.
+    private func callOff(_ key: PRKey) {
+        spawned[key]?.values.forEach { $0.cancel() }
+        if reading.contains(key) { readAgain.insert(key) }
     }
 
     /// Reads or checks for a followed pull request, until it's no longer followed or everything stops.
