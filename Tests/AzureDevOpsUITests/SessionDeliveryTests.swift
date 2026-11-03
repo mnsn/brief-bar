@@ -12,6 +12,11 @@ import Testing
 /// BriefBar's extension in one of the Copilot app's sessions, as far as these tests need it: it says it listens, claims its
 /// session's requests, and answers each as it's told. `CopilotOutboxTests` holds it to the contract.
 private final class ExtensionStandIn: Sendable {
+    /// How often it looks for requests, and BriefBar at the outbox, in these tests, as do the tests' own waits. Each look
+    /// reads the outbox's folders, in many tests at once: looking every 25 ms rather than every 5, these tests use about a
+    /// quarter less CPU, and take about as long.
+    static let lookEvery: Duration = .milliseconds(25)
+
     let outbox: URL
     let sessionId: String
     private let state = Mutex<(received: [String], task: Task<Void, Never>?)>(([], nil))
@@ -33,6 +38,7 @@ private final class ExtensionStandIn: Sendable {
     }
 
     /// Takes its session's requests until `stop()`: what `answer` returns goes into each one's result, or none when nil.
+    /// Started again, it answers as it's told then, and stops looking as it was told before.
     func start(after delay: Duration = .zero, answer: @escaping @Sendable (_ kind: String) -> [String: Any]? = { _ in ["ok": true] }) {
         let task = Task { [self] in
             while !Task.isCancelled {
@@ -53,10 +59,13 @@ private final class ExtensionStandIn: Sendable {
                     }
                     try? FileManager.default.removeItem(at: claimed)
                 }
-                try? await Task.sleep(for: .milliseconds(5))
+                try? await Task.sleep(for: Self.lookEvery)
             }
         }
-        state.withLock { $0.task = task }
+        state.withLock {
+            $0.task?.cancel()
+            $0.task = task
+        }
     }
 
     func stop() {
@@ -119,7 +128,7 @@ private final class ExtensionStandIn: Sendable {
         // Long enough for each step even while other tests keep the process busy for many seconds: a test that waits for
         // a step to time out shortens that step's.
         var timing = SessionSender.Timing()
-        timing.poll = .milliseconds(5)
+        timing.poll = ExtensionStandIn.lookEvery
         timing.claim = 60
         timing.load = 60
         timing.listen = 60
@@ -684,7 +693,7 @@ private final class ExtensionStandIn: Sendable {
 
         let sending = Task { await store.deliver("Fix the comments", to: task) }
         for _ in 0..<400 where requests(home).isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         #expect(store.isWorking(inFolder: worktree))
         #expect(await store.worktreeInUse(run) == "BriefBar is sending a prompt to a session that works in it. Remove it once that's done.")
@@ -761,7 +770,7 @@ private final class ExtensionStandIn: Sendable {
         // The fork's extension takes its prompt only a moment later, however long other tests keep the main actor.
         let sending = Task { await store.deliver("Try it", to: choice(session), forking: true) }
         for _ in 0..<2_000 where !requests(home).contains(where: { $0.hasPrefix("\(fork).") }) {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         #expect(store.isWorking(inFolder: worktree))
         let busy = try #require(store.busyReason(for: choice(other), in: worktree))
@@ -818,7 +827,7 @@ private final class ExtensionStandIn: Sendable {
 
         let sending = Task { await store.deliver("Fix the comments", to: found) }
         for _ in 0..<400 where requests(home).isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         #expect(store.isWorking(inFolder: now))
         #expect(!store.isWorking(inFolder: before))
@@ -895,7 +904,7 @@ private final class ExtensionStandIn: Sendable {
         defer { ext.stop() }
         let sending = Task { await store.deliver("Fix the comments", to: task) }
         for _ in 0..<400 where requests(home).isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         #expect(store.deliveringFolders[session]?.standardizedFileURL.path == now.standardizedFileURL.path)
         ext.start()
@@ -1022,7 +1031,7 @@ private final class ExtensionStandIn: Sendable {
         async let first = store.deliver("Fix the comments", to: choice(session))
         // Once it's on its way, however long other tests keep the main actor.
         for _ in 0..<400 where !store.delivering.contains(session) {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         #expect(store.delivering == [session])
         #expect(await store.deliver("Fix them again", to: choice(session)) == .notSent("BriefBar is sending it a prompt already."))
@@ -1092,7 +1101,7 @@ private final class ExtensionStandIn: Sendable {
 
         let sending = Task { await store.deliver("Fix the comments", to: choice(session), handOff: handOff) }
         for _ in 0..<400 where requests(home).isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         sending.cancel()
         #expect(await sending.value == .notSent(SendFailure.cancelled.description))
@@ -1116,7 +1125,7 @@ private final class ExtensionStandIn: Sendable {
 
         let sending = Task { await store.deliver("Fix the comments", to: choice(session)) }
         for _ in 0..<400 where requests(home).isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         CopilotSessionPrompts.set(false, in: store.settings.defaults)
         #expect(await sending.value == .notSent(CopilotTasksStore.cantSendNow))
@@ -1131,7 +1140,7 @@ private final class ExtensionStandIn: Sendable {
         defer { ext.stop() }
         let taken = Task { await store.deliver("Fix the comments", to: choice(session), handOff: handOff) }
         for _ in 0..<400 where ext.received.isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         CopilotSessionPrompts.set(false, in: store.settings.defaults)
         #expect(await taken.value == .sent)
@@ -1153,7 +1162,7 @@ private final class ExtensionStandIn: Sendable {
 
         let sending = Task { await store.deliver("Fix the comments", to: choice(session)) }
         for _ in 0..<400 where requests(home).isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         store.stop()
         #expect(await sending.value == .notSent(CopilotTasksStore.cantSendNow))

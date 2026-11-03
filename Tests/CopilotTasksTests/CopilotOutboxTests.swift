@@ -607,7 +607,7 @@ import Testing
         let sending = Task { await sender.send("Fix it", to: session) }
         let requests = outbox.url.appendingPathComponent("requests")
         for _ in 0..<400 where names(requests).isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: FakeExtension.lookEvery)
         }
         sending.cancel()
         #expect(await sending.value == .notSent(.cancelled))
@@ -638,7 +638,7 @@ import Testing
         let sending = Task { [sender = sender(outbox, effects)] in await sender.send("Fix it", to: session) }
         let requests = outbox.url.appendingPathComponent("requests")
         for _ in 0..<400 where names(requests).isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: FakeExtension.lookEvery)
         }
         effects.allowed.withLock { $0 = false }
         #expect(await sending.value == .notSent(.turnedOff))
@@ -679,7 +679,7 @@ import Testing
 
         let sending = Task { await sender.send("Fix it", to: session) }
         for _ in 0..<400 where !claimed.withLock({ $0 }) {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: FakeExtension.lookEvery)
         }
         sending.cancel()
         #expect(await sending.value == .sent)
@@ -687,7 +687,7 @@ import Testing
         claimed.withLock { $0 = false }
         let forking = Task { await sender.forkAndSend("Try it", from: session) }
         for _ in 0..<400 where !claimed.withLock({ $0 }) {
-            try await Task.sleep(for: .milliseconds(5))
+            try await Task.sleep(for: FakeExtension.lookEvery)
         }
         forking.cancel()
         #expect(await forking.value == .forkedNotSent(fork: fork, .cancelled))
@@ -780,7 +780,7 @@ import Testing
             effects.allowed.withLock { $0 = true }
             let forking = Task { await sender.forkAndSend("Try it", from: session) }
             for _ in 0..<400 where !claimed.withLock({ $0 }) {
-                try await Task.sleep(for: .milliseconds(5))
+                try await Task.sleep(for: FakeExtension.lookEvery)
             }
             effects.allowed.withLock { $0 = false }
             #expect(await forking.value == expected)
