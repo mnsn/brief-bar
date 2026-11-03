@@ -562,6 +562,56 @@ private final class ExtensionStandIn: Sendable {
         #expect(copied == ["Fix the comments"])
     }
 
+    /// Turned off while BriefBar looks how a prompt would reach the session, or how to show the session to copy the prompt
+    /// for it, Send Prompts to Copilot Sessions stops it: nothing's copied, opened or handed off, as when it's turned off
+    /// later. Only when it was off as you sent it does BriefBar copy the prompt, as the window said it would.
+    @Test func turningSendingOffAsItLooksCopiesAndOpensNothing() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var copied: [String] = []
+        var opened = 0
+        store.openForTests = { _, text in copied.append(text); return true }
+        store.showForTests = { _ in opened += 1; return true }
+        var handed = 0
+        store.handedOff = { _, _ in handed += 1 }
+        // The app has had the session open since before Send Prompts to Copilot Sessions was on: no extension listens in it.
+        try hold(session, home: home)
+        // BriefBar looks whether the app holds it first as it looks how a prompt would reach the session, then as it looks
+        // how to show the session, to copy the prompt for it.
+        var looks = 0
+        var turnsOffAt = 1
+        store.appHoldsForTests = { [weak store] pid in
+            looks += 1
+            if looks == turnsOffAt, let store { CopilotSessionPrompts.set(false, in: store.settings.defaults) }
+            return pid == getpid()
+        }
+
+        #expect(await store.deliver("Fix the comments", to: choice(session), handOff: handOff) == .notSent(CopilotTasksStore.cantSendNow))
+        #expect(looks == 1)
+
+        // Turned off as it looks how to show the session, once it found that it would copy the prompt.
+        CopilotSessionPrompts.set(true, in: store.settings.defaults)
+        looks = 0
+        turnsOffAt = 2
+        #expect(await store.deliver("Fix the comments", to: choice(session), handOff: handOff) == .notSent(CopilotTasksStore.cantSendNow))
+        #expect(looks == 2)
+        #expect(copied.isEmpty)
+        #expect(opened == 0)
+        #expect(handed == 0)
+        #expect(requests(home).isEmpty)
+
+        // Off as you sent it: BriefBar copies it, as the window said, and opens the session.
+        looks = 0
+        turnsOffAt = 0
+        guard case .fellBack(let fallback) = await store.deliver("Fix the comments", to: choice(session), handOff: handOff) else {
+            Issue.record("BriefBar didn't copy the prompt")
+            return
+        }
+        #expect(fallback.wasForeseen)
+        #expect(copied == ["Fix the comments"])
+        #expect(handed == 1)
+    }
+
     /// The session of a task that BriefBar started with the CLI isn't one of the app's, which the app could load: BriefBar
     /// copies the prompt for you to paste, as it says it will, unless its extension listens in the session; and it isn't
     /// forked.
@@ -756,6 +806,41 @@ private final class ExtensionStandIn: Sendable {
         ext.start()
         #expect(await sending.value == .sent)
         #expect(!store.isWorking(inFolder: now))
+    }
+
+    /// While BriefBar looks how to show a session, to copy a prompt for it as the window said it would, and as it copies the
+    /// prompt and shows the session, the checkout the session works in stays as it is, as it does while a prompt is on its
+    /// way: no task of BriefBar's starts there, and git removes no worktree there, meanwhile.
+    @Test func keepsTheCheckoutWhileItCopiesThePromptForASession() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let worktree = home.appendingPathComponent("checkouts/session", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        try work(session, in: worktree, home: home)
+        // The app has had the session open since before Send Prompts to Copilot Sessions was on: BriefBar copies the prompt.
+        try hold(session, home: home)
+        var kept: [Bool] = []
+        store.appHoldsForTests = { [weak store] pid in
+            kept.append(store?.isWorking(inFolder: worktree) == true)
+            return pid == getpid()
+        }
+        var copied: [String] = []
+        store.openForTests = { [weak store] _, text in
+            kept.append(store?.isWorking(inFolder: worktree) == true)
+            copied.append(text)
+            return true
+        }
+
+        guard case .fellBack(let fallback) = await store.deliver("Fix the comments", to: choice(session)) else {
+            Issue.record("BriefBar didn't copy the prompt")
+            return
+        }
+        #expect(fallback.wasForeseen)
+        #expect(copied == ["Fix the comments"])
+        // As it looked how to show the session, and as it copied the prompt and showed it.
+        #expect(kept.suffix(2) == [true, true])
+        #expect(!store.isWorking(inFolder: worktree))
+        #expect(store.deliveringFolders.isEmpty)
     }
 
     /// A task that went on with one of the app's sessions works where that session works now, which may have moved since

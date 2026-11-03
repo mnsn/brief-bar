@@ -235,19 +235,25 @@ extension CopilotTasksStore {
         guard !delivering.contains(id) else { return .notSent("BriefBar is sending it a prompt already.") }
         delivering.insert(id)
         defer { delivering.remove(id) }
+        // Whether BriefBar could send prompts to sessions as you sent this one: once it could, turning that off stops it.
+        let promptsWereOn = sessionPromptsAreOn
         let reach = await reach(of: choice)
         // Again, after that wait: Send Work to Copilot may have been turned off, or a task started in it, meanwhile. Where it
         // works now, where the window found it only when that can't be told now, is the checkout that has to be free, and
-        // that stays as it is until the prompt has gone, or been taken back.
+        // that stays as it is until the prompt has gone, been taken back, or been copied with the session showing.
         guard canSend, isOn, !hasStopped, let reach else { return .notSent(Self.cantSendNow) }
+        // Turned off meanwhile: nothing's sent, copied or opened, rather than copying it as when it was off already.
+        guard sessionPromptsAreOn || !promptsWereOn else { return .notSent(Self.cantSendNow) }
         let checkout = currentFolder(of: choice) ?? choice.folder
         if let busy = busyReason(for: choice, in: checkout) { return .notSent(busy) }
-        if let why = reach.whyNot(forking: forking) {
-            return await fallBack(prompt, in: id, forking: forking, reason: why, foreseen: true, handOff: handOff)
-        }
-        if case .loads = reach, !canOpenInApp { return .notSent(Self.cantOpenInApp) }
         if let checkout { deliveringFolders[id] = checkout }
         defer { deliveringFolders[id] = nil }
+        if let why = reach.whyNot(forking: forking) {
+            return await fallBack(
+                prompt, in: id, forking: forking, reason: why, foreseen: true, promptsWereOn: promptsWereOn, handOff: handOff
+            )
+        }
+        if case .loads = reach, !canOpenInApp { return .notSent(Self.cantOpenInApp) }
 
         let opened = SessionIDs()
         let reserved = SessionIDs()
@@ -337,10 +343,11 @@ extension CopilotTasksStore {
 
     /// Copies what to paste, and shows the session to paste it in: the prompt, or, to fork a session that hasn't forked,
     /// `/fork <prompt>`. Hands it off once the session shows. Nothing's copied or shown once it's stopped, as when its
-    /// window closed, or once Send Work to Copilot is off, as looked at right before.
+    /// window closed, or once Send Work to Copilot is off, as looked at right before; nor once Send Prompts to Copilot
+    /// Sessions is off, unless the window said it would copy it because that was off as you sent it (`promptsWereOn`).
     private func fallBack(
         _ prompt: String, in session: String, forking: Bool, fork: String? = nil, reason: String, foreseen: Bool = false,
-        mayHaveSent: Bool = false, handOff: CommentHandOff?
+        mayHaveSent: Bool = false, promptsWereOn: Bool = true, handOff: CommentHandOff?
     ) async -> SessionDelivery {
         let way: Showing?
         if openForTests != nil {
@@ -349,9 +356,11 @@ extension CopilotTasksStore {
             way = await showing(session)
         }
         guard !Task.isCancelled else { return .notSent(SendFailure.cancelled.description) }
-        // A fallback that the window said it would do goes on whether or not Send Prompts to Copilot Sessions is on; one
-        // from a send that BriefBar tried, only while it is.
-        guard canSend, isOn, !hasStopped, foreseen || sessionPromptsAreOn else { return .notSent(Self.cantSendNow) }
+        // A fallback that the window said it would do, since Send Prompts to Copilot Sessions was off as you sent it, goes
+        // on whether or not it's on now; any other, only while it is.
+        guard canSend, isOn, !hasStopped, sessionPromptsAreOn || (foreseen && !promptsWereOn) else {
+            return .notSent(Self.cantSendNow)
+        }
         // Where it shows: in the terminal of a CLI that has it open; otherwise in the app, if anything opens its sessions.
         let place: SessionFallback.Place
         if case .terminal? = way { place = .terminal } else { place = .app }

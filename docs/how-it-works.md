@@ -1824,7 +1824,8 @@ one; with none or more, there's no telling, and BriefBar sends nothing. Then the
 app; or, while a CLI has it open, the terminal that CLI runs in comes to the front, since the app loading
 it too would fork its history. Closing the window stops it, and so does turning Send Work to Copilot, Send
 Prompts to Copilot Sessions or Azure DevOps off: a request that no extension took yet is taken back, and
-nothing more is written, copied or opened. One that an extension took goes on, and BriefBar still waits for how it went,
+nothing more is written, copied or opened, even when BriefBar was still looking how the prompt would reach the
+session, or how to show it. One that an extension took goes on, and BriefBar still waits for how it went,
 so that the session takes no other prompt from it meanwhile.
 
 When BriefBar can't send it, it copies the prompt, and shows the session, for you to paste and send;
@@ -1936,8 +1937,9 @@ task BriefBar sent in another session, or in one of the app's sessions running a
 own too once you went on with it in the app, or that a session BriefBar is sending a prompt to works in,
 as it looks right before git deletes it, after each answer (`CopilotTasksStore.worktreeInUse`); from that
 look until git is done, its checkout is busy, so no task of BriefBar's starts there meanwhile, as a
-session's is while BriefBar sends it a prompt, and a fork's while BriefBar sends the fork one, until the
-prompt has gone or been taken back
+session's is while BriefBar sends it a prompt, or copies one for it and shows it, and a fork's while
+BriefBar sends the fork one, until the prompt has gone, been taken back, or been copied with the session
+showing
 (`CopilotTasksStore.deliveringFolders`). A prompt sent to a session stays on disk only in its request, until the
 session's extension is done with it or BriefBar withdraws it ([above](#send-work-to-copilot)). Copilot's
 branches, pull requests and sessions are yours, and stay.
