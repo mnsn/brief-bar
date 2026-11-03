@@ -224,9 +224,10 @@ extension CopilotTasksStore {
     /// the prompt, once the session forked but the prompt didn't reach it. Once the prompt's sent, or copied and the
     /// session showing, what `handOff` says it takes care of leaves Needs You. Only while Send Work to Copilot is on, never
     /// in the demo, and one prompt at a time for each session.
-    /// - Parameter about: the pull request's comment threads it's about, and what for: once it's sent, or copied for you to
-    ///   paste, BriefBar keeps that, to follow its turn in the session (`SentPrompt`). Whatever it's about, the turns of
-    ///   the prompts sent the session before that weren't seen to end aren't followed after (`overlap`).
+    /// - Parameter about: what of the pull request it's about, its threads, a build or its conflicts, and what for: once it's
+    ///   sent, or copied for you to paste, BriefBar keeps that, to follow its turn in the session (`SentPrompt`). Whatever
+    ///   it's about, the turns of the prompts sent the session before that weren't seen to end aren't followed after
+    ///   (`overlap`).
     /// - Returns: sent; forked and sent, with the fork; why it fell back; or why nothing went.
     func deliver(
         _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil

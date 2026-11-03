@@ -7,9 +7,10 @@ import SwiftUI
 
 /// A pull request's merge conflicts, in its details, while Azure DevOps says it has some: the files that conflict with its
 /// target branch, and how, each saying what each branch did to it, read as the details show it
-/// (`PullRequestConflictsStore`). A file opens its changes in the details, as its row in Files does. **Resolve with
-/// Copilot**, on your own while Send Work to Copilot is on, has Copilot merge the target branch in and resolve them; ↗
-/// opens the pull request in Azure DevOps, to resolve them there.
+/// (`PullRequestConflictsStore`). A file opens its changes in the details, as its row in Files does. Under them, while Send
+/// Work to Copilot is on, what Copilot does about them, in a sentence, then ✨ Explain, which asks the session that worked
+/// on the pull request why they conflict, and, on your own, **Resolve**, which has Copilot merge the target branch in and
+/// resolve them, each in a small composer in place. ↗ opens the pull request in Azure DevOps, to resolve them there.
 struct PullRequestConflictsSection: View {
     @ObservedObject var details: PullRequestDetailsStore
     let item: PRSnapshot
@@ -19,9 +20,12 @@ struct PullRequestConflictsSection: View {
     @EnvironmentObject private var conflicts: PullRequestConflictsStore
     @EnvironmentObject private var code: PullRequestCodeStore
     @EnvironmentObject private var store: PRStore
-    @EnvironmentObject private var copilot: CopilotTasksStore
     @Environment(\.shownSection) private var section
     @Environment(\.shownWindow) private var window
+    /// The composer in place that's open on them, one at a time, so Esc, Return and the keyboard's focus are its own; and
+    /// what you wrote in each.
+    @LocalState private var composing: CopilotComposing?
+    @LocalState private var drafts = CopilotDrafts()
 
     /// What they're read again for, while they show: a push or another target, and a window showing them on screen again,
     /// after none did.
@@ -48,6 +52,8 @@ struct PullRequestConflictsSection: View {
             case .reading?, nil:
                 placeholder
             }
+            // What Copilot does about them, Explain and Resolve.
+            ConflictsCopilotActions(item: item, now: store.now, composing: $composing, drafts: drafts)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: Reading(visibilityChanges: code.visibilityChanges, head: PullRequestFilesStore.Head(pullRequest))) {
@@ -66,6 +72,10 @@ struct PullRequestConflictsSection: View {
             }
             code.release(hold)
         }
+        // What a composer sends is called off as it closes, with ✕ or Esc, or another opens; and all of it as they go, with
+        // the details, or for another pull request or page.
+        .onChange(of: composing) { old, _ in if let old { drafts.callOff(old) } }
+        .onDisappear { drafts.callOffAll() }
     }
 
     // MARK: Header
@@ -75,20 +85,6 @@ struct PullRequestConflictsSection: View {
             let count: Int? = if case .read(let read)? = state, !read.files.isEmpty { read.files.count } else { nil }
             PageSectionHeader(title: "Merge Conflicts", count: count)
             Spacer(minLength: 8)
-            if canResolve {
-                Button {
-                    store.composeCopilot(.resolveConflicts, for: item, copilot: copilot)
-                } label: {
-                    Label("Resolve with Copilot", systemImage: PullRequestAction.resolveConflicts.symbol)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .font(size: 11.5, weight: .medium)
-                .disabled(isCopilotBusy)
-                .help(isCopilotBusy
-                    ? "Copilot is at work on this pull request already"
-                    : "Have Copilot merge \(pullRequest.targetBranch) in and resolve the conflicts: it may commit the merge, but doesn't push")
-            }
             Button {
                 AzureDevOps.open(item.pageURL())
             } label: {
@@ -101,17 +97,6 @@ struct PullRequestConflictsSection: View {
             .help("Open the pull request in Azure DevOps, to resolve its conflicts there")
             .accessibilityLabel("Resolve in Azure DevOps")
         }
-    }
-
-    /// Resolve Conflicts applies: your open pull request with conflicts, and Send Work to Copilot on.
-    private var canResolve: Bool {
-        guard copilot.isOn, copilot.canSend || copilot.mode == .demo, let record = store.record(for: item.key) else { return false }
-        return PullRequestTasks.actions(for: record, canShip: false).contains(.resolveConflicts)
-    }
-
-    /// A task of BriefBar's is at work on the pull request: nothing more goes until it's done, as in its Actions menu.
-    private var isCopilotBusy: Bool {
-        copilot.latest(forPullRequest: item.key)?.status.phase.isActive == true
     }
 
     // MARK: The list
@@ -147,8 +132,8 @@ struct PullRequestConflictsSection: View {
         }
     }
 
-    /// "3 files conflict with main: each branch changed them since they parted." With some resolved in Azure DevOps, which
-    /// hasn't committed them, and more than BriefBar reads, it says so.
+    /// "3 files conflict with main." With some resolved in Azure DevOps, which hasn't committed them, and more than BriefBar
+    /// reads, it says so.
     private func summary(_ read: MergeConflicts) -> String {
         let count = read.files.count
         let target = pullRequest.targetBranch.isEmpty ? "the target branch" : pullRequest.targetBranch
@@ -165,7 +150,7 @@ struct PullRequestConflictsSection: View {
         return parts.joined(separator: " ")
     }
 
-    /// Why they can't show, with Try Again when that may help, and ↗ to the pull request in Azure DevOps.
+    /// Why they can't show, with Try Again when that may help.
     private func unreadable(_ error: ADOError) -> some View {
         let why = switch error {
         case .notFound: "Azure DevOps doesn't list them for this pull request."
@@ -309,5 +294,333 @@ private struct ConflictRow: View {
         var components = URLComponents(url: item.pageURL(), resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "_a", value: "files"), URLQueryItem(name: "path", value: path)]
         return components?.url ?? item.pageURL()
+    }
+}
+
+// MARK: - Copilot
+
+/// Copilot's part in a pull request's merge conflicts, under them, while Send Work to Copilot is on: what Copilot does about
+/// them, in a sentence; what a session said of them with Explain; and ✨ Explain, or Ask More once it answered, and, on your
+/// own pull request, Resolve, side by side, each opening a small composer in place.
+private struct ConflictsCopilotActions: View {
+    let item: PRSnapshot
+    let now: Date
+    /// The composer in place that's open on them.
+    @Binding var composing: CopilotComposing?
+    let drafts: CopilotDrafts
+
+    @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var copilot: CopilotTasksStore
+    @EnvironmentObject private var sessions: PullRequestSessions
+    @EnvironmentObject private var questions: CopilotQuestions
+    @EnvironmentObject private var conflicts: PullRequestConflictsStore
+    @Environment(\.itemNavigation) private var navigation
+    @Environment(\.copilotActionsPreview) private var preview
+
+    /// What BriefBar said once it copied a prompt for you to paste, or why nothing went, until you close it.
+    @LocalState private var copied: String?
+    @LocalState private var isAskingInSession = false
+    /// Explain or Resolve, for the keyboard's focus to go back to once its composer closes.
+    @FocusState private var focused: CopilotAsk?
+
+    private let part = PullRequestPart.conflicts
+
+    private var record: PRRecord? { store.record(for: item.key) }
+
+    /// The composer in place that's open on them, if one is.
+    private var asking: CopilotAsk? { composing?.part == part ? composing?.ask : nil }
+
+    /// Whether you can ask Copilot about them now: the pull request is open, with conflicts, and Send Work to Copilot is on;
+    /// in the demo too, which answers Explain with made-up answers.
+    private var canAct: Bool {
+        guard copilot.isOn, copilot.canSend || copilot.mode == .demo, let record else { return false }
+        return record.pullRequest.status == .active && record.pullRequest.hasConflicts
+    }
+
+    /// Resolve is for your own pull requests, as Resolve Conflicts is.
+    private var canResolve: Bool { record?.role == .author }
+
+    private var names: CopilotSessionNames {
+        CopilotSessionNames(session: sessions.session(for: item.key), copilot: copilot, links: sessions.links)
+    }
+
+    private var work: CopilotWork? {
+        guard let preview else { return copilot.work(on: part, of: item.key) }
+        return preview.work(on: part) { copilot.work(on: part, of: item.key) }
+    }
+
+    private var question: CopilotQuestions.Question? {
+        preview?.question(about: part) ?? questions.question(about: part, of: item.key)
+    }
+
+    /// No Copilot session goes with the pull request, as its line found them: Explain has nobody to ask.
+    private var hasNobodyToAsk: Bool {
+        guard preview == nil, let session = sessions.session(for: item.key) else { return false }
+        return CopilotDestinations.make(session, worked: work?.session, ask: .explain).all.isEmpty
+    }
+
+    var body: some View {
+        let work = work
+        let question = question
+        if copilot.isOn, work != nil || question != nil || copied != nil || canAct {
+            VStack(alignment: .leading, spacing: 8) {
+                if let question {
+                    questionView(question)
+                }
+                if let work, question?.isAsking != true {
+                    workLine(work)
+                }
+                if let copied {
+                    CopilotCopiedNote(note: copied) { self.copied = nil }
+                }
+                if canAct {
+                    if let asking {
+                        ConflictsComposer(
+                            ask: asking, item: item, worked: work?.session, drafts: drafts, answer: question?.answer,
+                            preview: preview?.composer(about: part), fixInstead: canResolve ? { open(.fix) } : nil
+                        ) { result in
+                            if case .copied(let note)? = result { copied = note }
+                            close(asking)
+                        }
+                        // A new composer for each, with its own words and where it goes.
+                        .id(asking)
+                    } else {
+                        buttons(hasAnswer: question?.answer != nil)
+                    }
+                }
+            }
+            .padding(.top, 2)
+            .onAppear {
+                if let composer = preview?.composer(about: part) { composing = CopilotComposing(part: part, ask: composer.ask) }
+            }
+            // VoiceOver hears what became of them as it happens, wherever it is: not what shows as it's read.
+            .onChange(of: question?.state) { old, state in if old == .asking { announce(state) } }
+            .onChange(of: work?.state) { old, state in if let old, CopilotWork.isOngoing(old) { announce(state) } }
+        }
+    }
+
+    private func buttons(hasAnswer: Bool) -> some View {
+        let nobody = hasNobodyToAsk
+        let target = record?.pullRequest.targetBranch ?? "the target branch"
+        return HStack(spacing: 6) {
+            Button {
+                open(.explain)
+            } label: {
+                Label(hasAnswer ? "Ask More" : "Explain", systemImage: CopilotAsk.explain.symbol)
+            }
+            .focused($focused, equals: .explain)
+            .disabled(nobody)
+            .help(explainHelp(nobody: nobody, hasAnswer: hasAnswer, target: target))
+            if canResolve {
+                Button {
+                    open(.fix)
+                } label: {
+                    Label("Resolve", systemImage: CopilotAsk.fix.symbol)
+                }
+                .focused($focused, equals: .fix)
+                .help("Have Copilot merge \(target) in and resolve the conflicts, as you say"
+                    + (hasAnswer ? ", with what the session answered" : "") + ": it may commit the merge, but doesn't push")
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .font(size: 11.5, weight: .medium)
+    }
+
+    private func explainHelp(nobody: Bool, hasAnswer: Bool, target: String) -> String {
+        if nobody {
+            return "No Copilot session goes with this pull request to ask why its files conflict" + (canResolve ? ". Resolve starts one." : ".")
+        }
+        if hasAnswer { return "Ask the session more about the conflicts, with what it answered in mind" }
+        return "Ask the Copilot session that worked on this pull request why its files conflict with \(target), and how to resolve them"
+    }
+
+    /// Opens its composer, closing the other, whose words stay for when it opens again.
+    private func open(_ ask: CopilotAsk) {
+        copied = nil
+        composing = CopilotComposing(part: part, ask: ask)
+    }
+
+    /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
+    private func close(_ ask: CopilotAsk) {
+        guard composing == CopilotComposing(part: part, ask: ask) else { return }
+        composing = nil
+        Task { @MainActor in focused = ask }
+    }
+
+    private func workLine(_ work: CopilotWork) -> some View {
+        let look = work.look
+        return CopilotWorkLine(
+            symbol: look.symbol, text: names.sentence(work), state: look.state, since: work.since, now: now, subtitle: work.step,
+            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation)
+        )
+    }
+
+    @ViewBuilder
+    private func questionView(_ question: CopilotQuestions.Question) -> some View {
+        let place = CopilotWork.place(names.name(question.session), isFork: false, forkOf: nil)
+        switch question.state {
+        case .asking:
+            CopilotWorkLine(
+                symbol: "sparkles", text: "Copilot is explaining the conflicts in \(place)", state: .running, since: question.askedAt,
+                now: now, subtitle: question.asked.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "You asked: \($0)" }
+            ) {
+                Button("Stop") {
+                    questions.stop(about: part, of: item.key)
+                }
+                .buttonStyle(.borderless)
+                .font(size: 11.5, weight: .medium)
+                .fixedSize()
+                .help("Stop asking: nothing changes in the session")
+            }
+        case .answered(let answer):
+            CopilotAnswerCard(
+                answer: answer, asked: question.asked, place: place, answeredAt: question.endedAt ?? question.askedAt, now: now,
+                open: names.opener(question.session, isTask: names.isTask(question.session), navigation: navigation)
+            ) {
+                questions.dismiss(about: part, of: item.key)
+            }
+        case .failed(let failure):
+            CopilotWorkLine(
+                symbol: "exclamationmark.triangle.fill", text: "Couldn't explain them: " + failure.message(model: nil), state: .failing,
+                since: question.endedAt, now: now, detail: failure.detail
+            ) {
+                if ThreadCopilotActions.asksInSessionInstead(failure), let choice = names.choice(question.session), copilot.canSend {
+                    Button(isAskingInSession ? "Asking…" : "Ask in the Session") {
+                        askInSession(choice, question: question)
+                    }
+                    .buttonStyle(.borderless)
+                    .font(size: 11.5, weight: .medium)
+                    .fixedSize()
+                    .disabled(isAskingInSession)
+                    .help("Send the question to the session as a prompt, as Resolve sends its prompts: it goes in the session's history, and changes nothing")
+                }
+                CopilotDismissButton { questions.dismiss(about: part, of: item.key) }
+            }
+        }
+    }
+
+    /// Asks the session as a prompt it takes up itself, for when it can't be asked aside: in its own history, where it reads
+    /// the code and the target branch too, but changes nothing.
+    private func askInSession(_ choice: SessionChoice, question: CopilotQuestions.Question) {
+        guard let record else { return }
+        let sending = CopilotSending(item: item, record: record, store: store, copilot: copilot, session: sessions.session(for: item.key))
+        isAskingInSession = true
+        let part = part
+        let conflicts = conflicts
+        drafts.asks[part]?.cancel()
+        drafts.asks[part] = Task {
+            await conflicts.waitForRead(of: item.key)
+            guard !Task.isCancelled else { return }
+            let prompt = PullRequestPrompt.askAboutConflicts(
+                record, conflicts: conflicts.conflicts(for: record.pullRequest), question: question.asked, earlier: question.earlier
+            )
+            let outcome = await sending.explainAsPrompt(prompt, about: part, to: choice)
+            guard !Task.isCancelled else { return }
+            drafts.asks[part] = nil
+            isAskingInSession = false
+            switch outcome {
+            case .sent:
+                questions.dismiss(about: part, of: item.key)
+            case .copied(let note):
+                questions.dismiss(about: part, of: item.key)
+                copied = note
+            case .notSent(let why):
+                copied = why
+            case .needsWindow:
+                break
+            }
+        }
+    }
+
+    /// What VoiceOver hears as Explain ends: who answered, or why it couldn't.
+    private func announce(_ state: CopilotQuestions.Question.State?) {
+        guard let question else { return }
+        switch state {
+        case .answered?:
+            let place = CopilotWork.place(names.name(question.session), isFork: false, forkOf: nil)
+            SpokenText.announce("The conflicts: \(SpokenText.unquoted(place)) answered")
+        case .failed(let failure)?:
+            SpokenText.announce("The conflicts: couldn't explain them. \(failure.message(model: nil))")
+        case .asking?, nil:
+            break
+        }
+    }
+
+    /// What VoiceOver hears as Copilot's work on them ends, or waits for you.
+    private func announce(_ state: CopilotWork.State?) {
+        guard let work, let state else { return }
+        switch state {
+        case .done, .failed, .stopped, .needsYou:
+            SpokenText.announce("The conflicts: \(SpokenText.unquoted(names.sentence(work)))")
+        case .waiting, .working, .unknown:
+            break
+        }
+    }
+}
+
+/// The composer in place for what you ask about a pull request's merge conflicts (`CopilotPartComposer`): Explain, which
+/// asks a session why they conflict, or Resolve, which has Copilot merge the target branch in and resolve them, in a box of
+/// its own under them. Its prompts list the files that conflict, and how, once they're read: sent while they're read, it
+/// waits for them.
+private struct ConflictsComposer: View {
+    let ask: CopilotAsk
+    let item: PRSnapshot
+    /// The session that worked on them, by its ID, which it goes to first.
+    let worked: String?
+    /// What you wrote in it before, kept as you open another.
+    let drafts: CopilotDrafts
+    /// What a session answered about them with Explain, while it shows: Ask More follows up on it, and Resolve builds on it.
+    var answer: CopilotAnswer?
+    /// For `--render`: what it shows.
+    var preview: CopilotActionsPreview.Composer?
+    /// Explain had no session to ask: Resolve opens instead.
+    var fixInstead: (() -> Void)?
+    /// It's done: sent, copied for you to paste, or closed.
+    let done: (CopilotSending.Outcome?) -> Void
+
+    @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var conflicts: PullRequestConflictsStore
+
+    /// What it asks, and the prompts it sends, with the files that conflict as they're read when it's sent.
+    private var asking: CopilotAsking {
+        let record = store.record(for: item.key)
+        let conflicts = conflicts
+        let key = item.key
+        // The files are read before it's sent, while they're being read: its prompts list them once they are.
+        var prepare: (@MainActor () async -> Void)?
+        if conflicts.state(of: key) == .reading {
+            prepare = { await conflicts.waitForRead(of: key) }
+        }
+        let read = { () -> MergeConflicts? in record.flatMap { conflicts.conflicts(for: $0.pullRequest) } }
+        return CopilotAsking(
+            ask: ask, part: .conflicts, action: .resolveConflicts, prepare: prepare,
+            fix: { how, answer in
+                guard let record else {
+                    return CopilotSending.Fix(prompts: ("", ""), action: .resolveConflicts, parts: [], handOff: nil)
+                }
+                let files = read()
+                return CopilotSending.Fix(
+                    prompts: (
+                        PullRequestPrompt.resolveConflicts(record, workplace: .worktree, conflicts: files, note: how, answer: answer),
+                        PullRequestPrompt.resolveConflicts(record, workplace: .agent, conflicts: files, note: how, answer: answer)
+                    ),
+                    action: .resolveConflicts, parts: [.conflicts], handOff: nil
+                )
+            },
+            question: { asked, earlier in
+                guard let record else { return "" }
+                return PullRequestPrompt.explainConflicts(record, conflicts: read(), question: asked, earlier: earlier)
+            }
+        )
+    }
+
+    var body: some View {
+        CopilotPartComposer(
+            asking: asking, item: item, worked: worked, drafts: drafts, answer: answer, preview: preview, fixInstead: fixInstead,
+            isFramed: true
+        ) { outcome in
+            done(outcome)
+        }
     }
 }

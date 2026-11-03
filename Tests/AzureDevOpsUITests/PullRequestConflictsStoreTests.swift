@@ -234,6 +234,25 @@ import Testing
         #expect(read(store)?.files.count == 1)
     }
 
+    /// A prompt sent as they're read waits for them, to list them.
+    @Test func aPromptWaitsForTheReadUnderWay() async throws {
+        let reader = Reader()
+        let (store, _, _) = makeStores(reader)
+        await reader.hold(true)
+        store.show(pullRequest, on: page)
+        try await settle { await reader.isHolding }
+        let waited = Task { () -> MergeConflicts? in
+            await store.waitForRead(of: key)
+            return store.conflicts(for: pullRequest)
+        }
+        try await Task.sleep(for: .milliseconds(30))
+        await reader.release()
+        #expect(await waited.value?.files.count == 1)
+        // With nothing under way, at once.
+        await store.waitForRead(of: key)
+        await store.waitForRead(of: PRKey("contoso", 8))
+    }
+
     /// Resolve Conflicts lists the files its details read, in both places Copilot may work.
     @Test func resolveConflictsListsTheFilesRead() async {
         let record = PRRecord(pullRequest: pullRequest, role: .author, details: nil, me: "a")

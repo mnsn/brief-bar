@@ -47,6 +47,33 @@ enum PullRequestTasks {
         (record.details?.checks ?? []).filter { $0.kind == .build && $0.state == .failed && $0.isBlocking }
     }
 
+    /// What a task takes on, as its prompt does, for each to say what became of it: Fix Comments the threads it lists, Fix
+    /// the Build the builds that failed, Resolve Conflicts the conflicts, and Push & Reply what it ships, with the threads
+    /// its prompt lists; a review, nothing.
+    /// - Parameter shipping: for Push & Reply, what the fixes it ships took on, such as one session's: their threads, which
+    ///   its prompt lists alone, and their builds and conflicts. Without any, it lists the threads Fix Comments does.
+    static func parts(_ action: PullRequestAction, for record: PRRecord, shipping: [PullRequestPart] = []) -> [PullRequestPart] {
+        switch action {
+        case .fixComments:
+            return PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map { .thread($0.id) }
+        case .fixBuild:
+            return failedBuilds(record).compactMap(\.part)
+        case .resolveConflicts:
+            return [.conflicts]
+        case .pushAndReply:
+            let threads = PullRequestPrompt.shippedThreads(record, only: shippedThreads(shipping)).prefix(PullRequestPrompt.threadLimit)
+            return threads.map { .thread($0.id) } + shipping.filter { $0.thread == nil }
+        case .review:
+            return []
+        }
+    }
+
+    /// The threads a Push & Reply of these fixes ships, which its prompt lists and replies on: theirs, none for a build's
+    /// fix alone; nil, for those Fix Comments lists, without any fixes.
+    static func shippedThreads(_ shipping: [PullRequestPart]) -> [Int]? {
+        shipping.isEmpty ? nil : shipping.compactMap(\.thread)
+    }
+
     /// The pull request, as a task sent to Copilot knows it.
     static func task(for record: PRRecord) -> TaskPullRequest {
         let pr = record.pullRequest

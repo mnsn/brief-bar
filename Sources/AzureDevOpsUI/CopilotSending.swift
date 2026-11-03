@@ -3,21 +3,24 @@ import BriefBarCore
 import CopilotTasks
 import Foundation
 
-/// What a composer in place asks Copilot about a pull request's comments.
-enum CommentAsk: Equatable, Hashable, Sendable {
-    /// Why a thread was written, what it wants, and ways to address it: asked aside of a session that knows the change.
+/// What a composer in place asks Copilot about something of a pull request: a comment thread, a build, its conflicts.
+enum CopilotAsk: Equatable, Hashable, Sendable {
+    /// Why it's there, what it wants, and ways to address it: asked aside of a session that knows the change.
     case explain
-    /// Address one thread, as you say, or by applying a suggested change.
+    /// Address it, as you say: fix a thread or a build, or resolve the conflicts.
     case fix
-    /// Address the threads that wait on you, as Fix Comments does.
+    /// Address the comment threads that wait on you, as Fix Comments does.
     case fixAll
 
-    /// "Explain", "Fix", "Fix All".
-    var title: String {
-        switch self {
-        case .explain: "Explain"
-        case .fix: "Fix"
-        case .fixAll: "Fix All"
+    /// Its title, for what it's about: "Explain", "Explain the Failure", "Fix", "Resolve", "Fix All".
+    func title(about part: PullRequestPart?) -> String {
+        switch (self, part) {
+        case (.explain, .build?): "Explain the Failure"
+        case (.explain, .conflicts?): "Explain the Conflicts"
+        case (.explain, _): "Explain"
+        case (.fix, .conflicts?): "Resolve"
+        case (.fix, _): "Fix"
+        case (.fixAll, _): "Fix All"
         }
     }
 
@@ -36,12 +39,11 @@ enum CommentAsk: Equatable, Hashable, Sendable {
         }
     }
 
-    /// Its button: "Ask", "Fix", "Fix All".
-    var sendTitle: String {
+    /// Its button, for what it's about: "Ask", "Fix", "Resolve", "Fix All".
+    func sendTitle(about part: PullRequestPart?) -> String {
         switch self {
         case .explain: "Ask"
-        case .fix: "Fix"
-        case .fixAll: "Fix All"
+        case .fix, .fixAll: title(about: part)
         }
     }
 
@@ -54,7 +56,7 @@ enum CommentAsk: Equatable, Hashable, Sendable {
 }
 
 /// Where a composer's prompt goes.
-enum CommentDestination: Hashable, Sendable {
+enum CopilotDestination: Hashable, Sendable {
     /// A session that's there already, by its ID.
     case session(String)
     /// A fork of one, with its history, which works on it while the session stays as it is.
@@ -71,14 +73,14 @@ enum CommentDestination: Hashable, Sendable {
     }
 }
 
-/// The sessions a composer's ▾ offers, in its order: the session that worked on the thread, if one did, else the pull
+/// The sessions a composer's ▾ offers, in its order: the session that worked on what it's about, if one did, else the pull
 /// request's (`PullRequestSession`), first; for a fix, a fork of it and a new session; then the other sessions that go with
 /// the pull request, as its line ranks them, and the one whose log only mentions it; then the Copilot app's other sessions.
-struct CommentDestinations {
+struct CopilotDestinations {
     struct Entry: Identifiable {
-        var destination: CommentDestination
+        var destination: CopilotDestination
         var choice: SessionChoice?
-        var id: CommentDestination { destination }
+        var id: CopilotDestination { destination }
     }
 
     /// The session that worked on it, or the pull request's, and, for a fix, a fork of it and a new session.
@@ -88,13 +90,13 @@ struct CommentDestinations {
     /// The Copilot app's other sessions.
     var others: [Entry]
     /// Where it goes unless you choose: nil while the pull request's sessions ask which is its, or none is there to ask.
-    var preselected: CommentDestination?
+    var preselected: CopilotDestination?
 
     var all: [Entry] { first + more + others }
 
     /// - Parameters:
-    ///   - worked: the session that worked on the thread, by its ID.
-    static func make(_ session: PullRequestSession?, worked: String?, ask: CommentAsk) -> CommentDestinations {
+    ///   - worked: the session that worked on what it's about, by its ID.
+    static func make(_ session: PullRequestSession?, worked: String?, ask: CopilotAsk) -> CopilotDestinations {
         var known: [SessionChoice] = []
         for choice in (session?.candidates ?? []) + [session?.guess].compactMap({ $0 }) + (session?.others ?? [])
         where !known.contains(where: { $0.id == choice.id }) {
@@ -112,17 +114,17 @@ struct CommentDestinations {
         let likely = Set(((session?.candidates ?? []) + [session?.guess].compactMap { $0 }).map(\.id))
         let more = known.filter { likely.contains($0.id) && !listed.contains($0.id) }.map { Entry(destination: .session($0.id), choice: $0) }
         let others = known.filter { !likely.contains($0.id) && !listed.contains($0.id) }.map { Entry(destination: .session($0.id), choice: $0) }
-        var preselected: CommentDestination?
+        var preselected: CopilotDestination?
         if let lead {
             // A fork of one of BriefBar's tasks works in a worktree of its own, so a busy one's goes instead.
             preselected = ask != .explain && lead.isUnavailable && forksWithTheCLI(lead) ? .fork(lead.id) : .session(lead.id)
         } else if ask != .explain, case .newSession? = session?.pick {
             preselected = .newSession
         }
-        return CommentDestinations(first: first, more: more, others: others, preselected: preselected)
+        return CopilotDestinations(first: first, more: more, others: others, preselected: preselected)
     }
 
-    func choice(for destination: CommentDestination?) -> SessionChoice? {
+    func choice(for destination: CopilotDestination?) -> SessionChoice? {
         guard let destination else { return nil }
         return all.first { $0.destination == destination }?.choice
     }
@@ -139,12 +141,13 @@ struct CommentDestinations {
     }
 }
 
-/// Sends what a composer in place asks to where you chose: a fix, of one thread or of those that wait on you, to a session
-/// that's there already, as the Send to Copilot window would send it (`PullRequestSession.Delivery`), to a fork of it, or to
-/// a new session; or an explanation, as a prompt, when it can't be asked aside. Each prompt it sends takes what it hands to
-/// Copilot off Needs You, and is kept with the threads it took on, for each to say what became of it.
+/// Sends what a composer in place asks about something of a pull request to where you chose: a fix, of a thread, of those
+/// that wait on you, of a build or of its conflicts, to a session that's there already, as the Send to Copilot window would
+/// send it (`PullRequestSession.Delivery`), to a fork of it, or to a new session; or an explanation, as a prompt, when it
+/// can't be asked aside. Each prompt it sends takes what it hands to Copilot off Needs You, and is kept with what it took on,
+/// for each to say what became of it.
 @MainActor
-struct CommentSending {
+struct CopilotSending {
     let item: PRSnapshot
     let record: PRRecord
     let store: PRStore
@@ -164,50 +167,26 @@ struct CommentSending {
         case needsWindow
     }
 
+    /// What a fix sends: its prompts, for a worktree of BriefBar's, detached at the pull request's latest commit, and for a
+    /// session that works wherever it is; what it asks Copilot to do, which says what it may, such as Fix the Build, which
+    /// doesn't commit or push; what it takes on; and what it takes off Needs You once it's sent.
+    struct Fix {
+        var prompts: (worktree: String, session: String)
+        var action: PullRequestAction
+        var parts: [PullRequestPart]
+        var handOff: CommentHandOff?
+    }
+
     var task: TaskPullRequest { PullRequestTasks.task(for: record) }
-
-    /// A fix's prompts, for a worktree of BriefBar's, detached at the pull request's latest commit, and for a session that
-    /// works wherever it is: of one thread, building on what a session answered of it with Explain, or of those that wait
-    /// on you without one.
-    func fixPrompts(
-        _ thread: ReviewThread?, how: String?, suggestion: CommentSuggestion?, answer: ThreadAnswer? = nil, excerpt: ThreadExcerpt?
-    ) -> (worktree: String, session: String) {
-        guard let thread else {
-            return (PullRequestPrompt.fixComments(record, workplace: .worktree, note: how), PullRequestPrompt.fixComments(record, workplace: .agent, note: how))
-        }
-        return (
-            PullRequestPrompt.fixThread(record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .worktree),
-            PullRequestPrompt.fixThread(record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .agent)
-        )
-    }
-
-    /// The threads a fix takes on: one, or those Fix Comments lists.
-    func threads(of thread: ReviewThread?) -> [Int] {
-        if let thread { return [thread.id] }
-        return PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map(\.id)
-    }
-
-    /// What a fix takes off Needs You once it's sent, as its prompt is written now: on your own pull request only.
-    func handOff(of thread: ReviewThread?) -> CommentHandOff? {
-        guard let thread else { return store.commentHandOff(.fixComments, for: record) }
-        guard record.role == .author else { return nil }
-        return CommentHandOff(record, thread: thread.id, dismissedCutoff: store.dismissedCutoff(for: record.id), account: store.settings.account)
-    }
 
     /// Sends a fix where you chose: to a task's session with the Copilot CLI, or to one of the Copilot app's sessions through
     /// BriefBar's extension in it, or copied for you to paste there, as the Send to Copilot window would; to a fork of
     /// either; or to a new session in a worktree of the local clone BriefBar knows, or else the window, to choose one.
-    func fix(
-        _ thread: ReviewThread?, how: String?, suggestion: CommentSuggestion?, answer: ThreadAnswer? = nil, excerpt: ThreadExcerpt?,
-        to destination: CommentDestination, choice: SessionChoice?
-    ) async -> Outcome {
+    func fix(_ fix: Fix, to destination: CopilotDestination, choice: SessionChoice?) async -> Outcome {
         guard copilot.canSend, copilot.isOn else { return .notSent(CopilotTasksStore.cantSendNow) }
         guard !Task.isCancelled else { return .notSent(Self.calledOff) }
-        let prompts = fixPrompts(thread, how: how, suggestion: suggestion, answer: answer, excerpt: excerpt)
-        let threads = threads(of: thread)
-        let handOff = handOff(of: thread)
-        let about = SentPrompt.About(pullRequest: item.key, purpose: .fix, threads: threads)
-        let subject = TaskSubject.pullRequest(task, .fixComments)
+        let about = SentPrompt.About(pullRequest: item.key, purpose: .fix, parts: fix.parts)
+        let subject = TaskSubject.pullRequest(task, fix.action)
         let options = copilot.settings.copilotOptions
         switch destination {
         case .session(let id):
@@ -228,57 +207,53 @@ struct CommentSending {
                 }
                 if let busy = copilot.busyReason(for: choice) { return .notSent(busy) }
                 copilot.send(
-                    subject, prompt: run.worksInPullRequestWorktree ? prompts.worktree : prompts.session, options: options,
-                    repository: run.repository, continuing: run, threads: threads, handOff: handOff
+                    subject, prompt: run.worksInPullRequestWorktree ? fix.prompts.worktree : fix.prompts.session, options: options,
+                    repository: run.repository, continuing: run, parts: fix.parts, handOff: fix.handOff
                 )
                 return .sent
             case .app:
-                return Self.outcome(await copilot.deliver(prompts.session, to: choice, handOff: handOff, about: about))
+                return Self.outcome(await copilot.deliver(fix.prompts.session, to: choice, handOff: fix.handOff, about: about))
             case .busy(let why), .unavailable(let why):
                 return .notSent(why)
             }
         case .fork:
             guard let choice else { return .notSent(Self.gone) }
-            if CommentDestinations.forksWithTheCLI(choice), let run = choice.run {
-                copilot.send(subject, prompt: prompts.session, options: options, repository: run.repository, forking: run, threads: threads, handOff: handOff)
+            if CopilotDestinations.forksWithTheCLI(choice), let run = choice.run {
+                copilot.send(
+                    subject, prompt: fix.prompts.session, options: options, repository: run.repository, forking: run, parts: fix.parts,
+                    handOff: fix.handOff
+                )
                 return .sent
             }
-            return Self.outcome(await copilot.deliver(prompts.session, to: choice, forking: true, handOff: handOff, about: about))
+            return Self.outcome(await copilot.deliver(fix.prompts.session, to: choice, forking: true, handOff: fix.handOff, about: about))
         case .newSession:
             let repository = try? await copilot.repository(for: task, using: copilot.git())
             guard !Task.isCancelled else { return .notSent(Self.calledOff) }
             guard let repository else { return .needsWindow }
-            copilot.send(subject, prompt: prompts.worktree, options: options, repository: repository.root, threads: threads, handOff: handOff)
+            copilot.send(subject, prompt: fix.prompts.worktree, options: options, repository: repository.root, parts: fix.parts, handOff: fix.handOff)
             return .sent
         }
     }
 
-    /// Asks a session about a thread as a prompt it takes up itself, as a fix goes, for when it can't be asked aside: in its
+    /// Asks a session about something as a prompt it takes up itself, as a fix goes, for when it can't be asked aside: in its
     /// own history, where it reads the code too, but changes nothing.
-    func explainAsPrompt(
-        _ thread: ReviewThread, question: String?, earlier: ThreadAnswer? = nil, excerpt: ThreadExcerpt?, to choice: SessionChoice
-    ) async -> Outcome {
+    func explainAsPrompt(_ prompt: String, about part: PullRequestPart, to choice: SessionChoice) async -> Outcome {
         guard copilot.canSend, copilot.isOn else { return .notSent(CopilotTasksStore.cantSendNow) }
-        let prompt = PullRequestPrompt.askAboutThread(record, thread: thread, code: excerpt, question: question, earlier: earlier)
-        let about = SentPrompt.About(pullRequest: item.key, purpose: .explain, threads: [thread.id])
+        let about = SentPrompt.About(pullRequest: item.key, purpose: .explain, parts: [part])
         return Self.outcome(await copilot.deliver(prompt, to: choice, about: about))
     }
 
     /// Opens the Send to Copilot window with a fix's prompts, going where you chose, for the whole prompt, the model, and
     /// more places it can go.
-    func openWindow(
-        _ thread: ReviewThread?, how: String?, suggestion: CommentSuggestion?, answer: ThreadAnswer? = nil, excerpt: ThreadExcerpt?,
-        destination: CommentDestination?, choice: SessionChoice?
-    ) {
-        let prompts = fixPrompts(thread, how: how, suggestion: suggestion, answer: answer, excerpt: excerpt)
+    func openWindow(_ fix: Fix, destination: CopilotDestination?, choice: SessionChoice?) {
         var forking = false
         if case .fork? = destination { forking = true }
         CopilotComposer.shared.show(
-            subject: .pullRequest(task, .fixComments), prompt: prompts.worktree, sessionPrompt: prompts.session,
+            subject: .pullRequest(task, fix.action), prompt: fix.prompts.worktree, sessionPrompt: fix.prompts.session,
             createdAt: record.pullRequest.createdAt, options: copilot.settings.copilotOptions,
-            continuing: copilot.continuable(forPullRequest: item.key), handOff: handOff(of: thread),
+            continuing: copilot.continuable(forPullRequest: item.key), handOff: fix.handOff,
             session: destination == .newSession ? .newSession : choice.map { .session($0, forking: forking) },
-            threads: threads(of: thread), store: copilot
+            parts: fix.parts, store: copilot
         )
     }
 
@@ -292,5 +267,35 @@ struct CommentSending {
         case .fellBack(let fallback): .copied(CopilotComposerView.fallbackNote(fallback))
         case .notSent(let why): .notSent(why)
         }
+    }
+}
+
+// MARK: - Comments
+
+extension CopilotSending {
+    /// A comment's fix: of one thread, as you say, by applying a suggested change, building on what a session answered of it
+    /// with Explain; or, without one, of those that wait on you, as Fix Comments does. It takes on the thread, or those Fix
+    /// Comments lists, and takes what waits on you in them off Needs You, as its prompt is written now, on your own pull
+    /// request only.
+    func commentFix(
+        _ thread: ReviewThread?, how: String?, suggestion: CommentSuggestion?, answer: CopilotAnswer? = nil, excerpt: ThreadExcerpt?
+    ) -> Fix {
+        guard let thread else {
+            return Fix(
+                prompts: (PullRequestPrompt.fixComments(record, workplace: .worktree, note: how), PullRequestPrompt.fixComments(record, workplace: .agent, note: how)),
+                action: .fixComments, parts: PullRequestTasks.parts(.fixComments, for: record), handOff: store.commentHandOff(.fixComments, for: record)
+            )
+        }
+        var handOff: CommentHandOff?
+        if record.role == .author {
+            handOff = CommentHandOff(record, thread: thread.id, dismissedCutoff: store.dismissedCutoff(for: record.id), account: store.settings.account)
+        }
+        return Fix(
+            prompts: (
+                PullRequestPrompt.fixThread(record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .worktree),
+                PullRequestPrompt.fixThread(record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .agent)
+            ),
+            action: .fixComments, parts: [.thread(thread.id)], handOff: handOff
+        )
     }
 }

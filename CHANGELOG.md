@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **See which files conflict, and have Copilot resolve them.** When a pull request has merge conflicts, its
+  details list the files that conflict with its target branch, right under What's Left, whose **Merge
+  conflicts** now takes you there: each says what each branch did to it, such as **Changed on both branches**
+  or **Changed on rename-order-status, deleted on main**, and opens what the pull request changed in it. With
+  Send Work to Copilot on, **✨ Explain** asks the session that worked on the pull request why they conflict,
+  and **Resolve** has Copilot merge the target branch in and resolve them, as you say, in a composer in place
+  that says where it goes and what Copilot does: it may commit the merge, but doesn't push, which **Push &
+  Reply** does once it's done. **Resolve Conflicts with Copilot…** lists the files too, once the details read
+  them. BriefBar reads them with one request as the details show a pull request with conflicts, keeps them in
+  memory only, and, since Azure DevOps now reads this, asks you once to look at what it reads.
+
 ## 0.12.0 - 2026-11-03
 
 - **BriefBar now needs macOS 26 or later.** On macOS 15, BriefBar keeps the version it has: its updater doesn't

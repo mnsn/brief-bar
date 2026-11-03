@@ -128,6 +128,16 @@ final class PullRequestConflictsStore: ObservableObject {
         finish(key, head, await Self.read(pullRequest, with: reader))
     }
 
+    /// Returns once the read of a pull request's conflicts under way ends, if one is: for a prompt that lists them, as you
+    /// send it before they're read. One called off, as its window hid, ends too.
+    func waitForRead(of key: PRKey) async {
+        while let task = reads[key]?.task {
+            await task.value
+            // Not again for one that's over but still there.
+            if reads[key]?.task == task { break }
+        }
+    }
+
     private static func read(_ pullRequest: PullRequest, with reader: Reader) async -> Result<MergeConflicts, ADOError> {
         do {
             return .success(try await reader(pullRequest))

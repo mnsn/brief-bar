@@ -97,55 +97,6 @@ public enum PullRequestPrompt {
             """
     }
 
-    /// Merges the target branch in and resolves the conflicts, which it may commit, but doesn't push: Push & Reply does.
-    /// - Parameters:
-    ///   - conflicts: the files that conflict, and how, as Azure DevOps listed them, once read for the pull request as it
-    ///     is now: older ones are left out.
-    ///   - note: how you want them resolved, in your words, quoted as yours; nothing for nil or blank.
-    public static func resolveConflicts(
-        _ record: PRRecord, workplace: Workplace = .worktree, conflicts: MergeConflicts? = nil, note: String? = nil
-    ) -> String {
-        let pr = record.pullRequest
-        let target = pr.targetBranch
-        var parts = [
-            header(record, workplace: workplace),
-            """
-            It has merge conflicts with \(target). Fetch origin/\(target), merge it into \(workplace.here), and resolve the \
-            conflicts, keeping what each side meant.
-            """,
-        ]
-        if let conflicts, conflicts.isCurrent(for: pr), !conflicts.files.isEmpty {
-            parts.append(conflictList(conflicts, of: pr))
-        }
-        if let how = yours(note) {
-            parts.append("How I want them resolved, in my own words:\n\n" + how)
-        }
-        parts.append("""
-            Build, and run the tests that cover what conflicted. Don't push: end with what conflicted and how you resolved \
-            it.
-            """)
-        return parts.joined(separator: "\n\n")
-    }
-
-    /// The most conflicts a prompt lists.
-    public static let conflictLimit = 50
-
-    /// The files that conflict, numbered: each one's path and how it conflicts, "1. src/Orders/OrderService.cs: changed on
-    /// both branches".
-    static func conflictList(_ conflicts: MergeConflicts, of pullRequest: PullRequest) -> String {
-        let files = conflicts.files
-        let count = files.count == 1 ? "1 file" : "\(files.count) files"
-        let lead = conflicts.isComplete ? "Azure DevOps lists \(count) that conflict:" : "Azure DevOps lists these files that conflict, among more:"
-        var lines = files.prefix(conflictLimit).enumerated().map { index, conflict in
-            let path = conflict.path.hasPrefix("/") ? String(conflict.path.dropFirst()) : conflict.path
-            let how = conflict.how(source: pullRequest.sourceBranch, target: pullRequest.targetBranch)
-            let resolved = conflict.isResolved ? " (resolved in Azure DevOps, which hasn't committed it)" : ""
-            return "\(index + 1). \(path): \(how.prefix(1).lowercased() + how.dropFirst())\(resolved)"
-        }
-        if files.count > conflictLimit { lines.append("And \(files.count - conflictLimit) more.") }
-        return lead + "\n\n" + lines.joined(separator: "\n")
-    }
-
     public static func review(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
         let pr = record.pullRequest
         let threads = (record.details?.threads ?? []).filter { !$0.isResolved }
@@ -169,21 +120,23 @@ public enum PullRequestPrompt {
             """
     }
 
-    /// The threads Push & Reply ships: `only`, those the fixes it ships took on, that are still open, in that order; else
-    /// those Fix Comments lists.
+    /// The threads Push & Reply ships: `only`, those the fixes it ships took on, that are still open, in that order, none
+    /// when they took on none, as a build's fix alone; else, for nil, those Fix Comments lists.
     public static func shippedThreads(_ record: PRRecord, only: [Int]?) -> [ReviewThread] {
-        guard let only, !only.isEmpty else { return waitingThreads(record) }
+        guard let only else { return waitingThreads(record) }
         let open = (record.details?.threads ?? []).filter { !$0.isResolved }
         return only.compactMap { id in open.first { $0.id == id } }
     }
 
     /// - Parameter only: the threads the fixes it ships took on, such as one session's when fixes are in more than one: it
-    ///   replies on those alone. Nil for the pull request's.
+    ///   replies on those alone, and on none when they took on none, as a build's fix alone. Nil for the pull request's.
     public static func pushAndReply(_ record: PRRecord, workplace: Workplace = .worktree, threads only: [Int]? = nil) -> String {
         let pr = record.pullRequest
         let source = pr.sourceBranch
-        let scoped = only?.isEmpty == false
+        let scoped = only != nil
         let threads = shippedThreads(record, only: only)
+        // Fixes of none of its threads, such as of a build: nothing to reply on.
+        let repliesOnNone = scoped && threads.isEmpty
         var steps: [String] = []
         let ifRejected: String
         switch workplace {
@@ -203,7 +156,11 @@ public enum PullRequestPrompt {
         steps += [
             "Make sure it builds and the tests you ran pass, then commit your changes with a clear message.",
             "Push them to \(source), without force: git push origin HEAD:refs/heads/\(source). \(ifRejected)",
-            scoped
+        ]
+        if repliesOnNone {
+            steps.append("Don't reply on the pull request's comment threads: none that's still open is among what these changes take care of.")
+        } else {
+            steps.append(scoped
                 ? """
                 On the pull request, with your Azure DevOps tools, reply to each of the comment threads below that you \
                 addressed, saying what you changed, and resolve it. For one of them you didn't change, reply why, and leave \
@@ -212,17 +169,21 @@ public enum PullRequestPrompt {
                 : """
                 On the pull request, with your Azure DevOps tools, reply to each comment thread you addressed, saying what \
                 you changed, and resolve it. For a thread you didn't change, reply why, and leave it active.
-                """,
-        ]
+                """)
+        }
         let numbered = steps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
-        return """
+        let shipped = """
             Ship what you changed for pull request !\(pr.key.number) “\(pr.title)”, in \(workplace.here):
             \(pr.webURL.absoluteString)
 
             \(numbered)
 
             Don't complete, approve or abandon the pull request, and don't change pipelines. End with the commit you \
-            pushed and the threads you replied to.
+            pushed\(repliesOnNone ? "." : " and the threads you replied to.")
+            """
+        guard !repliesOnNone else { return shipped }
+        return """
+            \(shipped)
 
             \(scoped ? "The comment threads these changes take care of:" : "Its unresolved comment threads:")
 

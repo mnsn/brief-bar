@@ -127,6 +127,34 @@ import BriefBarCore
         #expect(long.contains("Azure DevOps lists these files that conflict, among more:"))
         #expect(long.contains("50. src/F50.cs: changed on both branches\nAnd 2 more."))
         #expect(!long.contains("51. "))
+        // What a session explained of them, for what you say to point to.
+        let answer = CopilotAnswer(question: nil, answer: "Both changed the rounding.\nKeep main's.")
+        let built = PullRequestPrompt.resolveConflicts(record, conflicts: conflicts, note: "The second way", answer: answer)
+        #expect(built.contains("Earlier I asked Copilot why its files conflict. It answered:\n\n> Both changed the rounding.\n> Keep main's."))
+        #expect(built.contains("How I want them resolved, in my own words:\n\n> The second way"))
+    }
+
+    /// Explain asks why the files conflict, listing them, aside, without tools; or, as a prompt in the session, it may read
+    /// the target branch, but changes nothing.
+    @Test func explainConflictsAsksWhyTheyConflict() {
+        let record = record()
+        let conflicts = MergeConflicts(files: [MergeConflict(id: 1, path: "/src/Checkout/Total.cs", kind: .editEdit)], of: record.pullRequest)
+        let why = PullRequestPrompt.explainConflicts(record, conflicts: conflicts, question: nil)
+        #expect(why.hasPrefix("Pull request !4071 “Fix the checkout total” in shop-web, from fix-total into main, has merge conflicts with main."))
+        #expect(why.contains("1. src/Checkout/Total.cs: changed on both branches"))
+        #expect(why.contains("Explain why they conflict: what this pull request changed in each file, and what main likely changed"))
+        #expect(why.hasSuffix("Be brief and concrete, and don't change anything."))
+        // Your question, following up on what it answered.
+        let earlier = CopilotAnswer(question: nil, answer: "Both changed the rounding.")
+        let more = PullRequestPrompt.explainConflicts(record, conflicts: nil, question: "Which is safer?", earlier: earlier)
+        #expect(more.contains("Earlier I asked Copilot why its files conflict. It answered:\n\n> Both changed the rounding."))
+        #expect(more.contains("My next question, in my own words:\n\n> Which is safer?"))
+        #expect(more.contains("Answer it, with what you answered before in mind."))
+        #expect(!more.contains("Azure DevOps lists"))
+        let inSession = PullRequestPrompt.askAboutConflicts(record, conflicts: conflicts, question: "Why Total.cs?")
+        #expect(inSession.contains("what origin/main changed"))
+        #expect(inSession.contains("don't merge, commit or push"))
+        #expect(inSession.contains("My question, in my own words:\n\n> Why Total.cs?"))
     }
 
     /// For some threads, such as one session's fixes when fixes are in more than one: it lists those alone, and replies on
@@ -136,10 +164,24 @@ import BriefBarCore
         #expect(ship.contains("The comment threads these changes take care of:\n\n1. General comment (thread 9)\n   Priya Shah: Please add a test."))
         #expect(!ship.contains("thread 7"))
         #expect(ship.contains("Don't reply on its other threads: other changes take care of them."))
-        // One resolved since is left out; none, or no list, is the pull request's.
+        // One resolved since is left out; no list is the pull request's.
         #expect(PullRequestPrompt.shippedThreads(record(), only: [12, 9]).map(\.id) == [9])
         #expect(PullRequestPrompt.shippedThreads(record(), only: nil).map(\.id) == [7, 9])
-        #expect(PullRequestPrompt.pushAndReply(record(), threads: []).contains("Its unresolved comment threads:"))
+        #expect(PullRequestPrompt.pushAndReply(record()).contains("Its unresolved comment threads:"))
+    }
+
+    /// Fixes of none of its threads, such as a build's alone, are pushed without replying on any thread.
+    @Test func pushAndReplyForNoThreadsRepliesOnNone() {
+        #expect(PullRequestPrompt.shippedThreads(record(), only: []).isEmpty)
+        let ship = PullRequestPrompt.pushAndReply(record(), threads: [])
+        #expect(ship.contains("git push origin HEAD:refs/heads/fix-total"))
+        #expect(ship.contains("3. Don't reply on the pull request's comment threads"))
+        #expect(!ship.contains("thread 7") && !ship.contains("thread 9"))
+        #expect(!ship.contains("with your Azure DevOps tools"))
+        #expect(ship.hasSuffix("End with the commit you pushed."))
+        // Nor does it take what waits on you off Needs You.
+        let handOff = CommentHandOff(record(), dismissedCutoff: .distantPast, account: nil, threads: [])
+        #expect(handOff.handedOff(in: ship) == nil)
     }
 
     /// The threads a prompt takes on are those whose entries are still in it, as you send it.

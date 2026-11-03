@@ -32,10 +32,10 @@ public struct CommentSuggestion: Sendable, Equatable {
     }
 }
 
-/// What a session said of a comment thread when you asked it with Explain, which a fix, or another question, can build on:
-/// asked aside, the session itself never saw it.
-public struct ThreadAnswer: Sendable, Equatable {
-    /// What you asked; nil for why you got it.
+/// What a session answered when you asked it with Explain, about a comment thread, a failed build or conflicts, which a fix,
+/// or another question, can build on: asked aside, the session itself never saw it.
+public struct CopilotAnswer: Sendable, Equatable {
+    /// What you asked; nil for why: why you got the comment, or why the build failed.
     public var question: String?
     public var answer: String
 
@@ -62,7 +62,7 @@ extension PullRequestPrompt {
     ///   - answer: what a session said of it with Explain, which what you want may point to, such as "the second way".
     public static func fixThread(
         _ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, how: String?, applying suggestion: CommentSuggestion? = nil,
-        answer: ThreadAnswer? = nil, workplace: Workplace = .worktree
+        answer: CopilotAnswer? = nil, workplace: Workplace = .worktree
     ) -> String {
         var parts = [header(record, workplace: workplace), "Address this review comment thread, and only this one:", quoted(thread, record: record)]
         if let code { parts.append(codeSection(code, thread: thread, record: record)) }
@@ -88,7 +88,7 @@ extension PullRequestPrompt {
     ///   - question: what you want to know, in your words; nil or blank for why you got it.
     ///   - earlier: what it answered before, which a throwaway fork never saw: a question then follows up on it.
     public static func explainThread(
-        _ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, question: String?, earlier: ThreadAnswer? = nil
+        _ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, question: String?, earlier: CopilotAnswer? = nil
     ) -> String {
         let pr = record.pullRequest
         var parts = [
@@ -104,7 +104,7 @@ extension PullRequestPrompt {
     /// The same question as a prompt the session takes up itself, as Fix's is, for when it can't be asked aside: in its own
     /// history, where it can read the code too, but changes nothing.
     public static func askAboutThread(
-        _ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, question: String?, earlier: ThreadAnswer? = nil
+        _ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, question: String?, earlier: CopilotAnswer? = nil
     ) -> String {
         let pr = record.pullRequest
         var parts = [
@@ -125,7 +125,7 @@ extension PullRequestPrompt {
 
     /// What Explain asks: what it answered before, if anything, and your question, as yours; then what to answer: why the
     /// thread was written, what it wants and ways to address it, or, following up, just your question.
-    private static func explanationAsk(_ thread: ReviewThread, record: PRRecord, question: String?, earlier: ThreadAnswer?) -> [String] {
+    private static func explanationAsk(_ thread: ReviewThread, record: PRRecord, question: String?, earlier: CopilotAnswer?) -> [String] {
         let reviewer = reviewer(of: thread, me: record.me)?.name ?? "the reviewer"
         var parts: [String] = []
         if let earlier { parts.append(Self.earlier(earlier)) }
@@ -142,15 +142,23 @@ extension PullRequestPrompt {
         return parts
     }
 
-    /// What a session answered about the thread before, quoted: what you asked, then its answer, cut to `ThreadAnswer.limit`.
-    static func earlier(_ answer: ThreadAnswer) -> String {
+    /// What a session answered about the thread before, quoted: what you asked, then its answer, cut to `CopilotAnswer.limit`.
+    static func earlier(_ answer: CopilotAnswer) -> String {
+        earlier(answer, why: "why I got this thread", about: "this thread")
+    }
+
+    /// What a session answered before, quoted: what you asked, then its answer, cut to `CopilotAnswer.limit`.
+    /// - Parameters:
+    ///   - why: what it was asked without a question of yours: "why I got this thread".
+    ///   - about: what it was asked about: "this thread".
+    static func earlier(_ answer: CopilotAnswer, why: String, about: String) -> String {
         var text = answer.answer.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.count > ThreadAnswer.limit { text = String(text.prefix(ThreadAnswer.limit)) + "…" }
+        if text.count > CopilotAnswer.limit { text = String(text.prefix(CopilotAnswer.limit)) + "…" }
         let quotedAnswer = text.split(separator: "\n", omittingEmptySubsequences: false).map { $0.isEmpty ? ">" : "> " + $0 }.joined(separator: "\n")
         guard let question = yours(answer.question) else {
-            return "Earlier I asked Copilot why I got this thread. It answered:\n\n" + quotedAnswer
+            return "Earlier I asked Copilot \(why). It answered:\n\n" + quotedAnswer
         }
-        return "Earlier I asked Copilot about this thread, in my own words:\n\n" + question + "\n\nIt answered:\n\n" + quotedAnswer
+        return "Earlier I asked Copilot about \(about), in my own words:\n\n" + question + "\n\nIt answered:\n\n" + quotedAnswer
     }
 
     /// The thread as Fix Comments lists it, its entry then its comments, but each comment in full, as its author wrote it.

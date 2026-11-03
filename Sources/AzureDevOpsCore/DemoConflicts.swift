@@ -25,6 +25,34 @@ extension DemoData {
         }
         return MergeConflicts(files: files, of: pullRequest)
     }
+
+    /// What the demo says a Copilot session answers when you ask it why a pull request's files conflict, with Explain: made
+    /// up, as the rest of the demo's data is, never asked of Copilot. For !4079, whose rename of the order status enum
+    /// conflicts with main in five files.
+    public static func conflictsExplanation(pullRequest number: Int) -> String {
+        guard number == 4079 else {
+            return """
+                This pull request and its target branch changed the same lines since they parted, so Git can't tell which to \
+                keep. Merging the target branch in and keeping what both meant resolves them: start with the files both \
+                changed, then build and run the tests that cover them.
+                """
+        }
+        return """
+            Each branch changed the same places since they parted:
+
+            - **OrderStatus.cs**: this pull request renamed `OrderStatusCode` to `OrderStatus`, and `Cancelled` to \
+            `Canceled`. main most likely added a value beside `Cancelled`, such as `Refunded`.
+            - **OrderService.cs**: the same rename, where main likely handles that new value.
+            - **LegacyOrderMapper.cs**: this pull request moved it to the new names, and main deleted it.
+            - **OrderStatusTests.cs**: both branches added tests at this path.
+            - **order-states.md**: renamed to `order-statuses.md` here, and moved to `docs/orders/states.md` on main.
+
+            To resolve them, merge main in and keep both sides: main's new value and what handles it, under this pull \
+            request's names, numbered as stored orders have it; let the mapper go, as main did, once nothing calls it; put \
+            both sets of tests in one file; and keep the page where main moved it, with this pull request's wording. Then \
+            build, and run the order tests.
+            """
+    }
 }
 
 extension DemoCode {

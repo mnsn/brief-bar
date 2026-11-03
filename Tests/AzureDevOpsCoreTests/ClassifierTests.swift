@@ -27,6 +27,16 @@ import BriefBarCore
         #expect(named.kind == .build)
         let unnamed = try #require(try check(Fixture.evaluation("Build", status: "approved")))
         #expect(unnamed.name == "Build")
+        #expect(unnamed.definitionId == nil)
+        // The pipeline it runs, as its settings say, else as its run does: each of its runs shares it.
+        let pipeline = try #require(try check(Fixture.evaluation("Build", status: "rejected", settings: ["buildDefinitionId": 31],
+                                                                 context: ["buildId": 204_417, "buildDefinitionId": 99])))
+        #expect(pipeline.definitionId == 31)
+        #expect(pipeline.buildId == 204_417)
+        let fromItsRun = try #require(try check(Fixture.evaluation("Build", status: "rejected", context: ["buildId": 1, "buildDefinitionId": 32])))
+        #expect(fromItsRun.definitionId == 32)
+        let status = try #require(try check(Fixture.evaluation("Status", status: "rejected", settings: ["buildDefinitionId": 31])))
+        #expect(status.definitionId == nil)
     }
 
     @Test func statusPolicies() throws {

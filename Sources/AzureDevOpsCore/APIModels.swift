@@ -170,19 +170,23 @@ public struct ADOPolicyEvaluation: Decodable, Sendable {
         public var defaultDisplayName: String?
         /// The people and teams a required-reviewers policy requires, by their identity IDs.
         public var requiredReviewerIds: [String]?
+        /// The pipeline a build policy runs: its build definition's ID.
+        public var buildDefinitionId: Int?
 
         private enum CodingKeys: String, CodingKey {
-            case displayName, minimumApproverCount, statusName, statusGenre, defaultDisplayName, requiredReviewerIds
+            case displayName, minimumApproverCount, statusName, statusGenre, defaultDisplayName, requiredReviewerIds, buildDefinitionId
         }
 
         public init(displayName: String? = nil, minimumApproverCount: Int? = nil, statusName: String? = nil,
-                    statusGenre: String? = nil, defaultDisplayName: String? = nil, requiredReviewerIds: [String]? = nil) {
+                    statusGenre: String? = nil, defaultDisplayName: String? = nil, requiredReviewerIds: [String]? = nil,
+                    buildDefinitionId: Int? = nil) {
             self.displayName = displayName
             self.minimumApproverCount = minimumApproverCount
             self.statusName = statusName
             self.statusGenre = statusGenre
             self.defaultDisplayName = defaultDisplayName
             self.requiredReviewerIds = requiredReviewerIds
+            self.buildDefinitionId = buildDefinitionId
         }
 
         public init(from decoder: Decoder) throws {
@@ -193,18 +197,21 @@ public struct ADOPolicyEvaluation: Decodable, Sendable {
             statusGenre = container.lenient(String.self, forKey: .statusGenre)
             defaultDisplayName = container.lenient(String.self, forKey: .defaultDisplayName)
             requiredReviewerIds = container.lenient([String].self, forKey: .requiredReviewerIds)
+            buildDefinitionId = container.lenient(Int.self, forKey: .buildDefinitionId)
         }
     }
 
     public struct Context: Decodable, Sendable {
         public var buildId: Int?
+        public var buildDefinitionId: Int?
         public var buildDefinitionName: String?
         public var isExpired: Bool?
 
-        private enum CodingKeys: String, CodingKey { case buildId, buildDefinitionName, isExpired }
+        private enum CodingKeys: String, CodingKey { case buildId, buildDefinitionId, buildDefinitionName, isExpired }
 
-        public init(buildId: Int? = nil, buildDefinitionName: String? = nil, isExpired: Bool? = nil) {
+        public init(buildId: Int? = nil, buildDefinitionId: Int? = nil, buildDefinitionName: String? = nil, isExpired: Bool? = nil) {
             self.buildId = buildId
+            self.buildDefinitionId = buildDefinitionId
             self.buildDefinitionName = buildDefinitionName
             self.isExpired = isExpired
         }
@@ -212,6 +219,7 @@ public struct ADOPolicyEvaluation: Decodable, Sendable {
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             buildId = container.lenient(Int.self, forKey: .buildId)
+            buildDefinitionId = container.lenient(Int.self, forKey: .buildDefinitionId)
             buildDefinitionName = container.lenient(String.self, forKey: .buildDefinitionName)
             isExpired = container.lenient(Bool.self, forKey: .isExpired)
         }

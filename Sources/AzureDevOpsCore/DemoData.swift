@@ -20,6 +20,10 @@ public enum DemoData {
     private static let dana = person("b007", "Dana Whitfield")
     private static let buildService = Person(id: "6f1c1a52-0000-4000-8000-00000000c001", name: "Storefront Build Service", isBot: true)
 
+    /// The pipelines the demo's build policies run, by their names: shop-web CI and payments-api CI as the Pipelines page
+    /// has them.
+    static let demoPipelines = ["shop-web CI": 31, "payments-api CI": 32, "infra CI": 33, "search CI": 34]
+
     static func person(_ suffix: String, _ name: String) -> Person {
         Person(id: "6f1c1a52-0000-4000-8000-00000000\(suffix)", name: name)
     }
@@ -119,10 +123,10 @@ public enum DemoData {
             Activity(threadId: thread, kind: .reviewersChanged, at: at, actor: by, added: [person.id])
         }
         let build = { (name: String, state: Check.State, completed: Date?) in
-            Check(name: name, kind: .build, state: state, completedAt: completed)
+            Check(name: name, kind: .build, state: state, completedAt: completed, definitionId: demoPipelines[name])
         }
         let failedBuild = { (name: String, completed: Date, failure: PipelineFailure) in
-            Check(name: name, kind: .build, state: .failed, completedAt: completed, buildId: 204_417, failure: failure)
+            Check(name: name, kind: .build, state: .failed, completedAt: completed, buildId: 204_417, definitionId: demoPipelines[name], failure: failure)
         }
         let minimumReviewers = { (state: Check.State, minimum: Int) in
             Check(name: "Minimum number of reviewers", kind: .reviewers, state: state, minimumApprovers: minimum)
@@ -276,7 +280,10 @@ public enum DemoData {
             record(
                 pr(4099, "Log slow database queries", repo: "infra", created: ago(90),
                    reviewers: [reviewer(alex), reviewer(jordan)], branch: "slow-query-log"),
-                checks: [Check(name: "infra CI", kind: .build, state: .running, buildId: runningBuildId), minimumReviewers(.pending, 2)],
+                checks: [
+                    Check(name: "infra CI", kind: .build, state: .running, buildId: runningBuildId, definitionId: demoPipelines["infra CI"]),
+                    minimumReviewers(.pending, 2),
+                ],
                 activity: [Activity(threadId: 91, kind: .push, at: ago(20), actor: me, commitCount: 1)]
             ),
             // Waiting for the author: you asked for changes.

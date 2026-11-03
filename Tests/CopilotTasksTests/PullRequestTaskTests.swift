@@ -359,73 +359,89 @@ import Testing
         #expect(decoded.workItem?.id == 7)
         #expect(decoded.onPullRequest == nil)
         #expect(decoded.isValid)
-        #expect(decoded.threads == nil)
+        #expect(decoded.taken == nil)
     }
 
-    /// Each thread a task took on, by its ID only, with when, and how that went once a later task went on with its session:
-    /// kept while the changes aren't pushed, so that each thread can say what became of it.
-    @Test func keepsTheThreadsItTookOnUntilTheyrePushed() throws {
-        func run(_ action: PullRequestAction, ended: RunPhase?, threads: [TakenThread]?) -> CopilotRun {
+    /// What a task took on, a thread, a build or its conflicts, by its ID only, with when, and how that went once a later
+    /// task went on with its session: kept while the changes aren't pushed, so that each can say what became of it.
+    @Test func keepsWhatItTookOnUntilItsPushed() throws {
+        func run(_ action: PullRequestAction, ended: RunPhase?, taken: [TakenPart]?) -> CopilotRun {
             CopilotRun(
                 id: "8c3f2e4d-5d0e-4f1a-8d6b-4a5b6c7d8e9f", workItem: nil, onPullRequest: pullRequest.reference, action: action,
                 options: CopilotModel.standard, repository: URL(fileURLWithPath: "/r"), worktree: URL(fileURLWithPath: "/w"),
                 startedAt: Date(timeIntervalSince1970: 0), process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: ended,
-                threads: threads
+                taken: taken
             )
         }
+        func taken(_ previous: CopilotRun?, on reference: PullRequestReference? = pullRequest.reference, _ parts: [PullRequestPart],
+                   for action: PullRequestAction?, at date: Date) -> [TakenPart]? {
+            CopilotRun.taken(goingOnWith: previous, on: reference, taking: parts, for: action, at: date)
+        }
         let first = Date(timeIntervalSince1970: 100), second = Date(timeIntervalSince1970: 200)
-        // A new session takes on what it's sent for; one that takes on none keeps none.
-        #expect(CopilotRun.threads(goingOnWith: nil, on: pullRequest.reference, taking: [11], for: .fixComments, at: first) == [TakenThread(id: 11, since: first)])
-        #expect(CopilotRun.threads(goingOnWith: nil, on: pullRequest.reference, taking: [], for: .fixComments, at: first) == nil)
-        // Going on with a fix, it keeps the threads it took on, with how that ended, and takes the new one on in its place.
-        let fixed = run(.fixComments, ended: .finished, threads: [TakenThread(id: 11, since: first), TakenThread(id: 12, since: first)])
-        #expect(CopilotRun.threads(goingOnWith: fixed, on: pullRequest.reference, taking: [12], for: .fixComments, at: second) == [
-            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second),
+        // A new session takes on what it's sent for, each once; one that takes on nothing keeps nothing.
+        #expect(taken(nil, [.thread(11)], for: .fixComments, at: first) == [TakenPart(.thread(11), since: first)])
+        #expect(taken(nil, [.build(31), .build(31)], for: .fixBuild, at: first) == [TakenPart(.build(31), since: first)])
+        #expect(taken(nil, [], for: .fixComments, at: first) == nil)
+        // Going on with a fix, it keeps what it took on, with how that ended, and takes the new one on in its place.
+        let fixed = run(.fixComments, ended: .finished, taken: [TakenPart(.thread(11), since: first), TakenPart(.thread(12), since: first)])
+        #expect(taken(fixed, [.thread(12)], for: .fixComments, at: second) == [
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second),
+        ])
+        // A build and its conflicts go along with threads.
+        #expect(taken(fixed, [.build(31)], for: .fixBuild, at: second) == [
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: first, ended: .finished),
+            TakenPart(.build(31), since: second),
         ])
         // One BriefBar didn't see end stopped.
-        let unseen = run(.fixBuild, ended: nil, threads: [TakenThread(id: 11, since: first)])
-        #expect(CopilotRun.threads(goingOnWith: unseen, on: pullRequest.reference, taking: [], for: .fixComments, at: second) == [
-            TakenThread(id: 11, since: first, ended: .stopped),
+        let unseen = run(.fixBuild, ended: nil, taken: [TakenPart(.build(31), since: first)])
+        #expect(taken(unseen, [.conflicts], for: .resolveConflicts, at: second) == [
+            TakenPart(.build(31), since: first, ended: .stopped), TakenPart(.conflicts, since: second),
         ])
-        // Push & Reply takes on those its prompt lists, to reply on, with those that prompts to the session fixed rather
-        // than its runs, such as 13; it doesn't reply on the others it has, which stay as they were.
-        let shipping = try #require(CopilotRun.threads(goingOnWith: fixed, on: pullRequest.reference, taking: [12, 13], for: .pushAndReply, at: second))
+        // Push & Reply takes on what it ships, with what prompts to the session fixed rather than its runs, such as 13; it
+        // doesn't reply on the others it has, which stay as they were.
+        let shipping = try #require(taken(fixed, [.thread(12), .thread(13), .build(31)], for: .pushAndReply, at: second))
         #expect(shipping == [
-            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ships: true),
-            TakenThread(id: 13, since: second, ships: true),
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ships: true),
+            TakenPart(.thread(13), since: second, ships: true), TakenPart(.build(31), since: second, ships: true),
         ])
-        #expect(CopilotRun.threads(goingOnWith: fixed, on: pullRequest.reference, taking: [], for: .pushAndReply, at: second) == [
-            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: first, ended: .finished),
+        #expect(taken(fixed, [], for: .pushAndReply, at: second) == [
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: first, ended: .finished),
         ])
-        // Once it's done, a later task keeps those it had and didn't list, still not pushed, and those it shipped, pushed, for
-        // an older fix of one of them, elsewhere, not to be its latest again.
-        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .finished, threads: shipping), on: pullRequest.reference, taking: [13], for: .fixComments, at: second)
-            == [
-                TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ended: .finished, ships: true),
-                TakenThread(id: 13, since: second),
-            ])
-        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .finished, threads: shipping), on: pullRequest.reference, taking: [11], for: .fixComments, at: second)
-            == [
-                TakenThread(id: 12, since: second, ended: .finished, ships: true), TakenThread(id: 13, since: second, ended: .finished, ships: true),
-                TakenThread(id: 11, since: second),
-            ])
-        // One that failed didn't push them: those it shipped say so, and a fix of one of them takes it on again.
-        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .failed, threads: shipping), on: pullRequest.reference, taking: [13], for: .fixComments, at: second) == [
-            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ended: .failed, ships: true),
-            TakenThread(id: 13, since: second),
+        // Once it's done, a later task keeps what it had and didn't ship, still not pushed, and what it shipped, pushed, for
+        // an older fix of it, elsewhere, not to be its latest again.
+        #expect(taken(run(.pushAndReply, ended: .finished, taken: shipping), [.thread(13)], for: .fixComments, at: second) == [
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ended: .finished, ships: true),
+            TakenPart(.build(31), since: second, ended: .finished, ships: true), TakenPart(.thread(13), since: second),
+        ])
+        #expect(taken(run(.pushAndReply, ended: .finished, taken: shipping), [.thread(11)], for: .fixComments, at: second) == [
+            TakenPart(.thread(12), since: second, ended: .finished, ships: true), TakenPart(.thread(13), since: second, ended: .finished, ships: true),
+            TakenPart(.build(31), since: second, ended: .finished, ships: true), TakenPart(.thread(11), since: second),
+        ])
+        // One that failed didn't push them: what it shipped says so, and a fix of it takes it on again.
+        #expect(taken(run(.pushAndReply, ended: .failed, taken: shipping), [.thread(13)], for: .fixComments, at: second) == [
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ended: .failed, ships: true),
+            TakenPart(.build(31), since: second, ended: .failed, ships: true), TakenPart(.thread(13), since: second),
         ])
         // A review changed nothing to push.
-        #expect(CopilotRun.threads(goingOnWith: run(.review, ended: .finished, threads: shipping), on: pullRequest.reference, taking: [], for: .fixComments, at: second) == nil)
+        #expect(taken(run(.review, ended: .finished, taken: shipping), [], for: .fixComments, at: second) == nil)
         // A session that goes on with another pull request keeps none of this one's, whose IDs are this one's own.
         var other = pullRequest.reference
         other.id += 1
-        #expect(CopilotRun.threads(goingOnWith: fixed, on: other, taking: [11], for: .fixComments, at: second) == [TakenThread(id: 11, since: second)])
-        #expect(CopilotRun.threads(goingOnWith: fixed, on: nil, taking: [], for: nil, at: second) == nil)
-        // Kept as IDs and dates, never what the threads say.
-        let kept = run(.pushAndReply, ended: .failed, threads: [TakenThread(id: 11, since: first, ended: .failed), TakenThread(id: 12, since: first, ships: true)])
+        #expect(taken(fixed, on: other, [.thread(11)], for: .fixComments, at: second) == [TakenPart(.thread(11), since: second)])
+        #expect(taken(fixed, on: nil, [], for: nil, at: second) == nil)
+        // Kept as kinds, IDs and dates, never what they say.
+        let kept = run(.pushAndReply, ended: .failed, taken: [
+            TakenPart(.thread(11), since: first, ended: .failed), TakenPart(.build(31), since: first, ships: true),
+            TakenPart(.conflicts, since: first),
+        ])
         let text = String(decoding: try JSONEncoder().encode(kept), as: UTF8.self)
-        #expect(text.contains(#""threads":[{"#))
+        #expect(text.contains(#""taken":[{"#))
+        #expect(text.contains(#"{"id":11,"kind":"thread"}"#) || text.contains(#"{"kind":"thread","id":11}"#))
         #expect(try JSONDecoder().decode(CopilotRun.self, from: Data(text.utf8)) == kept)
+        // What isn't one, as another program may write there, isn't read.
+        #expect((try? JSONDecoder().decode(PullRequestPart.self, from: Data(#"{"kind":"thread"}"#.utf8))) == nil)
+        #expect((try? JSONDecoder().decode(PullRequestPart.self, from: Data(#"{"kind":"review","id":3}"#.utf8))) == nil)
+        #expect(try JSONDecoder().decode(PullRequestPart.self, from: Data(#"{"kind":"conflicts"}"#.utf8)) == .conflicts)
     }
 }
 

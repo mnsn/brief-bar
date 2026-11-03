@@ -4,18 +4,19 @@ import Combine
 import CopilotTasks
 import Foundation
 
-/// What you ask Copilot sessions about pull requests' comment threads with Explain, and what they answer: each asked aside,
-/// of a throwaway fork of the session with no tools, which the Copilot CLI deletes after (`SessionQuestions`), so it changes
-/// no file and the session's history stays as it was. Each question sends the session's conversation, with the thread and
-/// its code, to GitHub Copilot, as one premium request. What's asked and answered stays in memory only, until you dismiss
-/// it, BriefBar quits, or Send Work to Copilot or Azure DevOps is turned off, which stops what's being asked. The demo
-/// makes its answers up, and never runs the Copilot CLI.
+/// What you ask Copilot sessions about pull requests with Explain, about a comment thread, a failed build or conflicts, and
+/// what they answer: each asked aside, of a throwaway fork of the session with no tools, which the Copilot CLI deletes after
+/// (`SessionQuestions`), so it changes no file and the session's history stays as it was. Each question sends the session's
+/// conversation, with what it's about, such as a thread and its code or a build's errors, failed tests and the end of its
+/// log, to GitHub Copilot, as one premium request. What's asked and answered stays in memory only, until you dismiss it,
+/// BriefBar quits, or Send Work to Copilot or Azure DevOps is turned off, which stops what's being asked. The demo makes its
+/// answers up, and never runs the Copilot CLI.
 @MainActor
-final class CommentQuestions: ObservableObject {
-    /// A thread of a pull request.
+final class CopilotQuestions: ObservableObject {
+    /// Something of a pull request.
     struct Key: Hashable {
         var pullRequest: PRKey
-        var thread: Int
+        var part: PullRequestPart
     }
 
     /// A question, and how it stands.
@@ -28,14 +29,16 @@ final class CommentQuestions: ObservableObject {
 
         /// The session asked.
         var session: String
-        /// What you asked, in your words; nil for why you got it.
+        /// What you asked, in your words; nil for why: why you got a comment, or why a build failed.
         var asked: String?
         var askedAt: Date
         var state: State
         /// When it was answered, or failed.
         var endedAt: Date?
         /// What the session answered before, which it follows up on: asked in the session instead, it goes along.
-        var earlier: ThreadAnswer?
+        var earlier: CopilotAnswer?
+        /// For a build, the run it's about: another run of it, as it runs again or after a push, isn't what it answered.
+        var run: Int?
 
         var isAsking: Bool { state == .asking }
     }
@@ -71,28 +74,33 @@ final class CommentQuestions: ObservableObject {
         !hasStopped && copilot.isOn && (copilot.canSend || copilot.mode == .demo)
     }
 
-    func question(on thread: Int, of key: PRKey) -> Question? {
-        questions[Key(pullRequest: key, thread: thread)]
+    func question(about part: PullRequestPart, of key: PRKey) -> Question? {
+        questions[Key(pullRequest: key, part: part)]
     }
 
-    /// Asks a session about a thread, in place of what was asked about it before, which stops if it's still being asked.
+    /// Asks a session about something of a pull request, in place of what was asked about it before, which stops if it's
+    /// still being asked.
     /// - Parameters:
-    ///   - prompt: the question in full (`PullRequestPrompt.explainThread`).
+    ///   - prompt: the question in full, such as `PullRequestPrompt.explainThread`'s.
     ///   - asked: what you asked, in your words, to show with the answer.
     ///   - earlier: what the session answered before, which it follows up on.
-    func ask(_ prompt: String, asked: String?, earlier: ThreadAnswer? = nil, session: String, on thread: Int, of key: PRKey) {
+    ///   - run: for a build, the run it's about.
+    func ask(
+        _ prompt: String, asked: String?, earlier: CopilotAnswer? = nil, session: String, about part: PullRequestPart, run: Int? = nil,
+        of key: PRKey
+    ) {
         guard canAsk else { return }
-        let id = Key(pullRequest: key, thread: thread)
+        let id = Key(pullRequest: key, part: part)
         asking.removeValue(forKey: id)?.cancel()
         let words = asked?.trimmingCharacters(in: .whitespacesAndNewlines)
         let question = Question(
-            session: session, asked: words?.isEmpty == false ? words : nil, askedAt: Date(), state: .asking, earlier: earlier
+            session: session, asked: words?.isEmpty == false ? words : nil, askedAt: Date(), state: .asking, earlier: earlier, run: run
         )
         questions[id] = question
-        Log.app.info("Asked a Copilot session about a comment thread")
+        Log.app.info("Asked a Copilot session about a pull request")
         asking[id] = Task { [weak self] in
             guard let self else { return }
-            let result = await self.answer(prompt, session: session, thread: thread, of: key)
+            let result = await self.answer(prompt, session: session, about: part, of: key)
             // Stopped, or asked again, meanwhile: this answer isn't wanted.
             guard !Task.isCancelled, self.questions[id] == question else { return }
             self.asking[id] = nil
@@ -102,13 +110,13 @@ final class CommentQuestions: ObservableObject {
             case .success(let text): answered.state = .answered(text)
             case .failure(let failure):
                 answered.state = .failed(failure)
-                Log.app.error("A Copilot session couldn't answer a question about a comment thread")
+                Log.app.error("A Copilot session couldn't answer a question about a pull request")
             }
             self.questions[id] = answered
         }
     }
 
-    private func answer(_ prompt: String, session: String, thread: Int, of key: PRKey) async -> Result<String, SessionQuestions.Failure> {
+    private func answer(_ prompt: String, session: String, about part: PullRequestPart, of key: PRKey) async -> Result<String, SessionQuestions.Failure> {
         if let askForTests { return await askForTests(prompt, session) }
         if copilot.mode == .demo {
             do {
@@ -116,7 +124,7 @@ final class CommentQuestions: ObservableObject {
             } catch {
                 return .failure(.cancelled)
             }
-            return .success(DemoData.explanation(ofThread: thread, pullRequest: key.number))
+            return .success(Self.demoAnswer(about: part, of: key))
         }
         let sessions = sessions
         let work = Task.detached { await sessions.ask(prompt, session: session) }
@@ -124,16 +132,25 @@ final class CommentQuestions: ObservableObject {
         return await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
     }
 
-    /// Stops what's being asked about a thread; its fork is deleted.
-    func stop(on thread: Int, of key: PRKey) {
-        let id = Key(pullRequest: key, thread: thread)
+    /// What the demo says a session answers, made up.
+    static func demoAnswer(about part: PullRequestPart, of key: PRKey) -> String {
+        switch part {
+        case .thread(let thread): DemoData.explanation(ofThread: thread, pullRequest: key.number)
+        case .build: DemoData.buildExplanation(pullRequest: key.number)
+        case .conflicts: DemoData.conflictsExplanation(pullRequest: key.number)
+        }
+    }
+
+    /// Stops what's being asked about something; its fork is deleted.
+    func stop(about part: PullRequestPart, of key: PRKey) {
+        let id = Key(pullRequest: key, part: part)
         asking.removeValue(forKey: id)?.cancel()
         questions[id] = nil
     }
 
-    /// Forgets what a thread was asked and answered.
-    func dismiss(on thread: Int, of key: PRKey) {
-        stop(on: thread, of: key)
+    /// Forgets what was asked and answered about something.
+    func dismiss(about part: PullRequestPart, of key: PRKey) {
+        stop(about: part, of: key)
     }
 
     private func forgetAll() {

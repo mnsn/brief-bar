@@ -776,36 +776,32 @@ final class PRStore: ObservableObject {
 
     /// Writes the prompts for what Copilot should do with a pull request, then opens the composer with them: for a failed
     /// build, once each failed build's errors have been read; for its conflicts, with the files that conflict, once its
-    /// details read them (`conflicts`). Fix Comments and Push & Reply take on the threads their prompts list, for each to
-    /// say what became of it.
+    /// details read them (`conflicts`). Each takes on what its prompt does, for each to say what became of it
+    /// (`PullRequestTasks.parts`).
     /// - Parameters:
     ///   - start: where it goes to begin with, rather than BriefBar's suggestion, such as the session whose fixes Push &
     ///     Reply ships.
-    ///   - threads: for Push & Reply, the threads whose fixes it ships, which its prompt lists alone; without them, it lists
-    ///     those Fix Comments does.
+    ///   - parts: for Push & Reply, what the fixes it ships took on: its prompt lists their threads alone, and replies on
+    ///     those alone, or on none for a build's fix alone; without any, it lists those Fix Comments does.
     func composeCopilot(
-        _ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore, start: ComposerStart? = nil, threads: [Int] = []
+        _ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore, start: ComposerStart? = nil,
+        parts: [PullRequestPart] = []
     ) {
         guard let record = record(for: item.key) else { return }
         let pr = record.pullRequest
         let task = PullRequestTasks.task(for: record)
         let client = mode == .live ? client : nil
-        // Push & Reply for some threads, such as one session's fixes when they're in more than one, ships, replies on and
-        // hands off those alone.
-        let scope = action == .pushAndReply && !threads.isEmpty ? threads : nil
+        // Push & Reply for some fixes, such as one session's when they're in more than one, ships, replies on and hands off
+        // their threads alone.
+        let scope = action == .pushAndReply ? PullRequestTasks.shippedThreads(parts) : nil
         let handOff = commentHandOff(action, for: record, threads: scope)
         let conflicts = action == .resolveConflicts ? self.conflicts(pr) : nil
-        // The threads it takes on, as its prompt lists them, for each to say what became of it.
-        let threads: [Int] = switch action {
-        case .fixComments: PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map(\.id)
-        case .pushAndReply: PullRequestPrompt.shippedThreads(record, only: scope).prefix(PullRequestPrompt.threadLimit).map(\.id)
-        default: threads
-        }
+        let taken = PullRequestTasks.parts(action, for: record, shipping: action == .pushAndReply ? parts : [])
         Task {
             let prompts = await PullRequestTasks.prompts(action, for: record, client: client, threads: scope, conflicts: conflicts)
             copilot.compose(
                 task, action: action, prompt: prompts.worktree, sessionPrompt: prompts.session, createdAt: pr.createdAt, handOff: handOff,
-                start: start, threads: threads
+                start: start, parts: taken
             )
         }
     }
