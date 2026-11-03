@@ -109,14 +109,17 @@ import Testing
     }
 
     /// Waits for the store's reads, which finish on the main actor between this test's awaits. `make test` runs every test
-    /// on one thread, which a long test can keep for many seconds on a busy runner: it gives up only after a minute, and
-    /// returns as soon as they're done.
-    private func settle(until done: () async -> Bool) async throws {
+    /// on one thread, which a long test can keep for many seconds on a busy runner: it gives up only after a minute, failing
+    /// the test, and returns as soon as they're done.
+    private func settle(until done: () async -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
         let deadline = ContinuousClock.now + .seconds(60)
         while ContinuousClock.now < deadline {
             if await done() { return }
             try await Task.sleep(for: .milliseconds(10))
         }
+        // On a busy runner the test may run again only after the deadline, though what it waited for came in time.
+        let isDone = await done()
+        try #require(isDone, "Timed out waiting for the store", sourceLocation: sourceLocation)
     }
 
     private func readFiles(_ store: PullRequestFilesStore) -> ChangedFiles? {
@@ -339,6 +342,10 @@ import Testing
         store.showDiff(of: files.files[0], in: files, of: pullRequest, by: viewer, on: page)
         store.showDiff(of: files.files[1], in: files, of: pullRequest, by: viewer, on: page)
         try await settle { if case .read? = store.diff(of: a, in: key) { true } else { false } }
+        guard case .read? = store.diff(of: a, in: key) else {
+            Issue.record("A's diff wasn't read again")
+            return
+        }
         #expect(store.diff(of: b, in: key) == .failed(.tooLarge))
         #expect(await reader.asked == ["diff A.cs", "diff B.cs", "diff A.cs"])
     }
@@ -516,6 +523,30 @@ import Testing
         #expect(store.file?.comment == .first)
         store.reachedComment(.first)
         #expect(store.file?.comment == nil && store.file?.from == .thread(11))
+    }
+
+    @Test func followsTheFileItShowsAndGoesBackToItsRowOrElseTheFiles() throws {
+        let store = PullRequestDetailsStore()
+        store.itemsChanged(items)
+        store.show(try item(4102))
+        store.open(file: "/src/PaymentsConfig.cs", at: 11)
+        // Shown as the file a push renamed it to: its path is that one's, keeping the rest.
+        store.follow(file: "/src/Config/PaymentsSettings.cs")
+        #expect(store.file == .init(path: "/src/Config/PaymentsSettings.cs", thread: 11))
+        store.back()
+        let renamed = FileChange.ID(path: "/src/Config/PaymentsSettings.cs")
+        #expect(store.place == .file(renamed))
+        // Back to its row when the Files list it; else to the Files, as when a push took it out of the change.
+        let panel = PullRequestPanel(try item(4102), record: nil)
+        let listed = ChangedFiles(
+            scope: .whole, comparison: ReviewThread.Comparison(base: 2), iterations: [],
+            files: [FileChange(path: "/src/Config/PaymentsSettings.cs", kind: .edit, objectId: "a")]
+        )
+        #expect(PullRequestDetailsStore.Place.file(renamed).anchor(in: panel, files: listed) == .file(renamed))
+        let gone = FileChange.ID(path: "/src/LegacyRetry.cs")
+        #expect(PullRequestDetailsStore.Place.file(gone).anchor(in: panel, files: listed) == .files)
+        #expect(PullRequestDetailsStore.Place.file(renamed).anchor(in: panel, files: nil) == .files)
+        #expect(PullRequestDetailsStore.Place.thread(11).anchor(in: panel, files: nil) == .section(.comments))
     }
 
     @Test func showsAThreadsFileInAllOfTheChange() throws {

@@ -22,6 +22,7 @@ struct PullRequestDetailsContent: View {
     @EnvironmentObject private var copilot: CopilotTasksStore
     @EnvironmentObject private var sessions: PullRequestSessions
     @EnvironmentObject private var services: AppServices
+    @EnvironmentObject private var files: PullRequestFilesStore
     @Environment(\.itemNavigation) private var navigation
     /// The window's page it's on, which its Copilot session is read only while the window shows on screen.
     @Environment(\.shownSection) private var section
@@ -139,7 +140,8 @@ struct PullRequestDetailsContent: View {
     /// to their comments, or their builds and checks, for one they don't have.
     private func go(in panel: PullRequestPanel) {
         guard let place = details.place, details.pages.isEmpty, details.file == nil, isShown else { return }
-        let anchor = place.anchor(in: panel)
+        let listed: ChangedFiles? = if case .read(let changes)? = files.list(of: item.key, details.scope) { changes } else { nil }
+        let anchor = place.anchor(in: panel, files: listed)
         Task { @MainActor in
             // Once what's there shows, such as a resolved thread unfolded for it.
             try? await Task.sleep(for: .milliseconds(60))

@@ -369,13 +369,15 @@ private enum ChangeFixture {
                    PullRequestPanel.Thread(thread: thread(6, path: "/src/Elsewhere.cs", tracking: 4), waitsOnYou: false, isNew: false)],
             resolved: [PullRequestPanel.Thread(thread: thread(7, line: 1, status: "fixed"), waitsOnYou: false, isNew: false)]
         )
-        let comments = threads.comments(on: file)
+        let none = FileChange(path: "/src/None.cs", kind: .add, objectId: "n")
+        let changes = ChangedFiles(scope: .whole, comparison: ReviewThread.Comparison(base: 2), iterations: [], files: [file, none])
+        let comments = threads.comments(on: file, in: changes)
         #expect(comments.threads.map(\.id) == [1, 4, 6, 2, 7])
         #expect(comments.open == 4)
         #expect(comments.resolved == 1)
         #expect(comments.waitingOnYou == 1)
         #expect(comments.spoken == "4 open comments, 1 of them waiting on you, and 1 resolved")
-        #expect(threads.comments(on: FileChange(path: "/src/None.cs", kind: .add, objectId: "n")).spoken == "No comments")
+        #expect(threads.comments(on: none, in: changes).spoken == "No comments")
         #expect(PullRequestPanel.FileComments(threads: [threads.resolved[0]]).spoken == "1 resolved comment")
     }
 
@@ -422,7 +424,7 @@ private enum ChangeFixture {
         )
         let byFile = threads.comments(in: changes)
         for file in changes.files {
-            let one = threads.comments(on: file)
+            let one = threads.comments(on: file, in: changes)
             #expect(byFile[file.id] == (one.isEmpty ? nil : one))
         }
         #expect(byFile[none.id] == nil)
@@ -441,6 +443,27 @@ private enum ChangeFixture {
         #expect(changes.file(of: thread(2, path: "/src/Pay.cs", tracking: 8))?.path == "/src/Pay.cs")
         #expect(changes.file(of: thread(3, path: "/src/Payments.cs"))?.path == "/src/Payments.cs")
         #expect(changes.file(of: thread(4, path: "/src/None.cs")) == nil)
+    }
+
+    @Test func findsAThreadOnTheFileItsTrackedOnBeforeOneAtItsPath() {
+        // Pay.cs renamed to Payments.cs, tracked as 4, and a new Pay.cs without a tracking ID.
+        let replacement = FileChange(path: "/src/Pay.cs", kind: .add, objectId: "p")
+        let changes = ChangedFiles(
+            scope: .whole, comparison: ReviewThread.Comparison(base: 2), iterations: [], files: [replacement, file]
+        )
+        let tracked = thread(1, path: "/src/Pay.cs", tracking: 4)
+        let threads = PullRequestPanel.Threads(
+            waitingOnYou: [], open: [PullRequestPanel.Thread(thread: tracked, waitsOnYou: false, isNew: false)], resolved: []
+        )
+        // On Payments.cs, which Azure DevOps tracks it on, alone: not on the new file at the path it names too.
+        #expect(changes.file(of: tracked)?.path == "/src/Payments.cs")
+        #expect(threads.comments(in: changes)[file.id]?.threads.map(\.id) == [1])
+        #expect(threads.comments(in: changes)[replacement.id] == nil)
+        #expect(threads.comments(on: replacement, in: changes).isEmpty)
+        #expect(threads.comments(on: file, in: changes).threads.map(\.id) == [1])
+        // Tracked on a file the change doesn't have: at its path, on the file without a tracking ID there.
+        let elsewhere = thread(2, path: "/src/Pay.cs", tracking: 9)
+        #expect(changes.file(of: elsewhere)?.path == "/src/Pay.cs")
     }
 
     @Test func findsTheFilesWithOpenThreadsToGoThrough() {

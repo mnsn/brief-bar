@@ -125,9 +125,10 @@ struct PullRequestFilePage: View {
             code.release(hold)
         }
         .onAppear { scrollToTop() }
-        // Opened at a thread on a file renamed since, whose old path another file took: the file it's on now, for good.
-        .onChange(of: threadFile?.id, initial: true) {
-            if let threadFile, threadFile.id != open.id { details.open(file: threadFile.path, at: open.thread) }
+        // The file it shows, for good, when that's not the one at the path it opened at: one a push renamed, or, opened at a
+        // thread, the one Azure DevOps tracks it on though another took its path. Back goes to that one's row.
+        .onChange(of: shown?.file.id, initial: true) {
+            if let shown, shown.file.id != open.id { details.follow(file: shown.file.path) }
         }
         .onChange(of: open.id) {
             current = nil
@@ -194,7 +195,7 @@ struct PullRequestFilePage: View {
             self.changes = changes
             index = changes.index(of: file.id) ?? 0
             self.diff = diff
-            let onFile = threads.comments(on: file).threads
+            let onFile = threads.comments(on: file, in: changes).threads
             guard case .read(let read)? = diff else {
                 apart = Self.asApart(onFile)
                 openThreads = apart.filter(Self.isOpen).map(\.id)
@@ -235,7 +236,7 @@ struct PullRequestFilePage: View {
     private func heading(_ shown: Shown) -> some View {
         let file = shown.file
         let kind = FileKindStyle(file.kind)
-        let comments = threads.comments(on: file)
+        let comments = threads.comments(on: file, in: shown.changes)
         return VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: kind.symbol)

@@ -116,12 +116,17 @@ public struct ChangedFiles: Sendable, Equatable {
     public var iterations: [PRIteration]
     /// As Azure DevOps' Files page lists them, folder by folder (`PullRequestPanel.listsFirst`).
     public var files: [FileChange] {
-        didSet { folders = Self.folders(of: files) }
+        didSet {
+            folders = Self.folders(of: files)
+            trackingIds = Set(files.compactMap(\.changeTrackingId))
+        }
     }
     /// The files by the folder they're right in, folder by folder as they're listed: a folder's folders, each with what
     /// it has, before its own files. A folder whose only content is another folder isn't listed apart: its path is part
     /// of that one's, "src/Payments/Retry". Made once, with the list.
     public private(set) var folders: [Folder]
+    /// The change-tracking IDs its files have, which tell which of them a comment thread is on before its path does.
+    private(set) var trackingIds: Set<Int>
     /// False when it changed more files than BriefBar reads, and the rest aren't here.
     public var isComplete: Bool
 
@@ -134,6 +139,7 @@ public struct ChangedFiles: Sendable, Equatable {
         self.files = files.sorted { PullRequestPanel.listsFirst($0.path, $1.path) }
         self.isComplete = isComplete
         folders = Self.folders(of: self.files)
+        trackingIds = Set(files.compactMap(\.changeTrackingId))
     }
 
     public func file(_ id: FileChange.ID) -> FileChange? {
@@ -150,10 +156,10 @@ public struct ChangedFiles: Sendable, Equatable {
         files.firstIndex { $0.id == id }
     }
 
-    /// The file a comment thread is on, as `PullRequestPanel.Threads.comments(on:)` puts it there: the one Azure DevOps
+    /// The file a comment thread is on, as `PullRequestPanel.Threads.comments(on:in:)` puts it there: the one Azure DevOps
     /// tracks it on, though another took the path it names since, or else the one at its path, after the change or before.
     public func file(of thread: ReviewThread) -> FileChange? {
-        files.first { PullRequestPanel.Threads.isOn($0, thread) }
+        files.first { PullRequestPanel.Threads.isOn($0, thread, in: self) }
     }
 
     /// The files in a folder, as the details list them: those right in it, under its path.
@@ -263,17 +269,17 @@ extension PullRequestPanel {
 
 extension PullRequestPanel.Threads {
     /// The threads on a file of the change: those Azure DevOps tracks on it, or else those on its path, after the change or
-    /// before it. Those that wait on you first, then the other open ones, then the resolved ones; in each, from the top of
-    /// the file down.
-    public func comments(on file: FileChange) -> PullRequestPanel.FileComments {
+    /// before it (`isOn(_:_:in:)`). Those that wait on you first, then the other open ones, then the resolved ones; in each,
+    /// from the top of the file down.
+    public func comments(on file: FileChange, in changes: ChangedFiles) -> PullRequestPanel.FileComments {
         func onFile(_ threads: [PullRequestPanel.Thread]) -> [PullRequestPanel.Thread] {
-            threads.filter { Self.isOn(file, $0.thread) }.sorted(by: Self.fromTheTop)
+            threads.filter { Self.isOn(file, $0.thread, in: changes) }.sorted(by: Self.fromTheTop)
         }
         return PullRequestPanel.FileComments(threads: onFile(waitingOnYou) + onFile(open) + onFile(resolved))
     }
 
-    /// The threads on each of a change's files, by the file, as `comments(on:)` finds them, but going through the threads
-    /// once, rather than through all of them for each file: those without any aren't there.
+    /// The threads on each of a change's files, by the file, as `comments(on:in:)` finds them, but going through the
+    /// threads once, rather than through all of them for each file: those without any aren't there.
     public func comments(in changes: ChangedFiles) -> [FileChange.ID: PullRequestPanel.FileComments] {
         // The files, by their places among them, by their tracking IDs and by their paths, after the change and before it.
         var byTracking: [Int: [Int]] = [:]
@@ -289,8 +295,10 @@ extension PullRequestPanel.Threads {
             for thread in threads {
                 let tracking = thread.thread.location?.changeTrackingId
                 var files = Set(tracking.flatMap { byTracking[$0] } ?? [])
-                // By its path: any file, for a thread without a tracking ID, else one without one, as `isOn` says.
-                if let path = (thread.thread.location?.path ?? thread.thread.filePath).flatMap({ $0.isEmpty ? nil : GitPath($0) }) {
+                // Else by its path: any file there, for a thread without a tracking ID, else one without one, as `isOn`
+                // says.
+                if files.isEmpty,
+                   let path = (thread.thread.location?.path ?? thread.thread.filePath).flatMap({ $0.isEmpty ? nil : GitPath($0) }) {
                     for index in byPath[path] ?? [] where tracking == nil || changes.files[index].changeTrackingId == nil {
                         files.insert(index)
                     }
@@ -326,11 +334,13 @@ extension PullRequestPanel.Threads {
         return line(lhs) != line(rhs) ? line(lhs) < line(rhs) : lhs.id < rhs.id
     }
 
-    /// Whether a thread is on a file: its tracking ID, when both have one, says; else its path, as the file is now or as
-    /// it was before a rename.
-    static func isOn(_ file: FileChange, _ thread: ReviewThread) -> Bool {
-        if let tracking = thread.location?.changeTrackingId, let fileTracking = file.changeTrackingId {
-            return tracking == fileTracking
+    /// Whether a thread is on a file of a change: its tracking ID says, when one of the change's files has it, though another
+    /// file took the path the thread names, or when the file has one too; else its path, as the file is now or as it was
+    /// before a rename.
+    static func isOn(_ file: FileChange, _ thread: ReviewThread, in changes: ChangedFiles) -> Bool {
+        if let tracking = thread.location?.changeTrackingId {
+            if changes.trackingIds.contains(tracking) { return file.changeTrackingId == tracking }
+            if file.changeTrackingId != nil { return false }
         }
         guard let path = (thread.location?.path ?? thread.filePath).flatMap({ $0.isEmpty ? nil : GitPath($0) }) else { return false }
         return path == GitPath(file.path) || file.originalPath.map(GitPath.init) == path

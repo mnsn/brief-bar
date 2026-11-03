@@ -1478,8 +1478,9 @@ does, and forgotten once nothing shows the pull request. They go by folder, as t
 (`ChangedFiles.folders`, `PullRequestPanel.listsFirst`), a folder whose only content is another folder named with it,
 `src/Payments/Retry`, grouped once with the list; each says what happened to it (`FileChange.what`), how many lines
 it adds and removes, and how many threads are on it (`PullRequestPanel.Threads.comments(in:)`, for all of them at
-once): those Azure DevOps tracks on it, or else those on its path, after the change or before it, the open ones
-counted first, "1 open comment, waiting on you, and 2 resolved". A file's lines are counted
+once): those Azure DevOps tracks on it, though another file took the path they name, or else, when none of the
+change's files has their tracking ID, those on its path, after the change or before it; the open ones counted first,
+"1 open comment, waiting on you, and 2 resolved". A file's lines are counted
 (`LineCounts`) as its row comes on screen, one file at a time, in the order the rows came, by comparing its two
 versions (`PullRequestCode.diff(of:in:of:)`), each read once, by its object ID, up to 1 MB; a row that leaves the
 screen before its turn isn't counted, and a file that isn't text, or is longer, says so; a row on screen asks again
@@ -1493,10 +1494,12 @@ one is.
 
 A file opens in place of the details' parts (`PullRequestFilePage`, `PullRequestDetailsStore.file`), the header's
 trail saying so, `!4102 › PaymentsClient.cs`, or `Bug 5110 › !4091 › Rounding.cs` on a pull request's page over a
-work item's details; **‹**, **⌘[** or Esc go back to the details, at its row (`Place.file`), or at the thread it
+work item's details; **‹**, **⌘[** or Esc go back to the details, at its row (`Place.file`), or their Files once no
+row is its, as after a push took it out of the change, or at the thread it
 opened from in their comments, whose file's heading, or its menu, opens it at that thread (`ChangedFileOpener`): in
 all of the change, which has it whatever the Files show (`OpenFile.scope`), and on the file Azure DevOps tracks it on
-(`ChangedFiles.file(of:)`), though another file took the path it names since. Its
+(`ChangedFiles.file(of:)`), though another file took the path it names since; and it follows the file it shows
+to the path a push moved it to (`PullRequestDetailsStore.follow(file:)`). Its
 diff is the two versions compared a line at a time (`LineDiff`), its changes with three lines around each, and all
 the lines its threads are on with three around them, the rest folded, to unfold twenty lines at a time, up from the
 code below a fold or down from the code above it, or all of it (`DiffLayout`). A thread shows under the line it ends on
