@@ -370,9 +370,14 @@ public struct CopilotOutbox: Sendable {
         guard info.st_uid == getuid() else { return false }
         let folder = openat(outbox, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard folder >= 0 else { return false }
+        // What can't be listed may hold prompts still.
+        guard let entries = listing(folder) else {
+            close(folder)
+            return false
+        }
         var emptied = true
         // Requests, claimed or not, results, and what was being written: files, or links, never followed.
-        for entry in names(in: folder) where unlinkat(folder, entry, 0) != 0 { emptied = false }
+        for entry in entries where unlinkat(folder, entry, 0) != 0 { emptied = false }
         let isOnlyYours = isPrivateFolder(folder)
         close(folder)
         if emptied, !isOnlyYours { emptied = unlinkat(outbox, name, AT_REMOVEDIR) == 0 }
@@ -486,24 +491,31 @@ public struct CopilotOutbox: Sendable {
         return OutboxListener(data, sessionId: String(name.dropLast(".json".count)))
     }
 
-    /// The names in a folder, but `.` and `..`.
+    /// The names in a folder, but `.` and `..`: none when they can't be read.
     static func names(in folder: Int32) -> [String] {
+        listing(folder) ?? []
+    }
+
+    /// The names in a folder, but `.` and `..`: nil when they can't all be read.
+    static func listing(_ folder: Int32) -> [String]? {
         let copy = dup(folder)
-        guard copy >= 0 else { return [] }
+        guard copy >= 0 else { return nil }
         guard let directory = fdopendir(copy) else {
             close(copy)
-            return []
+            return nil
         }
         defer { closedir(directory) }
         rewinddir(directory)
         var names: [String] = []
-        while let entry = readdir(directory) {
+        while true {
+            errno = 0
+            // The end, or, when it says why, a failure.
+            guard let entry = readdir(directory) else { return errno == 0 ? names : nil }
             let name = withUnsafePointer(to: entry.pointee.d_name) {
                 $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: entry.pointee.d_name)) { String(cString: $0) }
             }
             if name != ".", name != ".." { names.append(name) }
         }
-        return names
     }
 
     // MARK: Times

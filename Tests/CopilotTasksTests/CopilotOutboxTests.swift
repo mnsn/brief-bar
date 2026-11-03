@@ -288,6 +288,12 @@ import Testing
         #expect(!outbox.forget())
         #expect(names(requests) == ["stray"])
         #expect(!outbox.isWaiting(request))
+        // Nor is a folder whose names can't be read taken for an empty one: it may hold prompts still.
+        let descriptor = open(requests.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        defer { close(descriptor) }
+        #expect(CopilotOutbox.listing(descriptor) == ["stray"])
+        #expect(CopilotOutbox.listing(-1) == nil)
+        #expect(CopilotOutbox.names(in: -1).isEmpty)
     }
 
     // MARK: Sending
