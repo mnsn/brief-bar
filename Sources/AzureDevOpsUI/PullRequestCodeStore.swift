@@ -91,6 +91,8 @@ final class PullRequestCodeStore: ObservableObject {
         /// it again failed in a way that may pass; or without whether it changed since, which couldn't be read. They're
         /// read again as a read that failed in a way that may pass is.
         var unsettled: Set<Int> = []
+        /// The views on screen that show each thread, by the token each has: a read is called off only once none does.
+        var showing: [Int: Set<UUID>] = [:]
     }
 
     private let makeReader: (PullRequest) -> any ThreadCodeReader
@@ -163,8 +165,10 @@ final class PullRequestCodeStore: ObservableObject {
         isVisible = !viewers.isEmpty
         visibilityChanges += 1
         if !isVisible {
-            for (key, pullRequest) in reads {
-                for id in pullRequest.tasks.keys { hide(id, of: key) }
+            // Nothing is seen now: each view asks again once a window shows it.
+            for (key, pullRequestReads) in reads {
+                reads[key]?.showing = [:]
+                for id in pullRequestReads.tasks.keys { callOff(id, of: key) }
             }
         }
     }
@@ -187,11 +191,14 @@ final class PullRequestCodeStore: ObservableObject {
     /// A thread on lines of a file came on screen: its code is read, unless it's read for this version of the pull request
     /// already, or being read, or nothing shows its pull request, or no window shows it on screen. Read again, after a
     /// push, the code it showed stays until the new one is read.
-    /// - Parameter again: read it again even if it failed less than half a minute ago, as when you ask.
-    func show(_ thread: ReviewThread, of pullRequest: PullRequest, again: Bool = false) {
+    /// - Parameters:
+    ///   - viewer: the view that shows it, which says so again with `hide` once it leaves the screen.
+    ///   - again: read it again even if it failed less than half a minute ago, as when you ask.
+    func show(_ thread: ReviewThread, of pullRequest: PullRequest, by viewer: UUID, again: Bool = false) {
         let key = pullRequest.key
         guard isVisible, shows(key), ThreadCode.isOnLines(thread) else { return }
         let id = thread.id
+        reads[key, default: Reads()].showing[id, default: []].insert(viewer)
         let ask = Ask(thread, pullRequest)
         if reads[key]?.asked[id] == ask, !needsReading(id, of: key, again: again) { return }
         var pullRequestReads = reads[key] ?? Reads()
@@ -223,10 +230,21 @@ final class PullRequestCodeStore: ObservableObject {
         return now().timeIntervalSince(failed) >= Self.retryInterval
     }
 
-    /// A thread of a pull request left the screen: its code, unless it's read already, is called off, to be read when it's
-    /// back. Another pull request's thread with the same ID, as when the details move from one to another while the
-    /// first fades away, goes on.
-    func hide(_ threadId: Int, of key: PRKey) {
+    /// A view that showed a thread of a pull request doesn't anymore: it left the screen, or went. Once no view on screen
+    /// shows the thread, what's being read of its code is called off, to be read when one does again. The same thread's
+    /// read goes on while another view still shows it, such as the same pull request's details in another window; and so
+    /// does another pull request's thread with the same ID, as when the details move from one to another while the first
+    /// fades away.
+    func hide(_ threadId: Int, of key: PRKey, by viewer: UUID) {
+        guard reads[key] != nil else { return }
+        reads[key]?.showing[threadId]?.remove(viewer)
+        guard reads[key]?.showing[threadId]?.isEmpty ?? true else { return }
+        reads[key]?.showing[threadId] = nil
+        callOff(threadId, of: key)
+    }
+
+    /// Calls off what's being read of a thread's code, to be read when it's asked for again.
+    private func callOff(_ threadId: Int, of key: PRKey) {
         guard let task = reads[key]?.tasks.removeValue(forKey: threadId) else { return }
         task.cancel()
         reads[key]?.asked[threadId] = nil

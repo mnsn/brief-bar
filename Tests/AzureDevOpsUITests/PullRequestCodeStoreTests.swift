@@ -66,6 +66,8 @@ import Testing
     private let onFile = ReviewThread(id: 14, filePath: "/src/Cart.cs", comments: [], location: .init(path: "/src/Cart.cs"))
 
     private var key: PRKey { pullRequest.key }
+    /// The view that shows the threads, as each tells the store.
+    private let viewer = UUID()
 
     /// A store a window shows, with the pull request held, as its details hold it.
     private func makeStore(_ reader: Reader, now: @escaping () -> Date = Date.init) -> PullRequestCodeStore {
@@ -92,24 +94,24 @@ import Testing
         let reader = Reader()
         let store = makeStore(reader)
         #expect(store.state(of: onLine.id, in: key) == nil)
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         #expect(store.state(of: onLine.id, in: key) == .reading)
         try await settle { isRead(store, onLine.id) }
         #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c1")))
         // On screen again, or still: it's read already.
-        store.show(onLine, of: pullRequest)
-        store.hide(onLine.id, of: key)
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
+        store.hide(onLine.id, of: key, by: viewer)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await Task.sleep(for: .milliseconds(50))
         #expect(await reader.asked == [11])
         #expect(isRead(store, onLine.id))
 
         // Nothing's read for a thread on the pull request or on a whole file, or of a pull request nothing shows.
-        store.show(onPullRequest, of: pullRequest)
-        store.show(onFile, of: pullRequest)
+        store.show(onPullRequest, of: pullRequest, by: viewer)
+        store.show(onFile, of: pullRequest, by: viewer)
         var other = pullRequest
         other.key = PRKey("contoso", 8)
-        store.show(onOther, of: other)
+        store.show(onOther, of: other, by: viewer)
         try await Task.sleep(for: .milliseconds(50))
         #expect(await reader.asked == [11])
         #expect(store.state(of: onPullRequest.id, in: key) == nil && store.state(of: onFile.id, in: key) == nil && store.state(of: onOther.id, in: key) == nil)
@@ -119,9 +121,9 @@ import Testing
         let reader = Reader()
         await reader.hold(true)
         let store = makeStore(reader)
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await settle { await reader.isHolding(onLine.id) }
-        store.hide(onLine.id, of: key)
+        store.hide(onLine.id, of: key, by: viewer)
         #expect(store.state(of: onLine.id, in: key) == nil)
         // Its answer, once it comes, shows nothing.
         await reader.release(onLine.id)
@@ -129,7 +131,7 @@ import Testing
         #expect(store.state(of: onLine.id, in: key) == nil)
         // Back on screen, it's read again.
         await reader.hold(false)
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await settle { isRead(store, onLine.id) }
         #expect(await reader.asked == [11, 11])
     }
@@ -138,12 +140,12 @@ import Testing
         let reader = Reader()
         var now = Date(timeIntervalSince1970: 1_000_000)
         let store = makeStore(reader) { now }
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await settle { isRead(store, onLine.id) }
         await reader.hold(true)
         var pushed = pullRequest
         pushed.sourceCommit = "c2"
-        store.show(onLine, of: pushed)
+        store.show(onLine, of: pushed, by: viewer)
         // The code it showed stays until the new one is read.
         #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c1")))
         try await settle { await reader.isHolding(onLine.id) }
@@ -157,21 +159,21 @@ import Testing
         await reader.hold(false)
         await reader.answer(onLine.id, .failure(.unreadable(.offline)))
         pushed.sourceCommit = "c3"
-        store.show(onLine, of: pushed)
+        store.show(onLine, of: pushed, by: viewer)
         try await settle { await reader.asked.count == 3 }
         try await Task.sleep(for: .milliseconds(30))
         #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c2")))
-        store.show(onLine, of: pushed)
+        store.show(onLine, of: pushed, by: viewer)
         try await Task.sleep(for: .milliseconds(30))
         #expect(await reader.asked.count == 3)
         now += PullRequestCodeStore.retryInterval
         await reader.answer(onLine.id, .success(Self.excerpt(onLine.id, head: "c3")))
-        store.show(onLine, of: pushed)
+        store.show(onLine, of: pushed, by: viewer)
         try await settle { store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c3")) }
         #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c3")))
         // Read, it's not read again.
         now += PullRequestCodeStore.retryInterval
-        store.show(onLine, of: pushed)
+        store.show(onLine, of: pushed, by: viewer)
         try await Task.sleep(for: .milliseconds(30))
         #expect(await reader.asked.count == 4)
     }
@@ -182,42 +184,42 @@ import Testing
         let store = makeStore(reader) { now }
         await reader.answer(onLine.id, .failure(.unreadable(.offline)))
         await reader.answer(onOther.id, .failure(.binary))
-        store.show(onLine, of: pullRequest)
-        store.show(onOther, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
+        store.show(onOther, of: pullRequest, by: viewer)
         try await settle { store.state(of: onLine.id, in: key) == .failed(.unreadable(.offline)) && store.state(of: onOther.id, in: key) == .failed(.binary) }
         #expect(store.state(of: onLine.id, in: key) == .failed(.unreadable(.offline)))
 
         // Back on screen a moment later: not yet.
-        store.show(onLine, of: pullRequest)
-        store.show(onOther, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
+        store.show(onOther, of: pullRequest, by: viewer)
         try await Task.sleep(for: .milliseconds(30))
         #expect(await reader.asked.count == 2)
         // Half a minute later, offline is worth another try; a file that isn't text never is.
         now += PullRequestCodeStore.retryInterval
         await reader.answer(onLine.id, .success(Self.excerpt(onLine.id, head: "c1")))
-        store.show(onLine, of: pullRequest)
-        store.show(onOther, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
+        store.show(onOther, of: pullRequest, by: viewer)
         try await settle { isRead(store, onLine.id) }
         #expect(await reader.asked.sorted() == [11, 11, 12])
         #expect(store.state(of: onOther.id, in: key) == .failed(.binary))
 
         // Not even when asked.
-        store.show(onOther, of: pullRequest, again: true)
+        store.show(onOther, of: pullRequest, by: viewer, again: true)
         try await Task.sleep(for: .milliseconds(30))
         #expect(await reader.asked.count == 3)
 
         // Asked to, it tries again at once what may pass.
         var other = ReviewThread(id: 15, filePath: "/src/Cart.cs", line: 60, comments: [])
         await reader.answer(other.id, .failure(.unreadable(.http(503))))
-        store.show(other, of: pullRequest)
+        store.show(other, of: pullRequest, by: viewer)
         try await settle { store.state(of: other.id, in: key) == .failed(.unreadable(.http(503))) }
         await reader.answer(other.id, .success(Self.excerpt(other.id, head: "c1")))
-        store.show(other, of: pullRequest, again: true)
+        store.show(other, of: pullRequest, by: viewer, again: true)
         try await settle { isRead(store, other.id) }
         #expect(isRead(store, other.id))
         // Moved to other lines, a thread is read again.
         other.line = 61
-        store.show(other, of: pullRequest)
+        store.show(other, of: pullRequest, by: viewer)
         try await settle { await reader.asked.filter { $0 == 15 }.count == 3 }
         #expect(await reader.asked.filter { $0 == 15 }.count == 3)
     }
@@ -232,11 +234,11 @@ import Testing
         unknown.latestIteration = 2
         unknown.changedSince = nil
         await reader.answer(onLine.id, .success(unknown))
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await settle { store.state(of: onLine.id, in: key) == .read(unknown) }
         #expect(store.state(of: onLine.id, in: key) == .read(unknown))
         // Back on screen a moment later: not yet.
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await Task.sleep(for: .milliseconds(30))
         #expect(await reader.asked.count == 1)
         // Half a minute later, it's read again, and now it's known.
@@ -244,14 +246,51 @@ import Testing
         known.changedSince = true
         await reader.answer(onLine.id, .success(known))
         now += PullRequestCodeStore.retryInterval
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await settle { store.state(of: onLine.id, in: key) == .read(known) }
         #expect(store.state(of: onLine.id, in: key) == .read(known))
         // Known, it isn't read again.
         now += PullRequestCodeStore.retryInterval
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await Task.sleep(for: .milliseconds(30))
         #expect(await reader.asked.count == 2)
+    }
+
+    /// Two views show the same thread, as the same pull request's details in two windows: one leaving the screen while its
+    /// code is read leaves the read to the other, and it's called off only once neither shows it.
+    @Test func aReadIsCalledOffOnlyOnceNoViewShowsIt() async throws {
+        let reader = Reader()
+        let store = makeStore(reader)
+        let first = UUID()
+        let second = UUID()
+        await reader.hold(true)
+        store.show(onLine, of: pullRequest, by: first)
+        try await settle { await reader.isHolding(onLine.id) }
+        store.show(onLine, of: pullRequest, by: second)
+        // The first leaves: the second still waits on it, and gets it.
+        store.hide(onLine.id, of: key, by: first)
+        #expect(store.state(of: onLine.id, in: key) == .reading)
+        await reader.release(onLine.id)
+        try await settle { isRead(store, onLine.id) }
+        #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c1")))
+        #expect(await reader.asked == [11])
+
+        // Both leave while it's read again after a push: that's called off, and the code it showed stays.
+        var pushed = pullRequest
+        pushed.sourceCommit = "c2"
+        store.show(onLine, of: pushed, by: first)
+        store.show(onLine, of: pushed, by: second)
+        try await settle { await reader.isHolding(onLine.id) }
+        store.hide(onLine.id, of: key, by: first)
+        store.hide(onLine.id, of: key, by: second)
+        await reader.release(onLine.id)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c1")))
+        // Back on screen, it's read again.
+        await reader.hold(false)
+        store.show(onLine, of: pushed, by: second)
+        try await settle { store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c2")) }
+        #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c2")))
     }
 
     /// A thread whose file's path changed only in how a letter is written, as "é" in one character and in two, is on
@@ -282,9 +321,9 @@ import Testing
 
         let reader = Reader()
         let store = makeStore(reader)
-        store.show(before, of: pullRequest)
+        store.show(before, of: pullRequest, by: viewer)
         try await settle { isRead(store, before.id) }
-        store.show(after, of: pullRequest)
+        store.show(after, of: pullRequest, by: viewer)
         try await settle { await reader.asked.count == 2 }
         #expect(await reader.asked == [11, 11])
     }
@@ -295,10 +334,10 @@ import Testing
         let store = PullRequestCodeStore { _ in reader }
         store.setVisible(true, for: "window.1")
         let first = store.hold(key)
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await settle { isRead(store, onLine.id) }
         await reader.hold(true)
-        store.show(onOther, of: pullRequest)
+        store.show(onOther, of: pullRequest, by: viewer)
         try await settle { await reader.isHolding(onOther.id) }
 
         // Another view shows it too: it stays when the first lets go, and goes once both have.
@@ -317,7 +356,7 @@ import Testing
         // Held again, it's read again.
         await reader.hold(false)
         let again = store.hold(key)
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await settle { isRead(store, onLine.id) }
         #expect(await reader.asked.filter { $0 == onLine.id }.count == 2)
         store.release(again)
@@ -365,10 +404,10 @@ import Testing
         let fading = store.hold(key)
         let shown = store.hold(next.key)
         await reader.hold(true)
-        store.show(onLine, of: next)
+        store.show(onLine, of: next, by: viewer)
         try await settle { await reader.isHolding(onLine.id) }
         // The first one's thread 11 goes as it fades away.
-        store.hide(onLine.id, of: key)
+        store.hide(onLine.id, of: key, by: viewer)
         #expect(store.state(of: onLine.id, in: next.key) == .reading)
         #expect(store.state(of: onLine.id, in: key) == nil)
         store.release(fading)
@@ -386,13 +425,13 @@ import Testing
         let store = makeStore(reader)
         let changes = store.visibilityChanges
         await reader.hold(true)
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await settle { await reader.isHolding(onLine.id) }
         // Minimized: the read under way is called off, and nothing else is read.
         store.setVisible(false, for: "window.1")
         #expect(!store.isVisible && store.visibilityChanges == changes + 1)
         #expect(store.state(of: onLine.id, in: key) == nil)
-        store.show(onOther, of: pullRequest)
+        store.show(onOther, of: pullRequest, by: viewer)
         #expect(store.state(of: onOther.id, in: key) == nil)
         await reader.release(onLine.id)
         try await Task.sleep(for: .milliseconds(30))
@@ -406,7 +445,7 @@ import Testing
         store.setVisible(true, for: "window.1")
         store.setVisible(true, for: "window.2")
         #expect(store.isVisible && store.visibilityChanges == changes + 2)
-        store.show(onLine, of: pullRequest)
+        store.show(onLine, of: pullRequest, by: viewer)
         try await settle { isRead(store, onLine.id) }
         #expect(isRead(store, onLine.id))
         // One of two windows going away doesn't stop it.

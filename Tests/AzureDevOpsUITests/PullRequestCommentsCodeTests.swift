@@ -101,7 +101,7 @@ import Testing
         // The panel shows !4102, whose thread 11 is read.
         details.show(try row(panelRecord))
         let panelThread = try #require(panelRecord.details?.threads.first { $0.id == 11 })
-        code.show(panelThread, of: panelRecord.pullRequest)
+        code.show(panelThread, of: panelRecord.pullRequest, by: UUID())
         try await settle { isRead(code, 11, of: panelRecord.id, as: "// the code of !4102") }
         #expect(isRead(code, 11, of: panelRecord.id, as: "// the code of !4102"))
 

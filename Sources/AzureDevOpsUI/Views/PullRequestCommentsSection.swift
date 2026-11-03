@@ -372,6 +372,9 @@ private struct ThreadCodeArea: View {
     @EnvironmentObject private var code: PullRequestCodeStore
     @Environment(\.textScale) private var textScale
     @LocalState private var isOnScreen = false
+    /// What it tells the store it is, so that another view showing the same thread, such as its pull request's details
+    /// in another window, goes on reading it once this one leaves the screen.
+    @LocalState private var viewer = UUID()
 
     /// What its code is read again for, while it's on screen: a push, or the thread followed to other lines; and a window
     /// showing it on screen again, after none did.
@@ -400,15 +403,15 @@ private struct ThreadCodeArea: View {
         )) {
             // In the details' scroll view, and in a window that shows it: a minimized, hidden or covered one doesn't.
             guard isOnScreen, code.isVisible else {
-                code.hide(thread.id, of: pullRequest.key)
+                code.hide(thread.id, of: pullRequest.key, by: viewer)
                 return
             }
             // Not for a thread scrolled past.
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }
-            code.show(thread, of: pullRequest)
+            code.show(thread, of: pullRequest, by: viewer)
         }
-        .onDisappear { code.hide(thread.id, of: pullRequest.key) }
+        .onDisappear { code.hide(thread.id, of: pullRequest.key, by: viewer) }
     }
 
     /// What's read of its code, of its pull request's: another's thread with the same ID, as the details move from one to
@@ -501,7 +504,7 @@ private struct ThreadCodeArea: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if mayPass {
                 Button {
-                    code.show(thread, of: pullRequest, again: true)
+                    code.show(thread, of: pullRequest, by: viewer, again: true)
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(size: 11, weight: .medium)
