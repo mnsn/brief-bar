@@ -1107,24 +1107,54 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(requests(server, to: "/logs").isEmpty)
     }
 
-    @Test func aRunKeptWhileItWasGoingIsReadAgainOnceItsCheckSaysItFinished() async throws {
+    @Test func aRunKeptBeforeItGotAsFarAsItsCheckSaysIsReadAgain() async throws {
         let server = StubServer()
-        FailedRun.serve(server, build: FailedRun.build(status: "inProgress", result: nil))
+        FailedRun.serve(server, build: FailedRun.build(status: "notStarted", result: nil))
         let clock = TestClock(t(0))
         let investigator = BuildInvestigator(client: server.client(), now: { clock.now })
-        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        #expect(try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest).run.status == .queued)
         clock.advance(BuildInvestigator.keptWhileRunningFor - 1)
-        // Still going, as its check says: what's kept answers.
-        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, finished: false)
+        // Still in the queue, as its check says, or its check doesn't say: what's kept answers.
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, phase: .queued)
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
         #expect(requests(server, to: "/timeline").count == 1)
-        // Its check says it finished: what was kept while it was going isn't it any more.
+        // It started, as its check says: what was kept while it waited isn't it any more.
+        FailedRun.serve(server, build: FailedRun.build(status: "inProgress", result: nil))
+        #expect(try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, phase: .running).run.status == .running)
+        #expect(requests(server, to: "/timeline").count == 2)
+        // It finished, as its check says: nor is what was kept while it was going.
         FailedRun.serve(server)
-        let read = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, finished: true)
-        #expect(read.run.status == .failed)
+        #expect(try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, phase: .finished).run.status == .failed)
+        #expect(requests(server, to: "/timeline").count == 3)
+        // A run kept once it finished answers as it did, after a look at the run, even if its check is behind.
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, phase: .running)
+        #expect(requests(server, to: "/timeline").count == 3)
+    }
+
+    @Test func aReadItWaitsForThatsBehindItsCheckIsReadAgainOnce() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The run's first read says it's still going; the next, that it failed.
+        let (going, failed) = (StubServer.Reply.json(FailedRun.build(status: "inProgress", result: nil)), StubServer.Reply.json(FailedRun.build()))
+        let runReads = Locked(0)
+        server.on("/_apis/build/builds/77") { _ in runReads.increment() == 1 ? going : failed }
+        // What's under the run, which its route would answer for otherwise.
+        server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
+        server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
+        server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
+        let tokens = HeldTokens(server.id, holdAt: 1)
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+        let first = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, phase: .running) }
+        try await waitUntilHeld(tokens)
+        // Reopened as its check says it failed, before the first read is done: it waits for that read, then reads again.
+        let reopened = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, phase: .finished) }
+        let bothWait = (try? await waitUntil("both to wait for the read") { await investigator.waiting == 2 }) != nil
+        await tokens.release()
+        #expect(bothWait)
+        #expect(try await first.value.run.status == .running)
+        #expect(try await reopened.value.run.status == .failed)
         #expect(requests(server, to: "/timeline").count == 2)
-        // A run kept once it finished answers as it did, after a look at the run.
-        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, finished: true)
-        #expect(requests(server, to: "/timeline").count == 2)
+        #expect(runReads.value == 2)
     }
 
     @Test func stoppingWhileItLooksAtAKeptRunReadsNothingInstead() async throws {

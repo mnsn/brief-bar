@@ -15,6 +15,39 @@ extension PullRequestPanel {
     }
 }
 
+extension PipelineRun {
+    /// How far along a run is: waiting in the queue, running, or finished, however it ended.
+    public enum Phase: Int, Sendable, Comparable {
+        case queued, running, finished
+
+        public static func < (lhs: Phase, rhs: Phase) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+}
+
+extension PipelineRun.Status {
+    public var phase: PipelineRun.Phase {
+        switch self {
+        case .queued: .queued
+        case .running: .running
+        case .succeeded, .partiallySucceeded, .failed, .canceled: .finished
+        }
+    }
+}
+
+extension Check.State {
+    /// How far along a check's run is, as the check says: nil when it doesn't, as for one that hasn't run.
+    public var runPhase: PipelineRun.Phase? {
+        switch self {
+        case .queued: .queued
+        case .running: .running
+        case .passed, .failed, .expired: .finished
+        case .notRun, .pending, .notApplicable: nil
+        }
+    }
+}
+
 extension PullRequestPanel.CheckLine {
     /// Whether the details can look into it: one of the pull request's builds, with a run, that failed or is still going.
     /// One that passed, expired or hasn't run has nothing to look into, and neither has a status check, which has no run;
@@ -149,11 +182,11 @@ extension BuildHint {
 
 extension BuildTests {
     /// How its tests went, in a few words, after "Tests": "2 of 320 failed"; "None of 320 failed"; "None ran". When they
-    /// couldn't all be added up, "At least 2 failed", or "320 counted, none failed".
+    /// couldn't all be added up, "At least 2 failed", or "320 counted, no failures known": none counted isn't none failed.
     public var summary: String {
         guard failed > 0 else {
             if isComplete { return total > 0 ? "None of \(total) failed" : "None ran" }
-            return total > 0 ? "\(total) counted, none failed" : "None counted"
+            return total > 0 ? "\(total) counted, no failures known" : "No failures known"
         }
         guard isComplete else { return "At least \(failed) failed" }
         return total >= failed ? "\(failed) of \(total) failed" : "\(failed) failed"

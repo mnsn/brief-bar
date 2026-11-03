@@ -164,6 +164,19 @@ import Testing
         }
     }
 
+    @Test func aRunsPhaseIsHowFarAlongItIs() {
+        let phases: [PipelineRun.Status: PipelineRun.Phase] = [
+            .queued: .queued, .running: .running, .succeeded: .finished, .partiallySucceeded: .finished, .failed: .finished,
+            .canceled: .finished,
+        ]
+        for (status, phase) in phases {
+            #expect(status.phase == phase, "\(status)")
+        }
+        #expect(PipelineRun.Phase.queued < .running && PipelineRun.Phase.running < .finished)
+        #expect(Check.State.queued.runPhase == .queued && Check.State.expired.runPhase == .finished)
+        #expect(Check.State.notRun.runPhase == nil && Check.State.pending.runPhase == nil)
+    }
+
     // MARK: Is it this change?
 
     @Test func eachHintHasItsStateAndTheRunItNames() {
@@ -194,9 +207,10 @@ import Testing
         // Counts that don't add up.
         #expect(tests(total: 1, passed: 0, failed: 3) == "3 failed")
         #expect(tests(total: 320, passed: 320, failed: 0) == "None of 320 failed")
-        #expect(tests(total: 320, passed: 300, failed: 0, complete: false) == "320 counted, none failed")
+        // None counted isn't none failed: they couldn't all be counted.
+        #expect(tests(total: 320, passed: 300, failed: 0, complete: false) == "320 counted, no failures known")
         #expect(tests(total: 0, passed: 0, failed: 0) == "None ran")
-        #expect(tests(total: 0, passed: 0, failed: 0, complete: false) == "None counted")
+        #expect(tests(total: 0, passed: 0, failed: 0, complete: false) == "No failures known")
     }
 
     @Test func anErrorSaysWhatItsMessageDoesnt() {

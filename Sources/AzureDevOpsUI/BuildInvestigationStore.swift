@@ -52,20 +52,17 @@ final class BuildInvestigationStore: ObservableObject {
             return state != other.state || completedAt != other.completedAt
         }
 
-        /// Its check says the run finished: it passed, failed, or passed and expired since.
-        var finished: Bool {
-            switch state {
-            case .passed?, .failed?, .expired?: true
-            case .running?, .queued?, .notRun?, .pending?, .notApplicable?, nil: false
-            }
+        /// How far along its check says the run is: queued, running or finished.
+        var phase: PipelineRun.Phase? {
+            state?.runPhase
         }
     }
 
-    /// Reads one of a pull request's builds: anew rather than what's kept of it (`again`), and knowing whether its check
-    /// says it finished (`finished`), which what was kept while it was still going isn't. Through the investigator, or, in
-    /// tests, as they say.
-    typealias Reader = @Sendable (_ buildId: Int, _ pullRequest: PullRequest, _ again: Bool, _ finished: Bool) async throws
-        -> BuildInvestigation
+    /// Reads one of a pull request's builds: anew rather than what's kept of it (`again`), and knowing how far along its
+    /// check says the run is (`phase`), which what was kept or read of it before it got there isn't. Through the
+    /// investigator, or, in tests, as they say.
+    typealias Reader = @Sendable (_ buildId: Int, _ pullRequest: PullRequest, _ again: Bool, _ phase: PipelineRun.Phase?)
+        async throws -> BuildInvestigation
 
     /// A read asked for while another of the same run is under way, which the investigator would share: it starts once
     /// that one is done.
@@ -120,8 +117,8 @@ final class BuildInvestigationStore: ObservableObject {
             stopReading = {}
         } else {
             let investigator = BuildInvestigator(client: client)
-            self.reader = { buildId, pullRequest, again, finished in
-                try await investigator.investigation(buildId: buildId, of: pullRequest, refresh: again, finished: finished)
+            self.reader = { buildId, pullRequest, again, phase in
+                try await investigator.investigation(buildId: buildId, of: pullRequest, refresh: again, phase: phase)
             }
             forgetKept = { await investigator.forget() }
             stopReading = { await investigator.stop() }
@@ -222,11 +219,11 @@ final class BuildInvestigationStore: ObservableObject {
         case .live:
             let reader = reader
             let id = UUID()
-            let finished = stamp.finished
+            let phase = stamp.phase
             reading[buildId] = Reading(id: id, task: Task { [weak self] in
                 let result: Result<BuildInvestigation, ADOError>
                 do {
-                    result = .success(try await reader(buildId, pr, again, finished))
+                    result = .success(try await reader(buildId, pr, again, phase))
                 } catch let error as ADOError {
                     result = .failure(error)
                 } catch {
@@ -315,7 +312,9 @@ final class BuildInvestigationStore: ObservableObject {
             look.investigation = investigation
             look.failure = nil
         case .failure(let error):
-            // What was read before stays, with why it couldn't be read again.
+            // What was read before stays, with why it couldn't be read again; unless the run is gone, or no longer yours to
+            // read, as the investigator lets go of it then too.
+            if error == .notFound || error == .forbidden { look.investigation = nil }
             look.failure = error
             Log.app.error("Couldn't read a build: \(error.description, privacy: .public)")
         }
