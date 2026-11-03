@@ -96,11 +96,14 @@ enum PullRequestTasks {
     /// The prompts for an action, for both places Copilot may work: a worktree of BriefBar's, for a new session or an
     /// earlier task's; and wherever a session that's there already works, such as one of the Copilot app's. A failed
     /// build's errors are read once, for both.
-    /// - Parameter threads: for Push & Reply, the threads the fixes it ships took on, which it replies on alone.
+    /// - Parameters:
+    ///   - threads: for Push & Reply, the threads the fixes it ships took on, which it replies on alone.
+    ///   - investigations: what the pull request's details read of its builds, by run, which Fix the Build quotes.
     static func prompts(
-        _ action: PullRequestAction, for record: PRRecord, client: ADOClient?, threads: [Int]? = nil
+        _ action: PullRequestAction, for record: PRRecord, client: ADOClient?, threads: [Int]? = nil,
+        investigations: [Int: BuildInvestigation] = [:]
     ) async -> (worktree: String, session: String) {
-        let failures = action == .fixBuild ? await reports(for: record, client: client) : []
+        let failures = action == .fixBuild ? await reports(for: record, client: client, investigations: investigations) : []
         return (
             prompt(action, for: record, failures: failures, workplace: .worktree, threads: threads),
             prompt(action, for: record, failures: failures, workplace: .agent, threads: threads)
@@ -120,12 +123,20 @@ enum PullRequestTasks {
         }
     }
 
-    /// Where each failed build of a pull request failed, and its errors, from the runs' timelines.
-    static func reports(for record: PRRecord, client: ADOClient?) async -> [FailedBuildReport] {
+    /// Where each failed build of a pull request failed, and its errors: as its details read it, once it was opened there
+    /// (`BuildInvestigation`), with the tests that failed and the end of its log; else from the run's timeline, one GET each.
+    /// - Parameter investigations: what the details read of its builds, by run.
+    static func reports(
+        for record: PRRecord, client: ADOClient?, investigations: [Int: BuildInvestigation] = [:]
+    ) async -> [FailedBuildReport] {
         let pr = record.pullRequest
         var reports: [FailedBuildReport] = []
         for check in failedBuilds(record) {
             guard let buildId = check.buildId else { continue }
+            if let investigation = investigations[buildId], investigation.run.id == buildId, investigation.run.status == .failed {
+                reports.append(FailedBuildReport(investigation, name: check.name))
+                continue
+            }
             var failure = check.failure
             var errors = failure?.message.map { [$0] } ?? []
             if let client, let timeline = try? await client.get(

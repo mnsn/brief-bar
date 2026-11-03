@@ -89,7 +89,8 @@ struct PullRequestDetailsContent: View {
                 )
                     .id(PullRequestDetailsStore.Anchor.files)
                 PullRequestChecksSection(
-                    item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted
+                    item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted,
+                    composing: $composing, drafts: drafts
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.checks))
                 PullRequestReviewersSection(panel: panel)
@@ -103,7 +104,7 @@ struct PullRequestDetailsContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: details.place, initial: true) { go(in: panel) }
         // What a composer sends is called off as it closes, with ✕ or Esc, or another opens, in any of its parts; and all of
-        // it as they go (`PullRequestCommentsSection`).
+        // it as they go (`PullRequestCommentsSection`, `PullRequestChecksSection`).
         .onChange(of: composing) { old, _ in if let old { drafts.callOff(old) } }
         // Its Copilot session, kept up to date while it shows on screen; in pictures, as it was read for them (`prepare`).
         .task(id: SessionFollowing(key: item.key, page: page)) {

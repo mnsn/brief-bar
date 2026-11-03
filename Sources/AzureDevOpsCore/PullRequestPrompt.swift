@@ -1,7 +1,9 @@
 import Foundation
 
-/// A failed build of a pull request, for the prompt that asks Copilot to fix it: where it failed, and its errors, from
-/// the run's timeline.
+/// A failed build of a pull request, for the prompts that ask Copilot to fix it or explain it: where it failed, and its
+/// errors, from the run's timeline; and, once it was opened in the pull request's details (`BuildInvestigation`), what was
+/// read of it there: the tests that failed with what each said, the end of the failed step's log, and whether it's the
+/// change's doing.
 public struct FailedBuildReport: Sendable, Equatable {
     /// The build policy's name, such as `shop-web CI`.
     public var name: String
@@ -9,15 +11,39 @@ public struct FailedBuildReport: Sendable, Equatable {
     /// The run's page.
     public var url: URL
     public var failure: PipelineFailure?
-    /// Its error messages, the first ones, each on one line.
+    /// Its error messages, the first ones, each on one line, with where each is when the run says.
     public var errors: [String]
+    /// Where it failed, from its stage to its task, as its run says: "Test", "Unit tests", "Run unit tests". Empty when
+    /// only its check said, as `failure` does.
+    public var place: [String]
+    /// The tests that failed, the first of them, each with what it said; and how its tests went, "2 of 320 failed", and
+    /// how many more failed.
+    public var tests: [FailedTest]
+    public var testsSummary: String?
+    public var moreTests: Int
+    /// The end of the failed step's log, as Azure DevOps keeps it, with its `##[error]` and `##[warning]` marks; and the
+    /// step's name.
+    public var log: [String]
+    public var logStep: String?
+    /// Whether it's the change's doing, in sentences: "main's latest run failed too: it may not be this change."
+    public var hints: [String]
 
-    public init(name: String, buildId: Int, url: URL, failure: PipelineFailure?, errors: [String]) {
+    public init(
+        name: String, buildId: Int, url: URL, failure: PipelineFailure?, errors: [String], place: [String] = [], tests: [FailedTest] = [],
+        testsSummary: String? = nil, moreTests: Int = 0, log: [String] = [], logStep: String? = nil, hints: [String] = []
+    ) {
         self.name = name
         self.buildId = buildId
         self.url = url
         self.failure = failure
         self.errors = errors
+        self.place = place
+        self.tests = tests
+        self.testsSummary = testsSummary
+        self.moreTests = moreTests
+        self.log = log
+        self.logStep = logStep
+        self.hints = hints
     }
 }
 
@@ -73,28 +99,34 @@ public enum PullRequestPrompt {
             """
     }
 
-    public static func fixBuild(_ record: PRRecord, failures: [FailedBuildReport], workplace: Workplace = .worktree) -> String {
-        let builds = failures.enumerated().map { index, report in
-            var lines = ["\(index + 1). \(report.name): \(report.url.absoluteString)"]
-            if let failure = report.failure {
-                lines.append("   Failed" + (failure.stage.map { " in \($0)," } ?? "") + " at \(failure.step).")
-            }
-            for error in report.errors.prefix(errorLimit) {
-                lines.append("   - \(error)")
-            }
-            return lines.joined(separator: "\n")
+    /// - Parameters:
+    ///   - how: what you want, in your words; nothing for nil or blank.
+    ///   - answer: what a session said of the build with Explain, which what you want may point to.
+    ///   - alone: it's about one build, of those that failed, as its own Fix in the pull request's details asks: it keeps
+    ///     to that one.
+    public static func fixBuild(
+        _ record: PRRecord, failures: [FailedBuildReport], workplace: Workplace = .worktree, how: String? = nil,
+        answer: CopilotAnswer? = nil, alone: Bool = false
+    ) -> String {
+        let builds = failures.enumerated().map { index, report in report.described(index + 1) }
+        let failed: String
+        if builds.isEmpty {
+            failed = "Its build failed, but BriefBar couldn't tell which run."
+        } else {
+            failed = (alone ? "This build of it failed:\n\n" : "Its build failed:\n\n") + builds.joined(separator: "\n\n")
         }
-        return """
-            \(header(record, workplace: workplace))
-
-            \(builds.isEmpty ? "Its build failed, but BriefBar couldn't tell which run." : "Its build failed:\n\n" + builds.joined(separator: "\n\n"))
-
+        var parts = [header(record, workplace: workplace), failed]
+        if let answer { parts.append(earlier(answer, why: "why this build failed", about: "this build")) }
+        if let how = yours(how) { parts.append("How I want it fixed, in my own words:\n\n" + how) }
+        parts.append("""
             Reproduce the failure here: build, and run the failing tests. Read the run's whole log with your Azure DevOps \
-            tools if these errors aren't enough. Fix the cause, in the code or the configuration, and build and test \
-            again until it passes. If it's the build's infrastructure or a flaky test rather than this change, say so, \
-            with the evidence, instead of changing code. Don't queue, retry or change pipelines. Don't commit or push: \
-            end with what caused it and what you changed.
-            """
+            tools if this isn't enough. Fix the cause, in the code or the configuration, and build and test \
+            again until it passes.\(alone ? " Keep to this build: leave its other builds to their own fixes." : "") If it's \
+            the build's infrastructure or a flaky test rather than this change, say so, with the evidence, instead of \
+            changing code. Don't queue, retry or change pipelines. Don't commit or push: end with what caused it and what \
+            you changed.
+            """)
+        return parts.joined(separator: "\n\n")
     }
 
     public static func resolveConflicts(_ record: PRRecord, workplace: Workplace = .worktree) -> String {

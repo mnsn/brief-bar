@@ -53,6 +53,9 @@ final class PRStore: ObservableObject {
     var chatAccessChanged: ((AccessStatus) -> Void)?
     /// Opens a pull request's link: in the browser, or, in tests, where they say.
     var openLink: (URL) -> Void = { AzureDevOps.open($0) }
+    /// What the details read of one of a pull request's builds, by its run, while they show it (`BuildInvestigationStore`):
+    /// Fix the Build's prompt quotes it, rather than only its errors.
+    var investigation: (_ buildId: Int, _ key: PRKey) -> BuildInvestigation? = { _, _ in nil }
 
     let settings: AppSettings
     let summarizer: Summarizer
@@ -795,8 +798,15 @@ final class PRStore: ObservableObject {
         let scope = action == .pushAndReply ? PullRequestTasks.shippedThreads(parts) : nil
         let handOff = commentHandOff(action, for: record, threads: scope)
         let taken = PullRequestTasks.parts(action, for: record, shipping: action == .pushAndReply ? parts : [])
+        // What its details read of its builds, which Fix the Build quotes rather than only their errors.
+        var investigations: [Int: BuildInvestigation] = [:]
+        if action == .fixBuild {
+            for buildId in PullRequestTasks.failedBuilds(record).compactMap(\.buildId) {
+                if let investigation = investigation(buildId, item.key) { investigations[buildId] = investigation }
+            }
+        }
         Task {
-            let prompts = await PullRequestTasks.prompts(action, for: record, client: client, threads: scope)
+            let prompts = await PullRequestTasks.prompts(action, for: record, client: client, threads: scope, investigations: investigations)
             copilot.compose(
                 task, action: action, prompt: prompts.worktree, sessionPrompt: prompts.session, createdAt: pr.createdAt, handOff: handOff,
                 start: start, parts: taken
