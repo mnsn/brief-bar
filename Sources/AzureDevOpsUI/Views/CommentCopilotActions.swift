@@ -504,12 +504,18 @@ struct CommentComposer: View {
             .help("Copilot replaces the lines the thread is on with the change \(suggestion.author.name) suggested, as it's written, then builds and tests")
         }
         // Explain asks a session that knows the change: without one, Fix can still go.
-        if ask == .explain, destinations.all.isEmpty, let fixInstead {
+        if ask == .explain, destinations.preselected == nil, !isAsking(session), let fixInstead {
             Button("Fix Instead", action: fixInstead)
                 .buttonStyle(.borderless)
                 .font(size: 11.5, weight: .medium)
                 .help("Have Copilot address it instead, as you say")
         }
+    }
+
+    /// Whether the pull request's sessions ask which is its.
+    private func isAsking(_ session: PullRequestSession?) -> Bool {
+        if case .ask? = session?.pick { return true }
+        return false
     }
 
     // MARK: Where it goes
@@ -536,9 +542,12 @@ struct CommentComposer: View {
         if ask == .explain {
             guard isLive else { return ("The demo makes its answer up, and runs nothing.", false) }
             guard target != nil else {
+                if case .ask? = session?.pick {
+                    return ("The sessions that go with this pull request go with it as well as each other: choose one to ask.", false)
+                }
                 return destinations.all.isEmpty
                     ? ("No Copilot session goes with this pull request yet, so none can say why you got it.", true)
-                    : ("The sessions that go with this pull request go with it as well as each other: choose one to ask.", false)
+                    : ("No Copilot session goes with this pull request yet: choose one of the app's sessions to ask.", false)
             }
             return ("Asks \(name) aside, in a copy of its conversation that's deleted after: nothing changes. It sends the conversation to GitHub Copilot, as one premium request.", false)
         }
@@ -805,10 +814,28 @@ struct CommentsHeader: View {
                 }
             }
             if let copied {
-                Text(copied)
-                    .font(size: 11.5)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "doc.on.clipboard")
+                        .font(size: 11, weight: .semibold)
+                        .foregroundStyle(ItemState.needsYou.color)
+                        .accessibilityHidden(true)
+                    Text(copied)
+                        .font(size: 11.5)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        self.copied = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(size: 9.5, weight: .semibold)
+                            .frame(width: 18, height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Dismiss")
+                    .accessibilityLabel("Dismiss")
+                }
             }
         }
         .onAppear { if preview?.fixAll != nil { isFixing = true } }

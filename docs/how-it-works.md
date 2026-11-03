@@ -1975,8 +1975,10 @@ its `config.json`). The CLI gives a worktree of a repository you trust the same 
 more: a worktree of one you don't trust loads only your own configuration. BriefBar doesn't pass
 `--trust-folder`: the CLI refuses it with `--session-id`, and wouldn't start.
 
-**Forking a session, and asking one a side question.** Nothing offers these yet: the pull request panel will
-(`CopilotLauncher.Request.forking`, `SessionQuestions`). Send to Copilot's **Send to a Fork** forks one of the app's
+**Forking a session, and asking one a side question.** A pull request's comments do both
+([below](#about-a-comment)): Fix in a fork of one of BriefBar's own sessions, and the Send to Copilot window's **Fork
+with the CLI** (`CopilotLauncher.Request.forking`); and Explain (`SessionQuestions`). Send to Copilot's **Send to a
+Fork** forks one of the app's
 open sessions another way, through BriefBar's extension ([below](#its-extension-for-the-apps-sessions)). The Copilot
 CLI's `/fork` and `/ask` are commands of its terminal: with `-p`, tried with 1.0.105, they're words sent to the model,
 and join the session's history. So BriefBar asks the CLI's server, as the Copilot SDK does (`CopilotServer`): it starts
@@ -2048,15 +2050,16 @@ Neither source reads anything more for it.
 
 **What's kept.** Which work items and pull requests you sent, what for, with which model, in which
 repository and worktree, whether you stopped it, whether it went on with one of the Copilot app's sessions,
-and the pull request's link go to the preferences (`ado.copilot.runs`),
-without their titles; and so
+which comment threads it took on, by their IDs, and the pull request's link go to the preferences (`ado.copilot.runs`),
+without their titles; and so are the prompts about comments sent to the app's sessions, by references only
+(`ado.copilot.sentPrompts`); and so
 do your choices and the repository of each project, and the forks BriefBar hasn't deleted yet, by their sessions' IDs
 and their CLI's folder (`ado.copilot.forksToDelete`), which turning Azure DevOps off keeps, to delete them once it's on
 again. Any program running as you can change the
 preferences, and BriefBar may have Full Disk Access, so the files it reads for a task aren't kept
 there: a task keeps its session's ID, a UUID, which names its session log and its output, and those
 are read without following a symbolic link. What Copilot printed when it ended stays in a file only you
-can read. Turning Azure DevOps off forgets the tasks and the repositories, and deletes what Copilot
+can read. Turning Azure DevOps off forgets the tasks, the repositories and those prompts, and deletes what Copilot
 printed. **Clear** forgets a task and deletes what it printed; **Remove Worktree…** deletes its
 worktree with git, and asks again before deleting changes that aren't committed; it isn't there for one
 of the app's sessions, whose folder is the app's, and doesn't delete one that Copilot works in, for a
@@ -2070,6 +2073,60 @@ showing
 (`CopilotTasksStore.deliveringFolders`). A prompt sent to a session stays on disk only in its request, until the
 session's extension is done with it or BriefBar withdraws it ([above](#send-work-to-copilot)). Copilot's
 branches, pull requests and sessions are yours, and stay.
+
+#### About a comment
+
+In a pull request's details, while Send Work to Copilot is on, each open thread's card ends with **✨ Explain** and
+**Fix** (`ThreadCopilotActions`), and the comments' heading has **Fix All** (`CommentsHeader`) on your pull request
+while comments wait on you. Each opens a composer in place (`CommentComposer`, over `CopilotAskComposer`, which a failed
+build and conflicts can use too): a field for your words, where it goes, and its button, which Return in the field
+presses. Where it goes (`CommentDestinations`) is first the session that last worked on the thread, as its line says,
+when the pull request's session line knows it, else the pull request's own (`PullRequestSession.pick`), chosen unless
+the line asks which; for a fix, a fork of it and a new session; then the line's other sessions and its guess, and the
+app's other sessions. Each says how a prompt would get there as the line works it out (`PullRequestSession.delivery`),
+estimated without reading anything for all but the line's own, and the composer checks the one you choose as the Send to
+Copilot window would, without its git check (`CopilotTasksStore.delivery(to:for:checksRepository:)`, `reach(of:)`), and,
+for a new session, whether BriefBar knows a clone of the repository. Sending (`CommentSending`) goes the way that says: a
+task of BriefBar's goes on with the CLI, in its worktree; one of the Copilot app's sessions gets the prompt through
+BriefBar's extension, or copied for you to paste (`CopilotTasksStore.deliver`); a fork of one of BriefBar's own sessions
+is the CLI's, which picks the fork's ID, so the send goes by one of BriefBar's until the fork is made, then by the
+fork's; a fork of one of the app's is the app's, through the extension; and a new session gets a worktree of the clone
+BriefBar knows, or else the Send to Copilot window opens, to choose one. **Edit the Whole Prompt…** opens that window
+with the prompts, at the place you chose (`ComposerStart`). **Esc** closes a composer in place before the details it's
+in (`InlineComposerOpen`).
+
+**Fix** (`PullRequestPrompt.fixThread`) addresses that thread alone: its entry as Fix Comments lists it, each comment in
+full as its author wrote it, the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
+what was added, removed and commented, and what you wrote, quoted as yours; then it builds and tests, without
+committing, pushing or replying. A ```` ```suggestion ```` fence is a suggested change (`RichText.Block.suggestion`),
+which the comment shows labeled; **Apply ‹name›'s suggestion as written** has the prompt quote the latest that someone
+else suggested in the thread (`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on.
+Its hand-off is that thread's comments that wait on you (`CommentHandOff.init(_:thread:dismissedCutoff:account:)`), and
+since a pull request has one cutoff, a comment that waits on you from before, in another thread, keeps both on Needs You.
+**Fix All** is Fix Comments' prompt, with your words quoted as yours.
+
+**Explain** (`PullRequestPrompt.explainThread`) quotes the thread and its code the same way, with your question, and asks
+the session you chose, aside, why the reviewer wrote it, what they want, how the code relates, and ways to address it
+(`CommentQuestions`, over `SessionQuestions`): in a fork with no tools, deleted after, with the session's own model. The
+answer stays in memory only, until you dismiss it, BriefBar quits, or Send Work to Copilot or Azure DevOps is turned off,
+which stops a question that's being asked, and deletes its fork. When the CLI can't ask aside, or doesn't have the
+session, **Ask in the Session** sends `PullRequestPrompt.askAboutThread` to the session as a prompt, as a fix goes, which
+changes nothing but joins its history. The demo makes its answers up (`DemoData.explanation`), and runs nothing.
+
+**What Copilot does about a thread** is said on it, in a sentence (`CommentWork`, `CopilotWorkLine`), from the latest work
+that took it on. A task of BriefBar's keeps the threads it took on with its run, by their IDs, each with when
+(`CopilotRun.threads`); going on with a session whose changes aren't pushed keeps those it took on before, with how that
+ended, and Push & Reply ships them, after which a fix starts afresh (`CopilotRun.threads(goingOnWith:taking:for:at:)`). A
+prompt sent to one of the Copilot app's sessions, or copied for you to paste there, is kept by references only, never what
+it says: the pull request, the session that took it and the one it forked, the threads, what for, and when (`SentPrompt`,
+`ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows it from the session's log
+since it was sent (`SessionTurn`), read as a task's is, every three seconds, with which sessions the app runs a turn in and
+whether something has the session open, only while one hasn't ended and Send Work to Copilot is on: a turn that's over
+twice in a row, a few seconds apart, ended, which its record keeps; one copied as `/fork` follows the fork the app records
+as made since. One you didn't paste goes after half an hour, and one whose turn hasn't ended after twelve hours. A fix
+that's done and not pushed, on a thread that's still open, counts in the bar at the details' foot (`ReadyFixesBar`,
+`CopilotTasksStore.readyFixes`), whose **Push & Reply…** opens the Send to Copilot window in the session the fixes are in.
+The demo's are made up (`SentPrompt.demo`).
 
 ### Notifications
 

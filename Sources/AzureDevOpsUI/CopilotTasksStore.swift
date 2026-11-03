@@ -740,7 +740,8 @@ final class CopilotTasksStore: ObservableObject {
         let body: String
         switch entry.action {
         case .fixComments?:
-            heading = "Copilot is fixing the comments"
+            // Fix, on one thread, or Fix Comments, on those that wait on you.
+            heading = entry.threads?.filter({ $0.ended == nil }).count == 1 ? "Copilot is fixing a comment" : "Copilot is fixing the comments"
             body = "It works on its own in a worktree, and doesn't push or reply."
         case .fixBuild?:
             heading = "Copilot is fixing the build"
