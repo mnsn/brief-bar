@@ -77,7 +77,10 @@ public struct RichText: Sendable, Equatable {
     }
 
     /// From Markdown: the blocks work items use (headings, lists and task lists, quotes, code, tables and rules), and
-    /// inline formatting, links and images.
+    /// inline formatting, links and images. Outside code, the HTML that comments on pull requests have in their Markdown
+    /// shows as Azure DevOps shows it: HTML that starts a line is a block of HTML, as CommonMark has them, read as HTML,
+    /// Markdown in it as it's written; and in text, an HTML comment shows nothing, a line break breaks the line, an image
+    /// is an image, and the other tags it formats text with keep their text.
     public init(markdown: String) {
         self.init(blocks: MarkdownReader.read(markdown))
     }
@@ -760,7 +763,12 @@ private enum MarkdownReader {
     /// How many quotes in quotes it reads as quotes: deeper, the rest is their text, so a line of `>`s can't recurse deep.
     private static let quoteDepth = 8
 
-    static func read(_ markdown: String, depth: Int = 0) -> [RichText.Block] {
+    static func read(_ markdown: String) -> [RichText.Block] {
+        read(markdown, depth: 0).blocks
+    }
+
+    /// Its blocks, and whether an HTML comment in it has no end: then what follows it doesn't show, as HTML reads one.
+    private static func read(_ markdown: String, depth: Int) -> (blocks: [RichText.Block], unended: Bool) {
         let raw = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         // Each line with its indentation in spaces, tabs going to the next multiple of four columns, for the blocks'
@@ -776,6 +784,7 @@ private enum MarkdownReader {
         /// Whether a paragraph, or an item's text, goes on: a line that starts nothing else is more of it, however it's
         /// indented, as CommonMark has it. An image on a line of its own shows as a block, but is part of it too.
         var paragraphOpen = false
+        var unended = false
         var index = 0
 
         /// Shows what's read of a paragraph, or an item's text. When it goes on, with an image on a line of its own, its
@@ -802,6 +811,33 @@ private enum MarkdownReader {
         /// Where the text of the list item that a line indented this much is in starts: 0 on the page.
         func enclosingIndent(_ indent: Int) -> Int {
             itemIndents.last { $0 <= indent } ?? 0
+        }
+        /// An HTML block, from `first`, what's left of line `start` from its "<", to where it ends as `end` says, or as the
+        /// list's item it's in ends, `inside` columns in, or the page for 0: its HTML, the line after it, and whether a
+        /// comment in it doesn't end there.
+        func readHTML(_ first: Substring, at start: Int, ending end: HTMLBlockEnd, inside: Int) -> (html: String, next: Int, unended: Bool) {
+            var html = String(first)
+            var last = start
+            func add(_ line: Int) {
+                html += "\n" + Self.droppingIndentation(raw[line], columns: inside)
+                last = line
+            }
+            var line = start + 1
+            switch end {
+            case .line(let markers):
+                guard !Self.has(first, markers) else { break }
+                while line < lines.count, !Self.leaves(lines[line], inside) {
+                    add(line)
+                    if Self.has(raw[line][...], markers) { break }
+                    line += 1
+                }
+            case .blankLine:
+                while line < lines.count, !lines[line].trimmingCharacters(in: .whitespaces).isEmpty, !Self.leaves(lines[line], inside) {
+                    add(line)
+                    line += 1
+                }
+            }
+            return (html, last + 1, Self.endsInComment(html))
         }
 
         while index < lines.count {
@@ -840,6 +876,22 @@ private enum MarkdownReader {
                 }
                 let text = code.joined(separator: "\n").trimmingCharacters(in: .newlines)
                 if !text.isEmpty { blocks.append(.code(text)) }
+                continue
+            }
+            // HTML that starts a line starts an HTML block, as CommonMark has them (`htmlBlock(startingWith:)`), such as the
+            // comments bots leave: Azure DevOps passes it on as it is, Markdown and all, for HTML to show, as BriefBar's
+            // HTML reader does. A comment in it that doesn't end there hides all that follows, as text can't end it.
+            if let end = Self.htmlBlock(startingWith: trimmed[...], inParagraph: continuing),
+               let opening = raw[index].firstIndex(of: "<") {
+                flush()
+                closeLists(at: indent)
+                let block = readHTML(raw[index][opening...], at: index, ending: end, inside: inside)
+                blocks += RichText(html: block.html).blocks
+                index = block.next
+                if block.unended {
+                    unended = true
+                    break
+                }
                 continue
             }
             if let fence = Self.fence(trimmed) {
@@ -902,8 +954,14 @@ private enum MarkdownReader {
                 }
                 let inner = quoted.joined(separator: "\n")
                 if depth < quoteDepth {
-                    for block in read(inner, depth: depth + 1) {
+                    let quote = read(inner, depth: depth + 1)
+                    for block in quote.blocks {
                         if case .paragraph(let runs) = block { blocks.append(.quote(runs)) } else { blocks.append(block) }
+                    }
+                    // A comment in it that doesn't end there hides the rest, past it too.
+                    if quote.unended {
+                        unended = true
+                        break
                     }
                 } else {
                     let runs = inline(inner)
@@ -976,6 +1034,28 @@ private enum MarkdownReader {
                     }
                 }
                 pendingKind = .listItem(marker, depth: depth)
+                // An item whose text starts with HTML starts with an HTML block, as the page would, unless its text is
+                // indented as code: the block's first paragraph is the item's text; with nothing to show, such as a comment,
+                // the next paragraph in it is.
+                if column - markerEnd <= 4, let end = Self.htmlBlock(startingWith: content[...], inParagraph: false) {
+                    let block = readHTML(content[...], at: index, ending: end, inside: textIndent)
+                    var shown = RichText(html: block.html).blocks
+                    pending = []
+                    if case .paragraph(let runs)? = shown.first {
+                        blocks.append(.listItem(marker, depth: depth, runs))
+                        shown.removeFirst()
+                        pendingKind = .paragraph
+                    } else if !shown.isEmpty {
+                        pendingKind = .paragraph
+                    }
+                    blocks += shown
+                    index = block.next
+                    if block.unended {
+                        unended = true
+                        break
+                    }
+                    continue
+                }
                 pending = [content]
                 paragraphOpen = true
                 index += 1
@@ -989,7 +1069,7 @@ private enum MarkdownReader {
             index += 1
         }
         flush()
-        return blocks
+        return (blocks, unended)
     }
 
     /// A line without its indentation, but with what ends it: spaces after a backslash keep it from breaking the line.
@@ -1080,17 +1160,303 @@ private enum MarkdownReader {
         lines.joined(separator: "\n")
     }
 
+    // MARK: HTML in Markdown
+
+    /// Inline Markdown with `transform` applied to its text outside code spans, reading from left to right as CommonMark
+    /// does: a run of backticks starts a code span, which the next run of as many ends, and an HTML comment or tag goes on
+    /// to its end, whatever looks like code in it. A comment without an end is just text, as code after it is code. A
+    /// backslash before a run makes its first backtick just a backtick, but in code a backslash is a backslash, so a run
+    /// after one still ends a span. A bracket after a backslash starts no tag: it goes to the Markdown reader as it is,
+    /// which shows it.
+    static func outsideCode(_ text: String, _ transform: (Substring) -> String) -> String {
+        guard text.contains("<") else { return text }
+        // The runs of backticks, in order, and whether an odd number of backslashes before each escapes it.
+        var runs: [(range: Range<String.Index>, length: Int, escaped: Bool)] = []
+        var backslashes = 0
+        var index = text.startIndex
+        while index < text.endIndex {
+            if text[index] == "`" {
+                let start = index
+                var length = 0
+                while index < text.endIndex, text[index] == "`" {
+                    index = text.index(after: index)
+                    length += 1
+                }
+                runs.append((start..<index, length, backslashes % 2 == 1))
+                backslashes = 0
+            } else {
+                backslashes = text[index] == "\\" ? backslashes + 1 : 0
+                index = text.index(after: index)
+            }
+        }
+        // By length, where the runs are among them, the first last, to find the next of as many in one pass.
+        var later: [Int: [Int]] = [:]
+        for (position, run) in runs.enumerated().reversed() { later[run.length, default: []].append(position) }
+        func closing(after position: Int, length: Int) -> Int? {
+            while let next = later[length]?.last, next <= position { later[length]?.removeLast() }
+            return later[length]?.last
+        }
+        var result = ""
+        var plain = text.startIndex
+        var next = 0
+        // Whether a comment's end comes later: once one has none, none after it has.
+        var commentsEnd = true
+        index = text.startIndex
+        while index < text.endIndex {
+            while next < runs.count, runs[next].range.lowerBound < index { next += 1 }
+            if next < runs.count, runs[next].range.lowerBound == index {
+                let run = runs[next]
+                // Escaped, it's the rest of the run that may start one.
+                let opening = run.escaped ? text.index(after: index) : index
+                let length = run.escaped ? run.length - 1 : run.length
+                if length > 0, let end = closing(after: next, length: length) {
+                    result += transform(text[plain..<opening])
+                    result += text[opening..<runs[end].range.upperBound]
+                    index = runs[end].range.upperBound
+                    plain = index
+                } else {
+                    index = run.range.upperBound
+                }
+            } else if text[index] == "\\" {
+                let escaped = text.index(after: index)
+                if escaped < text.endIndex, text[escaped] == "<" {
+                    result += transform(text[plain..<index])
+                    result += text[index...escaped]
+                    plain = text.index(after: escaped)
+                    index = plain
+                } else if escaped < text.endIndex, text[escaped] != "`" {
+                    index = text.index(after: escaped)
+                } else {
+                    // A run it escapes is read as a run.
+                    index = escaped
+                }
+            } else if commentsEnd, text[index...].hasPrefix("<!--") {
+                if let end = text.range(of: "-->", range: text.index(index, offsetBy: 4)..<text.endIndex) {
+                    index = end.upperBound
+                } else {
+                    commentsEnd = false
+                    index = text.index(index, offsetBy: 4)
+                }
+            } else if text[index] == "<", let tag = text[index...].prefixMatch(of: Self.anyTag) {
+                index = tag.range.upperBound
+            } else {
+                index = text.index(after: index)
+            }
+        }
+        return result + transform(text[plain...])
+    }
+
+    /// What's left where HTML is taken out, for as long as the inline reader may need it to keep what's on either side
+    /// apart: see `keptApart(_:)`.
+    static let seam: Unicode.Scalar = "\u{FFFC}"
+
+    // MARK: HTML blocks
+
+    /// How an HTML block ends, as CommonMark has them: with the first line that has one of these, in any case, the line it
+    /// starts on included; or before a blank line.
+    enum HTMLBlockEnd: Equatable {
+        case line(containing: [String])
+        case blankLine
+    }
+
+    /// The elements whose text HTML shows as it is, which start an HTML block to their end tag.
+    nonisolated(unsafe) private static let rawTextElement = /<(?:pre|script|style|textarea)(?:\s|>|$)/.ignoresCase()
+
+    /// The elements that start an HTML block to the next blank line wherever they start a line, as CommonMark lists them.
+    nonisolated(unsafe) private static let blockElement = #/
+        <\/?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|
+        dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|
+        menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|
+        tr|track|ul)(?:\s|\/?>|$)
+        /#.ignoresCase()
+
+    /// The HTML block that a line's text starts, from its "<", as CommonMark has them: how it ends, or nil for none. Any
+    /// other tag alone on its line starts one too, but where it would go on with a paragraph (`inParagraph`).
+    static func htmlBlock(startingWith text: Substring, inParagraph: Bool) -> HTMLBlockEnd? {
+        guard text.hasPrefix("<") else { return nil }
+        if text.prefixMatch(of: rawTextElement) != nil { return .line(containing: ["</pre>", "</script>", "</style>", "</textarea>"]) }
+        if text.hasPrefix("<!--") { return .line(containing: ["-->"]) }
+        if text.hasPrefix("<?") { return .line(containing: ["?>"]) }
+        if text.hasPrefix("<!"), let next = text.dropFirst(2).first, next.isASCII, next.isLetter { return .line(containing: [">"]) }
+        if text.hasPrefix("<![CDATA[") { return .line(containing: ["]]>"]) }
+        if text.prefixMatch(of: blockElement) != nil { return .blankLine }
+        let tag = text.trimmingCharacters(in: .whitespaces)
+        guard !inParagraph, tag.wholeMatch(of: anyTag) != nil else { return nil }
+        let name = tag.dropFirst(tag.hasPrefix("</") ? 2 : 1).prefix { $0.isLetter || $0.isNumber || $0 == "-" }.lowercased()
+        return ["pre", "script", "style", "textarea"].contains(name) ? nil : .blankLine
+    }
+
+    /// Whether a line has one of these, in any case.
+    private static func has(_ line: Substring, _ markers: [String]) -> Bool {
+        markers.contains { line.range(of: $0, options: .caseInsensitive) != nil }
+    }
+
+    /// Whether HTML ends in a comment that doesn't end, as BriefBar's HTML reader reads it: then what follows doesn't show,
+    /// since Markdown's text can't end it, Azure DevOps writing its ">" as "&gt;".
+    static func endsInComment(_ html: String) -> Bool {
+        var index = html.startIndex
+        while let open = html[index...].firstIndex(of: "<") {
+            if html[open...].hasPrefix("<!--") {
+                guard let end = html.range(of: "-->", range: html.index(after: open)..<html.endIndex) else { return true }
+                index = end.upperBound
+            } else if let tag = Tag.parse(html, at: open) {
+                // One whose ">" never comes makes the rest text.
+                if tag.kind == .unterminated { return false }
+                index = tag.end
+            } else {
+                index = html.index(after: open)
+            }
+        }
+        return false
+    }
+
+    /// Text with a seam only where it keeps apart two marks that HTML kept apart, which Markdown would read together: runs
+    /// of a mark, as in `` `a`<!-- -->`b` `` or `**one**<b></b>**two**`, a link's text and where it goes, as in
+    /// `[a]<!-- -->(b)`, and an image's `!` and its description. Elsewhere it would be in the way, as between the two
+    /// spaces that break a line and its end.
+    static func keptApart(_ text: String) -> String {
+        guard text.unicodeScalars.contains(seam) else { return text }
+        var result = String.UnicodeScalarView()
+        var apart = false
+        for scalar in text.unicodeScalars {
+            if scalar == seam {
+                apart = true
+                continue
+            }
+            if apart, let last = result.last, joins(last, scalar) { result.append(seam) }
+            apart = false
+            result.append(scalar)
+        }
+        return String(result)
+    }
+
+    /// Whether Markdown reads two marks together.
+    private static func joins(_ before: Unicode.Scalar, _ after: Unicode.Scalar) -> Bool {
+        if before == after { return "*_~`".unicodeScalars.contains(after) }
+        return (before == "]" && after == "(") || (before == "!" && after == "[")
+    }
+
+    /// Text without its seams, once it's read.
+    static func withoutSeams(_ text: some StringProtocol) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.filter { $0 != seam }))
+    }
+
+    /// The HTML tags that format text, which keep their text.
+    nonisolated(unsafe) private static let htmlTag = #/
+        <(\/?)(a|abbr|b|bdi|bdo|big|blockquote|br|center|cite|code|dd|del|details|dfn|div|dl|dt|em|font|h[1-6]|hr|i|ins|
+        kbd|li|mark|ol|p|pre|q|s|samp|small|span|strike|strong|sub|summary|sup|table|tbody|td|tfoot|th|thead|tr|tt|u|ul|
+        var|wbr)(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>
+        /#.ignoresCase()
+
+    /// Those of them that start or end a block, such as a paragraph, which is on lines of its own.
+    private static let blockTags: Set<String> = [
+        "blockquote", "center", "dd", "details", "div", "dl", "dt", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "li", "ol", "p",
+        "pre", "summary", "table", "tbody", "tfoot", "thead", "tr", "ul",
+    ]
+
+    /// An `<img>` tag, read whole, as any tag is.
+    nonisolated(unsafe) private static let imageTag = /<img\b(?:[^<>"']|"[^"]*"|'[^']*')*>/.ignoresCase()
+
+    /// Any HTML tag, as CommonMark reads one: what's in its quoted attributes, `>` and backticks included, is the tag's.
+    nonisolated(unsafe) private static let anyTag = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>/
+
+    /// Text without the HTML it's formatted with, as Azure DevOps shows it: comments show nothing, a line break breaks the
+    /// line, a block such as a paragraph starts and ends on lines of its own, a table's cells are apart, an image is
+    /// Markdown's, and the other tags that format text keep their text. What isn't one of those stays, such as the `<T>`
+    /// of `List<T>`, and so does the start of a comment that doesn't end in the same paragraph, as CommonMark has it.
+    /// Where HTML is taken out, a seam is left. Its tags are read once, from left to right, so what an image becomes
+    /// isn't read as HTML again.
+    static func withoutHTML(_ text: Substring) -> String {
+        guard text.contains("<") else { return String(text) }
+        let text = withoutComments(text)
+        var result = ""
+        // Whether what's shown so far ends a line, spaces and seams aside: blocks one after another, or one in another,
+        // break it once.
+        var endsLine = false
+        func show(_ piece: some StringProtocol) {
+            result += piece
+            if let last = piece.unicodeScalars.last(where: { $0 != seam && $0 != " " && $0 != "\t" }) { endsLine = last == "\n" }
+        }
+        var plain = text.startIndex
+        var index = text.startIndex
+        while let open = text[index...].firstIndex(of: "<") {
+            if let tag = text[open...].prefixMatch(of: imageTag) {
+                show(text[plain..<open])
+                let image = image(String(tag.output))
+                show(image.isEmpty ? String(seam) : image)
+                plain = tag.range.upperBound
+            } else if let tag = text[open...].prefixMatch(of: htmlTag) {
+                show(text[plain..<open])
+                let name = tag.output.2.lowercased()
+                if name == "br" {
+                    show("\n")
+                } else if blockTags.contains(name) {
+                    if !endsLine { show("\n") }
+                } else if name == "td" || name == "th", !tag.output.1.isEmpty {
+                    show(" ")
+                } else {
+                    show(String(seam))
+                }
+                plain = tag.range.upperBound
+            } else {
+                index = text.index(after: open)
+                continue
+            }
+            index = plain
+        }
+        show(text[plain...])
+        return result
+    }
+
+    /// Text without its HTML comments, each a seam: each from `<!--` to the next `-->`, outside tags, whose quoted
+    /// attributes are theirs, whatever is in them. Once one has no end, none after it has.
+    private static func withoutComments(_ text: Substring) -> String {
+        var result = ""
+        var plain = text.startIndex
+        var index = text.startIndex
+        while let open = text[index...].firstIndex(of: "<") {
+            if text[open...].hasPrefix("<!--") {
+                guard let end = text[text.index(open, offsetBy: 4)...].range(of: "-->") else { break }
+                result += text[plain..<open]
+                result.unicodeScalars.append(seam)
+                plain = end.upperBound
+                index = end.upperBound
+            } else if let tag = text[open...].prefixMatch(of: anyTag) {
+                index = tag.range.upperBound
+            } else {
+                index = text.index(after: open)
+            }
+        }
+        return result + text[plain...]
+    }
+
+    /// An `<img>` tag as Markdown's image of a web page's picture, or else its description.
+    private static func image(_ tag: String) -> String {
+        // Its attributes, each read whole, so that what another's quoted value says isn't one, with their character
+        // references read once.
+        let attributes = Tag.parse(tag, at: tag.startIndex)?.attributes ?? [:]
+        // Its description is text, which the inline reader is to show as it is: each mark it would read is escaped.
+        let alt = (attributes["alt"] ?? "").reduce(into: "") { escaped, character in
+            if character.isASCII, character.isPunctuation || character.isSymbol { escaped.append("\\") }
+            escaped.append(character)
+        }
+        // Its source, kept from being read again: an ampersand in it is written as a reference to one.
+        guard let url = RichText.webLink(attributes["src"]) else { return alt }
+        return "![\(alt)](<\(url.absoluteString.replacingOccurrences(of: "&", with: "&amp;"))>)"
+    }
+
     /// Inline Markdown: emphasis, code, strikethrough, links and images, which link to where they are.
     private static func inline(_ text: String) -> [RichText.Run] {
+        let text = keptApart(outsideCode(text, withoutHTML))
         let options = AttributedString.MarkdownParsingOptions(
             allowsExtendedAttributes: false, interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible
         )
         guard let attributed = try? AttributedString(markdown: text, options: options) else {
-            return RichText.normalized([RichText.Run(text)])
+            return RichText.normalized([RichText.Run(withoutSeams(text))])
         }
         var runs: [RichText.Run] = []
         for run in attributed.runs {
-            var piece = String(attributed[run.range].characters)
+            var piece = withoutSeams(String(attributed[run.range].characters))
             var style = RichText.Style()
             if let intent = run.inlinePresentationIntent {
                 if intent.contains(.stronglyEmphasized) { style.insert(.bold) }
