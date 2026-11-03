@@ -91,4 +91,117 @@ public sealed class LevelDBFolderTests
         {
         }
     }
+
+    /// Of the tables and logs in the folder, the database's are those its MANIFEST lists. LevelDB removes the others once
+    /// it no longer needs them, but one it couldn't remove yet holds writes that compaction has since dropped, deletions
+    /// included: read, it would bring back a key that was deleted.
+    [Fact]
+    public void ReadsOnlyTheTablesAndLogsTheManifestLists()
+    {
+        using var folder = new TemporaryFolder();
+        // Log 3 wrote "a", "b" and "x", and a flush put them in table 5; log 6 then deleted "a" and "x" and wrote "c", and a
+        // flush put that in table 7. Compaction merged tables 5 and 7 into table 9 and, at the last level, dropped the
+        // deleted keys. Log 3 and table 5 are left behind; log 8 is the one LevelDB writes to now.
+        var flushed = new LogWriter();
+        flushed.Add(batch: LogWriter.Batch(sequence: 1, (Encodings.Utf8(text: "a"), Encodings.Utf8(text: "a1")), (Encodings.Utf8(text: "b"), Encodings.Utf8(text: "b1")), (Encodings.Utf8(text: "x"), Encodings.Utf8(text: "x1"))));
+        File.WriteAllBytes(path: folder.Combine("000003.log"), bytes: flushed.Bytes);
+        File.WriteAllBytes(path: folder.Combine("000005.ldb"), bytes: TableWriter.Table(entries: Entries(("a", 1), ("b", 2), ("x", 3))));
+        File.WriteAllBytes(path: folder.Combine("000009.ldb"), bytes: TableWriter.Table(entries: Entries(("b", 2), ("c", 6))));
+        var current = new LogWriter();
+        current.Add(batch: LogWriter.Batch(sequence: 7, (Encodings.Utf8(text: "d"), Encodings.Utf8(text: "d1"))));
+        File.WriteAllBytes(path: folder.Combine("000008.log"), bytes: current.Bytes);
+        ManifestWriter.Save(
+            folder: folder.Path,
+            number: 2,
+            ManifestWriter.Edit(comparator: "idb_cmp1", logNumber: 3, nextFile: 4, lastSequence: 0),
+            ManifestWriter.Edit(logNumber: 6, nextFile: 7, lastSequence: 3, added: [5]),
+            ManifestWriter.Edit(logNumber: 8, nextFile: 9, lastSequence: 6, added: [7]),
+            ManifestWriter.Edit(logNumber: 8, nextFile: 10, lastSequence: 7, deleted: [5, 7], added: [9]));
+
+        var read = new LevelDBFolder(path: folder.Path).Read();
+
+        Assert.Equal(expected: new Dictionary<string, string> { ["b"] = "b1", ["c"] = "c1", ["d"] = "d1" }, actual: Texts(read: read));
+        Assert.Equal(expected: (1, 1, 2), actual: (read.Tables, read.Logs, read.Unlisted));
+        Assert.Equal(expected: "000008.log", actual: Path.GetFileName(path: read.Log?.Path));
+        Assert.Empty(collection: read.Unreadable);
+        Assert.False(condition: read.Vanished);
+    }
+
+    /// LevelDB writes a table, then lists it: one it's still writing reads as broken, but isn't the database's yet.
+    [Fact]
+    public void LeavesOutATableLevelDBIsStillWriting()
+    {
+        using var folder = new TemporaryFolder();
+        File.WriteAllBytes(path: folder.Combine("000005.ldb"), bytes: TableWriter.Table(entries: Entries(("a", 1))));
+        File.WriteAllBytes(path: folder.Combine("000007.ldb"), bytes: Enumerable.Repeat(element: (byte)7, count: 100).ToArray());
+        ManifestWriter.Save(folder: folder.Path, number: 2, ManifestWriter.Edit(logNumber: 6, nextFile: 8, lastSequence: 1, added: [5]));
+
+        var read = new LevelDBFolder(path: folder.Path).Read();
+
+        Assert.Equal(expected: new Dictionary<string, string> { ["a"] = "a1" }, actual: Texts(read: read));
+        Assert.Equal(expected: (1, 1), actual: (read.Tables, read.Unlisted));
+        Assert.Empty(collection: read.Unreadable);
+    }
+
+    /// A table the MANIFEST lists, missing as the folder is read, as when compaction writes it and removes others
+    /// meanwhile, makes it start over. Still missing at the last attempt, the MANIFEST is one LevelDB would refuse: it
+    /// counts as unreadable, and every file is read.
+    [Fact]
+    public void SaysWhenATableTheManifestListsIsMissing()
+    {
+        using var folder = new TemporaryFolder();
+        File.WriteAllBytes(path: folder.Combine("000005.ldb"), bytes: TableWriter.Table(entries: Entries(("a", 1))));
+        File.WriteAllBytes(path: folder.Combine("000007.ldb"), bytes: TableWriter.Table(entries: Entries(("b", 2))));
+        var name = ManifestWriter.Save(folder: folder.Path, number: 2, ManifestWriter.Edit(logNumber: 6, nextFile: 10, lastSequence: 2, added: [5, 9]));
+
+        var read = new LevelDBFolder(path: folder.Path).Read();
+
+        Assert.Equal(expected: new Dictionary<string, FormatError> { [name] = FormatError.Corrupt(what: "manifest") }, actual: read.Unreadable);
+        Assert.Equal(expected: new Dictionary<string, string> { ["a"] = "a1", ["b"] = "b1" }, actual: Texts(read: read));
+        Assert.Equal(expected: (2, 0), actual: (read.Tables, read.Unlisted));
+        Assert.False(condition: read.Vanished);
+    }
+
+    /// Without the MANIFEST, it can't tell which files are the database's: it reads them all, and says the MANIFEST
+    /// couldn't be read, or that CURRENT named one that isn't there.
+    [Fact]
+    public void ReadsEveryFileWhenTheManifestCantBeRead()
+    {
+        using var folder = new TemporaryFolder();
+        File.WriteAllBytes(path: folder.Combine("000005.ldb"), bytes: TableWriter.Table(entries: Entries(("a", 1))));
+        File.WriteAllBytes(path: folder.Combine("000009.ldb"), bytes: TableWriter.Table(entries: Entries(("b", 2))));
+        var name = ManifestWriter.Save(
+            folder: folder.Path,
+            number: 2,
+            ManifestWriter.Edit(logNumber: 6, nextFile: 10, lastSequence: 2, added: [9]),
+            [.. Encodings.Varint(value: 8), .. Encodings.Varint(value: 1)]);
+        var everything = new Dictionary<string, string> { ["a"] = "a1", ["b"] = "b1" };
+
+        var unknown = new LevelDBFolder(path: folder.Path).Read();
+        Assert.Equal(expected: new Dictionary<string, FormatError> { [name] = FormatError.Corrupt(what: "version edit") }, actual: unknown.Unreadable);
+        Assert.Equal(expected: everything, actual: Texts(read: unknown));
+        Assert.Equal(expected: 0, actual: unknown.Unlisted);
+
+        File.WriteAllBytes(path: folder.Combine(LevelDBManifest.CurrentFile), bytes: Encodings.Utf8(text: "../" + name + "\n"));
+        var elsewhere = new LevelDBFolder(path: folder.Path).Read();
+        Assert.Equal(expected: new Dictionary<string, FormatError> { [LevelDBManifest.CurrentFile] = FormatError.Corrupt(what: "CURRENT") }, actual: elsewhere.Unreadable);
+        Assert.Equal(expected: everything, actual: Texts(read: elsewhere));
+
+        // A MANIFEST that's gone, as one LevelDB replaced as the folder was read, makes it start over; still gone at the
+        // last attempt, CURRENT names one that isn't there, which LevelDB refuses.
+        File.WriteAllBytes(path: folder.Combine(LevelDBManifest.CurrentFile), bytes: Encodings.Utf8(text: "MANIFEST-000003\n"));
+        var gone = new LevelDBFolder(path: folder.Path).Read();
+        Assert.Equal(expected: new Dictionary<string, FormatError> { [LevelDBManifest.CurrentFile] = FormatError.Corrupt(what: "CURRENT") }, actual: gone.Unreadable);
+        Assert.Equal(expected: everything, actual: Texts(read: gone));
+        Assert.False(condition: gone.Vanished);
+    }
+
+    /// Made-up writes, each key's value its name and "1".
+    static List<TableEntry> Entries(params (string Key, ulong Sequence)[] writes) => writes
+        .Select(selector: write => new TableEntry(Key: Encodings.Utf8(text: write.Key), Sequence: write.Sequence, Value: Encodings.Utf8(text: write.Key + "1")))
+        .ToList();
+
+    static Dictionary<string, string> Texts(LevelDBFolderRead read) => read.Values.ToDictionary(
+        keySelector: pair => System.Text.Encoding.UTF8.GetString(bytes: pair.Key),
+        elementSelector: pair => System.Text.Encoding.UTF8.GetString(bytes: pair.Value));
 }
