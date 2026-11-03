@@ -287,6 +287,8 @@ struct CopilotComposerView: View {
         .onAppear(perform: setUp)
         // After the change: a published value emits before it's set.
         .onReceive(store.objectWillChange.receive(on: DispatchQueue.main)) { _ in refreshAvailability() }
+        // The session you choose for the pull request in its details, until you choose here or change the prompt.
+        .onChange(of: settings.copilotPullRequestSessions) { update() }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
@@ -886,7 +888,7 @@ struct CopilotComposerView: View {
         guard Self.followsSuggestions(choseTarget: choseTarget, mustContinue: mustContinue, promptChanged: prompt != filledIn) else {
             return
         }
-        let suggested = CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: continuing, createdAt: createdAt)
+        let suggested = store.suggestedChoice(choices, for: subject)
         if suggested?.id != target?.id { select(suggested, byYou: false) }
     }
 

@@ -133,15 +133,20 @@ struct CopilotRunBadge: View {
     }
 }
 
-/// What you can do with a send: open its pull request, go on with it in Terminal, look at its worktree, stop it, or
-/// clear it.
+/// What you can do with a send: show its pull request in BriefBar or open it in Azure DevOps, go on with it in Terminal,
+/// look at its worktree, stop it, or clear it.
 struct CopilotRunMenuItems: View {
     let entry: CopilotTaskEntry
+    /// Show Pull Request in BriefBar, for its pull request: not in that pull request's own menus, which have their own.
+    var showsPullRequest = true
 
     @EnvironmentObject private var copilot: CopilotTasksStore
 
     var body: some View {
         Text("\(entry.action.map { "\($0.title): " } ?? "")\(entry.sentence(now: Date())) · \(entry.options.title)")
+        if showsPullRequest, let key = entry.pullRequestKey, copilot.canShowPullRequest(key) {
+            Button("Show Pull Request in BriefBar") { _ = copilot.showPullRequest(key) }
+        }
         if entry.pullRequest != nil {
             Button("Open Pull Request") { copilot.openPullRequest(entry) }
         }
@@ -292,6 +297,9 @@ extension CopilotTasksStore {
                         if entry.pullRequest != nil, entry.workItem != nil {
                             Button("Open Work Item") { self.openWorkItem(entry) }
                         }
+                        if let key = entry.pullRequestKey, self.canShowPullRequest(key) {
+                            Button("Show Pull Request in BriefBar") { _ = self.showPullRequest(key) }
+                        }
                         CopilotRunActions(entry: entry)
                     }.environmentObject(self))
                 }
@@ -345,7 +353,7 @@ struct PullRequestCopilotMenuItems: View {
             }
             if let last {
                 Menu("Copilot's Last Task") {
-                    CopilotRunMenuItems(entry: last)
+                    CopilotRunMenuItems(entry: last, showsPullRequest: false)
                 }
             }
         }

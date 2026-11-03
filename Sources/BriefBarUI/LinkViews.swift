@@ -131,7 +131,8 @@ package struct LinkMenuItems: View {
     }
 }
 
-/// A thing's links, each to open (or its own menu), then Link…, Unlink and Show Hidden Links.
+/// A thing's links, each to open (or its own menu, or, for one BriefBar shows in its window too, both ways to open it), then
+/// Link…, Unlink and Show Hidden Links.
 struct LinksMenuContent: View {
     let ref: ItemRef
     @ObservedObject var links: Links
@@ -142,11 +143,21 @@ struct LinksMenuContent: View {
         let hidden = all.filter(\.isHidden)
         ForEach(shown) { connection in
             let title = Self.title(connection)
-            if let menu = connection.item.menu {
+            let item = connection.item
+            if let menu = item.menu {
                 Menu(title) { menu() }
+            } else if let show = item.show {
+                // One BriefBar shows in its window too, such as one of your pull requests: there, or where it lives.
+                Menu(title) {
+                    Button("Show in BriefBar") {
+                        if !show() { item.open?() }
+                    }
+                    Button(item.ref.kind.openTitle) { item.open?() }
+                        .disabled(item.open == nil)
+                }
             } else {
-                Button(title) { connection.item.open?() }
-                    .disabled(connection.item.open == nil)
+                Button(title) { item.open?() }
+                    .disabled(item.open == nil)
             }
         }
         if !shown.isEmpty { Divider() }
