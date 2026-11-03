@@ -1,0 +1,2 @@
+# What Chromium wrote, byte for byte: Git takes LevelDB's CURRENT for text, and would end its line in CRLF on Windows.
+* -text

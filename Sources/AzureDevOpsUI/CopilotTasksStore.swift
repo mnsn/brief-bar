@@ -123,6 +123,23 @@ final class CopilotTasksStore: ObservableObject {
     var removeWorktreeForTests: ((CopilotRun, _ force: Bool) async throws -> Void)?
     /// Hears of each session whose log the search for mentions read, in tests.
     var mentionReadForTests: ((_ sessionId: String) -> Void)?
+    /// Stands in for showing a session, in the Copilot app or in the terminal of the CLI that has it open, without copying
+    /// anything, in tests: whether it opened.
+    var showForTests: ((_ sessionId: String) -> Bool)?
+    /// Whether the Copilot app holds a session, by the process that holds it, in tests.
+    var appHoldsForTests: ((pid_t) -> Bool)?
+    /// Where BriefBar's requests to its extension in the Copilot app's sessions go, in tests; `CopilotOutbox.standard`
+    /// otherwise.
+    var outboxForTests: CopilotOutbox?
+    /// How long sending to a session waits for each step, in tests.
+    var deliveryTimingForTests: SessionSender.Timing?
+    /// The sessions BriefBar sends a prompt to now, through its extension in them (`deliver`): one at a time, each.
+    @Published var delivering: Set<String> = []
+    /// Where each session that BriefBar sends a prompt to now works, by the session's ID: no task starts there, and git
+    /// removes no worktree there, until the prompt has gone or been taken back (`busyFolders`).
+    var deliveringFolders: [String: URL] = [:]
+    /// Azure DevOps was turned off, or BriefBar is quitting: a prompt on its way to a session goes no further.
+    private(set) var hasStopped = false
 
     /// Where the Copilot app keeps its sessions.
     var appHome: URL { appHomeForTests ?? AppSessions.home() }
@@ -312,6 +329,7 @@ final class CopilotTasksStore: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        hasStopped = true
     }
 
     // MARK: Sending
@@ -456,7 +474,7 @@ final class CopilotTasksStore: ObservableObject {
     /// they get ready, and those of runs whose Copilot process still runs; and those of worktrees git removes now. A new
     /// task's worktree is its own.
     func busyFolders() -> Set<String> {
-        var folders = Set(removingWorktrees.values.map(Self.checkoutKey))
+        var folders = Set((Array(removingWorktrees.values) + Array(deliveringFolders.values)).map(Self.checkoutKey))
         for entry in pending where entry.status.phase.isActive {
             if let folder = continuingFolders[entry.id] { folders.insert(Self.checkoutKey(folder)) }
         }
@@ -742,9 +760,38 @@ final class CopilotTasksStore: ObservableObject {
         for entry in entries where !entry.status.phase.isActive { clear(entry) }
     }
 
-    /// What BriefBar saved of the runs it started: what each printed. Called when Azure DevOps is turned off.
-    nonisolated static func deleteOutput() {
-        try? FileManager.default.removeItem(at: outputFolder)
+    /// What BriefBar saved of the runs it started: what each printed; and its requests to its extension in the Copilot
+    /// app's sessions, with their results, which hold its prompts, but not what the extensions that run say. Called when
+    /// Azure DevOps is turned off. What it can't delete, it logs.
+    nonisolated static func deleteOutput(in folder: URL = outputFolder, outbox: CopilotOutbox = .standard) {
+        if !outbox.forget() {
+            Log.app.error("Couldn't remove all of BriefBar's requests to the Copilot app's sessions, which hold its prompts")
+        }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        var isFolder: ObjCBool = false
+        // The outbox stays, for what extensions say in it, only as a real folder in this one: a link goes, not what it
+        // leads to.
+        guard !LocalFile.isLink(folder), outbox.url.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL,
+              let kept = outbox.path.last, names.contains(kept), !LocalFile.isLink(outbox.url),
+              FileManager.default.fileExists(atPath: outbox.url.path, isDirectory: &isFolder), isFolder.boolValue
+        else {
+            deleteSaved(folder)
+            return
+        }
+        for name in names where name != kept {
+            deleteSaved(folder.appendingPathComponent(name))
+        }
+    }
+
+    /// Deletes a file, or a folder and what's in it, without following a link: a link goes, not what it leads to.
+    private nonisolated static func deleteSaved(_ item: URL) {
+        do {
+            try FileManager.default.removeItem(at: item)
+        } catch CocoaError.fileNoSuchFile {
+            // Nothing was there.
+        } catch {
+            Log.app.error("Couldn't delete all that Copilot printed")
+        }
     }
 
     func openPullRequest(_ entry: CopilotTaskEntry) {
@@ -867,6 +914,10 @@ final class CopilotTasksStore: ObservableObject {
     /// Why a task's worktree can't be removed now, as BriefBar's own tasks say, or nil.
     private func taskInWorktree(_ run: CopilotRun) -> String? {
         if removingWorktrees[run.id] != nil { return "BriefBar is removing it already." }
+        let checkout = Self.checkoutKey(run.worktree)
+        if deliveringFolders.values.contains(where: { Self.checkoutKey($0) == checkout }) {
+            return "BriefBar is sending a prompt to a session that works in it. Remove it once that's done."
+        }
         if isWorking(inSession: run.id) || isWorking(inFolder: run.worktree) {
             return "Copilot is working in it for a task BriefBar sent. Remove it once that's done."
         }

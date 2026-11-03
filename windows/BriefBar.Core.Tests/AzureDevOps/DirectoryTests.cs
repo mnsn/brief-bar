@@ -332,10 +332,6 @@ public sealed class DirectoryTests
                 "AADSTS50020: User account '<account>' from identity provider 'live.com' does not exist in tenant '<name>'. "
                 + "Trace ID: <id> Correlation ID: <id>"),
             actual: AzureCLITokenProvider.ErrorFromOutput(output: output));
-        // A guest's sign-in name from another directory, as an email address.
-        Assert.Equal(
-            expected: AuthError.Failed(message: "The user <account> couldn't be signed in."),
-            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: The user robin_contoso.example#EXT#@fabrikam.onmicrosoft.com couldn't be signed in."));
         // A directory's ID where it says to sign in, and one it would cut short: neither is left, nor any part of one. A
         // quoted ID stays an ID.
         Assert.Equal(
@@ -373,6 +369,36 @@ public sealed class DirectoryTests
                 "ERROR: AADSTS500011: The resource principal named " + AzureCLITokenProvider.AzureDevOpsResource
                 + " was not found in the tenant named Fabrikam Example. This can happen if the application has not been installed by the "
                 + "administrator of the tenant or consented to by any user in the tenant."));
+    }
+
+    /// An address goes whole, whatever a Microsoft Entra user name holds: apostrophes, wherever they are, or a guest's sign-in
+    /// name in another directory, which holds their own address and their directory's domain, with `#` right before the `@`.
+    [Fact]
+    public void AnAddressIsKeptOutWhateverItHolds()
+    {
+        Assert.Equal(
+            expected: AuthError.Failed(message: "The user <account> couldn't be signed in."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: The user robin_contoso.example#EXT#@fabrikam.onmicrosoft.com couldn't be signed in."));
+        Assert.Equal(
+            expected: AuthError.SignedOut(message: "AADSTS50105: The signed in user '<account>' is not assigned to a role for the application."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output:
+                "ERROR: AADSTS50105: The signed in user 'robin_contoso.example#EXT#@fabrikam.onmicrosoft.com' is not assigned to a role for the application."));
+        Assert.Equal(
+            expected: AuthError.SignedOut(message: "AADSTS50020: User account '<account>' does not exist."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: AADSTS50020: User account 'O'Brien@contoso.example' does not exist."));
+        Assert.Equal(
+            expected: AuthError.SignedOut(message: "User '<account>' does not exist in MSAL token cache."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: User 'robin'@contoso.example' does not exist in MSAL token cache."));
+        // A user name of apostrophes only: the quote before it goes with it, as nothing tells them apart.
+        Assert.Equal(
+            expected: AuthError.SignedOut(message: "User <account>' does not exist in MSAL token cache."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: User ''@contoso.example' does not exist in MSAL token cache."));
+        // One whose user name is an ID goes whole, not as <id> before its directory's domain.
+        Assert.Equal(
+            expected: AuthError.SignedOut(message: "AADSTS50020: User account '<account>' does not exist."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: AADSTS50020: User account '0d0d0d0d-4444-4444-8444-444444444444@contoso.onmicrosoft.com' does not exist."));
+        Assert.Equal(expected: "<account>", actual: AzureCLITokenProvider.Redacted(message: "o''brien@contoso.example"));
+        Assert.Equal(expected: "<account>", actual: AzureCLITokenProvider.Redacted(message: "robin~dev^ops!@contoso.example"));
     }
 
     // Requests

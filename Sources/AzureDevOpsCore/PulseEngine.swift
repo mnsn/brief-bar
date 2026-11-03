@@ -329,6 +329,9 @@ public actor PulseEngine {
     private var linked: [PRKey: (listed: Listed, readAt: Date)] = [:]
     /// Linked pull requests read as closed, or gone or forbidden.
     private var closedLinks: Set<PRKey> = []
+    /// The organizations of pull requests sent to you that wait on a sign-in to their directory, by lowercased name: as
+    /// it's spelled, why, and when one of theirs was last tried. Said at every refresh, tried then or not.
+    private var linkedWaiting: [String: (organization: String, error: ADOError, triedAt: Date)] = [:]
     /// The organizations that couldn't be read at the last refresh for want of a sign-in to their directory, by lowercased
     /// name: what's listed from them stays as it was read, and nothing more is asked of them until you've signed in there.
     private var waitingOnSignIn: Set<String> = []
@@ -580,7 +583,7 @@ public actor PulseEngine {
         completed = completed.filter { watched.contains($0.key.organization.lowercased()) }
         vanished = vanished.filter { watched.contains($0.key.organization.lowercased()) }
         firstLoaded = firstLoaded.filter { watched.contains($0.key.lowercased()) }
-        let (linkedElsewhere, linkedRead, linkedThrottled) = await addLinked(to: &listed, at: startedAt)
+        let (linkedElsewhere, linkedRead, linkedThrottled) = await addLinked(to: &listed, at: startedAt, reached: succeeded)
         active = listed
         done = completed.filter { listed[$0.key] == nil && ($0.value.closedAt ?? .distantPast) > closedSince }
         details = details.filter { listed[$0.key] != nil }
@@ -632,29 +635,38 @@ public actor PulseEngine {
     }
 
     /// Reads the pull requests people sent you that aren't in your lists, ten a refresh: the ones never read
-    /// first, then the ones read longest ago. Each stays listed as it was last read in between. One that's closed
-    /// or couldn't be read is tried again an hour later. Once Azure DevOps asks to slow down, the rest wait for the next
-    /// refresh. A link that spells an organization in other letters is to the pull request in your lists: `PRKey` ignores
-    /// their case, as Azure DevOps does. One in an organization in a directory the Azure CLI isn't signed in to is read at
-    /// the next refresh, with the others there, rather than an hour later, since signing in there is what reads it:
-    /// those organizations are returned, to say so, with how many pull requests were read, and the error if Azure DevOps
-    /// asked to slow down.
+    /// first, then the ones read, or tried, longest ago. Each stays listed as it was last read in between. One that's
+    /// closed or couldn't be read is tried again an hour later. Once Azure DevOps asks to slow down, the rest wait for the
+    /// next refresh. A link that spells an organization in other letters is to the pull request in your lists: `PRKey`
+    /// ignores their case, as Azure DevOps does. One in an organization in a directory the Azure CLI isn't signed in to
+    /// waits with the others there, and its turn comes round again behind the rest, rather than an hour later, since
+    /// signing in there is what reads it. Such organizations are remembered and returned at each refresh, tried then or
+    /// not, to say so, with how many pull requests were read, and the error if Azure DevOps asked to slow down; one is
+    /// forgotten once it answers otherwise, or its lists, among `reached`, were read.
     private func addLinked(
-        to listed: inout [PRKey: Listed], at date: Date
+        to listed: inout [PRKey: Listed], at date: Date, reached: Set<String> = []
     ) async -> (elsewhere: [(organization: String, error: ADOError)], read: Int, throttled: ADOError?) {
         let wanted = linkedKeys.filter { listed[$0] == nil }
         linked = linked.filter { wanted.contains($0.key) }
+        // Only organizations that a pull request sent to you is still in wait on a sign-in, and not those just read.
+        let wantedOrganizations = Self.folded(wanted.map(\.organization))
+        linkedWaiting = linkedWaiting.filter { wantedOrganizations.contains($0.key) && !reached.contains($0.key) }
+        // Each one's turn: when it was last read, or its organization last found waiting, whichever came later.
+        func turn(_ key: PRKey) -> Date {
+            max(linked[key]?.readAt ?? .distantPast, linkedWaiting[key.organization.lowercased()]?.triedAt ?? .distantPast)
+        }
         let due = wanted
             .filter { linkedFailures[$0].map { date.timeIntervalSince($0) > 3_600 } ?? true }
-            .sorted { (linked[$0]?.readAt ?? .distantPast, $0) < (linked[$1]?.readAt ?? .distantPast, $1) }
-        var elsewhere: [(organization: String, error: ADOError)] = []
+            .sorted { (turn($0), $0) < (turn($1), $1) }
+        var tried: Set<String> = []
         var fetched = 0
         var throttled: ADOError?
-        // Ten reads a refresh; the ones waiting on a directory's sign-in don't count, so they don't hold up the others:
-        // each such organization is tried once a refresh, and the rest of its pull requests wait with it.
+        // Ten reads a refresh, the ones waiting on a directory's sign-in among them: each such organization is tried once,
+        // and the rest of its pull requests wait with it.
         var reads = 0
         for key in due {
-            if elsewhere.contains(where: { $0.organization.lowercased() == key.organization.lowercased() }) { continue }
+            let organization = key.organization.lowercased()
+            if tried.contains(organization) { continue }
             guard reads < 10 else { break }
             reads += 1
             do {
@@ -667,6 +679,8 @@ public actor PulseEngine {
                     identities[key.organization] = me
                 }
                 let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
+                // Read there: its organization doesn't wait on a sign-in.
+                linkedWaiting[organization] = nil
                 let pr = PullRequest(organization: key.organization, dto)
                 fetched += 1
                 // A closed one is read again an hour later too, in case it's reopened.
@@ -683,13 +697,17 @@ public actor PulseEngine {
                 // Not a failure of this pull request's: nothing more goes out until then, so the rest wait too.
                 throttled = .throttled(retryAfter: seconds)
                 break
-            } catch ADOError.otherDirectory(let organization, let tenant) {
-                // Not this pull request's failure either: it stays as it was last read, until you sign in there. Nor is it
-                // one of the ten.
-                reads -= 1
-                elsewhere.append((organization: key.organization, error: .otherDirectory(organization: organization, tenant: tenant)))
+            } catch ADOError.otherDirectory(let name, let tenant) {
+                // Not this pull request's failure either: it stays as it was last read, until you sign in there, and its
+                // organization's turn comes round again behind the others'.
+                tried.insert(organization)
+                linkedWaiting[organization] = (
+                    organization: key.organization, error: .otherDirectory(organization: name, tenant: tenant), triedAt: date
+                )
             } catch {
                 linkedFailures[key] = date
+                // It answered otherwise: its organization doesn't wait on a sign-in, whatever else is wrong.
+                linkedWaiting[organization] = nil
                 // Gone, or no access: nothing to list. Otherwise it stays as last read.
                 if case .notFound = error as? ADOError {
                     linked[key] = nil
@@ -702,6 +720,10 @@ public actor PulseEngine {
             }
         }
         for (key, read) in linked { listed[key] = read.listed }
+        // The organizations waiting, tried this time or not: said until one of theirs is read, or none is sent to you.
+        let elsewhere = linkedWaiting.values
+            .sorted { $0.organization.lowercased() < $1.organization.lowercased() }
+            .map { (organization: $0.organization, error: $0.error) }
         return (elsewhere, fetched, throttled)
     }
 
@@ -714,6 +736,7 @@ public actor PulseEngine {
         vanished = [:]
         linked = [:]
         closedLinks = []
+        linkedWaiting = [:]
         forgetRuns()
         problem = .noOrganizations
         hasLoaded = true
@@ -731,6 +754,7 @@ public actor PulseEngine {
         linkedFailures = [:]
         linked = [:]
         closedLinks = []
+        linkedWaiting = [:]
         forgetRuns()
     }
 

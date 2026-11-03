@@ -355,17 +355,23 @@ public sealed class AzureDevOpsSettings
     public bool IsWatching(string name) =>
         Read(value: () => organizations.Exists(match: organization => string.Equals(a: organization, b: name, comparisonType: StringComparison.OrdinalIgnoreCase)));
 
-    /// Watches `name`, or stops watching it.
-    public void ToggleOrganization(string name)
+    /// Watches `name`, or stops watching it, by any spelling, unless it's that way already: in one step, so that whoever
+    /// else watches it meanwhile, as the check of an organization you add does while you switch it on in Settings, nobody
+    /// undoes it, as looking first and then switching it could.
+    public void SetWatching(string name, bool watching)
     {
         ArgumentNullException.ThrowIfNull(argument: name);
         Write(
             change: () =>
             {
-                var watching = organizations.Exists(match: organization => string.Equals(a: organization, b: name, comparisonType: StringComparison.OrdinalIgnoreCase));
+                var wasWatching = organizations.Exists(match: organization => string.Equals(a: organization, b: name, comparisonType: StringComparison.OrdinalIgnoreCase));
+                if (wasWatching == watching)
+                {
+                    return false;
+                }
                 organizations = watching
-                    ? organizations.Where(predicate: organization => !string.Equals(a: organization, b: name, comparisonType: StringComparison.OrdinalIgnoreCase)).ToList()
-                    : [.. OrganizationDiscovery.Merged(names: organizations, preferred: [name])];
+                    ? [.. OrganizationDiscovery.Merged(names: organizations, preferred: [name])]
+                    : organizations.Where(predicate: organization => !string.Equals(a: organization, b: name, comparisonType: StringComparison.OrdinalIgnoreCase)).ToList();
                 return true;
             },
             save: () => settings.Write(key: OrganizationsKey, value: Names(names: organizations)));

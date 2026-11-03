@@ -14,6 +14,9 @@ public enum OrganizationDiscovery {
         public var all: [String]
         /// Where you have an active pull request, as author or reviewer.
         public var withPullRequests: [String]
+        /// In a directory the Azure CLI isn't signed in to: whether you have pull requests there can't be told until you've
+        /// signed in there.
+        public var elsewhere: [String] = []
     }
 
     /// What probing organizations for your pull requests told.
@@ -21,8 +24,11 @@ public enum OrganizationDiscovery {
         /// Where you have an active pull request, as author or reviewer.
         public var withPullRequests: [String]
         /// Where it couldn't tell: offline, slowed down, or Azure DevOps failing. An organization you can't read
-        /// (another tenant, no access) isn't one: there's nothing of yours to show there.
+        /// (no access) isn't one: there's nothing of yours to show there.
         public var failures: [String: ADOError]
+        /// In a directory the Azure CLI isn't signed in to: neither one without pull requests of yours, nor a failure that a
+        /// moment fixes, but one to look in again once you've signed in there.
+        public var elsewhere: [String] = []
     }
 
     /// Your organizations and the ones with your pull requests. Throws when it couldn't tell, for example while
@@ -38,13 +44,14 @@ public enum OrganizationDiscovery {
         if probe.withPullRequests.isEmpty, let failure = failures.first {
             throw failure.value
         }
-        return Found(all: all, withPullRequests: probe.withPullRequests)
+        return Found(all: all, withPullRequests: probe.withPullRequests, elsewhere: probe.elsewhere)
     }
 
     /// Looks for your active pull requests in each organization.
     public static func probe(_ organizations: [String], client: ADOClient, concurrency: Int = 6) async -> Probe {
         var found: [String] = []
         var failures: [String: ADOError] = [:]
+        var elsewhere: Set<String> = []
         var queue = organizations[...]
         await withTaskGroup(of: (String, Result<Bool, ADOError>).self) { group in
             for _ in 0..<max(1, concurrency) {
@@ -54,6 +61,7 @@ public enum OrganizationDiscovery {
             while let (organization, result) = await group.next() {
                 switch result {
                 case .success(let has): if has { found.append(organization) }
+                case .failure(.otherDirectory): elsewhere.insert(organization)
                 case .failure(let error): failures[organization] = error
                 }
                 if let next = queue.popFirst() {
@@ -61,7 +69,9 @@ public enum OrganizationDiscovery {
                 }
             }
         }
-        return Probe(withPullRequests: organizations.filter(found.contains), failures: failures)
+        return Probe(
+            withPullRequests: organizations.filter(found.contains), failures: failures, elsewhere: organizations.filter(elsewhere.contains)
+        )
     }
 
     static func hasPullRequests(_ organization: String, client: ADOClient) async -> Result<Bool, ADOError> {
@@ -77,8 +87,9 @@ public enum OrganizationDiscovery {
             return .success(false)
         } catch let error as ADOError {
             switch error {
-            // Another directory you aren't signed in to, or no access: nothing of yours to show there.
-            case .unauthorized, .forbidden, .notFound, .otherDirectory: return .success(false)
+            // No access: nothing of yours to show there. In another directory the Azure CLI isn't signed in to, that can't
+            // be told yet: it's a failure, which `probe` keeps apart.
+            case .unauthorized, .forbidden, .notFound: return .success(false)
             default: return .failure(error)
             }
         } catch {

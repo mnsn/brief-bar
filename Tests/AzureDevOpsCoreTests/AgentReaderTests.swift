@@ -186,6 +186,25 @@ import Testing
         #expect(server.requests.count == once)
     }
 
+    /// With no organizations chosen, an agent's reader finds yours: one in a directory to sign in to is looked in again at
+    /// each read, so signing in there finds your pull requests there, rather than never for the session.
+    @Test func findsYourOrganizationInAnotherDirectoryOnceSignedInThere() async {
+        let now = Date()
+        let server = StubServer()
+        server.on("/_apis/profile/profiles/me", json: ["id": "profile-id", "publicAlias": "alias"])
+        server.on("/_apis/accounts", query: ["memberId": "alias"], json: Fixture.list([["accountName": "fabrikam"]]))
+        server.serveOrganization("fabrikam", mine: [Fixture.pullRequest(1, title: "Mine", created: now.addingTimeInterval(-day))])
+        server.put("fabrikam", in: Tenants.other)
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let reader = AzureDevOpsReader(
+            demo: false, organizations: [], defaults: defaults(organizations: []), client: server.client(tokens: tokens)
+        ) {}
+        #expect(await reader.pullRequests(now: now).items.isEmpty)
+        await tokens.signIn(to: Tenants.other)
+        let read = await reader.pullRequests(now: now.addingTimeInterval(Double(AzureDevOpsReader.freshFor) + 1))
+        #expect(read.items.map(\.key) == [PRKey("fabrikam", 1)])
+    }
+
     /// A work item asked for by its number may be in any of your organizations: one in a directory to sign in to doesn't
     /// stop the others being looked in, and is named only when none of them has it.
     @Test func looksForAWorkItemPastAnOrganizationInAnotherDirectory() async throws {
