@@ -46,6 +46,21 @@ import Testing
             .contains("--reasoning-effort") == false)
     }
 
+    /// Fix Grammar asks the same way, with no tools, in a session named for it.
+    @Test func aGrammarFixRunsInASessionOfItsOwn() async throws {
+        let folder = folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let runner = FakeRunner { _ in .ok("I think it's fine.\n") }
+        let answer = await summarizer(runner, folder: folder).summarize(
+            "Fix: i think its fine", options: options, name: CopilotSummarizer.grammarSessionName
+        )
+        #expect(answer == .success("I think it's fine."))
+        let arguments = try #require(runner.arguments.first)
+        #expect(arguments.contains("--available-tools=briefbar_no_tools"))
+        let name = try #require(arguments.firstIndex(of: "--name"))
+        #expect(arguments[name + 1] == "BriefBar grammar fix")
+    }
+
     @Test func itAnswersWhatCopilotPrinted() async throws {
         let folder = folder()
         defer { try? FileManager.default.removeItem(at: folder) }
