@@ -64,6 +64,43 @@ import BriefBarCore
         #expect(seen.threads.waitingOnYou.first?.isNew == false)
     }
 
+    /// A thread you change in the details stays where it was as you first did, with the open ones and with those that wait
+    /// on you, however it stands now: replied to, resolved, or reactivated; the others go where they stand.
+    @Test func aThreadYouChangeStaysWhereItWas() throws {
+        let threads = [
+            // Answered: it waited on you before.
+            ReviewThread(id: 2, filePath: "/src/Cart.cs", line: 40, comments: [
+                comment(1, me, "Is a minute enough?", at: t(-6 * hour)), comment(2, People.sam, "Make it two.", at: t(-2 * hour)),
+                comment(3, me, "Done.", at: t(-minute)),
+            ]),
+            // Resolved: it was open.
+            ReviewThread(id: 4, status: "fixed", filePath: "/src/Cart.cs", line: 12, comments: [
+                comment(1, People.alex, "Check the cache?", at: t(-3 * hour)),
+            ]),
+            // Reactivated: it was resolved.
+            ReviewThread(id: 5, status: "active", filePath: "/src/Cart.cs", line: 90, comments: [
+                comment(1, People.alex, "Typo here.", at: t(-5 * day)), comment(2, me, "Fixed it.", at: t(-4 * day)),
+            ]),
+            ReviewThread(id: 6, status: "closed", comments: [comment(1, People.priya, "Nit.", at: t(-5 * day))]),
+        ]
+        // Seen an hour ago: Alex's comment in the thread resolved since doesn't wait on you.
+        let panel = try panel(record(makePR(created: t(-6 * day)), threads: threads), seen: t(-hour))
+        // As they stand.
+        let standing = panel.threads.arranged()
+        #expect(standing.open.flatMap(\.threads).map(\.id) == [2, 5])
+        #expect(standing.resolved.flatMap(\.threads).map(\.id) == [6, 4])
+
+        let held = panel.threads.arranged(holding: [2: .waitingOnYou, 4: .open, 5: .resolved])
+        // 2 still first, as it waited on you; 4 among the open ones, by its line.
+        #expect(held.open.flatMap(\.threads).map(\.id) == [2, 4])
+        #expect(held.resolved.flatMap(\.threads).map(\.id) == [6, 5])
+        // Each says how it stands now.
+        #expect(held.open.flatMap(\.threads).map(\.waitsOnYou) == [false, false])
+        #expect(held.open.flatMap(\.threads).last?.isResolved == true)
+        #expect(panel.threads.openByFile == standing.open)
+        #expect(panel.threads.resolvedByFile == standing.resolved)
+    }
+
     /// A comment that needs you in a thread resolved since, as a new one in a resolved thread does, waits on you there too.
     @Test func aResolvedThreadWithACommentThatNeedsYouWaitsOnYou() throws {
         let thread = ReviewThread(id: 9, status: "fixed", comments: [

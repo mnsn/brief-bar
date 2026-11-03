@@ -73,16 +73,34 @@ extension PullRequestPanel.Threads {
     /// file's, as a change lists its files (`PullRequestPanel.listsFirst`). In each, those that wait on you come first,
     /// then the others, from the top of the file down.
     public var openByFile: [PullRequestPanel.FileThreads] {
-        Self.byFile(waitingOnYou + open)
+        arranged().open
     }
 
     /// The resolved ones, by file in the same way.
     public var resolvedByFile: [PullRequestPanel.FileThreads] {
-        Self.byFile(resolved)
+        arranged().resolved
     }
 
-    /// By file as Git tells files apart, by their paths' bytes, rather than as Swift's strings compare them.
-    static func byFile(_ threads: [PullRequestPanel.Thread]) -> [PullRequestPanel.FileThreads] {
+    /// The threads by file, the open ones and the resolved ones apart, as the details list them while you change some of
+    /// them there (`held`): each of those stays where it was as you first changed it, with the open ones or the resolved
+    /// ones, and with those that wait on you or not, however it stands now, so it doesn't move away as you reply or resolve
+    /// it.
+    public func arranged(
+        holding held: [Int: PullRequestPanel.Thread.Placement] = [:]
+    ) -> (open: [PullRequestPanel.FileThreads], resolved: [PullRequestPanel.FileThreads]) {
+        func placement(_ thread: PullRequestPanel.Thread) -> PullRequestPanel.Thread.Placement { held[thread.id] ?? thread.placement }
+        let all = all
+        return (
+            Self.byFile(all.filter { placement($0) != .resolved }) { placement($0) == .waitingOnYou },
+            Self.byFile(all.filter { placement($0) == .resolved }) { placement($0) == .waitingOnYou }
+        )
+    }
+
+    /// By file as Git tells files apart, by their paths' bytes, rather than as Swift's strings compare them; in each, those
+    /// that `waitsFirst` first.
+    static func byFile(
+        _ threads: [PullRequestPanel.Thread], waitsFirst: (PullRequestPanel.Thread) -> Bool = \.waitsOnYou
+    ) -> [PullRequestPanel.FileThreads] {
         var general: [PullRequestPanel.Thread] = []
         var byPath: [GitPath: [PullRequestPanel.Thread]] = [:]
         for thread in threads {
@@ -93,14 +111,19 @@ extension PullRequestPanel.Threads {
             byPath[GitPath(path), default: []].append(thread)
         }
         let files = byPath.sorted { PullRequestPanel.listsFirst($0.key.string, $1.key.string) }
-            .map { PullRequestPanel.FileThreads(path: $0.key.string, threads: $0.value.sorted(by: showsFirst)) }
-        return (general.isEmpty ? [] : [PullRequestPanel.FileThreads(path: nil, threads: general.sorted(by: showsFirst))]) + files
+            .map { file in
+                PullRequestPanel.FileThreads(path: file.key.string, threads: file.value.sorted { showsFirst($0, $1, waitsFirst: waitsFirst) })
+            }
+        let onItself = general.sorted { showsFirst($0, $1, waitsFirst: waitsFirst) }
+        return (general.isEmpty ? [] : [PullRequestPanel.FileThreads(path: nil, threads: onItself)]) + files
     }
 
     /// Those that wait on you first; then from the top of the file down, those on the whole file first; then the latest
     /// first.
-    private static func showsFirst(_ lhs: PullRequestPanel.Thread, _ rhs: PullRequestPanel.Thread) -> Bool {
-        if lhs.waitsOnYou != rhs.waitsOnYou { return lhs.waitsOnYou }
+    private static func showsFirst(
+        _ lhs: PullRequestPanel.Thread, _ rhs: PullRequestPanel.Thread, waitsFirst: (PullRequestPanel.Thread) -> Bool
+    ) -> Bool {
+        if waitsFirst(lhs) != waitsFirst(rhs) { return waitsFirst(lhs) }
         let lhsLine = ThreadCode.span(of: lhs.thread)?.lines.lowerBound ?? lhs.thread.line ?? 0
         let rhsLine = ThreadCode.span(of: rhs.thread)?.lines.lowerBound ?? rhs.thread.line ?? 0
         if lhsLine != rhsLine { return lhsLine < rhsLine }
@@ -110,6 +133,15 @@ extension PullRequestPanel.Threads {
 }
 
 extension PullRequestPanel.Thread {
+    /// Where the details list a thread: with those that wait on you, the other open ones, or the resolved ones.
+    public enum Placement: Sendable, Hashable {
+        case waitingOnYou, open, resolved
+    }
+
+    /// Where the details list it as it stands.
+    public var placement: Placement {
+        waitsOnYou ? .waitingOnYou : isResolved ? .resolved : .open
+    }
     /// How many comments a thread has at most for all of them to show; past that, the first and the latest show, and those
     /// between them fold until you ask for them.
     public static let unfoldedComments = 3
