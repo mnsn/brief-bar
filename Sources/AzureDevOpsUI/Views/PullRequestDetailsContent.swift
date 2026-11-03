@@ -59,8 +59,8 @@ struct PullRequestDetailsContent: View {
                 // Its summary, of it and what's linked to it, under what it is.
                 PageSummary(ref: ref)
                 if let readiness = panel.readiness, !readiness.items.isEmpty {
-                    PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction) { section in
-                        details.go(to: .section(section))
+                    PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction) { left in
+                        if let place = PullRequestDetailsStore.Place.of(left, in: panel) { details.go(to: place) }
                     }
                 }
                 PullRequestCommentsSection(
@@ -78,7 +78,9 @@ struct PullRequestDetailsContent: View {
                     details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, highlighted: highlighted
                 )
                     .id(PullRequestDetailsStore.Anchor.files)
-                PullRequestChecksSection(panel: panel, highlighted: highlighted)
+                PullRequestChecksSection(
+                    item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted
+                )
                     .id(PullRequestDetailsStore.Anchor.section(.checks))
                 PullRequestReviewersSection(panel: panel)
                     .id(PullRequestDetailsStore.Anchor.section(.reviewers))

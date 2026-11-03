@@ -1161,6 +1161,13 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `{project}/_apis/git/repositories/{repo}/blobs/{objectId}?$format=octetstream` | with them: once for each version of a file that a thread on screen is on, and, in the Files, of each file whose row comes on screen, one file at a time, or whose page you open, up to 1 MB of it; four of these requests at a time | the file's text |
 | `{project}/_apis/git/repositories/{repo}/items?path=…&versionDescriptor.version={commit}&versionDescriptor.versionType=commit` | instead, for a file that the diff didn't change, or without its object ID | the file's text at that commit |
 | `{project}/_apis/build/builds/{id}/timeline` | once for each failed build of your pull requests, and again if it's retried and fails again: four a refresh; one that can't be read is tried again on the next refresh, then less and less often | where the build failed, and the first error there |
+| `{project}/_apis/build/builds/{id}` | only when you open a pull request's build in its details (below), and when you open it again within ten minutes, to tell whether it ran again since | the run: its pipeline, commit, branch and how it ended |
+| `{project}/_apis/build/builds/{id}/timeline`, `…/logs` | when you open a pull request's build in its details, unless BriefBar read it less than ten minutes ago, or half a minute while it's going, and it hasn't run again since | its stages, jobs and tasks, their errors, and how long each log is |
+| `{project}/_apis/build/builds/{id}/logs/{logId}?startLine=…&endLine=…` | the same, for the step that failed | the last 200 lines of its log |
+| `{project}/_apis/test/runs?buildUri=…&includeRunDetails=true` | the same, a hundred test runs a request, up to five hundred | the tests it published, by outcome |
+| `{project}/_apis/test/Runs/{runId}/results?outcomes=Failed,Error,Timeout,Aborted` | the same, for its first three test runs with failures | the first 20 tests that failed, with their messages and stack traces |
+| `{project}/_apis/build/builds?definitions=…&branchName=refs/pull/…&maxBuildsPerDefinition=25` | the same | the pipeline's runs on the pull request, for one that passed on the same commit |
+| `{project}/_apis/build/builds?definitions=…&branchName=…&statusFilter=completed&$top=5` | the same | the pipeline's latest finished runs on the target branch |
 | `{project}/_apis/build/builds?repositoryId=…&branchName=…&minTime=…` | after you merge a pull request (below): every refresh for half an hour, while one of its runs hasn't finished, and for a quarter of an hour after the last one did; five merges a refresh, the newest first | its target branch's runs, among them those on its merge commit |
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
@@ -1433,10 +1440,10 @@ change and since an update, is counted once.
 A file opens in place of the details' parts (`PullRequestFilePage`, `PullRequestDetailsStore.file`), the header's
 trail saying so, `!4102 › PaymentsClient.cs`, or `Bug 5110 › !4091 › Rounding.cs` on a pull request's page over a
 work item's details; **‹**, **⌘[** or Esc go back to the details, at its row (`Place.file`), or at the thread it
-opened from in their comments, whose file's heading, or its menu, opens it at that thread (`ChangedFileOpener`). Its diff is the two
-versions compared a line at a time (`LineDiff`), its changes with three lines around each, and the lines its threads
-are on with three around them, the rest folded, to unfold twenty lines at a time, up from the code below a fold or
-down from the code above it, or all of it (`DiffLayout`). A thread shows under the line it ends on
+opened from in their comments, whose file's heading, or its menu, opens it at that thread (`ChangedFileOpener`). Its
+diff is the two versions compared a line at a time (`LineDiff`), its changes with three lines around each, and the
+lines its threads are on with three around them, the rest folded, to unfold twenty lines at a time, up from the code
+below a fold or down from the code above it, or all of it (`DiffLayout`). A thread shows under the line it ends on
 (`FileDiff.row(of:in:)`): where Azure DevOps followed it to, or else where it was made, when that's the version the
 diff shows after the change, or, before it, the same diff; its lines marked in the accent color. Those on the whole
 file, and those on lines of a version it doesn't show, as one made on an earlier update that Azure DevOps didn't follow
@@ -1449,6 +1456,56 @@ details then cover the list, as in a narrow window, without being made again, so
 the file's page goes or **⤡**; the details remember it for their files' pages until they close. A diff is read as the
 page shows it, and called off as it goes before it's read; the last few read are kept, besides those that show. ↗
 opens the file on the pull request's Files page, with what that change changed in it (`ChangedFiles.filePageURL`).
+
+#### Its builds
+
+One of a pull request's builds that failed, or is still running or queued, opens under its row with a click, or Space
+(`PullRequestPanel.CheckLine.canInvestigate`); one that passed, expired or hasn't run, a status check, and the
+pipelines after a merge, which built the target branch rather than the pull request, don't. A place in the details
+opens its build too, by its run: **Build failed** in What's Left leads to the first required build that failed and can
+be opened (`PullRequestPanel.build(openedBy:)`); a run on the Pipelines page leads to that run; and a failing pull
+request opened from elsewhere leads to the first of its builds and checks that failed (`Place.about`), which opens
+when it's a build. What's Left's other items about builds and checks, such as **Build passed**, only scroll to them.
+Only then is its run read (`BuildInvestigationStore`, through `BuildInvestigator` and `BuildInvestigationReader`),
+with the requests in the table above: its run first, then, at once, its timeline, its logs, its test runs, the
+pipeline's runs on the pull request and its latest finished ones on the target
+branch, then the end of the failed step's log and the failed tests of its first test runs with failures: ten
+requests, and one more for each hundred test runs past the first hundred, up to five hundred. What was read is
+kept in memory, by run, for the last twenty runs opened, until someone else signs in to the Azure CLI or Azure
+DevOps is turned off, which stops the reads under way too, even those it let go of when someone else signed in
+(`BuildInvestigator.stop`). It's used for ten minutes, or half a minute while the run is still going, unless its check
+says the run got further since, as when it started or finished (`PipelineRun.Phase`): opening it again, which always
+asks the investigator, within that time reads only the run, to tell whether it ran again since, which reads it all
+again, or nothing while it's going; what was read before shows meanwhile, for the builds still open and the last five
+that folded. Something that couldn't be read isn't kept, and says so, and a run that's gone, or that you can't read
+any more, lets go of what was read of it, as does one that ran again since, as a look at it or its check says, when it
+can't be read again (`BuildInvestigator.RunReplaced`); **Read Again**, beside when it was read, reads it anew. So does
+a change of its check, as the list reads it, such as a run that finished or runs again under the same ID; and a push
+or a retarget of its pull request asks the investigator again, which says again whether the run built the latest
+commit, or reads it for the new target branch: at once while it's open, or as it opens again
+(`BuildInvestigationStore.Stamp`). The investigator shares a read under way with whoever asks for the run meanwhile,
+even to read it anew, so a read asked for then waits for it, and starts after, unless what's being read is what's
+asked for by then, as when a pull request is retargeted and back; one that comes back with the run not as far along as
+its check says by then, as when it finished meanwhile, is read again, once; and one that had read the run before they
+asked, and found it finished, is checked with a look at the run, which reads it again if it ran again since. Only one
+pull request's builds are open at a time, wherever its details show, beside the list or as a page over a work item's
+or another pull request's: opening one of another's folds them, and so do the details beside the list showing another
+pull request, or closing, for the one they showed; what shows of them goes, and so does what shows of a run its builds
+and checks don't list any more, such as one a newer run replaced. It shows, from what was read
+(`BuildInvestigationPanel.swift`): its stages, as the Pipelines page draws them (`StageFlow`); where it failed, from
+its stage to its task, without a name said twice in a row (`failurePlace`), or what it does while it's going
+(`progress`); whether it's the change's doing, the comparison's hints (`BuildHint`), each a sentence in its state's
+color, orange for an older commit or a pass on the same commit before, red when the target branch fails too, green
+when it passes, each but the first opening the run it names, and "may be flaky" only for a pass on the very same
+commit; **Fix the Build with Copilot…**, for a required build that failed, while Send Work to Copilot is on and the
+pull request's menu offers it, or that Copilot's on it; **Open Run**; its errors, each with where it is, unless its
+message starts with that very place, as a compiler writes it, its code, unless its message names it, and its step,
+unless it's the one that failed; how its tests went (`BuildTests.summary`), which, when they couldn't all be read,
+says how many failed at least, or that no failures are known rather than that none failed, and the first that failed,
+each with its class, how long it ran, its message, its first six lines with **Show More** for the rest, and, when you
+ask, its stack trace, with **Open Tests**; and the last 20 lines of the failed step's log, numbered, errors red,
+warnings orange and commands blue, in one text you can select across and scroll sideways, all 200 that were read with
+**Show All**, and **Open Log** for the rest.
 
 ### What counts as new
 
@@ -2107,7 +2164,8 @@ plain sentence if the model isn't available or fails. BriefBar explicitly uses
   account isn't in from one it only has to sign in to again: either way, it offers to sign in there, and
   signing in says which it is.
 - A failed build says where it failed only when its run's timeline can be read, and then only its
-  first error: the rest is in its log, which BriefBar doesn't read.
+  first error. Opened in a pull request's details, it shows its errors, the first 20 tests that failed and the
+  last 200 lines of the failed step's log: the rest is in Azure DevOps.
 - The pipelines after a merge are found in its repository's project: a run that a trigger starts in
   another project isn't.
 - The Sprint section shows one team's current sprint at a time, from your teams in the organizations
