@@ -614,9 +614,12 @@ package final class AzureDevOpsSource: BriefBarSource {
         await workLinks?.loadOnce()
         // Before Copilot's list loads, which shows them with the sessions.
         publishSentTasks()
-        // Each pull request's Copilot session, for the pictures of their details: Show Links' sessions are told later, and
-        // they follow.
-        await pullRequestSessions?.prepare(store.items)
+        // The Copilot sessions of the pull requests whose details are drawn, read once: the first of yours that needs you
+        // and the first that's failing; and, in the demo, which makes them up and reads nothing, every one, for the one
+        // whose sessions ask which is its and the one whose session waits for your answer. Show Links' sessions are told
+        // later, and they follow.
+        let drawn = Self.detailsDrawn(in: store.items)
+        await pullRequestSessions?.prepare(services.isDemo ? store.items : [drawn.yours, drawn.failing].compactMap { $0 })
         listDemoNotifications(from: store)
         // Let the on-device model word the brief before drawing.
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)
@@ -761,8 +764,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         guard let store else { return [] }
         // The sessions as Show Links has them now that every source told it.
         pullRequestSessions?.updateAll()
-        let yours = store.items.first { $0.group == .needsYou && $0.role == .author } ?? store.items.first
-        let failing = store.items.first { $0.group == .failing }
+        let (yours, failing) = Self.detailsDrawn(in: store.items)
         let asking = store.items.first { item in
             if case .ask? = pullRequestSessions?.session(for: item.key)?.pick { return true }
             return false
@@ -807,6 +809,12 @@ package final class AzureDevOpsSource: BriefBarSource {
             }
         }
         return renderings
+    }
+
+    /// The pull requests whose details are drawn whatever their sessions: the first of yours that needs you, or else the
+    /// first; and the first that's failing.
+    private static func detailsDrawn(in items: [PRSnapshot]) -> (yours: PRSnapshot?, failing: PRSnapshot?) {
+        (items.first { $0.group == .needsYou && $0.role == .author } ?? items.first, items.first { $0.group == .failing })
     }
 }
 

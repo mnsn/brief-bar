@@ -57,6 +57,8 @@ final class PullRequestSessions: ObservableObject {
     private var spawned: [PRKey: [UUID: Task<Void, Never>]] = [:]
     /// Stopped for good: nothing more is read.
     private var hasStopped = false
+    /// For pictures (`prepare`): read once, without the search for mentions or how work would reach a session.
+    private var isForPictures = false
     /// The pull requests read for now, and the sessions whose way there is checked now: one at a time, each.
     private var reading: Set<PRKey> = []
     private var checking: Set<String> = []
@@ -103,8 +105,10 @@ final class PullRequestSessions: ObservableObject {
         await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
-    /// Follows these pull requests for pictures, as they stand now: pictures don't follow anything.
+    /// Reads these pull requests' sessions once, for pictures, as they stand now: pictures follow nothing, and show neither
+    /// the guess nor how work would reach a session, so neither the logs are searched for mentions nor that is checked.
     func prepare(_ items: [PRSnapshot]) async {
+        isForPictures = true
         for item in items {
             start(following: item.key, record: record(item.key), createdAt: item.createdAt)
             await read(item.key)
@@ -220,7 +224,8 @@ final class PullRequestSessions: ObservableObject {
 
     /// Reads the sessions a followed pull request's work could go to, the Copilot app's database and the sessions' state,
     /// off the main thread; which of the app's sessions mention it, once, and only when none goes with it; and how work
-    /// would reach its session. Only while Send Work to Copilot is on and it's open, never in the demo.
+    /// would reach its session. Only while Send Work to Copilot is on and it's open, never in the demo; for pictures, only
+    /// its sessions.
     private func read(_ key: PRKey) async {
         guard !reading.contains(key) else { return }
         guard isReadable(key), let state = followed[key], let record = current(state, key) else {
@@ -235,6 +240,7 @@ final class PullRequestSessions: ObservableObject {
         guard !Task.isCancelled, followed[key] != nil, copilot.isOn else { return }
         followed[key]?.found = found
         update(key)
+        guard !isForPictures else { return }
         if case .newSession(chosenByYou: false)? = sessions[key]?.pick, followed[key]?.mentioned == nil {
             if let known = mentionsRead[key], Date().timeIntervalSince(known.at) < Self.mentionsFreshFor {
                 followed[key]?.mentioned = known.ids
@@ -252,10 +258,11 @@ final class PullRequestSessions: ObservableObject {
 
     /// How work would reach a followed pull request's session now, but for its repository, which doesn't change while its
     /// details show and is checked as work goes there: only for one whose work can go there, once its sessions were read.
-    private func checkDelivery(_ key: PRKey) async {
+    /// - Parameter unlessKnown: only if it isn't known yet for that session, as when it changed; a read checks it again.
+    private func checkDelivery(_ key: PRKey, unlessKnown: Bool = false) async {
         guard isReadable(key), let state = followed[key], state.found != nil, let record = current(state, key),
               let session = sessions[key], session.canChoose, let choice = session.session, !choice.isUnavailable,
-              !checking.contains(choice.id)
+              !checking.contains(choice.id), !unlessKnown || session.delivery == nil
         else { return }
         checking.insert(choice.id)
         defer { checking.remove(choice.id) }
@@ -303,12 +310,12 @@ final class PullRequestSessions: ObservableObject {
         }
         let session = make(state, key)
         if sessions[key] != session { sessions[key] = session }
-        guard isReadable(key) else { return }
+        guard isReadable(key), !isForPictures else { return }
         if state.found == nil {
             if !reading.contains(key) { spawn(for: key) { [weak self] in await self?.read(key) } }
         } else if let session, session.canChoose, session.delivery == nil, let choice = session.session, !choice.isUnavailable,
                   !checking.contains(choice.id) {
-            spawn(for: key) { [weak self] in await self?.checkDelivery(key) }
+            spawn(for: key) { [weak self] in await self?.checkDelivery(key, unlessKnown: true) }
         }
     }
 

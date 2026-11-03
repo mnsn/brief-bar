@@ -103,6 +103,10 @@ import Testing
         return (item, record)
     }
 
+    /// Between reads, in the tests that follow a pull request: often enough for them, without holding up the tests that run
+    /// beside them on the one thread they share (`LIBDISPATCH_COOPERATIVE_POOL_STRICT`).
+    private let refresh: Duration = .milliseconds(250)
+
     /// Waits, a little at a time, until something is so, as the store reads and keeps up off the main thread: for as long
     /// as a busy Mac may take, since it stops as soon as it is.
     private func until(_ condition: () -> Bool) async throws {
@@ -119,7 +123,7 @@ import Testing
         try database(at: home)
         let store = copilot(home: home)
         let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
-        sessions.refreshEvery = .milliseconds(50)
+        sessions.refreshEvery = refresh
         let (item, record) = try await pullRequest()
         sessions.record = { $0 == item.key ? record : nil }
 
@@ -202,7 +206,7 @@ import Testing
         )
         store.settings.copilotRuns = [lastTask]
         let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
-        sessions.refreshEvery = .milliseconds(50)
+        sessions.refreshEvery = refresh
         let (item, record) = try await pullRequest()
         sessions.record = { $0 == item.key ? record : nil }
         let following = Task { await sessions.follow(item, record: record) }
@@ -282,7 +286,7 @@ import Testing
         let links = Links(defaults: MemoryDefaults(), isDemo: false)
         links.setOn(true)
         let sessions = PullRequestSessions(copilot: store, links: links)
-        sessions.refreshEvery = .milliseconds(50)
+        sessions.refreshEvery = refresh
         let (item, record) = try await pullRequest(4085)
         #expect(record.pullRequest.status == .completed)
         sessions.record = { $0 == item.key ? record : nil }
@@ -374,7 +378,7 @@ import Testing
         let links = Links(defaults: MemoryDefaults(), isDemo: false)
         links.setOn(true)
         let sessions = PullRequestSessions(copilot: store, links: links)
-        sessions.refreshEvery = .milliseconds(50)
+        sessions.refreshEvery = refresh
         let (item, record) = try await pullRequest()
         sessions.record = { $0 == item.key ? record : nil }
         let ref = try #require(ItemRef.session(onBranch))
@@ -431,6 +435,50 @@ import Testing
         // What part 9 asks for a pull request that doesn't show, the same.
         let found = try #require(await sessions.find(openedRecord))
         #expect(found.session?.id == opener.session?.id && found.basis == .openedIt && found.delivery == .cli)
+    }
+
+    // MARK: Pictures
+
+    /// For pictures, each pull request's sessions are read once, and that's all: neither a search of the logs for mentions,
+    /// nor a check of how work would reach its session, which pictures don't show, nor another read.
+    @Test func readsOnlyTheSessionsForPictures() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        // Logs that would be searched.
+        for id in [onBranch, other] {
+            let state = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+            try Data("{}\n".utf8).write(to: state.appendingPathComponent("events.jsonl"))
+        }
+        let store = copilot(home: home)
+        var searched = 0
+        store.mentionReadForTests = { _ in searched += 1 }
+        // !4088's session is on its branch; none goes with !4091.
+        let (onIt, onItRecord) = try await pullRequest()
+        let (none, noneRecord) = try await pullRequest(4091)
+        let records = [onIt.key: onItRecord, none.key: noneRecord]
+
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        sessions.refreshEvery = refresh
+        sessions.record = { records[$0] }
+        var checked = 0
+        sessions.deliveryCheckedForTests = { _ in checked += 1 }
+        await sessions.prepare([onIt, none])
+        #expect(sessions.session(for: onIt.key)?.session?.id == onBranch)
+        #expect(sessions.session(for: onIt.key)?.delivery == nil)
+        #expect(sessions.session(for: none.key)?.pick == .newSession(chosenByYou: false))
+        sessions.updateAll()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(checked == 0 && searched == 0)
+
+        // As its details show it, its sessions' logs are searched.
+        let following = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        following.record = { records[$0] }
+        let task = Task { await following.follow(none, record: noneRecord) }
+        defer { task.cancel() }
+        try await until { searched > 0 }
+        #expect(searched > 0)
     }
 
     // MARK: How the line says it
