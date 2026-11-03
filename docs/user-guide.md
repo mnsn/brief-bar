@@ -396,7 +396,8 @@ step's log, which you can select and scroll sideways, all of the 200 BriefBar re
 build that's still going opens the same way, to show its stages as they are and what it runs now. **↻**, beside
 when it was read, reads it again, as BriefBar does once it finished or runs again, or once someone pushes to the
 pull request or retargets it; it keeps what it read in memory, so opening it again soon after reads little. When it
-can't read it again, what it read stays, with why, unless the run ran again since.
+can't read it again, what it read stays, with why, unless the run ran again since, or it's gone or no longer yours
+to read.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
