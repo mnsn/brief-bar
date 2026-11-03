@@ -386,15 +386,62 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
             Interactive authentication is needed. Please run:
             az login --tenant "\(Tenants.other)"
             """
+        // A quoted name goes up to the line's last quote: what's between goes with it.
         #expect(AzureCLITokenProvider.error(fromOutput: output) == .signedOut(
-            "AADSTS50020: User account '<account>' from identity provider 'live.com' does not exist in tenant '<name>' and cannot access the application '<id>'. Trace ID: <id> Correlation ID: <id>"
+            "AADSTS50020: User account '<account>' from identity provider 'live.com' does not exist in tenant '<name>'. Trace ID: <id> Correlation ID: <id>"
         ))
-        // A directory's ID where it says to sign in, and one it would cut short: neither is left, nor any part of one.
+        // A directory's ID where it says to sign in, and one it would cut short: neither is left, nor any part of one. A
+        // quoted ID stays an ID.
         #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Please run 'az login --tenant \"\(Tenants.other)\"' to setup account.")
             == .signedOut("Please run 'az login --tenant \"<id>\"' to setup account."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: AADSTS90002: Tenant '\(Tenants.other)' not found.")
+            == .signedOut("AADSTS90002: Tenant '<id>' not found."))
         let long = AzureCLITokenProvider.error(fromOutput: "ERROR: Please run 'az login'. " + String(repeating: "x", count: 266) + " " + Tenants.other)
         #expect(!long.description.contains(String(Tenants.other.prefix(8))))
         #expect(long.description.hasSuffix(" <id>"))
+    }
+
+    /// A directory's name, however it's written, in single quotes or double, and whatever it holds: quotes of its own, or no
+    /// closing quote.
+    @Test func aDirectorysNameIsKeptOutHoweverItsQuoted() {
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Directory 'Fabrikam Example' isn't available.")
+            == .failed("Directory '<name>' isn't available."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Directory 'Fabrikam's Research Directory' isn't available.")
+            == .failed("Directory '<name>' isn't available."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Directory \"Fabrikam's Example\" isn't available.")
+            == .failed("Directory \"<name>\" isn't available."))
+        let lab = """
+            ERROR: AADSTS50020: User account 'robin@contoso.example' does not exist in tenant 'Fabrikam Students' Lab' and cannot access the application '\(AzureCLITokenProvider.azureDevOpsResource)'.
+            """
+        #expect(AzureCLITokenProvider.error(fromOutput: lab) == .signedOut("AADSTS50020: User account '<account>' does not exist in tenant '<name>'."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Directory 'Fabrikam Example") == .failed("Directory '<name>'"))
+    }
+
+    /// A name it gives without quotes goes, to the line's end.
+    @Test func aDirectoryNamedWithoutQuotesIsKeptOut() {
+        let output = """
+            ERROR: AADSTS500011: The resource principal named \(AzureCLITokenProvider.azureDevOpsResource) was not found in the tenant named Fabrikam Example. This can happen if the application has not been installed by the administrator of the tenant or consented to by any user in the tenant.
+            """
+        #expect(AzureCLITokenProvider.error(fromOutput: output)
+            == .signedOut("AADSTS500011: The resource principal named <id> was not found in the tenant named <name>"))
+    }
+
+    /// An address goes whole, whatever a Microsoft Entra user name holds: apostrophes, wherever they are, or a guest's sign-in
+    /// name in another directory, which holds their own address and their directory's domain, with `#` right before the `@`.
+    @Test func anAddressIsKeptOutWhateverItHolds() {
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: The user robin_contoso.example#EXT#@fabrikam.onmicrosoft.com couldn't be signed in.")
+            == .failed("The user <account> couldn't be signed in."))
+        let guest = """
+            ERROR: AADSTS50105: The signed in user 'robin_contoso.example#EXT#@fabrikam.onmicrosoft.com' is not assigned to a role for the application.
+            """
+        #expect(AzureCLITokenProvider.error(fromOutput: guest)
+            == .signedOut("AADSTS50105: The signed in user '<account>' is not assigned to a role for the application."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: AADSTS50020: User account 'O'Brien@contoso.example' does not exist.")
+            == .signedOut("AADSTS50020: User account '<account>' does not exist."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: User 'robin'@contoso.example' does not exist in MSAL token cache.")
+            == .signedOut("User '<account>' does not exist in MSAL token cache."))
+        #expect(AzureCLITokenProvider.redacted("o''brien@contoso.example") == "<account>")
+        #expect(AzureCLITokenProvider.redacted("robin~dev^ops!@contoso.example") == "<account>")
     }
 
     // MARK: Requests
@@ -471,6 +518,28 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         }
         #expect(await tokens.asked == [nil, nil])
         #expect(await tokens.invalidations == 1)
+    }
+
+    @Test func eachDirectorysTokenIsRefreshedOnceWhenRejected() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        // Your token is rejected, then the fresh one is told the organization is in fabrikam's directory, whose kept token
+        // is rejected too, being stale; a fresh one from there works.
+        let calls = Locked(0)
+        server.on("/fabrikam/_apis/connectionData") { _ in
+            calls.set(calls.value + 1)
+            switch calls.value {
+            case 1: return .status(401)
+            case 2, 3: return .status(401, headers: ["X-VSS-ResourceTenant": Tenants.other])
+            default: return .json(["authenticatedUser": ["id": "ME"]])
+            }
+        }
+        let read = try await server.client(tokens: tokens).get(ADOEndpoint.connectionData(organization: "fabrikam"), as: ADOConnectionData.self)
+        #expect(read.authenticatedUser.id == "ME")
+        #expect(await tokens.asked == [nil, nil, Tenants.other, Tenants.other])
+        #expect(await tokens.invalidations == 2)
+        #expect(calls.value == 4)
     }
 
     @Test func onlyTenantIDsNameDirectories() throws {
@@ -647,26 +716,53 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(server.requests.filter { $0.url?.path.hasPrefix("/adatum/") == true }.count == 1)
     }
 
-    @Test func organizationsWaitingOnASignInDontTakeTheReadsOfPullRequestsSentToYou() async throws {
+    @Test func organizationsWaitingOnASignInTakeTurnsWithPullRequestsSentToYou() async throws {
         let server = StubServer()
         let tokens = FakeTokens(server.id, tenant: Tenants.home)
         server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
         server.on("/contoso/_apis/git/pullrequests/11", json: Fixture.pullRequest(11, title: "Theirs", author: People.sam))
         server.on("/_apis/policy/evaluations", json: Fixture.list([]))
         server.on("/threads", json: Fixture.list([]))
-        // Ten organizations in a directory to sign in to come first, as many as a refresh reads.
-        let elsewhere = (1...10).map { "adatum\($0)" }
+        // Twelve organizations in a directory to sign in to come first, more than a refresh reads.
+        let elsewhere = (1...12).map { "adatum" + ($0 < 10 ? "0\($0)" : "\($0)") }
         for organization in elsewhere { server.put(organization, in: Tenants.other) }
         let engine = PulseEngine(client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: [])) { _ in }
         await engine.setLinkedPullRequests(Set(elsewhere.map { PRKey($0, 1) } + [PRKey(Fixture.org, 11)]))
+        func asked() -> Int { server.requests.filter { $0.url?.path.hasPrefix("/adatum") == true }.count }
+
+        // Ten reads a refresh, theirs among them: ten are tried, a request each, and said.
         await engine.refreshNow()
+        #expect(asked() == 10)
+        #expect(await engine.currentSnapshot().problem
+            == .otherDirectory(organizations: Array(elsewhere.prefix(10)), tenant: Tenants.other, others: nil))
+
+        // Then the two not tried yet, and contoso's, come before those tried, seven of which are tried again: and all
+        // twelve are said, tried this time or not.
+        await engine.refreshNow()
+        #expect(asked() == 19)
         let snapshot = await engine.currentSnapshot()
         #expect(snapshot.records.map(\.id) == [PRKey(Fixture.org, 11)])
-        // Each was tried once, and is said.
-        for organization in elsewhere {
-            #expect(server.requests.filter { $0.url?.path.hasPrefix("/\(organization)/") == true }.count == 1)
-        }
-        #expect(snapshot.problem?.signInTenant == Tenants.other)
+        #expect(snapshot.problem == .otherDirectory(organizations: elsewhere, tenant: Tenants.other, others: nil))
+
+        // Once none is sent to you from there, none is said.
+        await engine.setLinkedPullRequests([PRKey(Fixture.org, 11)])
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == nil)
+    }
+
+    @Test func anOrganizationThatAnswersOtherwiseNoLongerWaitsOnASignIn() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        server.put("fabrikam", in: Tenants.other)
+        // Signed in there, it answers that you aren't one of its members: no access, rather than a sign-in to make.
+        server.on("/fabrikam/_apis/connectionData") { _ in .status(401) }
+        let engine = PulseEngine(client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: [])) { _ in }
+        await engine.setLinkedPullRequests([PRKey("fabrikam", 9)])
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+        await tokens.signIn(to: Tenants.other)
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == nil)
     }
 
     @Test func pullRequestsSentToYouAreReadWhileEveryOrganizationYouWatchWaitsOnASignIn() async throws {
@@ -892,6 +988,206 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
         // Its first project's pipelines say where it is; its other project's aren't asked for, this refresh.
         #expect(server.requests.count == 1)
+    }
+
+    @Test func aRunsStagesWaitingOnASignInSaySoAndAreTriedAgainAtEachRefresh() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let web = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 31, name: "web CI")
+        // fabrikam's runs are read, but its run's stages answer that they're in a directory to sign in to, as when that
+        // sign-in has just run out.
+        server.on("/fabrikam/p1/_apis/build/builds", json: Fixture.list([
+            WorkFixture.build(42, definition: 31, status: "inProgress", result: nil, queued: t(-hour)),
+        ]))
+        server.on("/fabrikam/p1/_apis/build/builds/42/timeline") { _ in .status(401, headers: ["X-VSS-ResourceTenant": Tenants.other]) }
+        let clock = Locked(t(0))
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: [web]), now: { clock.value }
+        ) { _ in }
+        func timelines() -> Int { server.requests.compactMap(\.url?.path).filter { $0.hasSuffix("/timeline") }.count }
+
+        await engine.refreshNow()
+        var snapshot = await engine.currentSnapshot()
+        #expect(snapshot.statuses.first?.runs.map(\.id) == [42])
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+        // Not a timeline that keeps failing, waited on longer and longer: it's tried again at each refresh.
+        clock.set(t(60))
+        await engine.refreshNow()
+        clock.set(t(61))
+        await engine.refreshNow()
+        #expect(timelines() == 3)
+        // So signing in there reads it at the next one.
+        await tokens.signIn(to: Tenants.other)
+        server.on("/fabrikam/p1/_apis/build/builds/42/timeline", json: WorkFixture.timeline([
+            WorkFixture.record("s", "Stage", "Build", order: 1, state: "inProgress", result: nil),
+        ]))
+        clock.set(t(62))
+        await engine.refreshNow()
+        snapshot = await engine.currentSnapshot()
+        #expect(snapshot.statuses.first?.stages.map(\.name) == ["Build"])
+        #expect(snapshot.problem == nil)
+    }
+
+    @Test func runsWaitingOnASignInTakeTheirTurnsBehindTheOthers() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        // Six of fabrikam's pipelines come first, a refresh's worth, with runs read whose stages wait on a sign-in to its
+        // directory; northwind's comes after them.
+        let fabrikam = (1...6).map {
+            PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: $0, name: "CI \($0)")
+        }
+        let northwind = PipelineRef(organization: "northwind", projectId: "p1", projectName: "Shop", definitionId: 7, name: "deploy")
+        server.on("/fabrikam/p1/_apis/build/builds", json: Fixture.list((1...6).map {
+            WorkFixture.build(100 + $0, definition: $0, status: "inProgress", result: nil, queued: t(-hour))
+        }))
+        for build in 101...106 {
+            server.on("/fabrikam/p1/_apis/build/builds/\(build)/timeline") { _ in .status(401, headers: ["X-VSS-ResourceTenant": Tenants.other]) }
+        }
+        server.on("/northwind/p1/_apis/build/builds", json: Fixture.list([
+            WorkFixture.build(207, definition: 7, status: "inProgress", result: nil, queued: t(-hour)),
+        ]))
+        server.on("/northwind/p1/_apis/build/builds/207/timeline", json: WorkFixture.timeline([
+            WorkFixture.record("s", "Stage", "Deploy", order: 1, state: "inProgress", result: nil),
+        ]))
+        let clock = Locked(t(0))
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: fabrikam + [northwind]),
+            now: { clock.value }
+        ) { _ in }
+        func northwindStages() async -> [String]? {
+            await engine.currentSnapshot().statuses.first { $0.pipeline.organization == "northwind" }?.stages.map(\.name)
+        }
+        await engine.refreshNow()
+        #expect(await northwindStages() == [])
+        // fabrikam's go behind it, though they aren't timelines that keep failing: northwind's stages are read next.
+        clock.set(t(60))
+        await engine.refreshNow()
+        #expect(await northwindStages() == ["Deploy"])
+        #expect(await engine.currentSnapshot().problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+    }
+
+    @Test func runsWaitingOnASignInAreSaidWhileTheOthersTakeTheirTurns() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        // Six of fabrikam's pipelines, whose runs' stages wait on a sign-in to its directory, and six of northwind's.
+        let fabrikam = (1...6).map {
+            PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: $0, name: "CI \($0)")
+        }
+        let northwind = (7...12).map {
+            PipelineRef(organization: "northwind", projectId: "p1", projectName: "Shop", definitionId: $0, name: "deploy \($0)")
+        }
+        server.on("/fabrikam/p1/_apis/build/builds", json: Fixture.list((1...6).map {
+            WorkFixture.build(100 + $0, definition: $0, status: "inProgress", result: nil, queued: t(-hour))
+        }))
+        server.on("/northwind/p1/_apis/build/builds", json: Fixture.list((7...12).map {
+            WorkFixture.build(200 + $0, definition: $0, status: "inProgress", result: nil, queued: t(-hour))
+        }))
+        for build in 101...106 {
+            server.on("/fabrikam/p1/_apis/build/builds/\(build)/timeline") { _ in .status(401, headers: ["X-VSS-ResourceTenant": Tenants.other]) }
+        }
+        for build in 207...212 {
+            server.on("/northwind/p1/_apis/build/builds/\(build)/timeline", json: WorkFixture.timeline([
+                WorkFixture.record("s", "Stage", "Deploy", order: 1, state: "inProgress", result: nil),
+            ]))
+        }
+        let clock = Locked(t(0))
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: fabrikam + northwind),
+            now: { clock.value }
+        ) { _ in }
+        let waiting = PulseProblem.otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil)
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == waiting)
+
+        // Then northwind's take every turn: fabrikam's aren't tried, but they still wait on that sign-in, which is still said.
+        clock.set(t(60))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        let northwindStatuses = snapshot.statuses.filter { $0.pipeline.organization == "northwind" }
+        #expect(northwindStatuses.count == 6)
+        #expect(northwindStatuses.allSatisfy { $0.stages.map(\.name) == ["Deploy"] })
+        #expect(snapshot.problem == waiting)
+    }
+
+    @Test func aRunSetAsideForASignInIsReadOnceSignedInThereWhateverItFailedBefore() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let first = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 1, name: "CI")
+        let second = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 2, name: "deploy")
+        server.on("/fabrikam/p1/_apis/build/builds", json: Fixture.list([
+            WorkFixture.build(101, definition: 1, status: "inProgress", result: nil, queued: t(-hour)),
+            WorkFixture.build(102, definition: 2, status: "inProgress", result: nil, queued: t(-hour)),
+        ]))
+        // The first run's stages are read until fabrikam's directory wants a sign-in; the second's fail, three times.
+        let signedOut = Locked(false)
+        server.on("/fabrikam/p1/_apis/build/builds/101/timeline") { _ in
+            signedOut.value
+                ? .status(401, headers: ["X-VSS-ResourceTenant": Tenants.other])
+                : .json(WorkFixture.timeline([WorkFixture.record("s", "Stage", "Build", order: 1, state: "inProgress", result: nil)]))
+        }
+        let failing = Locked(true)
+        server.on("/fabrikam/p1/_apis/build/builds/102/timeline") { _ in
+            failing.value
+                ? .status(500)
+                : .json(WorkFixture.timeline([WorkFixture.record("s", "Stage", "Deploy", order: 1, state: "inProgress", result: nil)]))
+        }
+        let clock = Locked(t(0))
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: [first, second]),
+            now: { clock.value }
+        ) { _ in }
+        for time in [0.0, 60, 120] {
+            clock.set(t(time))
+            await engine.refreshNow()
+        }
+        // When the second's turn comes again, fabrikam's directory wants a sign-in, which the first's stages tell: the
+        // second is set aside, untried.
+        signedOut.set(true)
+        clock.set(t(240))
+        await engine.refreshNow()
+        // Signed in there again a minute later, it's read, rather than waited on longer and longer as one that keeps failing.
+        signedOut.set(false)
+        failing.set(false)
+        clock.set(t(300))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.statuses.first { $0.pipeline.definitionId == 2 }?.stages.map(\.name) == ["Deploy"])
+        #expect(snapshot.problem == nil)
+    }
+
+    @Test func aRunNoLongerShownNoLongerWaitsOnASignIn() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let ci = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 1, name: "CI")
+        let release = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 2, name: "release")
+        server.on("/fabrikam/p1/_apis/build/builds", json: Fixture.list([
+            WorkFixture.build(101, definition: 1, status: "inProgress", result: nil, queued: t(-hour)),
+            WorkFixture.build(201, definition: 2, queued: t(-2 * hour)),
+        ]))
+        server.on("/fabrikam/p1/_apis/build/builds/201/timeline", json: WorkFixture.timeline([WorkFixture.record("s", "Stage", "Release", order: 1)]))
+        // CI's run, still running, has its stages read, until fabrikam's directory wants a sign-in.
+        let signedOut = Locked(false)
+        server.on("/fabrikam/p1/_apis/build/builds/101/timeline") { _ in
+            signedOut.value
+                ? .status(401, headers: ["X-VSS-ResourceTenant": Tenants.other])
+                : .json(WorkFixture.timeline([WorkFixture.record("s", "Stage", "Build", order: 1, state: "inProgress", result: nil)]))
+        }
+        let clock = Locked(t(0))
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: [ci, release]),
+            now: { clock.value }
+        ) { _ in }
+        await engine.refreshNow()
+        signedOut.set(true)
+        clock.set(t(60))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+
+        // CI is unpinned: release's run, finished and read, isn't asked for again, and nothing shown waits on that sign-in.
+        await engine.setConfiguration(PipelinesEngine.Configuration(pipelines: [release]))
+        clock.set(t(120))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == nil)
     }
 
     @Test func theSprintSaysWhichOrganizationsTeamsAreInAnotherDirectory() async throws {
@@ -1312,6 +1608,137 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(snapshot.problem?.signInTenant == Tenants.other)
     }
 
+    @Test func aTeamFoundWhoseBoardThenWaitsOnASignInIsntShownNorKept() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        let web = TeamRef(organization: "fabrikam", projectId: "p9", projectName: "Web", id: "t9", name: "Web Team")
+        WorkFixture.serve(
+            server, sprints: [WorkFixture.team.id: [WorkFixture.iteration()], web.id: [WorkFixture.iteration("i9", name: "Sprint 9")]],
+            relations: ["i1": WorkFixture.relations([1]), "i9": WorkFixture.relations([5])],
+            items: [WorkFixture.workItem(1, "User Story"), WorkFixture.workItem(5, "Task", "Yours", assignee: People.me)]
+        )
+        server.on("/fabrikam/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/fabrikam/_apis/teams", json: Fixture.list([WorkFixture.teamJSON(web)]))
+        server.put("fabrikam", in: Tenants.other)
+        let clock = Locked(t(0))
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens), configuration: SprintEngine.Configuration(organizations: [Fixture.org, "fabrikam"]),
+            now: { clock.value }, calendar: WorkFixture.utc
+        ) { _ in }
+        // fabrikam's team has more of your work: it's found, and kept.
+        await engine.refreshNow()
+        var snapshot = await engine.currentSnapshot()
+        #expect(snapshot.board?.team.id == web.id)
+        #expect(snapshot.foundTeam == web)
+
+        // A minute later, the Azure CLI has signed out of fabrikam's directory, which only its board's next read tells, its
+        // teams and sprint being known: fabrikam waits on a sign-in, and contoso's team shows instead, not kept.
+        await tokens.signOut(of: Tenants.other)
+        clock.set(t(60))
+        await engine.refreshNow()
+        snapshot = await engine.currentSnapshot()
+        #expect(snapshot.board?.team.id == WorkFixture.team.id)
+        #expect(snapshot.foundTeam == nil)
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+    }
+
+    /// A team found for you is set aside once its organization waits on a sign-in: when its board is read, or your teams
+    /// are read again. If the team looked at instead can't be read, its board isn't shown meanwhile.
+    @Test(arguments: [60, SprintEngine.teamsLifetime + 60])
+    func aTeamSetAsideForASignInIsntShownWhenTheNextCantBeRead(after gap: TimeInterval) async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        let web = TeamRef(organization: "fabrikam", projectId: "p9", projectName: "Web", id: "t9", name: "Web Team")
+        WorkFixture.serve(
+            server, sprints: [WorkFixture.team.id: [WorkFixture.iteration()], web.id: [WorkFixture.iteration("i9", name: "Sprint 9")]],
+            relations: ["i9": WorkFixture.relations([5])],
+            items: [WorkFixture.workItem(1, "User Story"), WorkFixture.workItem(5, "Task", "Yours", assignee: People.me)]
+        )
+        // contoso's sprint's work can be read at first, and not later.
+        let failing = Locked(false)
+        server.on("/iterations/i1/workitems") { _ in failing.value ? .status(500) : .json(WorkFixture.relations([1])) }
+        server.on("/fabrikam/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/fabrikam/_apis/teams", json: Fixture.list([WorkFixture.teamJSON(web)]))
+        server.put("fabrikam", in: Tenants.other)
+        let clock = Locked(t(0))
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens), configuration: SprintEngine.Configuration(organizations: [Fixture.org, "fabrikam"]),
+            now: { clock.value }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().board?.team.id == web.id)
+
+        // Later, fabrikam waits on a sign-in, and contoso's team, looked at instead, can't be read: fabrikam's board doesn't
+        // stay shown meanwhile.
+        await tokens.signOut(of: Tenants.other)
+        failing.set(true)
+        clock.set(t(gap))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.board == nil)
+        #expect(snapshot.foundTeam == nil)
+        #expect(snapshot.problem == .otherDirectory(
+            organizations: ["fabrikam"], tenant: Tenants.other, others: "Couldn't read contoso (Azure DevOps answered with HTTP 500.)."
+        ))
+    }
+
+    @Test func aTeamWhoseOrganizationThenWaitsOnASignInIsntFoundOnItsOwn() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        let first = TeamRef(organization: "fabrikam", projectId: "p9", projectName: "Web", id: "t9", name: "A Team")
+        let second = TeamRef(organization: "fabrikam", projectId: "p9", projectName: "Web", id: "t10", name: "B Team")
+        // B Team's sprint can't be read at first. (Before the fixture's routes, which have none of B Team's.)
+        server.on("/t10/_apis/work/teamsettings/iterations") { _ in .status(500) }
+        WorkFixture.serve(
+            server, sprints: [first.id: [WorkFixture.iteration("i9", name: "Sprint 9")]],
+            relations: ["i9": WorkFixture.relations([5])], items: [WorkFixture.workItem(5, "Task", "Yours", assignee: People.me)]
+        )
+        server.on("/fabrikam/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/fabrikam/_apis/teams", json: Fixture.list([WorkFixture.teamJSON(first), WorkFixture.teamJSON(second)]))
+        server.put("fabrikam", in: Tenants.other)
+        let clock = Locked(t(0))
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens), configuration: SprintEngine.Configuration(organizations: ["fabrikam"]),
+            now: { clock.value }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().board?.team.id == first.id)
+        func boardReads() -> Int { server.requests.filter { $0.url?.path.contains("/iterations/i9/workitems") == true }.count }
+        let before = boardReads()
+
+        // A minute later, signed out of fabrikam's directory, BriefBar looks for your team again, as you now watch contoso
+        // too: A Team's sprint is still known, and B Team's tells that fabrikam waits on a sign-in. A Team isn't found on
+        // its own then, nor its board asked for. (contoso's team has no sprint.)
+        await tokens.signOut(of: Tenants.other)
+        clock.set(t(60))
+        await engine.setConfiguration(SprintEngine.Configuration(organizations: ["fabrikam", Fixture.org]))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(boardReads() == before)
+        #expect(snapshot.board == nil)
+        #expect(snapshot.foundTeam == nil)
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+    }
+
+    @Test func theSprintSaysWhyOtherOrganizationsTeamsCouldntBeReadBesideATeamYouChose() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1, "User Story")])
+        server.on("/northwind/_apis/teams") { _ in .status(500) }
+        let engine = SprintEngine(
+            client: server.client(),
+            configuration: SprintEngine.Configuration(organizations: [Fixture.org, "northwind"], team: WorkFixture.team),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        // Your team's sprint shows, and why northwind's teams, which the team picker lacks, couldn't be read.
+        #expect(snapshot.board?.sprint.name == "Sprint 7")
+        #expect(snapshot.problem == .someOrganizations("Couldn't read northwind (Azure DevOps answered with HTTP 500.)."))
+    }
+
     @Test func teamsWaitingOnASignInDontTakeTheTurnsOfOthers() async throws {
         let server = StubServer()
         let tokens = FakeTokens(server.id, tenant: Tenants.home)
@@ -1383,13 +1810,16 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         server.serveOrganization("fabrikam", mine: [Fixture.pullRequest(1)])
         server.put("fabrikam", in: Tenants.other)
         let client = server.client(tokens: tokens)
-        // Not signed in there: nothing of yours to show, rather than a failure to try again.
+        // Not signed in there: neither a failure to try again soon, nor one without pull requests of yours, but one to look
+        // in again once signed in there.
         var probe = await OrganizationDiscovery.probe(["fabrikam"], client: client)
         #expect(probe.withPullRequests.isEmpty)
         #expect(probe.failures.isEmpty)
+        #expect(probe.elsewhere == ["fabrikam"])
         await tokens.signIn(to: Tenants.other)
         probe = await OrganizationDiscovery.probe(["fabrikam"], client: client)
         #expect(probe.withPullRequests == ["fabrikam"])
+        #expect(probe.elsewhere.isEmpty)
     }
 
     @Test func checksAnOrganizationAsYouAddIt() async {

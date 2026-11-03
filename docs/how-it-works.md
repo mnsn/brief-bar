@@ -1074,9 +1074,10 @@ pull requests stay listed and counted, as when any of them can't be read, and on
 there, the organization is read with the rest. Until then, what's listed from it stays as it was read: its
 pull requests' details, builds and merges aren't asked for. An organization in such a directory says so,
 whatever else failed reading it, but Azure DevOps asking BriefBar to slow down comes first. A pull
-request you watch, or that was sent to you, in such an organization says the same, and is read at the
-next refresh once you've signed in, rather than an hour later; such organizations don't take the ten
-reads a refresh gives those pull requests, each being tried once a refresh. When every organization you
+request you watch, or that was sent to you, in such an organization says the same, and is read once
+you've signed in there, when its turn comes round, rather than an hour later: such an organization takes
+one of the ten reads a refresh gives those pull requests, then waits behind the others, and is said at
+every refresh until it's read. When every organization you
 watch is in such a directory, the pull requests sent to you from others are still read. The Sprint and
 Pipelines sections, the Add Pipelines sheet, its projects included, and a work item's details say the
 same, and the sheet offers **Try Again** to read its projects and search again once you've signed in;
@@ -1086,11 +1087,15 @@ them with any other organizations whose teams, or your team's sprint, couldn't b
 finds for you then is shown, but kept only once it's been compared with theirs: it's looked for again as
 each of their directories is signed in to, or as its own needs a sign-in, and stays unkept until their
 teams are read. A team whose sprint can't be read for want of such a sign-in counts among them, and
-doesn't take the turn of another. The command line and agents, which have no button, say what to run;
+doesn't take the turn of another; and a team found for you whose organization turns out to wait on such
+a sign-in, as its board or another of its organization's sprints is read, is set aside, neither shown
+nor kept, and another of yours is looked for. The command line and agents, which have no button, say what to run;
 an agent's work item, asked for by its number alone, is looked for in your other organizations too, and
-such an organization is named only when none of them has it. A directory's ID is never shown otherwise,
-and what the Azure CLI says when it can't give a token goes to the log without IDs, email addresses or
-the names of directories it quotes.
+such an organization is named only when none of them has it. With no organizations chosen, an agent
+looks in one of yours in such a directory again at most once a minute, so signing in there finds your
+pull requests there. A directory's ID is never shown otherwise,
+and what the Azure CLI says when it can't give a token goes to the log without IDs, email addresses (a
+guest's user name included) or the names of directories it quotes, in single or double quotes, or names.
 The log names none of these organizations, nor the others that couldn't be read with them, and says
 only how many are in such a directory: a pull request sent to you comes from a chat. While nothing could
 be read but such organizations, BriefBar looks again every minute, as it does while the CLI is signed
@@ -1099,9 +1104,10 @@ out.
 Your own tokens come from your sign-in's directory: the CLI's default directory, the first time, and
 then that same directory, asked for with `--tenant`, even once `az login --tenant` has made another
 directory the CLI's default. So signing in to an organization's directory changes neither whose
-sign-in BriefBar reads with, nor what it read in your directory. BriefBar starts from the directory of
-the account it last read your pull requests with, and where that account is from, which it keeps with
-it (`ado.accountOrigin`); the command line and agents do too. Turning Azure DevOps off forgets both,
+sign-in BriefBar reads with, nor what it read in your directory. BriefBar starts from your sign-in's
+directory as it last read with it, whichever section did, the pipelines or the sprint without pull
+requests too (`ado.accountDirectory`), and where that account is from (`ado.accountOrigin`); the
+command line and agents do too. Turning Azure DevOps off forgets both,
 with what you've seen, and nothing read before then saves them again. When the CLI can't give a token in your
 directory, BriefBar looks at its default directory's token: a guest's names where its account is from
 (`idp`), its own directory or, for a personal Microsoft account, `live.com`. When that's your account's,
@@ -1155,7 +1161,7 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
-| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed |
@@ -1547,7 +1553,8 @@ that account can read. They start in windows only, hidden in the menu bar and in
 
 **Which sprint.** The first time, BriefBar looks through your teams (up to 25) for one with a sprint
 going on today, and when several have one, picks the team with the most work assigned to you. It
-keeps that team until you choose another. Azure DevOps keeps calling a team's last sprint "current"
+keeps that team until you choose another. Organizations whose teams couldn't be read are named beside
+the sprint, with why, so the team picker's gaps are explained. Azure DevOps keeps calling a team's last sprint "current"
 after it's over, when the team stops planning sprints, so a sprint counts only while today is one of
 its days: its first and last days are dates, which Azure DevOps keeps in UTC, and today is the day
 it is on your Mac.
@@ -1600,7 +1607,9 @@ failed, it names the first task that failed, the stage it's in and its first err
 Azure DevOps itself, such as scheduled ones, don't name who started them. The timelines never read
 go first, then the ones read longest ago; one that fails is tried again on the next refresh, then
 less and less often, up to every 30 minutes, and one you may not read isn't asked for again until
-the run changes. Stages are kept by organization, project and run, since run IDs are unique only
+the run changes. One whose organization waits on a sign-in to its directory isn't one that fails: it
+takes its turn again at each refresh, behind the others, and the sign-in is said, read then or not,
+until one of that organization's timelines answers or the run is no longer shown. Stages are kept by organization, project and run, since run IDs are unique only
 within an organization.
 
 Below pinned pipelines, **Your Pull Requests** groups validation runs into one expandable card per
