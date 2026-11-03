@@ -523,7 +523,8 @@ import Testing
     }
 
     /// A session you choose while how work would reach the last one is still being checked is checked once that's done,
-    /// rather than at the next turn.
+    /// rather than at the next turn, and only then: as its details show, its sessions are read once, even on a busy Mac,
+    /// where a read can be done before the next starts.
     @Test func checksASessionYouChooseWhileAnotherIsChecked() async throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -542,11 +543,24 @@ import Testing
                 sessions.use(choice, for: item.key)
             }
         }
+        // As on a busy Mac: any read after the first starts only once the session you choose has been checked.
+        var started = 0
+        var waiting: [CheckedContinuation<Void, Never>] = []
+        sessions.readStartsForTests = { _ in
+            started += 1
+            if started > 1, checked.count < 2 { await withCheckedContinuation { waiting.append($0) } }
+        }
+        var reads = 0
+        sessions.sessionsReadForTests = { _ in reads += 1 }
         let following = followOnScreen(sessions, item, record: record)
         defer { following.cancel() }
-        try await until { checked.count == 2 }
-        #expect(checked == [onBranch, other])
         try await until { sessions.session(for: item.key)?.session?.id == other && sessions.session(for: item.key)?.delivery != nil }
+        // Then whatever waited goes on: there's nothing more to read, nor to check.
+        let late = waiting.count
+        waiting.forEach { $0.resume() }
+        try await until { reads == 1 + late }
+        #expect(reads == 1)
+        #expect(checked == [onBranch, other])
         #expect(sessions.session(for: item.key)?.basis == .chosenByYou)
     }
 
