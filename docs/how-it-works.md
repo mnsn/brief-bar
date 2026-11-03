@@ -1379,20 +1379,20 @@ each read once for every thread on it, which it compares a line at a time (`Line
 changed since, from the diff of that update with the latest. `PullRequestCodeStore` asks for a thread's code only
 once it comes on screen, as the details scroll, after a moment, so a thread scrolled past isn't read; it calls the
 read off when the thread leaves the screen first, once no other view shows it, such as the same pull request's
-details in another window. It reads only while a window shows, on screen, a page where a pull request's details
-can show, the Pull Requests page or the Sprint page (`sectionVisibilityChanged`): once each such window is
-minimized, hidden or covered, what's being read is called off, and read once one shows again. What's read is kept
-in memory only, while something shows that pull request's details: the panel beside the list, pages over it
-included, or a page of it elsewhere, which holds it while it shows (`hold`); once nothing does, it's forgotten.
-Each pull request's threads are its own, as Azure DevOps numbers each pull request's threads from 1: one that
-fades away as the details move to another doesn't touch the next one's thread of the same number. A thread is read
-again only on screen, after a push or a move to another target branch, or when Azure DevOps followed it to other
-lines; until that's read, it shows the code it showed. A read that failed in a way reading again may fix, offline,
-throttled or signed out, is tried again when the thread comes on screen half a minute later, or at once with
-**↻**, and so is code read without whether it changed since, which couldn't be read: it shows meanwhile, and since
-what was read of it is kept, reading it again is one request at most; one that can't be read, such as a file that
-isn't text, longer than 1 MB, or that Azure DevOps doesn't have, says why in a few words (`ThreadCode.sentence`),
-with ↗ to the thread.
+details in another window. It reads a thread's code only while the window it's in shows its page on screen, the
+Pull Requests page or the Sprint page (`sectionVisibilityChanged`, with the window each view is in,
+`shownWindow`): once that window is minimized, hidden or covered, what only its threads asked for is called off,
+whatever other windows show, and read once it shows them again. What's read is kept in memory only, while
+something shows that pull request's details: the panel beside the list, pages over it included, or a page of it
+elsewhere, which holds it while it shows (`hold`); once nothing does, it's forgotten. Each pull request's threads
+are its own, as Azure DevOps numbers each pull request's threads from 1: one that fades away as the details move
+to another doesn't touch the next one's thread of the same number. A thread is read again only on screen, after a
+push or a move to another target branch, or when Azure DevOps followed it to other lines; until that's read, it
+shows the code it showed. A read that failed in a way reading again may fix, offline, throttled or signed out, is
+tried again when the thread comes on screen half a minute later, or at once with **↻**, and so is code read
+without whether it changed since, which couldn't be read: it shows meanwhile, and since what was read of it is
+kept, reading it again is one request at most; one that can't be read, such as a file that isn't text, longer than
+1 MB, or that Azure DevOps doesn't have, says why in a few words (`ThreadCode.sentence`), with ↗ to the thread.
 
 `CodeView` draws code, for the threads and, later, whole files: AppKit's text system, so each row is as tall as
 the others, its text selectable across rows and copied without the numbers, and only the rows on screen drawn.

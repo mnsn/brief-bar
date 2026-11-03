@@ -13,8 +13,9 @@ extension PullRequestCode: ThreadCodeReader {}
 /// The code that pull requests' comment threads are on, read as each thread comes on screen (`show`), through one
 /// `PullRequestCode` for each pull request, and called off as it leaves (`hide`) before it's read. It reads only for what
 /// shows a pull request's details: the panel beside the list, which it follows (`follow`), and the views on screen that
-/// hold a pull request (`hold`), such as its comments on its page over a work item's details; and only while a window
-/// shows, on screen, a page where those can show (`setVisible`). What's read stays in memory only, while something shows
+/// hold a pull request (`hold`), such as its comments on its page over a work item's details; and only for a thread on
+/// screen in a window that shows its page on screen (`setVisible`), whatever other windows show. What's read stays in
+/// memory only, while something shows
 /// that pull request: once nothing does, it's forgotten. It never reads by itself: a thread is read again only once it's
 /// on screen after a push, and one that couldn't be read because Azure DevOps couldn't be reached, at most every half
 /// minute, or when you ask.
@@ -31,11 +32,9 @@ final class PullRequestCodeStore: ObservableObject {
     /// What's read of each pull request that something shows, by thread ID. Azure DevOps numbers each pull request's
     /// threads from 1, so a thread is only ever looked up with its pull request.
     @Published private(set) var states: [PRKey: [Int: State]] = [:]
-    /// Whether a window shows, on screen, a page where a pull request's details can show: the Pull Requests page, or the
-    /// Sprint page, whose work items' details open pull requests' pages. Nothing is read while none does.
-    @Published private(set) var isVisible = false
-    /// How many times `isVisible` changed: what each thread asks for its code again by, once a window shows it again,
-    /// however SwiftUI gathers the changes in between.
+    /// How many times a window started or stopped showing, on screen, a page where a pull request's details can show:
+    /// what each thread asks for its code again by, once its window shows it again, however SwiftUI gathers the changes
+    /// in between.
     @Published private(set) var visibilityChanges = 0
 
     /// What the code of a thread was last asked for as: where the thread is, and the pull request's head and target, which
@@ -91,8 +90,9 @@ final class PullRequestCodeStore: ObservableObject {
         /// it again failed in a way that may pass; or without whether it changed since, which couldn't be read. They're
         /// read again as a read that failed in a way that may pass is.
         var unsettled: Set<Int> = []
-        /// The views on screen that show each thread, by the token each has: a read is called off only once none does.
-        var showing: [Int: Set<UUID>] = [:]
+        /// The views on screen that show each thread, by the token each has, with the page each is on (`page`): a read is
+        /// called off once none does, or none whose window shows its page on screen.
+        var showing: [Int: [UUID: String]] = [:]
     }
 
     private let makeReader: (PullRequest) -> any ThreadCodeReader
@@ -102,8 +102,8 @@ final class PullRequestCodeStore: ObservableObject {
     /// The pull requests that views hold, by the number each hold got.
     private var holds: [Int: PRKey] = [:]
     private var lastHold = 0
-    /// What shows, on screen, a page where a pull request's details can show.
-    private var viewers: Set<String> = []
+    /// The pages where a pull request's details can show that windows show on screen (`page`).
+    private var visiblePages: Set<String> = []
     private var subscription: AnyCancellable?
     private let now: () -> Date
 
@@ -153,24 +153,36 @@ final class PullRequestCodeStore: ObservableObject {
         followed == key || holds.values.contains(key)
     }
 
-    /// A window started or stopped showing, on screen, a page where a pull request's details can show. While none does,
-    /// nothing is read, and what was being read is called off, to be read when one does again.
-    func setVisible(_ visible: Bool, for viewer: String) {
+    /// What a window's page is called here: its section, the Pull Requests page or the Sprint page, whose work items'
+    /// details open pull requests' pages, and its window, by the ID `SectionViewer` gives it.
+    nonisolated static func page(_ section: SectionID, window: String) -> String {
+        "\(section.rawValue) in window \(window)"
+    }
+
+    /// Whether a window shows this page on screen (`page`): what a thread on it is read only while.
+    func isVisible(_ page: String?) -> Bool {
+        page.map(visiblePages.contains) ?? false
+    }
+
+    /// A window started or stopped showing, on screen, a page where a pull request's details can show: minimized, hidden
+    /// or covered, its threads don't ask for anything anymore, and what only they asked for is called off, to be read when
+    /// it shows them again. A read that a thread on another page still asks for, such as the same pull request's details
+    /// in another window, goes on.
+    func setVisible(_ visible: Bool, for page: String) {
         if visible {
-            viewers.insert(viewer)
+            guard visiblePages.insert(page).inserted else { return }
         } else {
-            viewers.remove(viewer)
-        }
-        guard viewers.isEmpty == isVisible else { return }
-        isVisible = !viewers.isEmpty
-        visibilityChanges += 1
-        if !isVisible {
-            // Nothing is seen now: each view asks again once a window shows it.
+            guard visiblePages.remove(page) != nil else { return }
             for (key, pullRequestReads) in reads {
-                reads[key]?.showing = [:]
-                for id in pullRequestReads.tasks.keys { callOff(id, of: key) }
+                for (id, views) in pullRequestReads.showing {
+                    let left = views.filter { $0.value != page }
+                    guard left.count < views.count else { continue }
+                    reads[key]?.showing[id] = left.isEmpty ? nil : left
+                    if left.isEmpty { callOff(id, of: key) }
+                }
             }
         }
+        visibilityChanges += 1
     }
 
     /// Forgets the code of the pull requests nothing shows anymore, and calls off what's being read of them.
@@ -189,16 +201,17 @@ final class PullRequestCodeStore: ObservableObject {
     }
 
     /// A thread on lines of a file came on screen: its code is read, unless it's read for this version of the pull request
-    /// already, or being read, or nothing shows its pull request, or no window shows it on screen. Read again, after a
-    /// push, the code it showed stays until the new one is read.
+    /// already, or being read, or nothing shows its pull request, or no window shows its page on screen. Read again,
+    /// after a push, the code it showed stays until the new one is read.
     /// - Parameters:
     ///   - viewer: the view that shows it, which says so again with `hide` once it leaves the screen.
+    ///   - page: the window's page it's on (`page`): nil outside one, where nothing is read.
     ///   - again: read it again even if it failed less than half a minute ago, as when you ask.
-    func show(_ thread: ReviewThread, of pullRequest: PullRequest, by viewer: UUID, again: Bool = false) {
+    func show(_ thread: ReviewThread, of pullRequest: PullRequest, by viewer: UUID, on page: String?, again: Bool = false) {
         let key = pullRequest.key
-        guard isVisible, shows(key), ThreadCode.isOnLines(thread) else { return }
+        guard let page, isVisible(page), shows(key), ThreadCode.isOnLines(thread) else { return }
         let id = thread.id
-        reads[key, default: Reads()].showing[id, default: []].insert(viewer)
+        reads[key, default: Reads()].showing[id, default: [:]][viewer] = page
         let ask = Ask(thread, pullRequest)
         if reads[key]?.asked[id] == ask, !needsReading(id, of: key, again: again) { return }
         var pullRequestReads = reads[key] ?? Reads()
@@ -237,7 +250,7 @@ final class PullRequestCodeStore: ObservableObject {
     /// fades away.
     func hide(_ threadId: Int, of key: PRKey, by viewer: UUID) {
         guard reads[key] != nil else { return }
-        reads[key]?.showing[threadId]?.remove(viewer)
+        reads[key]?.showing[threadId]?[viewer] = nil
         guard reads[key]?.showing[threadId]?.isEmpty ?? true else { return }
         reads[key]?.showing[threadId] = nil
         callOff(threadId, of: key)
@@ -299,8 +312,7 @@ final class PullRequestCodeStore: ObservableObject {
         subscription = nil
         followed = nil
         holds = [:]
-        viewers = []
+        visiblePages = []
         forgetWhatNothingShows()
-        isVisible = false
     }
 }
