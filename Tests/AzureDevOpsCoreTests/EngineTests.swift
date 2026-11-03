@@ -867,15 +867,14 @@ import BriefBarCore
         ) { collector.add($0) }
         await engine.start()
         defer { Task { await engine.stop() } }
-        // Each as long as the test may: on a busy machine, a few requests can take longer than a wait's usual 10 s.
-        try await collector.wait("the first load", timeout: .seconds(60)) {
+        try await collector.wait("the first load") {
             $0.hasLoaded && !$0.isRefreshing && $0.records.count == 1
         }
 
         server.on("/_apis/git/pullrequests", query: ["searchCriteria.status": "active", "searchCriteria.creatorId": Fixture.me],
                   json: Fixture.list([Fixture.pullRequest(1), Fixture.pullRequest(2)]))
         engine.refresh()
-        try await collector.wait("the refresh it asked for", timeout: .seconds(60)) { $0.records.count == 2 && !$0.isRefreshing }
+        try await collector.wait("the refresh it asked for") { $0.records.count == 2 && !$0.isRefreshing }
     }
 
     @Test(.timeLimit(.minutes(1)))
