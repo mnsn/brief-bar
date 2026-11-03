@@ -88,7 +88,7 @@ import Testing
     /// teammate's, which the lists don't have, opens only where it lives.
     @Test func yourPullRequestsShowInBriefBarFromALink() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
         let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
