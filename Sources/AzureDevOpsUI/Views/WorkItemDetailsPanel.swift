@@ -663,8 +663,8 @@ struct WorkItemDetailsPanel: View {
         return date.formatted(sameYear ? .dateTime.month(.abbreviated).day() : .dateTime.month(.abbreviated).day().year())
     }
 
-    /// "just now", "5m ago".
-    static func ago(_ date: Date, now: Date) -> String {
+    /// "just now", "5m ago". Not the main actor's, as it only formats a date: for what isn't a view, too.
+    nonisolated static func ago(_ date: Date, now: Date) -> String {
         let elapsed = Elapsed.short(since: date, now: now)
         return elapsed == "now" ? "just now" : "\(elapsed) ago"
     }

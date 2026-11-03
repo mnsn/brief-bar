@@ -380,8 +380,12 @@ import Testing
             two.cancel()
         }
         try await until { sessions.session(for: first.key)?.delivery != nil && sessions.session(for: second.key)?.delivery != nil }
-        #expect(sessions.session(for: first.key)?.session?.id == onBranch && sessions.session(for: second.key)?.session?.id == onBranch)
-        #expect(sessions.session(for: first.key)?.delivery != nil && sessions.session(for: second.key)?.delivery != nil)
+        let firstSession = try #require(sessions.session(for: first.key))
+        let secondSession = try #require(sessions.session(for: second.key))
+        #expect(firstSession.session?.id == onBranch)
+        #expect(secondSession.session?.id == onBranch)
+        #expect(firstSession.delivery != nil)
+        #expect(secondSession.delivery != nil)
     }
 
     /// A session you choose while how work would reach the last one is still being checked is checked once that's done,
@@ -574,7 +578,9 @@ import Testing
         #expect(opener.delivery == .cli)
         // What part 9 asks for a pull request that doesn't show, the same.
         let found = try #require(await sessions.find(openedRecord))
-        #expect(found.session?.id == opener.session?.id && found.basis == .openedIt && found.delivery == .cli)
+        #expect(found.session?.id == opener.session?.id)
+        #expect(found.basis == .openedIt)
+        #expect(found.delivery == .cli)
     }
 
     // MARK: Pictures
