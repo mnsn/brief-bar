@@ -51,6 +51,8 @@ final class PRStore: ObservableObject {
     var showChatAccessSetup: (() -> Void)?
     /// Whether Notification Center could be read, each time that changes: for the Full Disk Access window.
     var chatAccessChanged: ((AccessStatus) -> Void)?
+    /// Opens a pull request's link: in the browser, or, in tests, where they say.
+    var openLink: (URL) -> Void = { AzureDevOps.open($0) }
 
     let settings: AppSettings
     let summarizer: Summarizer
@@ -454,7 +456,7 @@ final class PRStore: ObservableObject {
     /// in Needs You, no longer as new, until you answer them or remove it.
     func open(_ item: PRSnapshot) {
         markSeen(item)
-        AzureDevOps.open(item.url)
+        openLink(item.url)
     }
 
     /// Opens what a notification is about (its own comment, rather than the one the panel would open), and marks
