@@ -66,6 +66,54 @@ public sealed class LevelDBLogTests
         Assert.Equal(expected: log.Bytes.Length, actual: LevelDBLog.Parse(bytes: [.. log.Bytes, .. new byte[100]]).End);
     }
 
+    /// A record at the end whose checksum doesn't match may be one LevelDB is still writing: a log stops before it, counting
+    /// nothing, and reading on from there tries it again.
+    [Fact]
+    public void StopsBeforeADamagedRecordAtTheEnd()
+    {
+        var log = new LogWriter();
+        log.Add(batch: LogWriter.Batch(sequence: 1, (key, Encodings.Utf8(text: "first"))));
+        var firstEnd = log.Bytes.Length;
+        log.Add(batch: LogWriter.Batch(sequence: 2, (key, Encodings.Utf8(text: "second"))));
+        var bytes = log.Bytes;
+        bytes[^1] ^= 0xFF;
+
+        var parsed = LevelDBLog.Parse(bytes: bytes);
+
+        Assert.Equal(expected: [1UL], actual: parsed.Entries.Select(selector: entry => entry.Sequence));
+        Assert.Equal(expected: firstEnd, actual: parsed.End);
+        Assert.Equal(expected: 0, actual: parsed.Corrupt);
+    }
+
+    /// LevelDB skips the rest of a block that reads as zeros, as space it never wrote, and reads on, counting nothing
+    /// unless that breaks off a batch. Zeros that run to the end may be space it hasn't written yet: a log stops before
+    /// them, as before what isn't all there, and counts nothing.
+    [Fact]
+    public void SkipsTheRestOfABlockLevelDBNeverWrote()
+    {
+        var first = new LogWriter();
+        first.Add(batch: LogWriter.Batch(sequence: 1, (key, Encodings.Utf8(text: "before"))));
+        var second = new LogWriter();
+        second.Add(batch: LogWriter.Batch(sequence: 2, (key, Encodings.Utf8(text: "after"))));
+        byte[] bytes = [.. first.Bytes, .. new byte[LevelDBLog.BlockSize - first.Bytes.Length], .. second.Bytes];
+
+        var parsed = LevelDBLog.Parse(bytes: bytes);
+
+        Assert.Equal(expected: [1UL, 2UL], actual: parsed.Entries.Select(selector: entry => entry.Sequence));
+        Assert.Equal(expected: bytes.Length, actual: parsed.End);
+        Assert.Equal(expected: 0, actual: parsed.Corrupt);
+
+        // A batch split across blocks, whose second block reads as zeros to the end.
+        var split = new LogWriter();
+        split.Add(batch: LogWriter.Batch(sequence: 1, (key, Encodings.Utf8(text: "before"))));
+        var firstEnd = split.Bytes.Length;
+        split.Add(batch: LogWriter.Batch(sequence: 2, (key, new byte[40_000])));
+        var unwritten = LevelDBLog.Parse(bytes: [.. split.Bytes[..LevelDBLog.BlockSize], .. new byte[100]]);
+        Assert.Equal(expected: [1UL], actual: unwritten.Entries.Select(selector: entry => entry.Sequence));
+        Assert.Equal(expected: firstEnd, actual: unwritten.End);
+        Assert.Equal(expected: 0, actual: unwritten.Corrupt);
+    }
+
     [Fact]
     public void SkipsABlockWithABadChecksum()
     {
