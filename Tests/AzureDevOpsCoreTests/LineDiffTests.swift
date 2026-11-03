@@ -203,7 +203,7 @@ import Testing
         // Fifty lines removed between the two the thread is on.
         let removed = LineDiff.compare((["a"] + (1...50).map { "x\($0)" } + ["b"]).joined(separator: "\n"), "a\nb")
         let between = try #require(ThreadExcerpt.window(of: removed, side: .right, lines: 1...2, context: 0))
-        #expect(between.lines.map(\.text) == ["a"] + (1...5).map { "x\($0)" } + (46...50).map { "x\($0)" } + ["b"])
+        #expect(between.lines.map(\.text) == ["a", "x1", "x2", "x3", "x4", "x5", "x46", "x47", "x48", "x49", "x50", "b"])
         #expect(between.lines.map(\.omittedAfter) == [0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0])
         #expect(between.reachesStart && between.reachesEnd)
 

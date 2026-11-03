@@ -63,6 +63,32 @@ import Testing
         #expect(again == ["Line 80, 79 before the change: if (attempt == MaxAttempts)"])
     }
 
+    /// VoiceOver finds each row where it shows: across the code, as tall as a row, one under another from the top.
+    @Test func voiceOverFindsEachRowWhereItShows() throws {
+        _ = NSApplication.shared
+        let metrics = CodeMetrics(scale: 1)
+        let view = CodeNSView()
+        view.update(rows: rows, metrics: metrics, showsOldNumbers: true, label: "Code", onOverflow: nil)
+        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 300, height: 200), styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+        let children = view.accessibilityChildren()?.compactMap { $0 as? NSView } ?? []
+        let list = try #require(children.first { $0.accessibilityRole() == .list })
+        let frames = (list.accessibilityChildren() ?? []).compactMap { ($0 as? NSAccessibilityElement)?.accessibilityFrame() }
+        #expect(frames.count == rows.count)
+        for frame in frames {
+            #expect(abs(frame.height - metrics.lineHeight) < 0.5 && abs(frame.width - 300) < 0.5)
+            #expect(abs(frame.minX - 100) < 0.5)
+        }
+        // From the window's top down: the screen's y grows upward.
+        #expect(frames.first.map { abs($0.maxY - window.frame.maxY) < 0.5 } == true)
+        for (upper, lower) in zip(frames, frames.dropFirst()) {
+            #expect(abs(upper.minY - lower.maxY) < 0.5)
+        }
+        window.contentView = nil
+    }
+
     /// Rows that differ only in how a letter is written, as "é" in one character and in two, are other rows: what's
     /// copied is what shows.
     @Test func rowsThatLookTheSameButDifferInTheirBytesShowAsTheyAre() {
