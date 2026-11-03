@@ -677,11 +677,13 @@ package final class AzureDevOpsSource: BriefBarSource {
         await workLinks?.loadOnce()
         // Before Copilot's list loads, which shows them with the sessions.
         publishSentTasks()
-        // The Copilot sessions of the pull requests whose details are drawn, read once: the first of yours that needs you
-        // and the first that's failing; and, in the demo, which makes them up and reads nothing, every one, for the one
-        // whose sessions ask which is its and the one whose session waits for your answer. Show Links' sessions are told
-        // later, and they follow.
-        await pullRequestSessions?.prepare(store.mode == .demo ? store.items : renderedPullRequests(store))
+        // The Copilot sessions of the pull requests whose details are drawn, read once: the first of yours that needs you,
+        // the first that's failing, and those whose builds show; and, in the demo, which makes them up and reads nothing,
+        // every one, for the one whose sessions ask which is its and the one whose session waits for your answer. Show
+        // Links' sessions are told later, and they follow.
+        var drawn = renderedPullRequests(store)
+        drawn += renderedInvestigations.map { $0.item }
+        await pullRequestSessions?.prepare(store.mode == .demo ? store.items : drawn)
         listDemoNotifications(from: store)
         // Let the on-device model word the brief before drawing.
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)

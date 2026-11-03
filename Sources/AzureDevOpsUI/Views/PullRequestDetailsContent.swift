@@ -97,8 +97,11 @@ struct PullRequestDetailsContent: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: details.place, initial: true) { go(in: panel) }
-        // Its Copilot session, kept up to date while it shows on screen.
-        .task(id: SessionFollowing(key: item.key, page: page)) { await sessions.follow(item, record: record, on: page) }
+        // Its Copilot session, kept up to date while it shows on screen; in pictures, as it was read for them (`prepare`).
+        .task(id: SessionFollowing(key: item.key, page: page)) {
+            guard !isRendering else { return }
+            await sessions.follow(item, record: record, on: page)
+        }
         .tellsStory(of: ref)
         // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details.
         .writesSummary(of: ref)
