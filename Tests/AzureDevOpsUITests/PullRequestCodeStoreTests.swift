@@ -254,6 +254,41 @@ import Testing
         #expect(await reader.asked.count == 2)
     }
 
+    /// A thread whose file's path changed only in how a letter is written, as "é" in one character and in two, is on
+    /// another file to Git: its code is read again.
+    @Test func aThreadOnAnotherSpellingOfItsPathIsReadAgain() async throws {
+        let composed = "/src/caf\u{E9}.cs"
+        let decomposed = "/src/cafe\u{301}.cs"
+        #expect(composed == decomposed)
+        let before = ReviewThread(id: 11, filePath: composed, line: 12, comments: [], location: .init(
+            path: composed, right: .init(lines: 12...12), madeOn: .init(base: 1),
+            tracking: .init(to: .init(first: 1, second: 2), originalPath: composed, originalRight: .init(lines: 12...12))
+        ))
+        var after = before
+        after.filePath = decomposed
+        #expect(PullRequestCodeStore.Ask(before, pullRequest) == PullRequestCodeStore.Ask(before, pullRequest))
+        #expect(PullRequestCodeStore.Ask(before, pullRequest) != PullRequestCodeStore.Ask(after, pullRequest))
+        var moved = before
+        moved.location?.path = decomposed
+        #expect(PullRequestCodeStore.Ask(before, pullRequest) != PullRequestCodeStore.Ask(moved, pullRequest))
+        var renamed = before
+        renamed.location?.tracking?.originalPath = decomposed
+        #expect(PullRequestCodeStore.Ask(before, pullRequest) != PullRequestCodeStore.Ask(renamed, pullRequest))
+        var retargeted = pullRequest
+        retargeted.targetBranch = "caf\u{E9}"
+        var other = pullRequest
+        other.targetBranch = "cafe\u{301}"
+        #expect(PullRequestCodeStore.Ask(before, retargeted) != PullRequestCodeStore.Ask(before, other))
+
+        let reader = Reader()
+        let store = makeStore(reader)
+        store.show(before, of: pullRequest)
+        try await settle { isRead(store, before.id) }
+        store.show(after, of: pullRequest)
+        try await settle { await reader.asked.count == 2 }
+        #expect(await reader.asked == [11, 11])
+    }
+
     /// What nothing shows anymore is forgotten, and what's being read of it called off; what something still shows stays.
     @Test func whatNothingShowsAnymoreIsForgotten() async throws {
         let reader = Reader()

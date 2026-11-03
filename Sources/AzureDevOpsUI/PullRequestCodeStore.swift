@@ -39,7 +39,9 @@ final class PullRequestCodeStore: ObservableObject {
     @Published private(set) var visibilityChanges = 0
 
     /// What the code of a thread was last asked for as: where the thread is, and the pull request's head and target, which
-    /// a push or another target changes.
+    /// a push or another target changes. Its paths and branch are compared by their bytes, as Git tells them apart:
+    /// Swift's strings are equal when they look the same, as "é" written in one character and in two, but those are two
+    /// files to Git, and a thread moved from one to the other is read again.
     struct Ask: Equatable {
         var location: ReviewThread.Location?
         var filePath: String?
@@ -55,6 +57,22 @@ final class PullRequestCodeStore: ObservableObject {
             source = pullRequest.sourceCommit
             targetBranch = pullRequest.targetBranch
             target = pullRequest.targetCommit
+        }
+
+        static func == (lhs: Ask, rhs: Ask) -> Bool {
+            lhs.location == rhs.location && lhs.line == rhs.line && lhs.source == rhs.source && lhs.target == rhs.target
+                && same(lhs.filePath, rhs.filePath) && same(lhs.location?.path, rhs.location?.path)
+                && same(lhs.location?.tracking?.originalPath, rhs.location?.tracking?.originalPath)
+                && same(lhs.targetBranch, rhs.targetBranch)
+        }
+
+        /// Whether two strings are the same byte for byte.
+        private static func same(_ lhs: String?, _ rhs: String?) -> Bool {
+            switch (lhs, rhs) {
+            case (nil, nil): true
+            case let (lhs?, rhs?): lhs.utf8.elementsEqual(rhs.utf8)
+            default: false
+            }
         }
     }
 
