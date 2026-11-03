@@ -36,6 +36,12 @@ private final class InvestigationGate {
         guard let index = waiting.firstIndex(where: { $0.buildId == buildId }) else { return }
         waiting.remove(at: index).continuation.resume(with: result.mapError { $0 as Error })
     }
+
+    /// Waits for the store to ask, then fails its oldest read with `error`, as the investigator may.
+    func fail(_ error: Error) async throws {
+        try await until("a read") { !waiting.isEmpty }
+        waiting.removeFirst().continuation.resume(throwing: error)
+    }
 }
 
 private struct Timeout: Error, CustomStringConvertible {
@@ -399,6 +405,65 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
             #expect(store.look(1, of: delivery.key)?.investigation == nil)
             #expect(store.look(1, of: delivery.key)?.failure == error)
         }
+    }
+
+    @Test func whatWasReadOfARunThatRanAgainGoesWhenItCantBeReadAgain() async throws {
+        let gate = InvestigationGate()
+        let store = makeStore(gate)
+        var failed = Check(name: "shop-web CI", kind: .build, state: .failed, buildId: 1)
+        failed.completedAt = now
+        store.expand(1, of: delivery, check: failed)
+        try await gate.answer(.success(investigation(1, number: "first")))
+        try await until("the read") { store.look(1, of: delivery.key)?.isReading == false }
+
+        // Opened again, the investigator's look at the run finds it ran again, and then it can't be read: what was read of
+        // the earlier attempt goes, rather than show beside why.
+        store.collapse(1, of: delivery.key)
+        store.expand(1, of: delivery, check: failed)
+        try await gate.fail(BuildInvestigator.RunReplaced(error: .offline))
+        try await until("the read as it opens") { store.look(1, of: delivery.key)?.isReading == false }
+        #expect(store.look(1, of: delivery.key)?.investigation == nil)
+        #expect(store.look(1, of: delivery.key)?.failure == .offline)
+
+        // Its check says it ran again, and finished at another time, since what shows was read: that goes too.
+        store.read(1, of: delivery, check: failed, again: true)
+        try await gate.answer(.success(investigation(1, number: "second")))
+        try await until("the read again") { store.look(1, of: delivery.key)?.investigation?.run.number == "second" }
+        var failedAgain = failed
+        failedAgain.completedAt = now.addingTimeInterval(600)
+        store.changed(1, of: delivery, check: failedAgain)
+        try await gate.answer(.failure(.offline))
+        try await until("the read for its check") { store.look(1, of: delivery.key)?.isReading == false }
+        #expect(store.look(1, of: delivery.key)?.investigation == nil)
+        #expect(store.look(1, of: delivery.key)?.failure == .offline)
+
+        // A run that only finished since, the same attempt, keeps what was read while it went, beside why.
+        let running = Check(name: "shop-web CI", kind: .build, state: .running, buildId: 2)
+        var finished = running
+        finished.state = .failed
+        finished.completedAt = now
+        store.expand(2, of: delivery, check: running)
+        try await gate.answer(.success(investigation(2, number: "running")))
+        try await until("the read") { store.look(2, of: delivery.key)?.isReading == false }
+        store.changed(2, of: delivery, check: finished)
+        try await gate.answer(.failure(.offline))
+        try await until("the read once it finished") { store.look(2, of: delivery.key)?.isReading == false }
+        #expect(store.look(2, of: delivery.key)?.investigation?.run.number == "running")
+        #expect(store.look(2, of: delivery.key)?.failure == .offline)
+
+        // What a check says of a run that ran again: it had finished, and it's queued or running now, or finished at
+        // another time.
+        func stamp(_ state: Check.State, at completedAt: Date? = nil) -> BuildInvestigationStore.Stamp {
+            BuildInvestigationStore.Stamp(check: Check(name: "", kind: .build, state: state, completedAt: completedAt), pullRequest: delivery)
+        }
+        let done = stamp(.failed, at: now)
+        #expect(stamp(.running).ranAgain(since: done))
+        #expect(stamp(.queued).ranAgain(since: done))
+        #expect(stamp(.passed, at: now.addingTimeInterval(60)).ranAgain(since: done))
+        #expect(!stamp(.failed, at: now).ranAgain(since: done))
+        #expect(!stamp(.notRun).ranAgain(since: done))
+        #expect(!stamp(.failed, at: now).ranAgain(since: stamp(.running)))
+        #expect(!stamp(.running).ranAgain(since: stamp(.queued)))
     }
 
     @Test func foldedBuildsKeepWhatsReadOnlyForTheLastFew() throws {

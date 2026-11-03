@@ -5,8 +5,9 @@ import Foundation
 /// The builds you look into in a pull request's details, and what's read of them. A failed or running build opens under
 /// its row there, and only then is its run read, through the investigator (`BuildInvestigator`), with a few GETs. It keeps
 /// what it read for a while, and opening the run again asks it again, so what it keeps answers while it's fresh, and the
-/// run is read anew once it isn't: what was read before shows meanwhile. A run whose check changed since, as when it
-/// finished or runs again, is read anew, and one whose pull request has other commits, or another target branch, is asked
+/// run is read anew once it isn't: what was read before shows meanwhile, unless it can't be read again after the run ran
+/// again, or went, as the investigator or its check says. A run whose check changed since, as when it finished or runs
+/// again, is read anew, and one whose pull request has other commits, or another target branch, is asked
 /// for again, which revises what's kept, or reads it for that branch: at once while it's open, or as it opens. Only one
 /// pull request's builds are open at a time, wherever its details show, beside the list or as a page: opening one of
 /// another's folds them, and so does the details beside the list showing another pull request, or closing, for the one
@@ -23,6 +24,8 @@ final class BuildInvestigationStore: ObservableObject {
         var failure: ADOError?
         /// What it was read for last.
         var readFor: Stamp?
+        /// What the investigation that shows was read for.
+        var shownFor: Stamp?
     }
 
     /// What a run is read for: its check, as the list reads it, which changes when the run finishes or runs again under the
@@ -55,6 +58,13 @@ final class BuildInvestigationStore: ObservableObject {
         /// How far along its check says the run is: queued, running or finished.
         var phase: PipelineRun.Phase? {
             state?.runPhase
+        }
+
+        /// Whether its check says the run ran again, under the same ID, since it said `other`: it had finished then, and
+        /// it's queued or running now, or finished at another time. What was read for `other` is another attempt's.
+        func ranAgain(since other: Stamp) -> Bool {
+            guard other.phase == .finished, let phase else { return false }
+            return phase < .finished || completedAt != other.completedAt
         }
     }
 
@@ -215,21 +225,25 @@ final class BuildInvestigationStore: ObservableObject {
         switch mode {
         case .demo:
             let read = DemoData.investigation(buildId: buildId, of: pr, now: now())
-            finish(buildId, read: nil, generation: generation, read.map { .success($0) } ?? .failure(.notFound))
+            finish(buildId, read: nil, generation: generation, read.map { .success($0) } ?? .failure(.notFound), replaced: false)
         case .live:
             let reader = reader
             let id = UUID()
             let phase = stamp.phase
             reading[buildId] = Reading(id: id, task: Task { [weak self] in
                 let result: Result<BuildInvestigation, ADOError>
+                var replaced = false
                 do {
                     result = .success(try await reader(buildId, pr, again, phase))
+                } catch let error as BuildInvestigator.RunReplaced {
+                    result = .failure(error.error)
+                    replaced = true
                 } catch let error as ADOError {
                     result = .failure(error)
                 } catch {
                     result = .failure(.network(error.localizedDescription))
                 }
-                self?.finish(buildId, read: id, generation: generation, result)
+                self?.finish(buildId, read: id, generation: generation, result, replaced: replaced)
             })
         }
     }
@@ -301,8 +315,12 @@ final class BuildInvestigationStore: ObservableObject {
 
     /// What a read found, unless another was asked for since, or what it was for went: it shows, or why it couldn't be
     /// read; then a read asked for meanwhile starts.
-    /// - Parameter id: the read's, for one under way; nil for one done at once, the demo's.
-    private func finish(_ buildId: Int, read id: UUID?, generation: Int, _ result: Result<BuildInvestigation, ADOError>) {
+    /// - Parameters:
+    ///   - id: the read's, for one under way; nil for one done at once, the demo's.
+    ///   - replaced: the investigator found the run ran again, or gone, before it couldn't be read.
+    private func finish(
+        _ buildId: Int, read id: UUID?, generation: Int, _ result: Result<BuildInvestigation, ADOError>, replaced: Bool
+    ) {
         guard generation == self.generation, id == nil || reading[buildId]?.id == id else { return }
         reading[buildId] = nil
         var look = looks[buildId] ?? Look()
@@ -310,11 +328,17 @@ final class BuildInvestigationStore: ObservableObject {
         switch result {
         case .success(let investigation):
             look.investigation = investigation
+            look.shownFor = look.readFor
             look.failure = nil
         case .failure(let error):
-            // What was read before stays, with why it couldn't be read again; unless the run is gone, or no longer yours to
-            // read, as the investigator lets go of it then too.
-            if error == .notFound || error == .forbidden { look.investigation = nil }
+            // What was read before stays, with why it couldn't be read again, unless it isn't the run any more: it's gone,
+            // or no longer yours to read, as the investigator lets go of it then too, or it ran again since, as a look at it
+            // found, or its check says.
+            let ranAgain = replaced || look.readFor.flatMap { stamp in look.shownFor.map { stamp.ranAgain(since: $0) } } == true
+            if error == .notFound || error == .forbidden || ranAgain {
+                look.investigation = nil
+                look.shownFor = nil
+            }
             look.failure = error
             Log.app.error("Couldn't read a build: \(error.description, privacy: .public)")
         }

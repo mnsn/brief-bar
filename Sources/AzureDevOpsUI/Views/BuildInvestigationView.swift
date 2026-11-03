@@ -252,6 +252,8 @@ private struct BuildActions: View {
             readStatus
         }
         .controlSize(.small)
+        // A small button's own size, which follows the window's text size, as what's beside them does.
+        .font(size: 11)
     }
 
     /// While Send Work to Copilot is on: that Copilot's at work on its builds, or Fix the Build with Copilot, for a required
@@ -348,7 +350,8 @@ private struct BuildErrors: View {
 
 // MARK: - Tests
 
-/// How its tests went, and the ones that failed, each with what it said, and its stack trace when you ask.
+/// How its tests went, and the ones that failed, each with what it said, its first lines until you ask for all of it, and
+/// its stack trace when you ask.
 private struct FailedTests: View {
     let tests: BuildTests
     let page: URL
@@ -375,6 +378,11 @@ private struct FailedTestRow: View {
     let test: FailedTest
 
     @LocalState private var showsTrace = false
+    @LocalState private var showsWholeMessage = false
+    @LocalState private var messageHeight: (shown: CGFloat, full: CGFloat) = (0, 0)
+
+    /// How many lines of what it said show, until you ask for all of it.
+    static let messageLines = 6
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -409,11 +417,34 @@ private struct FailedTestRow: View {
                         .truncationMode(.middle)
                 }
                 if let message = test.message {
-                    Text(message)
-                        .font(size: 11, design: .monospaced)
-                        .lineLimit(showsTrace ? nil : 6)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                    // Show More at its end while there's more of it, with or without a stack trace; Show Less once it's all
+                    // there.
+                    HStack(alignment: .lastTextBaseline, spacing: 8) {
+                        Text(message)
+                            .font(size: 11, design: .monospaced)
+                            .lineLimit(showsWholeMessage ? nil : Self.messageLines)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { messageHeight.shown = $0 }
+                            // All of it, unseen, to tell whether its first lines cut it short.
+                            .background(alignment: .topLeading) {
+                                Text(message)
+                                    .font(size: 11, design: .monospaced)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .hidden()
+                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { messageHeight.full = $0 }
+                            }
+                        if showsWholeMessage || messageHeight.full > messageHeight.shown + 1 {
+                            Button(showsWholeMessage ? "Show Less" : "Show More") {
+                                withAnimation(.easeOut(duration: 0.15)) { showsWholeMessage.toggle() }
+                            }
+                            .buttonStyle(.borderless)
+                            .font(size: 11)
+                            .foregroundStyle(.tint)
+                            .fixedSize()
+                            .help(showsWholeMessage ? "Show only the first lines of what it said" : "Show all of what it said")
+                        }
+                    }
                 }
                 if let trace = test.stackTrace {
                     Button {
@@ -561,6 +592,7 @@ private struct BuildReadFailure: View {
                 Button("Try Again", action: readAgain)
             }
             .controlSize(.small)
+            .font(size: 11)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

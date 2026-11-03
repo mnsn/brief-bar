@@ -661,7 +661,8 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(await keeping.keptBuilds == [77])
         #expect(try await keeping.investigation(buildId: 77, of: pr) == first)
 
-        // Found run again by the look at it, though it can't be read again after: the failure kept before goes all the same.
+        // Found run again by the look at it, though it can't be read again after: the failure kept before goes all the same,
+        // and it says the run ran again, with why it can't be read; asked again, it knows nothing of the run to say so.
         let lost = StubServer()
         FailedRun.serve(lost)
         let losing = BuildInvestigator(client: lost.client())
@@ -670,7 +671,7 @@ private actor GatedTokens: AccessTokenProvider {
         let runAgain = StubServer.Reply.json(passed)
         // Only the run is asked for from here: each read stops when it can't be read.
         lost.on("/_apis/build/builds/77") { _ in runReads.increment() == 1 ? runAgain : .failure(.notConnectedToInternet) }
-        await #expect(throws: ADOError.offline) { try await losing.investigation(buildId: 77, of: pr) }
+        await #expect(throws: BuildInvestigator.RunReplaced(error: .offline)) { try await losing.investigation(buildId: 77, of: pr) }
         #expect(await losing.keptBuilds.isEmpty)
         await #expect(throws: ADOError.offline) { try await losing.investigation(buildId: 77, of: pr) }
     }
@@ -805,7 +806,8 @@ private actor GatedTokens: AccessTokenProvider {
         let bothWait = (try? await waitUntil("both to wait for the refresh") { await investigator.waiting == 2 }) != nil
         await tokens.releaseAll()
         #expect(held && refreshHeld && gone && bothWait)
-        await #expect(throws: ADOError.offline) { try await looking.value }
+        // The one that looked found the run ran again since what was kept: it says so, with why it couldn't be read.
+        await #expect(throws: BuildInvestigator.RunReplaced(error: .offline)) { try await looking.value }
         await #expect(throws: ADOError.offline) { try await refreshing.value }
         // So, offline, it doesn't show.
         await #expect(throws: ADOError.offline) { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
@@ -1155,6 +1157,45 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(try await reopened.value.run.status == .failed)
         #expect(requests(server, to: "/timeline").count == 2)
         #expect(runReads.value == 2)
+    }
+
+    @Test func aReadThatHadReadTheRunWhenItWasAskedForIsCheckedWithALook() async throws {
+        for readAgainFails in [false, true] {
+            let server = StubServer()
+            FailedRun.serve(server)
+            // The read's first request, for the run, is answered; the next waits.
+            let tokens = HeldTokens(server.id, holdAt: 2)
+            let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+            let first = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+            try await waitUntilHeld(tokens)
+            // Meanwhile its failed jobs ran again and failed again, and its details opened again, as their check says.
+            var again = FailedRun.build()
+            again["finishTime"] = iso(t(-minute))
+            let (ranAgain, offline) = (StubServer.Reply.json(again), StubServer.Reply.failure(.notConnectedToInternet))
+            let answers = readAgainFails ? [ranAgain, offline] : [ranAgain, ranAgain]
+            let runReads = Locked(0)
+            server.on("/_apis/build/builds/77") { _ in answers[min(runReads.increment(), answers.count) - 1] }
+            // What's under the run, which its route would answer for otherwise.
+            server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
+            server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
+            server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
+            let reopened = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, phase: .finished) }
+            let bothWait = (try? await waitUntil("both to wait for the read") { await investigator.waiting == 2 }) != nil
+            await tokens.release()
+            #expect(bothWait)
+            // Who asked for the read gets the run as it read it.
+            #expect(try await first.value.run.finishedAt == t(-hour + 330))
+            // Who asked for it after it had read the run waits for it, then looks at the run, which ran again since: it's
+            // read again, or says so when it can't be.
+            if readAgainFails {
+                await #expect(throws: BuildInvestigator.RunReplaced(error: .offline)) { try await reopened.value }
+                #expect(await investigator.keptBuilds.isEmpty)
+            } else {
+                #expect(try await reopened.value.run.finishedAt == t(-minute))
+                #expect(requests(server, to: "/timeline").count == 2)
+            }
+            #expect(runReads.value == 2)
+        }
     }
 
     @Test func stoppingWhileItLooksAtAKeptRunReadsNothingInstead() async throws {

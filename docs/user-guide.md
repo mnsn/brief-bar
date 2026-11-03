@@ -345,14 +345,15 @@ as the Pipelines page, and only then does BriefBar read its run. You see its sta
 where it failed, from its stage to its task, and whether it's the change's doing: that it built an older commit
 than the pull request's latest, that it passed on the very same commit before, so it may be flaky, that it
 passed on this commit before the target branch changed, or that the pipeline's latest run on the target branch
-failed too or passed, each opening the run it names. Then its errors, the tests that failed, with what each
-said and its stack trace when you ask, and the last lines of the failed step's log, which you can select and
-scroll sideways, all of the 200 BriefBar read with **Show All**. **Open Run**, **Open Log** and **Open Tests**
-open the rest in Azure DevOps, and, while Send Work to Copilot is on, **Fix the Build with Copilot…** sends it
-to Copilot, as the pull request's menu does, or says Copilot's on it. A build that's still going opens the same
-way, to show its stages as they are and what it runs now. **↻**, beside when it was read, reads it again, as
-BriefBar does once it finished or runs again, or once someone pushes to the pull request or retargets it; it keeps
-what it read in memory, so opening it again soon after reads little.
+failed too or passed, each opening the run it names. Then its errors, the tests that failed, with what each said,
+all of it with **Show More** when it's long, and its stack trace when you ask, and the last lines of the failed
+step's log, which you can select and scroll sideways, all of the 200 BriefBar read with **Show All**. **Open Run**,
+**Open Log** and **Open Tests** open the rest in Azure DevOps, and, while Send Work to Copilot is on,
+**Fix the Build with Copilot…** sends it to Copilot, as the pull request's menu does, or says Copilot's on it. A
+build that's still going opens the same way, to show its stages as they are and what it runs now. **↻**, beside
+when it was read, reads it again, as BriefBar does once it finished or runs again, or once someone pushes to the
+pull request or retargets it; it keeps what it read in memory, so opening it again soon after reads little. When it
+can't read it again, what it read stays, with why, unless the run ran again since.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
