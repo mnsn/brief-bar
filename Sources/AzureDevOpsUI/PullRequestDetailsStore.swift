@@ -20,6 +20,10 @@ final class PullRequestDetailsStore: ObservableObject {
         /// A check without a run, such as a status another service posts, by its name: the first of that name.
         case check(String)
         case section(PullRequestPanel.Section)
+        /// Its Files, the files its change touched.
+        case files
+        /// A file of its change, in its Files: its row.
+        case file(FileChange.ID)
         /// Their top, where the pull request's title is.
         case top
 
@@ -36,23 +40,28 @@ final class PullRequestDetailsStore: ObservableObject {
             return PullRequestPanel.section(of: item).map(Place.section)
         }
 
-        /// What the details scroll to for it: its part, its thread, or the row of the first build or check it names;
-        /// nil for a build or a check they don't have.
+        /// What the details scroll to for it: its part, its thread, its file's row, or the row of the first build or check it
+        /// names; nil for a build or a check they don't have.
         func anchor(in checks: [PullRequestPanel.CheckLine]) -> Anchor? {
             switch self {
             case .thread(let id): .thread(id)
             case .section(let section): .section(section)
+            case .files: .files
+            case .file(let id): .file(id)
             case .top: .top
             case .run, .check: checks.first { Place.of($0) == self }.map { .check($0.id) }
             }
         }
 
-        /// What they scroll to for it, as `anchor(in:)` says: for a thread they don't have, their comments, and for a build
-        /// or a check they don't have, such as a run that isn't one a policy queued last, their builds and checks.
-        func anchor(in panel: PullRequestPanel) -> Anchor {
+        /// What they scroll to for it, as `anchor(in:)` says: for a thread they don't have, their comments; for a build or a
+        /// check they don't have, such as a run that isn't one a policy queued last, their builds and checks; and for a file
+        /// their Files don't list, as one a push took out of the change, or while they don't list any, their Files.
+        func anchor(in panel: PullRequestPanel, files: ChangedFiles? = nil) -> Anchor {
             switch self {
             case .thread(let id): panel.threads.contains(id) ? .thread(id) : .section(.comments)
             case .section(let section): .section(section)
+            case .files: .files
+            case .file(let id): files?.file(id) == nil ? .files : .file(id)
             case .top: .top
             case .run, .check: anchor(in: panel.checks) ?? .section(.checks)
             }
@@ -83,19 +92,53 @@ final class PullRequestDetailsStore: ObservableObject {
     }
 
     /// When you last looked at a pull request, and up to when what waited on you there doesn't anymore, since you removed
-    /// it from Needs You or sent it to Copilot.
+    /// it from Needs You or sent it to Copilot; and when you last looked at it yourself, without BriefBar's first days.
     struct Cutoffs: Equatable {
         var seen: Date
         var dismissed: Date
+        /// When you last opened it, saw its details or marked it seen; nil when you never did.
+        var looked: Date? = nil
     }
 
     /// Something in the details to scroll to, and to point out: one of their parts, a thread, or a build's or a check's
-    /// row, by its ID (`PullRequestPanel.CheckLine.id`), which no other row has.
+    /// row, by its ID (`PullRequestPanel.CheckLine.id`), which no other row has; or a file's row in their Files.
     enum Anchor: Hashable {
         case section(PullRequestPanel.Section)
         case thread(Int)
         case check(String)
+        case files
+        case file(FileChange.ID)
         case top
+    }
+
+    /// A file of the pull request's change whose page shows in its details, in place of their parts, where on it to go,
+    /// one of its comment threads, and where in the details it opened from, to go back to. Files are told apart as Git tells
+    /// them, by their paths' bytes.
+    struct OpenFile: Equatable {
+        /// Such as "/src/PaymentsClient.cs".
+        var path: String
+        var thread: Int?
+        /// Where in the details it opened from, such as a thread in their comments; nil for its row in their Files.
+        var from: Place? = nil
+        /// Or the first or the last of its open threads, as its page shows them, going on to them from another file's.
+        var comment: Edge? = nil
+        /// Which of the change it shows: what the Files showed as it opened from them, all of it from a comment, which
+        /// the Files may not have, and as before going on to another file.
+        var scope: ChangeScope = .whole
+
+        enum Edge: Equatable {
+            case first, last
+        }
+
+        var id: FileChange.ID { FileChange.ID(path: path) }
+
+        /// "PaymentsClient.cs".
+        var name: String { (path as NSString).lastPathComponent }
+
+        static func == (lhs: OpenFile, rhs: OpenFile) -> Bool {
+            lhs.id == rhs.id && lhs.thread == rhs.thread && lhs.from == rhs.from && lhs.comment == rhs.comment
+                && lhs.scope == rhs.scope
+        }
     }
 
     /// The pull request that shows, as the list has it now, or had it last once it's not listed; nil while none does.
@@ -113,6 +156,13 @@ final class PullRequestDetailsStore: ObservableObject {
     /// The thread they were taken to, which their trail names after the pull request, "!4102 › PaymentsClient.cs:41",
     /// until they go somewhere else: another place in them, their top, a page over them, or another pull request.
     @Published private(set) var trailThread: Int?
+    /// The file of its change whose page shows, in place of their parts; nil while none does.
+    @Published private(set) var file: OpenFile?
+    /// Which of its changes its Files show: all of it, or what changed since you last looked. Until another pull request
+    /// shows.
+    @Published var scope: ChangeScope = .whole
+    /// Whether a file's page fills the page, over the list, rather than sharing it with the list. Until they close.
+    @Published var fillsPage = false
 
     /// Sees a pull request, as opening it from the list does: the source's.
     var markSeen: (PRSnapshot) -> Void = { _ in }
@@ -150,7 +200,7 @@ final class PullRequestDetailsStore: ObservableObject {
         opensInBriefBar = { [weak list] in list?.settings.opensPullRequestsInBriefBar ?? false }
         readRecord = { [weak list] key in list?.record(for: key) }
         cutoffs = { [weak list] key in
-            list.map { Cutoffs(seen: $0.seenCutoff(for: key), dismissed: $0.dismissedCutoff(for: key)) }
+            list.map { Cutoffs(seen: $0.seenCutoff(for: key), dismissed: $0.dismissedCutoff(for: key), looked: $0.lastLooked(at: key)) }
         }
         classify = { [weak list] record, seen in list?.snapshot(of: record, seenAt: seen) }
         subscriptions = []
@@ -167,14 +217,24 @@ final class PullRequestDetailsStore: ObservableObject {
     /// seen, as opening it is.
     func show(_ item: PRSnapshot, at place: Place? = nil) {
         // Shown again, it's still the same look at it.
-        if item.key != selected?.key { before = cutoffs(item.key) }
+        if item.key != selected?.key {
+            before = cutoffs(item.key)
+            scope = .whole
+        }
         pages = []
+        file = nil
         selected = item
         record = keeping(readRecord(item.key))
         isListed = listed.contains { $0.key == item.key }
         self.place = place
         trailThread = place?.thread
         markSeen(item)
+    }
+
+    /// When you last looked at the pull request that shows, before its details showed it: what changed since then is what
+    /// its Files can show. Nil when you never did.
+    var lastLooked: Date? {
+        before?.looked
     }
 
     /// From anywhere: shows a pull request's details on the Pull Requests page, in BriefBar's window. False, showing
@@ -254,10 +314,11 @@ final class PullRequestDetailsStore: ObservableObject {
         return classify(record, seen)?.pendingEvents ?? []
     }
 
-    /// Takes the details to a place in them, from the pages over them too.
+    /// Takes the details to a place in them, from the pages over them, and from a file's page, too.
     func go(to place: Place) {
         guard selected != nil else { return }
         pages = []
+        file = nil
         self.place = place
         trailThread = place.thread
     }
@@ -272,14 +333,59 @@ final class PullRequestDetailsStore: ObservableObject {
         if self.place == place { self.place = nil }
     }
 
+    /// Shows a file's page in the details, in place of their parts: from their Files, from another file's page, at the first
+    /// or last of its open threads (`comment`) going on to them from another file's, or, at one of its comment threads, to
+    /// scroll to, from that thread in their comments, to go back to.
+    /// - Parameter scope: which of the change it shows; by default, what another file's page showed, or else the Files.
+    func open(
+        file path: String, at thread: Int? = nil, from origin: Place? = nil, comment: OpenFile.Edge? = nil, scope: ChangeScope? = nil
+    ) {
+        guard selected != nil else { return }
+        pages = []
+        trailThread = nil
+        place = nil
+        // From another file's page, back goes where that one would have, and it shows the same change.
+        file = OpenFile(path: path, thread: thread, from: origin ?? file?.from, comment: comment, scope: scope ?? file?.scope ?? self.scope)
+    }
+
+    /// Whether it shows a file's page of the pull request a page shows, by its reference: for whatever the page is over to go
+    /// back from it first.
+    func showsFile(of ref: ItemRef) -> Bool {
+        file != nil && selected?.key.linkRef == ref
+    }
+
+    /// Back from a file's page to the details: where it opened from, or its row in their Files.
+    func closeFile() {
+        guard let file else { return }
+        self.file = nil
+        place = file.from ?? .file(file.id)
+    }
+
+    /// The file's page shows the file now at another path, such as one a push renamed: it's that one's from then on.
+    func follow(file path: String) {
+        file?.path = path
+    }
+
+    /// The file's page went to the thread it was asked to.
+    func reachedThread(_ thread: Int) {
+        if file?.thread == thread { file?.thread = nil }
+    }
+
+    /// The file's page went to its first or last open thread, as it was asked to: it doesn't again.
+    func reachedComment(_ edge: OpenFile.Edge) {
+        if file?.comment == edge { file?.comment = nil }
+    }
+
     /// Shows the page of something linked to the pull request over its details, to come back from: one that shows
-    /// already, under the one on top, by going back to it; the pull request itself, by going back to its details.
+    /// already, under the one on top, by going back to it; the pull request itself, by going back to its details. A file's
+    /// page stays under the pages, to come back to.
     func open(page ref: ItemRef) {
         guard let selected else { return }
         // A page opens from the details, not from the thread they were taken to.
         trailThread = nil
         if ref == selected.key.linkRef {
             pages = []
+            file = nil
         } else if let index = pages.firstIndex(of: ref) {
             pages = Array(pages.prefix(through: index))
         } else {
@@ -287,13 +393,17 @@ final class PullRequestDetailsStore: ObservableObject {
         }
     }
 
-    /// Back from the page on top, to the one under it or to the details.
+    /// Back from the page on top, to the one under it, to a file's page under them, or to the details.
     func back() {
-        guard !pages.isEmpty else { return }
-        pages.removeLast()
+        if pages.isEmpty {
+            closeFile()
+        } else {
+            pages.removeLast()
+        }
     }
 
-    /// Back to one of the pages that show, or, for nil, to the pull request's details under them.
+    /// Back to one of the pages that show, or, for nil, to the pull request's details under them, or to a file's page
+    /// under them.
     func back(toPage index: Int?) {
         guard let index else {
             pages = []
@@ -308,8 +418,8 @@ final class PullRequestDetailsStore: ObservableObject {
         pages = []
     }
 
-    /// Whether ‹ goes anywhere.
-    var canGoBack: Bool { !pages.isEmpty }
+    /// Whether ‹ goes anywhere: back from a page, or from a file's page.
+    var canGoBack: Bool { !pages.isEmpty || file != nil }
 
     func close() {
         selected = nil
@@ -319,6 +429,9 @@ final class PullRequestDetailsStore: ObservableObject {
         pages = []
         place = nil
         trailThread = nil
+        file = nil
+        scope = .whole
+        fillsPage = false
     }
 
     /// The list refreshed: the details follow the pull request as it is now. One the list doesn't have anymore, such as

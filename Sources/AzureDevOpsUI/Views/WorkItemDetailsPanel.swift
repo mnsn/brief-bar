@@ -24,7 +24,8 @@ struct WorkItemDetailsPanel: View {
     var body: some View {
         if let item = details.selected {
             VStack(spacing: 0) {
-                topBar(item)
+                // Drawn again as the pull request a page shows changes too, such as when its file's page opens.
+                Observing(pageDetails) { topBar(item) }
                 Divider()
                     .opacity(0.6)
                 ScrollViewReader { proxy in
@@ -80,6 +81,11 @@ struct WorkItemDetailsPanel: View {
     }
 
     private func goBack() {
+        // From a file's page in the pull request's page on top, to that pull request's details.
+        if let page = details.pages.last, pageDetails.showsFile(of: page) {
+            withAnimation(.easeOut(duration: 0.15)) { pageDetails.closeFile() }
+            return
+        }
         returnTo = details.pages.last ?? details.selected?.linkRef
         withAnimation(.easeOut(duration: 0.15)) { details.back() }
     }
@@ -88,6 +94,9 @@ struct WorkItemDetailsPanel: View {
 
     /// "Back to Bug 5110: Coupon totals round down", or to the page before.
     private func backHelp(_ item: WorkItem) -> String {
+        if let page = details.pages.last, pageDetails.showsFile(of: page) {
+            return "Back to \(services.links.describe(page).menuTitle)"
+        }
         if details.pages.count > 1, let previous = details.pages.dropLast().last {
             return "Back to \(services.links.describe(previous).menuTitle)"
         }
@@ -209,7 +218,7 @@ struct WorkItemDetailsPanel: View {
     }
 
     /// "Bug 5110", or, on a page, the way there: "Bug 5110 › !4091", the work item and each page but the last one going
-    /// back to it.
+    /// back to it, and a file's page of the pull request the last one shows after it: "Bug 5110 › !4091 › Rounding.cs".
     @ViewBuilder
     private func crumbs(_ item: WorkItem) -> some View {
         let pages = details.pages
@@ -220,48 +229,32 @@ struct WorkItemDetailsPanel: View {
                 .lineLimit(1)
                 .textSelection(.enabled)
         } else {
-            HStack(spacing: 5) {
-                Button {
-                    returnTo = pages.first
-                    withAnimation(.easeOut(duration: 0.15)) { details.back(toPage: nil) }
-                } label: {
-                    Text(pages.count > 1 ? String(item.id) : item.type + " " + String(item.id))
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Back to \(item.type) \(item.id): \(item.title)")
-                .layoutPriority(1)
-                ForEach(Array(pages.enumerated()), id: \.offset) { index, page in
-                    let linked = services.links.describe(page)
-                    Image(systemName: "chevron.right")
-                        .font(size: 8.5, weight: .semibold)
-                        .foregroundStyle(.tertiary)
-                        .accessibilityHidden(true)
-                    if index == pages.count - 1 {
-                        Text(ItemPageView.crumb(of: linked))
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .help(linked.menuTitle)
-                            .layoutPriority(1)
-                    } else {
-                        Button {
-                            returnTo = pages[index + 1]
-                            withAnimation(.easeOut(duration: 0.15)) { details.back(toPage: index) }
-                        } label: {
-                            Text(ItemPageView.crumb(of: linked))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .help("Back to \(linked.menuTitle)")
-                    }
-                }
-            }
-            .font(size: 12, weight: .medium).monospacedDigit()
+            DetailsTrail(crumbs: pageCrumbs(item))
         }
+    }
+
+    /// The trail to the page on top: the work item, then each page, the last one's file's page after it.
+    private func pageCrumbs(_ item: WorkItem) -> [DetailsTrail.Crumb] {
+        let pages = details.pages
+        var crumbs: [DetailsTrail.Crumb] = [
+            .init(title: pages.count > 1 ? String(item.id) : item.type + " " + String(item.id),
+                  help: "Back to \(item.type) \(item.id): \(item.title)") {
+                returnTo = pages.first
+                withAnimation(.easeOut(duration: 0.15)) { details.back(toPage: nil) }
+            },
+        ]
+        for (index, page) in pages.enumerated() {
+            let linked = services.links.describe(page)
+            if index < pages.count - 1 {
+                crumbs.append(.init(title: ItemPageView.crumb(of: linked), help: "Back to \(linked.menuTitle)") {
+                    returnTo = pages[index + 1]
+                    withAnimation(.easeOut(duration: 0.15)) { details.back(toPage: index) }
+                })
+            } else {
+                crumbs += DetailsTrail.lastPage(linked, details: pageDetails, ref: page)
+            }
+        }
+        return crumbs
     }
 
     @ViewBuilder

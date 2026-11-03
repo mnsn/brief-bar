@@ -38,6 +38,15 @@
 - **Show a task's or a link's pull request in BriefBar.** A Copilot task's menu has **Show Pull Request in
   BriefBar**, and one of your pull requests in a row's links **Show in BriefBar**, for its details on the
   window's Pull Requests page, beside opening it in Azure DevOps.
+- **Review the whole change, file by file, without opening Azure DevOps.** Under its comments, a pull
+  request's details list the files it changes, folder by folder, each with what happened to it, how many
+  lines it adds and removes, and how many comments are on it. Click one to see its changes, with a few
+  lines around each and the rest folded, to unfold as you need, and its comments at their lines. **‹** and
+  **›**, or **⌥⌘↑** and **⌥⌘↓**, go from file to file, and **⌃⌘↑** and **⌃⌘↓** from comment to comment, on
+  to the next file's. **⤢** lets a file's changes fill the page, for long lines. Once you've looked at a
+  pull request before, its files can show only what changed since. BriefBar reads which files changed, and
+  each file, only as they come on screen or you open one, one file at a time, and keeps them in memory
+  only while those details show; Azure DevOps' description says so.
 
 ## 0.11.1 - 2026-11-03
 
