@@ -28,6 +28,14 @@ final class PullRequestDetailsStore: ObservableObject {
             line.buildId.map { .run($0) } ?? .check(line.run.name)
         }
 
+        /// Where an item of what's left leads: for builds that failed, the first required one that failed and can be looked
+        /// into, which opens (`PullRequestPanel.build(openedBy:)`); for anything else with a part of its own, that part,
+        /// only to scroll there. Nil for an item without one, such as a draft.
+        static func of(_ item: PRReadiness.Item, in panel: PullRequestPanel) -> Place? {
+            if let line = panel.build(openedBy: item) { return .of(line) }
+            return PullRequestPanel.section(of: item).map(Place.section)
+        }
+
         /// What the details scroll to for it: its part, its thread, or the row of the first build or check it names;
         /// nil for a build or a check they don't have.
         func anchor(in checks: [PullRequestPanel.CheckLine]) -> Anchor? {
