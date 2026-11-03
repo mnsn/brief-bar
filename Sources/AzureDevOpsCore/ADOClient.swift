@@ -87,10 +87,34 @@ public struct ADOClient: Sendable {
         }
     }
 
+    /// A JSON answer's bytes.
+    func data(_ url: URL) async throws -> Data {
+        try await answer(url, accept: "application/json", isAnswer: Self.isJSON) { request, redirects in
+            let (data, response) = try await session.data(for: request, delegate: redirects)
+            return (data, response, true)
+        }.data
+    }
+
+    /// A file's bytes, from a request whose answer is the file itself rather than JSON: at most `limit` of them. Past that,
+    /// the rest isn't read, and they aren't complete.
+    func file(_ url: URL, limit: Int) async throws -> FileBytes {
+        // Any type of file is an answer: 203 is what says it's a sign-in page instead.
+        let read = try await answer(url, accept: "application/octet-stream", isAnswer: { _ in true }) { request, redirects in
+            let (bytes, response) = try await session.bytes(for: request, delegate: redirects)
+            return try await Self.read(bytes, response, limit: limit)
+        }
+        return FileBytes(data: read.data, isComplete: read.isComplete)
+    }
+
     /// The only way requests are made: GET, with a bearer token for the organization's directory, retried with a fresh
     /// token once for each directory whose token is rejected, and once with a token for the organization's own directory
-    /// if Azure DevOps names another one than the token's.
-    func data(_ url: URL) async throws -> Data {
+    /// if Azure DevOps names another one than the token's, following no redirect. `isAnswer` tells what was asked for from
+    /// a sign-in page, and `send` sends the request with the guard against redirects it's given, and gets the answer's
+    /// body, and whether that's all of it.
+    private func answer(
+        _ url: URL, accept: String, isAnswer: (HTTPURLResponse) -> Bool,
+        _ send: (URLRequest, RedirectGuard) async throws -> (Data, URLResponse, Bool)
+    ) async throws -> (data: Data, isComplete: Bool) {
         if let wait = await gate.remainingWait(), wait > 0 {
             throw ADOError.throttled(retryAfter: wait)
         }
@@ -112,9 +136,9 @@ public struct ADOClient: Sendable {
         var movedDirectory = false
         for _ in 0..<4 {
             let redirects = RedirectGuard()
-            let (data, response): (Data, URLResponse)
+            let (data, response, isComplete): (Data, URLResponse, Bool)
             do {
-                (data, response) = try await session.data(for: Self.request(url, token: token.value), delegate: redirects)
+                (data, response, isComplete) = try await send(Self.request(url, token: token.value, accept: accept), redirects)
             } catch {
                 // A refused redirect ends the request, however URLSession ends it.
                 if let redirect = redirects.refused { throw Self.error(refusing: redirect) }
@@ -134,8 +158,8 @@ public struct ADOClient: Sendable {
             case 204:
                 // Nothing there, such as the timeline of a run that has none yet: not a sign-in problem.
                 throw ADOError.notFound
-            case 200..<300 where http.statusCode != 203 && Self.isJSON(http):
-                return data
+            case 200..<300 where http.statusCode != 203 && isAnswer(http):
+                return (data, isComplete)
             case 200..<300, 401:
                 // 203 with a sign-in page is how Azure DevOps answers a request it didn't authenticate. An organization
                 // in another directory names its own: once a token from there works, it's read with one from there.
@@ -180,11 +204,36 @@ public struct ADOClient: Sendable {
         }
     }
 
-    static func request(_ url: URL, token: String) -> URLRequest {
+    /// An answer's bytes, up to `limit`, when it's what was asked for. An error's or a sign-in page's aren't read.
+    private static func read(
+        _ bytes: URLSession.AsyncBytes, _ response: URLResponse, limit: Int
+    ) async throws -> (Data, URLResponse, Bool) {
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), ![203, 204].contains(http.statusCode)
+        else {
+            bytes.task.cancel()
+            return (Data(), response, true)
+        }
+        if http.expectedContentLength > Int64(limit) {
+            bytes.task.cancel()
+            return (Data(), response, false)
+        }
+        var data = Data()
+        if http.expectedContentLength > 0 { data.reserveCapacity(Int(http.expectedContentLength)) }
+        for try await byte in bytes {
+            guard data.count < limit else {
+                bytes.task.cancel()
+                return (data, response, false)
+            }
+            data.append(byte)
+        }
+        return (data, response, true)
+    }
+
+    static func request(_ url: URL, token: String, accept: String = "application/json") -> URLRequest {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(accept, forHTTPHeaderField: "Accept")
         // Answer an unauthenticated request with 401 instead of a redirect to the sign-in page.
         request.setValue("Suppress", forHTTPHeaderField: "X-TFS-FedAuthRedirect")
         return request

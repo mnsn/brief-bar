@@ -245,19 +245,172 @@ public struct ADOThread: Decodable, Sendable {
     public var status: String?
     public var isDeleted: Bool?
     public var threadContext: ThreadContext?
+    /// Which diff it was made on, and where Azure DevOps has followed it since.
+    public var pullRequestThreadContext: PullRequestThreadContext?
     public var comments: [ADOComment]?
     public var properties: [String: ADOProperty]?
     /// Identities that the properties refer to by key, such as who voted.
     public var identities: [String: ADOIdentity]?
 
+    /// Where on a file it is: its first and last characters, on the left side of the diff (the file before the change), the
+    /// right side, or both.
     public struct ThreadContext: Decodable, Sendable {
         public var filePath: String?
         public var rightFileStart: Position?
+        public var rightFileEnd: Position?
         public var leftFileStart: Position?
+        public var leftFileEnd: Position?
+
+        private enum CodingKeys: String, CodingKey { case filePath, rightFileStart, rightFileEnd, leftFileStart, leftFileEnd }
+
+        public init(filePath: String? = nil, rightFileStart: Position? = nil, rightFileEnd: Position? = nil,
+                    leftFileStart: Position? = nil, leftFileEnd: Position? = nil) {
+            self.filePath = filePath
+            self.rightFileStart = rightFileStart
+            self.rightFileEnd = rightFileEnd
+            self.leftFileStart = leftFileStart
+            self.leftFileEnd = leftFileEnd
+        }
+
+        public init(from decoder: Decoder) throws {
+            guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
+                self.init()
+                return
+            }
+            self.init(
+                filePath: container.lenient(String.self, forKey: .filePath),
+                rightFileStart: container.lenient(Position.self, forKey: .rightFileStart),
+                rightFileEnd: container.lenient(Position.self, forKey: .rightFileEnd),
+                leftFileStart: container.lenient(Position.self, forKey: .leftFileStart),
+                leftFileEnd: container.lenient(Position.self, forKey: .leftFileEnd)
+            )
+        }
     }
 
+    /// A line, from 1, and a character in it.
     public struct Position: Decodable, Sendable {
         public var line: Int?
+        public var offset: Int?
+
+        private enum CodingKeys: String, CodingKey { case line, offset }
+
+        public init(line: Int? = nil, offset: Int? = nil) {
+            self.line = line
+            self.offset = offset
+        }
+
+        public init(from decoder: Decoder) throws {
+            guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
+                self.init()
+                return
+            }
+            self.init(
+                line: container.lenient(Int.self, forKey: .line),
+                offset: container.lenient(Int.self, forKey: .offset)
+            )
+        }
+    }
+
+    /// The iterations a thread's diff compared, the file it's on across iterations, and, once Azure DevOps followed it to
+    /// a later diff, where it was made. A value of an unexpected type counts as missing, rather than losing the thread.
+    public struct PullRequestThreadContext: Decodable, Sendable {
+        /// The file across the pull request's iterations, as their lists of changes number it.
+        public var changeTrackingId: Int?
+        /// The diff it was made on.
+        public var iterationContext: IterationContext?
+        /// Set once it's been followed to a later diff: then `threadContext` says where it is there.
+        public var trackingCriteria: TrackingCriteria?
+
+        private enum CodingKeys: String, CodingKey { case changeTrackingId, iterationContext, trackingCriteria }
+
+        public init(changeTrackingId: Int? = nil, iterationContext: IterationContext? = nil, trackingCriteria: TrackingCriteria? = nil) {
+            self.changeTrackingId = changeTrackingId
+            self.iterationContext = iterationContext
+            self.trackingCriteria = trackingCriteria
+        }
+
+        public init(from decoder: Decoder) throws {
+            guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
+                self.init()
+                return
+            }
+            self.init(
+                changeTrackingId: container.lenient(Int.self, forKey: .changeTrackingId),
+                iterationContext: container.lenient(IterationContext.self, forKey: .iterationContext),
+                trackingCriteria: container.lenient(TrackingCriteria.self, forKey: .trackingCriteria)
+            )
+        }
+    }
+
+    /// The iteration on each side of a diff: on the left, the base the pull request's branch shares with its target when
+    /// it's the same as the right's.
+    public struct IterationContext: Decodable, Sendable {
+        public var firstComparingIteration: Int?
+        public var secondComparingIteration: Int?
+
+        private enum CodingKeys: String, CodingKey { case firstComparingIteration, secondComparingIteration }
+
+        public init(firstComparingIteration: Int? = nil, secondComparingIteration: Int? = nil) {
+            self.firstComparingIteration = firstComparingIteration
+            self.secondComparingIteration = secondComparingIteration
+        }
+
+        public init(from decoder: Decoder) throws {
+            guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
+                self.init()
+                return
+            }
+            self.init(
+                firstComparingIteration: container.lenient(Int.self, forKey: .firstComparingIteration),
+                secondComparingIteration: container.lenient(Int.self, forKey: .secondComparingIteration)
+            )
+        }
+    }
+
+    /// The diff a thread was followed to, and where it was before: its file's path and its characters' positions.
+    public struct TrackingCriteria: Decodable, Sendable {
+        public var firstComparingIteration: Int?
+        public var secondComparingIteration: Int?
+        public var origFilePath: String?
+        public var origLeftFileStart: Position?
+        public var origLeftFileEnd: Position?
+        public var origRightFileStart: Position?
+        public var origRightFileEnd: Position?
+
+        private enum CodingKeys: String, CodingKey {
+            case firstComparingIteration, secondComparingIteration, origFilePath, origLeftFileStart, origLeftFileEnd,
+                 origRightFileStart, origRightFileEnd
+        }
+
+        public init(
+            firstComparingIteration: Int? = nil, secondComparingIteration: Int? = nil, origFilePath: String? = nil,
+            origLeftFileStart: Position? = nil, origLeftFileEnd: Position? = nil, origRightFileStart: Position? = nil,
+            origRightFileEnd: Position? = nil
+        ) {
+            self.firstComparingIteration = firstComparingIteration
+            self.secondComparingIteration = secondComparingIteration
+            self.origFilePath = origFilePath
+            self.origLeftFileStart = origLeftFileStart
+            self.origLeftFileEnd = origLeftFileEnd
+            self.origRightFileStart = origRightFileStart
+            self.origRightFileEnd = origRightFileEnd
+        }
+
+        public init(from decoder: Decoder) throws {
+            guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
+                self.init()
+                return
+            }
+            self.init(
+                firstComparingIteration: container.lenient(Int.self, forKey: .firstComparingIteration),
+                secondComparingIteration: container.lenient(Int.self, forKey: .secondComparingIteration),
+                origFilePath: container.lenient(String.self, forKey: .origFilePath),
+                origLeftFileStart: container.lenient(Position.self, forKey: .origLeftFileStart),
+                origLeftFileEnd: container.lenient(Position.self, forKey: .origLeftFileEnd),
+                origRightFileStart: container.lenient(Position.self, forKey: .origRightFileStart),
+                origRightFileEnd: container.lenient(Position.self, forKey: .origRightFileEnd)
+            )
+        }
     }
 
     /// The kind of activity a system thread records, e.g. `VoteUpdate` or `RefUpdate`.
