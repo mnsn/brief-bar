@@ -578,16 +578,18 @@ public struct OrderStep: Equatable, Sendable {
     public var standing: OrderStanding
     /// What goes before it.
     public var prerequisites: [OrderPrerequisite]
-    /// What it comes right after: what goes before it, without what goes before those, merged or not. A rail joins its row
-    /// to the one above only when that's one of these.
+    /// What it comes right after: what goes before it, without what goes before those, merged or not. These are the lines
+    /// into its node in List's gutter, and its arrows in the Map.
     public var directPrerequisites: [ItemRef]
     /// When its session suggested reviewing it: advice, never a promise; nil when no session said.
     public var review: ReviewTiming?
     public var notes: [OrderNote]
+    /// The session that opened it, or works on it, the first BriefBar knows of: its lane in the Map. Nil when none is known.
+    public var session: ItemRef?
 
     public init(
         ref: ItemRef, number: Int? = nil, status: OrderStatus, standing: OrderStanding, prerequisites: [OrderPrerequisite] = [],
-        directPrerequisites: [ItemRef] = [], review: ReviewTiming? = nil, notes: [OrderNote] = []
+        directPrerequisites: [ItemRef] = [], review: ReviewTiming? = nil, notes: [OrderNote] = [], session: ItemRef? = nil
     ) {
         self.ref = ref
         self.number = number
@@ -597,9 +599,10 @@ public struct OrderStep: Equatable, Sendable {
         self.directPrerequisites = directPrerequisites
         self.review = review
         self.notes = notes
+        self.session = session
     }
 
-    /// Whether it comes right after that one, so that a rail joins their rows when that one's is right above it.
+    /// Whether it comes right after that one, with nothing between them.
     public func comesRightAfter(_ other: ItemRef) -> Bool {
         directPrerequisites.contains(other)
     }
@@ -1003,7 +1006,7 @@ extension Board {
                 of: ref, prerequisites: entry.after, hasDependents: hasDependents, declared: true, cycle: cycle, earlier: earlier
             ),
             prerequisites: prerequisites, directPrerequisites: Self.nearest(entry.after, earlier: earlier), review: review(entry.review),
-            notes: notes
+            notes: notes, session: openers[ref]?.first
         )
     }
 
@@ -1016,7 +1019,7 @@ extension Board {
         for later in after[ref, default: []].sorted() where group.contains(later) {
             if let origin = origins(ref, later).first { notes.append(.stackedWith(later, comesAfter: false, origin)) }
         }
-        return OrderStep(ref: ref, status: status(ref), standing: .notInOrder, notes: notes)
+        return OrderStep(ref: ref, status: status(ref), standing: .notInOrder, notes: notes, session: openers[ref]?.first)
     }
 
     /// Pull requests BriefBar sees stacked together that no order names, in their order, each with a place: a GitHub
@@ -1042,7 +1045,7 @@ extension Board {
                     earlier: ancestors
                 ),
                 prerequisites: earlier.map { OrderPrerequisite(ref: $0, origins: origins($0, ref), status: status($0)) },
-                directPrerequisites: Self.nearest(earlier, earlier: ancestors), notes: showsAgainst(ref)
+                directPrerequisites: Self.nearest(earlier, earlier: ancestors), notes: showsAgainst(ref), session: openers[ref]?.first
             )
         }
         let stacks = refs.compactMap { facts.pullRequests[$0]?.stack }
@@ -1075,7 +1078,7 @@ extension Board {
             guard let refs = groups[session]?.sorted(by: isEarlier), refs.count > 1 else { return nil }
             return OrderMission(
                 key: .family(session), kind: .family(session: session),
-                steps: refs.map { OrderStep(ref: $0, status: status($0), standing: .unordered) },
+                steps: refs.map { OrderStep(ref: $0, status: status($0), standing: .unordered, session: openers[$0]?.first) },
                 attached: [], cycles: [], isFocused: false, isFinished: false, isStale: false, attention: attention(refs),
                 date: newest(refs), sessions: sessions(of: refs, first: session)
             )
