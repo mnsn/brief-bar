@@ -294,7 +294,7 @@ import Testing
     /// Seen as opening it is: what needs you there now is no longer new, and a comment that waits on you still does.
     @Test func showingItsDetailsSeesItAsOpeningItDoes() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         // What `loadOnce` makes the demo up as of.
         let now = store.now
         await store.loadOnce()
@@ -313,7 +313,7 @@ import Testing
     /// A refresh that leaves the pull request out, as a review that merged, keeps what was read of it with its last row,
     /// though the list read it again before it left it out.
     @Test func whatALeftPullRequestShowsStaysWithItsLastRow() async throws {
-        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         // What `loadOnce` makes the demo up as of.
         let now = store.now
         await store.loadOnce()
@@ -342,7 +342,7 @@ import Testing
     /// closed one's threads and policies: its details keep those they read last. One that closed before they showed it has
     /// none, and doesn't get another's.
     @Test func oneThatClosesWhileItShowsKeepsWhatWasReadOfIt() async throws {
-        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         // What `loadOnce` makes the demo up as of.
         let now = store.now
         await store.loadOnce()
@@ -388,7 +388,7 @@ import Testing
     /// in its details too.
     @Test func removingItFromNeedsYouSeesWhatOnlyItsDetailsShowed() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         // What `loadOnce` makes the demo up as of.
         let now = store.now
         await store.loadOnce()
