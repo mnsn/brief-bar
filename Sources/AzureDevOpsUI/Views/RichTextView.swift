@@ -1,4 +1,5 @@
 import AzureDevOpsCore
+import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
@@ -42,16 +43,26 @@ struct RichTextView: View {
                     Capsule().fill(Color.secondary.opacity(0.35)).frame(width: 3)
                 }
         case .code(let code):
-            ScrollView(.horizontal) {
-                Text(code)
-                    .font(size: size - 1, design: .monospaced)
-                    .fixedSize()
+            codeBlock(code)
+        case .suggestion(let code):
+            // Labeled, so it doesn't read as the reviewer's own code.
+            VStack(alignment: .leading, spacing: 0) {
+                Label(code.isEmpty ? "Suggests removing these lines" : "Suggested change", systemImage: "text.badge.checkmark")
+                    .font(size: size - 1.5, weight: .semibold)
+                    .foregroundStyle(ItemState.done.textColor)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.top, 6)
+                    .padding(.bottom, code.isEmpty ? 6 : 0)
+                if !code.isEmpty {
+                    codeLines(code)
+                }
             }
-            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(ItemState.done.color.opacity(0.08)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(ItemState.done.color.opacity(0.3), lineWidth: 1)
+            )
+            .accessibilityElement(children: .combine)
         case .table(let rows):
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
@@ -83,6 +94,24 @@ struct RichTextView: View {
         Text(Self.attributed(runs, size: (size ?? self.size) * scale, weight: weight))
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func codeBlock(_ code: String) -> some View {
+        codeLines(code)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
+    }
+
+    /// Code as it's written, scrolling sideways rather than wrapping.
+    private func codeLines(_ code: String) -> some View {
+        ScrollView(.horizontal) {
+            Text(code)
+                .font(size: size - 1, design: .monospaced)
+                .fixedSize()
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+        }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
     }
 
     static func attributed(_ runs: [RichText.Run], size: CGFloat, weight: Font.Weight = .regular) -> AttributedString {

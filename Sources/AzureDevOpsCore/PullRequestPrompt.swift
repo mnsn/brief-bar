@@ -56,14 +56,16 @@ public enum PullRequestPrompt {
         return waiting.isEmpty ? open : waiting
     }
 
-    public static func fixComments(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
+    /// - Parameter note: what you want, in your words, quoted as yours; nothing for nil or blank.
+    public static func fixComments(_ record: PRRecord, workplace: Workplace = .worktree, note: String? = nil) -> String {
         let threads = waitingThreads(record)
+        let how = yours(note).map { "\n\nHow I want them fixed, in my own words:\n\n\($0)" } ?? ""
         return """
             \(header(record, workplace: workplace))
 
             Address these review comments:
 
-            \(threads.isEmpty ? "(There are no unresolved comment threads right now.)" : list(threads, record: record))
+            \(threads.isEmpty ? "(There are no unresolved comment threads right now.)" : list(threads, record: record))\(how)
 
             For each thread, make the change, or say briefly why not. Keep the changes focused. Build, and run the \
             tests that cover what you changed. Don't commit, push or reply on the pull request: end with a short \

@@ -45,6 +45,9 @@ public struct RichText: Sendable, Equatable {
         case listItem(ListMarker, depth: Int, [Run])
         case quote([Run])
         case code(String)
+        /// A change a reviewer suggests, from a fence whose info string is `suggestion`, as Azure DevOps and GitHub write
+        /// one: what the lines its comment thread is on would become, as written; empty to remove them.
+        case suggestion(String)
         /// Rows of cells.
         case table([[[Run]]])
         /// An image, which isn't loaded: what it shows, and where it is.
@@ -105,7 +108,7 @@ public struct RichText: Sendable, Equatable {
                 case .checkbox(let checked): prefix = checked ? "[x]" : "[ ]"
                 }
                 return String(repeating: "  ", count: depth) + prefix + " " + Self.text(of: runs)
-            case .code(let code):
+            case .code(let code), .suggestion(let code):
                 return code
             case .table(let rows):
                 return rows.map { $0.map(Self.text(of:)).joined(separator: " | ") }.joined(separator: "\n")
@@ -897,6 +900,7 @@ private enum MarkdownReader {
             if let fence = Self.fence(trimmed) {
                 flush()
                 closeLists(at: indent)
+                let suggests = Self.info(of: trimmed, after: fence) == "suggestion"
                 // It's in a list's item, or the page: a line less indented than the item's text leaves the item, and ends
                 // the code. Its closing fence may be up to three columns into what it's in, as CommonMark has it.
                 var code: [String] = []
@@ -910,7 +914,12 @@ private enum MarkdownReader {
                     index += 1
                 }
                 let text = code.joined(separator: "\n").trimmingCharacters(in: .newlines)
-                if !text.isEmpty { blocks.append(.code(text)) }
+                // An empty suggestion suggests removing the lines.
+                if suggests {
+                    blocks.append(.suggestion(text))
+                } else if !text.isEmpty {
+                    blocks.append(.code(text))
+                }
                 continue
             }
             if case .paragraph = pendingKind, !pending.isEmpty, !trimmed.isEmpty, indent >= itemIndents.last ?? 0,
@@ -1129,6 +1138,12 @@ private enum MarkdownReader {
             return String(line.prefix { $0 == mark.first })
         }
         return nil
+    }
+
+    /// The first word of what follows a fence that opens code, lowercased, such as `swift` or `suggestion`: its language,
+    /// or what it is; nil without one.
+    private static func info(of line: String, after fence: String) -> String? {
+        line.dropFirst(fence.count).split(whereSeparator: \.isWhitespace).first.map { $0.lowercased() }
     }
 
     /// `---`, `***` or `___`, with spaces between or not.
