@@ -511,9 +511,9 @@ and Apple Intelligence on your Mac when it isn't. In the picker, you can choose 
 from Claude Haiku 5.5, the cheapest, to Claude Opus 5.5, the most capable, which costs the most: it gets
 those details through the Copilot CLI, one request on your Copilot plan, at the model's rate, each time
 one's written, and the card says so as it opens. Or choose Apple Intelligence, free: it needs Apple
-Intelligence on and ready, uses no Copilot requests or subscription, and never Private
-Cloud Compute, but it can take less, so it reads a shorter cut of each thing, and, being a small model,
-it often gets details wrong, even in short histories. Neither gets tools, so it can only write. The card says
+Intelligence on and ready, uses no Copilot requests or subscription, and never Private Cloud Compute,
+but it can take less, so it reads a shorter cut of each thing, and, being a small model, it often gets
+details wrong, even in short histories. Neither gets tools, so it can only write. The card says
 when it was written, and its tooltip by which model and from what. When one can't be written, it says
 why and what would help: Apple Intelligence isn't available or the item is too long, the Copilot CLI
 isn't signed in, the model isn't on your plan (**Choose Model…**), or your premium requests ran out; one

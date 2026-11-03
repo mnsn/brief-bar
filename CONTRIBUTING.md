@@ -388,11 +388,12 @@ incompatible update.
 
 BriefBar needs macOS 26 or later. Sparkle copies the app's `LSMinimumSystemVersion` into the appcast's
 `<sparkle:minimumSystemVersion>`, and `scripts/verify-appcast.swift` requires it to be the one in
-`Resources/Info.plist`, so a Mac on an older macOS isn't offered an update that won't open there: it keeps
-the version it has. `scripts/check-app.sh` fails unless that's the macOS the binaries need (`platforms` in
-`Package.swift`), so raise both together. The Homebrew cask says it too (`depends_on macos:`), which
-`scripts/update-homebrew-cask.sh` leaves as it is: raise it in the tap by hand for the first release that
-needs the newer macOS.
+`Resources/Info.plist`, so a Mac on an older macOS isn't offered an update that won't open there: it
+keeps the version it has. `scripts/check-app.sh` fails unless the updater's `Info.plist`,
+`Resources/BriefBarUpdater-Info.plist`, and the binaries, from `platforms` in `Package.swift`, need that
+macOS too, so raise the three together. The Homebrew cask's minimum, `depends_on macos:` in
+[mnsn/homebrew-tap](https://github.com/mnsn/homebrew-tap), is changed in the tap by hand, since
+`scripts/update-homebrew-cask.sh` sets only its version and SHA-256.
 
 ### The release keys
 

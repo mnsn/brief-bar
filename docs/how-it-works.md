@@ -3002,16 +3002,15 @@ when BriefBar does.
   `AzureDevOpsCore` and `GitHubCore` use networking APIs, and only `BriefBarCore` starts programs. It
   also fails if those stop using them, since the check could no longer tell. It reads BriefBar's own
   modules, the updater's included, not Sparkle, whose requests are only for updates.
-- `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar
-  has no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the
-  updater has its own identity, the one entitlement, the same signature as BriefBar, and Sparkle in
-  its own `Frameworks`, without the XPC services, with its license and arm64 code; that BriefBar and
-  its updater contain only arm64 code; a designated requirement that names a certificate, unless
-  `--allow-ad-hoc` says a build of your own may be ad hoc; the update settings (the feed, the
-  signed-appcast keys, and with `--release` the
-  public key); that BriefBar and its updater need the macOS its `Info.plist` says, which the appcast says
-  too; its Copilot plugins, at its own
-  version, without their tests; and that it runs, starts the updater, which loads Sparkle, and passes the demo check.
+- `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar has
+  no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the updater
+  has its own identity, the one entitlement, the same signature as BriefBar, and Sparkle in its own
+  `Frameworks`, without the XPC services, with its license and arm64 code; that BriefBar and its updater
+  contain only arm64 code; a designated requirement that names a certificate, unless `--allow-ad-hoc`
+  says a build of your own may be ad hoc; the update settings (the feed, the signed-appcast keys, and
+  with `--release` the public key); that BriefBar and its updater need the macOS its `Info.plist` says,
+  which the appcast says too; its Copilot plugins, at its own version, without their tests; and that it
+  runs, starts the updater, which loads Sparkle, and passes the demo check.
 - `scripts/test-updater-isolation.sh` (`make updater-check`) shows, on a copy of a build that macOS
   opens, that the updater is responsible for itself and that other code in place of Sparkle never runs
   as BriefBar ([above](#the-hardened-runtime-and-library-validation)). CI runs it on every package.

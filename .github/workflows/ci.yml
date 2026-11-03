@@ -58,7 +58,6 @@ jobs:
     runs-on: ${{ needs.changes.outputs.mac == 'false' && 'ubuntu-latest' || matrix.os }}
     timeout-minutes: 40
     strategy:
-      fail-fast: false
       matrix:
         os: [macos-26]
     steps:
