@@ -5,9 +5,11 @@ import Foundation
 /// iteration that changed none of it.
 struct DemoCode: CodeSource {
     /// A file a pull request changed: its text before the pull request, and after each of its iterations, nil where
-    /// there's no file.
+    /// there's no file. A text with a NUL byte isn't text, as a picture.
     struct File {
         var path: String
+        /// Where it was before the pull request, when the pull request renamed it.
+        var originalPath: String? = nil
         var base: String?
         /// From the first iteration on.
         var versions: [String?]
@@ -15,6 +17,11 @@ struct DemoCode: CodeSource {
         /// After `iteration`, or before the pull request for 0.
         func text(_ iteration: Int) -> String? {
             iteration == 0 ? base : versions[min(iteration, versions.count) - 1]
+        }
+
+        /// Whether it's at `path` at `iteration`: before the pull request, at its original path.
+        func isAt(_ path: String, _ iteration: Int) -> Bool {
+            GitPath(iteration == 0 ? originalPath ?? self.path : self.path) == GitPath(path)
         }
     }
 
@@ -34,7 +41,7 @@ struct DemoCode: CodeSource {
             File(path: "/tests/PaymentsClientTests.cs", base: nil, versions: [nil, paymentsClientTests]),
             File(path: "/src/RetryPolicy.cs", base: nil, versions: [retryPolicy, retryPolicy]),
             File(path: "/src/RetryOptions.cs", base: nil, versions: [nil, retryOptions]),
-        ]),
+        ] + paymentsRetryFiles),
         // Maria pointed out that the cutoff is the warehouse's, on line 27 of the delivery estimate, which the second push
         // fixed.
         4088: Changes(pushedAgo: [nil, 28 * 3_600], files: [
@@ -66,11 +73,14 @@ struct DemoCode: CodeSource {
         return FileChanges(files: made.files.enumerated().compactMap { index, file in
             let old = file.text(comparedTo)
             let new = file.text(iteration)
-            guard old != new else { return nil }
-            let kind: FileChange.Kind = old == nil ? .add : new == nil ? .delete : .edit
+            // Renamed since the base: moved, and edited too when its text changed.
+            let renamed = comparedTo == 0 && file.originalPath != nil && old != nil && new != nil
+            guard old != new || renamed else { return nil }
+            var kind: FileChange.Kind = old == nil ? .add : new == nil ? .delete : .edit
+            if renamed { kind = old == new ? .rename : [.rename, .edit] }
             return FileChange(
-                path: file.path, kind: kind, objectId: new.map(Self.objectId), originalObjectId: old.map(Self.objectId),
-                changeTrackingId: index + 1
+                path: file.path, originalPath: renamed ? file.originalPath : nil, kind: kind, objectId: new.map(Self.objectId),
+                originalObjectId: old.map(Self.objectId), changeTrackingId: index + 1
             )
         })
     }
@@ -79,7 +89,7 @@ struct DemoCode: CodeSource {
         for made in Self.pullRequests.values {
             for file in made.files {
                 if let text = ([file.base] + file.versions).compactMap({ $0 }).first(where: { Self.objectId($0) == objectId }) {
-                    return .text(text)
+                    return Self.read(text)
                 }
             }
         }
@@ -88,13 +98,18 @@ struct DemoCode: CodeSource {
 
     func file(of pullRequest: PullRequest, path: String, commit: String, limit: Int) async throws -> FileText {
         let number = pullRequest.key.number
-        guard let made = Self.pullRequests[number], let file = made.files.first(where: { GitPath($0.path) == GitPath(path) }) else {
-            throw ADOError.notFound
-        }
+        guard let made = Self.pullRequests[number] else { throw ADOError.notFound }
         let iteration = commit == Self.base(number)
             ? 0 : made.pushedAgo.indices.first { Self.commit(number, $0 + 1, of: made.pushedAgo.count) == commit }.map { $0 + 1 }
-        guard let iteration, let text = file.text(iteration) else { throw ADOError.notFound }
-        return .text(text)
+        guard let iteration, let text = made.files.first(where: { $0.isAt(path, iteration) })?.text(iteration) else {
+            throw ADOError.notFound
+        }
+        return Self.read(text)
+    }
+
+    /// A file's text, or a picture's bytes, which aren't text.
+    private static func read(_ text: String) -> FileText {
+        text.contains("\0") ? .binary : .text(text)
     }
 
     /// An iteration's head: the pull request's own for the latest, as the demo's pull requests have it.

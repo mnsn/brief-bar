@@ -339,6 +339,13 @@ final class AppSettings: ObservableObject {
         max(seen.cutoff(for: key), seenSentInChats[SeenState.name(of: key)] ?? .distantPast)
     }
 
+    /// When you last looked at a pull request yourself: opened it from BriefBar, saw its details or marked it seen. Nil when
+    /// you never did, even though what came before BriefBar's first days counts as seen.
+    func lastLooked(at key: PRKey) -> Date? {
+        let name = SeenState.name(of: key)
+        return [seen.seenAt[name], seenSentInChats[name]].compactMap { $0 }.max()
+    }
+
     /// The Azure CLI account whose seen state is in use, once known: what you see and take off Needs You now is its own.
     var account: String? { seen.account }
 

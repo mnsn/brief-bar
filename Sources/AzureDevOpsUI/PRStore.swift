@@ -745,6 +745,11 @@ final class PRStore: ObservableObject {
         settings.seenCutoff(for: key)
     }
 
+    /// When you last looked at a pull request yourself, for what changed since; nil when you never did.
+    func lastLooked(at key: PRKey) -> Date? {
+        settings.lastLooked(at: key)
+    }
+
     /// Up to when what waited on you in a pull request doesn't anymore: when you last removed it from Needs You, or sent
     /// its comments to Copilot.
     func dismissedCutoff(for key: PRKey) -> Date {

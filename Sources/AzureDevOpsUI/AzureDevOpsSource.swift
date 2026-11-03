@@ -76,6 +76,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private(set) var pullRequestDetails: PullRequestDetailsStore?
     /// The code that pull requests' comment threads are on, read as they come on screen in their details.
     private var pullRequestCode: PullRequestCodeStore?
+    /// Pull requests' changed files and their diffs, read as their Files come on screen, through the same readers.
+    private var pullRequestFiles: PullRequestFilesStore?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     private let changes = PassthroughSubject<Void, Never>()
@@ -97,7 +99,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     private func environment<V: View>(_ view: V) -> AnyView {
-        guard let store, let sprint, let pipelines, let copilot, let details, let pullRequestDetails, let pullRequestCode else {
+        guard let store, let sprint, let pipelines, let copilot, let details, let pullRequestDetails, let pullRequestCode,
+              let pullRequestFiles
+        else {
             return AnyView(EmptyView())
         }
         return AnyView(view
@@ -107,6 +111,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             .environmentObject(details)
             .environmentObject(pullRequestDetails)
             .environmentObject(pullRequestCode)
+            .environmentObject(pullRequestFiles)
             .environmentObject(pipelines)
             .environmentObject(copilot)
             .environmentObject(settings)
@@ -150,6 +155,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         let pullRequestCode = PullRequestCodeStore(demo: store.mode == .demo, client: store.client)
         pullRequestCode.follow(pullRequestDetails)
         self.pullRequestCode = pullRequestCode
+        pullRequestFiles = PullRequestFilesStore(code: pullRequestCode)
         // Someone else signed in to the Azure CLI: the details read as the last one go, and what was told of them.
         store.$authoredPullRequestList.map(\.account).removeDuplicates()
             .sink { [weak details, weak workLinks, weak pullRequestDetails] account in
@@ -303,6 +309,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         details = nil
         pullRequestDetails = nil
         pullRequestCode = nil
+        pullRequestFiles = nil
         services.fullDiskAccess.unregister(.azureDevOps)
     }
 
