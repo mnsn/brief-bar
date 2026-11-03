@@ -136,8 +136,9 @@ struct PullRequestFilePage: View {
         .onChange(of: open.id) {
             current = nil
             unfoldedResolved = []
-            // Its threads' composers go with it.
+            // Its threads' composers go with it, and what they, or Ask in the Session, send.
             composing = nil
+            drafts.callOffAll()
             // For VoiceOver to go to the next file's name, though it was on this one's.
             isNameFocused = false
             scrollToTop()

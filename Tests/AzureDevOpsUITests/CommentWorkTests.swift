@@ -114,9 +114,9 @@ import Testing
         #expect(store.readyFixes(of: key, among: [11, 12, 13]) == [ReadyFixes(session: task, forkedFrom: nil, isTask: true, threads: [11, 12], latest: second)])
         // Only the threads still open.
         #expect(store.readyFixes(of: key, among: [12]).map(\.threads) == [[12]])
-        // Push & Reply ships them.
+        // Push & Reply ships those its prompt lists.
         settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, threads: [
-            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ended: .finished),
+            TakenThread(id: 11, since: now, ships: true), TakenThread(id: 12, since: now, ships: true),
         ])]
         let shipping = try #require(store.commentWork(on: 11, of: key))
         #expect(shipping.purpose == .pushAndReply)
@@ -124,11 +124,11 @@ import Testing
         #expect(store.readyFixes(of: key, among: [11, 12]).isEmpty)
         // One that failed, or stopped, didn't push them: they're still ready, for Push & Reply again.
         settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, ended: .failed, threads: [
-            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ended: .finished),
+            TakenThread(id: 11, since: now, ships: true), TakenThread(id: 12, since: now, ships: true),
         ])]
         #expect(store.readyFixes(of: key, among: [11, 12]).map(\.threads) == [[11, 12]])
         // And those it took on that prompts to the session fixed, rather than its runs: once it's done, they're pushed.
-        settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, ended: .finished, threads: [TakenThread(id: 13, since: now)])]
+        settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, ended: .finished, threads: [TakenThread(id: 13, since: now, ships: true)])]
         let shipped = try #require(store.commentWork(on: 13, of: key))
         #expect(shipped.purpose == .pushAndReply)
         #expect(!shipped.isReadyFix)
@@ -136,6 +136,27 @@ import Testing
         // Nothing while Send Work to Copilot is off.
         settings.copilotEnabled = false
         #expect(store.commentWork(on: 11, of: key) == nil)
+    }
+
+    /// A Push & Reply whose prompt lists some of the threads its session fixed replies on those alone: the others stay
+    /// fixed and not pushed, and one that another session fixed since stays that one's.
+    @Test func pushAndReplySaysItShipsOnlyTheThreadsItListed() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let first = now.addingTimeInterval(-600), second = now.addingTimeInterval(-300)
+        // The task fixed 11 and 12; it ships 12 alone.
+        settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, ended: .finished, threads: [
+            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: now, ships: true),
+        ])]
+        #expect(store.commentWork(on: 12, of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Pushed and replied from ‘Retry backoff’")
+        let eleven = try #require(store.commentWork(on: 11, of: key))
+        #expect(eleven.sentence(name: "Retry backoff", forkOf: nil) == "Fixed in ‘Retry backoff’, not pushed")
+        #expect(eleven.since == first)
+        #expect(store.readyFixes(of: key, among: [11, 12]).map(\.threads) == [[11]])
+        // A fork fixed 11 again since: its fix is 11's latest, and it's ready there.
+        settings.copilotRuns.append(run(fork, startedAt: second, ended: .finished, threads: [TakenThread(id: 11, since: second)], forkedFrom: task))
+        #expect(store.commentWork(on: 11, of: key)?.session == fork)
+        #expect(store.readyFixes(of: key, among: [11, 12]).map(\.session) == [fork])
     }
 
     /// A task keeps the threads it takes on with its run; going on with its session keeps those it took on before.

@@ -412,8 +412,9 @@ thread, a line above its buttons says so, in its state's color, with since when 
 explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Retry backoff’ · 2m**, **Fixed in ‘Retry
 backoff’, not pushed** or **Couldn't fix it: …**; click it to see the session. When you send a session something else
 before it's done with what you sent it, BriefBar can't tell from the session which of them ended how, so the earlier
-thread says **Sent to ‘Retry backoff’ · see the session** instead. Once fixes are done, a bar at the foot of the details
-says **2 fixes ready in ‘Retry backoff’**, which takes you to the threads, with **Push & Reply…**, which opens the Send
+thread says **Sent to ‘Retry backoff’ · see the session** instead. Once fixes are done, a bar at the foot of the details,
+or of a pull request's page over a work item's or another pull request's, says **2 fixes ready in ‘Retry backoff’**,
+which takes you to the threads, with **Push & Reply…**, which opens the Send
 to Copilot window to commit them, push and reply from that session; they stay in the bar when Push & Reply fails or is
 stopped, to try again. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
 off, unless the session has it already. VoiceOver hears what becomes of each.

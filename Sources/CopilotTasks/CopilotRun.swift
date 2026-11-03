@@ -51,10 +51,11 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// its own (`CopilotLauncher.Request.forking`): its ID, to say so, and not to read anything by, unless it's checked to be
     /// a session's. Nil otherwise, as runs that BriefBar kept before it had this were.
     public var forkedFrom: String?
-    /// The comment threads of its pull request it took on, by their IDs, each with when: one at a time with Fix, or those
-    /// that waited on you, with Fix Comments. Going on with a session whose changes aren't pushed keeps those it took on
-    /// before, with how that went (`threads(goingOnWith:on:taking:for:at:)`), so each thread can say what became of it. Nil
-    /// for a task that took on none, and for runs that BriefBar kept before it had this.
+    /// The comment threads of its pull request it took on, by their IDs, each with when: one at a time with Fix, those that
+    /// waited on you with Fix Comments, and those its prompt listed with Push & Reply. Going on with a session whose changes
+    /// aren't pushed keeps those it took on before, with how that went (`threads(goingOnWith:on:taking:for:at:)`), so each
+    /// thread can say what became of it. Nil for a task that took on none, and for runs that BriefBar kept before it had
+    /// this.
     public var threads: [TakenThread]?
 
     public init(
@@ -122,9 +123,9 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// The threads a task keeps once it goes on with `previous`'s session, or starts in a session of its own when that's
     /// nil, for `action`, at `now`: those `previous` took on, with how it ended, while its changes aren't pushed, as after a
     /// fix, or a Push & Reply that didn't finish, and only on the same pull request, since a thread's ID is its pull
-    /// request's own; then `taken`, which it takes on now, in their place. Push & Reply ships what's there, and the threads
-    /// it's sent for that it doesn't have, fixed by prompts sent to the session rather than by its runs, as they were. Nil
-    /// when it keeps none.
+    /// request's own; then `taken`, which it takes on now, in their place. Push & Reply takes on those its prompt lists, to
+    /// reply on (`TakenThread.ships`), whether its runs or prompts sent to the session fixed them; the others stay as they
+    /// were, since it doesn't reply on them. Nil when it keeps none.
     /// - Parameter pullRequest: the pull request it's on, if it's on one.
     public static func threads(
         goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?, taking taken: [Int], for action: PullRequestAction?,
@@ -140,30 +141,29 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
                 return thread
             }
         }
-        if action == .pushAndReply {
-            let held = Set(kept.map(\.id))
-            kept += taken.filter { !held.contains($0) }.map { TakenThread(id: $0, since: now) }
-        } else {
-            let ids = Set(taken)
-            kept = kept.filter { !ids.contains($0.id) } + taken.map { TakenThread(id: $0, since: now) }
-        }
+        let ids = Set(taken)
+        let ships: Bool? = action == .pushAndReply ? true : nil
+        kept = kept.filter { !ids.contains($0.id) } + taken.map { TakenThread(id: $0, since: now, ships: ships) }
         return kept.isEmpty ? nil : kept
     }
 }
 
 /// A comment thread of the pull request a task took on (`CopilotRun.threads`): by its ID, never what it says, with when,
-/// and how the task that took it on ended, once a later task went on with the same session.
+/// what for, and how the task that took it on ended, once a later task went on with the same session.
 public struct TakenThread: Sendable, Codable, Equatable, Hashable {
     public var id: Int
     /// When the task that took it on started.
     public var since: Date
     /// How that task ended, once a later one went on with its session; nil while it's the session's latest.
     public var ended: RunPhase?
+    /// A Push & Reply took it on, as its prompt listed it, to push its fix and reply on it; nil for a fix.
+    public var ships: Bool?
 
-    public init(id: Int, since: Date, ended: RunPhase? = nil) {
+    public init(id: Int, since: Date, ended: RunPhase? = nil, ships: Bool? = nil) {
         self.id = id
         self.since = since
         self.ended = ended
+        self.ships = ships
     }
 }
 

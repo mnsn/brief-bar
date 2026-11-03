@@ -86,6 +86,19 @@ import Testing
         }
     }
 
+    /// Waits for what the store and the reader do, for as long as a busy machine could need (`waitLimit`), failing the test
+    /// if it doesn't happen.
+    private func waitFor(_ done: () async -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while await !done() {
+            guard ContinuousClock.now < deadline else {
+                Issue.record("Timed out waiting", sourceLocation: sourceLocation)
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
     private func isRead(_ store: PullRequestCodeStore, _ id: Int) -> Bool {
         if case .read? = store.state(of: id, in: key) { return true }
         return false
@@ -519,5 +532,48 @@ import Testing
         other.key = PRKey("contoso", 8)
         await store.readAll([onLine], of: other)
         #expect(await reader.asked == [11, 12])
+    }
+
+    /// For a prompt about a thread whose code doesn't show, as on its file's page: what's read is used, else it's read
+    /// then, and kept, and read again after a push.
+    @Test func aPromptsCodeIsReadWhenItIsntYet() async throws {
+        let reader = Reader()
+        let store = makeStore(reader)
+        #expect(await store.excerpt(of: onLine, in: pullRequest) == Self.excerpt(onLine.id, head: "c1"))
+        #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c1")))
+        // Read, it isn't read again.
+        #expect(await store.excerpt(of: onLine, in: pullRequest) == Self.excerpt(onLine.id, head: "c1"))
+        #expect(await reader.asked == [11])
+        // After a push, it is.
+        var pushed = pullRequest
+        pushed.sourceCommit = "c2"
+        #expect(await store.excerpt(of: onLine, in: pushed) == Self.excerpt(onLine.id, head: "c2"))
+        #expect(await reader.asked == [11, 11])
+        // Nothing for one that isn't on lines, can't be read, or whose pull request nothing shows.
+        await reader.answer(onOther.id, .failure(.tooLarge))
+        #expect(await store.excerpt(of: onFile, in: pullRequest) == nil)
+        #expect(await store.excerpt(of: onOther, in: pullRequest) == nil)
+        #expect(store.state(of: onOther.id, in: key) == .failed(.tooLarge))
+        var other = pullRequest
+        other.key = PRKey("contoso", 8)
+        #expect(await store.excerpt(of: onLine, in: other) == nil)
+        #expect(await reader.asked == [11, 11, 12])
+    }
+
+    /// One read for a prompt doesn't take the place of what a thread that shows asked for meanwhile, as after a push.
+    @Test func aPromptsCodeLeavesWhatAShowingThreadReadSince() async throws {
+        let reader = Reader()
+        await reader.hold(true)
+        let store = makeStore(reader)
+        let asking = Task { await store.excerpt(of: onLine, in: pullRequest) }
+        try await waitFor { await reader.isHolding(onLine.id) }
+        var pushed = pullRequest
+        pushed.sourceCommit = "c2"
+        store.show(onLine, of: pushed, by: viewer, on: page)
+        try await waitFor { await reader.asked.count == 2 }
+        await reader.release(onLine.id)
+        #expect(await asking.value == Self.excerpt(onLine.id, head: "c1"))
+        try await waitFor { isRead(store, onLine.id) }
+        #expect(store.state(of: onLine.id, in: key) == .read(Self.excerpt(onLine.id, head: "c2")))
     }
 }

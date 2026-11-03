@@ -244,17 +244,33 @@ import BriefBarCore
             ReviewThread(id: 12, comments: [comment(1, People.priya, "A test?", at: t(-30 * minute))]),
         ]
         let handOff = CommentHandOff(record(threads), thread: 11, dismissedCutoff: t(-3 * day), account: "tenant/robin")
+        // Its own under its entry; the others' with none.
         #expect(handOff.waiting == [
             CommentHandOff.Waiting(thread: 11, entry: "1. src/PaymentsClient.cs, line 88 (thread 11)", comments: [2], first: t(-hour), last: t(-hour)),
+            CommentHandOff.Waiting(thread: 12, entry: nil, comments: [1], first: t(-30 * minute), last: t(-30 * minute)),
         ])
         let prompt = PullRequestPrompt.fixThread(record(threads), thread: threads[0], code: nil, how: nil)
         // Thread 12's comment came after, so the pull request's one cutoff takes 11's off Needs You, not 12's.
         #expect(handOff.handedOff(in: prompt, now: record(threads)) == t(-hour))
+        #expect(handOff.handedOff(in: prompt) == t(-hour))
         // Without its entry, nothing goes.
         #expect(handOff.handedOff(in: prompt.replacingOccurrences(of: "(thread 11)", with: "")) == nil)
         // A thread that's resolved, or that doesn't wait on you, hands nothing off.
-        #expect(CommentHandOff(record(threads), thread: 12, dismissedCutoff: t(0), account: nil).waiting.isEmpty)
-        #expect(CommentHandOff(record(threads), thread: 99, dismissedCutoff: t(-3 * day), account: nil).waiting.isEmpty)
+        let twelve = PullRequestPrompt.fixThread(record(threads), thread: threads[1], code: nil, how: nil)
+        #expect(CommentHandOff(record(threads), thread: 12, dismissedCutoff: t(0), account: nil).handedOff(in: twelve) == nil)
+        #expect(CommentHandOff(record(threads), thread: 99, dismissedCutoff: t(-3 * day), account: nil).handedOff(in: prompt) == nil)
+    }
+
+    /// With the pull request unread as the prompt goes, as after you switch accounts, a comment that waits on you from
+    /// before, in another thread, still holds the cutoff back.
+    @Test func anEarlierCommentElsewhereHoldsItBackWithoutTheRecord() {
+        let threads = [
+            ReviewThread(id: 12, comments: [comment(1, People.priya, "A test?", at: t(-2 * hour))]),
+            ReviewThread(id: 11, comments: [comment(1, People.sam, "Cap it?", at: t(-hour))]),
+        ]
+        let handOff = CommentHandOff(record(threads), thread: 11, dismissedCutoff: t(-3 * day), account: nil)
+        let prompt = PullRequestPrompt.fixThread(record(threads), thread: threads[1], code: nil, how: nil)
+        #expect(handOff.handedOff(in: prompt, now: nil) == t(-2 * hour).addingTimeInterval(-0.001))
     }
 
     @Test func anEarlierCommentElsewhereKeepsItOnNeedsYou() {

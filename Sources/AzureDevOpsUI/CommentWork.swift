@@ -253,29 +253,24 @@ struct CommentWork: Equatable {
         }
     }
 
-    /// From a task of BriefBar's that took the thread on (`CopilotRun.threads`), as it stands, or as it ended once a later
-    /// task went on with its session.
+    /// From a task of BriefBar's that took the thread on (`CopilotRun.threads`), to fix it, or to push its fix and reply on
+    /// it, as it stands, or as it ended once a later task went on with its session.
     static func from(_ entry: CopilotTaskEntry, taken: TakenThread) -> CommentWork {
         let isTask = entry.run?.isAppSession != true
-        let ended = entry.status.phase.isActive ? nil : entry.status.since
-        // Push & Reply ships every thread it has: those an earlier task in the session took on, and those prompts to it fixed.
-        if entry.action == .pushAndReply {
-            return CommentWork(
-                purpose: .pushAndReply, state: state(of: entry.status), session: entry.id, forkedFrom: entry.forkedFrom,
-                isTask: isTask, since: ended ?? entry.startedAt
-            )
-        }
-        // Taken on by an earlier task in the session, which another fix went on with.
+        // Push & Reply ships those its prompt listed; the others it has, it doesn't reply on, and they stay as they were.
+        let purpose: Purpose = taken.ships == true ? .pushAndReply : .fix
+        // Taken on by an earlier task in the session, which a later one went on with.
         if let before = taken.ended {
             let state: State = switch before {
             case .finished: .done(nil)
             case .failed: .failed(nil)
             case .stopped, .preparing, .working: .stopped
             }
-            return CommentWork(purpose: .fix, state: state, session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask, since: taken.since)
+            return CommentWork(purpose: purpose, state: state, session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask, since: taken.since)
         }
+        let ended = entry.status.phase.isActive ? nil : entry.status.since
         return CommentWork(
-            purpose: .fix, state: state(of: entry.status), session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask,
+            purpose: purpose, state: state(of: entry.status), session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask,
             since: ended ?? taken.since
         )
     }
@@ -350,7 +345,8 @@ extension CopilotTasksStore {
         }
         for entry in entries where entry.isOn(key) {
             guard let taken = entry.threads?.first(where: { $0.id == thread }) else { continue }
-            consider(taken.ended == nil || entry.action == .pushAndReply ? entry.startedAt : taken.since, CommentWork.from(entry, taken: taken))
+            // One the session's latest task took on, as it started; one an earlier task did, as that one did.
+            consider(taken.ended == nil ? entry.startedAt : taken.since, CommentWork.from(entry, taken: taken))
         }
         for prompt in settings.copilotSentPrompts where prompt.isFor(key) && prompt.threads.contains(thread) {
             consider(prompt.sentAt, CommentWork.from(prompt, turn: promptTurns[prompt.id]))
@@ -445,6 +441,11 @@ extension CopilotTasksStore {
             // Where the sessions are that prompts go to: the Copilot app's folder, and the CLI's, whose terminal one may
             // have been pasted in.
             let homes = await sessionHomes()
+            // Turned off, or stopped, while that waited: nothing's read.
+            guard canSend, isOn, !hasStopped else {
+                isFollowingPrompts = false
+                return
+            }
             let read = await Task.detached(priority: .utility) { () -> [(prompt: SentPrompt, fork: String?, turn: SessionTurn?)] in
                 let running = Set((try? AppSessions.running(home: home)) ?? [])
                 var read: [(prompt: SentPrompt, fork: String?, turn: SessionTurn?)] = []

@@ -54,10 +54,12 @@ struct PullRequestDetailsPanel: View {
                     .id(scrollKey(item))
                     .onChange(of: scrollKey(item)) { scrollBack(proxy) }
                 }
-                // Once fixes of its comments are done, and not pushed: Push & Reply.
-                if details.pages.isEmpty {
-                    ReadyFixesBar(item: item)
-                        .overlay(alignment: .top) { Divider().opacity(0.6) }
+                // Once fixes of its comments are done, and not pushed: Push & Reply. Under a pull request's page over them,
+                // that one's.
+                if let page = details.pages.last {
+                    Observing(pageDetails) { ReadyFixesBar.under(page, details: pageDetails, items: store.items) }
+                } else {
+                    ReadyFixesBar(item: item, details: details)
                 }
             }
             .onPreferenceChange(InlineComposerOpen.self) { isComposing = $0 }

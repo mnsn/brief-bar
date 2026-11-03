@@ -53,6 +53,10 @@ struct WorkItemDetailsPanel: View {
                     .id(scrollKey(item))
                     .onChange(of: scrollKey(item)) { scrollBack(proxy) }
                 }
+                // Under a pull request's page over them, once fixes of its comments are done, and not pushed: Push & Reply.
+                if let page = details.pages.last {
+                    Observing(pageDetails) { ReadyFixesBar.under(page, details: pageDetails, items: store.items) }
+                }
             }
             .onAppear { details.refreshIfStale() }
             .onPreferenceChange(InlineComposerOpen.self) { isComposing = $0 }

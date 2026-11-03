@@ -307,6 +307,24 @@ final class PullRequestCodeStore: ObservableObject {
         }
     }
 
+    /// The code of a thread, for a prompt about it, as it's read for this version of the pull request; else read now, as
+    /// you open a composer on a thread that doesn't show its own, on its file's page, and kept as one that shows is. Nil
+    /// for a thread that isn't on lines, or can't be read, or while nothing shows its pull request.
+    func excerpt(of thread: ReviewThread, in pullRequest: PullRequest) async -> ThreadExcerpt? {
+        let key = pullRequest.key
+        let ask = Ask(thread, pullRequest)
+        let asked = reads[key]?.asked[thread.id]
+        if case .read(let excerpt)? = state(of: thread.id, in: key), asked == ask { return excerpt }
+        guard ThreadCode.isOnLines(thread), let reader = reader(for: pullRequest) else { return nil }
+        let result = await reader.excerpt(of: thread, in: pullRequest, context: ThreadExcerpt.context)
+        // Kept unless its pull request was forgotten meanwhile, or a thread that shows it asked for it since.
+        if shows(key), reads[key]?.tasks[thread.id] == nil, reads[key]?.asked[thread.id] == asked {
+            reads[key, default: Reads()].asked[thread.id] = ask
+            finish(thread.id, of: key, ask, result)
+        }
+        return try? result.get()
+    }
+
     private func finish(_ id: Int, of key: PRKey, _ ask: Ask, _ result: Result<ThreadExcerpt, ThreadExcerpt.Problem>) {
         // Unless it was asked for again since, or its pull request forgotten.
         guard reads[key]?.asked[id] == ask else { return }

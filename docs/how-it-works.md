@@ -2231,7 +2231,9 @@ happens.
 **Fix** (`PullRequestPrompt.fixThread`) addresses that thread alone: its entry as Fix Comments lists it, each comment in
 full as its author wrote it, the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
 what was added, removed and commented, and what you wrote, quoted as yours; then it builds and tests, without
-committing, pushing or replying. A ```` ```suggestion ```` fence, in any case, is a suggested change
+committing, pushing or replying. On a file's page, whose threads don't show their own code, a composer reads it as it
+opens, and Explain and Fix wait for it as they go (`PullRequestCodeStore.excerpt(of:in:)`), through the reader the
+page's diff was read with. A ```` ```suggestion ```` fence, in any case, is a suggested change
 (`RichText.Block.suggestion`), blank lines at its ends and all, which the comment shows labeled; **Apply ‹name›'s
 suggestion as written** has the prompt quote the latest that someone else suggested in the thread
 (`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on, which Copilot finds in the
@@ -2239,7 +2241,9 @@ file as it is now by their code, since their numbers are from when the thread wa
 **Include the answer above** quotes what it answered (`ThreadAnswer`, cut to 6,000 characters) before your words, which
 can point to it. Its hand-off is that thread's comments that wait on you
 (`CommentHandOff.init(_:thread:dismissedCutoff:account:)`), and since a pull request has one cutoff, a comment that waits
-on you from before, in another thread, keeps both on Needs You. **Fix All** is Fix Comments' prompt, with your words
+on you from before, in another thread, keeps both on Needs You: as BriefBar last read the pull request when the task
+starts, or, when it hasn't read it then, as after you switch accounts, as the prompt was written, for which the other
+threads' comments are kept too. **Fix All** is Fix Comments' prompt, with your words
 quoted as yours; it says **Fix 1 Comment** while open threads that don't wait on you are left (`CommentAsk.fixAllTitle`).
 
 **Explain** (`PullRequestPrompt.explainThread`) quotes the thread and its code the same way, with your question, and asks
@@ -2255,7 +2259,9 @@ makes its answers up (`DemoData.explanation`), and runs nothing.
 **What Copilot does about a thread** is said on it, in a sentence (`CommentWork`, `CopilotWorkLine`), from the latest work
 that took it on. A task of BriefBar's keeps the threads it took on with its run, by their IDs, each with when
 (`CopilotRun.threads`); going on with a session whose changes aren't pushed, on the same pull request, keeps those it took
-on before, with how that ended, and Push & Reply ships them, after which a fix starts afresh
+on before, with how that ended. Push & Reply takes on those its prompt lists, to reply on (`TakenThread.ships`): the others
+the session fixed stay as they were, fixed and not pushed, with when, since it doesn't reply on them, and a thread that
+another session fixed since stays that one's. Once it's done, a fix starts afresh
 (`CopilotRun.threads(goingOnWith:on:taking:for:at:)`). A
 prompt sent to one of the Copilot app's sessions, or copied for you to paste there, is kept by references only, never what
 it says: the pull request, the session that took it and the one it forked, the threads, what for, and when (`SentPrompt`,
@@ -2275,7 +2281,8 @@ the session's log can't tell their turns apart: BriefBar stops following the ear
 how the later turn went, and leaves it out of the bar below; it's kept as long as one that ended
 (`SentPrompt.overlapped`, `CopilotTasksStore.overlap(promptsIn:before:)`). A turn seen over just once isn't taken as its
 end, since it may be the end of the turn that ran as it was sent. A fix that's done and not pushed, on a thread that's
-still open, counts in the bar at the details' foot (`ReadyFixesBar`, `CopilotTasksStore.readyFixes`), and so does one
+still open, counts in the bar at the details' foot (`ReadyFixesBar`, `CopilotTasksStore.readyFixes`), the pull request's
+own or, under its page over the details on the Pull Requests or Sprint page, the linked one's, and so does one
 whose Push & Reply failed or stopped, to try again (`CommentWork.waitsToBePushed`), even once a question was asked about
 the thread since, whose sentence takes the details
 to the first thread they fixed, and whose **Push & Reply…** opens the Send to Copilot window in the session the fixes are

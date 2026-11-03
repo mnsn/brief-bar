@@ -775,12 +775,13 @@ final class PRStore: ObservableObject {
     }
 
     /// Writes the prompts for what Copilot should do with a pull request, then opens the composer with them: for a failed
-    /// build, once each failed build's errors have been read. Fix Comments takes on the threads its prompt lists, for each
-    /// to say what became of it.
+    /// build, once each failed build's errors have been read. Fix Comments and Push & Reply take on the threads their
+    /// prompts list, for each to say what became of it.
     /// - Parameters:
     ///   - start: where it goes to begin with, rather than BriefBar's suggestion, such as the session whose fixes Push &
     ///     Reply ships.
-    ///   - threads: the threads it takes on, for Push & Reply, those whose fixes it ships.
+    ///   - threads: for Push & Reply, the threads whose fixes it ships, which its prompt lists alone; without them, it lists
+    ///     those Fix Comments does.
     func composeCopilot(
         _ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore, start: ComposerStart? = nil, threads: [Int] = []
     ) {
@@ -792,8 +793,12 @@ final class PRStore: ObservableObject {
         // hands off those alone.
         let scope = action == .pushAndReply && !threads.isEmpty ? threads : nil
         let handOff = commentHandOff(action, for: record, threads: scope)
-        let threads = action == .fixComments
-            ? PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map(\.id) : threads
+        // The threads it takes on, as its prompt lists them, for each to say what became of it.
+        let threads: [Int] = switch action {
+        case .fixComments: PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map(\.id)
+        case .pushAndReply: PullRequestPrompt.shippedThreads(record, only: scope).prefix(PullRequestPrompt.threadLimit).map(\.id)
+        default: threads
+        }
         Task {
             let prompts = await PullRequestTasks.prompts(action, for: record, client: client, threads: scope)
             copilot.compose(

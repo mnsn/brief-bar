@@ -67,12 +67,14 @@ struct CopilotWorkLine<Trailing: View>: View {
     }
 
     private func label(opens: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        // Read here, not in the alignment's closure, which runs apart from the view.
+        let scale = textScale
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: symbol)
                 .font(size: 11, weight: .semibold)
                 .foregroundStyle(state?.color ?? .secondary)
-                .frame(width: 14 * textScale)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 * textScale }
+                .frame(width: 14 * scale)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 * scale }
             VStack(alignment: .leading, spacing: 1) {
                 Text(text)
                     .font(size: 11.5, weight: .medium)

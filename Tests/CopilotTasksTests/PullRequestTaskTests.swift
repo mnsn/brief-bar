@@ -387,17 +387,24 @@ import Testing
         #expect(CopilotRun.threads(goingOnWith: unseen, on: pullRequest.reference, taking: [], for: .fixComments, at: second) == [
             TakenThread(id: 11, since: first, ended: .stopped),
         ])
-        // Push & Reply ships them, with those it's sent for that prompts to the session fixed rather than its runs, such
-        // as 13; once it's done, they're pushed, and a later fix starts afresh.
+        // Push & Reply takes on those its prompt lists, to reply on, with those that prompts to the session fixed rather
+        // than its runs, such as 13; it doesn't reply on the others it has, which stay as they were. Once it's done, those
+        // it shipped are pushed, and a later fix starts afresh.
         let shipping = try #require(CopilotRun.threads(goingOnWith: fixed, on: pullRequest.reference, taking: [12, 13], for: .pushAndReply, at: second))
-        #expect(shipping.map(\.id) == [11, 12, 13])
-        #expect(shipping.map(\.ended) == [.finished, .finished, nil])
-        #expect(CopilotRun.threads(goingOnWith: fixed, on: pullRequest.reference, taking: [], for: .pushAndReply, at: second)?.map(\.id) == [11, 12])
+        #expect(shipping == [
+            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ships: true),
+            TakenThread(id: 13, since: second, ships: true),
+        ])
+        #expect(CopilotRun.threads(goingOnWith: fixed, on: pullRequest.reference, taking: [], for: .pushAndReply, at: second) == [
+            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: first, ended: .finished),
+        ])
         #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .finished, threads: shipping), on: pullRequest.reference, taking: [13], for: .fixComments, at: second)
             == [TakenThread(id: 13, since: second)])
-        // One that failed didn't push them.
-        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .failed, threads: shipping), on: pullRequest.reference, taking: [], for: .fixComments, at: second)?
-            .map(\.id) == [11, 12, 13])
+        // One that failed didn't push them: those it shipped say so, and a fix of one of them takes it on again.
+        #expect(CopilotRun.threads(goingOnWith: run(.pushAndReply, ended: .failed, threads: shipping), on: pullRequest.reference, taking: [13], for: .fixComments, at: second) == [
+            TakenThread(id: 11, since: first, ended: .finished), TakenThread(id: 12, since: second, ended: .failed, ships: true),
+            TakenThread(id: 13, since: second),
+        ])
         // A review changed nothing to push.
         #expect(CopilotRun.threads(goingOnWith: run(.review, ended: .finished, threads: shipping), on: pullRequest.reference, taking: [], for: .fixComments, at: second) == nil)
         // A session that goes on with another pull request keeps none of this one's, whose IDs are this one's own.
@@ -406,7 +413,7 @@ import Testing
         #expect(CopilotRun.threads(goingOnWith: fixed, on: other, taking: [11], for: .fixComments, at: second) == [TakenThread(id: 11, since: second)])
         #expect(CopilotRun.threads(goingOnWith: fixed, on: nil, taking: [], for: nil, at: second) == nil)
         // Kept as IDs and dates, never what the threads say.
-        let kept = run(.fixComments, ended: .finished, threads: [TakenThread(id: 11, since: first, ended: .failed)])
+        let kept = run(.pushAndReply, ended: .failed, threads: [TakenThread(id: 11, since: first, ended: .failed), TakenThread(id: 12, since: first, ships: true)])
         let text = String(decoding: try JSONEncoder().encode(kept), as: UTF8.self)
         #expect(text.contains(#""threads":[{"#))
         #expect(try JSONDecoder().decode(CopilotRun.self, from: Data(text.utf8)) == kept)

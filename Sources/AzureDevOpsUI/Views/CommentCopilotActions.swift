@@ -354,12 +354,13 @@ struct ThreadCopilotActions: View {
 
     private func askInSession(_ choice: SessionChoice, question: CommentQuestions.Question) {
         guard let record else { return }
-        let excerpt: ThreadExcerpt? = if case .read(let excerpt)? = code.state(of: thread.id, in: item.key) { excerpt } else { nil }
         let sending = CommentSending(item: item, record: record, store: store, copilot: copilot, session: sessions.session(for: item.key))
         isAskingInSession = true
         let id = thread.id
         drafts.asks[id]?.cancel()
         drafts.asks[id] = Task {
+            let excerpt = await code.excerpt(of: thread.thread, in: record.pullRequest)
+            guard !Task.isCancelled else { return }
             let outcome = await sending.explainAsPrompt(
                 thread.thread, question: question.asked, earlier: question.earlier, excerpt: excerpt, to: choice
             )
@@ -652,6 +653,11 @@ struct CommentComposer: View {
             close: { done(nil) }
         )
         .task(id: target) { await check(target, choice: choice) }
+        // The code it's on, for the prompt, read as it opens where the thread doesn't show its own, as on its file's page.
+        .task(id: thread?.id) {
+            guard preview == nil, let thread, let record else { return }
+            _ = await code.excerpt(of: thread, in: record.pullRequest)
+        }
         .onChange(of: text) { if preview == nil { drafts.texts[draftKey] = text } }
         .onAppear {
             guard !hasAppeared else { return }
@@ -847,15 +853,29 @@ struct CommentComposer: View {
 
     private func send(to target: CommentDestination?, choice: SessionChoice?) {
         guard let target, let record, canSend(target, choice: choice) else { return }
+        let key = draftKey
+        // Kept with the page's composers, to be called off as this one closes, however it does: a prompt no session took
+        // yet is taken back, and nothing starts for a composer that's gone.
+        drafts.callOff(key)
         if ask == .explain {
             guard let thread, let id = target.sessionID else { return }
-            questions.ask(
-                PullRequestPrompt.explainThread(record, thread: thread, code: excerpt, question: text, earlier: answer), asked: text,
-                earlier: answer, session: id, on: thread.id, of: item.key
-            )
-            drafts.texts[draftKey] = nil
-            ThreadCopilotActions.announce("Asking \(choice.map(PullRequestSession.name) ?? "the session")")
-            done(.sent)
+            let question = text
+            let earlier = answer
+            // With the code it's on, once it's read: on its file's page, it's read as the composer opens.
+            isSending = excerpt == nil && ThreadCode.isOnLines(thread)
+            drafts.sends[key] = Task {
+                let excerpt = await code.excerpt(of: thread, in: record.pullRequest)
+                guard !Task.isCancelled else { return }
+                drafts.sends[key] = nil
+                isSending = false
+                questions.ask(
+                    PullRequestPrompt.explainThread(record, thread: thread, code: excerpt, question: question, earlier: earlier),
+                    asked: question, earlier: earlier, session: id, on: thread.id, of: item.key
+                )
+                drafts.texts[key] = nil
+                ThreadCopilotActions.announce("Asking \(choice.map(PullRequestSession.name) ?? "the session")")
+                done(.sent)
+            }
             return
         }
         isSending = true
@@ -864,13 +884,9 @@ struct CommentComposer: View {
         let how = text
         let suggestion = appliesSuggestion ? suggestion : nil
         let answer = includesAnswer ? answer : nil
-        let excerpt = excerpt
         let thread = ask == .fix ? thread : nil
-        let key = draftKey
-        // Kept with the page's composers, to be called off as this one closes, however it does: a prompt no session took
-        // yet is taken back, and nothing starts for a composer that's gone.
-        drafts.callOff(key)
         drafts.sends[key] = Task {
+            let excerpt = if let thread { await code.excerpt(of: thread, in: record.pullRequest) } else { ThreadExcerpt?.none }
             let outcome = await sending.fix(thread, how: how, suggestion: suggestion, answer: answer, excerpt: excerpt, to: target, choice: choice)
             guard !Task.isCancelled else { return }
             drafts.sends[key] = nil
@@ -1079,11 +1095,12 @@ struct CommentsHeader: View {
 /// At the foot of a pull request's details, once fixes of its comments are done and not pushed: "2 fixes ready in
 /// ‘Retry backoff’", which takes the details to the threads they fixed, with **Push & Reply…**, which opens the Send to
 /// Copilot window to commit them, push and reply, in that session. While Send Work to Copilot is on, on an open pull
-/// request of yours.
+/// request of yours: the details', or the one a page over them shows, on the Pull Requests page or the Sprint page.
 struct ReadyFixesBar: View {
     let item: PRSnapshot
+    /// The details that show it, which it takes to the threads.
+    let details: PullRequestDetailsStore
 
-    @EnvironmentObject private var details: PullRequestDetailsStore
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
     @EnvironmentObject private var sessions: PullRequestSessions
@@ -1150,7 +1167,17 @@ struct ReadyFixesBar: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .background(ItemState.done.color.opacity(0.08))
+            .overlay(alignment: .top) { Divider().opacity(0.6) }
             .accessibilityElement(children: .contain)
+        }
+    }
+
+    /// The bar under a page over details, for the pull request it shows, with `details`, the page's: none for a page of
+    /// anything else.
+    @ViewBuilder
+    static func under(_ page: ItemRef, details: PullRequestDetailsStore, items: [PRSnapshot]) -> some View {
+        if let item = LinkedItemPage.pullRequest(page, in: items, kept: details) {
+            ReadyFixesBar(item: item, details: details)
         }
     }
 
