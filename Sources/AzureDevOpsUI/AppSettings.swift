@@ -58,6 +58,11 @@ final class AppSettings: ObservableObject {
     @Published var followMerges: Bool {
         didSet { defaults.set(followMerges, forKey: Key.followMerges) }
     }
+    /// A pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window,
+    /// rather than opening in Azure DevOps. Off by default: they open in Azure DevOps, as they always did.
+    @Published var opensPullRequestsInBriefBar: Bool {
+        didSet { defaults.set(opensPullRequestsInBriefBar, forKey: Key.opensPullRequestsInBriefBar) }
+    }
     /// Pull requests you watch by their links, though you're not on them: listed as if you reviewed them, until
     /// they close or you stop watching them.
     @Published var watchedPullRequests: [PullRequestLink] {
@@ -135,6 +140,11 @@ final class AppSettings: ObservableObject {
     @Published var copilotRuns: [CopilotRun] {
         didSet { Self.store(copilotRuns, in: defaults, forKey: Key.copilotRuns) }
     }
+    /// The forks of Copilot sessions that BriefBar made and couldn't delete yet, by their sessions' IDs and their CLI's
+    /// folder, nothing else: each is deleted before the next question, fork or task (`LeftoverForks`).
+    private(set) var copilotForksToDelete: [LeftoverFork] {
+        didSet { Self.store(copilotForksToDelete, in: defaults, forKey: Key.copilotForksToDelete) }
+    }
     /// What the account signed in now has seen.
     @Published private(set) var seen: SeenState
     /// Where that account is from (`AccessToken.accountTenant`), so that after a restart, your own directory wanting you to
@@ -142,6 +152,17 @@ final class AppSettings: ObservableObject {
     var accountOrigin: String? {
         get { defaults.string(forKey: Key.accountOrigin) }
         set { defaults.set(newValue, forKey: Key.accountOrigin) }
+    }
+    /// Your sign-in's directory, as BriefBar last read with it, whichever section did: so that after a restart, signing in
+    /// to another directory, which makes that one the Azure CLI's default, doesn't read you there instead.
+    var accountDirectory: String? {
+        get { defaults.string(forKey: Key.accountDirectory) }
+        set { defaults.set(newValue, forKey: Key.accountDirectory) }
+    }
+    /// The directory to ask the Azure CLI for your tokens in: the one kept, or, from builds that kept none, the directory
+    /// of the account that saw your pull requests.
+    var pinnedDirectory: String? {
+        accountDirectory ?? seen.account.flatMap(AccessToken.tenant(ofAccount:))
     }
     /// When you last looked at each pull request that's listed only because someone sent it to you (`SeenState.name(of:)`),
     /// in memory only, like the links: in the preferences, it would say which pull requests people sent you.
@@ -161,6 +182,7 @@ final class AppSettings: ObservableObject {
         showToReview = defaults.bool(forKey: Key.showToReview)
         pullRequestOrder = defaults.string(forKey: Key.pullRequestOrder).flatMap(PROrder.init(rawValue:)) ?? .status
         followMerges = defaults.object(forKey: Key.followMerges) as? Bool ?? true
+        opensPullRequestsInBriefBar = defaults.bool(forKey: Key.opensPullRequestsInBriefBar)
         watchedPullRequests = Self.load([PullRequestLink].self, from: defaults, forKey: Key.watchedPullRequests) ?? []
         organizations = defaults.stringArray(forKey: Key.organizations) ?? []
         knownOrganizations = defaults.stringArray(forKey: Key.knownOrganizations) ?? []
@@ -177,8 +199,10 @@ final class AppSettings: ObservableObject {
         copilotPrompt = defaults.string(forKey: Key.copilotPrompt)
         copilotRepositories = defaults.dictionary(forKey: Key.copilotRepositories) as? [String: String] ?? [:]
         copilotWorktreesFolder = defaults.string(forKey: Key.copilotWorktreesFolder)
-        // Any program running as you can write the preferences: a run whose ID isn't a session's is left out.
+        // Any program running as you can write the preferences: a run whose ID isn't a session's is left out, and so is a
+        // fork's.
         copilotRuns = (Self.load([CopilotRun].self, from: defaults, forKey: Key.copilotRuns) ?? []).filter(\.isValid)
+        copilotForksToDelete = (Self.load([LeftoverFork].self, from: defaults, forKey: Key.copilotForksToDelete) ?? []).filter(\.isValid)
         chatLinks = ChatLinkState()
         // Where earlier builds kept the links, which any program running as you could read: gone, whatever the setting.
         defaults.removeObject(forKey: Key.chatLinks)
@@ -202,12 +226,14 @@ final class AppSettings: ObservableObject {
         persistSeen()
     }
 
-    /// Forgets what you've seen, with every account, where that account is from, and the pull requests people sent you,
-    /// when Azure DevOps is turned off. Your organizations, and whether to look for pull requests sent in chats, stay.
+    /// Forgets what you've seen, with every account, where that account is from and its directory, and the pull requests
+    /// people sent you, when Azure DevOps is turned off. Your organizations, and whether to look for pull requests sent in
+    /// chats, stay.
     func forgetSeen() {
         defaults.removeObject(forKey: Key.seen)
         defaults.removeObject(forKey: Key.otherSeen)
         defaults.removeObject(forKey: Key.accountOrigin)
+        defaults.removeObject(forKey: Key.accountDirectory)
         hasSavedSeen = false
         seen = SeenState.firstRun()
         otherSeen = [:]
@@ -221,7 +247,7 @@ final class AppSettings: ObservableObject {
 
     /// Forgets the tasks sent to Copilot, and the repositories their work went in, when Azure DevOps is turned off.
     /// What Copilot printed for them is deleted with them (`CopilotTasksStore.deleteOutput`). Copilot's worktrees,
-    /// branches and sessions stay: they're your work.
+    /// branches and sessions stay: they're your work. The forks still to delete stay too, to delete once it's on again.
     func forgetCopilotRuns() {
         copilotRuns = []
         copilotRepositories = [:]
@@ -478,6 +504,7 @@ enum SettingsKey {
     static let showToReview = "ado.showToReviewInMenuBar"
     static let pullRequestOrder = "ado.pullRequestOrder"
     static let followMerges = "ado.followMerges"
+    static let opensPullRequestsInBriefBar = "ado.opensPullRequestsInBriefBar"
     static let watchedPullRequests = "ado.watchedPullRequests"
     static let organizations = "ado.organizations"
     static let knownOrganizations = "ado.knownOrganizations"
@@ -487,6 +514,8 @@ enum SettingsKey {
     /// Where the account BriefBar last read your pull requests with is from (`AccessToken.accountTenant`): a directory's
     /// ID, or an identity provider such as live.com.
     static let accountOrigin = "ado.accountOrigin"
+    /// Your sign-in's directory, as BriefBar last read with it (`AccessToken.tenant`): a directory's ID.
+    static let accountDirectory = "ado.accountDirectory"
     static let chatLinksEnabled = "ado.chatLinksEnabled"
     /// Where earlier builds kept the links sent in chats. Nothing writes it now: the app removes it at launch.
     static let chatLinks = "ado.chatLinks"
@@ -502,6 +531,23 @@ enum SettingsKey {
     static let copilotRepositories = "ado.copilot.repositories"
     static let copilotWorktreesFolder = "ado.copilot.worktreesFolder"
     static let copilotRuns = "ado.copilot.runs"
+    static let copilotForksToDelete = "ado.copilot.forksToDelete"
+}
+
+/// The forks BriefBar couldn't delete yet are kept with its runs, so that none is left behind when it quits first.
+extension AppSettings: LeftoverForks {
+    func leftoverForks() async -> [LeftoverFork] {
+        copilotForksToDelete
+    }
+
+    func keepLeftoverFork(_ fork: LeftoverFork) async {
+        guard fork.isValid, !copilotForksToDelete.contains(fork) else { return }
+        copilotForksToDelete.append(fork)
+    }
+
+    func dropLeftoverFork(_ fork: LeftoverFork) async {
+        copilotForksToDelete.removeAll { $0 == fork }
+    }
 }
 
 extension BriefBarUI.WidgetSize {

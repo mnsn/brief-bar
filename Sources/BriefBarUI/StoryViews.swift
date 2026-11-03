@@ -124,7 +124,7 @@ package struct WhereItStandsSection: View {
     }
 
     /// How a page's thing is linked to what you opened it from, as its first fact: "In Azure DevOps, to Bug 5110".
-    static func linkFact(_ connection: LinkConnection, from subject: LinkedItem) -> ItemStory.Fact {
+    package static func linkFact(_ connection: LinkConnection, from subject: LinkedItem) -> ItemStory.Fact {
         let what = switch subject.ref.kind {
         case .workItem: "work item \(subject.label)"
         case .pullRequest, .gitHubPullRequest: subject.label

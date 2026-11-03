@@ -160,12 +160,15 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         )
     }
 
-    /// The Azure CLI's tokens, asked for in the directory the app last read your pull requests with, as the app asks
-    /// for them: so what's read is its account's.
-    static func tokens(_ defaults: UserDefaults? = appDefaults) -> AzureCLITokenProvider {
+    /// The Azure CLI's tokens, asked for in the directory the app last read with, as the app asks for them: so what's read
+    /// is its account's.
+    static func tokens(
+        _ defaults: UserDefaults? = appDefaults, runner: any ProcessRunning = ProcessRunner(), locator: AzureCLILocator = AzureCLILocator()
+    ) -> AzureCLITokenProvider {
         AzureCLITokenProvider(
-            homeTenant: seenBook(defaults).current.account.flatMap(AccessToken.tenant(ofAccount:)),
-            homeAccountTenant: defaults?.string(forKey: SettingsKey.accountOrigin)
+            homeTenant: defaults?.string(forKey: SettingsKey.accountDirectory)
+                ?? seenBook(defaults).current.account.flatMap(AccessToken.tenant(ofAccount:)),
+            homeAccountTenant: defaults?.string(forKey: SettingsKey.accountOrigin), locator: locator, runner: runner
         )
     }
 

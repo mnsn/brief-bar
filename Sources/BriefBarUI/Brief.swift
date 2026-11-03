@@ -31,11 +31,15 @@ package struct BriefLine: Identifiable {
     /// What the on-device model already wrote for it, such as the summary Teams' list shows, so that it's said the
     /// same way, and not asked for again.
     package var written: String?
+    /// Opens it, as a click in the menu bar's list or a widget does.
     package var open: @MainActor () -> Void
+    /// Shows it in BriefBar's window instead, from one of its pages, such as the Overview, for a thing whose details show
+    /// there: false when they can't, and `open` does then. Nil for one that opens elsewhere.
+    package var show: (@MainActor () -> Bool)?
 
     package init(
         id: String, source: SourceID, state: ItemState, date: Date?, sentence: String, request: BriefRequest? = nil,
-        written: String? = nil, open: @escaping @MainActor () -> Void
+        written: String? = nil, open: @escaping @MainActor () -> Void, show: (@MainActor () -> Bool)? = nil
     ) {
         self.id = id
         self.source = source
@@ -45,6 +49,14 @@ package struct BriefLine: Identifiable {
         self.request = request
         self.written = written
         self.open = open
+        self.show = show
+    }
+
+    /// Opens it from a page of BriefBar's window: its details there, where it has them, or else as `open` does.
+    @MainActor
+    package func openInWindow() {
+        if let show, show() { return }
+        open()
     }
 }
 
