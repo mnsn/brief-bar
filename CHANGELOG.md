@@ -29,9 +29,9 @@
   **Bug 5110 › !4091**. **Open Pull Requests in BriefBar**, off by default in Azure DevOps' settings, does the
   same for the menu bar's list, widgets and notifications, rather than opening Azure DevOps. Either way, a pull
   request's menu has both **Show in BriefBar** and **Open in Azure DevOps**.
-- **HTML in work items' Markdown shows as Azure DevOps shows it.** In a work item's details, a line break
-  (`<br>`) breaks the line, an HTML comment shows nothing, and tags such as `<b>` or `<details>` keep only
-  their text, rather than showing as they were written.
+- **HTML in work items' Markdown shows as Azure DevOps shows it.** In a work item's details, HTML such as a
+  line break (`<br>`), a table or `<details>` shows as it does in Azure DevOps, and an HTML comment shows
+  nothing, rather than showing as they were written.
 - **See each comment with its code, without opening Azure DevOps.** In a pull request's details, its
   comment threads now go by file, in the order its change lists them, with those on the pull request
   itself first. Each thread on code shows the lines it's on as its reviewer saw them, with their numbers,

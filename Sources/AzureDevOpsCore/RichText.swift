@@ -78,8 +78,9 @@ public struct RichText: Sendable, Equatable {
 
     /// From Markdown: the blocks work items use (headings, lists and task lists, quotes, code, tables and rules), and
     /// inline formatting, links and images. Outside code, the HTML that comments on pull requests have in their Markdown
-    /// shows as Azure DevOps shows it: an HTML comment shows nothing, a line break breaks the line, an image is an image,
-    /// and the other tags it formats text with keep their text.
+    /// shows as Azure DevOps shows it: HTML that starts a line is a block of HTML, as CommonMark has them, read as HTML,
+    /// Markdown in it as it's written; and in text, an HTML comment shows nothing, a line break breaks the line, an image
+    /// is an image, and the other tags it formats text with keep their text.
     public init(markdown: String) {
         self.init(blocks: MarkdownReader.read(markdown))
     }
@@ -766,8 +767,7 @@ private enum MarkdownReader {
         read(markdown, depth: 0).blocks
     }
 
-    /// Its blocks, and whether an HTML comment in it has no end there: then it goes on past it, as HTML reads one, to
-    /// its end or to the end of the text.
+    /// Its blocks, and whether an HTML comment in it has no end: then what follows it doesn't show, as HTML reads one.
     private static func read(_ markdown: String, depth: Int) -> (blocks: [RichText.Block], unended: Bool) {
         let raw = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -812,24 +812,32 @@ private enum MarkdownReader {
         func enclosingIndent(_ indent: Int) -> Int {
             itemIndents.last { $0 <= indent } ?? 0
         }
-        /// Hides an HTML comment, from line `start`, after `opening` on it or else from its start, to the line it ends
-        /// on, blank lines and all. What follows its end there is the HTML block's too: it shows as HTML shows it, not
-        /// read as Markdown, and the next line starts a block of its own. False when the comment, or one after it there,
-        /// has no end, and so hides all the rest.
-        func skipComment(from start: Int, after opening: String.Index? = nil) -> Bool {
-            guard start < raw.count else { return false }
-            var end = start
-            var close = raw[start][(opening ?? raw[start].startIndex)...].range(of: "-->")
-            while close == nil, end + 1 < raw.count {
-                end += 1
-                close = raw[end].range(of: "-->")
+        /// An HTML block, from `first`, what's left of line `start` from its "<", to where it ends as `end` says, or as the
+        /// list's item it's in ends, `inside` columns in, or the page for 0: its HTML, the line after it, and whether a
+        /// comment in it doesn't end there.
+        func readHTML(_ first: Substring, at start: Int, ending end: HTMLBlockEnd, inside: Int) -> (html: String, next: Int, unended: Bool) {
+            var html = String(first)
+            var last = start
+            func add(_ line: Int) {
+                html += "\n" + Self.droppingIndentation(raw[line], columns: inside)
+                last = line
             }
-            guard let close else { return false }
-            index = end + 1
-            let rest = Self.literal(raw[end][close.upperBound...])
-            let runs = inline(rest.text)
-            if !runs.isEmpty { blocks.append(.paragraph(runs)) }
-            return !rest.unended
+            var line = start + 1
+            switch end {
+            case .line(let markers):
+                guard !Self.has(first, markers) else { break }
+                while line < lines.count, !Self.leaves(lines[line], inside) {
+                    add(line)
+                    if Self.has(raw[line][...], markers) { break }
+                    line += 1
+                }
+            case .blankLine:
+                while line < lines.count, !lines[line].trimmingCharacters(in: .whitespaces).isEmpty, !Self.leaves(lines[line], inside) {
+                    add(line)
+                    line += 1
+                }
+            }
+            return (html, last + 1, Self.endsInComment(html))
         }
 
         while index < lines.count {
@@ -870,13 +878,17 @@ private enum MarkdownReader {
                 if !text.isEmpty { blocks.append(.code(text)) }
                 continue
             }
-            // An HTML comment that starts a line, as bots leave them in their comments, is a block of its own, which shows
-            // nothing, blank lines and all, to the line it ends on; without an end, it's all the rest. What follows its end
-            // there shows as HTML shows it.
-            if trimmed.hasPrefix("<!--"), let opening = raw[index].range(of: "<!--") {
+            // HTML that starts a line starts an HTML block, as CommonMark has them (`htmlBlock(startingWith:)`), such as the
+            // comments bots leave: Azure DevOps passes it on as it is, Markdown and all, for HTML to show, as BriefBar's
+            // HTML reader does. A comment in it that doesn't end there hides all that follows, as text can't end it.
+            if let end = Self.htmlBlock(startingWith: trimmed[...], inParagraph: continuing),
+               let opening = raw[index].firstIndex(of: "<") {
                 flush()
                 closeLists(at: indent)
-                guard skipComment(from: index, after: opening.upperBound) else {
+                let block = readHTML(raw[index][opening...], at: index, ending: end, inside: inside)
+                blocks += RichText(html: block.html).blocks
+                index = block.next
+                if block.unended {
                     unended = true
                     break
                 }
@@ -946,8 +958,8 @@ private enum MarkdownReader {
                     for block in quote.blocks {
                         if case .paragraph(let runs) = block { blocks.append(.quote(runs)) } else { blocks.append(block) }
                     }
-                    // A comment in it that doesn't end there goes on past it.
-                    if quote.unended, !skipComment(from: index) {
+                    // A comment in it that doesn't end there hides the rest, past it too.
+                    if quote.unended {
                         unended = true
                         break
                     }
@@ -1021,46 +1033,31 @@ private enum MarkdownReader {
                         content = String(task.2 ?? "")
                     }
                 }
-                // An item that starts with HTML comments: they show nothing, blank lines and all; without an end, it's all
-                // the rest. The first one's end ends the HTML block it starts, with its line: what follows on it, but other
-                // comments that end there, is the block's too, which shows as HTML shows it, a comment that doesn't end
-                // there included, and the item has no paragraph for the lines after it to go on with. With nothing there,
-                // the next paragraph in it is its text. Text indented as code starts with no comment.
-                var startsWithComment = false
-                var text = Substring(content)
-                while column - markerEnd <= 4, text.hasPrefix("<!--") {
-                    if let close = text.dropFirst(4).range(of: "-->") {
-                        startsWithComment = true
-                        text = text[close.upperBound...].drop { $0 == " " || $0 == "\t" }
-                        continue
+                pendingKind = .listItem(marker, depth: depth)
+                // An item whose text starts with HTML starts with an HTML block, as the page would, unless its text is
+                // indented as code: the block's first paragraph is the item's text; with nothing to show, such as a comment,
+                // the next paragraph in it is.
+                if column - markerEnd <= 4, let end = Self.htmlBlock(startingWith: content[...], inParagraph: false) {
+                    let block = readHTML(content[...], at: index, ending: end, inside: textIndent)
+                    var shown = RichText(html: block.html).blocks
+                    pending = []
+                    if case .paragraph(let runs)? = shown.first {
+                        blocks.append(.listItem(marker, depth: depth, runs))
+                        shown.removeFirst()
+                        pendingKind = .paragraph
+                    } else if !shown.isEmpty {
+                        pendingKind = .paragraph
                     }
-                    guard !startsWithComment else { break }
-                    startsWithComment = true
-                    var end = index + 1
-                    while end < lines.count, !lines[end].contains("-->") { end += 1 }
-                    guard end < lines.count, let close = raw[end].range(of: "-->") else {
-                        text = ""
-                        index = lines.count - 1
+                    blocks += shown
+                    index = block.next
+                    if block.unended {
                         unended = true
                         break
                     }
-                    text = raw[end][close.upperBound...].drop { $0 == " " || $0 == "\t" }
-                    index = end
+                    continue
                 }
-                pendingKind = .listItem(marker, depth: depth)
-                pending = []
-                if !startsWithComment {
-                    pending = [content]
-                    paragraphOpen = true
-                } else if !text.isEmpty {
-                    let rest = Self.literal(text)
-                    pending = [rest.text]
-                    flush()
-                    if rest.unended {
-                        unended = true
-                        index = lines.count - 1
-                    }
-                }
+                pending = [content]
+                paragraphOpen = true
                 index += 1
                 continue
             }
@@ -1253,32 +1250,64 @@ private enum MarkdownReader {
     /// apart: see `keptApart(_:)`.
     static let seam: Unicode.Scalar = "\u{FFFC}"
 
-    /// Text as HTML shows it, which Markdown doesn't read: each mark Markdown would read is escaped, but in HTML's tags
-    /// and comments, which stay HTML, and in character references, which HTML reads too. Unended when a comment in it
-    /// has no end: HTML hides everything after one, which isn't in the text.
-    static func literal(_ text: Substring) -> (text: String, unended: Bool) {
-        var result = ""
-        var index = text.startIndex
-        while index < text.endIndex {
-            let character = text[index]
-            if character == "<" {
-                if text[index...].hasPrefix("<!--") {
-                    guard let end = text[text.index(index, offsetBy: 4)...].range(of: "-->") else { return (result, true) }
-                    result += text[index..<end.upperBound]
-                    index = end.upperBound
-                    continue
-                }
-                if let tag = text[index...].prefixMatch(of: anyTag) {
-                    result += text[tag.range]
-                    index = tag.range.upperBound
-                    continue
-                }
+    // MARK: HTML blocks
+
+    /// How an HTML block ends, as CommonMark has them: with the first line that has one of these, in any case, the line it
+    /// starts on included; or before a blank line.
+    enum HTMLBlockEnd: Equatable {
+        case line(containing: [String])
+        case blankLine
+    }
+
+    /// The elements whose text HTML shows as it is, which start an HTML block to their end tag.
+    nonisolated(unsafe) private static let rawTextElement = /<(?:pre|script|style|textarea)(?:\s|>|$)/.ignoresCase()
+
+    /// The elements that start an HTML block to the next blank line wherever they start a line, as CommonMark lists them.
+    nonisolated(unsafe) private static let blockElement = #/
+        <\/?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|
+        dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|
+        menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|
+        tr|track|ul)(?:\s|\/?>|$)
+        /#.ignoresCase()
+
+    /// The HTML block that a line's text starts, from its "<", as CommonMark has them: how it ends, or nil for none. Any
+    /// other tag alone on its line starts one too, but where it would go on with a paragraph (`inParagraph`).
+    static func htmlBlock(startingWith text: Substring, inParagraph: Bool) -> HTMLBlockEnd? {
+        guard text.hasPrefix("<") else { return nil }
+        if text.prefixMatch(of: rawTextElement) != nil { return .line(containing: ["</pre>", "</script>", "</style>", "</textarea>"]) }
+        if text.hasPrefix("<!--") { return .line(containing: ["-->"]) }
+        if text.hasPrefix("<?") { return .line(containing: ["?>"]) }
+        if text.hasPrefix("<!"), let next = text.dropFirst(2).first, next.isASCII, next.isLetter { return .line(containing: [">"]) }
+        if text.hasPrefix("<![CDATA[") { return .line(containing: ["]]>"]) }
+        if text.prefixMatch(of: blockElement) != nil { return .blankLine }
+        let tag = text.trimmingCharacters(in: .whitespaces)
+        guard !inParagraph, tag.wholeMatch(of: anyTag) != nil else { return nil }
+        let name = tag.dropFirst(tag.hasPrefix("</") ? 2 : 1).prefix { $0.isLetter || $0.isNumber || $0 == "-" }.lowercased()
+        return ["pre", "script", "style", "textarea"].contains(name) ? nil : .blankLine
+    }
+
+    /// Whether a line has one of these, in any case.
+    private static func has(_ line: Substring, _ markers: [String]) -> Bool {
+        markers.contains { line.range(of: $0, options: .caseInsensitive) != nil }
+    }
+
+    /// Whether HTML ends in a comment that doesn't end, as BriefBar's HTML reader reads it: then what follows doesn't show,
+    /// since Markdown's text can't end it, Azure DevOps writing its ">" as "&gt;".
+    static func endsInComment(_ html: String) -> Bool {
+        var index = html.startIndex
+        while let open = html[index...].firstIndex(of: "<") {
+            if html[open...].hasPrefix("<!--") {
+                guard let end = html.range(of: "-->", range: html.index(after: open)..<html.endIndex) else { return true }
+                index = end.upperBound
+            } else if let tag = Tag.parse(html, at: open) {
+                // One whose ">" never comes makes the rest text.
+                if tag.kind == .unterminated { return false }
+                index = tag.end
+            } else {
+                index = html.index(after: open)
             }
-            if character.isASCII, character.isPunctuation || character.isSymbol, character != "&" { result.append("\\") }
-            result.append(character)
-            index = text.index(after: index)
         }
-        return (result, false)
+        return false
     }
 
     /// Text with a seam only where it keeps apart two marks that HTML kept apart, which Markdown would read together: runs
