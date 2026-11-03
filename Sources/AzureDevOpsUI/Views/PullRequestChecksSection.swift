@@ -5,9 +5,9 @@ import BriefBarUI
 import SwiftUI
 
 /// A pull request's builds and status checks, in its details, what failed first: where each stands and since when, where a
-/// build failed and its first error, whether it's optional, and ↗ to its run. A build that failed, or is still going,
-/// opens under its row, to find out why without leaving BriefBar (`BuildInvestigationView`). A merged one's are the
-/// pipelines that ran after it merged.
+/// build failed and its first error, whether it's optional, what Copilot does about it, and ↗ to its run. A build that
+/// failed, or is still going, opens under its row, to find out why without leaving BriefBar (`BuildInvestigationView`),
+/// and to ask Copilot about it. A merged one's are the pipelines that ran after it merged.
 struct PullRequestChecksSection: View {
     let item: PRSnapshot
     /// What the list read of it: a build is read, to open it, in its project.
@@ -17,6 +17,10 @@ struct PullRequestChecksSection: View {
     let place: PullRequestDetailsStore.Place?
     /// The build or the check the details just went to, pointed out for a moment.
     let highlighted: PullRequestDetailsStore.Anchor?
+    /// The composer in place that's open in the details, one at a time in them, so Esc, Return and the keyboard's focus are
+    /// its own; and what you wrote in each.
+    @Binding var composing: CopilotComposing?
+    let drafts: CopilotDrafts
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var investigations: BuildInvestigationStore
@@ -46,8 +50,11 @@ struct PullRequestChecksSection: View {
                         }
                         // Its own, which no other row has, whatever their names.
                         let anchor = PullRequestDetailsStore.Anchor.check(line.id)
-                        CheckRow(line: line, item: item, pullRequest: pullRequest, now: store.now, isHighlighted: highlighted == anchor)
-                            .id(anchor)
+                        CheckRow(
+                            line: line, item: item, pullRequest: pullRequest, now: store.now, isHighlighted: highlighted == anchor,
+                            composing: $composing, drafts: drafts
+                        )
+                        .id(anchor)
                     }
                 }
                 .padding(.vertical, 3)
@@ -60,6 +67,9 @@ struct PullRequestChecksSection: View {
         .onChange(of: panel.checks.compactMap(\.buildId), initial: true) {
             investigations.retain(Set(panel.checks.compactMap(\.buildId)), of: item.key)
         }
+        // What a composer sends is called off as the builds go, with the details, or for another pull request, file or page;
+        // as it closes, or another opens, the details call it off.
+        .onDisappear { drafts.callOffAll() }
     }
 
     /// Opens the build the details are asked to go to, as What's Left's failed build asks, or the Pipelines page, or a
@@ -77,14 +87,17 @@ struct PullRequestChecksSection: View {
     }
 }
 
-/// A build or a check: where it stands, as the Pipelines page draws it, and why it failed. One that failed or is still
-/// going opens with a click, or Space, to look into its run.
+/// A build or a check: where it stands, as the Pipelines page draws it, why it failed, and what Copilot does about it. One
+/// that failed or is still going opens with a click, or Space, to look into its run.
 private struct CheckRow: View {
     let line: PullRequestPanel.CheckLine
     let item: PRSnapshot
     let pullRequest: PullRequest?
     let now: Date
     let isHighlighted: Bool
+    /// The composer in place that's open in the builds and checks.
+    @Binding var composing: CopilotComposing?
+    let drafts: CopilotDrafts
 
     @EnvironmentObject private var investigations: BuildInvestigationStore
     @LocalState private var isHovered = false
@@ -145,9 +158,12 @@ private struct CheckRow: View {
                     .padding(.leading, 24)
                     .padding(.top, 2)
             }
+            // What Copilot does about it, open or not.
+            BuildWorkLine(line: line, item: item, now: now)
             if isExpanded, let investigable {
                 BuildInvestigationView(
-                    line: line, item: item, pullRequest: investigable.pullRequest, buildId: investigable.buildId, look: look, now: now
+                    line: line, item: item, pullRequest: investigable.pullRequest, buildId: investigable.buildId, look: look, now: now,
+                    composing: $composing, drafts: drafts
                 )
                 .padding(.leading, 24)
                 .padding(.top, 10)

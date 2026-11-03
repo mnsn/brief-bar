@@ -148,6 +148,39 @@ import Testing
         #expect(PullRequestDetailsStore.Place.of(.conflicts, in: panel) == .section(.conflicts))
     }
 
+    /// A build's line shows while Copilot is at it, or the build doesn't pass: a rerun, or a push, that passes ends it.
+    @Test func aBuildsLineEndsOnceItPasses() {
+        func work(_ state: CopilotWork.State) -> CopilotWork {
+            CopilotWork(part: .build(31), purpose: .fix, state: state, session: task, forkedFrom: nil, isTask: true, since: now)
+        }
+        #expect(work(.done(nil)).shows(onBuild: .failed))
+        #expect(work(.done(nil)).shows(onBuild: .running))
+        #expect(work(.done(nil)).shows(onBuild: nil))
+        #expect(!work(.done(nil)).shows(onBuild: .passed))
+        #expect(!work(.failed(nil)).shows(onBuild: .expired))
+        #expect(!work(.stopped).shows(onBuild: .notApplicable))
+        // Copilot is still at it: it shows, though the build passed meanwhile.
+        #expect(work(.working(nil)).shows(onBuild: .passed))
+        #expect(work(.waiting(copied: true)).shows(onBuild: .passed))
+    }
+
+    /// Fix the Build quotes what the details read of a build, once one was opened there: its failed tests and the end of its
+    /// log; else the errors its check had. Another run's, as before a push, isn't this one's.
+    @Test func fixTheBuildQuotesWhatTheDetailsRead() async throws {
+        let record = try #require(DemoData.records(now: now).first { $0.id.number == 4088 })
+        let investigation = try #require(DemoData.buildInvestigation(buildId: 204_417, of: record.pullRequest, now: now))
+        let read = await PullRequestTasks.reports(for: record, client: nil, investigations: [204_417: investigation])
+        #expect(read.map(\.name) == ["shop-web CI"])
+        #expect(read.first?.tests.count == 2)
+        #expect(read.first?.log.isEmpty == false)
+        let plain = await PullRequestTasks.reports(for: record, client: nil)
+        #expect(plain.first?.tests.isEmpty == true)
+        #expect(plain.first?.errors == ["2 tests failed in DeliveryEstimateTests."])
+        var another = investigation
+        another.run.id = 204_500
+        #expect(await PullRequestTasks.reports(for: record, client: nil, investigations: [204_417: another]).first?.tests.isEmpty == true)
+    }
+
     /// What each action takes on, as its prompt does: Fix the Build its builds that failed, Resolve Conflicts the
     /// conflicts, Push & Reply what it ships, with its threads alone.
     @Test func eachActionTakesOnWhatItsPromptDoes() throws {

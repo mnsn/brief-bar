@@ -64,14 +64,15 @@ extension CopilotTaskEntry {
                 options: CopilotModel.quick, startedAt: now.addingTimeInterval(-6 * 60),
                 status: RunStatus(phase: .working, detail: "Run the cart tests")
             ),
-            // Fixing the demo's failing pull request.
+            // Fixing the demo's failing pull request: its shop-web CI build, which says so.
             CopilotTaskEntry(
                 id: "1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b03", workItem: nil,
                 onPullRequest: PullRequestReference(organization: DemoData.organization, project: "Storefront", repository: "shop-web",
                                                     id: 4088, sourceBranch: "delivery-estimates"),
                 action: .fixBuild, options: CopilotModel.standard, startedAt: now.addingTimeInterval(-9 * 60),
                 status: RunStatus(phase: .working, detail: "Run DeliveryEstimateTests"),
-                pullRequest: URL(string: "https://dev.azure.com/\(DemoData.organization)/Storefront/_git/shop-web/pullrequest/4088")
+                pullRequest: URL(string: "https://dev.azure.com/\(DemoData.organization)/Storefront/_git/shop-web/pullrequest/4088"),
+                taken: DemoData.demoPipelines["shop-web CI"].map { [TakenPart(.build($0), since: now.addingTimeInterval(-9 * 60))] }
             ),
         ]
     }

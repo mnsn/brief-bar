@@ -22,7 +22,7 @@ public enum DemoData {
 
     /// The pipelines the demo's build policies run, by their names: shop-web CI and payments-api CI as the Pipelines page
     /// has them.
-    static let demoPipelines = ["shop-web CI": 31, "payments-api CI": 32, "infra CI": 33, "search CI": 34]
+    public static let demoPipelines = ["shop-web CI": 31, "payments-api CI": 32, "infra CI": 33, "search CI": 34]
 
     static func person(_ suffix: String, _ name: String) -> Person {
         Person(id: "6f1c1a52-0000-4000-8000-00000000\(suffix)", name: name)
