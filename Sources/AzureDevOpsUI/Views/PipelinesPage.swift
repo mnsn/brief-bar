@@ -164,7 +164,7 @@ private struct PullRequestPipelinesCard: View {
             if canShow {
                 Button("Show Details") { show(at: firstFailure.map { .run($0.id) } ?? .section(.checks)) }
             }
-            Button("Open in Azure DevOps") { AzureDevOps.open(pullRequest.url) }
+            Button("Open in Azure DevOps") { details.openInAzureDevOps(pullRequest.id, link: pullRequest.url) }
             if let run = firstFailure {
                 Button("Open Run \(run.number) in Azure DevOps") { pipelines.open(run) }
             }
@@ -182,11 +182,11 @@ private struct PullRequestPipelinesCard: View {
         return failed.first { run in pullRequest.revisions[run.id] == .current } ?? failed.first
     }
 
-    /// Its details on the Pull Requests page, at a place in them, which sees it; Azure DevOps, which does too, when they
-    /// can't show there.
+    /// Its details on the Pull Requests page, at a place in them, which sees it; or Azure DevOps, as its row opens it, which
+    /// does too, when they can't show there.
     private func show(at place: PullRequestDetailsStore.Place) {
         if details.reveal(pullRequest.id, at: place) { return }
-        AzureDevOps.open(pullRequest.url)
+        details.openInAzureDevOps(pullRequest.id, link: pullRequest.url)
     }
 }
 
@@ -270,7 +270,7 @@ private struct MergeCard: View {
             if canShow {
                 Button("Show Details", action: show)
             }
-            Button("Open in Azure DevOps") { AzureDevOps.open(merge.url) }
+            Button("Open in Azure DevOps") { details.openInAzureDevOps(merge.pullRequest, link: merge.url) }
             ForEach(merge.pipelines) { status in
                 if let run = status.latest {
                     Button("Open \(status.pipeline.name) \(run.number)") { pipelines.open(run) }
@@ -284,10 +284,11 @@ private struct MergeCard: View {
         details.hasPage() && store.items.contains { $0.key == merge.pullRequest }
     }
 
-    /// Its details, at the run that failed, waits or was canceled, or else at their top; Azure DevOps when they can't show.
+    /// Its details, at the run that failed, waits or was canceled, or else at their top; or Azure DevOps, as its row opens it,
+    /// when they can't show. Either sees it, while the list has it.
     private func show() {
         if details.reveal(merge.pullRequest, at: merge.summary?.runId.map { .run($0) }) { return }
-        AzureDevOps.open(merge.url)
+        details.openInAzureDevOps(merge.pullRequest, link: merge.url)
     }
 
     /// "Merged into main · 25m ago · 2 of 3 passed"

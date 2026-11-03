@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Find out why a build failed without leaving BriefBar.** In a pull request's details, click a build that
+  failed, or **Build failed** in What's Left, and it opens in place: its stages, where it failed, from its stage
+  to its task, whether it's the change's doing (it built an older commit, it passed on the same commit before
+  and may be flaky, or the target branch fails too), its errors, the tests that failed with what each said and
+  its stack trace, and the last lines of the failed step's log, selectable, with **Open Run**, **Open Log** and
+  **Open Tests** for the rest, and **Fix the Build with Copilot…** while Send Work to Copilot is on. A build
+  that's still going shows its stages as they are. BriefBar reads all this only as you open a build, with about
+  ten requests, and keeps it in memory only. Azure DevOps says what it reads for it, so it asks you to look
+  again once.
+
+## 0.11.1 - 2026-11-03
+
 - **Send a prompt straight to one of the Copilot app's sessions, or to a fork of it.** In the Send to Copilot
   window, for a session that's already there, **Send to Session** sends the prompt to the session in the Copilot
   app, as your own message, instead of copying it for you to paste. **Send to a Fork** forks the session, with
@@ -15,15 +27,6 @@
   itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's
   off until you turn it on, since each session the app has open runs it, at about 46 MB, and sessions
   that are already open get it once they start again. Turning it off, or turning agents off, removes it.
-- **Find out why a build failed without leaving BriefBar.** In a pull request's details, click a build that
-  failed, or **Build failed** in What's Left, and it opens in place: its stages, where it failed, from its stage
-  to its task, whether it's the change's doing (it built an older commit, it passed on the same commit before
-  and may be flaky, or the target branch fails too), its errors, the tests that failed with what each said and
-  its stack trace, and the last lines of the failed step's log, selectable, with **Open Run**, **Open Log** and
-  **Open Tests** for the rest, and **Fix the Build with Copilot…** while Send Work to Copilot is on. A build
-  that's still going shows its stages as they are. BriefBar reads all this only as you open a build, with about
-  ten requests, and keeps it in memory only. Azure DevOps says what it reads for it, so it asks you to look
-  again once.
 - **Build errors without stray color codes.** Where a pull request's or a pipeline's run failed, and in the
   prompt that asks Copilot to fix it, BriefBar leaves out the color codes some tools write into their
   errors, which showed as `[31m`.
@@ -38,6 +41,9 @@
   **Bug 5110 › !4091**. **Open Pull Requests in BriefBar**, off by default in Azure DevOps' settings, does the
   same for the menu bar's list, widgets and notifications, rather than opening Azure DevOps. Either way, a pull
   request's menu has both **Show in BriefBar** and **Open in Azure DevOps**.
+- **Opening a pull request in Azure DevOps from the Pipelines page sees it**, as opening it anywhere else in
+  BriefBar does, so what was new on it isn't anymore. It opens where its row does: at the comment that needs you,
+  or the run after its merge.
 
 ## 0.11.0 - 2026-11-02
 
