@@ -212,10 +212,18 @@ private struct SessionLineRow: View {
                 .foregroundStyle(symbolColor)
                 .frame(width: 16)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-            line
-                .font(size: 12.5)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // The sentence on one line where it fits; else its name, then why and how it stands, rather than a phrase
+            // broken in two.
+            ViewThatFits(in: .horizontal) {
+                line(tail.map { head + Text(" · ").foregroundStyle(.tertiary) + $0 } ?? head)
+                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 1) {
+                    line(head)
+                    if let tail { line(tail) }
+                }
+            }
+            .font(size: 12.5)
+            .frame(maxWidth: .infinity, alignment: .leading)
             // Since when, as a row says it.
             if let date = standing.date {
                 Text(Elapsed.short(since: date, now: store.now))
@@ -234,18 +242,34 @@ private struct SessionLineRow: View {
         .contentShape(Rectangle())
     }
 
-    /// "Copilot · ‘Retry backoff’ · on its branch · Finished 1d ago", how it stands in its state's color.
-    private var line: Text {
-        let separator = Text(" · ").foregroundStyle(.tertiary)
-        var text = Text("Copilot").fontWeight(.semibold).foregroundStyle(.secondary)
-            + separator + Text(name).fontWeight(.medium).foregroundStyle(choice == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-        if let why { text = text + separator + Text(why).foregroundStyle(.secondary) }
+    private func line(_ text: Text) -> some View {
+        text.fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// "Copilot · ‘Retry backoff’".
+    private var head: Text {
+        Text("Copilot").fontWeight(.semibold).foregroundStyle(.secondary)
+            + Text("\u{00A0}· ").foregroundStyle(.tertiary)
+            + Text(name).fontWeight(.medium).foregroundStyle(choice == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+    }
+
+    /// "on its branch · Finished", how it stands in its state's color; wrapping only between the two, and the dot staying
+    /// with the first.
+    private var tail: Text? {
+        var parts: [Text] = []
+        if let why { parts.append(Text(Self.unbroken(why)).foregroundStyle(.secondary)) }
         let standing = standing
         if !standing.text.isEmpty {
             let color = standing.state.map { AnyShapeStyle($0.textColor) } ?? AnyShapeStyle(.secondary)
-            text = text + separator + Text(standing.text).fontWeight(.medium).foregroundStyle(color)
+            parts.append(Text(Self.unbroken(standing.text)).fontWeight(.medium).foregroundStyle(color))
         }
-        return text
+        guard let first = parts.first else { return nil }
+        return parts.dropFirst().reduce(first) { $0 + Text("\u{00A0}· ").foregroundStyle(.tertiary) + $1 }
+    }
+
+    /// A few words that don't break across lines.
+    private static func unbroken(_ phrase: String) -> String {
+        phrase.replacingOccurrences(of: " ", with: "\u{00A0}")
     }
 
     /// What a click does: opens it in the Copilot app while it waits for you there; else shows its page in the details,
