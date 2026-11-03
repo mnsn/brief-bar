@@ -164,7 +164,7 @@ package struct WhereItStandsSection: View {
     package static func sentenceText(_ sentence: String, state: ItemState?) -> Text {
         let (lead, rest) = phrase(sentence)
         let opening = Text(lead).foregroundStyle(state.map { AnyShapeStyle($0.textColor) } ?? AnyShapeStyle(.secondary))
-        return rest.isEmpty ? opening : opening + Text(" " + rest).foregroundStyle(.secondary)
+        return rest.isEmpty ? opening : Text("\(opening)\(Text(" " + rest).foregroundStyle(.secondary))")
     }
 
     /// A sentence's opening phrase, which takes its state's color, and the rest: "Ready to complete:" and "Approved by…".
@@ -514,10 +514,10 @@ private struct WaitingLine: View {
         let parts = waits.isEmpty ? [Text("no one").foregroundStyle(.secondary)] : waits.enumerated().map { index, wait in
             // A short one doesn't break: the line does, after a "·".
             let text = wait.text.count > 32 ? wait.text : wait.text.replacingOccurrences(of: " ", with: "\u{00A0}")
-            return (index > 0 ? Text(" · ").foregroundStyle(.secondary) : Text(""))
-                + (wait.who == .you ? Text(text).fontWeight(.semibold) : Text(text))
+            let shown = wait.who == .you ? Text(text).fontWeight(.semibold) : Text(text)
+            return index > 0 ? Text("\(Text(" · ").foregroundStyle(.secondary))\(shown)") : shown
         }
-        (parts.reduce(Text("Waiting on: ").fontWeight(.semibold).foregroundStyle(.secondary)) { $0 + $1 })
+        (parts.reduce(Text("Waiting on: ").fontWeight(.semibold).foregroundStyle(.secondary)) { Text("\($0)\($1)") })
             .font(size: 12)
             .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
@@ -787,8 +787,8 @@ private struct StoryRow: View {
         return lines.joined(separator: "\n")
     }
 
-    /// "now", "41m", "20h", "3d": since when, in one unit. Nonisolated, for `StoryTime`: with the macOS 15 SDK, a view's
-    /// members are the main actor's.
+    /// "now", "41m", "20h", "3d": since when, in one unit. Not the main actor's, as it only formats a date: for
+    /// `StoryTime` too.
     nonisolated static func ago(_ date: Date, now: Date = Date()) -> String {
         let minutes = max(0, Int(now.timeIntervalSince(date) / 60))
         switch minutes {

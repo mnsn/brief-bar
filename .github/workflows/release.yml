@@ -119,13 +119,15 @@ jobs:
           printf '%s\n' "$SPARKLE_PRIVATE_KEY" | env -u SPARKLE_PRIVATE_KEY ./scripts/make-appcast.sh \
             build/release "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/"
 
-      # Checks with the public key in Info.plist, which the installed apps have too.
+      # Checks with the public key in Info.plist, which the installed apps have too, and that the update needs the
+      # macOS that Info.plist says.
       - name: Check the signatures
         run: >-
           swift scripts/verify-appcast.swift build/release/appcast.xml build/release/BriefBar.zip
           "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/"
           "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Resources/Info.plist)"
           "${GITHUB_REF_NAME#v}"
+          "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' Resources/Info.plist)"
 
       - name: Attest the build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

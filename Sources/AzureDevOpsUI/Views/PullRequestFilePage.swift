@@ -277,21 +277,23 @@ struct PullRequestFilePage: View {
         let file = shown.file
         var text = Text([file.folder ?? pullRequest?.repositoryName, file.what].compactMap { $0 }.joined(separator: " · "))
             .foregroundStyle(.secondary)
+        func add(_ more: Text) { text = Text("\(text)\(more)") }
         if case .read(let diff)? = shown.diff, diff.counts.added > 0 || diff.counts.removed > 0 {
-            text = text + Text(" · ").foregroundStyle(.tertiary)
+            add(Text(" · ").foregroundStyle(.tertiary))
             if diff.counts.isApproximate {
-                text = text + Text("about ").foregroundStyle(.secondary)
+                add(Text("about ").foregroundStyle(.secondary))
             }
             if diff.counts.added > 0 {
-                text = text + Text(verbatim: "+\(diff.counts.added)").foregroundStyle(ItemState.done.textColor).fontWeight(.medium)
+                add(Text(verbatim: "+\(diff.counts.added)").foregroundStyle(ItemState.done.textColor).fontWeight(.medium))
             }
-            if diff.counts.added > 0 && diff.counts.removed > 0 { text = text + Text(" ") }
+            if diff.counts.added > 0 && diff.counts.removed > 0 { add(Text(" ")) }
             if diff.counts.removed > 0 {
-                text = text + Text(verbatim: "−\(diff.counts.removed)").foregroundStyle(ItemState.failing.textColor).fontWeight(.medium)
+                add(Text(verbatim: "−\(diff.counts.removed)").foregroundStyle(ItemState.failing.textColor).fontWeight(.medium))
             }
         }
         if open.scope != .whole {
-            text = text + Text(" · ").foregroundStyle(.tertiary) + Text("since you last looked").foregroundStyle(ItemState.running.textColor)
+            add(Text(" · ").foregroundStyle(.tertiary))
+            add(Text("since you last looked").foregroundStyle(ItemState.running.textColor))
         }
         return text
     }

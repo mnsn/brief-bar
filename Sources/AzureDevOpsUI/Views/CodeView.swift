@@ -401,8 +401,8 @@ final class CodeRowElement: NSAccessibilityElement {
         setAccessibilityParent(gutter)
     }
 
-    /// AppKit asks for it on the main thread, where its gutter is. The macOS 26 SDK says so; macOS 15's doesn't, so it's
-    /// said here, with only what may go there: the gutter, a view, and the row's number, not the element.
+    /// AppKit asks for it on the main thread, where its gutter is, but not every compiler and SDK says so, so it's said
+    /// here, with only what may go there: the gutter, a view, and the row's number, not the element.
     override func accessibilityFrame() -> NSRect {
         let gutter = self.gutter
         let row = index

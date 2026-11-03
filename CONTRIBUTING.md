@@ -4,8 +4,8 @@ Bug reports, ideas and pull requests are welcome.
 
 ## Getting started
 
-You need an Apple silicon Mac (M1 or later), macOS 15 or later and Swift 6. Xcode works, and so do just
-the Command Line Tools.
+You need an Apple silicon Mac (M1 or later), macOS 26 or later and Swift 6.2 or later. Xcode works, and
+so do just the Command Line Tools.
 
 ```sh
 git clone https://github.com/mnsn/brief-bar.git
@@ -171,10 +171,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - The `@State`, `@Entry` and `#Preview` SwiftUI macros aren't available without Xcode, so the views
   use a small `@LocalState` property wrapper instead of `@State`, and environment values are written
   out by hand.
-- Liquid Glass (`glassEffect`, the glass button style) is in the macOS 26 SDK only: use it inside
-  `#if compiler(>=6.2)` and `if #available(macOS 26.0, *)`, so CI's macOS 15 build on `main` still
-  compiles. `--render` can't draw glass or materials, so views draw a stand-in when `isRendering` is
-  set (`Sources/BriefBarUI/WindowStyle.swift`).
+- `--render` can't draw Liquid Glass (`glassEffect`, the glass button style) or materials, so views draw a
+  stand-in when `isRendering` is set (`Sources/BriefBarUI/WindowStyle.swift`).
 
 ## Ground rules
 
@@ -287,8 +285,6 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - Run `make test`, `make check-boundaries` and `make demo-check` first, and `make plugin-test` when you
   change BriefBar's extension for the Copilot app's sessions. CI runs them on macOS 26,
   checks the signing keys' protection, packages the app and checks its updater, on Apple silicon only.
-  After you merge, CI on `main` also runs them on macOS 15 (with Xcode 16, so without summaries) and
-  runs the app there.
 - Update the README, or [How it works](docs/how-it-works.md), when behavior or settings change.
 - For UI changes, include before and after screenshots from `make screenshots`, never of your own data.
 
@@ -334,9 +330,6 @@ pull requests, and when started by hand. A new run cancels the one in progress o
   a throwaway key, the way a release does (`scripts/appcast-dry-run.sh`), checks that its updater can't
   use BriefBar's permissions (`scripts/test-updater-isolation.sh`), installs an update through it
   (`scripts/update-rehearsal.sh`), and uploads the package as the `BriefBar` artifact.
-- On `main` only, pushed or started by hand, it also builds and tests the same way on macOS 15, whose
-  Xcode 16 SDK has no FoundationModels, and the next job runs the macOS 26 package on macOS 15, with
-  the updater check too. Pull requests skip macOS 15, so each waits for one runner instead of three.
 - A pull request that changes only BriefBar for Windows (`windows/` and its workflow) builds nothing for
   the Mac: `scripts/ci-changes.sh` says what changed, and the build job still runs, on Linux, skipping
   every step, so its required check passes.
@@ -372,8 +365,8 @@ Releases are built and signed by GitHub Actions, not on a maintainer's Mac.
    git push origin v0.2.0
    ```
 
-5. Approve the release once CI has passed on `main`, the only run on macOS 15: in the run under
-   **Actions**, click **Review deployments**, select `release` and click **Approve and deploy**.
+5. Approve the release once CI has passed on `main`: in the run under **Actions**, click
+   **Review deployments**, select `release` and click **Approve and deploy**.
 
 The tag starts the [release workflow](.github/workflows/release.yml). Its first job checks the
 version and the changelog, then builds and tests the Apple silicon app on macOS 26, signed with a
@@ -392,6 +385,14 @@ The app and its updater are built only for arm64. Sparkle derives
 `<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>` from the app's binary, and
 `scripts/verify-appcast.swift` requires it before publication, so Intel Macs aren't offered an
 incompatible update.
+
+BriefBar needs macOS 26 or later. Sparkle copies the app's `LSMinimumSystemVersion` into the appcast's
+`<sparkle:minimumSystemVersion>`, and `scripts/verify-appcast.swift` requires it to be the one in
+`Resources/Info.plist`, so a Mac on an older macOS isn't offered an update that won't open there: it keeps
+the version it has. `scripts/check-app.sh` fails unless that's the macOS the binaries need (`platforms` in
+`Package.swift`), so raise both together. The Homebrew cask says it too (`depends_on macos:`), which
+`scripts/update-homebrew-cask.sh` leaves as it is: raise it in the tap by hand for the first release that
+needs the newer macOS.
 
 ### The release keys
 

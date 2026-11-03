@@ -34,8 +34,8 @@ require_safe_key() {
 }
 
 # sign_with <SHA-1> <path> <keychain, or ""> [codesign options...]: signs with exactly that certificate, and
-# checks that the signature names it. On macOS 15 and 26, codesign finds it only in a keychain on the search
-# list, even with --keychain.
+# checks that the signature names it. codesign finds it only in a keychain on the search list, even with
+# --keychain.
 sign_with() {
     local hash="$1" target="$2" keychain="$3" requirement
     shift 3
@@ -52,7 +52,7 @@ sign_with() {
 }
 
 # add_to_search_list <keychain>: puts a keychain of its own, such as CI's or the release workflow's, on the
-# keychain search list, where codesign on macOS 15 and 26 looks. Deleting the keychain takes it off again.
+# keychain search list, where codesign looks. Deleting the keychain takes it off again.
 add_to_search_list() {
     local line current=()
     while IFS= read -r line; do

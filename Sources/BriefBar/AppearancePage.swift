@@ -64,7 +64,8 @@ private struct TextSizeSetting: View {
             .accessibilityValue("\(percent) percent")
             .frame(width: 180)
         } label: {
-            Text("Text Size in Windows") + Text("  \(percent)%").foregroundStyle(.secondary)
+            let size = Text("  \(percent)%").foregroundStyle(.secondary)
+            Text("Text Size in Windows\(size)")
             Text("Bigger text on the pages of BriefBar's windows. The menu bar's lists and the widgets keep their size. In a window, hold ⌘ and scroll up or down to change it.")
         }
     }

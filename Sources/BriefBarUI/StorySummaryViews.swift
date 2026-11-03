@@ -295,7 +295,7 @@ package struct SummaryCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if let next = summary.next, !Self.repeats(next, for: summary.nextFor, among: waits) {
-                    (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
+                    Text("\(Text(summary.nextLabel).fontWeight(.semibold)) \(next)")
                         .font(size: isRow ? 11.5 : 13)
                         .foregroundStyle(strong)
                         .fixedSize(horizontal: false, vertical: true)
@@ -667,8 +667,8 @@ package struct StorySummariesSetting: View {
                 Copilot answered. Never anything from Teams.
                 """),
             ("Where", onDevice ? "desktopcomputer" : "network", onDevice ? """
-                on this Mac with Apple Intelligence, never Private Cloud Compute or Copilot. Needs macOS 26 or later and \
-                Apple Intelligence enabled and ready. BriefBar keeps summaries in memory only.
+                on this Mac with Apple Intelligence, never Private Cloud Compute or Copilot. Needs Apple Intelligence \
+                enabled and ready. BriefBar keeps summaries in memory only.
                 """ : """
                 GitHub Copilot, through the Copilot CLI, which keeps each one in its session history, as a session named \
                 “BriefBar summary”. BriefBar keeps summaries in memory only.
