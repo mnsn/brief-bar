@@ -60,7 +60,7 @@ import Testing
             // Copilot's part in its threads, which Send Work to Copilot, off, leaves out.
             .environmentObject(copilot)
             .environmentObject(sessions)
-            .environmentObject(CommentQuestions(copilot: copilot))
+            .environmentObject(CopilotQuestions(copilot: copilot))
             // On a window's Pull Requests page, as `WindowView` says.
             .environment(\.shownSection, .azureDevOpsPullRequests)
             .environment(\.shownWindow, "test")

@@ -42,8 +42,8 @@ struct PullRequestFilePage: View {
     /// The resolved threads you unfolded.
     @LocalState private var unfoldedResolved: Set<Int> = []
     /// The composer in place that's open on its threads, one at a time, and what you wrote in each.
-    @LocalState private var composing: CommentComposing?
-    @LocalState private var drafts = CommentDrafts()
+    @LocalState private var composing: CopilotComposing?
+    @LocalState private var drafts = CopilotDrafts()
     /// VoiceOver goes to the file's name as its page opens, and as it goes to another file.
     @AccessibilityFocusState private var isNameFocused: Bool
     /// Its toolbar is at the details' top, where it stays as the code scrolls under it.

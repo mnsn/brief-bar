@@ -2201,17 +2201,18 @@ branches, pull requests and sessions are yours, and stay.
 
 In a pull request's details, while Send Work to Copilot is on, each open thread's card ends with **✨ Explain** and
 **Fix** (`ThreadCopilotActions`), and the comments' heading has **Fix All** (`CommentsHeader`) on your pull request
-while comments wait on you. Each opens a composer in place (`CommentComposer`, over `CopilotAskComposer`, which a failed
-build and conflicts can use too): a field for your words, where it goes, and its button, which Return in the field
-presses, with a beep while it can't send. One is open at a time in the comments (`CommentComposing`), which keep what
-you wrote in each until you send it (`CommentDrafts`), and it scrolls itself into view as it opens. Where it goes
-(`CommentDestinations`) is first the session that last worked on the thread, as its line says, when the pull request's
+while comments wait on you. Each opens a composer in place (`CommentComposer`, over `CopilotPartComposer` and
+`CopilotAskComposer`, which a failed build and conflicts use too, each with what it asks about and the prompts it sends,
+`CopilotAsking`): a field for your words, where it goes, and its button, which Return in the field presses, with a beep
+while it can't send. One is open at a time in the comments (`CopilotComposing`), which keep what you wrote in each until
+you send it (`CopilotDrafts`), and it scrolls itself into view as it opens. Where it goes (`CopilotDestinations`) is
+first the session that last worked on the thread, as its line says, when the pull request's
 session line knows it, else the pull request's own (`PullRequestSession.pick`), chosen unless the line asks which, or,
 for a fix while it's one of BriefBar's tasks and busy, a fork of it; for a fix, a fork of it and a new session; then the
 line's other sessions and its guess, and the app's other sessions. Without any, Explain has nobody to ask. Each says how a prompt would get there as the line works it out (`PullRequestSession.delivery`),
 estimated without reading anything for all but the line's own, and the composer checks the one you choose as the Send to
 Copilot window would, without its git check (`CopilotTasksStore.delivery(to:for:checksRepository:)`, `reach(of:)`), and,
-for a new session, whether BriefBar knows a clone of the repository. Sending (`CommentSending`) goes the way that says: a
+for a new session, whether BriefBar knows a clone of the repository. Sending (`CopilotSending`) goes the way that says: a
 task of BriefBar's goes on with the CLI, in its worktree; one of the Copilot app's sessions gets the prompt through
 BriefBar's extension, or copied for you to paste (`CopilotTasksStore.deliver`); a fork of one of BriefBar's own sessions
 is the CLI's, which picks the fork's ID, so the send goes by one of BriefBar's until the fork is made, then by the
@@ -2220,7 +2221,7 @@ BriefBar knows, or else the Send to Copilot window opens, to choose one. **Edit 
 that window with the prompts, at the place you chose (`ComposerStart`). **Esc** closes a composer in place before the
 details it's in (`InlineComposerOpen`). What a composer sends is called off as it closes, with ✕ or **Esc**, as another
 opens, or as its page goes, with the details or for another pull request, file or page, though not as its card scrolls
-out of sight in a file's diff (`CommentDrafts.sends`): a prompt no session took yet is taken back, as when the Send to
+out of sight in a file's diff (`CopilotDrafts.sends`): a prompt no session took yet is taken back, as when the Send to
 Copilot window closes, and nothing starts or opens after. VoiceOver hears what's sent, and what becomes of it, as it
 happens.
 
@@ -2236,17 +2237,17 @@ read that's under way as they go, and go without the code when it isn't read
 suggestion as written** has the prompt quote the latest that someone else suggested in the thread
 (`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on, which Copilot finds in the
 file as it is now by their code, since their numbers are from when the thread was written. The box is checked when the suggestion is the thread's last comment. Once a session answered Explain on the thread,
-**Include the answer above** quotes what it answered (`ThreadAnswer`, cut to 6,000 characters) before your words, which
+**Include the answer above** quotes what it answered (`CopilotAnswer`, cut to 6,000 characters) before your words, which
 can point to it. Its hand-off is that thread's comments that wait on you
 (`CommentHandOff.init(_:thread:dismissedCutoff:account:)`), and since a pull request has one cutoff, a comment that waits
 on you from before, in another thread, keeps both on Needs You: as BriefBar last read the pull request when the task
 starts, or, when it hasn't read it then, as after you switch accounts, as the prompt was written, for which the other
 threads' comments are kept too. **Fix All** is Fix Comments' prompt, with your words
-quoted as yours; it says **Fix 1 Comment** while open threads that don't wait on you are left (`CommentAsk.fixAllTitle`).
+quoted as yours; it says **Fix 1 Comment** while open threads that don't wait on you are left (`CopilotAsk.fixAllTitle`).
 
 **Explain** (`PullRequestPrompt.explainThread`) quotes the thread and its code the same way, with your question, and asks
 the session you chose, aside, why the reviewer wrote it, what they want, how the code relates, and ways to address it
-(`CommentQuestions`, over `SessionQuestions`): in a fork with no tools, deleted after, with the session's own model. The
+(`CopilotQuestions`, over `SessionQuestions`): in a fork with no tools, deleted after, with the session's own model. The
 answer stays in memory only, until you dismiss it, BriefBar quits, or Send Work to Copilot or Azure DevOps is turned off,
 which stops a question that's being asked, and deletes its fork. When the CLI can't ask aside, or doesn't have the
 session, **Ask in the Session** sends `PullRequestPrompt.askAboutThread` to the session as a prompt, as a fix goes, with
@@ -2254,16 +2255,17 @@ what it answered before for a follow-up, which changes nothing but joins its his
 throwaway fork never saw, and asks your next question with them in mind, or, without one, why you got it again. The demo
 makes its answers up (`DemoData.explanation`), and runs nothing.
 
-**What Copilot does about a thread** is said on it, in a sentence (`CommentWork`, `CopilotWorkLine`), from the latest work
-that took it on. A task of BriefBar's keeps the threads it took on with its run, by their IDs, each with when
-(`CopilotRun.threads`); going on with a session whose changes aren't pushed, on the same pull request, keeps those it took
-on before, with how that ended. Push & Reply takes on those its prompt lists, to reply on (`TakenThread.ships`): the others
+**What Copilot does about a thread** is said on it, in a sentence (`CopilotWork`, `CopilotWorkLine`), from the latest work
+that took it on, as for a build and conflicts. A task of BriefBar's keeps what it took on with its run, threads, builds
+and conflicts, by their kinds and IDs, each with when (`CopilotRun.taken`, `PullRequestPart`); going on with a session
+whose changes aren't pushed, on the same pull request, keeps what it took on before, with how that ended. Push & Reply
+takes on what it ships, and the threads its prompt lists, to reply on (`TakenPart.ships`): the others
 the session fixed stay as they were, fixed and not pushed, with when, since it doesn't reply on them, and a thread that
 another session fixed since stays that one's. Once it's done, those it listed say they're pushed and replied, and a later
 task in the session keeps them so, for an older fix of one of them, elsewhere, not to say it's ready again
-(`CopilotRun.threads(goingOnWith:on:taking:for:at:)`). A
+(`CopilotRun.taken(goingOnWith:on:taking:for:at:)`). A
 prompt sent to one of the Copilot app's sessions, or copied for you to paste there, is kept by references only, never what
-it says: the pull request, the session that took it and the one it forked, the threads, what for, and when (`SentPrompt`,
+it says: the pull request, the session that took it and the one it forked, what it took on, what for, and when (`SentPrompt`,
 `ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows it from the session's log
 since it began to send it, so that a turn that's over before BriefBar hears the prompt went counts too, but only from the
 first message the session got since, the prompt itself as the earliest, sent or pasted: a turn that was under way as it
@@ -2281,17 +2283,20 @@ how the later turn went, and leaves it out of the bar below; it's kept as long a
 (`SentPrompt.overlapped`, `CopilotTasksStore.overlap(promptsIn:before:)`). While BriefBar is sending the session another
 prompt, or starting the CLI on it, the earlier one isn't followed, since the new one's turn may end before BriefBar hears
 it went; once nothing went, it's followed again (`CopilotTasksStore.pauseFollowing`). A turn seen over just once isn't taken as its
-end, since it may be the end of the turn that ran as it was sent. A fix that's done and not pushed, on a thread that's
-still open, counts in the bar at the details' foot (`ReadyFixesBar`, `CopilotTasksStore.readyFixes`), the pull request's
+end, since it may be the end of the turn that ran as it was sent. A fix that's done and not pushed, of a thread that's
+still open, a build that doesn't pass or conflicts the pull request still has (`PRRecord.partsToFix`), counts in the bar
+at the details' foot (`ReadyFixesBar`, `CopilotTasksStore.readyFixes`), the pull request's
 own or, under its page over the details on the Pull Requests or Sprint page, the linked one's, and so does one
-whose Push & Reply failed or stopped, to try again (`CommentWork.waitsToBePushed`), even once a question was asked about
+whose Push & Reply failed or stopped, to try again (`CopilotWork.waitsToBePushed`), even once a question was asked about
 the thread since, whose sentence takes the details
-to the first thread they fixed, and whose **Push & Reply…** opens the Send to Copilot window in the session the fixes are
-in, for those threads alone: its prompt lists them and replies on them alone, and hands off what waits on you in them
-alone (`PullRequestPrompt.pushAndReply(_:workplace:threads:)`, `PullRequestPrompt.shippedThreads`), and the task that
-ships them takes them on, so they say they're pushed once it's done, though prompts fixed them rather than its runs. A
-prompt in the Send to Copilot window takes on the threads whose entries are still in it as you send it
-(`PullRequestPrompt.threadsListed`). The demo's are made up (`SentPrompt.demo`).
+to the first thing they fixed, and whose **Push & Reply…** opens the Send to Copilot window in the session the fixes are
+in, for their threads alone: its prompt lists them and replies on them alone, or on none for a build's fix alone, and
+hands off what waits on you in them alone (`PullRequestPrompt.pushAndReply(_:workplace:threads:)`,
+`PullRequestPrompt.shippedThreads`), and the task that ships them takes them on, with their builds and conflicts, so they
+say they're pushed once it's done, though prompts fixed them rather than its runs. A prompt in the Send to Copilot window
+takes on what its action is for (`PullRequestTasks.parts`): the threads whose entries are still in it as you send it
+(`PullRequestPrompt.threadsListed`), the builds that failed for Fix the Build, the conflicts for Resolve Conflicts. The
+demo's are made up (`SentPrompt.demo`).
 
 ### Notifications
 

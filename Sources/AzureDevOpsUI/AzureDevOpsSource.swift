@@ -92,7 +92,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// The Copilot session of the pull request whose details show.
     private var pullRequestSessions: PullRequestSessions?
     /// What you ask Copilot sessions about pull requests' comment threads with Explain, and their answers, in memory.
-    private var commentQuestions: CommentQuestions?
+    private var copilotQuestions: CopilotQuestions?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     /// For `--render`: a pull request's details with a build open, one that failed and one still going.
@@ -124,7 +124,7 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     private func environment<V: View>(_ view: V) -> AnyView {
         guard let store, let sprint, let pipelines, let copilot, let details, let pullRequestDetails, let buildInvestigations,
-              let pullRequestCode, let pullRequestFiles, let pullRequestSessions, let commentQuestions
+              let pullRequestCode, let pullRequestFiles, let pullRequestSessions, let copilotQuestions
         else {
             return AnyView(EmptyView())
         }
@@ -138,7 +138,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             .environmentObject(pullRequestCode)
             .environmentObject(pullRequestFiles)
             .environmentObject(pullRequestSessions)
-            .environmentObject(commentQuestions)
+            .environmentObject(copilotQuestions)
             .environmentObject(pipelines)
             .environmentObject(copilot)
             .environmentObject(settings)
@@ -215,7 +215,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         let sessions = PullRequestSessions(copilot: copilot, links: services.links)
         sessions.record = { [weak store] key in store?.record(for: key) }
         pullRequestSessions = sessions
-        commentQuestions = CommentQuestions(copilot: copilot)
+        copilotQuestions = CopilotQuestions(copilot: copilot)
         // A pull request that a task or a link names shows in its details, on the window's page, while the list has it.
         copilot.canShowPullRequest = { [weak store, weak pullRequestDetails] key in
             guard let store, let pullRequestDetails else { return false }
@@ -355,7 +355,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         buildInvestigations?.stop()
         pullRequestCode?.stop()
         pullRequestSessions?.stopAll()
-        commentQuestions?.stopAll()
+        copilotQuestions?.stopAll()
         services.sentTasks.withdraw(.azureDevOps)
         services.summaries.setYourName(.azureDevOps, nil)
         store = nil
@@ -369,7 +369,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         pullRequestCode = nil
         pullRequestFiles = nil
         pullRequestSessions = nil
-        commentQuestions = nil
+        copilotQuestions = nil
         services.fullDiskAccess.unregister(.azureDevOps)
     }
 
@@ -1007,7 +1007,7 @@ extension AzureDevOpsSource {
     /// about another thread above them, and the fixes ready to push at the foot; Explain's composer open, then asking, then
     /// answered; Fix's composer open, on it and on a thread with a suggested change; Copilot fixing it, in its session and in
     /// a fork of it; fixed; failing; sent, how it went unknown; and Fix All's composer open. In a narrow window too, for the first two. Each from made-up
-    /// states, through `CommentActionsPreview`: nothing's sent or asked.
+    /// states, through `CopilotActionsPreview`: nothing's sent or asked.
     func commentActionRenderings() -> [(name: String, view: AnyView)] {
         guard let store, store.mode == .demo, let item = renderedPullRequests(store).first, let record = store.record(for: item.key) else {
             return []
@@ -1019,61 +1019,61 @@ extension AzureDevOpsSource {
         let now = store.now
         let session = SentPrompt.demoSession
         let fork = "5c1e7a90-3b2d-4f68-9a1c-2e8d7b6f4a05"
-        func work(_ state: CommentWork.State, ago minutes: Double, forkedFrom: String? = nil) -> CommentWork {
-            CommentWork(
-                purpose: .fix, state: state, session: forkedFrom == nil ? session : fork, forkedFrom: forkedFrom, isTask: false,
+        func work(_ state: CopilotWork.State, ago minutes: Double, forkedFrom: String? = nil) -> CopilotWork {
+            CopilotWork(
+                part: .thread(waiting.id), purpose: .fix, state: state, session: forkedFrom == nil ? session : fork, forkedFrom: forkedFrom, isTask: false,
                 since: now.addingTimeInterval(-minutes * 60)
             )
         }
         let question = "Isn't 30 seconds too short when the provider is down for minutes?"
         let how = "Cap it with a MaxDelay on RetryOptions, as Priya suggests, 30 seconds by default"
-        let ready = suggested.map { [ReadyFixes(session: session, forkedFrom: nil, isTask: false, threads: [waiting.id, $0.id], latest: now)] }
-        var shown: [(name: String, thread: Int, preview: CommentActionsPreview, sizes: [(suffix: String, size: CGSize)])] = [
-            ("pull-requests-comment-actions", waiting.id, CommentActionsPreview(), [("", CGSize(width: 1_000, height: 900)), ("-narrow", CGSize(width: 560, height: 900))]),
-            ("pull-requests-comment-explain", waiting.id, CommentActionsPreview(composers: [
-                .init(thread: waiting.id, ask: .explain, text: question, destination: .session(session)),
+        let ready = suggested.map { [ReadyFixes(session: session, forkedFrom: nil, isTask: false, parts: [.thread(waiting.id), .thread($0.id)], latest: now)] }
+        var shown: [(name: String, thread: Int, preview: CopilotActionsPreview, sizes: [(suffix: String, size: CGSize)])] = [
+            ("pull-requests-comment-actions", waiting.id, CopilotActionsPreview(), [("", CGSize(width: 1_000, height: 900)), ("-narrow", CGSize(width: 560, height: 900))]),
+            ("pull-requests-comment-explain", waiting.id, CopilotActionsPreview(composers: [
+                .init(part: .thread(waiting.id), ask: .explain, text: question, destination: .session(session)),
             ]), [("", CGSize(width: 1_000, height: 900)), ("-narrow", CGSize(width: 560, height: 900))]),
-            ("pull-requests-comment-explaining", waiting.id, CommentActionsPreview(questions: [
-                waiting.id: .init(session: session, asked: question, askedAt: now.addingTimeInterval(-40), state: .asking),
+            ("pull-requests-comment-explaining", waiting.id, CopilotActionsPreview(questions: [
+                .thread(waiting.id): .init(session: session, asked: question, askedAt: now.addingTimeInterval(-40), state: .asking),
             ]), [("", CGSize(width: 1_000, height: 900))]),
-            ("pull-requests-comment-answer", waiting.id, CommentActionsPreview(questions: [
-                waiting.id: .init(
+            ("pull-requests-comment-answer", waiting.id, CopilotActionsPreview(questions: [
+                .thread(waiting.id): .init(
                     session: session, asked: question, askedAt: now.addingTimeInterval(-150),
                     state: .answered(DemoData.explanation(ofThread: waiting.id, pullRequest: item.key.number)), endedAt: now.addingTimeInterval(-90)
                 ),
             ]), [("", CGSize(width: 1_000, height: 1_100))]),
             // Fix, building on what the session answered.
-            ("pull-requests-comment-fix-answer", waiting.id, CommentActionsPreview(
-                composers: [.init(thread: waiting.id, ask: .fix, text: "The second way, with 45 seconds by default", destination: .session(session))],
+            ("pull-requests-comment-fix-answer", waiting.id, CopilotActionsPreview(
+                composers: [.init(part: .thread(waiting.id), ask: .fix, text: "The second way, with 45 seconds by default", destination: .session(session))],
                 questions: [
-                    waiting.id: .init(
+                    .thread(waiting.id): .init(
                         session: session, asked: question, askedAt: now.addingTimeInterval(-150),
                         state: .answered(DemoData.explanation(ofThread: waiting.id, pullRequest: item.key.number)), endedAt: now.addingTimeInterval(-90)
                     ),
                 ]
             ), [("", CGSize(width: 1_000, height: 1_500))]),
-            ("pull-requests-comment-fix", waiting.id, CommentActionsPreview(composers: [
-                .init(thread: waiting.id, ask: .fix, text: how, destination: .session(session)),
+            ("pull-requests-comment-fix", waiting.id, CopilotActionsPreview(composers: [
+                .init(part: .thread(waiting.id), ask: .fix, text: how, destination: .session(session)),
             ]), [("", CGSize(width: 1_000, height: 900)), ("-narrow", CGSize(width: 560, height: 900))]),
-            ("pull-requests-comment-fixing", waiting.id, CommentActionsPreview(work: [waiting.id: work(.working("Run PaymentsClientTests"), ago: 2)]),
+            ("pull-requests-comment-fixing", waiting.id, CopilotActionsPreview(work: [.thread(waiting.id): work(.working("Run PaymentsClientTests"), ago: 2)]),
              [("", CGSize(width: 1_000, height: 900))]),
-            ("pull-requests-comment-fork", waiting.id, CommentActionsPreview(work: [waiting.id: work(.working(nil), ago: 2, forkedFrom: session)]),
+            ("pull-requests-comment-fork", waiting.id, CopilotActionsPreview(work: [.thread(waiting.id): work(.working(nil), ago: 2, forkedFrom: session)]),
              [("", CGSize(width: 1_000, height: 900))]),
-            ("pull-requests-comment-fixed", waiting.id, CommentActionsPreview(
-                work: [waiting.id: work(.done("Capped the backoff at RetryOptions.MaxDelay, 30 seconds by default. The tests pass."), ago: 1)],
+            ("pull-requests-comment-fixed", waiting.id, CopilotActionsPreview(
+                work: [.thread(waiting.id): work(.done("Capped the backoff at RetryOptions.MaxDelay, 30 seconds by default. The tests pass."), ago: 1)],
                 ready: ready
             ), [("", CGSize(width: 1_000, height: 900))]),
-            ("pull-requests-comment-failed", waiting.id, CommentActionsPreview(
-                work: [waiting.id: work(.failed("The build failed: CS0103 The name 'MaxDelay' does not exist in the current context."), ago: 3)]
+            ("pull-requests-comment-failed", waiting.id, CopilotActionsPreview(
+                work: [.thread(waiting.id): work(.failed("The build failed: CS0103 The name 'MaxDelay' does not exist in the current context."), ago: 3)]
             ), [("", CGSize(width: 1_000, height: 900))]),
             // Another prompt went to the session before its turn ended: how it went isn't known.
-            ("pull-requests-comment-unknown", waiting.id, CommentActionsPreview(work: [waiting.id: work(.unknown(copied: false), ago: 6)], ready: []),
+            ("pull-requests-comment-unknown", waiting.id, CopilotActionsPreview(work: [.thread(waiting.id): work(.unknown(copied: false), ago: 6)], ready: []),
              [("", CGSize(width: 1_000, height: 900))]),
         ]
         if let suggested {
-            shown.append(("pull-requests-comment-suggestion", suggested.id, CommentActionsPreview(
-                composers: [.init(thread: suggested.id, ask: .fix, text: "", destination: .session(session), appliesSuggestion: true)],
-                quiet: [suggested.id], ready: []
+            shown.append(("pull-requests-comment-suggestion", suggested.id, CopilotActionsPreview(
+                composers: [.init(part: .thread(suggested.id), ask: .fix, text: "", destination: .session(session), appliesSuggestion: true)],
+                quiet: [.thread(suggested.id)], ready: []
             ), [("", CGSize(width: 1_000, height: 900))]))
         }
         var renderings: [(name: String, view: AnyView)] = []
@@ -1083,7 +1083,7 @@ extension AzureDevOpsSource {
             }
         }
         // Fix All's composer, under the comments' heading.
-        let fixAll = CommentActionsPreview(composers: [.init(thread: nil, ask: .fixAll, text: "Keep the public API as it is", destination: .session(session))])
+        let fixAll = CopilotActionsPreview(composers: [.init(part: nil, ask: .fixAll, text: "Keep the public API as it is", destination: .session(session))])
         let details = PullRequestDetailsStore()
         details.readRecord = { [weak store] key in store?.record(for: key) }
         details.itemsChanged(store.items)
@@ -1094,7 +1094,7 @@ extension AzureDevOpsSource {
 
     /// The Pull Requests page with a pull request's details taken to one of its threads, in a store of its own, since each
     /// scrolls its details there once.
-    private func commentsPage(_ item: PRSnapshot, at thread: Int, preview: CommentActionsPreview, size: CGSize) -> some View {
+    private func commentsPage(_ item: PRSnapshot, at thread: Int, preview: CopilotActionsPreview, size: CGSize) -> some View {
         let details = PullRequestDetailsStore()
         details.readRecord = { [weak store] key in store?.record(for: key) }
         details.itemsChanged(store?.items ?? [])
@@ -1102,10 +1102,10 @@ extension AzureDevOpsSource {
         return page(details, preview: preview, size: size)
     }
 
-    private func page(_ details: PullRequestDetailsStore, preview: CommentActionsPreview, size: CGSize) -> some View {
+    private func page(_ details: PullRequestDetailsStore, preview: CopilotActionsPreview, size: CGSize) -> some View {
         PullRequestsPage()
             .environmentObject(details)
-            .environment(\.commentActionsPreview, preview)
+            .environment(\.copilotActionsPreview, preview)
             .environment(\.panelStyle, .page)
             .textSize(from: services)
             .frame(width: size.width, height: size.height)

@@ -131,21 +131,23 @@ public enum PullRequestPrompt {
             """
     }
 
-    /// The threads Push & Reply ships: `only`, those the fixes it ships took on, that are still open, in that order; else
-    /// those Fix Comments lists.
+    /// The threads Push & Reply ships: `only`, those the fixes it ships took on, that are still open, in that order, none
+    /// when they took on none, as a build's fix alone; else, for nil, those Fix Comments lists.
     public static func shippedThreads(_ record: PRRecord, only: [Int]?) -> [ReviewThread] {
-        guard let only, !only.isEmpty else { return waitingThreads(record) }
+        guard let only else { return waitingThreads(record) }
         let open = (record.details?.threads ?? []).filter { !$0.isResolved }
         return only.compactMap { id in open.first { $0.id == id } }
     }
 
     /// - Parameter only: the threads the fixes it ships took on, such as one session's when fixes are in more than one: it
-    ///   replies on those alone. Nil for the pull request's.
+    ///   replies on those alone, and on none when they took on none, as a build's fix alone. Nil for the pull request's.
     public static func pushAndReply(_ record: PRRecord, workplace: Workplace = .worktree, threads only: [Int]? = nil) -> String {
         let pr = record.pullRequest
         let source = pr.sourceBranch
-        let scoped = only?.isEmpty == false
+        let scoped = only != nil
         let threads = shippedThreads(record, only: only)
+        // Fixes of none of its threads, such as of a build: nothing to reply on.
+        let repliesOnNone = scoped && threads.isEmpty
         var steps: [String] = []
         let ifRejected: String
         switch workplace {
@@ -165,7 +167,11 @@ public enum PullRequestPrompt {
         steps += [
             "Make sure it builds and the tests you ran pass, then commit your changes with a clear message.",
             "Push them to \(source), without force: git push origin HEAD:refs/heads/\(source). \(ifRejected)",
-            scoped
+        ]
+        if repliesOnNone {
+            steps.append("Don't reply on the pull request's comment threads: none that's still open is among what these changes take care of.")
+        } else {
+            steps.append(scoped
                 ? """
                 On the pull request, with your Azure DevOps tools, reply to each of the comment threads below that you \
                 addressed, saying what you changed, and resolve it. For one of them you didn't change, reply why, and leave \
@@ -174,17 +180,21 @@ public enum PullRequestPrompt {
                 : """
                 On the pull request, with your Azure DevOps tools, reply to each comment thread you addressed, saying what \
                 you changed, and resolve it. For a thread you didn't change, reply why, and leave it active.
-                """,
-        ]
+                """)
+        }
         let numbered = steps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
-        return """
+        let shipped = """
             Ship what you changed for pull request !\(pr.key.number) “\(pr.title)”, in \(workplace.here):
             \(pr.webURL.absoluteString)
 
             \(numbered)
 
             Don't complete, approve or abandon the pull request, and don't change pipelines. End with the commit you \
-            pushed and the threads you replied to.
+            pushed\(repliesOnNone ? "." : " and the threads you replied to.")
+            """
+        guard !repliesOnNone else { return shipped }
+        return """
+            \(shipped)
 
             \(scoped ? "The comment threads these changes take care of:" : "Its unresolved comment threads:")
 
