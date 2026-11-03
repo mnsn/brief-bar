@@ -10,7 +10,8 @@ import Foundation
 /// for again, which revises what's kept, or reads it for that branch: at once while it's open, or as it opens. Only one
 /// pull request's builds are open at a time, wherever its details show, beside the list or as a page: opening one of
 /// another's folds them, and so does the details beside the list showing another pull request, or closing, for the one
-/// they showed; what was read for them here goes.
+/// they showed; what was read for them here goes. What's read of the builds that fold stays for the last few
+/// (`foldedKept`), and a run its checks don't list any more, such as one a newer run replaced, goes.
 @MainActor
 final class BuildInvestigationStore: ObservableObject {
     /// What's read of a run, for its row.
@@ -50,11 +51,21 @@ final class BuildInvestigationStore: ObservableObject {
             guard let other else { return false }
             return state != other.state || completedAt != other.completedAt
         }
+
+        /// Its check says the run finished: it passed, failed, or passed and expired since.
+        var finished: Bool {
+            switch state {
+            case .passed?, .failed?, .expired?: true
+            case .running?, .queued?, .notRun?, .pending?, .notApplicable?, nil: false
+            }
+        }
     }
 
-    /// Reads one of a pull request's builds, or reads it anew rather than what's kept of it: through the investigator, or,
-    /// in tests, as they say.
-    typealias Reader = @Sendable (_ buildId: Int, _ pullRequest: PullRequest, _ again: Bool) async throws -> BuildInvestigation
+    /// Reads one of a pull request's builds: anew rather than what's kept of it (`again`), and knowing whether its check
+    /// says it finished (`finished`), which what was kept while it was still going isn't. Through the investigator, or, in
+    /// tests, as they say.
+    typealias Reader = @Sendable (_ buildId: Int, _ pullRequest: PullRequest, _ again: Bool, _ finished: Bool) async throws
+        -> BuildInvestigation
 
     /// A read asked for while another of the same run is under way, which the investigator would share: it starts once
     /// that one is done.
@@ -63,6 +74,15 @@ final class BuildInvestigationStore: ObservableObject {
         var check: Check?
         var again: Bool
     }
+
+    /// A read under way: only the latest of a run answers.
+    private struct Reading {
+        var id = UUID()
+        var task: Task<Void, Never>
+    }
+
+    /// How many folded builds keep what's read of them, to show at once as they open again.
+    static let foldedKept = 5
 
     let mode: PRStore.Mode
     /// The pull request whose builds can be open; nil while no details show.
@@ -78,9 +98,11 @@ final class BuildInvestigationStore: ObservableObject {
     private let stopReading: @Sendable () async -> Void
     private let now: () -> Date
     /// The reads under way, by run.
-    private var reading: [Int: Task<Void, Never>] = [:]
+    private var reading: [Int: Reading] = [:]
     /// The reads to start once those under way are done, by run.
     private var queued: [Int: Queued] = [:]
+    /// The builds that folded, the latest last.
+    private var folded: [Int] = []
     /// What reads are for: a read from before another pull request showed, or someone else signed in, is let go.
     private var generation = 0
     /// Who's signed in to the Azure CLI, which what's kept was read as, once known.
@@ -98,8 +120,8 @@ final class BuildInvestigationStore: ObservableObject {
             stopReading = {}
         } else {
             let investigator = BuildInvestigator(client: client)
-            self.reader = { buildId, pullRequest, again in
-                try await investigator.investigation(buildId: buildId, of: pullRequest, refresh: again)
+            self.reader = { buildId, pullRequest, again, finished in
+                try await investigator.investigation(buildId: buildId, of: pullRequest, refresh: again, finished: finished)
             }
             forgetKept = { await investigator.forget() }
             stopReading = { await investigator.stop() }
@@ -123,12 +145,16 @@ final class BuildInvestigationStore: ObservableObject {
         guard !isStopped else { return }
         show(pr.key)
         expanded.insert(buildId)
+        folded.removeAll { $0 == buildId }
         read(buildId, of: pr, check: check, again: Stamp(check: check, pullRequest: pr).runChanged(since: looks[buildId]?.readFor))
     }
 
+    /// Folds a run: what's read of it stays, for the last few that folded.
     func collapse(_ buildId: Int, of key: PRKey) {
-        guard pullRequest == key else { return }
-        expanded.remove(buildId)
+        guard pullRequest == key, expanded.remove(buildId) != nil else { return }
+        folded.removeAll { $0 == buildId }
+        folded.append(buildId)
+        prune()
     }
 
     func toggle(_ buildId: Int, of pr: PullRequest, check: Check? = nil) {
@@ -144,8 +170,24 @@ final class BuildInvestigationStore: ObservableObject {
     func changed(_ buildId: Int, of pr: PullRequest, check: Check?) {
         guard isExpanded(buildId, of: pr.key), let look = looks[buildId] else { return }
         let stamp = Stamp(check: check, pullRequest: pr)
-        guard look.readFor != stamp else { return }
+        // As it was read, or is being read: nothing more to read, unless a read was asked for since, for something else.
+        guard look.readFor != stamp || queued[buildId] != nil else { return }
         read(buildId, of: pr, check: check, again: stamp.runChanged(since: look.readFor))
+    }
+
+    /// The runs a pull request's builds and checks list now: the others, such as a run a newer one replaced, fold and go,
+    /// with what's read of them, and their reads stop.
+    func retain(_ listed: Set<Int>, of key: PRKey) {
+        guard pullRequest == key else { return }
+        let gone = Set(looks.keys).union(expanded).union(reading.keys).subtracting(listed)
+        guard !gone.isEmpty else { return }
+        for id in gone {
+            reading.removeValue(forKey: id)?.task.cancel()
+            queued[id] = nil
+            looks[id] = nil
+        }
+        expanded.subtract(gone)
+        folded.removeAll { gone.contains($0) }
     }
 
     /// Asks the investigator for a run, while what was read of it before shows. While another read of it is under way,
@@ -158,8 +200,13 @@ final class BuildInvestigationStore: ObservableObject {
         show(pr.key)
         let stamp = Stamp(check: check, pullRequest: pr)
         if reading[buildId] != nil {
-            guard again || looks[buildId]?.readFor != stamp else { return }
-            queued[buildId] = Queued(pullRequest: pr, check: check, again: again || queued[buildId]?.again == true)
+            if !again, looks[buildId]?.readFor == stamp {
+                // What's being read is what it's asked for now, as when its pull request is retargeted and back: a read
+                // asked for since, for something else, isn't needed any more, but one asked for anew still is, for this.
+                queued[buildId] = queued[buildId]?.again == true ? Queued(pullRequest: pr, check: check, again: true) : nil
+            } else {
+                queued[buildId] = Queued(pullRequest: pr, check: check, again: again || queued[buildId]?.again == true)
+            }
             return
         }
         queued[buildId] = nil
@@ -171,20 +218,22 @@ final class BuildInvestigationStore: ObservableObject {
         switch mode {
         case .demo:
             let read = DemoData.investigation(buildId: buildId, of: pr, now: now())
-            finish(buildId, generation: generation, read.map { .success($0) } ?? .failure(.notFound))
+            finish(buildId, read: nil, generation: generation, read.map { .success($0) } ?? .failure(.notFound))
         case .live:
             let reader = reader
-            reading[buildId] = Task { [weak self] in
+            let id = UUID()
+            let finished = stamp.finished
+            reading[buildId] = Reading(id: id, task: Task { [weak self] in
                 let result: Result<BuildInvestigation, ADOError>
                 do {
-                    result = .success(try await reader(buildId, pr, again))
+                    result = .success(try await reader(buildId, pr, again, finished))
                 } catch let error as ADOError {
                     result = .failure(error)
                 } catch {
                     result = .failure(.network(error.localizedDescription))
                 }
-                self?.finish(buildId, generation: generation, result)
-            }
+                self?.finish(buildId, read: id, generation: generation, result)
+            })
         }
     }
 
@@ -226,22 +275,38 @@ final class BuildInvestigationStore: ObservableObject {
     /// For `--render`: opens a run and waits until it's read.
     func expandAndWait(_ buildId: Int, of pr: PullRequest, check: Check?) async {
         expand(buildId, of: pr, check: check)
-        await reading[buildId]?.value
+        await reading[buildId]?.task.value
     }
 
     /// Folds every run and lets go of what was read here; reads under way don't answer.
     private func letGo() {
-        for task in reading.values { task.cancel() }
+        for current in reading.values { current.task.cancel() }
         reading = [:]
         queued = [:]
         generation += 1
         expanded = []
+        folded = []
         looks = [:]
     }
 
-    /// What a read found: it shows, or why it couldn't be read; then a read asked for meanwhile starts.
-    private func finish(_ buildId: Int, generation: Int, _ result: Result<BuildInvestigation, ADOError>) {
-        guard generation == self.generation else { return }
+    /// Lets go of what's read of the builds that folded, but for the last `foldedKept`, and those being read.
+    private func prune() {
+        var excess = folded.count - Self.foldedKept
+        guard excess > 0 else { return }
+        var dropped: Set<Int> = []
+        for id in folded where excess > 0 && reading[id] == nil {
+            dropped.insert(id)
+            excess -= 1
+        }
+        folded.removeAll { dropped.contains($0) }
+        for id in dropped { looks[id] = nil }
+    }
+
+    /// What a read found, unless another was asked for since, or what it was for went: it shows, or why it couldn't be
+    /// read; then a read asked for meanwhile starts.
+    /// - Parameter id: the read's, for one under way; nil for one done at once, the demo's.
+    private func finish(_ buildId: Int, read id: UUID?, generation: Int, _ result: Result<BuildInvestigation, ADOError>) {
+        guard generation == self.generation, id == nil || reading[buildId]?.id == id else { return }
         reading[buildId] = nil
         var look = looks[buildId] ?? Look()
         look.isReading = false
@@ -257,6 +322,8 @@ final class BuildInvestigationStore: ObservableObject {
         looks[buildId] = look
         if let next = queued.removeValue(forKey: buildId) {
             read(buildId, of: next.pullRequest, check: next.check, again: next.again)
+        } else {
+            prune()
         }
     }
 

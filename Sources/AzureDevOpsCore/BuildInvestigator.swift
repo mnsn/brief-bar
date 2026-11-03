@@ -604,6 +604,9 @@ public actor BuildInvestigator {
     private(set) var waiting = 0
     /// It was stopped: it reads nothing any more.
     private var isStopped = false
+    /// The reads and looks under way, by their IDs, to cancel when it stops: `forget()` lets go of them for whoever asks
+    /// next, but they're under way all the same.
+    private var underway: [UUID: @Sendable () -> Void] = [:]
 
     public init(client: ADOClient, now: @escaping @Sendable () -> Date = { Date() }) {
         self.client = client
@@ -611,14 +614,19 @@ public actor BuildInvestigator {
     }
 
     /// One of a pull request's builds, investigated: what was kept of it, while it's fresh, or read now.
-    /// - Parameter refresh: read it again even when it's kept, as when you ask to.
+    /// - Parameters:
+    ///   - refresh: read it again even when it's kept, as when you ask to.
+    ///   - finished: the run finished, as its check says now: what was kept while it was still going isn't it any more.
     /// - Throws: `CancellationError` once it's stopped, or when it's stopped meanwhile.
-    public func investigation(buildId: Int, of pullRequest: PullRequest, refresh: Bool = false) async throws -> BuildInvestigation {
+    public func investigation(
+        buildId: Int, of pullRequest: PullRequest, refresh: Bool = false, finished: Bool = false
+    ) async throws -> BuildInvestigation {
         try checkStopped()
         let key = Key(pullRequest.key.organization, buildId)
         let readKey = ReadKey(run: key, targetBranch: pullRequest.targetBranch)
         // A read under way is newer than what's kept: wait for it rather than look at the run.
-        if !refresh, reading[readKey] == nil, let read = await stillKept(key, readKey: readKey, pullRequest: pullRequest) {
+        if !refresh, reading[readKey] == nil,
+           let read = await stillKept(key, readKey: readKey, pullRequest: pullRequest, finished: finished) {
             return read.revised(for: pullRequest)
         }
         // Stopped while it looked at what's kept: it isn't read instead.
@@ -627,6 +635,7 @@ public actor BuildInvestigator {
         waiting += 1
         let result = await current.task.result
         waiting -= 1
+        underway[current.id] = nil
         finish(readKey, current, result)
         try checkStopped()
         return try result.get().revised(for: pullRequest)
@@ -636,8 +645,8 @@ public actor BuildInvestigator {
     /// nothing is read any more. Whoever waits for a build, or asks for one, gets `CancellationError`.
     public func stop() {
         isStopped = true
-        for current in reading.values { current.task.cancel() }
-        for check in checking.values { check.task.cancel() }
+        for cancel in underway.values { cancel() }
+        underway = [:]
         forget()
     }
 
@@ -660,19 +669,22 @@ public actor BuildInvestigator {
         Set(kept.keys.map(\.buildId))
     }
 
-    /// What's kept of the run, while it's fresh: as it was, for a run still going; for one that had finished, once a look
-    /// at the run that started after it was read says it hasn't been run again since, or the run can't be read. Nil when
-    /// it has to be read again: when the look finds the run run again, or gone, what's kept goes, even if a read under way
-    /// is waited for instead. Callers at the same time share a look, but what a read that started after it kept gets a
-    /// look of its own.
-    private func stillKept(_ key: Key, readKey: ReadKey, pullRequest: PullRequest) async -> BuildInvestigationReader.Read? {
+    /// What's kept of the run, while it's fresh: as it was, for a run still going, unless the caller knows it finished since;
+    /// for one that had finished, once a look at the run that started after it was read says it hasn't been run again
+    /// since, or the run can't be read. Nil when it has to be read again: when the look finds the run run again, or gone,
+    /// what's kept goes, even if a read under way is waited for instead. Callers at the same time share a look, but what a
+    /// read that started after it kept gets a look of its own.
+    private func stillKept(
+        _ key: Key, readKey: ReadKey, pullRequest: PullRequest, finished: Bool
+    ) async -> BuildInvestigationReader.Read? {
         guard let held = kept[key], isFresh(held.read.investigation, for: pullRequest) else { return nil }
-        guard held.read.investigation.run.status.isFinished else { return held.read }
+        guard held.read.investigation.run.status.isFinished else { return finished ? nil : held.read }
         let generation = generation
         let check = checking[key].flatMap { $0.order > held.order ? $0 : nil } ?? startCheck(key, pullRequest: pullRequest)
         waiting += 1
         let look = await check.task.value
         waiting -= 1
+        underway[check.id] = nil
         if checking[key]?.id == check.id { checking[key] = nil }
         guard generation == self.generation else { return nil }
         switch look {
@@ -685,7 +697,9 @@ public actor BuildInvestigator {
             tidy(key)
             return nil
         }
-        guard current.order < check.order else { return await stillKept(key, readKey: readKey, pullRequest: pullRequest) }
+        guard current.order < check.order else {
+            return await stillKept(key, readKey: readKey, pullRequest: pullRequest, finished: finished)
+        }
         return isFresh(current.read.investigation, for: pullRequest) ? current.read : nil
     }
 
@@ -709,6 +723,8 @@ public actor BuildInvestigator {
             }
         })
         checking[key] = check
+        let task = check.task
+        underway[check.id] = { task.cancel() }
         return check
     }
 
@@ -721,6 +737,8 @@ public actor BuildInvestigator {
             try await BuildInvestigationReader.readRun(client: client, buildId: buildId, of: pullRequest, now: readAt)
         })
         self.reading[readKey] = reading
+        let task = reading.task
+        underway[reading.id] = { task.cancel() }
         return reading
     }
 

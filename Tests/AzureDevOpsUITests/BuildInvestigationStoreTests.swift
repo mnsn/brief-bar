@@ -7,23 +7,33 @@ import Testing
 /// Reads of builds that wait for the test to answer them, as Azure DevOps answers later: what the store does meanwhile.
 @MainActor
 private final class InvestigationGate {
-    /// Each read asked for: which run, whether anew, and for the pull request as it was then.
-    private(set) var asked: [(buildId: Int, again: Bool, pullRequest: PullRequest)] = []
-    private var waiting: [CheckedContinuation<BuildInvestigation, Error>] = []
+    /// Each read asked for: which run, whether anew, for the pull request as it was then, and whether its check said the
+    /// run finished.
+    private(set) var asked: [(buildId: Int, again: Bool, pullRequest: PullRequest, finished: Bool)] = []
+    private var waiting: [(buildId: Int, continuation: CheckedContinuation<BuildInvestigation, Error>)] = []
 
     var reader: BuildInvestigationStore.Reader {
-        { [self] buildId, pullRequest, again in try await self.read(buildId, pullRequest, again: again) }
+        { [self] buildId, pullRequest, again, finished in
+            try await self.read(buildId, pullRequest, again: again, finished: finished)
+        }
     }
 
-    private func read(_ buildId: Int, _ pullRequest: PullRequest, again: Bool) async throws -> BuildInvestigation {
-        asked.append((buildId, again, pullRequest))
-        return try await withCheckedThrowingContinuation { waiting.append($0) }
+    private func read(_ buildId: Int, _ pullRequest: PullRequest, again: Bool, finished: Bool) async throws -> BuildInvestigation {
+        asked.append((buildId, again, pullRequest, finished))
+        return try await withCheckedThrowingContinuation { waiting.append((buildId, $0)) }
     }
 
     /// Waits for the store to ask, then answers its oldest read.
     func answer(_ result: Result<BuildInvestigation, ADOError>) async throws {
         try await until("a read") { !waiting.isEmpty }
-        waiting.removeFirst().resume(with: result.mapError { $0 as Error })
+        waiting.removeFirst().continuation.resume(with: result.mapError { $0 as Error })
+    }
+
+    /// Waits for the store to ask for a run, then answers its oldest read of it.
+    func answer(_ buildId: Int, _ result: Result<BuildInvestigation, ADOError>) async throws {
+        try await until("a read of \(buildId)") { waiting.contains { $0.buildId == buildId } }
+        guard let index = waiting.firstIndex(where: { $0.buildId == buildId }) else { return }
+        waiting.remove(at: index).continuation.resume(with: result.mapError { $0 as Error })
     }
 }
 
@@ -304,6 +314,140 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         store.changed(1, of: conflicting, check: failed)
         try await Task.sleep(for: .milliseconds(20))
         #expect(gate.asked.count == 3)
+    }
+
+    @Test func aReadAskedForSinceIsDroppedWhenWhatsReadIsWhatsAskedForAgain() async throws {
+        let gate = InvestigationGate()
+        let store = makeStore(gate)
+        let failed = Check(name: "shop-web CI", kind: .build, state: .failed, completedAt: now, buildId: 1)
+        store.expand(1, of: delivery, check: failed)
+        try await until("the read for main") { gate.asked.count == 1 }
+        // Retargeted to release while it's read for main, then back to main: the read for release isn't needed any more.
+        var retargeted = delivery
+        retargeted.targetBranch = "release"
+        store.changed(1, of: retargeted, check: failed)
+        store.changed(1, of: delivery, check: failed)
+        try await gate.answer(.success(investigation(1, number: "for main")))
+        try await until("its answer") { store.look(1, of: delivery.key)?.isReading == false }
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(gate.asked.count == 1)
+        #expect(store.look(1, of: delivery.key)?.investigation?.run.number == "for main")
+        #expect(store.look(1, of: delivery.key)?.readFor == BuildInvestigationStore.Stamp(check: failed, pullRequest: delivery))
+
+        // A read asked for anew since, as when the check changed and back, still reads, anew, for what it's asked for now.
+        store.read(1, of: delivery, check: failed, again: true)
+        try await until("the read again") { gate.asked.count == 2 }
+        var running = failed
+        running.state = .running
+        running.completedAt = nil
+        store.changed(1, of: delivery, check: running)
+        store.changed(1, of: delivery, check: failed)
+        try await gate.answer(.success(investigation(1, number: "first")))
+        try await until("the read anew") { gate.asked.count == 3 }
+        #expect(gate.asked.last?.again == true)
+        #expect(gate.asked.last?.finished == true)
+        try await gate.answer(.success(investigation(1, number: "anew")))
+        try await until("its answer") { store.look(1, of: delivery.key)?.isReading == false }
+        #expect(store.look(1, of: delivery.key)?.investigation?.run.number == "anew")
+    }
+
+    @Test func theInvestigatorHearsWhetherTheRunFinished() async throws {
+        let gate = InvestigationGate()
+        let store = makeStore(gate)
+        let running = Check(name: "shop-web CI", kind: .build, state: .running, buildId: 1)
+        var failed = running
+        failed.state = .failed
+        failed.completedAt = now
+        store.expand(1, of: delivery, check: running)
+        try await until("the read") { gate.asked.count == 1 }
+        #expect(gate.asked.last?.finished == false)
+        try await gate.answer(.success(investigation(1, number: "running")))
+        try await until("its answer") { store.look(1, of: delivery.key)?.isReading == false }
+        // Another pull request shows, and what was read here goes. Back here, the run has finished since: the
+        // investigator, which may keep it as it was while it was going, hears so.
+        store.show(slowQueries.key)
+        store.expand(1, of: delivery, check: failed)
+        try await until("the read as it opens") { gate.asked.count == 2 }
+        #expect(gate.asked.last?.finished == true)
+        #expect(gate.asked.last?.again == false)
+        try await gate.answer(.success(investigation(1, number: "failed")))
+        try await until("its answer") { store.look(1, of: delivery.key)?.isReading == false }
+        #expect(store.look(1, of: delivery.key)?.investigation?.run.number == "failed")
+        let stamp = { (state: Check.State) in BuildInvestigationStore.Stamp(check: Check(name: "", kind: .build, state: state), pullRequest: delivery) }
+        #expect([Check.State.passed, .failed, .expired].allSatisfy { stamp($0).finished })
+        #expect(![Check.State.running, .queued, .notRun, .pending, .notApplicable].contains { stamp($0).finished })
+    }
+
+    @Test func foldedBuildsKeepWhatsReadOnlyForTheLastFew() throws {
+        let store = makeStore()
+        let kept = BuildInvestigationStore.foldedKept
+        let builds = Array(1...(kept + 3))
+        for id in builds {
+            store.expand(id, of: delivery)
+        }
+        #expect(store.looks.count == builds.count)
+        // The first stays open; the others fold, the earliest first: only the last few keep what's read of them.
+        for id in builds.dropFirst() {
+            store.collapse(id, of: delivery.key)
+        }
+        #expect(Set(store.looks.keys) == Set([1] + builds.suffix(kept)))
+        #expect(store.expanded == [1])
+        // Opened again, the earliest of those doesn't count among the folded ones: folding the first then keeps it too.
+        let reopened = builds[builds.count - kept]
+        store.expand(reopened, of: delivery)
+        store.collapse(1, of: delivery.key)
+        #expect(Set(store.looks.keys) == Set([1, reopened] + builds.suffix(kept)))
+        #expect(store.expanded == [reopened])
+    }
+
+    @Test func aFoldedBuildBeingReadKeepsItsReadUntilItsDone() async throws {
+        let gate = InvestigationGate()
+        let store = makeStore(gate)
+        let kept = BuildInvestigationStore.foldedKept
+        store.expand(1, of: delivery)
+        try await until("the read") { gate.asked.count == 1 }
+        store.collapse(1, of: delivery.key)
+        for id in 2...(kept + 2) {
+            store.expand(id, of: delivery)
+            try await gate.answer(id, .success(investigation(id)))
+            try await until("its answer") { store.looks[id]?.isReading == false }
+            store.collapse(id, of: delivery.key)
+        }
+        // Folded first, but still being read, it stays, and those that folded after it go instead.
+        #expect(Set(store.looks.keys) == Set([1] + Array(4...(kept + 2))))
+        try await gate.answer(1, .success(investigation(1)))
+        try await until("its answer") { store.looks[1]?.isReading == false }
+        // Once it's read, it's the earliest that folded, and goes first.
+        store.expand(kept + 3, of: delivery)
+        try await gate.answer(kept + 3, .success(investigation(kept + 3)))
+        try await until("its answer") { store.looks[kept + 3]?.isReading == false }
+        store.collapse(kept + 3, of: delivery.key)
+        #expect(Set(store.looks.keys) == Set(4...(kept + 3)))
+    }
+
+    @Test func aRunTheChecksDontListAnyMoreGoes() async throws {
+        let gate = InvestigationGate()
+        let store = makeStore(gate)
+        store.expand(1, of: delivery)
+        store.expand(2, of: delivery)
+        try await until("both reads") { gate.asked.count == 2 }
+        try await gate.answer(1, .success(investigation(1)))
+        try await until("the first answer") { store.look(1, of: delivery.key)?.isReading == false }
+        store.collapse(1, of: delivery.key)
+        // A newer run replaced both: they go, and the read under way doesn't answer.
+        store.retain([3], of: delivery.key)
+        #expect(store.looks.isEmpty && store.expanded.isEmpty)
+        try await gate.answer(2, .success(investigation(2)))
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(store.looks.isEmpty)
+        // Another pull request's runs change nothing here; nor do this one's, while they list it.
+        store.expand(3, of: delivery)
+        store.retain([], of: slowQueries.key)
+        store.retain([3, 4], of: delivery.key)
+        #expect(store.isExpanded(3, of: delivery.key))
+        try await gate.answer(3, .success(investigation(3)))
+        try await until("its answer") { store.look(3, of: delivery.key)?.isReading == false }
+        #expect(store.look(3, of: delivery.key)?.investigation == investigation(3))
     }
 
     @Test func aRunThatCantBeReadSaysWhyAndOpeningItAgainTriesAgain() async throws {

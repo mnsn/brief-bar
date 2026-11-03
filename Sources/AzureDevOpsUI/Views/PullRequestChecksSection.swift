@@ -56,6 +56,10 @@ struct PullRequestChecksSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: place, initial: true) { open(place) }
+        // A run that isn't listed any more, such as one a newer run replaced, goes, with what was read of it.
+        .onChange(of: panel.checks.compactMap(\.buildId), initial: true) {
+            investigations.retain(Set(panel.checks.compactMap(\.buildId)), of: item.key)
+        }
     }
 
     /// Opens the build the details are asked to go to, as What's Left's failed build asks, or the Pipelines page, or a

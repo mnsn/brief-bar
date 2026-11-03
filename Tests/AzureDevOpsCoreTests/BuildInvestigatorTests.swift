@@ -1091,6 +1091,42 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(requests(server, to: "/timeline").isEmpty)
     }
 
+    @Test func stoppingAfterForgettingStillStopsTheReadUnderWay() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        let tokens = HeldTokens(server.id, holdAt: 1)
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+        let read = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntilHeld(tokens)
+        // Someone else signed in, then Azure DevOps is turned off: the read it forgot stops all the same.
+        await investigator.forget()
+        await investigator.stop()
+        await tokens.release()
+        await #expect(throws: CancellationError.self) { try await read.value }
+        #expect(requests(server, to: "/timeline").isEmpty)
+        #expect(requests(server, to: "/logs").isEmpty)
+    }
+
+    @Test func aRunKeptWhileItWasGoingIsReadAgainOnceItsCheckSaysItFinished() async throws {
+        let server = StubServer()
+        FailedRun.serve(server, build: FailedRun.build(status: "inProgress", result: nil))
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        clock.advance(BuildInvestigator.keptWhileRunningFor - 1)
+        // Still going, as its check says: what's kept answers.
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, finished: false)
+        #expect(requests(server, to: "/timeline").count == 1)
+        // Its check says it finished: what was kept while it was going isn't it any more.
+        FailedRun.serve(server)
+        let read = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, finished: true)
+        #expect(read.run.status == .failed)
+        #expect(requests(server, to: "/timeline").count == 2)
+        // A run kept once it finished answers as it did, after a look at the run.
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, finished: true)
+        #expect(requests(server, to: "/timeline").count == 2)
+    }
+
     @Test func stoppingWhileItLooksAtAKeptRunReadsNothingInstead() async throws {
         let server = StubServer()
         FailedRun.serve(server)
