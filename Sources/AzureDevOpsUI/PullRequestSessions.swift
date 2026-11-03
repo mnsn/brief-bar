@@ -366,7 +366,12 @@ final class PullRequestSessions: ObservableObject {
         if sessions[key] != session { sessions[key] = session }
         guard isReadable(key), !isForPictures else { return }
         if state.found == nil {
-            if !reading.contains(key) { spawn(for: key) { [weak self] in await self?.read(key) } }
+            // One under way may be one called off, as its details closed and showed again: then once it ends.
+            if reading.contains(key) {
+                readAgain.insert(key)
+            } else {
+                spawn(for: key) { [weak self] in await self?.read(key) }
+            }
         } else if let session, session.canChoose, session.delivery == nil, let choice = session.session, !choice.isUnavailable,
                   !checking.contains(key) {
             spawn(for: key) { [weak self] in await self?.checkDelivery(key, unlessKnown: true) }
