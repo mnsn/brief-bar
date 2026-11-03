@@ -282,6 +282,46 @@ import Testing
         #expect(store.readyFixes(of: key, among: [11]).map(\.session) == [session])
     }
 
+    /// One pasted in a terminal where the Copilot CLI has the session, in the CLI's own folder rather than the app's, is
+    /// followed there.
+    @Test func followsAPromptInTheCLIsFolder() async throws {
+        let app = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let cli = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: app)
+            try? FileManager.default.removeItem(at: cli)
+        }
+        let folder = cli.appendingPathComponent("session-state/\(session)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        store.appHomeForTests = app
+        store.useEnvironment(["COPILOT_HOME": cli.path])
+        let sent = Date()
+        settings.copilotSentPrompts = [try #require(SentPrompt(about(), session: session, sentAt: sent, copied: true))]
+        let stamp = { (seconds: TimeInterval) in sent.addingTimeInterval(seconds).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
+        let lines = [
+            #"{"type":"user.message","data":{"content":"Fix it"},"id":"a","timestamp":"\#(stamp(1))","parentId":null}"#,
+            #"{"type":"session.task_complete","data":{"summary":"Capped it","success":true},"id":"b","timestamp":"\#(stamp(2))","parentId":null}"#,
+        ]
+        try (lines.joined(separator: "\n") + "\n").write(to: folder.appendingPathComponent("events.jsonl"), atomically: true, encoding: .utf8)
+        store.followSentPrompts(now: sent.addingTimeInterval(3))
+        try await settle { !store.isFollowingPrompts }
+        #expect(store.commentWork(on: 11, of: key)?.state == .done("Capped it"))
+    }
+
+    /// A question asked about a thread since its fix, as its line says, doesn't push the fix: it's still ready.
+    @Test func aQuestionSinceDoesntPushAFix() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let fixed = try #require(SentPrompt(about(), session: session, sentAt: now.addingTimeInterval(-120), copied: false, ended: .finished))
+        let asked = try #require(SentPrompt(about(.explain), session: session, sentAt: now.addingTimeInterval(-60), copied: false))
+        settings.copilotSentPrompts = [fixed, asked]
+        #expect(store.commentWork(on: 11, of: key)?.purpose == .explain)
+        #expect(store.readyFixes(of: key, among: [11]).map(\.threads) == [[11]])
+    }
+
     /// One copied for you to paste that you didn't paste goes after half an hour.
     @Test func forgetsAPromptYouDidntPaste() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())

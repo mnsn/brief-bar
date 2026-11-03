@@ -317,10 +317,12 @@ extension CopilotTasksStore {
     /// Copilot's latest work on a pull request's comment thread, as its status line says it: a task of BriefBar's that
     /// took it on, or a prompt sent to one of the Copilot app's sessions about it, whichever took it on last. Nil when none
     /// did, while Send Work to Copilot is off, and for the demo's other threads.
-    func commentWork(on thread: Int, of key: PRKey) -> CommentWork? {
+    /// - Parameter purposes: only work for these, such as fixes and shipping them, past a question asked since.
+    func commentWork(on thread: Int, of key: PRKey, for purposes: Set<CommentWork.Purpose>? = nil) -> CommentWork? {
         guard isOn else { return nil }
         var latest: (since: Date, work: CommentWork)?
         func consider(_ since: Date, _ work: CommentWork) {
+            if let purposes, !purposes.contains(work.purpose) { return }
             if latest.map({ since > $0.since }) ?? true { latest = (since, work) }
         }
         for entry in entries where entry.isOn(key) {
@@ -340,11 +342,12 @@ extension CopilotTasksStore {
     }
 
     /// The fixes of a pull request's threads that are done and not pushed, by the session they're in, the latest first:
-    /// only those of `threads`, the ones still open.
+    /// only those of `threads`, the ones still open. A question asked about a thread since, as its line says, doesn't
+    /// push its fix.
     func readyFixes(of key: PRKey, among threads: [Int]) -> [ReadyFixes] {
         var groups: [String: ReadyFixes] = [:]
         for thread in threads {
-            guard let work = commentWork(on: thread, of: key), work.isReadyFix else { continue }
+            guard let work = commentWork(on: thread, of: key, for: [.fix, .pushAndReply]), work.isReadyFix else { continue }
             var group = groups[work.session] ?? ReadyFixes(
                 session: work.session, forkedFrom: work.forkedFrom, isTask: work.isTask, threads: [], latest: work.since
             )
@@ -394,6 +397,9 @@ extension CopilotTasksStore {
         let home = appHome
         let monitor = promptMonitor
         Task {
+            // Where the sessions are that prompts go to: the Copilot app's folder, and the CLI's, whose terminal one may
+            // have been pasted in.
+            let homes = await sessionHomes()
             let read = await Task.detached(priority: .utility) { () -> [(prompt: SentPrompt, fork: String?, turn: SessionTurn?)] in
                 let running = Set((try? AppSessions.running(home: home)) ?? [])
                 var read: [(prompt: SentPrompt, fork: String?, turn: SessionTurn?)] = []
@@ -404,13 +410,20 @@ extension CopilotTasksStore {
                         fork = SentPrompt.onlyFork(AppSessions.forks(of: prompt.session, since: prompt.sentAt, home: home))
                         session = fork
                     }
-                    guard let session, let events = AppSessions.events(of: session, home: home) else {
+                    let found = session.flatMap { session in
+                        homes.lazy.compactMap { home in
+                            AppSessions.events(of: session, home: home).flatMap { FileManager.default.fileExists(atPath: $0.path) ? (home, $0) : nil }
+                        }.first
+                    }
+                    guard let session, let found else {
                         read.append((prompt, fork, nil))
                         continue
                     }
+                    let (sessionHome, events) = found
                     let log = await monitor.log(id: session, events: events)
                     let turn = SessionTurn.of(
-                        sentAt: prompt.sentAt, log: log, isRunning: running.contains(session), isOpen: AppSessions.isOpen(session, home: home)
+                        sentAt: prompt.sentAt, log: log, isRunning: running.contains(session),
+                        isOpen: AppSessions.isOpen(session, home: sessionHome)
                     )
                     read.append((prompt, fork, turn))
                 }

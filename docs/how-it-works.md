@@ -2196,15 +2196,20 @@ it says: the pull request, the session that took it and the one it forked, the t
 `ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows it from the session's log
 since it began to send it, so that a turn that's over before BriefBar hears the prompt went counts too, but only from the
 first message the session got since, the prompt itself as the earliest, sent or pasted: a turn that was under way as it
-was sent, or copied, is an earlier message's (`SessionTurn`). It's read as a task's is, every three seconds, with which
+was sent, or copied, is an earlier message's (`SessionTurn`). It's read where the session is, in the Copilot app's folder
+or, for one pasted in a terminal, the CLI's, as a task's is, every three seconds, with which
 sessions the app runs a turn in and whether something has the session open, only while one hasn't ended and Send Work to
 Copilot is on and Azure DevOps hasn't stopped: a turn that's over twice in a row, a few seconds apart, ended, which its
 record keeps; one copied as `/fork` follows the fork the app records as made since, when it made just one. One you
 didn't paste goes after half an hour, and one whose turn hasn't ended after twelve hours. A fix that's done and not
 pushed, on a thread that's still open, counts in the bar at the details' foot (`ReadyFixesBar`,
-`CopilotTasksStore.readyFixes`), whose sentence takes the details to the first thread they fixed, and whose **Push &
-Reply…** opens the Send to Copilot window in the session the fixes are in.
-The demo's are made up (`SentPrompt.demo`).
+`CopilotTasksStore.readyFixes`), even once a question was asked about the thread since, whose sentence takes the details
+to the first thread they fixed, and whose **Push & Reply…** opens the Send to Copilot window in the session the fixes are
+in, for those threads alone: its prompt lists them and replies on them alone, and hands off what waits on you in them
+alone (`PullRequestPrompt.pushAndReply(_:workplace:threads:)`, `PullRequestPrompt.shippedThreads`), and the task that
+ships them takes them on, so they say they're pushed once it's done, though prompts fixed them rather than its runs. A
+prompt in the Send to Copilot window takes on the threads whose entries are still in it as you send it
+(`PullRequestPrompt.threadsListed`). The demo's are made up (`SentPrompt.demo`).
 
 ### Notifications
 

@@ -464,7 +464,7 @@ extension CopilotTasksStore {
     }
 
     /// Where the sessions BriefBar can send to are: the Copilot app's folder and, when your shell sets another, the CLI's.
-    private func sessionHomes() async -> [URL] {
+    func sessionHomes() async -> [URL] {
         let home = appHome
         let cliHome = CopilotCLI.home(environment: await environment())
         return AppSessions.folderKey(cliHome) == AppSessions.folderKey(home) ? [home] : [home, cliHome]

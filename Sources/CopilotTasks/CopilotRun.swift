@@ -122,8 +122,9 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// The threads a task keeps once it goes on with `previous`'s session, or starts in a session of its own when that's
     /// nil, for `action`, at `now`: those `previous` took on, with how it ended, while its changes aren't pushed, as after a
     /// fix, or a Push & Reply that didn't finish, and only on the same pull request, since a thread's ID is its pull
-    /// request's own; then `taken`, which it takes on now, in their place. Push & Reply takes none on: it ships what's
-    /// there. Nil when it keeps none.
+    /// request's own; then `taken`, which it takes on now, in their place. Push & Reply ships what's there, and the threads
+    /// it's sent for that it doesn't have, fixed by prompts sent to the session rather than by its runs, as they were. Nil
+    /// when it keeps none.
     /// - Parameter pullRequest: the pull request it's on, if it's on one.
     public static func threads(
         goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?, taking taken: [Int], for action: PullRequestAction?,
@@ -139,7 +140,10 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
                 return thread
             }
         }
-        if action != .pushAndReply {
+        if action == .pushAndReply {
+            let held = Set(kept.map(\.id))
+            kept += taken.filter { !held.contains($0) }.map { TakenThread(id: $0, since: now) }
+        } else {
             let ids = Set(taken)
             kept = kept.filter { !ids.contains($0.id) } + taken.map { TakenThread(id: $0, since: now) }
         }

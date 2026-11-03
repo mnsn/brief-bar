@@ -1119,9 +1119,13 @@ struct CopilotComposerView: View {
 
     // MARK: Sending
 
+    /// The threads it takes on, as the prompt you send still lists them: one whose entry you took out isn't.
+    private var sentThreads: [Int] { PullRequestPrompt.threadsListed(in: prompt, among: threads) }
+
     /// What a prompt sent to one of the Copilot app's sessions is about, for its threads to say what became of it: a fix
     /// of some of them, or Push & Reply.
     private var aboutThreads: SentPrompt.About? {
+        let threads = sentThreads
         guard !threads.isEmpty, case .pullRequest(let pullRequest, let action) = subject else { return nil }
         let purpose: SentPrompt.Purpose
         switch action {
@@ -1137,13 +1141,13 @@ struct CopilotComposerView: View {
         let options = CopilotRunOptions(model: model.trimmingCharacters(in: .whitespaces), effort: effort)
         guard let target else {
             guard let folder = repository?.root else { return }
-            store.send(subject, prompt: prompt, options: options, repository: folder, threads: threads, handOff: handOff)
+            store.send(subject, prompt: prompt, options: options, repository: folder, threads: sentThreads, handOff: handOff)
             close()
             return
         }
         // A fork of one of BriefBar's own sessions, which works in a worktree of its own, however the session stands.
         if delivery == .cliFork, case .task(let run) = target.kind {
-            store.send(subject, prompt: prompt, options: options, repository: run.repository, forking: run, threads: threads, handOff: handOff)
+            store.send(subject, prompt: prompt, options: options, repository: run.repository, forking: run, threads: sentThreads, handOff: handOff)
             close()
             return
         }
@@ -1160,14 +1164,14 @@ struct CopilotComposerView: View {
         case .cli:
             switch target.kind {
             case .task(let run):
-                store.send(subject, prompt: prompt, options: options, repository: run.repository, continuing: run, threads: threads, handOff: handOff)
+                store.send(subject, prompt: prompt, options: options, repository: run.repository, continuing: run, threads: sentThreads, handOff: handOff)
             case .app(let session):
                 guard let run = store.appRun(for: session, subject: subject, options: options) else {
                     cliProblem = "BriefBar can't tell which folder it works in."
                     fixDelivery()
                     return
                 }
-                store.send(subject, prompt: prompt, options: options, repository: run.repository, continuing: run, threads: threads, handOff: handOff)
+                store.send(subject, prompt: prompt, options: options, repository: run.repository, continuing: run, threads: sentThreads, handOff: handOff)
             }
         }
         close()
