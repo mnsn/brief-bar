@@ -88,7 +88,11 @@ struct PullRequestFilePage: View {
             visibilityChanges: code.visibilityChanges, head: pullRequest.map(PullRequestFilesStore.Head.init), scope: details.scope
         )) {
             guard let pullRequest else { return }
-            files.showList(of: pullRequest, scope: details.scope, on: page)
+            // Asked for again every half minute, for what couldn't be read, which the store reads again then.
+            while !Task.isCancelled {
+                files.showList(of: pullRequest, scope: details.scope, on: page)
+                try? await Task.sleep(for: .seconds(PullRequestCodeStore.retryInterval))
+            }
         }
         // Its pull request's change is read, and kept, while it shows: in the panel's details, or on a pull request's page.
         .task(id: item.key) {
@@ -440,15 +444,21 @@ struct PullRequestFilePage: View {
             }
             files.showDiff(of: shown.file, in: shown.changes, of: pullRequest, by: viewer, on: page)
         }
-        // Asked to go to one of its threads, once it shows.
-        .onChange(of: diffIsRead(shown), initial: true) {
+        // Asked to go to one of its threads, once it shows: also on another file whose diff was read already.
+        .task(id: ThreadReaching(version: version, isRead: diffIsRead(shown), thread: open.thread)) {
             guard diffIsRead(shown), let thread = open.thread else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(60))
-                reach(thread)
-                details.reachedThread(thread)
-            }
+            try? await Task.sleep(for: .milliseconds(60))
+            guard !Task.isCancelled else { return }
+            reach(thread)
+            details.reachedThread(thread)
         }
+    }
+
+    /// What it goes to a thread again for: another file, its diff read, or another thread.
+    private struct ThreadReaching: Equatable {
+        var version: PullRequestFilesStore.Version
+        var isRead: Bool
+        var thread: Int?
     }
 
     private func diffIsRead(_ shown: Shown) -> Bool {

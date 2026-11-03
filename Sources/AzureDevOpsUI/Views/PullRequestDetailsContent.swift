@@ -70,7 +70,9 @@ struct PullRequestDetailsContent: View {
                     .id(PullRequestDetailsStore.Anchor.section(.comments))
                     // A thread's file opens here, at the thread.
                     .environment(\.changedFileOpener, ChangedFileOpener { path, thread in
-                        withAnimation(.easeOut(duration: 0.15)) { details.open(file: path, at: thread) }
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            details.open(file: path, at: thread, from: thread.map(PullRequestDetailsStore.Place.thread))
+                        }
                     })
                 PullRequestFilesSection(
                     details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, highlighted: highlighted

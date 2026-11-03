@@ -139,7 +139,9 @@ final class PullRequestFilesStore: ObservableObject {
             }
             switch lists[key]?[scope] {
             case .read?:
-                return
+                // Unless reading it again after a push failed in a way that may pass: it's read again half a minute
+                // later, or when you ask, showing what was read before meanwhile.
+                guard let failed = pullRequestReads.listFailedAt[scope], again || isDue(failed) else { return }
             case .failed(let problem)?:
                 guard ThreadCode.mayPass(problem), again || isDue(pullRequestReads.listFailedAt[scope]) else { return }
             case .reading?, nil:

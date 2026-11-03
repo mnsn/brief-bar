@@ -161,6 +161,36 @@ import Testing
         #expect(readFiles(store)?.files.first?.objectId == "A-c2")
     }
 
+    @Test func readsTheFilesAgainHalfAMinuteAfterReadingThemAfterAPushFailed() async throws {
+        let reader = Reader()
+        var now = Date()
+        let (store, _, _, _) = makeStores(reader) { now }
+        store.showList(of: pullRequest, scope: .whole, on: page)
+        try await settle { readFiles(store) != nil }
+        // After a push, Azure DevOps can't be reached: the files from before show.
+        await reader.failList(.unreadable(.offline))
+        var pushed = pullRequest
+        pushed.sourceCommit = "c2"
+        store.showList(of: pushed, scope: .whole, on: page)
+        try await settle { await reader.asked.count == 2 }
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(readFiles(store)?.files.first?.objectId == "A-c1")
+        // Asked again at once, it waits; half a minute later, it's read again.
+        await reader.failList(nil)
+        store.showList(of: pushed, scope: .whole, on: page)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await reader.asked.count == 2)
+        now = now.addingTimeInterval(PullRequestCodeStore.retryInterval)
+        store.showList(of: pushed, scope: .whole, on: page)
+        try await settle { readFiles(store)?.files.first?.objectId == "A-c2" }
+        #expect(readFiles(store)?.files.first?.objectId == "A-c2")
+        // Read, it isn't read again.
+        now = now.addingTimeInterval(PullRequestCodeStore.retryInterval)
+        store.showList(of: pushed, scope: .whole, on: page)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await reader.asked.count == 3)
+    }
+
     @Test func readsAFilesDiffAsItsPageShowsAndCallsItOffWhenItGoes() async throws {
         let reader = Reader()
         let (store, _, _, _) = makeStores(reader)
@@ -392,6 +422,18 @@ import Testing
         store.back()
         #expect(store.file == nil && store.place == .file(file) && !store.canGoBack)
         #expect(PullRequestDetailsStore.Place.file(file).anchor(in: []) == .file(file))
+    }
+
+    @Test func goesBackToTheThreadItOpenedFrom() throws {
+        let store = PullRequestDetailsStore()
+        store.itemsChanged(items)
+        store.show(try item(4102))
+        store.open(file: path, at: 11, from: .thread(11))
+        // On to the next file, and back: to the thread, in the comments.
+        store.open(file: "/src/RetryOptions.cs")
+        #expect(store.file?.from == .thread(11))
+        store.back()
+        #expect(store.file == nil && store.place == .thread(11))
     }
 
     @Test func goingElsewhereClosesTheFile() throws {

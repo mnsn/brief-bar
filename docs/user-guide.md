@@ -372,9 +372,11 @@ didn't follow to this one, with the code they were made on. **‹** and **›**,
 the files before and after it, **4 of 9** lists them all, and **⌃⌘↑** and **⌃⌘↓** go through its open
 comments, on to the next file's. While the details are beside the list, **⤢** makes them fill the page,
 for long lines, until you go back to the details or click **⤡**. A file that isn't text, or is longer than
-1 MB, says so, with **↗** to see it in Azure DevOps, as **↗** on each file's page does. **‹**, **⌘[** or
-**Esc** go back to the details, at the file's row; a pull request's page over a work item's details shows
-its files the same way, **Bug 5110 › !4091 › Rounding.cs**. BriefBar reads which files changed as **Files**
+1 MB, says so, with **↗** to see it in Azure DevOps, as **↗** on each file's page does. A file's comments
+open its page too, with **🔍** beside its name in the comments, at the first of them, or **Show in Its
+File's Changes** in a thread's menu, at that one. **‹**, **⌘[** or **Esc** go back to the details, at the
+file's row, or at the comment it opened from; a pull request's page over a work item's details shows its
+files the same way, **Bug 5110 › !4091 › Rounding.cs**. BriefBar reads which files changed as **Files**
 comes on screen, and each file before and after the change, one file at a time, as its row comes on screen,
 to count its lines, or as you open it, and keeps them in memory only, while the details show that pull
 request.

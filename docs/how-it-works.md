@@ -1432,7 +1432,8 @@ change and since an update, is counted once.
 
 A file opens in place of the details' parts (`PullRequestFilePage`, `PullRequestDetailsStore.file`), the header's
 trail saying so, `!4102 › PaymentsClient.cs`, or `Bug 5110 › !4091 › Rounding.cs` on a pull request's page over a
-work item's details; **‹**, **⌘[** or Esc go back to the details, at its row (`Place.file`). Its diff is the two
+work item's details; **‹**, **⌘[** or Esc go back to the details, at its row (`Place.file`), or at the thread it
+opened from in their comments, whose file's heading, or its menu, opens it at that thread (`ChangedFileOpener`). Its diff is the two
 versions compared a line at a time (`LineDiff`), its changes with three lines around each, and the lines its threads
 are on with three around them, the rest folded, to unfold twenty lines at a time, up from the code below a fold or
 down from the code above it, or all of it (`DiffLayout`). A thread shows under the line it ends on

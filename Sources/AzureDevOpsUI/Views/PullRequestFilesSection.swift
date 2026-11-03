@@ -83,9 +83,13 @@ struct PullRequestFilesSection: View {
             scope: details.scope
         )) {
             guard isOnScreen, let pullRequest else { return }
-            // The whole change, which says which updates there are, and the one it shows.
-            files.showList(of: pullRequest, scope: .whole, on: page)
-            if details.scope != .whole { files.showList(of: pullRequest, scope: details.scope, on: page) }
+            // The whole change, which says which updates there are, and the one it shows; asked for again every half
+            // minute while it's on screen, for what couldn't be read, which the store reads again then.
+            while !Task.isCancelled {
+                files.showList(of: pullRequest, scope: .whole, on: page)
+                if details.scope != .whole { files.showList(of: pullRequest, scope: details.scope, on: page) }
+                try? await Task.sleep(for: .seconds(PullRequestCodeStore.retryInterval))
+            }
         }
         // Its files are read, and kept, while it shows: in the panel's details, or on a pull request's page.
         .task(id: item.key) {
@@ -111,6 +115,17 @@ struct PullRequestFilesSection: View {
             if let lastSeen {
                 scopeMenu(since: lastSeen)
             }
+            Button {
+                AzureDevOps.open(Self.filesPage(item))
+            } label: {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(size: 11.5, weight: .medium)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Open the pull request's files in Azure DevOps")
+            .accessibilityLabel("Open Files in Azure DevOps")
         }
     }
 
