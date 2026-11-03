@@ -1378,15 +1378,19 @@ otherwise, worked out as the window does: a task of BriefBar's with the Copilot 
 a task the app has open or the CLI can't go on with, in the app, where BriefBar's extension in the session sends it the
 prompt, now or once the app loads it, or else BriefBar copies the prompt for you to paste there, as
 `CopilotTasksStore.reach(of:)` says, which reads which sessions the extension listens in only while Send Prompts to
-Copilot Sessions is on; or busy while a task of BriefBar's works in it or in its checkout. How it stands is what Copilot's list says of it through Show Links, or what BriefBar follows of its own
-task. While it waits for your answer, the line is orange, and opens the session in the Copilot app, where you answer
-it, as Copilot's list does; otherwise it shows the session's page in the details, and it isn't under **Also
-Linked**. **Use for This Pull Request**, in its menu, keeps your choice in the preferences
-(`ado.copilot.pullRequestSessions`), by references only, the pull request's and the session's, never names, as
-Show Links keeps the links you make, and for as long (`PullRequestSessionChoice`): what's older leaves the
-preferences as BriefBar reads them, and turning Azure DevOps off forgets it. The Send to Copilot window goes there
-too, unless you choose otherwise (`CopilotTasksStore.suggestedChoice`), and
-so do agents ([below](#agents)). Without Send Work to Copilot, the line shows only the sessions Show Links links to
+Copilot Sessions is on; or busy while a task of BriefBar's works in it or in its checkout. How it stands is what
+Copilot's list says of it through Show Links, or what BriefBar follows of its own task, until that's done; then, while
+Copilot's list says its session works or waits for you, as when you went on with it in the Copilot app, that
+(`Links.describe(_:by:)`), which the task's own row in Show Links would hide. While it waits for your answer, the
+line is orange, and opens the session in the Copilot app, where you answer it, as Copilot's list does; otherwise it
+shows the session's page in the details, and it isn't under **Also Linked**. **Use for This Pull Request**, in its
+menu, keeps your choice in the preferences (`ado.copilot.pullRequestSessions`), by references only, the pull
+request's and the session's, never names, as Show Links keeps the links you make, and for as long
+(`PullRequestSessionChoice`): what's older leaves the preferences as BriefBar reads them, a task that starts on the
+pull request in another session forgets it, so clearing that task doesn't bring it back, and turning Azure DevOps off
+forgets it. The Send to Copilot window goes there too, unless you choose otherwise
+(`CopilotTasksStore.suggestedChoice`), following what you choose in the details while it's open, and so do agents
+([below](#agents)). Without Send Work to Copilot, the line shows only the sessions Show Links links to
 the pull request, read from nothing else, to look at; with neither, nothing. The demo makes its sessions up from its
 own tasks and the Copilot demo's sessions that Show Links links, and reads nothing.
 

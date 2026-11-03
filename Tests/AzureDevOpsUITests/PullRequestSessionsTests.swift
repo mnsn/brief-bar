@@ -327,6 +327,63 @@ import Testing
         #expect(checked == 2)
     }
 
+    /// Shown again while a read that going off screen called off is still ending, it's read again as that read ends, rather
+    /// than at the next turn.
+    @Test func readsAgainWhenShownWhileAReadWasCalledOff() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        // Sessions on other branches, whose logs are searched since none goes with it.
+        let ids = ["aaaaaaaa-aaaa-4aaa-8aaa-000000000001", "aaaaaaaa-aaaa-4aaa-8aaa-000000000002", "aaaaaaaa-aaaa-4aaa-8aaa-000000000003"]
+        try database(at: home, elsewhere: ids)
+        for id in ids {
+            let state = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+            try Data("{}\n".utf8).write(to: state.appendingPathComponent("events.jsonl"))
+        }
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        sessions.refreshEvery = .seconds(3_600)
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        var searched = 0
+        store.mentionReadForTests = { _ in
+            searched += 1
+            // Covered, then shown again, as the first log is read.
+            if searched == 1 {
+                sessions.setVisible(false, for: self.page)
+                sessions.setVisible(true, for: self.page)
+            }
+        }
+        let following = followOnScreen(sessions, item, record: record)
+        defer { following.cancel() }
+        try await until { searched >= 1 + ids.count }
+        #expect(searched == 1 + ids.count)
+    }
+
+    /// Two pull requests whose work goes to the same session each say how work would reach it.
+    @Test func checksTheSessionOfEachPullRequestItsWorkGoesFrom() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        sessions.refreshEvery = .seconds(3_600)
+        let (first, firstRecord) = try await pullRequest()
+        let (second, secondRecord) = try await pullRequest(4091)
+        let records = [first.key: firstRecord, second.key: secondRecord]
+        sessions.record = { records[$0] }
+        store.settings.choose(session: onBranch, for: second.key)
+        let one = followOnScreen(sessions, first, record: firstRecord)
+        let two = followOnScreen(sessions, second, record: secondRecord)
+        defer {
+            one.cancel()
+            two.cancel()
+        }
+        try await until { sessions.session(for: first.key)?.delivery != nil && sessions.session(for: second.key)?.delivery != nil }
+        #expect(sessions.session(for: first.key)?.session?.id == onBranch && sessions.session(for: second.key)?.session?.id == onBranch)
+        #expect(sessions.session(for: first.key)?.delivery != nil && sessions.session(for: second.key)?.delivery != nil)
+    }
+
     /// A closed pull request's work goes nowhere: its details show the sessions Show Links links to it, to look at, and
     /// nothing of Copilot's is read for it, though Send Work to Copilot is on.
     @Test func readsNothingForAClosedPullRequest() async throws {
@@ -389,6 +446,10 @@ import Testing
         searching.cancel()
         #expect(await searching.value.isEmpty)
         #expect(read.isEmpty)
+        // Nor a check of how work would reach one.
+        let checking = Task { await store.cliProblem(for: choices[0], subject: subject) }
+        checking.cancel()
+        #expect(await checking.value == CopilotTasksStore.stoppedChecking)
         // Nor does a look for the sessions it could go to, cancelled as the details that wanted them close.
         let looking = Task { await store.sessionChoices(for: subject) }
         looking.cancel()
@@ -568,6 +629,37 @@ import Testing
         // What needs you, or works, says so without since when, which the line shows apart.
         let waiting = PullRequestSessionLine.Standing(text: "Waiting for your answer", state: .needsYou, date: now.addingTimeInterval(-240))
         #expect(waiting.phrase(now: now) == "waiting for your answer")
+
+        // A task of BriefBar's that's done, which you went on with in the Copilot app: as Copilot's list tells its session
+        // while it waits for you there, though the task's own row, Azure DevOps', says it finished; once it's done there
+        // too, as the task.
+        let worktree = URL(fileURLWithPath: "/tmp/pr-4088")
+        let run = CopilotRun(
+            id: onBranch, workItem: nil,
+            onPullRequest: PullRequestReference(organization: "contoso", project: "Storefront", repository: "shop-web", id: 4088, sourceBranch: "delivery-estimates"),
+            action: .fixComments, options: CopilotModel.standard, repository: worktree.deletingLastPathComponent(), worktree: worktree,
+            startedAt: now.addingTimeInterval(-7_200), process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: .finished, pullRequest: nil
+        )
+        let entry = CopilotTaskEntry(
+            id: onBranch, workItem: nil, onPullRequest: run.onPullRequest, action: .fixComments, options: CopilotModel.standard,
+            startedAt: run.startedAt, status: RunStatus(phase: .finished, since: now.addingTimeInterval(-3_600)), pullRequest: nil, run: run
+        )
+        let task = SessionChoice(kind: .task(run), name: "Fix Comments", place: nil, lastActive: run.startedAt, reasons: [.earlierTask])
+        links.publish(.azureDevOps, links: [], items: [LinkedItem(
+            ref: ref, label: "Fix Comments", title: "Copilot: Fix Comments", symbol: "paperplane.fill", color: .secondary,
+            status: "Finished", date: now.addingTimeInterval(-3_600)
+        )])
+        links.publish(.copilot, links: [], items: [LinkedItem(
+            ref: ref, label: "Retry backoff", title: "Retry backoff", symbol: "waveform.path.ecg", color: .orange, state: .needsYou,
+            status: "Waiting for your answer", date: now.addingTimeInterval(-240)
+        )])
+        #expect(PullRequestSessionLine.standing(of: task, links: links, entries: [entry]) == waiting)
+        links.publish(.copilot, links: [], items: [LinkedItem(
+            ref: ref, label: "Retry backoff", title: "Retry backoff", symbol: "checkmark.circle.fill", color: .secondary,
+            status: "Finished", date: now.addingTimeInterval(-120)
+        )])
+        let done = PullRequestSessionLine.standing(of: task, links: links, entries: [entry])
+        #expect(done.text == RunPhase.finished.title && done.date == now.addingTimeInterval(-3_600))
 
         // Nothing's shown without a session, unless you can choose one.
         let none = PullRequestSession.make([], chosen: nil, lastTask: nil, createdAt: nil, canChoose: false)

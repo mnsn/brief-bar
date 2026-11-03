@@ -976,8 +976,11 @@ private struct DatabaseError: Error {
         #expect(started.workItem == opened.workItem)
         #expect(store.pending.isEmpty)
         #expect(store.latest(forPullRequest: key)?.run == started)
-        // It started after you chose: it takes that session's place.
+        // It started after you chose: it takes that session's place, for good, so clearing it doesn't bring yours back.
         #expect(store.lastTask(forPullRequest: key) == PullRequestSession.LastTask(started))
+        #expect(store.chosenSession(for: subject) == nil)
+        #expect(store.settings.chosenSession(for: key) == nil)
+        store.settings.copilotRuns = []
         #expect(store.chosenSession(for: subject) == nil)
     }
 

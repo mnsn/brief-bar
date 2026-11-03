@@ -298,6 +298,12 @@ package final class Links: ObservableObject {
         return Self.fallback(ref)
     }
 
+    /// What one source says something is, when it says: for something two say, such as the session of a task BriefBar
+    /// sent, which the task's source tells as the task, and Copilot's as the session it goes on as.
+    package func describe(_ ref: ItemRef, by source: SourceID) -> LinkedItem? {
+        described[source]?[ref]
+    }
+
     /// Whether a source says what it is, rather than only its reference.
     package func isDescribed(_ ref: ItemRef) -> Bool {
         SourceID.allCases.contains { described[$0]?[ref] != nil }

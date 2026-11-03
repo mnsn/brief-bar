@@ -63,9 +63,11 @@ final class PullRequestSessions: ObservableObject {
     private var visiblePages: Set<String> = []
     /// For pictures (`prepare`): read once, without the search for mentions or how work would reach a session.
     private var isForPictures = false
-    /// The pull requests read for now, and the sessions whose way there is checked now: one at a time, each.
+    /// The pull requests read for now, and those whose session's way there is checked now: one at a time, each.
     private var reading: Set<PRKey> = []
-    private var checking: Set<String> = []
+    private var checking: Set<PRKey> = []
+    /// The pull requests to read again once the read under way ends: their window showed them again meanwhile.
+    private var readAgain: Set<PRKey> = []
     private var isScheduled = false
     private var subscriptions: Set<AnyCancellable> = []
 
@@ -170,7 +172,12 @@ final class PullRequestSessions: ObservableObject {
         if visible {
             guard visiblePages.insert(page).inserted else { return }
             for (key, state) in followed where state.followers.values.contains(page) {
-                spawn(for: key) { [weak self] in await self?.read(key) }
+                // One under way may have been called off as it went off screen: then once it ends.
+                if reading.contains(key) {
+                    readAgain.insert(key)
+                } else {
+                    spawn(for: key) { [weak self] in await self?.read(key) }
+                }
             }
         } else {
             guard visiblePages.remove(page) != nil else { return }
@@ -265,7 +272,10 @@ final class PullRequestSessions: ObservableObject {
             return
         }
         reading.insert(key)
-        defer { reading.remove(key) }
+        defer {
+            reading.remove(key)
+            if readAgain.remove(key) != nil { spawn(for: key) { [weak self] in await self?.read(key) } }
+        }
         let subject = TaskSubject.pullRequest(PullRequestTasks.task(for: record), .fixComments)
         let found = await copilot.sessionChoices(for: subject)
         // Cancelled meanwhile, as when its details closed, what was read is left out: whatever still follows it reads again.
@@ -294,10 +304,10 @@ final class PullRequestSessions: ObservableObject {
     private func checkDelivery(_ key: PRKey, unlessKnown: Bool = false) async {
         guard isReadable(key), let state = followed[key], state.found != nil, let record = current(state, key),
               let session = sessions[key], session.canChoose, let choice = session.session, !choice.isUnavailable,
-              !checking.contains(choice.id), !unlessKnown || session.delivery == nil
+              !checking.contains(key), !unlessKnown || session.delivery == nil
         else { return }
-        checking.insert(choice.id)
-        defer { checking.remove(choice.id) }
+        checking.insert(key)
+        defer { checking.remove(key) }
         deliveryCheckedForTests?(choice.id)
         let value = await copilot.delivery(to: choice, for: PullRequestTasks.task(for: record), checksRepository: false)
         // Busy says itself as it changes (`update`).
@@ -346,7 +356,7 @@ final class PullRequestSessions: ObservableObject {
         if state.found == nil {
             if !reading.contains(key) { spawn(for: key) { [weak self] in await self?.read(key) } }
         } else if let session, session.canChoose, session.delivery == nil, let choice = session.session, !choice.isUnavailable,
-                  !checking.contains(choice.id) {
+                  !checking.contains(key) {
             spawn(for: key) { [weak self] in await self?.checkDelivery(key, unlessKnown: true) }
         }
     }

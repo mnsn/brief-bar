@@ -53,12 +53,17 @@ struct PullRequestSessionLine: View {
     }
 
     /// How a session stands (`Standing`): as the source that lists it tells it through Show Links; a task's as BriefBar
-    /// follows it; else whether the Copilot app runs a turn in it, and when it was last active. Busy, while a task of
-    /// BriefBar's works in its checkout for another session.
+    /// follows it, or, once it's done, as Copilot's list tells its session while it works or waits for you, as when you went
+    /// on with it in the Copilot app; else whether the Copilot app runs a turn in it, and when it was last active. Busy,
+    /// while a task of BriefBar's works in its checkout for another session.
     static func standing(of choice: SessionChoice, links: Links, entries: [CopilotTaskEntry]) -> Standing {
         if choice.isFolderBusy, !choice.isBusy { return Standing(text: "Busy", state: nil, date: nil) }
         if choice.run != nil, let entry = entries.first(where: { $0.id == choice.id }) {
             let phase = entry.status.phase
+            if !phase.isActive, links.isOn, let ref = ItemRef.session(choice.id), let live = links.describe(ref, by: .copilot),
+               let state = live.state, state == .needsYou || state == .running, let status = live.status, !status.isEmpty {
+                return Standing(text: status, state: state, date: live.date ?? choice.lastActive)
+            }
             return Standing(text: phase.title, state: phase.state, date: entry.status.since ?? entry.startedAt)
         }
         if links.isOn, let ref = ItemRef.session(choice.id), links.isDescribed(ref) {

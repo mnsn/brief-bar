@@ -149,6 +149,9 @@ struct CopilotComposerView: View {
     @LocalState private var choices: [SessionChoice] = []
     /// Still finding sessions, or which of them mention it.
     @LocalState private var isLooking = false
+    /// Whether to look for the sessions again once the look under way ends: you chose one in the details that it hadn't
+    /// found.
+    @LocalState private var looksAgain = false
     /// Where it goes: nil for a new session.
     @LocalState private var target: SessionChoice?
     /// You chose where it goes: what BriefBar finds later doesn't change it.
@@ -853,7 +856,11 @@ struct CopilotComposerView: View {
             update()
             return
         }
-        if !isLooking { findSessions() }
+        if isLooking {
+            looksAgain = true
+        } else {
+            findSessions()
+        }
     }
 
     /// The sessions it can go to: BriefBar's tasks and the Copilot app's sessions first, then which of the app's mention
@@ -871,6 +878,10 @@ struct CopilotComposerView: View {
                 update()
             }
             isLooking = false
+            if looksAgain {
+                looksAgain = false
+                findSessions()
+            }
         }
     }
 

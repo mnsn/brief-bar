@@ -451,6 +451,10 @@ final class CopilotTasksStore: ObservableObject {
                 } else {
                     settings.copilotRuns.append(run)
                 }
+                // On a pull request, in another session than the one you chose for its work: it takes that one's place.
+                if case .pullRequest(let pullRequest, _) = subject {
+                    settings.forgetChosenSession(for: PRKey(pullRequest.organization, pullRequest.id), supersededBy: run)
+                }
                 Log.app.info("Sent a task to Copilot\(continuing == nil ? "" : ", going on with its session", privacy: .public)")
                 if let handOff { handedOff(handOff, prompt) }
                 refresh()

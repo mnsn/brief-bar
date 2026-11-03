@@ -363,10 +363,13 @@ extension CopilotTasksStore {
     /// - Parameter checksRepository: false to leave out the repository, which doesn't change while the window is open,
     ///   once it passed.
     func cliProblem(for choice: SessionChoice, subject: TaskSubject, checksRepository: Bool = true) async -> String? {
-        // Nothing of Copilot's is read while Send Work to Copilot is off.
+        // Nothing of Copilot's is read while Send Work to Copilot is off, nor once what asked is cancelled, such as details
+        // that went off screen.
         guard canSend, isOn else { return "BriefBar can't send anything now." }
+        guard !Task.isCancelled else { return Self.stoppedChecking }
         let home = appHome
         let cliHome = CopilotCLI.home(environment: await environment())
+        guard !Task.isCancelled else { return Self.stoppedChecking }
         let id = choice.id
         let isAppsSession = choice.appSession != nil || choice.run?.isAppSession == true
         let worktree = choice.run?.worktree
@@ -380,10 +383,12 @@ extension CopilotTasksStore {
         guard found.known else { return "The Copilot CLI doesn't have this session, in \(UserPath.abbreviate(cliHome.path))." }
         guard let folder = found.folder else { return "BriefBar can't tell which folder it works in." }
         if isWorking(inFolder: folder) { return "Copilot is working in the same checkout for another task BriefBar sent." }
+        guard !Task.isCancelled else { return Self.stoppedChecking }
         if await anotherSessionRuns(inCheckoutOf: folder, besides: id) {
             return "Another Copilot session is working in the same checkout now, so Copilot won't work there on its own."
         }
         guard checksRepository else { return nil }
+        guard !Task.isCancelled else { return Self.stoppedChecking }
         let git = await git()
         do {
             switch subject {
@@ -396,13 +401,16 @@ extension CopilotTasksStore {
         }
     }
 
+    /// What `cliProblem` says once what asked is cancelled: it stopped before it could tell, which nothing shows.
+    static let stoppedChecking = "BriefBar stopped checking."
+
     /// Whether another of the Copilot app's sessions runs a turn now, by the app's own flag, in the same checkout as the
     /// folder (`checkoutKey`), as the app's database and the sessions' state say now, not as the window found them; and
     /// whether the window lists it as one of the app's sessions or as an earlier task that went on with one. Not `id`,
     /// when given: the session Copilot would go on with (`AppSessions.anotherRunsATurn`). Read off the main thread, and
     /// not at all while Send Work to Copilot is off.
     func anotherSessionRuns(inCheckoutOf folder: URL, besides id: String?) async -> Bool {
-        guard canSend, isOn else { return false }
+        guard canSend, isOn, !Task.isCancelled else { return false }
         let home = appHome
         return await Task.detached(priority: .userInitiated) {
             AppSessions.anotherRunsATurn(inCheckoutOf: folder, besides: id, home: home)
