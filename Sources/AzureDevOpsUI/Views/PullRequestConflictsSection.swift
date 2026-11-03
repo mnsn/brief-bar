@@ -17,7 +17,9 @@ struct PullRequestConflictsSection: View {
     /// The pull request as the list read it last: open, and its merge conflicts.
     let pullRequest: PullRequest
     /// The composer in place that's open in the details, one at a time in them, so Esc, Return and the keyboard's focus are
-    /// its own; and what you wrote in each.
+    /// its own; and what you wrote in each. What one sends is called off as it closes or another opens, and with the rest of
+    /// the details' as they go (`PullRequestCommentsSection`, always beside it); not as this section goes on its own, while
+    /// Azure DevOps works the merge out again, which would take back a prompt you sent, or one sent about a comment.
     @Binding var composing: CopilotComposing?
     let drafts: CopilotDrafts
 
@@ -72,9 +74,6 @@ struct PullRequestConflictsSection: View {
             }
             code.release(hold)
         }
-        // What a composer sends is called off as they go, with the details, or for another pull request, file or page; as it
-        // closes, or another opens, the details call it off.
-        .onDisappear { drafts.callOffAll() }
     }
 
     // MARK: Header

@@ -2256,7 +2256,8 @@ BriefBar knows, or else the Send to Copilot window opens, to choose one. **Edit 
 that window with the prompts, at the place you chose (`ComposerStart`). **Esc** closes a composer in place before the
 details it's in (`InlineComposerOpen`). What a composer sends is called off as it closes, with ✕ or **Esc**, as another
 opens, or as its page goes, with the details or for another pull request, file or page, though not as its card scrolls
-out of sight in a file's diff (`CopilotDrafts.sends`): a prompt no session took yet is taken back, as when the Send to
+out of sight in a file's diff, nor as Merge Conflicts goes while Azure DevOps works the merge out again
+(`CopilotDrafts.sends`): a prompt no session took yet is taken back, as when the Send to
 Copilot window closes, and nothing starts or opens after. VoiceOver hears what's sent, and what becomes of it, as it
 happens.
 
