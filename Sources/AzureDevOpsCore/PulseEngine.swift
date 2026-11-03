@@ -350,6 +350,10 @@ public actor PulseEngine {
     private var buildAttempts: [FailedBuild: (last: Date, failures: Int)] = [:]
     /// The pipelines after your merges, by pull request, while Done keeps it.
     private var merges: [PRKey: MergeFollow] = [:]
+    /// How many changes BriefBar made to pull requests' threads (`changed(_:by:)`), and the count when each pull request's
+    /// last was made: a read of its details that started before then may not have it, and isn't taken.
+    private var changes = 0
+    private var changedAt: [PRKey: Int] = [:]
     private var problem: PulseProblem?
     private var refreshedAt: Date?
     private var hasLoaded = false
@@ -438,6 +442,33 @@ public actor PulseEngine {
 
     public func currentSnapshot() -> PulseSnapshot {
         snapshot()
+    }
+
+    /// BriefBar changed one of a pull request's threads, with your reply or its status, and Azure DevOps answered with how it
+    /// is now: that shows at once, and the pull request's details are read again, now, for what else changed with it, such
+    /// as what's left before it can complete. A read under way that started before the change isn't taken: it's read again
+    /// at the next refresh.
+    public func changed(_ key: PRKey, by change: ThreadChange) async {
+        changes += 1
+        changedAt[key] = changes
+        if var kept = details[key] {
+            kept.apply(change)
+            details[key] = kept
+        }
+        publish()
+        await readAgain(key)
+    }
+
+    /// Reads a pull request's details again now, as after a change BriefBar may or may not have made, such as one Azure
+    /// DevOps didn't answer in time: two requests, unless it isn't listed, or its organization waits on a sign-in, or Azure
+    /// DevOps asked to slow down. One that isn't read now is read at the next refresh.
+    public func readAgain(_ key: PRKey) async {
+        entries[key] = nil
+        guard let pr = active[key]?.pullRequest, !waitingOnSignIn.contains(key.organization.lowercased()),
+              await client.gate.remainingWait() == nil
+        else { return }
+        _ = await fetchDetails([pr], configuration: configuration)
+        publish()
     }
 
     /// One refresh: the lists, then the details the planner picks.
@@ -766,11 +797,14 @@ public actor PulseEngine {
         merges = [:]
     }
 
-    /// Fetches details a few pull requests at a time. Returns the error if Azure DevOps asked to slow down.
+    /// Fetches details a few pull requests at a time. Returns the error if Azure DevOps asked to slow down. Those of a pull
+    /// request whose thread BriefBar changed since this started may not have the change: its threads stay as they are, with
+    /// the change, and it's read again at the next refresh.
     private func fetchDetails(_ pullRequests: [PullRequest], configuration: Configuration) async -> ADOError? {
         guard !pullRequests.isEmpty else { return nil }
         let client = self.client
         let fetchedAt = now()
+        let changesBefore = changes
         var queue = pullRequests[...]
         var throttled: ADOError?
         await withTaskGroup(of: (PullRequest, DetailsRead).self) { group in
@@ -779,14 +813,17 @@ public actor PulseEngine {
                 group.addTask { (pr, await Self.details(of: pr, client: client)) }
             }
             while let (pr, read) = await group.next() {
+                let isBeforeChange = (changedAt[pr.key] ?? 0) > changesBefore
                 switch (read.policies, read.threads) {
-                case (.success(let policies), .success(let threads)):
+                case (.success(let policies), .success(let threads)) where !isBeforeChange:
                     let fetched = PRDetails(fetchedAt: fetchedAt, pullRequest: pr, evaluations: policies, threads: threads)
                     details[pr.key] = fetched
                     entries[pr.key] = RefreshPlanner.Entry(
                         fetchedAt: fetchedAt, fingerprint: pr.fingerprint, isBusy: fetched.hasChecksInProgress,
                         isQuiet: isQuiet(pr, fetched, configuration: configuration, at: fetchedAt)
                     )
+                    // Read since BriefBar's last change to it, which it has.
+                    changedAt[pr.key] = nil
                 default:
                     // Keep the old details, and try again on the normal schedule rather than every refresh. But what
                     // the policies say now replaces what they said, even when the threads couldn't be read: a pull
@@ -796,7 +833,7 @@ public actor PulseEngine {
                         kept.checksKnown = policies != nil
                         details[pr.key] = kept
                     }
-                    entries[pr.key] = RefreshPlanner.Entry(
+                    entries[pr.key] = isBeforeChange ? nil : RefreshPlanner.Entry(
                         fetchedAt: fetchedAt, fingerprint: pr.fingerprint, isBusy: details[pr.key]?.hasChecksInProgress ?? false,
                         isQuiet: details[pr.key].map { isQuiet(pr, $0, configuration: configuration, at: fetchedAt) } ?? false
                     )
