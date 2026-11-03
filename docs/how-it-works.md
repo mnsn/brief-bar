@@ -1739,16 +1739,20 @@ from the latest default branch, and commits only what it changed for the work it
 prompt, puts it on the clipboard as it stands, with your changes, whatever the session and the way it
 goes. It sends nothing and hands nothing off (`CommentHandOff`), so it works in the demo. A prompt you
 changed stays as you wrote it when you choose another session, and **Reset** goes back to the one for
-the session you chose (`CopilotComposerView.rewritten`). There are two ways to send to a session that's
-there:
+the session you chose (`CopilotComposerView.rewritten`). There are three ways to send to a session that's
+there, side by side (`CopilotComposerView.Delivery`: in the Copilot app or with the CLI, to the session
+itself or to a fork of it):
 
-- **Open in Copilot**, the default for the app's sessions, puts the prompt on the clipboard and opens the
-  session with its `ghapp://sessions/<id>` link, for you to paste and send. The app has no way for
-  another program to send a session a message, and its link for a new session doesn't reach one that's
-  there. Copilot then works with the session's own model, mode and permissions: the CLI's `--deny-tool`
-  limits don't apply, only the prompt's words. It needs an app that opens `ghapp://` links, which only
-  the Copilot app does: without one, it isn't offered. The comments the prompt quotes are handed off
-  only once the session opened; if it didn't, the window stays open and says so.
+- **Send to Session**, the default for the app's sessions, sends the prompt to the session in the Copilot
+  app, as your own message, through BriefBar's extension in it (below), then shows the session. Copilot
+  works with the session's own model, mode and permissions: the CLI's `--deny-tool` limits don't apply,
+  only the prompt's words. A session that's working takes it once its turn is done.
+- **Send to a Fork** forks one of the app's sessions with the app's own fork, and sends the fork the
+  prompt. The fork is a session of the app's, with the session's history and the changes it hasn't
+  committed, in a worktree and branch of its own; the session itself gains no message, only the app's note
+  that it forked. It isn't there for a chat, nor for BriefBar's own sessions, which aren't the app's; nor
+  for Push & Reply, which ships what its last task changed only in that task's session and worktree, where
+  a fork would push a copy of them and leave them uncommitted (`CopilotComposerView.offersFork`).
 - **Run with the CLI**, the default for BriefBar's own tasks, starts the CLI as for a later task: the
   session's `--session-id`, without `--name`, in the folder it works in. That's an earlier task's
   worktree, or the `cwd` in the app's session's `session-state/<id>/workspace.yaml`, read without
@@ -1777,6 +1781,80 @@ the launcher refuses (`LaunchError.openInApp`), looking again after its git comm
 starts the CLI, and **Continue in Terminal** opens the session in the app instead. A lock whose program is gone, as after the app quits, doesn't count, nor does one whose
 process ID belongs to a program that started after the lock was written, since macOS reuses them. Nothing keeps the app
 from opening a session while the CLI works in it, so the composer asks you not to until Copilot is done.
+**Send to Session** forks nothing: BriefBar's extension sends the prompt through the runtime that has the
+session open.
+
+**Sending to a session, or a fork of it.** The Copilot app offers no way for another program to send one
+of its sessions a message: its `ghapp://sessions/<id>` link only shows a session, and its link for a new
+session doesn't reach one that's there. A program that runs inside the session can, as an extension of
+the Copilot SDK: each runs in its session's runtime, and `session.send` sends that session a message, as
+yours. So **Send Prompts to Copilot Sessions**, off until you turn it on in Settings › Agents
+(`CopilotSessionPrompts`), installs BriefBar's second Copilot plugin, `briefbar-sessions`, whose extension
+runs in each of the app's sessions that start afterwards, acts only on its own session, and only when
+BriefBar asks ([below](#its-extension-for-the-apps-sessions)). BriefBar asks through files in `~/Library/Application Support/BriefBar/Copilot/Outbox`, on
+this Mac only (`CopilotOutbox`):
+
+- **Requests.** As you send it, BriefBar writes `requests/<session>.<request>.json`: the session, and
+  `send` with the prompt, or `fork`, which expires two minutes on. The session's extension claims it by
+  renaming it, so it's handled once, then writes `results/<request>.json`: done, with the message's ID or
+  the fork's session ID, or why not. BriefBar reads the result and removes it. A request that no extension
+  claims in time, BriefBar withdraws by removing it; one that's claimed always gets a result, however long
+  it takes.
+- **Listening.** While it runs, the extension writes `listening/<session>.json`, with its process ID and
+  when it started. BriefBar counts it only while that process runs and started by then, give or take two
+  seconds, as it tells a task's process from one that got its ID later (`CopilotOutbox.isLive`).
+- **Only yours.** Each folder is a real one that only you can open (0700), and each file a regular one that
+  only you can read (0600), written whole to a name starting with `.`, then renamed into place. BriefBar
+  opens each without following a symbolic link below your home folder, uses no folder and reads no file
+  that isn't so, and makes the folders only as it writes a request. As it writes one, it removes its
+  requests and results that are more than an hour old; turning Azure DevOps off removes them all, since
+  they hold its prompts, even from a folder of yours that others could open by then, which goes too, and
+  unlinks a link where one of their folders should be, without following it (`CopilotOutbox.forget`); what
+  it can't remove, it logs. What the extensions say in `listening` stays, theirs while they run.
+
+Before you send it, the window says what will happen, and looks again every five seconds
+(`CopilotTasksStore.reach(of:)`): BriefBar's extension listens in the session, so the prompt goes at once;
+nothing has the session open, so opening it in the app loads it, with the extension, which takes the
+request waiting for it, about 11 seconds later; or the app, or a CLI, has had it open since before the
+option was on, so it needs restarting. While the option is off, BriefBar sends nothing, even to a session
+whose extension still runs, as one does until the session restarts. A task's session that BriefBar started
+with the CLI isn't the app's, which can't load it.
+
+Sending (`CopilotTasksStore.deliver`, `SessionSender`) takes one prompt at a time for each session, and
+waits without blocking a thread: up to 10 seconds for a listening extension to claim a request, 45 for a
+session to load and 30 more for its extension, a minute for a send's result and two for a fork's, which
+took about 22 seconds. To fork, the session's extension runs the app's own `fork_session`, whose text says
+the fork's session ID, beside the session's name, which you or an agent chose. BriefBar sends the fork the
+prompt only once the app's database records it as a fork of the session made since the request
+(`forked_from_session_id` and `created_at`, read-only), and the fork's own extension, which listens by the
+time the fork is made, takes it. Like the session's, the checkout the fork works in has to be free, unless
+it's the session's own, and stays as it is until the fork's prompt has gone or been taken back; when Copilot
+works there for another task BriefBar sent, BriefBar copies the prompt for the fork instead. When the
+extension couldn't name the fork it made, named a session the
+database doesn't record so, as a name that holds another session's ID could have it do, or didn't say how
+the fork went, the fork is the one the database records of the session since the request, if there's just
+one; with none or more, there's no telling, and BriefBar sends nothing. Then the session, or the fork, shows the way BriefBar opens one: in the
+app; or, while a CLI has it open, the terminal that CLI runs in comes to the front, since the app loading
+it too would fork its history. Closing the window stops it, and so does turning Send Work to Copilot, Send
+Prompts to Copilot Sessions or Azure DevOps off: a request that no extension took yet is taken back, and
+nothing more is written, copied or opened, even when BriefBar was still looking how the prompt would reach the
+session, or how to show it. One that an extension took goes on, and BriefBar still waits for how it went,
+so that the session takes no other prompt from it meanwhile.
+
+When BriefBar can't send it, it copies the prompt, and shows the session, for you to paste and send;
+when the window knows that beforehand, its button says **Open in Copilot** (`CopilotComposerView.sendTitle`).
+For a fork, it copies `/fork` and the prompt, and shows the session:
+pasted and sent there, the app's own `/fork` forks the session and sends the fork the prompt. A CLI's
+terminal comes to the front, but not necessarily the session's own window or tab in it, so the window stays
+open to say to find it there; and since the CLI's own `/fork` takes a name for the fork rather than a
+prompt, for a fork there BriefBar copies the prompt alone, to paste once you've forked the session. Once the
+session forked but the prompt didn't reach the fork, it copies the prompt and shows the fork. When the
+window didn't say beforehand that it would, it stays open to say why; and when the extension took the
+request but didn't say how it went, or said it failed, which it also says once it stops waiting for the
+session, it says the session may have it already. What the prompt quotes is handed off
+once it's sent, or once the session shows with the prompt copied; without the Copilot app, nothing shows,
+nothing's copied, and the window says why, along with why BriefBar didn't send it, and, when the session
+may have it already, to look first, rather than send it again with the CLI.
 
 Copilot loads a folder's own skills, MCP servers and hooks only once you trust it (`trustedFolders` in
 its `config.json`). The CLI gives a worktree of a repository you trust the same trust by itself, and no
@@ -1869,9 +1947,14 @@ printed. **Clear** forgets a task and deletes what it printed; **Remove Worktree
 worktree with git, and asks again before deleting changes that aren't committed; it isn't there for one
 of the app's sessions, whose folder is the app's, and doesn't delete one that Copilot works in, for a
 task BriefBar sent in another session, or in one of the app's sessions running a turn there, the task's
-own too once you went on with it in the app, as it looks right before git deletes it, after each answer
-(`CopilotTasksStore.worktreeInUse`); from that look until git is done, its checkout is busy, so no task of
-BriefBar's starts there meanwhile. What **Open in Copilot** hands over isn't kept. Copilot's
+own too once you went on with it in the app, or that a session BriefBar is sending a prompt to works in,
+as it looks right before git deletes it, after each answer (`CopilotTasksStore.worktreeInUse`); from that
+look until git is done, its checkout is busy, so no task of BriefBar's starts there meanwhile, as a
+session's is while BriefBar sends it a prompt, or copies one for it and shows it, and a fork's while
+BriefBar sends the fork one, until the prompt has gone, been taken back, or been copied with the session
+showing
+(`CopilotTasksStore.deliveringFolders`). A prompt sent to a session stays on disk only in its request, until the
+session's extension is done with it or BriefBar withdraws it ([above](#send-work-to-copilot)). Copilot's
 branches, pull requests and sessions are yours, and stay.
 
 ### Notifications
@@ -1927,7 +2010,7 @@ The Copilot app already records everything needed, in two places under `~/.copil
 
 | Source | Written by | Provides |
 |---|---|---|
-| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session started which and which coordinates which, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
+| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session started which and which coordinates which, which one each fork was forked from, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
 | `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors; and, only as [Summarize with Copilot](#what-a-summary-reads) writes a summary, what was asked in it and what Copilot answered |
 | `session-state/<id>/checkpoints/` | the Copilot agent | only with [Show Links](#links), for [Where It Stands](#where-it-stands): the notes Copilot writes when it compacts a long session, `index.md` with each one's title, and the latest one's overview, what's done and what's next |
 
@@ -2089,6 +2172,11 @@ log format, and the `ghapp://` link. An app update could change them.
   looked at on every read that fails) is no problem: the Copilot CLI keeps none, so the list is its
   session folders, and nothing is shown, in the panel, the widget, the command line or to agents
   (`CopilotApp.problem(of:)`). With the app installed, it's shown as before.
+- Sending a prompt to a session ([above](#send-work-to-copilot)) relies on the Copilot SDK's extensions, which
+  are supported, on how the app runs them in its sessions, on its `fork_session` tool, which the SDK's
+  `tools.execute` runs and which it marks as experimental, and on `forked_from_session_id`. If any of
+  them changes, BriefBar copies the prompt for you to paste instead, as it does whenever the extension
+  doesn't answer, and does no harm.
 
 ## GitHub
 

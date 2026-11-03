@@ -26,7 +26,9 @@ final class AppSettings: ObservableObject {
 
     typealias Key = SettingsKey
 
-    private let defaults: UserDefaults
+    /// The app's preferences, or the demo's: for what other parts of BriefBar keep there, such as whether Send Prompts to
+    /// Copilot Sessions is on (`CopilotTasksStore.sessionPromptsAreOn`).
+    let defaults: UserDefaults
 
     @Published var refreshSeconds: Int {
         didSet { defaults.set(refreshSeconds, forKey: Key.refreshSeconds) }
