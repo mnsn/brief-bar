@@ -24,6 +24,8 @@ struct PullRequestDetailsContent: View {
 
     /// The thread, the build or the check it just went to, pointed out for a moment.
     @LocalState private var highlighted: PullRequestDetailsStore.Anchor?
+    /// `--render` draws it without waiting for animations, which it doesn't run.
+    @Environment(\.isRendering) private var isRendering
 
     /// Whether `details` shows this pull request yet: a page's own store shows it once the page appears.
     private var isShown: Bool { details.selected?.key == item.key }
@@ -45,6 +47,7 @@ struct PullRequestDetailsContent: View {
         let ref = item.key.linkRef
         VStack(alignment: .leading, spacing: 20) {
             PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact)
+                .id(PullRequestDetailsStore.Anchor.top)
             PullRequestSessionLine(item: item)
             // Its summary, of it and what's linked to it, under what it is.
             PageSummary(ref: ref)
@@ -53,7 +56,9 @@ struct PullRequestDetailsContent: View {
                     details.go(to: .section(section))
                 }
             }
-            PullRequestCommentsSection(item: item, panel: panel, me: record?.me, place: details.place, highlighted: highlighted)
+            PullRequestCommentsSection(
+                item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place, highlighted: highlighted
+            )
                 .id(PullRequestDetailsStore.Anchor.section(.comments))
             PullRequestChecksSection(panel: panel, highlighted: highlighted)
                 .id(PullRequestDetailsStore.Anchor.section(.checks))
@@ -91,9 +96,10 @@ struct PullRequestDetailsContent: View {
             // Once what's there shows, such as a resolved thread unfolded for it.
             try? await Task.sleep(for: .milliseconds(60))
             details.reached(place)
-            withAnimation(.easeOut(duration: 0.25)) { scroll.scrollTo(anchor, anchor: .top) }
+            withAnimation(isRendering ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(anchor, anchor: .top) }
             if case .section = anchor { return }
-            withAnimation(.easeOut(duration: 0.2)) { highlighted = anchor }
+            if anchor == .top { return }
+            withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { highlighted = anchor }
             try? await Task.sleep(for: .seconds(1.6))
             if highlighted == anchor {
                 withAnimation(.easeOut(duration: 0.4)) { highlighted = nil }

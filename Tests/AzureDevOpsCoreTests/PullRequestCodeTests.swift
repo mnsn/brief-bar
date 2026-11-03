@@ -1070,13 +1070,19 @@ private actor LaterCode: CodeSource {
             let code = PullRequestCode.demo(record.pullRequest)
             for thread in record.details?.threads ?? [] where thread.filePath != nil {
                 let excerpt = try await code.excerpt(of: thread, in: record.pullRequest).get()
-                #expect(excerpt.lines.filter(\.isCommented).map(\.newNumber) == [thread.line])
-                #expect(excerpt.changedSince == false)
+                // Its lines, on the side it's on: before the change for one only on lines there.
+                let isLeft = thread.location.map { $0.right == nil && $0.left != nil } ?? false
+                let lines = try #require(thread.location.flatMap { $0.right ?? $0.left }?.lines ?? thread.line.map { $0...$0 })
+                #expect(excerpt.lines.filter(\.isCommented).map { isLeft ? $0.oldNumber : $0.newNumber } == lines.map(Optional.some))
+                // Made on a push before the latest, it's on code that changed since.
+                #expect(excerpt.changedSince == (excerpt.iteration < excerpt.latestIteration))
                 shown[thread.id] = excerpt
             }
         }
-        // 4102's backoff, attempts and retry policy, 4088's delivery estimate, and 4091's rounding and coupons.
-        #expect(Set(shown.keys) == [11, 13, 14, 43, 63, 67])
+        // 4102's backoff, attempts, retry policy, old check and tests, 4088's delivery estimate, and 4091's rounding and
+        // coupons.
+        #expect(Set(shown.keys) == [11, 13, 14, 16, 17, 43, 63, 67])
+        #expect(shown[16]?.changedSince == true)
         func commented(_ id: Int) -> String? {
             shown[id]?.lines.first { $0.isCommented }?.text
         }

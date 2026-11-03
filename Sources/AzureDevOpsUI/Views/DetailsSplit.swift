@@ -80,6 +80,10 @@ struct DetailsSplit<Content: View, Details: View>: View {
                 if showsDetails {
                     if isBeside {
                         panel
+                            // What in them shows more once they're wider, such as long lines of code, can make them so.
+                            .environment(\.detailsWidening, DetailsWidening(width: panelWidth, widest: layout.panelWidths.upperBound) {
+                                resize(to: layout.panelWidth(nearest: $0))
+                            })
                             .frame(width: panelWidth)
                             .overlay(alignment: .leading) {
                                 if layout.panelWidths.upperBound > layout.panelWidths.lowerBound {
@@ -172,5 +176,27 @@ private struct DetailsEdge: View {
         if panelWidth < panelWidths.upperBound { directions.insert(.leading) }
         if panelWidth > panelWidths.lowerBound { directions.insert(.trailing) }
         return directions
+    }
+}
+
+/// The details beside a list or board, for what in them shows more once they're wider: how wide they are, how wide they
+/// can be on this page, and making them wider, as dragging their edge does. Nil while they cover the list or board.
+struct DetailsWidening {
+    var width: CGFloat
+    var widest: CGFloat
+    var widen: @MainActor (CGFloat) -> Void
+
+    /// Whether they can be wider.
+    var canWiden: Bool { width < widest - 1 }
+}
+
+private struct DetailsWideningKey: EnvironmentKey {
+    static var defaultValue: DetailsWidening? { nil }
+}
+
+extension EnvironmentValues {
+    var detailsWidening: DetailsWidening? {
+        get { self[DetailsWideningKey.self] }
+        set { self[DetailsWideningKey.self] = newValue }
     }
 }

@@ -20,6 +20,8 @@ final class PullRequestDetailsStore: ObservableObject {
         /// A check without a run, such as a status another service posts, by its name: the first of that name.
         case check(String)
         case section(PullRequestPanel.Section)
+        /// Their top, where the pull request's title is.
+        case top
 
         /// Where a build or a check is: its run, or else its name.
         static func of(_ line: PullRequestPanel.CheckLine) -> Place {
@@ -32,6 +34,7 @@ final class PullRequestDetailsStore: ObservableObject {
             switch self {
             case .thread(let id): .thread(id)
             case .section(let section): .section(section)
+            case .top: .top
             case .run, .check: checks.first { Place.of($0) == self }.map { .check($0.id) }
             }
         }
@@ -42,6 +45,7 @@ final class PullRequestDetailsStore: ObservableObject {
             switch self {
             case .thread(let id): panel.threads.contains(id) ? .thread(id) : .section(.comments)
             case .section(let section): .section(section)
+            case .top: .top
             case .run, .check: anchor(in: panel.checks) ?? .section(.checks)
             }
         }
@@ -63,6 +67,11 @@ final class PullRequestDetailsStore: ObservableObject {
             guard item.group == .failing else { return nil }
             return PullRequestPanel(item, record: record).checks.first { $0.run.state == .failing }.map(Place.of)
         }
+
+        /// The thread it is, if it's one.
+        var thread: Int? {
+            if case .thread(let id) = self { id } else { nil }
+        }
     }
 
     /// When you last looked at a pull request, and up to when what waited on you there doesn't anymore, since you removed
@@ -78,6 +87,7 @@ final class PullRequestDetailsStore: ObservableObject {
         case section(PullRequestPanel.Section)
         case thread(Int)
         case check(String)
+        case top
     }
 
     /// The pull request that shows, as the list has it now, or had it last once it's not listed; nil while none does.
@@ -92,6 +102,9 @@ final class PullRequestDetailsStore: ObservableObject {
     @Published private(set) var pages: [ItemRef] = []
     /// Where its details take you once they show, until they have.
     @Published private(set) var place: Place?
+    /// The thread they were taken to, which their trail names after the pull request, "!4102 › PaymentsClient.cs:41",
+    /// until they go somewhere else: another place in them, their top, a page over them, or another pull request.
+    @Published private(set) var trailThread: Int?
 
     /// Sees a pull request, as opening it from the list does: the source's.
     var markSeen: (PRSnapshot) -> Void = { _ in }
@@ -149,6 +162,7 @@ final class PullRequestDetailsStore: ObservableObject {
         record = keeping(readRecord(item.key))
         isListed = listed.contains { $0.key == item.key }
         self.place = place
+        trailThread = place?.thread
         markSeen(item)
     }
 
@@ -223,6 +237,12 @@ final class PullRequestDetailsStore: ObservableObject {
         guard selected != nil else { return }
         pages = []
         self.place = place
+        trailThread = place.thread
+    }
+
+    /// Back to the top of the details, where the trail starts: the thread it named leaves it.
+    func goToTop() {
+        go(to: .top)
     }
 
     /// The details went where they were asked to.
@@ -234,6 +254,8 @@ final class PullRequestDetailsStore: ObservableObject {
     /// already, under the one on top, by going back to it; the pull request itself, by going back to its details.
     func open(page ref: ItemRef) {
         guard let selected else { return }
+        // A page opens from the details, not from the thread they were taken to.
+        trailThread = nil
         if ref == selected.key.linkRef {
             pages = []
         } else if let index = pages.firstIndex(of: ref) {
@@ -274,6 +296,7 @@ final class PullRequestDetailsStore: ObservableObject {
         isListed = false
         pages = []
         place = nil
+        trailThread = nil
     }
 
     /// The list refreshed: the details follow the pull request as it is now. One the list doesn't have anymore, such as

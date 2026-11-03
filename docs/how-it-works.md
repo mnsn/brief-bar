@@ -1150,6 +1150,10 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `_apis/git/pullrequests?searchCriteria.creatorId=…&status=completed&minTime=…` | every refresh | yours completed in the Done window |
 | `{project}/_apis/policy/evaluations?artifactId=vstfs:///CodeReview/CodeReviewId/{project}/{id}` | per pull request | builds, status checks, reviewer and other policies |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads` | per pull request | comment threads, and activity: pushes, votes, reviewer changes |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/iterations?includeCommits=false` | only in a pull request's details, as the first thread on code comes on screen; again after a push or a move to another target branch, and once for a thread on an update it hadn't read | its updates, and the commits each one's diff compares |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/iterations/{n}/changes?$top=2000&$skip=…&$compareTo=…` | with them: once for each diff a thread on screen was made on, and once for the diff of that update with the latest; up to five pages of 2,000 files | the files it changed, with their object IDs before and after |
+| `{project}/_apis/git/repositories/{repo}/blobs/{objectId}?$format=octetstream` | with them: once for each version of a file that a thread on screen is on, up to 1 MB of it; four of these requests at a time | the file's text |
+| `{project}/_apis/git/repositories/{repo}/items?path=…&versionDescriptor.version={commit}&versionDescriptor.versionType=commit` | instead, for a file that the diff didn't change, or without its object ID | the file's text at that commit |
 | `{project}/_apis/build/builds/{id}/timeline` | once for each failed build of your pull requests, and again if it's retried and fails again: four a refresh; one that can't be read is tried again on the next refresh, then less and less often | where the build failed, and the first error there |
 | `{project}/_apis/build/builds?repositoryId=…&branchName=…&minTime=…` | after you merge a pull request (below): every refresh for half an hour, while one of its runs hasn't finished, and for a quarter of an hour after the last one did; five merges a refresh, the newest first | its target branch's runs, among them those on its merge commit |
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
@@ -1308,36 +1312,84 @@ leaves that out of **Also Linked**, and the header's way there carries on, `Bug 
 details' menu above it, for the pull request the page shows. A pull request your lists don't have, such as a teammate's,
 keeps the page Show Links tells (`ItemPageView`).
 
-They show what the list read already, so nothing more is read for them, and they follow the list as it
-refreshes (`PullRequestPanel` in `Sources/AzureDevOpsCore` puts it in order): what it is and where, its title,
-its row's sentence, its opening words in its state's color, and since when; its branch and who wrote it; ✨
-**Summarize** and its summary, as a pull request's page has them; then **What's Left**, its `PRReadiness` items,
-what's left first, each saying **Your turn** when it waits on you or failed, and those about its comments, its
-builds and checks or its reviewers taking you there; its comment threads, those with a comment that waits on
-you first (as its row's events say, or said as the details showed it), then the other open ones, the latest first, the resolved ones folded
-behind **Show Resolved**, each with its file and line, its status unless it's active, and what each person
-said, in plain text; its builds and status checks, as its page's pipelines say them (`PullRequestStory.run`),
-what failed first, the required one first, with where a build failed, its first error and its run, or, once
-it merged, the pipelines that ran after; who reviews it, the ones it requires first, with how each voted; and
-**Also Linked**, as on a page, whose work items, sessions and pull requests open as pages over the details,
-**‹**, **⌘[** or Esc going back, and the header saying the way there, `‹ !4102 › 5160`. A pull request's
-description isn't there: BriefBar reads it only for a summary. **↗** opens the pull request where its row
-does: at the comment that needs you or that you answered, or a merge's run; ↗ on a thread or a build opens
+They show what the list read already, so nothing more is read for them but the code that comment threads are on
+([below](#the-code-comments-are-on)), and they follow the list as it refreshes (`PullRequestPanel` in
+`Sources/AzureDevOpsCore` puts it in order): what it is and where, its title, its row's sentence, its opening
+words in its state's color, and since when; its branch and who wrote it; ✨ **Summarize** and its summary, as a
+pull request's page has them; then **What's Left**, its `PRReadiness` items, what's left first, each saying **Your
+turn** when it waits on you or failed, and those about its comments, its builds and checks or its reviewers taking
+you there; its comment threads, by file, as below; its builds and status checks, as its page's pipelines say them
+(`PullRequestStory.run`), what failed first, the required one first, with where a build failed, its first error
+and its run, or, once it merged, the pipelines that ran after; who reviews it, the ones it requires first, with
+how each voted; and **Also Linked**, as on a page, whose work items, sessions and pull requests open as pages over
+the details, **‹**, **⌘[** or Esc going back, and the header saying the way there, `‹ !4102 › 5160`. A pull
+request's description isn't there: BriefBar reads it only for a summary. **↗** opens the pull request where its
+row does: at the comment that needs you or that you answered, or a merge's run; ↗ on a thread or a build opens
 that, and **⋯** has the row's menu, its Copilot actions among them while Send Work to Copilot is on.
 
-Something else can ask the details to show a pull request at a place (`PullRequestDetailsStore.Place`): a
-thread, which unfolds the resolved ones when it's one of them, a build by its run, a check by its name (the
-first of that name), or a part, such as its comments, which What's Left does. They scroll there once it shows,
-and point a thread, a build or a check out for a moment; for a thread they don't have, they scroll to their
-comments, and for a run or a check they don't have, such as a run that isn't the one a policy queued last, to
-their builds and checks (`Place.anchor(in:)`).
-`reveal(_:at:)` shows them on the window's page and opens it there, unless no window has that page. A pull
-request the list doesn't have anymore, such as a review that merged, stays as it was last, with what the list
-had read of it, until you close it: it says so, and its menu loses the row's actions. The list reads a pull
-request's threads and policies only while it's open, so one of yours that completes while its details show,
-which stays under Done, keeps the threads, builds and checks they read last; for one that had closed before,
-they say BriefBar reads those only while a pull request is open. Someone else signing in to the Azure CLI
-closes it.
+Something else can ask the details to show a pull request at a place (`PullRequestDetailsStore.Place`): a thread,
+which unfolds the resolved ones when it's one of them, a build by its run, a check by its name (the first of that
+name), or a part, such as its comments, which What's Left does. They scroll there once it shows, and point a
+thread, a build or a check out for a moment; for a thread they don't have, they scroll to their comments, and for
+a run or a check they don't have, such as a run that isn't the one a policy queued last, to their builds and
+checks (`Place.anchor(in:)`). Taken to a thread, the header names it after the pull request, `!4102 ›
+PaymentsClient.cs:88` (`PullRequestDetailsStore.trailThread`), until they go elsewhere in them or over them; the
+pull request's number there takes them back to their top (`Place.top`). `reveal(_:at:)` shows them on the
+window's page and opens it there, unless no window has that page. A pull request the list doesn't have anymore,
+such as a review that merged, stays as it was last, with what the list had read of it, until you close it: it
+says so, and its menu loses the row's actions. The list reads a pull request's threads and policies only while
+it's open, so one of yours that completes while its details show, which stays under Done, keeps the threads,
+builds and checks they read last; for one that had closed before, they say BriefBar reads those only while a pull
+request is open. Someone else signing in to the Azure CLI closes it.
+
+#### Its comment threads
+
+Its threads go by file (`PullRequestPanel.Threads.openByFile`, `resolvedByFile`): those on the pull request itself
+first, then each file's, as Azure DevOps' Files page lists them, folder by folder, each folder's folders before
+its files, by name (`PullRequestPanel.listsFirst`). Files are told apart as Git tells them, by their paths' bytes
+(`GitPath`): two whose names look the same, as "é" written in one character and in two, are two files, and two
+names alike but for case, or for how their letters are written, go by their bytes. In each, those with a comment
+that waits on you come first (as its row's events say, or said as the details showed it), then the other open
+ones, from the top of the file down; the resolved ones are folded behind **Show Resolved**, by file the same way.
+A thread says the lines it's on, its status as Azure DevOps names it, **Waits on you** when it does, and otherwise
+who it waits on (`PullRequestPanel.Thread.waitingOn`): whom its latest comment asks, the first person, or team, it
+mentions that BriefBar can name, else the pull request's author when someone else spoke last, else whoever else
+spoke last; nobody once it's resolved, when only you spoke, when the latest comment asks only people BriefBar
+can't name, and when it asks you, though it doesn't wait on you anymore, as when you removed it from Needs You:
+then it's your turn, not someone else's. Each comment shows in full, its Markdown drawn by BriefBar
+(`ReviewComment.markdown`, `RichText`, `RichTextView`), mentions as names; a thread of more than three shows its
+first and latest until you ask for the rest.
+
+#### The code comments are on
+
+A thread on lines of a file shows the code it's on, as its reviewer saw it: in the diff it was made on
+(`ThreadCode.span`), before Azure DevOps followed it to later ones, with three lines before and after, the lines
+it's on marked, and the removed and added lines among them (`ThreadExcerpt`). `PullRequestCode` reads it, one
+reader for the pull request whose details show, with GETs, four at a time: the pull request's updates, the files
+the diff it was made on changed, and its file before and after that change, by their object IDs, up to 1 MB each,
+each read once for every thread on it, which it compares a line at a time (`LineDiff`); and whether the file
+changed since, from the diff of that update with the latest. `PullRequestCodeStore` asks for a thread's code only
+once it comes on screen, as the details scroll, after a moment, so a thread scrolled past isn't read; it calls the
+read off when the thread leaves the screen first. What's read is kept in memory only, while the details show that
+pull request, and forgotten when they show another one, or none. A thread is read again only on screen, after a
+push or a move to another target branch, or when Azure DevOps followed it to other lines; until that's read, it
+shows the code it showed. A read that failed in a way reading again may fix, offline, throttled or signed out, is
+tried again when the thread comes on screen half a minute later, or at once with **↻**, and so is code read
+without whether it changed since, which couldn't be read: it shows meanwhile, and since what was read of it is
+kept, reading it again is one request at most; one that can't be read, such as a file that isn't text, longer than
+1 MB, or that Azure DevOps doesn't have, says why in a few words (`ThreadCode.sentence`), with ↗ to the thread.
+
+`CodeView` draws code, for the threads and, later, whole files: AppKit's text system, so each row is as tall as
+the others, its text selectable across rows and copied without the numbers, and only the rows on screen drawn. Its
+gutter numbers each line after the change, and before it too when lines were removed or the thread is on the code
+before the change; added lines are green with +, removed ones red with −, the lines a thread is on in the accent
+color with a bar, and lines left out in a run of removed or added ones are a row that says how many
+(`ThreadCode.rows`). It drops the indentation every line shares (`ThreadCode.outdented`), follows the text size on
+windows' pages, and scrolls sideways a gesture that starts sideways, leaving up and down to the details. While the
+details are beside the list, **⟷** makes them wide enough for a thread's longest line (`DetailsWidening`). When
+the file changed after the comment, it says so, or that it may have, when that couldn't be read though the pull
+request changed since, with ↗ to the pull request's Files page at that file, from the update the comment was made
+on to the latest (`PRSnapshot.filePageURL`).
 
 ### What counts as new
 
