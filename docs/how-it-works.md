@@ -1483,24 +1483,26 @@ new line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘R
 (`ThreadChanges.keep`), in memory only, for each thread, until it's sent: closing the field, or the details, keeps it,
 and **Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure
 CLI forgets it, and calls off the changes on their way (`ThreadChanges.forgetAll`): one that hasn't gone yet never does,
-and nothing says it failed. One that has, which Azure DevOps may make all the same, settles: what Azure DevOps answers
-shows, as any change's does, but nothing more happens, such as the status after a reply, though the setting is on again;
-and one that may have been made without saying so, as one it didn't answer in time, has its pull request read again once
-it settled, not as the setting goes off, while Azure DevOps may still be making it. As the setting goes off, a change
-under way keeps its thread until it settles: on again, the thread shows it on its way and takes no other change
-(`ThreadChanges.settling`), and then a reply that may have gone is checked before the same goes again, as below, though
-what you wrote went with the setting. Someone else signing in doesn't wait for it, nor check theirs against it: it was
-the last one's. A reply goes as you wrote it, but for the lines that say nothing before it and the spaces after it
-(`ThreadChanges.posted`): its first line's indent stays, which can make it code. After a reply that may have gone, as
-one Azure DevOps didn't answer in time, the thread is read again before the same reply is sent again, by a read that
-starts then, never one under way before, and nothing goes until it was (`ADOWriteProblem.unconfirmed`): a comment of
-yours that came since it was sent, and says the same as it would go, its first line's indent included, as Azure DevOps
-keeps it, its mentions as their IDs, or as the details show it, is it, whatever came after it, so it isn't sent twice
-(`ThreadChanges.Attempt`, which keeps a fingerprint of what it said, not what it said, `ThreadChanges.digest`, for each
-reply on the thread that may have gone, until its own is checked); a reply that says something else goes without that
-read. **Resolve**, or **Reactivate** on a resolved thread, sets its status at once, without asking, since the same menu
-sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps' own menu offers, Active, Pending,
-Resolved, Won't Fix and Closed, and By Design only for a thread that has it (`ThreadStatus.choices`).
+and nothing says it failed. One that has, as the setting goes off, which Azure DevOps may make all the same, settles:
+what Azure DevOps answers shows, as any change's does, but nothing more happens, such as the status after a reply,
+though the setting is on again; and one that may have been made without saying so, as one it didn't answer in time, has
+its pull request read again once it settled, not as the setting goes off, while Azure DevOps may still be making it. As
+the setting goes off, a change under way keeps its thread until it settles: on again, the thread shows it on its way and
+takes no other change (`ThreadChanges.settling`), and then a reply that may have gone is checked before the same goes
+again, as below, though what you wrote went with the setting. Someone else signing in, or Azure DevOps stopping, doesn't
+wait for it: it was the last one's, and does nothing as it settles, whatever Azure DevOps answers
+(`ThreadChanges.lifetime`), nor is theirs checked against it. A reply goes as you wrote it, but for the lines that say
+nothing before it and the spaces after it (`ThreadChanges.posted`): its first line's indent stays, which can make it
+code. After a reply that may have gone, as one Azure DevOps didn't answer in time, the thread is read again before the
+same reply is sent again, by a read that starts then, never one under way before, and nothing goes until it was
+(`ADOWriteProblem.unconfirmed`): a comment of yours that came since it was sent, and says the same as it would go, its
+first line's indent included, as Azure DevOps keeps it, its mentions as their IDs, or as the details show it, is it,
+whatever came after it, so it isn't sent twice (`ThreadChanges.Attempt`, which keeps a fingerprint of what it said, not
+what it said, `ThreadChanges.digest`, for each reply on the thread that may have gone, until its own is checked); a
+reply that says something else goes without that read. **Resolve**, or **Reactivate** on a resolved thread, sets its
+status at once, without asking, since the same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses
+Azure DevOps' own menu offers, Active, Pending, Resolved, Won't Fix and Closed, and By Design only for a thread that has
+it (`ThreadStatus.choices`).
 
 What Azure DevOps answers shows at once (`ThreadChange`, which `PRDetails.apply` applies once, however often): the list
 applies it (`PRStore.changed`), so the details, Needs You, What's Left, the brief and the counts follow it, then the
@@ -1604,12 +1606,16 @@ before it doesn't cut short, and only by one that started since the change (`Tag
 off that Azure DevOps says isn't there is, when the tags read again don't have it, as you wanted. Each change goes in a
 task kept by pull request, which turning the setting off, Azure DevOps stopping or someone else signing in calls off
 (`TagChanges.forgetAll`): one that hasn't gone, as while it waits for a token, never does, and says nothing. One that
-has, which Azure DevOps may make all the same, settles: the tags show what Azure DevOps answered, and are read again
-after it, as after any change, but nothing more happens, though the setting is on again; and one that may have been made
-without saying so, or a tag taken off that Azure DevOps says isn't there, has the tags read again once it settled, not
-as the setting goes off, while Azure DevOps may still be making it. It goes only as whom the list was read as when you
-clicked (`ADOClient.send(_:as:)`): when someone else signed in to the Azure CLI since, nothing goes, and the tags say
-so, with **Sign In…**.
+has, as the setting goes off, which Azure DevOps may make all the same, settles: the tags show what Azure DevOps
+answered, and are read again after it, as after any change, but nothing more happens, though the setting is on again;
+and one that may have been made without saying so, or a tag taken off that Azure DevOps says isn't there, has the tags
+read again once it settled, not as the setting goes off, while Azure DevOps may still be making it. As the setting goes
+off, a change under way keeps the pull request's tags until it settles: on again, they show it on its way and take no
+other change (`TagChanges.settling`), so that its answer, coming late, can't undo a later one. Someone else signing in,
+or Azure DevOps stopping, doesn't wait for it: it was the last one's, and does nothing as it settles, whatever Azure
+DevOps answers (`TagChanges.lifetime`). It goes only as whom the list was read as when you clicked
+(`ADOClient.send(_:as:)`): when someone else signed in to the Azure CLI since, nothing goes, and the tags say so, with
+**Sign In…**.
 
 As you type, the field suggests (`TagChoices`) the tags you added in the pull request's project, the latest first, then
 those on the pull requests BriefBar read there, the most used first, then by name, but the pull request's own, six at

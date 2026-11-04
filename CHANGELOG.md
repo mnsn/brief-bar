@@ -9,8 +9,8 @@
 - **"Slow down" says until when.** When Azure DevOps asks BriefBar to slow down, a reply, a status or a tag it held back
   says until when, rather than "try again in a minute".
 - **Nothing goes twice when you turn Make Changes off.** Turning off **Make Changes in Azure DevOps** stops a reply, a
-  status or a tag that hasn't gone yet. One that has finishes and shows, and, turned back on, its thread waits for it. A
-  reply that may have gone is checked before it's sent again, though you sent another that may have gone since.
+  status or a tag that hasn't gone yet. One that has finishes and shows, and, turned back on, its thread or tags wait for
+  it. A reply that may have gone is checked before it's sent again, though you sent another that may have gone since.
 - **A build stops being read when you're done with it.** A build you opened in a pull request's details stops being read
   as you close them or show another pull request, or as someone else signs in to the Azure CLI.
 - **Azure DevOps' description says when it reads again.** It now says that a pull request's updates and Files are read
