@@ -44,6 +44,9 @@ final class CopilotQuestions: ObservableObject {
         /// For a build, when the attempt of its run it's about finished, as its check said: rerunning its failed jobs makes
         /// another attempt, under the same ID, which isn't what it answered either.
         var attempt: Date?
+        /// For conflicts, the pull request's branches as it was asked about them: after a push or a retarget they conflict
+        /// otherwise, so what it answered isn't about them as they are.
+        var head: PullRequestFilesStore.Head?
 
         var isAsking: Bool { state == .asking }
 
@@ -100,9 +103,10 @@ final class CopilotQuestions: ObservableObject {
     ///   - earlier: what the session answered before, which it follows up on.
     ///   - run: for a build, the run it's about.
     ///   - attempt: for a build, when the attempt of its run it's about finished, as its check said.
+    ///   - head: for conflicts, the pull request's branches as the question is written for them.
     func ask(
         _ prompt: String, asked: String?, earlier: CopilotAnswer? = nil, session: String, about part: PullRequestPart, run: Int? = nil,
-        attempt: Date? = nil, of key: PRKey
+        attempt: Date? = nil, head: PullRequestFilesStore.Head? = nil, of key: PRKey
     ) {
         guard canAsk else { return }
         let id = Key(pullRequest: key, part: part, run: run)
@@ -110,7 +114,7 @@ final class CopilotQuestions: ObservableObject {
         let words = asked?.trimmingCharacters(in: .whitespacesAndNewlines)
         let question = Question(
             session: session, asked: words?.isEmpty == false ? words : nil, askedAt: Date(), state: .asking, earlier: earlier, run: run,
-            attempt: attempt
+            attempt: attempt, head: head
         )
         questions[id] = question
         Log.app.info("Asked a Copilot session about a pull request")
@@ -160,11 +164,18 @@ final class CopilotQuestions: ObservableObject {
     /// Dismisses what was asked about pull requests' builds that's no longer about one of their runs as the list read them
     /// last: a run a newer one replaced, as after a push, or another attempt of one, as when its failed jobs ran again under
     /// the same ID. What it answered isn't about the build as it is, and Ask More and Fix would build on it; what's still
-    /// being asked stops. A pull request whose builds weren't read, or whose policies couldn't be, keeps them.
+    /// being asked stops. A pull request whose builds weren't read, or whose policies couldn't be, keeps them. So goes what
+    /// was asked about a pull request's conflicts once someone pushed to it or retargeted it since: they conflict otherwise
+    /// now, and Ask More and Resolve would build on it.
     /// - Parameter records: the pull requests as the list read them last.
     func dismissStale(of records: [PRRecord]) {
         let listed = Dictionary(records.map { ($0.pullRequest.key, $0) }, uniquingKeysWith: { first, _ in first })
         for (id, question) in questions {
+            if case .conflicts = id.part {
+                guard let asked = question.head, let record = listed[id.pullRequest] else { continue }
+                if PullRequestFilesStore.Head(record.pullRequest) != asked { stop(about: id.part, run: id.run, of: id.pullRequest) }
+                continue
+            }
             guard case .build = id.part, let details = listed[id.pullRequest]?.details, details.checksKnown else { continue }
             let checks = details.checks
             let current = checks.contains { check in

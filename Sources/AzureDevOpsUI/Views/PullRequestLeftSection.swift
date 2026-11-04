@@ -6,7 +6,7 @@ import SwiftUI
 
 /// What's left before you can complete one of your pull requests, in its details, as its row's line says it: the most
 /// pressing first, then what's done. What's yours to do says so, or that Copilot's on it, and an item with a part of its
-/// own below, its comments, its builds and checks or its reviewers, takes you there.
+/// own below, its comments, its merge conflicts, its builds and checks or its reviewers, takes you there.
 struct PullRequestLeftSection: View {
     let readiness: PRReadiness
     /// What the task Copilot is at work on for it does, while Send Work to Copilot is on: what it takes care of is
@@ -179,6 +179,7 @@ private struct LeftRow: View {
     static func hint(_ section: PullRequestPanel.Section) -> String {
         switch section {
         case .comments: "Shows its comments"
+        case .conflicts: "Shows the files that conflict"
         case .checks: "Shows its builds and checks"
         case .reviewers: "Shows its reviewers"
         }

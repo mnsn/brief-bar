@@ -24,6 +24,16 @@
 - **Comments fixed with Copilot before this update no longer say so.** What tasks and prompts took on before isn't
   read any more, so those comments lose the line that said what Copilot did, and the bar of fixes ready to push
   forgets them. **Push & Reply with Copilot…**, in the pull request's menu, still pushes them from their session.
+- **See which files conflict, and have Copilot resolve them.** When a pull request has merge conflicts, its
+  details list the files that conflict with its target branch, right under What's Left, whose **Merge
+  conflicts** now takes you there: each says what each branch did to it, such as **Changed on both branches**
+  or **Changed on rename-order-status, deleted on main**, and opens what the pull request changed in it. With
+  Send Work to Copilot on, **✨ Explain** asks the session that worked on the pull request why they conflict,
+  and **Resolve** has Copilot merge the target branch in and resolve them, as you say, in a composer in place
+  that says where it goes and what Copilot does: it may commit the merge, but doesn't push, which **Push &
+  Reply** does once it's done. **Resolve Conflicts with Copilot…** lists the files too, once the details read
+  them. BriefBar reads them with one request as the details show a pull request with conflicts, keeps them in
+  memory only, and, since Azure DevOps now reads this, asks you once to look at what it reads.
 - **Reply to comments, and resolve them, without opening Azure DevOps.** Turn on **Make Changes in Azure DevOps** in
   Azure DevOps' settings, off by default, and each comment thread in a pull request's details has **Reply** and
   **Resolve**, beside ✨ Explain and Fix. **Reply** opens a field under the comment, in Markdown: **Reply**, or ⌘Return,
@@ -38,12 +48,11 @@
 - **See a pull request's tags, and add or remove them.** A pull request's details show its tags under its heading.
   With **Make Changes in Azure DevOps** on, **✕** on a tag removes it, with **Undo**, and **Add Tag** opens a field
   that suggests tags as you type: those you added in that project, which BriefBar remembers, then those on the pull
-  requests it read there. **Tab** completes the one you chose, **Return** adds it, or what you typed as a new tag, and
-  **Esc** closes it. The tags show
-  what Azure DevOps answered, and say in a sentence why a change didn't go, such as no permission or being offline.
-  Azure DevOps' description says so: it reads tags with the lists it reads already, or with one request for a pull
-  request sent to you or that you watch, and keeps the tags you add, up to 20 for each project, until you turn the
-  setting off.
+  requests it read there. **Tab** completes the one you chose, **Return** adds it, or what you typed as a new tag,
+  and **Esc** closes it. The tags show what Azure DevOps answered, and say in a sentence why a change didn't go,
+  such as no permission or being offline. Azure DevOps' description says so: it reads tags with the lists it reads
+  already, or with one request for a pull request sent to you or that you watch, and keeps the tags you add, up to
+  20 for each project, until you turn the setting off.
 
 ## 0.12.0 - 2026-11-03
 
