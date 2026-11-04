@@ -329,6 +329,14 @@ enum Renderer {
             .frame(width: 600, alignment: .leading)
             .background(Color(nsColor: .windowBackgroundColor))
             write(Snapshot.render(linksSettings, appearance: appearance), "settings-links-\(suffix)")
+            // Pull Request Order, below them, on and off.
+            for (name, isOn) in [("on", true), ("off", false)] {
+                let setting = PullRequestOrderSettingView(order: PullRequestOrder(defaults: MemoryDefaults(), isDemo: isOn))
+                    .padding(24)
+                    .frame(width: 600, alignment: .leading)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                write(Snapshot.render(setting, appearance: appearance), "settings-pull-request-order-\(name)-\(suffix)")
+            }
             if demo {
                 let cloudSummaries = StorySummaries(
                     defaults: MemoryDefaults(), links: model.services.links, stories: model.services.stories, isDemo: true

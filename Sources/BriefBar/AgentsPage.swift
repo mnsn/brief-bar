@@ -36,6 +36,8 @@ final class AgentsModel: ObservableObject {
     @Published private var serverProgress = CopilotCLIProgress<CopilotMCPRegistration.Status>()
     @Published private var pluginProgress = CopilotCLIProgress<CopilotPluginRegistration.Status>()
     @Published private var sessionPromptsProgress = CopilotCLIProgress<CopilotPluginRegistration.Status>()
+    /// Pull Request Order's skill, which Copilot gets while both it and agents are on.
+    @Published private var orderProgress = CopilotCLIProgress<CopilotPluginRegistration.Status>()
     /// What you turned Send Prompts to Copilot Sessions to, while the CLI is at it.
     @Published private var sessionPromptsAsked: Bool?
     /// What you last turned it to, which Try Again asks the CLI for again.
@@ -57,6 +59,12 @@ final class AgentsModel: ObservableObject {
         return sessionPromptsProgress.status.map(Plugin.known) ?? .unknown
     }
 
+    /// Pull Request Order's skill among the CLI's plugins.
+    var orderSkill: Plugin {
+        if orderProgress.isWorking { return .working }
+        return orderProgress.status.map(Plugin.known) ?? .unknown
+    }
+
     private let defaults: UserDefaults
     private let isLive: Bool
     /// BriefBar's binary, which agents start with `--mcp`.
@@ -70,6 +78,7 @@ final class AgentsModel: ObservableObject {
     private var checkedAt: Date?
     private var pluginCheckedAt: Date?
     private var sessionPromptsCheckedAt: Date?
+    private var orderCheckedAt: Date?
 
     init(
         defaults: UserDefaults, isLive: Bool, executable: String = Bundle.main.executablePath ?? AppIdentity.name,
@@ -142,6 +151,8 @@ final class AgentsModel: ObservableObject {
             change(demo: .added(enabled: true)) { await $0.add() }
             refreshPlugin(force: true)
             refreshSessionPrompts(force: true)
+            // With Pull Request Order on, which you turned on before agents.
+            if isOrderOn { pullRequestOrderChanged(true) }
         } else {
             refresh(force: true)
         }
@@ -161,6 +172,7 @@ final class AgentsModel: ObservableObject {
         change(demo: .absent) { await $0.remove() }
         changePlugin(demo: .absent) { await $0.remove() }
         changeSessionPrompts(demo: .absent) { await $0.remove() }
+        changeOrderSkill(demo: .absent) { await $0.remove() }
     }
 
     /// Asks the Copilot CLI whether it has BriefBar and its plugins: when the page shows, unless it asked a moment ago.
@@ -171,6 +183,7 @@ final class AgentsModel: ObservableObject {
         }
         refreshPlugin(force: force)
         refreshSessionPrompts(force: force)
+        refreshOrderSkill(force: force)
     }
 
     func addToCopilotCLI() {
@@ -187,12 +200,14 @@ final class AgentsModel: ObservableObject {
     /// removing it, once it has, or when agents are on.
     var leftovers: AgentCleanup? {
         guard state == .off else { return nil }
-        return AgentCleanup.left(server: serverProgress, plugin: pluginProgress, sessionPrompts: sessionPromptsProgress)
+        return AgentCleanup.left(
+            server: serverProgress, plugin: pluginProgress, sessionPrompts: sessionPromptsProgress, order: orderProgress
+        )
     }
 
     /// While agents are off, BriefBar is removing itself, or its plugins, from the Copilot CLI.
     var isLeaving: Bool {
-        state == .off && (registration == .working || plugin == .working || sessionPrompts == .working)
+        state == .off && (registration == .working || plugin == .working || sessionPrompts == .working || orderSkill == .working)
     }
 
     /// Removes again what turning agents off couldn't.
@@ -202,6 +217,52 @@ final class AgentsModel: ObservableObject {
         if leftovers.server != nil { change(demo: .absent) { await $0.remove() } }
         if leftovers.plugin != nil { changePlugin(demo: .absent) { await $0.remove() } }
         if leftovers.sessionPrompts != nil { changeSessionPrompts(demo: .absent) { await $0.remove() } }
+        if leftovers.order != nil { changeOrderSkill(demo: .absent) { await $0.remove() } }
+    }
+
+    // MARK: Pull Request Order's skill
+
+    /// Pull Request Order is on, in Settings › General.
+    var isOrderOn: Bool { PullRequestOrderSetting.isOn(in: defaults) }
+
+    /// Pull Request Order turned on or off: with agents on, Copilot gets its skill, which tells the sessions that open pull
+    /// requests together when to tell BriefBar their order; turned off, the skill goes. Agents turned on later add it then,
+    /// and turned off remove it. A copy of BriefBar without the plugin can remove it, but not install it.
+    func pullRequestOrderChanged(_ isOn: Bool) {
+        if isOn {
+            guard state == .on, hasPlugin else { return }
+            Log.app.info("Adding Pull Request Order's skill")
+            changeOrderSkill(demo: .installed(enabled: true)) { await $0.install() }
+        } else {
+            guard state == .on || orderSkill != .unknown else { return }
+            Log.app.info("Removing Pull Request Order's skill")
+            changeOrderSkill(demo: .absent) { await $0.remove() }
+        }
+    }
+
+    private func refreshOrderSkill(force: Bool) {
+        guard orderSkill != .working, isOrderOn || orderSkill != .unknown else { return }
+        if !force, let orderCheckedAt, Date().timeIntervalSince(orderCheckedAt) < 30 { return }
+        var demo = CopilotPluginRegistration.Status.absent
+        if case .known(let status) = orderSkill { demo = status }
+        changeOrderSkill(demo: demo) { await $0.status() }
+    }
+
+    private func changeOrderSkill(
+        demo: CopilotPluginRegistration.Status,
+        _ action: @escaping @Sendable (CopilotPluginRegistration) async -> CopilotPluginRegistration.Status
+    ) {
+        guard isLive else {
+            orderProgress = CopilotCLIProgress(status: demo)
+            return
+        }
+        let request = orderProgress.ask()
+        withPlugin(.order, action) { [weak self] status in
+            guard let self else { return }
+            orderProgress.answer(request, with: status)
+            orderCheckedAt = Date()
+            Log.app.info("Pull Request Order's skill in the Copilot CLI: \(status.kind, privacy: .public)")
+        }
     }
 
     // MARK: The plugin
@@ -536,6 +597,11 @@ struct AgentsPage: View {
                     Divider()
                     SessionPromptsRow(agents: agents)
                         .padding(.vertical, 10)
+                    if agents.isOrderOn || agents.orderSkill != .unknown {
+                        Divider()
+                        OrderSkillRow(agents: agents)
+                            .padding(.vertical, 10)
+                    }
                     Divider()
                     OtherAgentsRow(agents: agents)
                         .padding(.vertical, 10)
@@ -581,6 +647,9 @@ private struct AgentsLeftoversRow: View {
                     }
                     if let sessionPrompts = leftovers.sessionPrompts {
                         Text("Its extension for \(CopilotSessionPrompts.title): \(sessionPrompts)")
+                    }
+                    if let order = leftovers.order {
+                        Text("Its skill for \(PullRequestOrderSettingView.title): \(order)")
                     }
                     Text("Agents are off either way: BriefBar's tools answer that they are.")
                         .foregroundStyle(.secondary)
@@ -906,6 +975,67 @@ private struct SessionPromptsRow: View {
                     Text("Couldn't ask the Copilot CLI: \(message)")
                         .foregroundStyle(.secondary)
                     Button("Try Again") { agents.retrySessionPrompts() }
+                }
+            }
+        }
+    }
+}
+
+/// Pull Request Order's skill in the Copilot CLI, which comes and goes with Pull Request Order, in Settings › General.
+private struct OrderSkillRow: View {
+    @ObservedObject var agents: AgentsModel
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(PullRequestOrderSettingView.title)'s skill")
+                    .font(style: .headline)
+                status
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+    }
+
+    private static let installed = "On, as \(CopilotPluginRegistration.Plugin.order.rawValue). Sessions get it as they start: "
+        + "it tells the ones that open pull requests together when to tell BriefBar their order."
+
+    @ViewBuilder
+    private var status: some View {
+        switch agents.orderSkill {
+        case .unknown:
+            Text(agents.hasPlugin
+                 ? "It comes with \(PullRequestOrderSettingView.title), in Settings › General."
+                 : "This copy of BriefBar doesn't have it: BriefBar.app does.")
+                .foregroundStyle(.secondary)
+        case .working:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Asking the Copilot CLI…")
+                    .foregroundStyle(.secondary)
+            }
+        case .known(let status):
+            switch status {
+            case .installed(enabled: true), .installedElsewhere:
+                Label(Self.installed, systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            case .installed(enabled: false), .absent, .taken, .noCLI:
+                HStack(alignment: .firstTextBaseline) {
+                    Text(agents.isOrderOn ? "Not in the Copilot CLI." : "Off, with \(PullRequestOrderSettingView.title).")
+                        .foregroundStyle(.secondary)
+                    if agents.isOrderOn, agents.hasPlugin {
+                        Button("Add") { agents.pullRequestOrderChanged(true) }
+                    }
+                }
+            case .failed(let message):
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Couldn't ask the Copilot CLI: \(message)")
+                        .foregroundStyle(.secondary)
+                    Button("Try Again") { agents.pullRequestOrderChanged(agents.isOrderOn) }
                 }
             }
         }
