@@ -1040,7 +1040,9 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(requests(server, to: "/timeline").count == 2)
     }
 
-    @Test func forgettingWhileItChecksAKeptRunReadsItAgain() async throws {
+    /// Forgetting while a caller looks at a kept run, as someone else signs in, calls the caller off: what it asked for as
+    /// the last one isn't read as them. Whoever asks next reads the run anew.
+    @Test func forgettingWhileItChecksAKeptRunCallsItOff() async throws {
         let server = StubServer()
         FailedRun.serve(server)
         // The first read's eight requests, then the check of the run it kept.
@@ -1052,10 +1054,12 @@ private actor GatedTokens: AccessTokenProvider {
         clock.advance(10)
         let again = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
         try await waitUntilHeld(tokens)
-        // Someone else signed in: what was read before isn't shown, and what's read now, as them, is.
         await investigator.forget()
         await tokens.release()
-        #expect(try await again.value.readAt == t(10))
+        await #expect(throws: CancellationError.self) { try await again.value }
+        #expect(requests(server, to: "/timeline").count == 1)
+        #expect(await investigator.keptBuilds.isEmpty)
+        #expect(try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest).readAt == t(10))
         #expect(requests(server, to: "/timeline").count == 2)
         #expect(await investigator.keptBuilds == [77])
     }
@@ -1306,7 +1310,7 @@ private actor GatedTokens: AccessTokenProvider {
         await investigator.stop()
         await tokens.release()
         await #expect(throws: CancellationError.self) { try await looking.value }
-        // Unlike forgetting, after which it's read again, as whoever signed in.
+        // Nothing is read instead.
         #expect(requests(server, to: "/timeline").count == 1)
         #expect(await investigator.keptBuilds.isEmpty)
     }

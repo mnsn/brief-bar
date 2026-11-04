@@ -670,13 +670,15 @@ public actor BuildInvestigator {
     ) async throws -> BuildInvestigation {
         try checkStopped()
         try Task.checkCancellation()
+        // What it's asked for as: once it forgets, as someone else signs in, nothing more is read for it, as them.
+        let asked = (order: started, generation: generation)
         let key = Key(pullRequest.key.organization, buildId)
         let readKey = ReadKey(run: key, targetBranch: pullRequest.targetBranch)
-        let asked = started
         var replaced = replaced
         // A read under way is newer than what's kept: wait for it rather than look at the run.
         if !refresh, reading[readKey] == nil {
             let kept = await stillKept(key, readKey: readKey, pullRequest: pullRequest, phase: phase)
+            try checkForgot(since: asked.generation)
             if let read = kept.read { return read.revised(for: pullRequest) }
             replaced = replaced || kept.replaced
         }
@@ -685,7 +687,7 @@ public actor BuildInvestigator {
         try Task.checkCancellation()
         let joined = reading[readKey]
         // Under way since before this was asked for, it had read the run by then: it may have, before the run ran again.
-        let readTheRunBefore = joined.map { $0.order <= asked && $0.readTheRun.isDone } ?? false
+        let readTheRunBefore = joined.map { $0.order <= asked.order && $0.readTheRun.isDone } ?? false
         let current = joined ?? start(readKey, pullRequest: pullRequest)
         lastAsk += 1
         let ask = lastAsk
@@ -704,6 +706,7 @@ public actor BuildInvestigator {
         try checkStopped()
         // Called off, as its caller was, or with the read, as it forgot.
         if Task.isCancelled || task.isCancelled { throw CancellationError() }
+        try checkForgot(since: asked.generation)
         let read: BuildInvestigationReader.Read
         do {
             read = try result.get()
@@ -715,10 +718,11 @@ public actor BuildInvestigator {
         // again since, or went, as a look at it finds.
         var readAgain = phase.map { read.investigation.run.status.phase < $0 } ?? false
         if !readAgain, readTheRunBefore, read.investigation.run.status.isFinished {
-            let isStill = await stillTheRun(key, as: read.build, after: asked, pullRequest: pullRequest)
-            // Stopped, or called off, while it looked, which a canceled look can't tell from a run it couldn't read.
+            let isStill = await stillTheRun(key, as: read.build, after: asked.order, pullRequest: pullRequest)
+            // Stopped, called off or forgotten while it looked, which a canceled look can't tell from a run it couldn't read.
             try checkStopped()
             try Task.checkCancellation()
+            try checkForgot(since: asked.generation)
             if !isStill {
                 readAgain = true
                 replaced = true
@@ -743,8 +747,14 @@ public actor BuildInvestigator {
         if isStopped { throw CancellationError() }
     }
 
+    /// Throws when it forgot since a caller asked (`generation`), as someone else signed in: what was asked for as the last
+    /// one isn't read, or looked at, as them.
+    private func checkForgot(since generation: Int) throws {
+        if generation != self.generation { throw CancellationError() }
+    }
+
     /// Forgets what it read, as when someone else signs in: the reads and looks under way, as the last one, are called off,
-    /// and whoever waits for a read gets `CancellationError`; nothing read before is kept.
+    /// and whoever waits for a read, or a look at a run, gets `CancellationError`; nothing read before is kept.
     public func forget() {
         for cancel in underway.values { cancel() }
         underway = [:]
