@@ -93,6 +93,54 @@ import Testing
         #expect(thread(in: await engine.currentSnapshot())?.comments.map(\.id) == [1, 2])
     }
 
+    /// Nor does one that answers after the change's own read was taken, as a slow answer may come after a quick one: the
+    /// change's read having been taken doesn't make an older read new.
+    @Test(.timeLimit(.minutes(1)))
+    func aReadThatStartedBeforeAChangeAndAnswersLastDoesntUndoIt() async throws {
+        let now = Date()
+        let server = StubServer()
+        server.serveOrganization(mine: [Fixture.pullRequest(1, created: now.addingTimeInterval(-day))])
+        let question = Fixture.comment(1, People.sam, "Cap it?", at: now.addingTimeInterval(-hour))
+        let before = threads([question], at: now.addingTimeInterval(-hour))
+        server.on("/pullRequests/1/threads", json: before)
+        let collector = SnapshotCollector()
+        // Whether the change's own read was taken: it has the thread resolved meanwhile.
+        let changeRead = Locked(false)
+        let key = self.key
+        let engine = PulseEngine(client: server.client(), configuration: PulseEngine.Configuration(
+            organizations: [Fixture.org], planner: RefreshPlanner.Options(busyInterval: 0, activeInterval: 0, quietInterval: 0)
+        )) { snapshot in
+            collector.add(snapshot)
+            let thread = snapshot.records.first { $0.id == key }?.details?.threads.first { $0.id == 7 }
+            if thread?.status == "fixed" { changeRead.set(true) }
+        }
+        await engine.refreshNow()
+
+        // The next read answers as the threads were before the change, once the change's own read, which answers as they are
+        // after it, was taken.
+        var held = StubServer.Reply.json(before)
+        held.waitsFor = { changeRead.value }
+        let stale = held
+        let after = StubServer.Reply.json(threads(
+            [question, Fixture.comment(2, People.me, "Capped", at: now)], status: "fixed", at: now.addingTimeInterval(-hour)
+        ))
+        let reads = Locked(0)
+        server.on("/pullRequests/1/threads") { _ in reads.increment() == 1 ? stale : after }
+        let refresh = Task { await engine.refreshNow() }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: waitLimit)
+        while reads.value < 1, clock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(reads.value >= 1)
+        await engine.changed(key, by: ThreadChange(thread: 7, comments: [comment(2, People.me, "Capped", at: now)]))
+        await refresh.value
+
+        #expect(changeRead.value)
+        #expect(reads.value == 2)
+        let last = try #require(thread(in: await engine.currentSnapshot()))
+        #expect(last.comments.map(\.id) == [1, 2])
+        #expect(last.status == "fixed")
+    }
+
     /// Read again, as after a change Azure DevOps didn't answer in time: two requests, now.
     @Test func readsAPullRequestAgainWhenAsked() async throws {
         let now = Date()

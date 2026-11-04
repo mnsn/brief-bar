@@ -261,6 +261,9 @@ final class StubServer: Sendable {
         var error: URLError?
         /// Where the request is redirected, with its headers, as a server's 307 would.
         var redirect: URL?
+        /// Answers only once this holds, while it answers other requests meanwhile, as a slow answer that comes after a
+        /// quicker one does; or after ten seconds, if it never does.
+        var waitsFor: (@Sendable () -> Bool)?
 
         static func json(_ object: Any, status: Int = 200, headers: [String: String] = [:]) -> Reply {
             var reply = Reply(status: status, body: Fixture.data(object))
@@ -375,6 +378,23 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         let reply = server.handle(request)
+        guard let isReady = reply.waitsFor else { return answer(reply, to: url) }
+        // On the thread that's loading it, as URLProtocol has it, once it may answer.
+        let thread = LoadingThread(runLoop: CFRunLoopGetCurrent())
+        DispatchQueue.global().async { [self] in
+            let deadline = Date().addingTimeInterval(10)
+            while !isReady(), Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            CFRunLoopPerformBlock(thread.runLoop, CFRunLoopMode.commonModes.rawValue) { self.answer(reply, to: url) }
+            CFRunLoopWakeUp(thread.runLoop)
+        }
+    }
+
+    /// A loading thread's run loop, to answer on later.
+    private struct LoadingThread: @unchecked Sendable {
+        let runLoop: CFRunLoop
+    }
+
+    private func answer(_ reply: StubServer.Reply, to url: URL) {
         if let error = reply.error {
             client?.urlProtocol(self, didFailWithError: error)
             return

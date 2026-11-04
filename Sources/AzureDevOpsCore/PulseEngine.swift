@@ -351,7 +351,8 @@ public actor PulseEngine {
     /// The pipelines after your merges, by pull request, while Done keeps it.
     private var merges: [PRKey: MergeFollow] = [:]
     /// How many changes BriefBar made to pull requests' threads (`changed(_:by:)`), and the count when each pull request's
-    /// last was made: a read of its details that started before then may not have it, and isn't taken.
+    /// last was made: a read of its details that started before then may not have it, and isn't taken, even after a read
+    /// that started since was, as a slow answer may come after a quick one.
     private var changes = 0
     private var changedAt: [PRKey: Int] = [:]
     private var problem: PulseProblem?
@@ -822,8 +823,6 @@ public actor PulseEngine {
                         fetchedAt: fetchedAt, fingerprint: pr.fingerprint, isBusy: fetched.hasChecksInProgress,
                         isQuiet: isQuiet(pr, fetched, configuration: configuration, at: fetchedAt)
                     )
-                    // Read since BriefBar's last change to it, which it has.
-                    changedAt[pr.key] = nil
                 default:
                     // Keep the old details, and try again on the normal schedule rather than every refresh. But what
                     // the policies say now replaces what they said, even when the threads couldn't be read: a pull
