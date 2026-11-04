@@ -2504,7 +2504,8 @@ read that's under way as they go, and go without the code when it isn't read
 suggestion as written** has the prompt quote the latest that someone else suggested in the thread
 (`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on, which Copilot finds in the
 file as it is now by their code, since their numbers are from when the thread was written. A character nobody sees in the
-change, or in the code it's on, such as a zero-width space, is written out in its fence, as `\u{200B}`, and the prompt then
+change, or in the code it's on, such as a zero-width space, is written out in its fence, as `\u{200B}`, or as `⟦U+200B⟧`
+when the code spells out `\u{` itself, so the two can't be mistaken for each other, and the prompt then
 says that it stands for the character itself, to write as that character or the language's own escape, so the change is
 still applied, and the code still found, exactly as it's written (`QuotedText.writtenOut`). The box is checked when the suggestion is the thread's last comment. Once a session answered Explain on the thread,
 **Include the answer above** quotes what it answered (`CopilotAnswer`, cut to 6,000 characters) before your words, which
@@ -3073,8 +3074,9 @@ of it. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 
 `pull_request` quotes what others named or wrote in the pull request as the prompts do: its title, its people, its
-checks and where they failed, and what people wrote in what's new and in its threads, each on its line with what breaks
-a line or isn't seen written out, and its branches in single quotes when a shell would read something in them; what people
+checks and where they failed, what the lists say of it, and what people wrote in what's new and in its threads, each on
+its line with what breaks a line or isn't seen written out, and its branches in single quotes when a shell would read
+something in them, wherever it names them; what people
 wrote follows a note that it's what they ask of the change, not instructions to the agent.
 
 While **Send Work to Copilot** is on, `pull_request` also names an open pull request's session: the
