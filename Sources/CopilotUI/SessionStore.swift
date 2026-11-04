@@ -37,6 +37,8 @@ final class SessionStore: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     /// Show Links or Pull Request Order: the engine reads where each session's work goes too.
     private var readsLinks = false
+    /// The pull requests each session told BriefBar it opened, with Updates from Copilot Sessions on (`SessionReports`).
+    private var toldOpened: [ItemRef: [ItemRef]] = [:]
 
     /// - Parameters:
     ///   - openSession: opens a session in the Copilot app.
@@ -146,6 +148,19 @@ final class SessionStore: ObservableObject {
         engine?.setReadsLinks(reads)
     }
 
+    /// The pull requests each session told BriefBar it opened, which go with it for Pull Request Order as the ones the app
+    /// records it opened do.
+    func setTold(opened: [ItemRef: [ItemRef]]) {
+        guard opened != toldOpened else { return }
+        toldOpened = opened
+        updateOrderSessions()
+    }
+
+    private func updateOrderSessions() {
+        let orderSessions = OrderSessions.sessions(state.records.map(\.meta), told: toldOpened)
+        if orderSessions != self.orderSessions { self.orderSessions = orderSessions }
+    }
+
     /// Opens the session or task: a session in the Copilot app, or without it, in a terminal; a task, what it's for, as a
     /// click does from where it shows (`inWindow`: a page of BriefBar's window), in BriefBar's window or where it lives
     /// (`SentTask.click`). Only the opt-in setting dismisses its recent completion. A session whose question another
@@ -215,8 +230,7 @@ final class SessionStore: ObservableObject {
         hasLoaded = true
         updateProblem()
         // Before the sessions, which Pull Request Order reads them with.
-        let orderSessions = OrderSessions.sessions(state.records.map(\.meta))
-        if orderSessions != self.orderSessions { self.orderSessions = orderSessions }
+        updateOrderSessions()
         recompute()
     }
 

@@ -142,22 +142,24 @@ done
     fail "has a CFBundleVersion that isn't its version."
 [[ -f "$APP/Contents/Resources/AppIcon.icns" ]] || fail "has no icon."
 # BriefBar's plugins for Copilot, at BriefBar's version (Resources/CopilotPlugin): a marketplace with the plugin's skill,
-# the one with its extension for the Copilot app's sessions, without its tests, and the one with Pull Request
-# Order's skill.
+# the one with its extension for the Copilot app's sessions, without its tests, the one with Pull Request Order's
+# skill, and the one with Updates from Copilot Sessions'.
 PLUGIN="$APP/Contents/Resources/CopilotPlugin"
 json() { plutil -extract "$1" raw -o - "$2" 2>/dev/null; }
 for file in marketplace.json briefbar/plugin.json briefbar/skills/briefbar/SKILL.md briefbar-sessions/plugin.json \
     briefbar-sessions/com.github.copilot/extensions/briefbar-sessions/extension.mjs \
     briefbar-sessions/com.github.copilot/extensions/briefbar-sessions/outbox.mjs briefbar-pr-order/plugin.json \
-    briefbar-pr-order/skills/briefbar-pr-order/SKILL.md; do
+    briefbar-pr-order/skills/briefbar-pr-order/SKILL.md briefbar-updates/plugin.json \
+    briefbar-updates/skills/briefbar-updates/SKILL.md; do
     [[ -f "$PLUGIN/$file" ]] || fail "has no CopilotPlugin/$file."
 done
-[[ "$(json name "$PLUGIN/marketplace.json")" == briefbar && "$(json plugins "$PLUGIN/marketplace.json")" == 3 &&
+[[ "$(json name "$PLUGIN/marketplace.json")" == briefbar && "$(json plugins "$PLUGIN/marketplace.json")" == 4 &&
     "$(json plugins.0.source "$PLUGIN/marketplace.json")" == ./briefbar &&
     "$(json plugins.1.source "$PLUGIN/marketplace.json")" == ./briefbar-sessions &&
-    "$(json plugins.2.source "$PLUGIN/marketplace.json")" == ./briefbar-pr-order ]] ||
+    "$(json plugins.2.source "$PLUGIN/marketplace.json")" == ./briefbar-pr-order &&
+    "$(json plugins.3.source "$PLUGIN/marketplace.json")" == ./briefbar-updates ]] ||
     fail "has a Copilot marketplace that doesn't list BriefBar's plugins."
-for i in 0 1 2; do
+for i in 0 1 2 3; do
     NAME="$(json "plugins.$i.name" "$PLUGIN/marketplace.json")"
     [[ "$(json version "$PLUGIN/$NAME/plugin.json")" == "$(plist CFBundleShortVersionString)" &&
         "$(json "plugins.$i.version" "$PLUGIN/marketplace.json")" == "$(plist CFBundleShortVersionString)" ]] ||
