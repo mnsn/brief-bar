@@ -214,6 +214,34 @@ import Testing
         #expect(changes.state(of: key) == nil)
     }
 
+    /// A change on its way, as one waiting for a token, is called off as the setting goes off, or someone else signs in: it
+    /// never goes, and says nothing.
+    @Test func aChangeOnItsWayIsCalledOffAsItGoesOff() async throws {
+        let (store, changes, azure) = live()
+        changes.send = { write in
+            // Waits, as for a token, until it's called off.
+            try await Task.sleep(for: .seconds(30))
+            return try azure.send(write)
+        }
+        let adding = Task { await changes.add("hotfix", to: key) }
+        try await waitUntil { changes.isSending(key) }
+        changes.settings.makesChanges = false
+        #expect(await adding.value == false)
+        #expect(azure.sent.isEmpty)
+        #expect(changes.state(of: key) == nil)
+        #expect(tags(store) == ["deploy-eu", "needs-qa"])
+
+        changes.settings.makesChanges = true
+        changes.accountChanged("robin@contoso.example")
+        let removing = Task { await changes.remove(PullRequestTag("needs-qa", tagId: "demo-tag-needs-qa"), from: key) }
+        try await waitUntil { changes.isSending(key) }
+        changes.accountChanged("sam@contoso.example")
+        await removing.value
+        #expect(azure.sent.isEmpty)
+        #expect(changes.state(of: key) == nil)
+        #expect(tags(store) == ["deploy-eu", "needs-qa"])
+    }
+
     /// What adding a tag offers: the tags you added in the project, then those on its pull requests, but the pull request's
     /// own; then what you typed, as a new one.
     @Test func suggestsTheTagsOfThePullRequestsInItsProject() throws {

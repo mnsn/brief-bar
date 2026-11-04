@@ -1528,7 +1528,9 @@ the list keeps the change over a snapshot read before it, which has the tags as 
 tags changed since (`PRStore.pending`). A tag the pull request has already, ignoring letter case, isn't sent. A change that
 didn't happen says why under the tags (`ADOWriteProblem`), with **Try Again**, or **Sign In…**, and when it may have
 happened all the same, the tags are read again; one taken off that Azure DevOps says isn't there is, when the tags read
-again don't have it, as you wanted.
+again don't have it, as you wanted. Each change goes in a task kept by pull request, which turning the setting off, Azure
+DevOps stopping or someone else signing in calls off (`TagChanges.forgetAll`): one that hasn't gone, as while it waits for
+a token, never does.
 
 As you type, the field suggests (`TagChoices`) the tags you added in the pull request's project, the latest first, then
 those on the pull requests BriefBar read there, the most used first, then by name, but the pull request's own, six at most:

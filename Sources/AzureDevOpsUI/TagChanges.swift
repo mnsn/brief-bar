@@ -32,6 +32,9 @@ final class TagChanges: ObservableObject {
     }
 
     @Published private(set) var states: [PRKey: State] = [:]
+    /// The changes on their way, by pull request, which turning the setting off, Azure DevOps stopping or someone else
+    /// signing in calls off (`forgetAll`): one that hasn't gone never does.
+    private var inFlight: [PRKey: Task<ADOWrite.Answer, Error>] = [:]
 
     let settings: AppSettings
     private weak var store: PRStore?
@@ -49,15 +52,15 @@ final class TagChanges: ObservableObject {
         let client = store.client
         send = { try await client.send($0) }
         readTags = { [weak store] key in await store?.readTags(key) }
-        // Turned off, the tags show neither + nor ✕, what went wrong goes, and so do the tags you added, which nothing
-        // suggests anymore.
+        // Turned off, the tags show neither + nor ✕, a change on its way is called off, what went wrong goes, and so do the
+        // tags you added, which nothing suggests anymore.
         settings.$makesChanges.removeDuplicates().dropFirst()
             .sink { [weak self] on in
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.objectWillChange.send()
                     if !on {
-                        self.states = [:]
+                        self.forgetAll()
                         self.settings.usedTags = UsedTags()
                     }
                 }
@@ -116,7 +119,7 @@ final class TagChanges: ObservableObject {
             case .demo:
                 store.changedTags(key, to: PullRequestTag.adding(DemoTags.tag(name), to: current))
             case .live:
-                let answer = try await send(.addTag(PullRequestAddress(record.pullRequest), name: name))
+                let answer = try await dispatch(.addTag(PullRequestAddress(record.pullRequest), name: name), for: key)
                 if case .tag(let answered) = answer, let tag = PullRequestTag.tags([answered]).first {
                     // As Azure DevOps spells it, with the tags as they are now, which a refresh may have read meanwhile.
                     added = tag.name
@@ -125,6 +128,9 @@ final class TagChanges: ObservableObject {
                     await readAgain(key)
                 }
             }
+        } catch is CancellationError {
+            // Called off, as the setting was turned off or someone else signed in: nothing to say.
+            return false
         } catch {
             fail(key, ADOWriteProblem(error), change)
             return false
@@ -151,9 +157,11 @@ final class TagChanges: ObservableObject {
             case .demo:
                 store.changedTags(key, to: PullRequestTag.removing(tag, from: current))
             case .live:
-                _ = try await send(.removeTag(PullRequestAddress(record.pullRequest), tag: tag.tagId ?? tag.name))
+                _ = try await dispatch(.removeTag(PullRequestAddress(record.pullRequest), tag: tag.tagId ?? tag.name), for: key)
                 store.changedTags(key, to: PullRequestTag.removing(tag, from: store.record(for: key)?.tags ?? current))
             }
+        } catch is CancellationError {
+            return
         } catch {
             let problem = ADOWriteProblem(error)
             // Not on the pull request, as far as Azure DevOps knows: its tags, read again, tell whether that's so, and then
@@ -168,6 +176,24 @@ final class TagChanges: ObservableObject {
         }
         states[key] = nil
         SpokenText.announce("Removed the tag \(tag.name)")
+    }
+
+    /// Sends a change, while you can make changes, in a task that's called off as they go (`forgetAll`): before it goes, as
+    /// while it waits for a token, it never does.
+    private func dispatch(_ write: ADOWrite, for key: PRKey) async throws -> ADOWrite.Answer {
+        guard settings.makesChanges else {
+            states[key] = nil
+            throw CancellationError()
+        }
+        let send = send
+        let task = Task { try await send(write) }
+        inFlight[key] = task
+        defer { if inFlight[key] == task { inFlight[key] = nil } }
+        do {
+            return try await task.value
+        } catch where task.isCancelled {
+            throw CancellationError()
+        }
     }
 
     /// Tries a change that didn't happen again.
@@ -266,8 +292,11 @@ final class TagChanges: ObservableObject {
 
     // MARK: Forgetting
 
-    /// Forgets what was going on, as Azure DevOps stops or someone else signs in.
+    /// Forgets what was going on, and calls off a change on its way, as the setting goes off, Azure DevOps stops or someone
+    /// else signs in.
     func forgetAll() {
+        for task in inFlight.values { task.cancel() }
+        inFlight = [:]
         states = [:]
         readAt = [:]
         failedAt = [:]
