@@ -24,7 +24,15 @@ MainActor.assumeIsolated {
             exit(1)
         }
         let next = index + 1 < arguments.count ? arguments[index + 1] : nil
-        exit(Renderer.run(directory: next.flatMap { $0.hasPrefix("--") ? nil : $0 } ?? "render", demo: demo))
+        var part: Int?
+        if let partIndex = arguments.firstIndex(of: "--part") {
+            guard partIndex + 1 < arguments.count, let number = Int(arguments[partIndex + 1]), number > 0 else {
+                fputs("--part takes a number from 1.\n", stderr)
+                exit(2)
+            }
+            part = number
+        }
+        exit(Renderer.run(directory: next.flatMap { $0.hasPrefix("--") ? nil : $0 } ?? "render", demo: demo, part: part))
     }
 
     // One instance per user; a second launch (e.g. running the binary again) just exits.
