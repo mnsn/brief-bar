@@ -503,8 +503,10 @@ import Testing
         #expect(ADOWriteProblem.unconfirmed.mayHaveGone)
         #expect(!ADOWriteProblem.notAllowed.mayHaveGone)
         #expect(!ADOWriteProblem.closed.mayHaveGone)
-        // Nothing went as someone else.
+        // Nothing went as someone else, nor for a pull request that left your lists.
         #expect(!ADOWriteProblem.otherAccount.mayHaveGone)
+        #expect(!ADOWriteProblem.notListed.mayHaveGone)
+        #expect(ADOWriteProblem.notListed.sentence(.reply) == "This pull request is no longer in your lists, so your reply didn't go.")
         #expect(ADOWriteProblem.otherAccount.sentence(.reply).contains("sent nothing as them"))
     }
 

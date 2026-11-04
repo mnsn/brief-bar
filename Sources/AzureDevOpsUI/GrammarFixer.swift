@@ -42,7 +42,7 @@ final class GrammarFixer {
             try? await Task.sleep(for: .milliseconds(500))
             return .success(GrammarFix.madeUp(text))
         }
-        let request = GrammarFix.request(for: text)
+        let request = await Self.away { GrammarFix.request(for: text) }
         let onDevice = model == StorySummaries.appleIntelligenceModel
         let answer: Result<String, Problem>
         if onDevice {
@@ -55,10 +55,20 @@ final class GrammarFixer {
             let asked = await (askCopilot ?? askThroughCLI)(request.prompt, model)
             answer = asked.mapError { Problem(message: $0.message(model: name), detail: $0.detail, choosesModel: Self.choosesModel($0)) }
         }
-        guard !Task.isCancelled else { return .failure(Problem(message: "Fix Grammar was stopped.")) }
-        return answer.flatMap { said in
-            GrammarFix.corrected(said, for: request).mapError { Self.turnedDown($0, by: model) }
-        }
+        guard !Task.isCancelled else { return .failure(Self.stopped) }
+        guard case .success(let said) = answer else { return answer }
+        let corrected = await Self.away { GrammarFix.corrected(said, for: request) }
+        guard !Task.isCancelled else { return .failure(Self.stopped) }
+        return corrected.mapError { Self.turnedDown($0, by: model) }
+    }
+
+    private static let stopped = Problem(message: "Fix Grammar was stopped.")
+
+    /// Work that takes longer the longer a reply is, such as holding back its code or checking what a model answered, off
+    /// the main actor, so that the field and Stop answer meanwhile; called off with what asked for it.
+    private static func away<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        let task = Task.detached(priority: .userInitiated, operation: work)
+        return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     /// Why a model's answer isn't a correction to suggest, in a sentence: Apple Intelligence answers the same again, so

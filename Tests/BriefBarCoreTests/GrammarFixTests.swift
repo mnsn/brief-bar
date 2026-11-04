@@ -174,6 +174,39 @@ import Testing
             == .success("We needed to add the cap to prevent the stall."))
     }
 
+    /// What was held back is in a translation too: the numbers that mark it aren't words it kept. "yes `x`" isn't corrected
+    /// into "Oui `x`.", nor "thanks @sam" into "Merci @sam."; the same, corrected, is.
+    @Test func turnsDownATranslationOfWhatHoldsCodeOrAMention() {
+        let code = GrammarFix.request(for: "yes `x`")
+        #expect(GrammarFix.corrected("Oui {{1}}.", for: code) == .failure(.changedMore))
+        #expect(GrammarFix.corrected("Yes, {{1}}.", for: code) == .success("Yes, `x`."))
+        let mention = GrammarFix.request(for: "thanks @sam")
+        #expect(mention.held == ["@sam"])
+        #expect(GrammarFix.corrected("Merci {{1}}.", for: mention) == .failure(.changedMore))
+        #expect(GrammarFix.corrected("Thanks, {{1}}.", for: mention) == .success("Thanks, @sam."))
+        #expect(GrammarFix.corrected("The {{1}} works.", for: GrammarFix.request(for: "teh `x` works")) == .success("The `x` works."))
+    }
+
+    /// However long a reply, checking an answer takes bounded work: within 2,000 changes, with typos looked for only in a
+    /// short one; and it stops as it's called off.
+    @Test(.timeLimit(.minutes(1)))
+    func boundsTheWorkForALongReply() async {
+        // 100 characters, half of which is 50, within a bound of 20 for the test: more changes than that are more than a
+        // correction, though fewer than half.
+        let text = String(repeating: "a", count: 100)
+        func changed(_ count: Int) -> String { String(repeating: "a", count: 100 - count) + String(repeating: "b", count: count) }
+        #expect(GrammarFix.isCorrection(of: text, changed(20), atMost: 20))
+        #expect(!GrammarFix.isCorrection(of: text, changed(21), atMost: 20))
+        #expect(GrammarFix.isCorrection(of: text, changed(21)))
+        let long = String(repeating: "This retries the request when the server is busy. ", count: 400)
+        #expect(!GrammarFix.keepsWords(of: long, String(repeating: "Ceci réessaie la requête quand le serveur est occupé. ", count: 400)))
+        let calledOff = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return GrammarFix.isCorrection(of: long, long)
+        }
+        #expect(await calledOff.value == false)
+    }
+
     /// How far a correction may go, worked out within a band of the table, is what the whole table says.
     @Test func measuresACorrectionAsTheWholeTableWould() {
         var seed: UInt64 = 0x5EED

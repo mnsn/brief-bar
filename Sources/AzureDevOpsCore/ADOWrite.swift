@@ -298,6 +298,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
     case refused(String?)
     /// Someone else signed in to the Azure CLI since you asked for it: nothing went as them.
     case otherAccount
+    /// The pull request isn't in your lists anymore, though its details still show it: nothing went.
+    case notListed
     /// Anything else, as BriefBar says it.
     case failed(String)
 
@@ -355,6 +357,10 @@ public enum ADOWriteProblem: Sendable, Equatable {
             return "Azure DevOps refused it."
         case .otherAccount:
             return "Someone else is signed in to the Azure CLI now, so BriefBar sent nothing as them: sign in as yourself, then try again."
+        case .notListed:
+            return kind == .reply
+                ? "This pull request is no longer in your lists, so your reply didn't go."
+                : "This pull request is no longer in your lists, so this thread's status didn't change."
         case .failed(let why):
             return (kind == .reply ? "Couldn't reply: " : "Couldn't change its status: ") + why
         }

@@ -57,6 +57,16 @@ public enum GrammarFix {
         public var prompt: String { instructions + "\n\n" + text }
 
         func marker(_ number: Int) -> String { open + String(number) + close }
+
+        /// A text as it reads, each of its markers a space: what's held back says nothing of a correction, nor do the
+        /// numbers that mark it.
+        func prose(_ text: String) -> String {
+            var prose = text
+            for number in held.indices.map({ $0 + 1 }) {
+                prose = prose.replacingOccurrences(of: marker(number), with: " ")
+            }
+            return prose
+        }
     }
 
     /// Why a model's answer isn't a correction to suggest.
@@ -109,8 +119,10 @@ public enum GrammarFix {
         guard positions == positions.sorted() else { return .failure(.changedHeld) }
         // A marker it made up, such as the next number, is something that was never there.
         if said.ranges(of: request.marker(request.held.count + 1)).count > 0 { return .failure(.changedHeld) }
-        guard var text = relined(said, as: request.masked), isCorrection(of: request.masked, text), keepsWords(of: request.masked, text)
-        else { return .failure(.changedMore) }
+        // What it says, without what was held back, whose markers' numbers aren't words of its own: the cheaper look first.
+        guard var text = relined(said, as: request.masked) else { return .failure(.changedMore) }
+        let saidBefore = request.prose(request.masked), saidAfter = request.prose(text)
+        guard keepsWords(of: saidBefore, saidAfter), isCorrection(of: saidBefore, saidAfter) else { return .failure(.changedMore) }
         for (index, original) in request.held.enumerated().reversed() {
             text = text.replacingOccurrences(of: request.marker(index + 1), with: original)
         }
@@ -157,11 +169,12 @@ public enum GrammarFix {
     }
 
     /// Whether `answer` is no more than a correction of `text`: whether it takes adding, taking out or changing at most half
-    /// as many characters as the text has, and 16 for a short one, case aside, to turn one into the other. A correction
-    /// changes a letter or a comma here and there; a translation, a rewrite, or an answer to what the text asks, most of it.
-    static func isCorrection(of text: String, _ answer: String) -> Bool {
+    /// as many characters as the text has, 16 for a short one and `atMost` for a long one, case aside, to turn one into the
+    /// other. A correction changes a letter or a comma here and there; a translation, a rewrite, or an answer to what the
+    /// text asks, most of it. Its work grows with the text and that bound, which it keeps within; called off, it says no.
+    static func isCorrection(of text: String, _ answer: String, atMost bound: Int = 2_000) -> Bool {
         let before = Array(text.lowercased().unicodeScalars), after = Array(answer.lowercased().unicodeScalars)
-        let limit = max(16, before.count / 2)
+        let limit = min(max(16, before.count / 2), bound)
         guard abs(before.count - after.count) <= limit else { return false }
         guard !before.isEmpty, !after.isEmpty else { return true }
         // The edit distance, a row of the table at a time, within `limit` of its diagonal: further out is more than it.
@@ -169,6 +182,7 @@ public enum GrammarFix {
         var previous = (0...after.count).map { $0 <= limit ? $0 : beyond }
         var current = [Int](repeating: beyond, count: after.count + 1)
         for i in 1...before.count {
+            if i % 256 == 0, Task.isCancelled { return false }
             let low = max(1, i - limit), high = min(after.count, i + limit)
             current[0] = i <= limit ? i : beyond
             if low > 1 { current[low - 1] = beyond }
@@ -189,7 +203,8 @@ public enum GrammarFix {
 
     /// Whether `answer` keeps the words of `text`, as a correction does: at least half of them, case and apostrophes aside,
     /// as they were or with a typo fixed. A translation, or an answer in words of its own, keeps few or none of them, however
-    /// short the text: "yes" isn't corrected into "oui", nor "why?" into "It fails."
+    /// short the text: "yes" isn't corrected into "oui", nor "why?" into "It fails." A long text corrected keeps most of its
+    /// words as they were, so only a short one's typos are looked for, which takes each word left against each other.
     static func keepsWords(of text: String, _ answer: String) -> Bool {
         let before = words(text)
         guard !before.isEmpty else { return true }
@@ -205,14 +220,17 @@ public enum GrammarFix {
                 missing.append(word)
             }
         }
+        if kept * 2 >= before.count { return true }
+        guard before.count <= 200 else { return false }
         // Those it didn't keep as they were, with a typo fixed: few, in a correction.
         var others = left.flatMap { word, count in Array(repeating: word, count: count) }.sorted()
         for word in missing {
             guard let index = others.firstIndex(where: { isSameWord(word, $0) }) else { continue }
             others.remove(at: index)
             kept += 1
+            if kept * 2 >= before.count { return true }
         }
-        return kept * 2 >= before.count
+        return false
     }
 
     /// A text's words, in lowercase and without apostrophes: "Don't" is "dont".

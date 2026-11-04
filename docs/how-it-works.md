@@ -1437,28 +1437,32 @@ ask for the rest.
 
 #### Replying and setting a thread's status
 
-With **Make Changes in Azure DevOps** on (`ado.makeChanges`, off by default: `MakeChangesSetting`), each thread on an open
-pull request ends with **Reply** and its status (`ThreadReplyButtons`), in the row with Explain and Fix
+With **Make Changes in Azure DevOps** on (`ado.makeChanges`, off by default: `MakeChangesSetting`), each thread on an
+open pull request ends with **Reply** and its status (`ThreadReplyButtons`), in the row with Explain and Fix
 (`ThreadCopilotActions`, which shows it without them too), in its details' comments and on its file's page, and its
-right-click menu has them. They're the only changes BriefBar makes in Azure DevOps (`ADOWrite`, in
+right-click menu has them. An open pull request is one your lists have open now (`ThreadChanges.canChange`,
+`CopilotSending.isOpen`), not only as its details last saw it, which keep one that left them as it was: on one that's
+completed or abandoned, or that left your lists, a lock takes their place, which says why in its tooltip and to
+VoiceOver (`ThreadReadOnlyMark`), and a change that finds it so says so on the thread (`ADOWriteProblem.notListed`,
+`closed`) rather than nothing. They're the only changes BriefBar makes in Azure DevOps (`ADOWrite`, in
 `Sources/AzureDevOpsCore`): your reply in a thread, a `POST` of a comment, in reply to the thread's first, with the body
 Azure DevOps' samples send (`content`, `parentCommentId` and `commentType` 1, text), and a thread's status, a `PATCH` of
-only that (`status`, by the number the API takes for it). `ADOClient.send(_:as:)` alone sends them, with a GET's sign-in,
-headers and redirect guard, from the same request path, once: it sends one again only when Azure DevOps rejected the
-sign-in, which it never acts on, so a change that fails otherwise, or times out, isn't made twice. When Azure DevOps refuses
-one, the error says why, as it said it (`ADOError.refused`, TF401181 for a pull request that's completed or abandoned), which
-shows on the thread but never goes to the log. Any answer from 200 to 299 says the change was made, but 203, a sign-in
-page's: an empty 204 too, and one whose answer can't be read, which says so (`ADOWrite.Answer.unreadable`), and the pull
-request is read again instead. A change called off before it goes, as when the setting is turned off while it waits for a
-token, never goes. And it goes only as whom the list was read as when you clicked (`send(_:as:)`): when someone else
-signed in to the Azure CLI since, as the list doesn't know yet, nothing goes, and the thread says so, with **Sign In…**
-(`ADOError.otherAccount`). A token from your own directory says whom it's for. For an organization in another directory,
-whose tokens are a guest's there, with an ID of their own that nothing in them ties to yours, the guest's token is read
-again, fresh, since one kept from before someone else signed in may be theirs, and the Azure CLI gets every directory's
-for whom it's signed in to now; then your own directory's sign-in, fresh, says who that is. `WriteTests` goes through every kind of change
-(`ADOWrite.Kind`), and checks that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET. Agents
-(`--mcp`) and the command line get none of it, and the demo sends nothing: its changes are made up (`DemoThreadChanges`),
-in its made-up data only, while it runs.
+only that (`status`, by the number the API takes for it). `ADOClient.send(_:as:)` alone sends them, with a GET's
+sign-in, headers and redirect guard, from the same request path, once: it sends one again only when Azure DevOps
+rejected the sign-in, which it never acts on, so a change that fails otherwise, or times out, isn't made twice. When
+Azure DevOps refuses one, the error says why, as it said it (`ADOError.refused`, TF401181 for a pull request that's
+completed or abandoned), which shows on the thread but never goes to the log. Any answer from 200 to 299 says the change
+was made, but 203, a sign-in page's: an empty 204 too, and one whose answer can't be read, which says so
+(`ADOWrite.Answer.unreadable`), and the pull request is read again instead. A change called off before it goes, as when
+the setting is turned off while it waits for a token, never goes. And it goes only as whom the list was read as when you
+clicked (`send(_:as:)`): when someone else signed in to the Azure CLI since, as the list doesn't know yet, nothing goes,
+and the thread says so, with **Sign In…** (`ADOError.otherAccount`). A token from your own directory says whom it's for.
+For an organization in another directory, whose tokens are a guest's there, with an ID of their own that nothing in them
+ties to yours, the guest's token is read again, fresh, since one kept from before someone else signed in may be theirs,
+and the Azure CLI gets every directory's for whom it's signed in to now; then your own directory's sign-in, fresh, says
+who that is. `WriteTests` goes through every kind of change (`ADOWrite.Kind`), and checks that nothing else in
+`AzureDevOpsCore` makes a request or sets a method but GET. Agents (`--mcp`) and the command line get none of it, and
+the demo sends nothing: its changes are made up (`DemoThreadChanges`), in its made-up data only, while it runs.
 
 **Reply** opens a field under the thread, in place (`ThreadReplyComposer`), as a composer of Copilot's does, and it's
 the details' one composer in place (`CopilotComposing.reply(to:)`): opening it closes Explain's or Fix's, and the other
@@ -1503,30 +1507,33 @@ for a reply, in its field, which stays open with what you wrote, and **Sign In�
 request that's completed or abandoned, a thread or pull request deleted meanwhile, offline, signed out, slowed down, or
 no answer in time, after which the pull request is read again, since it may have been made.
 
-**Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language it's
-written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its code blocks, fenced,
-found as Markdown closes them, in quotes too, or indented, as Markdown reads them, four columns past a list item's indent
-in a list, and inline code, links and pictures, web addresses, with the parentheses they have, and
-mentions, and characters that control how text reads, go to the model as markers,
-`{{1}}`, which it keeps, and are put back as they were; an answer that lost, repeated or moved one is turned down. The
-model is told to proofread, with an example, which Apple Intelligence corrects far more with, and gets the reply in a
-fence nothing in it closes, as what someone wrote rather than what to do. Each line keeps the Markdown the reply had
-before what it says, such as a quote's `>`, and the spaces after it, whatever the model did with them, and an answer that
-joined or split lines, changed more than half of what it says, or kept fewer than half of its words, as a translation or
-an answer to what it asks does, is turned down too (`GrammarFix.Failure.changedMore`). It shows the correction under the field, what it
-changes marked word by word (`GrammarFix.changes`), a change to spaces on the word beside it, so that a correction never
-shows as nothing to correct, with **Use It**, then **Undo**, while the reply is as it left it: it
-never changes your reply without you, nor sends it, and the field waits while it runs, with **Stop**. It uses Apple
-Intelligence, on this Mac (`OnDeviceModel`), unless you choose a Copilot model in its **▾**, from those summaries offer,
-which BriefBar keeps (`ado.grammar.model`): then the Copilot CLI gets the reply, as a summary does, with no tools, in a
-session of its own, "BriefBar grammar fix" (`CopilotSummarizer`), one premium request each time, which the field says.
-Where Apple Intelligence can't run, or is turned off, it says so, and offers the Copilot models (`GrammarFixer`): what it
-can't do never goes to Copilot by itself. The demo makes its corrections up (`GrammarFix.madeUp`), and runs no model.
+**Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language
+it's written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its code blocks,
+fenced, found as Markdown closes them, in quotes too, or indented, as Markdown reads them, four columns past a list
+item's indent in a list, and inline code, links and pictures, web addresses, with the parentheses they have, and
+mentions, and characters that control how text reads, go to the model as markers, `{{1}}`, which it keeps, and are put
+back as they were; an answer that lost, repeated or moved one is turned down. The model is told to proofread, with an
+example, which Apple Intelligence corrects far more with, and gets the reply in a fence nothing in it closes, as what
+someone wrote rather than what to do. Each line keeps the Markdown the reply had before what it says, such as a quote's
+`>`, and the spaces after it, whatever the model did with them, and an answer that joined or split lines, kept fewer
+than half of its words, or changed more than half of what it says, or 2,000 characters of a long one, what it held back
+aside, as a translation or an answer to what it asks does, is turned down too (`GrammarFix.Failure.changedMore`): it's
+checked off the main thread, as what it holds back is found, so the field and **Stop** answer meanwhile, and its work is
+bounded, however long the reply. It shows the correction under the field, what it changes marked word by word
+(`GrammarFix.changes`), a change to spaces on the word beside it, so that a correction never shows as nothing to
+correct, with **Use It**, then **Undo**, while the reply is as it left it: it never changes your reply without you, nor
+sends it, and the field waits while it runs, with **Stop**. It uses Apple Intelligence, on this Mac (`OnDeviceModel`),
+unless you choose a Copilot model in its **▾**, from those summaries offer, which BriefBar keeps (`ado.grammar.model`):
+then the Copilot CLI gets the reply, as a summary does, with no tools, in a session of its own, "BriefBar grammar fix"
+(`CopilotSummarizer`), one premium request each time, which the field says. Where Apple Intelligence can't run, or is
+turned off, it says so, and offers the Copilot models (`GrammarFixer`): what it can't do never goes to Copilot by
+itself. The demo makes its corrections up (`GrammarFix.madeUp`), and runs no model.
 
-`--render` draws, in the demo, Reply open, with Fix Grammar's suggestion, once used, with Apple Intelligence turned off and
-with a Copilot model chosen; a reply and a status that couldn't be made; then, from lists of their own with them made as
-the demo makes them, a thread replied to and resolved, and one set to Won't Fix; and the setting, as Settings shows it
-(`ThreadChangesPreview`, `threadChangeRenderings`).
+`--render` draws, in the demo, Reply open, with Fix Grammar's suggestion, once used, with Apple Intelligence turned off
+and with a Copilot model chosen; a reply and a status that couldn't be made; a pull request's threads read-only, as for
+one that left your lists; then, from lists of their own with them made as the demo makes them, a thread replied to and
+resolved, and one set to Won't Fix; and the setting, as Settings shows it (`ThreadChangesPreview`,
+`threadChangeRenderings`).
 
 #### A pull request's tags
 

@@ -1331,6 +1331,10 @@ extension AzureDevOpsSource {
             ), [("", wide), ("-narrow", narrow)]),
             ("pull-requests-status-failed", ThreadChangesPreview(states: [waiting.id: .failed(.notAllowed, .status(.fixed))]),
              [("", wide), ("-narrow", narrow)]),
+            // As for a pull request that left your lists as you resolved a thread: read-only, which says why.
+            ("pull-requests-read-only", ThreadChangesPreview(
+                states: [waiting.id: .failed(.notListed, .status(.fixed))], readOnly: ThreadChanges.notListed
+            ), [("", wide), ("-narrow", narrow)]),
         ]
         var renderings: [(name: String, view: AnyView)] = []
         for (name, preview, sizes) in shown {
