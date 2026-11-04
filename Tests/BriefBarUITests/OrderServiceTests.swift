@@ -154,6 +154,28 @@ private final class Clock {
         #expect(OrderFocus.load(from: defaults) == nil)
     }
 
+    /// Time alone changes missions, which its hourly clock looks at: a quiet order shows as stale after 30 days, and a
+    /// finished one goes two weeks later, though the sources show nothing new.
+    @Test func timeAloneMarksAQuietOrderStaleAndAFinishedOneGoes() throws {
+        let defaults = try Self.defaults(on: true)
+        let clock = Clock()
+        let order = Self.service(defaults, clock: clock)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")])
+        #expect(order.missions.first?.isStale == false)
+
+        clock.advance(days: 31)
+        order.timePassed()
+
+        #expect(order.missions.first?.isStale == true)
+        order.publish(.azureDevOps, pullRequests: [
+            Self.ado(4101, from: "robin/rounding", state: .merged), Self.ado(4102, from: "robin/cart", state: .closed),
+        ])
+        #expect(order.missions.first?.isFinished == true)
+        clock.advance(days: 15)
+        order.timePassed()
+        #expect(order.orders.plans.isEmpty && order.missions.isEmpty)
+    }
+
     @Test func theMissionYouFocusOnComesFirstUntilItsOrderIsForgotten() throws {
         let defaults = try Self.defaults(on: true)
         let order = Self.service(defaults)

@@ -31,6 +31,12 @@ package final class PullRequestOrder: ObservableObject {
     private var told: [SourceID: Told] = [:]
     /// Hears about the orders an agent tells or forgets through `--mcp`, while it's on.
     private var agentChanges: AnyObject?
+    /// Looks at the time every hour, while it's on (`timePassed`).
+    private var clock: Timer?
+
+    /// How often it looks at the time, for what time alone changes: an order that hasn't changed for 30 days shows as stale,
+    /// and one that finished goes two weeks later, whether or not the sources show anything new meanwhile.
+    package static let timeCheckInterval: TimeInterval = 3_600
 
     /// What a source told: its pull requests and sessions, and how its things look, for what shows them.
     private struct Told {
@@ -80,6 +86,8 @@ package final class PullRequestOrder: ObservableObject {
             load()
         } else {
             agentChanges = nil
+            clock?.invalidate()
+            clock = nil
             told = [:]
             orders = DeclaredOrders()
             evidence = OrderEvidence()
@@ -96,6 +104,21 @@ package final class PullRequestOrder: ObservableObject {
         if !isDemo, agentChanges == nil {
             agentChanges = AgentChanges.observe { [weak self] in self?.reloadOrders() }
         }
+        if clock == nil {
+            let clock = Timer(timeInterval: Self.timeCheckInterval, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.timePassed() }
+            }
+            clock.tolerance = 300
+            RunLoop.main.add(clock, forMode: .common)
+            self.clock = clock
+        }
+        rebuild()
+    }
+
+    /// Looks again at what time alone changes, as its clock does every hour: orders that went stale, and those that
+    /// finished long enough ago to go.
+    package func timePassed() {
+        guard isOn else { return }
         rebuild()
     }
 
