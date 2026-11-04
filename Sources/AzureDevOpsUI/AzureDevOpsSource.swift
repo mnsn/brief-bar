@@ -1537,6 +1537,8 @@ extension AzureDevOpsSource {
             for (suffix, size) in [("", wide), ("-narrow", narrow)] {
                 let details = PullRequestDetailsStore()
                 details.use(list)
+                // Unseen, as for the other pictures, which light and dark draw the same.
+                details.markSeen = { _ in }
                 details.show(item, at: .section(.comments))
                 details.markRead(thread)
                 let view = page(details, size: size)

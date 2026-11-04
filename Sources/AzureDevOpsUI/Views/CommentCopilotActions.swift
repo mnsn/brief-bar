@@ -511,6 +511,8 @@ struct CommentsHeader: View {
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
     @Environment(\.copilotActionsPreview) private var preview
+    /// Active | All grows with the text, which a segmented control's font doesn't.
+    @Environment(\.textScale) private var textScale
     @LocalState private var copied: String?
     @FocusState private var isFocused: Bool
 
@@ -541,7 +543,7 @@ struct CommentsHeader: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .font(size: 11.5)
-                    .controlSize(.small)
+                    .controlSize(textScale < 1.15 ? .small : textScale < 1.35 ? .regular : .large)
                     .fixedSize()
                     .help("Active: only the comments whose status is active or pending. All: every comment, the resolved ones folded")
                     .accessibilityLabel("Comments Shown")
