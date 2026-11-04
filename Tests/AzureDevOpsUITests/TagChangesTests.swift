@@ -641,6 +641,53 @@ import Testing
         #expect(tags(store) == nil)
     }
 
+    /// After a change Azure DevOps answered, the engine reads the tags again, counted as a read of them, in a task that
+    /// turning Azure DevOps off calls off, as one waiting for the Azure CLI's sign-in: what it answers after does nothing.
+    @Test func stoppingCallsOffTheReadAfterAChange() async throws {
+        let (store, changes, azure) = live()
+        var started: [[String]] = []
+        var calledOff = false
+        changes.readAfterChange = { _, tags in
+            started.append(tags.map(\.name))
+            // Waits, as for a token, until it's called off.
+            do {
+                try await Task.sleep(for: .seconds(30))
+            } catch {
+                calledOff = true
+            }
+            return .success(tags)
+        }
+        #expect(await changes.add("hotfix", to: key))
+        try await waitUntil { started.count == 1 }
+        #expect(started == [["deploy-eu", "hotfix", "needs-qa"]])
+        #expect(changes.isReading(key))
+        changes.stop()
+        try await waitUntil { calledOff }
+        #expect(!changes.isReading(key))
+        #expect(azure.sent.count == 1)
+        #expect(tags(store) == ["deploy-eu", "hotfix", "needs-qa"])
+    }
+
+    /// Undo offers the tag you took off while the pull request doesn't have it again: once someone else added it back, as the
+    /// tags read since show, it goes.
+    @Test func undoGoesOnceTheTagIsBack() async throws {
+        let (store, changes, _) = live()
+        let tag = PullRequestTag("needs-qa", tagId: "demo-tag-needs-qa")
+        await changes.remove(tag, from: key)
+        #expect(tags(store) == ["deploy-eu"])
+        #expect(changes.undoable(on: key, tags: store.record(for: key)?.tags) == tag)
+        // The engine has the change, as it keeps it; then someone else added it back, as it read since.
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        snapshot.records[index].tags = [PullRequestTag("deploy-eu")]
+        store.receive(snapshot)
+        #expect(changes.undoable(on: key, tags: store.record(for: key)?.tags) == tag)
+        snapshot.records[index].tags = [PullRequestTag("deploy-eu"), PullRequestTag("needs-qa")]
+        store.receive(snapshot)
+        #expect(tags(store) == ["deploy-eu", "needs-qa"])
+        #expect(changes.undoable(on: key, tags: store.record(for: key)?.tags) == nil)
+    }
+
     /// Tags are due to be read on their own when they're unknown, or when the lists don't carry them and they were read ten
     /// minutes ago or more; never while the lists carry them.
     @Test func tagsAreDueWhenUnknownOrReadTenMinutesAgo() throws {

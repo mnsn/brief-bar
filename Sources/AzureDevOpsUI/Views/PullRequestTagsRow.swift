@@ -41,7 +41,7 @@ struct PullRequestTagsRow: View {
 
     private var key: PRKey { item.key }
     private var state: TagChanges.State? { preview?.state ?? changes.state(of: key) }
-    private var removed: PullRequestTag? { preview?.removed ?? changes.removed[key] }
+    private var removed: PullRequestTag? { preview?.removed ?? changes.undoable(on: key, tags: record?.tags) }
     private var canChange: Bool { preview?.canChange ?? changes.canChange(record) }
     private var isOpen: Bool { composing == .tags && canChange }
 
@@ -457,7 +457,8 @@ struct PullRequestTagsRow: View {
         }
     }
 
-    /// Takes a tag off. The keyboard's focus, when its ✕ had it, goes to the next tag's ✕, or else to +.
+    /// Takes a tag off. The keyboard's focus, when its ✕ had it, goes to the next tag's ✕, while it's there, or else to Add
+    /// Tag, or to the field while it's open, in Add Tag's place.
     private func remove(_ tag: PullRequestTag) {
         guard preview == nil else { return }
         let hadFocus = focus == .remove(tag.key)
@@ -468,8 +469,13 @@ struct PullRequestTagsRow: View {
         changes.dismiss(key)
         Task {
             await changes.remove(tag, from: key)
-            guard hadFocus, store.record(for: key)?.tags?.contains(where: { $0.key == tag.key }) != true else { return }
-            focus = following.map { .remove($0.key) } ?? .add
+            let left = store.record(for: key)?.tags
+            guard hadFocus, left?.contains(where: { $0.key == tag.key }) != true else { return }
+            if let following, left?.contains(where: { $0.key == following.key }) == true {
+                focus = .remove(following.key)
+            } else {
+                focus = composing == .tags ? .field : .add
+            }
         }
     }
 

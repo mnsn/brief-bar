@@ -471,12 +471,12 @@ turn the setting off. It doesn't suggest from Azure DevOps' own list of a projec
 items and can hold many thousands, more than one request can read in time. The tags show what Azure DevOps answered, as
 it spells the tag in that project, as soon as it answers, and BriefBar reads them again, for anyone else's change
 meanwhile. Nothing asks first: after you remove one, **Undo**, under the tags, adds it back, until you change them
-again, dismiss it or close the details. When it can't, a sentence under them says why, such as **Azure DevOps says you
-may not change this pull request's tags**, **You're offline**, or that the pull request is completed, abandoned or no
-longer in your lists, with **Try Again** where trying again may help, or **Sign In…** when the Azure CLI isn't signed
-in. Without the setting, or on a pull request that's completed, abandoned or no longer in your lists, they show without
-✕ or Add Tag, and the tag glyph's tooltip says why. The demo has made-up tags, such as `deploy-eu`, `deploy-us` and
-`hotfix`, changes only those, and sends nothing.
+again, dismiss it or close the details, or someone else adds it back. When it can't, a sentence under them says why,
+such as **Azure DevOps says you may not change this pull request's tags**, **You're offline**, or that the pull request
+is completed, abandoned or no longer in your lists, with **Try Again** where trying again may help, or **Sign In…** when
+the Azure CLI isn't signed in. Without the setting, or on a pull request that's completed, abandoned or no longer in
+your lists, they show without ✕ or Add Tag, and the tag glyph's tooltip says why. The demo has made-up tags, such as
+`deploy-eu`, `deploy-us` and `hotfix`, changes only those, and sends nothing.
 
 **See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
 changes, folder by folder as Azure DevOps' Files page lists them, a click on a folder folding it: each with

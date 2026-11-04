@@ -791,8 +791,8 @@ final class PRStore: ObservableObject {
     }
 
     /// You changed a pull request's tags, with Make Changes in Azure DevOps on (`TagChanges`), and Azure DevOps answered: they
-    /// show at once, as it answered, and are read again (`PulseEngine.changedTags`). In the demo, which reads nothing, they stay
-    /// in its made-up data while it runs.
+    /// show at once, as it answered, and then the engine reads them again (`readTags(afterChanging:to:)`). In the demo, which
+    /// reads nothing, they stay in its made-up data while it runs.
     func changedTags(_ key: PRKey, to tags: [PullRequestTag]) {
         var made = madeTags[key] ?? MadeTags(tags: tags)
         if let before = record(for: key)?.tags, !PullRequestTag.same(before, tags) { made.replaced.append(before) }
@@ -801,8 +801,14 @@ final class PRStore: ObservableObject {
         state.records = Self.applying(madeTags, to: state.records)
         recompute()
         refreshed.send()
-        guard mode == .live, let engine else { return }
-        Task { await engine.changedTags(key, to: tags) }
+    }
+
+    /// After a change to a pull request's tags (`changedTags`): the engine keeps them as Azure DevOps answered, over any read
+    /// that started before, then reads them again, one request, for anyone else's change meanwhile (`PulseEngine.changedTags`),
+    /// in its caller's task, which turning Azure DevOps off calls off (`TagChanges`). Nil in the demo, which reads nothing.
+    func readTags(afterChanging key: PRKey, to tags: [PullRequestTag]) async -> Result<[PullRequestTag], ADOError>? {
+        guard mode == .live, let engine else { return nil }
+        return await engine.changedTags(key, to: tags)
     }
 
     /// Reads a pull request's tags on their own now, one request, as Azure DevOps has them: for one whose list doesn't carry

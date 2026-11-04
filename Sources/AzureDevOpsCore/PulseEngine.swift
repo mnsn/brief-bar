@@ -528,12 +528,13 @@ public actor PulseEngine {
 
     /// BriefBar changed a pull request's tags, and Azure DevOps answered: they show as it answered at once, rather than as a
     /// read that started before, such as a refresh under way, has them; then they're read again, one request, for any other
-    /// change made to them meanwhile.
-    public func changedTags(_ key: PRKey, to changed: [PullRequestTag]) async {
-        guard active[key] != nil || done[key] != nil else { return }
+    /// change made to them meanwhile. Returns them as that read left them.
+    @discardableResult
+    public func changedTags(_ key: PRKey, to changed: [PullRequestTag]) async -> Result<[PullRequestTag], ADOError> {
+        guard active[key] != nil || done[key] != nil else { return .failure(.notFound) }
         keep(PullRequestTag.sorted(changed), of: key, readAt: now())
         publish()
-        await readTags(key)
+        return await readTags(key)
     }
 
     /// A pull request's tags, as a read that started at `readAt` has them: unless the tags kept are from one that started

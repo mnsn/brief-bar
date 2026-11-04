@@ -1567,26 +1567,29 @@ tags have ✕, and Add Tag opens a field that adds one, which is the details' on
 (`CopilotComposing.tags`); otherwise the tag glyph's tooltip, and VoiceOver, say why they can't be changed. Adding one
 is a `POST` of its name (`ADOWrite.addTag`); taking one off, a `DELETE` of it, by the project's tag's ID, so a name with
 a slash in it is no trouble, with no body (`ADOWrite.removeTag`), whose answer, whether nothing (204), an empty 200 or
-JSON, says it's done. What Azure DevOps answers shows at once, the tag as the project spells it, and the engine reads
-the tags again, one request, for anyone else's change meanwhile (`PRStore.changedTags`, `PulseEngine.changedTags`); the
-list keeps the change over a snapshot read before it, which has the tags as they were, until one has it, or has tags
-changed since (`PRStore.pending`). A tag the pull request has already, ignoring letter case, isn't sent. Nothing asks
-first: after a tag is taken off, **Undo** adds it back, by its name (`TagChanges.removed`, `undoRemoval`), until the
-tags change again, you dismiss it, or nothing shows the pull request. A change that didn't happen says why under the
-tags (`ADOWriteProblem`), with **Try Again**, but not when Azure DevOps refused it, the pull request is closed or the
-tag isn't there, which trying again can't help, and **Sign In…** when that's why. One clicked as the pull request was
-completed or abandoned, or left your lists, goes nowhere and says so, as a thread's does (`closed`, `notListed`), and
-what the tags say stays once they can't be changed, with nothing to try again; when it may have happened all the same,
-as when Azure DevOps didn't answer in time, or Azure Front Door answered 503 once it took too long, the tags are read
-again, and, when they can't be yet, as nothing goes out for a while after a 503, as soon as they can be while its
-details show, half a minute after the read that couldn't, which one that started before it doesn't cut short, and only
-by one that started since the change (`TagChanges.readAgain`, `unsure`); one taken off that Azure DevOps says isn't
-there is, when the tags read again don't have it, as you wanted. Each change goes in a task kept by pull request, which
-turning the setting off, Azure DevOps stopping or someone else signing in calls off (`TagChanges.forgetAll`): one that
-hasn't gone, as while it waits for a token, never does, and one called off does nothing more, though the setting is on
-again; as the setting goes off, the tags of a pull request whose change it called off are read again, as it may have
-gone all the same. It goes only as whom the list was read as when you clicked (`ADOClient.send(_:as:)`): when someone
-else signed in to the Azure CLI since, nothing goes, and the tags say so, with **Sign In…**.
+JSON, says it's done. What Azure DevOps answers shows at once, the tag as the project spells it, and the engine keeps
+it, over any read that started before, then reads the tags again, one request, for anyone else's change meanwhile, in a
+task that turning Azure DevOps off calls off, counted as a read of them (`PRStore.changedTags`,
+`readTags(afterChanging:to:)`, `PulseEngine.changedTags`); the list keeps the change over a snapshot read before it,
+which has the tags as they were, until one has it, or has tags changed since (`PRStore.pending`). A tag the pull request
+has already, ignoring letter case, isn't sent. Nothing asks first: after a tag is taken off, **Undo** adds it back, by
+its name (`TagChanges.removed`, `undoRemoval`), until the tags change again, you dismiss it, or nothing shows the pull
+request, and not once they have it again, as when someone else added it back (`TagChanges.undoable`). A change that
+didn't happen says why under the tags (`ADOWriteProblem`), with **Try Again**, but not when Azure DevOps refused it, the
+pull request is closed or the tag isn't there, which trying again can't help, and **Sign In…** when that's why. One
+clicked as the pull request was completed or abandoned, or left your lists, goes nowhere and says so, as a thread's does
+(`closed`, `notListed`), and what the tags say stays once they can't be changed, with nothing to try again; when it may
+have happened all the same, as when Azure DevOps didn't answer in time, or Azure Front Door answered 503 once it took
+too long, the tags are read again, and, when they can't be yet, as nothing goes out for a while after a 503, as soon as
+they can be while its details show, half a minute after the read that couldn't, which one that started before it doesn't
+cut short, and only by one that started since the change (`TagChanges.readAgain`, `unsure`); one taken off that Azure
+DevOps says isn't there is, when the tags read again don't have it, as you wanted. Each change goes in a task kept by
+pull request, which turning the setting off, Azure DevOps stopping or someone else signing in calls off
+(`TagChanges.forgetAll`): one that hasn't gone, as while it waits for a token, never does, and one called off does
+nothing more, though the setting is on again; as the setting goes off, the tags of a pull request whose change it called
+off are read again, as it may have gone all the same. It goes only as whom the list was read as when you clicked
+(`ADOClient.send(_:as:)`): when someone else signed in to the Azure CLI since, nothing goes, and the tags say so, with
+**Sign In…**.
 
 As you type, the field suggests (`TagChoices`) the tags you added in the pull request's project, the latest first, then
 those on the pull requests BriefBar read there, the most used first, then by name, but the pull request's own, six at
