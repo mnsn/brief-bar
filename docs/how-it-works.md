@@ -1454,8 +1454,10 @@ line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘Retur
 **Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure CLI forgets
 it, and calls off the changes on their way (`ThreadChanges.forgetAll`): one that hasn't gone yet never does, and nothing
 says it failed. After a reply that may have gone, as one Azure DevOps didn't answer in time, the thread is read again
-before it's sent again, and nothing goes until it was (`ADOWriteProblem.unconfirmed`): a comment of yours that came since
-it was sent, and says the same, is it, whatever came after it, so it isn't sent twice (`ThreadChanges.Attempt`). **Resolve**, or **Reactivate** on a resolved thread, sets its status at once, without asking, since the
+before it's sent again, by a read that starts then, never one under way before, and nothing goes until it was
+(`ADOWriteProblem.unconfirmed`): a comment of yours that came since it was sent, and says the same, as Azure DevOps keeps
+it, its mentions as their IDs, or as the details show it, is it, whatever came after it, so it isn't sent twice
+(`ThreadChanges.Attempt`). **Resolve**, or **Reactivate** on a resolved thread, sets its status at once, without asking, since the
 same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps' own menu offers, Active, Pending,
 Resolved, Won't Fix and Closed, and By Design only for a thread that has it (`ThreadStatus.choices`).
 
@@ -1463,13 +1465,16 @@ What Azure DevOps answers shows at once (`ThreadChange`, which `PRDetails.apply`
 applies it (`PRStore.changed`), so the details, Needs You, What's Left, the brief and the counts follow it, then the engine
 does, and reads the pull request's details again, two requests, now (`PulseEngine.changed`, `readAgain`). A read that
 started before the change, such as a refresh under way, doesn't undo it, even when it answers after the change's own: its
-threads are left as they are, and the pull request is read again at the next refresh. The list keeps the change over its
+threads are left as they are, and its policies too, which a thread's status changes, such as one that wants comments
+resolved, and the pull request is read again at the next refresh. So it is after a change that may have been made, as one
+Azure DevOps didn't answer in time, or whose answer can't be read (`PulseEngine.mayHaveChanged`). The list keeps the change over its
 refreshes until a snapshot has it (`PRStore.pending`), a status replacing one set before on the thread, so that
 **Reactivate** after **Resolve** isn't undone by it. A thread you replied to doesn't wait on you, as your last word is after the comment; one you resolved
 doesn't either, as the pull request is seen as you resolve it, and its details, which keep what was new as it was when they
 showed it, leave out what was in it until then (`ThreadChanges.waiting`). While the details show the pull request, a thread
-you change stays where it was as you first did, with the open ones or the resolved ones, and with those that wait on you or
-not, however it stands now (`Threads.arranged(holding:)`), and on its file's page, it stays unfolded: so it doesn't move
+you change stays where it was as you first did, with the open ones or the resolved ones, with those that wait on you or
+not, and among them, by when something was last said in it then, though your reply is the latest now, however it stands
+now (`Threads.arranged(holding:)`), and on its file's page, it stays unfolded: so it doesn't move
 away as you reply or resolve it, and the menu that sets it back is where you left it. A change that didn't happen says why
 on the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help, or,
 for a reply, in its field, which stays open with what you wrote, and **Sign In…** when that's why: no
