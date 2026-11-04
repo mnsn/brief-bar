@@ -166,6 +166,13 @@ final class WorkLinksStore {
         Task { await engine.reread(pullRequests: pullRequests, workItems: workItems) }
     }
 
+    /// The organizations of what it looks up, what's linked that your lists and the sprint don't show, while it reads:
+    /// any, not only those you chose, as a session or a link you added may link another organization's work item.
+    var lookupOrganizations: Set<String> {
+        guard engine != nil, let lastInputs else { return [] }
+        return Set(lastInputs.workItemLookups.map(\.organization) + lastInputs.pullRequestLookups.map(\.organization))
+    }
+
     private func refreshEngine() {
         guard let engine else { return }
         Task { await engine.refresh() }

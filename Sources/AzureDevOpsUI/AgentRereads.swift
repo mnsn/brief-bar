@@ -7,12 +7,12 @@ import Foundation
 /// Reads again, sooner than its next refresh, what Copilot sessions say they just changed in Azure DevOps
 /// (`changed_in_azure_devops`), with Updates from Copilot Sessions on: only what BriefBar reads anyway, in the organizations
 /// it reads. Your pull requests' lists, with the named ones' details, and their tags that the lists don't carry, as their
-/// details show (`TagChanges.changedElsewhere`); with Show Links on, their work items and the sprint's pull requests; the
-/// sprint, while something shows it; and the work item whose details show. What comes within `gathering` is one pass, and
-/// passes are `spacing` apart at least, so that agents can't make BriefBar read Azure DevOps more often than opening its
-/// panel again and again does (`PRStore.refreshIfStale`); and the engines' own caps hold (`PulseEngine.reread`,
-/// `LinkEngine.reread`). Turning Updates from Copilot Sessions off or on forgets what waits for its pass, as it forgets
-/// what sessions asked before (`SessionUpdates.setOn`).
+/// details show (`TagChanges.changedElsewhere`); with Show Links on, their work items, the sprint's pull requests and what
+/// else is linked that it looks up; the sprint, while something shows it, for a work item it may have; and the work item
+/// whose details show. What comes within `gathering` is one pass, and passes are `spacing` apart at least, so that agents
+/// can't make BriefBar read Azure DevOps more often than opening its panel again and again does (`PRStore.refreshIfStale`);
+/// and the engines' own caps hold (`PulseEngine.reread`, `LinkEngine.reread`). Turning Updates from Copilot Sessions off or
+/// on forgets what waits for its pass, as it forgets what sessions asked before (`SessionUpdates.setOn`).
 @MainActor
 final class AgentRereads {
     /// How long a pass waits for more after the first request, so that a burst of calls is one pass.
@@ -34,7 +34,8 @@ final class AgentRereads {
     private let now: () -> Date
     private let gathering: TimeInterval
     private let spacing: TimeInterval
-    private var pending = Pass()
+    /// What the next pass reads.
+    private(set) var pending = Pass()
     private var lastPass: Date?
     private var scheduled: Task<Void, Never>?
     private var subscriptions: Set<AnyCancellable> = []
@@ -56,23 +57,35 @@ final class AgentRereads {
 
     /// With the source's stores, which it reads with. The organizations BriefBar reads are those you chose, those of the
     /// pull requests its lists have, which include the ones you watch and those sent to you from elsewhere, and the
-    /// sprint's team's.
+    /// sprint's team's; with Show Links on, those of what it looks up, which may be any, such as another organization's
+    /// work item linked to a session (`WorkLinksStore.lookupOrganizations`); and that of the work item whose details show.
     convenience init(
         updates: SessionUpdates, store: PRStore, sprint: SprintStore?, workLinks: WorkLinksStore?, details: WorkItemDetailsStore?,
         tags: TagChanges?
     ) {
-        let organizations = { [weak store, weak sprint] () -> [String] in
+        let organizations = { [weak store, weak sprint, weak workLinks, weak details] () -> [String] in
             guard let store else { return [] }
-            return store.organizations + store.items.map(\.key.organization) + [sprint?.board?.team.organization].compactMap { $0 }
+            return store.organizations + store.items.map(\.key.organization)
+                + [sprint?.board?.team.organization, details?.selected?.organization].compactMap { $0 }
+                + (workLinks?.lookupOrganizations ?? [])
         }
         self.init(updates: updates, organizations: organizations) {
             [weak store, weak sprint, weak workLinks, weak details, weak tags] pass in
             store?.reread(pass.pullRequests)
             tags?.changedElsewhere(pass.pullRequests)
-            if !pass.workItems.isEmpty { sprint?.refresh() }
+            if let sprint, AgentRereads.sprintMayHave(pass.workItems, team: sprint.settings.sprintTeam ?? sprint.board?.team) {
+                sprint.refresh()
+            }
             workLinks?.reread(pullRequests: pass.pullRequests, workItems: pass.workItems)
             details?.reloadIfShowing(pass.workItems)
         }
+    }
+
+    /// Whether a team's sprint may have one of these work items: one of the team's organization; any, while the sprint
+    /// doesn't know its team yet.
+    static func sprintMayHave(_ workItems: Set<WorkItemKey>, team: TeamRef?) -> Bool {
+        guard let team else { return !workItems.isEmpty }
+        return workItems.contains { $0.organization == team.organization.lowercased() }
     }
 
     /// Hears what agents ask to read again, until it stops; and as Updates from Copilot Sessions goes off or on, forgets
