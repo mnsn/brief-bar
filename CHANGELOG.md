@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **BriefBar no longer quits as a minute passes while a summary shows.** With summaries on, a minute passing while a
+  summary showed, under a row or on a page, could make BriefBar quit, as it checked again, everywhere at once, where
+  what the summary sums up stands.
+
 ## 0.12.0 - 2026-11-03
 
 - **BriefBar now needs macOS 26 or later.** On macOS 15, BriefBar keeps the version it has: its updater doesn't

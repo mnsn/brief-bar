@@ -53,6 +53,8 @@ package final class ItemStories: ObservableObject {
     private var readers: [SourceID: ContextRegistration] = [:]
     @Published private var told: [ItemRef: Told] = [:]
     @Published private var telling: [ItemRef: Telling] = [:]
+    /// What views asked for, to be asked on the main actor's next turn (`request(_:)`): the latest row of each.
+    private var requested: [LinkedItem] = []
     private var nextToken = 0
     private var cancellable: AnyCancellable?
     /// For tests: what "now" is.
@@ -118,9 +120,10 @@ package final class ItemStories: ObservableObject {
         if let current = telling[ref] { start(ref, version: current.version) }
     }
 
-    /// Whether its story is being told now, for the first time or again.
+    /// Whether its story is being told now, for the first time or again, or will be on the main actor's next turn, as a view
+    /// asked for it (`request(_:)`).
     package func isTelling(_ ref: ItemRef) -> Bool {
-        telling[ref] != nil
+        telling[ref] != nil || requested.contains { $0.ref == ref && wouldTell(ref, version: Self.version(of: $0)) }
     }
 
     /// Whether anything was told of it, even that there's nothing to tell.
@@ -129,11 +132,29 @@ package final class ItemStories: ObservableObject {
     }
 
     /// Asks for a thing's story, unless it's being told, or was told lately for the row as it is. Nothing while Show Links
-    /// is off.
+    /// is off. Views ask as they update, in the middle of AppKit's layout, where each change to what they show marks their
+    /// window for another pass, and AppKit throws past as many passes as the window has views: so what's asked is taken up
+    /// on the main actor's next turn, once for each thing, for the latest row asked for, however many times it's asked
+    /// meanwhile.
     package func request(_ item: LinkedItem) {
-        let version = Self.version(of: item)
-        guard needsTelling(item.ref, version: version) else { return }
-        start(item.ref, version: version)
+        if let index = requested.firstIndex(where: { $0.ref == item.ref }) {
+            requested[index] = item
+            return
+        }
+        requested.append(item)
+        guard requested.count == 1 else { return }
+        Task { [weak self] in self?.takeUpRequests() }
+    }
+
+    /// Asks for what views asked for since the last turn (`request(_:)`), in the order they asked.
+    private func takeUpRequests() {
+        let items = requested
+        requested = []
+        for item in items {
+            let version = Self.version(of: item)
+            guard needsTelling(item.ref, version: version) else { continue }
+            start(item.ref, version: version)
+        }
     }
 
     /// Tells every one of them and waits, for a summary and for `--render`: one being told already for the row as it is,
@@ -166,6 +187,13 @@ package final class ItemStories: ObservableObject {
     private func needsTelling(_ ref: ItemRef, version: String) -> Bool {
         guard links.isOn, tellers.values.contains(where: { $0.kinds.contains(ref.kind) }) else { return false }
         sweep()
+        return wouldTell(ref, version: version)
+    }
+
+    /// Whether asking for its story would tell it, for this row: unless Show Links is off, no source tells its kind, it's
+    /// being told for this row, or it was told for it lately. Changes nothing.
+    private func wouldTell(_ ref: ItemRef, version: String) -> Bool {
+        guard links.isOn, tellers.values.contains(where: { $0.kinds.contains(ref.kind) }) else { return false }
         if telling[ref]?.version == version { return false }
         guard let told = told[ref] else { return true }
         return told.version != version || now().timeIntervalSince(told.at) >= Self.freshFor

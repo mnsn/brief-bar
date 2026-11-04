@@ -464,8 +464,12 @@ Links is on, from what it already read, and BriefBar keeps what they tell in mem
 row changes, a minute later, or once more of it is read, such as a work item's details as they show
 (`ItemStories.invalidate`), and forgotten a quarter of an hour after it was told, when its source stops or someone else
 signs in to its CLI, the Azure CLI or GitHub's, or no one does, with the summaries made of them, or when Show Links goes
-off. When two sources know the same thing, what they tell is put together in the sources' order: a task Azure DevOps
-sent to Copilot says how it went, and Copilot what it recorded.
+off. Views ask as they update, as they show and each minute, in the middle of AppKit's layout, where each change to what
+they show marks their window for another pass, and AppKit throws past as many passes as the window has views: so what
+they ask is taken up on the main actor's next turn, once for each thing however often it's asked
+(`ItemStories.request`), and a summary looks again at what it sums up, as stories are told, once on that turn, however
+many were (`StorySummaries.lookAgain`). When two sources know the same thing, what they tell is put together in the
+sources' order: a task Azure DevOps sent to Copilot says how it went, and Copilot what it recorded.
 
 - **Azure DevOps** (`PullRequestStory`): one of your pull requests, from all that's read of it: who reviews it and how
   each voted (people only: groups aren't reviewers), how many threads are open and how many comments wait on you,
