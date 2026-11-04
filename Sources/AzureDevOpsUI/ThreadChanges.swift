@@ -1,6 +1,7 @@
 import AzureDevOpsCore
 import BriefBarCore
 import Combine
+import CryptoKit
 import Foundation
 
 /// What you change in Azure DevOps from BriefBar, with **Make Changes in Azure DevOps** on: your replies in pull requests'
@@ -43,20 +44,25 @@ final class ThreadChanges: ObservableObject {
     /// When you resolved each thread you did here: what waited on you in it until then doesn't anymore, though its details
     /// show what was new as it was when they showed it (`waiting(_:of:)`).
     private var resolved: [Key: Date] = [:]
-    /// The threads whose reply may have gone though it failed, as one Azure DevOps didn't answer in time, with what it said:
-    /// until their threads, read again for it, tell, none is sent there.
+    /// The threads whose reply may have gone though it failed, as one Azure DevOps didn't answer in time, with a fingerprint
+    /// of what it said (`Attempt`): until their threads, read again for it, tell, the same isn't sent there.
     private var unsure: [Key: Attempt] = [:]
     /// The changes on their way to Azure DevOps, by thread: called off as replies go, when the setting is turned off, Azure
     /// DevOps stops or someone else signs in, so that one that hasn't gone yet, as one waiting for a token, never does.
     private var inFlight: [Key: Task<ADOWrite.Answer, Error>] = [:]
+    /// The changes on their way as the setting went off, which may have gone already, by thread, with when they were asked
+    /// for (`generation`): they settle all the same (`ADOClient.send(_:as:)`), and until they have, their thread, on again,
+    /// shows them on their way and takes no other change, so that none goes twice while it's unknown whether it went.
+    private var settling: [Key: Int] = [:]
     /// How many times what was going on was called off (`forgetAll`): a change asked for before then does nothing more, as
     /// it comes back from what it waited for, though the setting is on again and another change on its thread is under way.
     private var generation = 0
 
-    /// A reply that may have gone: what it said, and the comments its thread had before it was sent, by their IDs. A comment
-    /// of yours that came since, which says the same, is it, whatever came after it.
+    /// A reply that may have gone: a fingerprint of what it said, as it went (`digest`), rather than what it said, so that it
+    /// can outlast what you wrote, as the setting goes off; and the comments its thread had before it was sent, by their IDs.
+    /// A comment of yours that came since, which says the same, is it, whatever came after it.
     struct Attempt: Equatable {
-        var markdown: String
+        var digest: SHA256.Digest
         var before: Set<Int>
     }
 
@@ -86,17 +92,15 @@ final class ThreadChanges: ObservableObject {
         readAgain = { [weak store] key in store?.mayHaveChanged(key) }
         // The demo shows them: they change only its made-up data.
         if store.mode == .demo { settings.makesChanges = true }
-        // Turned off, threads show none of it, what you wrote goes, and a change on its way is called off. One called off may
-        // have gone all the same: its pull request is read again, to show it if it did, so that it isn't made twice.
+        // Turned off, threads show none of it, what you wrote goes, and a change that hasn't gone yet is called off. One that
+        // may have goes on, since Azure DevOps may make it all the same: its thread takes no other change until it settles,
+        // and then says what happened; and a reply that may have gone is still checked before the same goes again
+        // (`forgetAll(keepingGuards:)`).
         settings.$makesChanges.removeDuplicates().dropFirst()
             .sink { [weak self] on in
                 MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.objectWillChange.send()
-                    guard !on else { return }
-                    let calledOff = Set(self.inFlight.keys.map(\.pullRequest))
-                    self.forgetAll()
-                    for pullRequest in calledOff { self.readAgain(pullRequest) }
+                    self?.objectWillChange.send()
+                    if !on { self?.forgetAll(keepingGuards: true) }
                 }
             }
             .store(in: &cancellables)
@@ -182,8 +186,10 @@ final class ThreadChanges: ObservableObject {
     /// Sends your reply to a thread, as you wrote it (`posted(_:)`), then, with `status`, sets the thread's status, as Reply &
     /// Resolve does. Returns whether the reply went, and was still yours to finish: then what you wrote is forgotten;
     /// otherwise it's kept, and the thread says why. After one that may have gone, as one Azure DevOps didn't answer in
-    /// time, the thread is read again first, and nothing goes until it was: if it went, it isn't sent again, whatever came
-    /// after it. Called off meanwhile (`forgetAll`), it does nothing more, though it's turned back on.
+    /// time, the same reply goes only once the thread, read again first, says it didn't, whatever came after it. Called off
+    /// meanwhile (`forgetAll`), it does nothing more, though it's turned back on: but one that had gone keeps its thread
+    /// until it settles, then shows what Azure DevOps answered, or, when it may have been made without saying so, its pull
+    /// request is read again, and it's checked before the same goes again.
     @discardableResult
     func reply(_ text: String, then status: ThreadStatus? = nil, to thread: ReviewThread, of pullRequest: PRKey) async -> Bool {
         let key = Key(pullRequest: pullRequest, thread: thread.id)
@@ -198,7 +204,7 @@ final class ThreadChanges: ObservableObject {
         // As the list read it last, which may have more than the view had; or, after a reply that may have gone, as Azure
         // DevOps has it now.
         var thread = record.details?.threads.first { $0.id == thread.id } ?? thread
-        if let attempt = unsure[key] {
+        if let attempt = unsure[key], attempt.digest == Self.digest(markdown) {
             states[key] = .sending(.reply(then: status))
             let threads = await readThreads(pullRequest)
             // Turned off meanwhile, or someone else signed in: what you wrote is gone, and nothing goes, though it's on again.
@@ -211,8 +217,8 @@ final class ThreadChanges: ObservableObject {
             unsure[key] = nil
             states[key] = nil
             thread = read
-            // It went, and says what you'd send: it's there already.
-            if Self.went(attempt, in: read, me: record.me), Self.same(attempt.markdown, markdown) {
+            // It went: it's there already.
+            if Self.went(attempt, in: read, me: record.me) {
                 drafts[key] = nil
                 if let status, read.threadStatus != status {
                     await setStatus(status, of: read, in: pullRequest, afterReply: true)
@@ -237,18 +243,31 @@ final class ThreadChanges: ObservableObject {
                 }
             }
         } catch is CancellationError {
-            // Called off, as the setting was turned off or someone else signed in, with what you wrote: nothing to say.
+            // Called off before it went, as the setting was turned off or someone else signed in while it waited for a token:
+            // it didn't go, so there's nothing to say or to check.
+            settled(key, sentIn: generation)
             return false
         } catch {
-            // Called off meanwhile: what's on its thread now is someone else's to say.
-            guard generation == self.generation else { return false }
             let problem = ADOWriteProblem(error, now: now())
-            if problem.mayHaveGone { unsure[key] = Attempt(markdown: markdown, before: Set(thread.comments.map(\.id))) }
+            // One that may have gone is checked before the same goes again: unless someone else signed in since, whose it isn't.
+            if problem.mayHaveGone, account == self.account {
+                unsure[key] = Attempt(digest: Self.digest(markdown), before: Set(thread.comments.map(\.id)))
+            }
+            // Called off as it went, as the setting was turned off: the thread says nothing, but once it's settled, its pull
+            // request is read again, to show it if it was made.
+            guard generation == self.generation else {
+                if problem.mayHaveGone { readAgain(pullRequest) }
+                settled(key, sentIn: generation)
+                return false
+            }
             fail(key, problem, .reply(then: status), pullRequest: pullRequest)
             return false
         }
         // It went, but was called off as it did: the thread shows it, and nothing more happens.
-        guard generation == self.generation else { return false }
+        guard generation == self.generation else {
+            settled(key, sentIn: generation)
+            return false
+        }
         drafts[key] = nil
         if let status {
             states[key] = nil
@@ -285,13 +304,22 @@ final class ThreadChanges: ObservableObject {
                 }
             }
         } catch is CancellationError {
+            settled(key, sentIn: generation)
             return
         } catch {
-            guard generation == self.generation else { return }
-            fail(key, ADOWriteProblem(error, now: now()), .status(status), pullRequest: pullRequest)
+            let problem = ADOWriteProblem(error, now: now())
+            guard generation == self.generation else {
+                if problem.mayHaveGone { readAgain(pullRequest) }
+                settled(key, sentIn: generation)
+                return
+            }
+            fail(key, problem, .status(status), pullRequest: pullRequest)
             return
         }
-        guard generation == self.generation else { return }
+        guard generation == self.generation else {
+            settled(key, sentIn: generation)
+            return
+        }
         states[key] = nil
         if status.isResolved {
             // Up to its latest comment, as Azure DevOps dates them: what comes after needs you again.
@@ -308,7 +336,8 @@ final class ThreadChanges: ObservableObject {
 
     /// Sends a change, while you can make changes and nothing called it off since it was asked for (`generation`), as whom
     /// it was asked for as, in a task that's called off as replies go (`forgetAll`): before it goes, as while it waits for a
-    /// token, it never does.
+    /// token, it never does, and throws `CancellationError`; once it's gone, it settles all the same, with Azure DevOps'
+    /// answer or why it failed (`ADOClient.send(_:as:)`).
     private func dispatch(_ write: ADOWrite, for key: Key, as account: String?, in generation: Int) async throws -> ADOWrite.Answer {
         guard generation == self.generation else { throw CancellationError() }
         guard settings.makesChanges else {
@@ -319,11 +348,7 @@ final class ThreadChanges: ObservableObject {
         let task = Task { try await send(write, account) }
         inFlight[key] = task
         defer { if inFlight[key] == task { inFlight[key] = nil } }
-        do {
-            return try await task.value
-        } catch where task.isCancelled {
-            throw CancellationError()
-        }
+        return try await task.value
     }
 
     /// Whether a reply that may have gone did: a comment of yours in the thread, which came since it was sent, says it, as
@@ -331,8 +356,14 @@ final class ThreadChanges: ObservableObject {
     static func went(_ attempt: Attempt, in thread: ReviewThread, me: String) -> Bool {
         thread.comments.contains { comment in
             guard !attempt.before.contains(comment.id), comment.author.id == me.lowercased() else { return false }
-            return comment.content.map { same($0, attempt.markdown) } == true || same(comment.markdown, attempt.markdown)
+            return comment.content.map { digest($0) == attempt.digest } == true || digest(comment.markdown) == attempt.digest
         }
+    }
+
+    /// A fingerprint of a reply as it would go (`posted(_:)`): two say the same when theirs are, but for the lines that say
+    /// nothing before them, the spaces after them and how their lines end, and with their first line's indent.
+    static func digest(_ text: String) -> SHA256.Digest {
+        SHA256.hash(data: Data(posted(text).utf8))
     }
 
     /// A change that didn't happen, or may not have: the thread says why, and when it may have happened all the same, its
@@ -353,22 +384,35 @@ final class ThreadChanges: ObservableObject {
         return posted
     }
 
-    /// Whether two replies say the same, as they'd go (`posted(_:)`): but for the lines that say nothing before them, the
-    /// spaces after them and how their lines end, and with their first line's indent, which can make it code.
-    static func same(_ lhs: String, _ rhs: String) -> Bool {
-        posted(lhs) == posted(rhs)
-    }
-
-    /// Forgets what you wrote, and what was going on, as Azure DevOps stops or someone else signs in.
-    func forgetAll() {
+    /// Forgets what you wrote, and what was going on, and calls off the changes on their way that haven't gone yet, as the
+    /// setting goes off, Azure DevOps stops or someone else signs in. As the setting goes off (`keepingGuards`), the changes
+    /// on their way, which may have gone already, keep their threads until they settle (`settling`), and a reply that may
+    /// have gone is still checked before the same goes again, by its fingerprint, not what it said.
+    func forgetAll(keepingGuards: Bool = false) {
+        if keepingGuards {
+            for key in inFlight.keys { settling[key] = generation }
+        } else {
+            settling = [:]
+        }
         generation += 1
         for task in inFlight.values { task.cancel() }
         inFlight = [:]
         drafts = [:]
-        states = [:]
+        // What's left of a change still settling: a reply's status after it doesn't go.
+        states = states.filter { settling[$0.key] != nil }.mapValues { state in
+            if case .sending(.reply) = state { return .sending(.reply(then: nil)) }
+            return state
+        }
         resolved = [:]
-        unsure = [:]
+        if !keepingGuards { unsure = [:] }
         focusing = nil
+    }
+
+    /// A change on its way as the setting went off has settled, and said what it could: its thread takes changes again.
+    private func settled(_ key: Key, sentIn generation: Int) {
+        guard settling[key] == generation else { return }
+        settling[key] = nil
+        states[key] = nil
     }
 
     /// Who's signed in to the Azure CLI, as the list last told.
