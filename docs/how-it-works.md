@@ -1450,17 +1450,19 @@ line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘Retur
 & Reactivate** reactivates a resolved one, as Azure DevOps' own does. What you write is kept as you type
 (`ThreadChanges.keep`), in memory only, for each thread, until it's sent: closing the field, or the details, keeps it, and
 **Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure CLI forgets
-it. A reply whose text is already your last word in the thread, as one that went though Azure DevOps didn't answer in time,
-isn't sent again. **Resolve**, or **Reactivate** on a resolved thread, sets its status at once, without asking, since the
+it. A reply whose text is already your last word in the thread isn't sent again; and after one that may have gone, as one
+Azure DevOps didn't answer in time, the thread is read again before it's sent again, and nothing goes until it was
+(`ADOWriteProblem.unconfirmed`). **Resolve**, or **Reactivate** on a resolved thread, sets its status at once, without asking, since the
 same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps' own menu offers, Active, Pending,
 Resolved, Won't Fix and Closed, and By Design only for a thread that has it (`ThreadStatus.choices`).
 
 What Azure DevOps answers shows at once (`ThreadChange`, which `PRDetails.apply` applies once, however often): the list
 applies it (`PRStore.changed`), so the details, Needs You, What's Left, the brief and the counts follow it, then the engine
 does, and reads the pull request's details again, two requests, now (`PulseEngine.changed`, `readAgain`). A read that
-started before the change, such as a refresh under way, doesn't undo it: its threads are left as they are, and the pull
-request is read again at the next refresh. The list keeps the change over its refreshes until a snapshot has it
-(`PRStore.pending`). A thread you replied to doesn't wait on you, as your last word is after the comment; one you resolved
+started before the change, such as a refresh under way, doesn't undo it, even when it answers after the change's own: its
+threads are left as they are, and the pull request is read again at the next refresh. The list keeps the change over its
+refreshes until a snapshot has it (`PRStore.pending`), a status replacing one set before on the thread, so that
+**Reactivate** after **Resolve** isn't undone by it. A thread you replied to doesn't wait on you, as your last word is after the comment; one you resolved
 doesn't either, as the pull request is seen as you resolve it, and its details, which keep what was new as it was when they
 showed it, leave out what was in it until then (`ThreadChanges.waiting`). While the details show the pull request, a thread
 you change stays where it was as you first did, with the open ones or the resolved ones, and with those that wait on you or
@@ -1471,14 +1473,15 @@ permission, a pull request that's completed or abandoned, a thread or pull reque
 slowed down, or no answer in time, after which the pull request is read again, since it may have been made.
 
 **Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language it's
-written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its fenced and inline code,
-links and pictures, web addresses and mentions, and characters that control how text reads, go to the model as markers,
+written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its fenced code, found as
+Markdown closes it, in quotes too, and inline code, links and pictures, web addresses, with the parentheses they have, and
+mentions, and characters that control how text reads, go to the model as markers,
 `{{1}}`, which it keeps, and are put back as they were; an answer that lost, repeated or moved one is turned down. The
 model is told to proofread, with an example, which Apple Intelligence corrects far more with, and gets the reply in a
 fence nothing in it closes, as what someone wrote rather than what to do. Each line keeps the Markdown the reply had
 before what it says, such as a quote's `>`, and the spaces after it, whatever the model did with them, and an answer that
-joined or split lines, or changed more than half of what it says, as a translation or an answer to what it asks does, is
-turned down too (`GrammarFix.Failure.changedMore`). It shows the correction under the field, what it
+joined or split lines, changed more than half of what it says, or kept fewer than half of its words, as a translation or
+an answer to what it asks does, is turned down too (`GrammarFix.Failure.changedMore`). It shows the correction under the field, what it
 changes marked word by word (`GrammarFix.changes`), with **Use It**, then **Undo**, while the reply is as it left it: it
 never changes your reply without you, nor sends it, and the field waits while it runs, with **Stop**. It uses Apple
 Intelligence, on this Mac (`OnDeviceModel`), unless you choose a Copilot model in its **▾**, from those summaries offer,
