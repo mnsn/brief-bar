@@ -130,6 +130,12 @@ import Testing
         #expect(MergeConflict(id: 1, path: "/docs", kind: .directoryFile).isFolderInPullRequest)
         #expect(!MergeConflict(id: 1, path: "/docs", kind: .fileDirectory).isFolderInPullRequest)
         #expect(!MergeConflict(id: 1, path: "/docs/a.md", kind: .directoryChild).isFolderInPullRequest)
+        // Those, and a file in a folder that's a file on the other branch, which may be on the target's side alone, show in
+        // Azure DevOps.
+        #expect(MergeConflict(id: 1, path: "/docs", kind: .directoryFile).showsInAzureDevOps)
+        #expect(MergeConflict(id: 1, path: "/docs/a.md", kind: .directoryChild).showsInAzureDevOps)
+        #expect(!MergeConflict(id: 1, path: "/docs", kind: .fileDirectory).showsInAzureDevOps)
+        #expect(!MergeConflict(id: 1, path: "/docs/a.md", kind: .editEdit).showsInAzureDevOps)
     }
 
     /// Paths are told apart by their bytes, as Git tells them: "é" written as one character, and as "e" with an accent

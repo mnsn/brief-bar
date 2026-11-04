@@ -188,6 +188,13 @@ public struct MergeConflict: Sendable, Equatable, Identifiable {
         kind == .directoryFile
     }
 
+    /// Whether what the pull request did at its path shows in Azure DevOps rather than in the details: a folder on its
+    /// branch has no changes of its own (`isFolderInPullRequest`), and a file in a folder that's a file on the other branch
+    /// (`directoryChild`) may be on the target's side alone.
+    public var showsInAzureDevOps: Bool {
+        kind == .directoryFile || kind == .directoryChild
+    }
+
     /// Where the pull request's change has the file, to show it: where it renamed it to, or its path.
     public var pathInPullRequest: String {
         switch kind {

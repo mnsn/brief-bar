@@ -489,8 +489,8 @@ right under **What's Left**, whose **Merge conflicts** takes you there: each fil
 branch, and what each branch did to it, such as **Changed on both branches**, **Changed on rename-order-status,
 deleted on main**, or **Renamed to order-statuses.md on rename-order-status, and to docs/orders/states.md on main**.
 One someone resolved in Azure DevOps, which hasn't committed it yet, says so. Click a file to see what the pull
-request changed in it, as from **Files**, and **‹** comes back; a folder, which one branch has where the other has a
-file, opens in Azure DevOps. **↗** opens the pull request in Azure DevOps, to resolve them there. With Send Work to Copilot on, under them, **✨ Explain** asks the session that worked on the pull
+request changed in it, as from **Files**, and **‹** comes back; a folder, or a file in a folder, where the other branch
+has a file, opens in Azure DevOps. **↗** opens the pull request in Azure DevOps, to resolve them there. With Send Work to Copilot on, under them, **✨ Explain** asks the session that worked on the pull
 request why its files conflict and how it would resolve each, aside, as for a comment, until someone pushes to it or
 retargets it, and, on your own pull request,
 **Resolve** has Copilot merge the target branch in and resolve them, as you say in **Tell Copilot how (optional)**,

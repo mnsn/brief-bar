@@ -285,8 +285,12 @@ import Testing
         let alone = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         let without = try #require(await alone.copilotPrompts(.resolveConflicts, for: record))
         #expect(!without.prompts.worktree.contains("Azure DevOps lists"))
-        // Gone from the list while it waited, as merged or abandoned: nothing opens.
+        // Gone from the list while it waited, or completed: nothing opens.
         store.conflicts = { _ in nil }
+        #expect(await store.copilotPrompts(.resolveConflicts, for: record) == nil)
+        var completed = record
+        completed.pullRequest.status = .completed
+        store.conflicts = { _ in (completed, nil) }
         #expect(await store.copilotPrompts(.resolveConflicts, for: record) == nil)
         // Nor does the list matter to what doesn't list the conflicts.
         #expect(await store.copilotPrompts(.review, for: record) != nil)

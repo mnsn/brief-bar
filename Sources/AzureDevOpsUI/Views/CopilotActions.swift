@@ -757,8 +757,8 @@ struct CopilotPartComposer<Options: View>: View {
                 guard !Task.isCancelled else { return }
                 drafts.sends[key] = nil
                 isSending = false
-                // Gone from your lists meanwhile, as merged or abandoned: nothing is asked.
-                guard store.record(for: item.key) != nil else {
+                // Gone from your lists, completed or abandoned meanwhile: nothing is asked.
+                guard CopilotSending.isOpen(item.key, in: store) else {
                     problem = CopilotSending.pullRequestGone
                     SpokenText.announce(CopilotSending.pullRequestGone)
                     return
@@ -820,7 +820,7 @@ struct CopilotPartComposer<Options: View>: View {
             guard !Task.isCancelled else { return }
             drafts.sends[key] = nil
             isSending = false
-            guard let record = store.record(for: item.key) else {
+            guard let record = store.record(for: item.key), record.pullRequest.status == .active else {
                 problem = CopilotSending.pullRequestGone
                 SpokenText.announce(CopilotSending.pullRequestGone)
                 return

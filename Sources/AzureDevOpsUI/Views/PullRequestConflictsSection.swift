@@ -210,7 +210,8 @@ struct PullRequestConflictsSection: View {
 }
 
 /// A file that conflicts: its name and folder, and what each branch did to it. A click opens its changes in the details;
-/// for a folder on the pull request's branch, which has none of its own, the pull request's files in Azure DevOps, there.
+/// for a folder on the pull request's branch, which has none of its own, or a file in a folder that's a file on the other
+/// branch, which may be on the target's side alone, the pull request's files in Azure DevOps, there.
 private struct ConflictRow: View {
     let conflict: MergeConflict
     let item: PRSnapshot
@@ -226,11 +227,13 @@ private struct ConflictRow: View {
         return conflict.isResolved ? how + " · resolved in Azure DevOps, not committed yet" : how
     }
 
-    /// A folder on the pull request's branch, which opens in Azure DevOps.
+    /// A folder on the pull request's branch.
     private var isFolder: Bool { conflict.isFolderInPullRequest }
+    /// What opens in Azure DevOps, rather than in the details.
+    private var opensInAzureDevOps: Bool { conflict.showsInAzureDevOps }
 
     private func activate() {
-        if isFolder { openInAzureDevOps() } else { open() }
+        if opensInAzureDevOps { openInAzureDevOps() } else { open() }
     }
 
     private func openInAzureDevOps() {
@@ -266,8 +269,8 @@ private struct ConflictRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: isFolder ? "arrow.up.forward.app" : "chevron.right")
-                    .font(size: isFolder ? 10.5 : 9, weight: .semibold)
+                Image(systemName: opensInAzureDevOps ? "arrow.up.forward.app" : "chevron.right")
+                    .font(size: opensInAzureDevOps ? 10.5 : 9, weight: .semibold)
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
             }
@@ -282,11 +285,9 @@ private struct ConflictRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .help(conflict.path + " · " + how + (isFolder
-            ? "\nA folder on this pull request's branch: click to see its files in Azure DevOps"
-            : "\nClick to see what this pull request changed in it"))
+        .help(conflict.path + " · " + how + clickHelp)
         .contextMenu {
-            if !isFolder {
+            if !opensInAzureDevOps {
                 Button("Show Its Changes", action: open)
             }
             Button("Open in Azure DevOps", action: openInAzureDevOps)
@@ -294,8 +295,16 @@ private struct ConflictRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint(isFolder ? "Opens this folder's files in Azure DevOps" : "Shows what this pull request changed in it")
+        .accessibilityHint(isFolder ? "Opens this folder's files in Azure DevOps"
+            : opensInAzureDevOps ? "Opens it in the pull request's files in Azure DevOps" : "Shows what this pull request changed in it")
         .accessibilityAddTraits(.isButton)
+    }
+
+    /// What a click does, under where it is and how it conflicts.
+    private var clickHelp: String {
+        if isFolder { return "\nA folder on this pull request's branch: click to see its files in Azure DevOps" }
+        if opensInAzureDevOps { return "\nIt may be on one branch alone: click to see it in Azure DevOps" }
+        return "\nClick to see what this pull request changed in it"
     }
 
     /// "OrderService.cs, in src/Orders, changed on both branches".

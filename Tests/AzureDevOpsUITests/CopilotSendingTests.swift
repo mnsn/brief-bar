@@ -64,8 +64,9 @@ import Testing
         #expect(settings.copilotRuns.isEmpty)
     }
 
-    /// A pull request that left your lists while a send waited, as merged or abandoned, gets nothing: no task, no prompt.
-    @Test func nothingGoesForAPullRequestNoLongerListed() async throws {
+    /// A pull request that left your lists, or was completed or abandoned, while a send waited gets nothing: no task, no
+    /// prompt.
+    @Test func nothingGoesForAPullRequestNoLongerOpen() async throws {
         let prs = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         await prs.loadOnce()
         let listed = try #require(prs.items.first { prs.record(for: $0.key)?.role == .author })
@@ -79,14 +80,20 @@ import Testing
         copilot.useEnvironment(["COPILOT_HOME": "/nonexistent"])
         copilot.appHomeForTests = URL(fileURLWithPath: "/nonexistent/copilot-app", isDirectory: true)
         let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
-        #expect(!sending.isListed)
+        #expect(!sending.isOpen)
         let fix = CopilotSending.Fix(prompts: ("Resolve them.", "Resolve them."), action: .resolveConflicts, parts: [.conflicts], handOff: nil)
         #expect(await sending.fix(fix, to: .newSession, choice: nil) == .notSent(CopilotSending.pullRequestGone))
         #expect(await sending.explainAsPrompt("Why?", about: .conflicts, to: appChoice(app)) == .notSent(CopilotSending.pullRequestGone))
         #expect(copilot.pending.isEmpty)
         #expect(settings.copilotRuns.isEmpty)
-        // Listed, it goes on.
-        #expect(CopilotSending(item: listed, record: try #require(prs.record(for: listed.key)), store: prs, copilot: copilot, session: nil).isListed)
+        // Completed, as Done keeps it: nothing goes either.
+        let done = try #require(prs.items.first { prs.record(for: $0.key)?.pullRequest.status == .completed })
+        let completed = CopilotSending(item: done, record: try #require(prs.record(for: done.key)), store: prs, copilot: copilot, session: nil)
+        #expect(!completed.isOpen)
+        #expect(await completed.fix(fix, to: .newSession, choice: nil) == .notSent(CopilotSending.pullRequestGone))
+        #expect(copilot.pending.isEmpty)
+        // Open in your lists, it goes on.
+        #expect(CopilotSending(item: listed, record: try #require(prs.record(for: listed.key)), store: prs, copilot: copilot, session: nil).isOpen)
     }
 
     @Test func theSessionThatWorkedOnItLeadsThenItsForkAndANewSession() {

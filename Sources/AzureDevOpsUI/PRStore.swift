@@ -817,7 +817,7 @@ final class PRStore: ObservableObject {
     /// The prompts `composeCopilot` opens the composer with, and the pull request as they're written for: for its conflicts,
     /// once a read of them under way ends, the pull request as the list has it then, with the files read for it (`conflicts`),
     /// so they're listed even when you ask before they're read, and a push or a retarget meanwhile is taken in; nil once the
-    /// list has it no more, as merged or abandoned meanwhile.
+    /// list has it no more, or it was completed or abandoned meanwhile.
     /// - Parameters:
     ///   - threads: for Push & Reply, the threads it ships alone.
     ///   - investigations: what the details read of its builds, by run, which Fix the Build quotes.
@@ -827,7 +827,7 @@ final class PRStore: ObservableObject {
         var record = record
         var files: MergeConflicts?
         if action == .resolveConflicts, let conflicts {
-            guard let current = await conflicts(record.pullRequest.key) else { return nil }
+            guard let current = await conflicts(record.pullRequest.key), current.record.pullRequest.status == .active else { return nil }
             record = current.record
             files = current.conflicts
         }

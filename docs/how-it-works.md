@@ -1601,8 +1601,9 @@ order-statuses.md on rename-order-status, and to docs/orders/states.md on main**
 resolved in Azure DevOps, which hasn't committed the merge yet, says so. They're in the order a change lists its files
 (`PullRequestPanel.listsFirst`). A click opens what the pull request changed in the file, its page in the details, at
 the path the pull request has it at (`pathInPullRequest`), as from **Files**, and back comes back to them; a folder on
-the pull request's branch, where the target has a file (`directoryFile`), has no changes of its own, so it opens the pull
-request's files in Azure DevOps there instead, with **↗** in place of **›** (`isFolderInPullRequest`). **↗** opens
+the pull request's branch, where the target has a file (`directoryFile`), has no changes of its own, and a file in a
+folder that's a file on the other branch (`directoryChild`) may be on the target's side alone, so they open the pull
+request's files in Azure DevOps there instead, with **↗** in place of **›** (`showsInAzureDevOps`). **↗** opens
 the pull request in Azure DevOps, where they can be resolved.
 
 With Send Work to Copilot on, what Copilot does about them shows under them, as on a thread (`CopilotWork`, for
@@ -2263,8 +2264,8 @@ is the CLI's, which picks the fork's ID, so the send goes by one of BriefBar's u
 fork's; a fork of one of the app's is the app's, through the extension; and a new session gets a worktree of the clone
 BriefBar knows, or else the Send to Copilot window opens, to choose one. **Edit the Whole Prompt…**, last in ▾, opens
 that window with the prompts, at the place you chose (`ComposerStart`), once what they quote is read, as a send waits
-for it. A pull request that left your lists while a send waited, as merged or abandoned, gets nothing, and its composer
-says so (`CopilotSending.isListed`). **Esc** closes a composer in place before the
+for it. A pull request that left your lists, or was completed or abandoned, while a send waited gets nothing, and its
+composer says so (`CopilotSending.isOpen`). **Esc** closes a composer in place before the
 details it's in (`InlineComposerOpen`). What a composer sends is called off as it closes, with ✕ or **Esc**, as another
 opens, or as its page goes, with the details or for another pull request, file or page, though not as its card scrolls
 out of sight in a file's diff (`CopilotDrafts.sends`): a prompt no session took yet is taken back, as when the Send to
