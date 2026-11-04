@@ -94,12 +94,14 @@ struct CopilotSessionNames {
     }
 
     /// Where Try Again sends a fix that failed or stopped: the session it was in, as the line lists it, or as BriefBar keeps
-    /// its task; a new session, for a task that couldn't start; a new fork of the session a fork it was in forked; else
-    /// nil, when that isn't known, which its composer says, for you to choose.
+    /// its task; for a task that couldn't start, a new fork of the session it was to fork, or else a new session, as it
+    /// was; a new fork of the session a fork it was in forked; else nil, when that isn't known, which its composer says,
+    /// for you to choose.
     func retryDestination(of work: CopilotWork) -> CopilotDestination? {
         if choice(work.session) != nil { return .session(work.session) }
         if let entry = copilot.entries.first(where: { $0.id == work.session }) {
-            return entry.run == nil ? .newSession : .session(work.session)
+            guard entry.run == nil else { return .session(work.session) }
+            return entry.forkedFrom.map(CopilotDestination.fork) ?? .newSession
         }
         return work.forkedFrom.map(CopilotDestination.fork)
     }
@@ -936,6 +938,7 @@ struct CopilotPartComposer<Options: View>: View {
                 return
             }
             let fix = asking.fix(words, answer)
+            let started = Date()
             let outcome = await sending.fix(fix, to: target, choice: choice)
             guard !Task.isCancelled else { return }
             drafts.sends[key] = nil
@@ -943,12 +946,12 @@ struct CopilotPartComposer<Options: View>: View {
             switch outcome {
             case .sent:
                 drafts.texts[key] = nil
-                remember(words, for: fix)
+                remember(words, for: fix, sent: started...Date())
                 SpokenText.announce("Sent to Copilot")
                 done(outcome)
             case .copied(let note):
                 drafts.texts[key] = nil
-                remember(words, for: fix)
+                remember(words, for: fix, sent: started...Date())
                 SpokenText.announce(note)
                 done(outcome)
             case .notSent(let why):
@@ -961,10 +964,11 @@ struct CopilotPartComposer<Options: View>: View {
         }
     }
 
-    /// The words a fix went with, for each thing it took on, for Try Again to send them again.
-    private func remember(_ words: String, for fix: CopilotSending.Fix) {
+    /// The words a fix went with, for each thing it took on, with when it was sent, for Try Again to send them again for
+    /// that fix alone (`CopilotTasksStore.words(for:of:)`).
+    private func remember(_ words: String, for fix: CopilotSending.Fix, sent: ClosedRange<Date>) {
         for part in fix.parts {
-            copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)] = words
+            copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)] = CopilotTasksStore.FixWords(text: words, sent: sent)
         }
     }
 

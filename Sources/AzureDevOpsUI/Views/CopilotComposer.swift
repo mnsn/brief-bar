@@ -1150,10 +1150,11 @@ struct CopilotComposerView: View {
     }
 
     /// What a prompt sent to one of the Copilot app's sessions, or to a fork of it, is about, for each to say what became of
-    /// it: a fix of some of its threads, builds or conflicts, or Push & Reply.
+    /// it: a fix of some of its threads, builds or conflicts, or Push & Reply, even of none of them, which pushes what the
+    /// session changed, for the fixes there to say they're pushed.
     private func aboutParts(to session: String?) -> SentPrompt.About? {
         let parts = sentParts(to: session)
-        guard !parts.isEmpty, case .pullRequest(let pullRequest, let action) = subject else { return nil }
+        guard case .pullRequest(let pullRequest, let action) = subject, !parts.isEmpty || action == .pushAndReply else { return nil }
         let purpose: SentPrompt.Purpose
         switch action {
         case .fixComments, .fixBuild, .resolveConflicts: purpose = .fix

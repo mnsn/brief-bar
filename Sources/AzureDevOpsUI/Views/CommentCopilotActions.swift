@@ -218,7 +218,7 @@ struct ThreadCopilotActions: View {
     /// sends them again, where that fix went, as it opens, if it can go.
     private func tryAgain(_ work: CopilotWork) {
         open(.fix)
-        let words = copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)]
+        let words = copilot.words(for: work, of: item.key)
         drafts.retry(CopilotComposing(part: part, ask: .fix), words: words, to: names.retryDestination(of: work))
         tries += 1
     }

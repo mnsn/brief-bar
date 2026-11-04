@@ -241,8 +241,7 @@ extension CopilotTasksStore {
         if !forking { pauseFollowing(choice.id) }
         defer { if !forking { resumeFollowing(choice.id) } }
         let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff)
-        let kept = keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt)
-        if case .fellBack = outcome, let kept { copiedPrompts[kept.id] = (prompt, handOff) }
+        keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt, copying: prompt, handOff: handOff)
         return outcome
     }
 

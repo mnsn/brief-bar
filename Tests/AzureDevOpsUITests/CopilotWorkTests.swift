@@ -1442,6 +1442,64 @@ import Testing
         #expect(CopilotComposerID(ask: .fix, tries: 0) != CopilotComposerID(ask: .fix, tries: 1))
     }
 
+    /// Try Again sends the words a fix went with only for that fix, taken on as they were sent: not for one sent another
+    /// way since, such as from the Send to Copilot window, whose words BriefBar doesn't keep.
+    @Test func tryAgainSendsTheWordsOfThatFixAlone() {
+        let store = store()
+        let sent = now.addingTimeInterval(-600)
+        store.fixWords[CopilotTasksStore.PartKey(pullRequest: key, part: .thread(11))] = CopilotTasksStore.FixWords(
+            text: "Use the shared helper", sent: sent...sent.addingTimeInterval(2)
+        )
+        func work(takenAt: Date) -> CopilotWork {
+            CopilotWork(part: .thread(11), purpose: .fix, state: .failed(nil), session: session, isTask: false, since: takenAt, takenAt: takenAt)
+        }
+        #expect(store.words(for: work(takenAt: sent.addingTimeInterval(1)), of: key) == "Use the shared helper")
+        #expect(store.words(for: work(takenAt: now), of: key) == nil)
+        #expect(store.words(for: work(takenAt: sent.addingTimeInterval(-1)), of: key) == nil)
+        #expect(store.words(for: work(takenAt: sent.addingTimeInterval(1)), of: PRKey("contoso", 4099)) == nil)
+    }
+
+    /// Try Again sends a fix that couldn't start where it was to go: a fork of the session it was to fork, again, rather
+    /// than a new session at the pull request's latest commit; one that was to start a new session, to a new one.
+    @Test func aFixThatCouldntStartIsTriedAgainWhereItWasToGo() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        store.launchForTests = { _, _, _ in throw CancellationError() }
+        let names = CopilotSessionNames(session: nil, copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        func failed(_ part: PullRequestPart) async throws -> CopilotWork {
+            try await settle {
+                if case .failed? = store.work(on: part, of: key)?.state { return true }
+                return false
+            }
+            return try #require(store.work(on: part, of: key))
+        }
+        let original = run(task, startedAt: now.addingTimeInterval(-3_600), ended: .finished, taken: nil)
+        settings.copilotRuns = [original]
+        store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 11", options: CopilotModel.standard,
+                   repository: original.repository, forking: original, parts: [.thread(11)])
+        #expect(names.retryDestination(of: try await failed(.thread(11))) == .fork(task))
+        store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 12", options: CopilotModel.standard,
+                   repository: original.repository, parts: [.thread(12)])
+        #expect(names.retryDestination(of: try await failed(.thread(12))) == .newSession)
+    }
+
+    /// A Push & Reply that lists no thread, sent to one of the Copilot app's sessions, is kept, so the fixes there say
+    /// they're pushed, and Clear leaves it; one copied for you to paste is kept with what was copied before BriefBar follows
+    /// it.
+    @Test func aPushOfNoThreadIsKeptToCarryTheSessionsFixes() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let fixed = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: now.addingTimeInterval(-600), copied: false, ended: .finished))
+        settings.copilotSentPrompts = [fixed]
+        let push = try #require(store.keep(SentPrompt.About(pullRequest: key, purpose: .pushAndReply, parts: []), sentTo: .sent, from: session, forking: false))
+        #expect(store.work(on: .thread(11), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Pushing from ‘Retry backoff’")
+        store.clear(.thread(11), of: key)
+        #expect(settings.copilotSentPrompts.contains { $0.id == push.id })
+        let fallback = SessionFallback(reason: "BriefBar's extension in the session didn't answer.", session: session)
+        let copied = try #require(store.keep(about(threads: [13]), sentTo: .fellBack(fallback), from: session, forking: false, copying: "Fix 13"))
+        #expect(store.copiedPrompts[copied.id]?.text == "Fix 13")
+    }
+
     /// Waits for the store's work, which runs on the main actor between this test's awaits, for as long as a busy machine
     /// could need (`waitLimit`), failing the test if it doesn't happen.
     private func settle(until done: () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {

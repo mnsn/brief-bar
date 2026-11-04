@@ -87,7 +87,7 @@ enum BuildCopilot {
     ) {
         guard let part = line.check?.part else { return }
         let composer = CopilotComposing(part: part, ask: .fix, row: line.id)
-        let words = names.copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: key, part: part)]
+        let words = names.copilot.words(for: work, of: key)
         drafts.retry(composer, words: words, to: names.retryDestination(of: work))
         composing.wrappedValue = composer
     }
@@ -193,11 +193,13 @@ struct BuildWorkLine: View {
         }
     }
 
-    /// What its line's menu does: Try Again opens the build, and its Fix composer there, which sends the fix again.
+    /// What its line's menu does: Try Again opens the build, and its Fix composer there, which sends the fix again: only for
+    /// a failed build that opens, whose run, once read, offers Fix.
     private func actions(_ work: CopilotWork) -> CopilotLineActions {
         guard let part = line.check?.part else { return CopilotLineActions() }
         let names = names
-        let tryAgain: (() -> Void)? = canFix ? { [line, item, drafts, show] in
+        let opensToFix = line.canInvestigate && line.check?.state == .failed
+        let tryAgain: (() -> Void)? = canFix && opensToFix ? { [line, item, drafts, show] in
             BuildCopilot.tryAgain(work, on: line, of: item.key, names: names, drafts: drafts, composing: $composing)
             show()
         } : nil

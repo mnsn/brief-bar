@@ -2541,7 +2541,8 @@ you pasted it: its turn starts there, and the comments it quotes leave Needs You
 instead, is the session's own, and until then the prompt says it's copied for you to paste. What BriefBar copied is kept
 in memory only (`CopilotTasksStore.copiedPrompts`): one it copied before it restarted is taken up by the session's next
 message, as any prompt is, and hands nothing off; and one you don't paste, and one BriefBar stops following first, leave
-them there. Once BriefBar sends the
+them there. It's kept with what was copied before BriefBar starts following it, and hands off only as a look at the
+session finds the text pasted (`CopilotTasksStore.keep`). Once BriefBar sends the
 session another prompt, about threads or not, or goes on with it with the CLI, before a prompt's turn was seen to end,
 the session's log can't tell their turns apart: BriefBar stops following the earlier one, whose thread says **Sent to
 ‘Retry backoff’ · see the session**, or **Copied for ‘Retry backoff’ · see the session** for one it copied, rather than
@@ -2564,7 +2565,8 @@ is its task, wherever it's named, even one that takes on nothing, which keeps th
 from before BriefBar recorded what they took on do (`CopilotRun.keeping(_:for:)`).
 **Push & Reply with Copilot…**, in the pull request's ⋯ and context menus, offers the same, a menu of them with fixes in
 more than one session; with none ready, what its last task changed, pushed without a reply
-(`CopilotTasksStore.pushes(of:)`). Either way: its prompt lists them and replies on them alone, or on none for a build's fix alone, and
+(`CopilotTasksStore.pushes(of:)`). Sent to one of the Copilot app's sessions, a Push & Reply is kept as a prompt even when
+it lists no thread, for the fixes there to say they're pushed (`CopilotComposerView.aboutParts`), and Clear leaves it. Either way: its prompt lists them and replies on them alone, or on none for a build's fix alone, and
 hands off what waits on you in them alone (`PullRequestPrompt.pushAndReply(_:workplace:threads:)`,
 `PullRequestPrompt.shippedThreads`), and the task that ships them takes them on, with their builds and conflicts, so they
 say they're pushed once it's done, though prompts fixed them rather than its runs. A prompt in the Send to Copilot window
@@ -2578,11 +2580,15 @@ you something, never once it's over, though a later task works in its session: a
 its row's Stop does, or a prompt's turn in one of the app's sessions, which BriefBar's extension in the session stops as
 the app's own Stop does; where it can't, BriefBar shows the session, to stop it there, and says so
 (`CopilotTasksStore.canStop(_:of:)`, `stop(_:of:)`, `stopTurn(in:)`). **Try Again**, for a fix that failed or stopped,
-opens its composer anew, even one that's open already (`CopilotComposerID`), with the words that fix went with, kept in
-memory only, and sends them where that fix went, never elsewhere: when BriefBar can't find that session now, or it can't
-go there, the composer says so and waits for you to choose (`CopilotDrafts.retry`, `CopilotDrafts.retryGone`). Without
-those words, as once BriefBar restarted, it opens with what you wrote in it, for you to send; and what Try Again asked
-of a composer that didn't open for it, as a build that wasn't read, goes as you open the composer yourself, or close it.
+opens its composer anew, even one that's open already (`CopilotComposerID`), with the words that fix went with, as its
+composer sent them, kept in memory only and only for that fix, not one sent another way since, such as from the Send to
+Copilot window (`CopilotTasksStore.words(for:of:)`), and sends them where that fix went, never elsewhere: for one that
+couldn't start, a new fork of the session it was to fork, or a new session (`CopilotSessionNames.retryDestination`). When
+BriefBar can't find that session now, or it can't go there, the composer says so and waits for you to choose
+(`CopilotDrafts.retry`, `CopilotDrafts.retryGone`). Without those words, as once BriefBar restarted, it opens with what
+you wrote in it, for you to send; and what Try Again asked of a composer that didn't open for it, as a build that wasn't
+read, goes as you open the composer yourself, or close it. On a closed build's row, it's there only for a failed build,
+which opens to its Fix.
 **Clear**, once it's over, or copied for you to paste, lets go of what each task and prompt took on of it, and of what a
 send that couldn't start keeps of it, or one getting ready carries from before, so the line goes and nothing older takes
 its place, as Dismiss does for an answer (`CopilotTasksStore.clear`); the demo's go in memory. While Copilot fixes it, or

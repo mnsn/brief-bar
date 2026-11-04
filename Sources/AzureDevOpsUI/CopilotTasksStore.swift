@@ -163,9 +163,14 @@ final class CopilotTasksStore: ObservableObject {
         var pullRequest: PRKey
         var part: PullRequestPart
     }
-    /// The words you last sent a fix of each thing of a pull request with, from its composer in place, for Try Again to
-    /// send them again: in memory only.
-    var fixWords: [PartKey: String] = [:]
+    /// The words you last sent a fix of each thing of a pull request with, from its composer in place, with when, for Try
+    /// Again to send them again only for that fix (`words(for:of:)`): in memory only.
+    var fixWords: [PartKey: FixWords] = [:]
+    /// Words a fix was sent with, and when: from as its send started to as it went.
+    struct FixWords {
+        var text: String
+        var sent: ClosedRange<Date>
+    }
     /// What Clear let go of in the demo, whose made-up work is made anew each time: in memory only.
     var clearedInDemo: Set<PartKey> = []
     var isFollowingPrompts = false
