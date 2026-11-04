@@ -47,8 +47,10 @@ final class DetailsDrafts: ObservableObject {
         words[pullRequest] = kept.isEmpty ? nil : kept
     }
 
-    /// What you wrote in a composer went: it's forgotten.
-    func sent(_ composer: CopilotComposing, of pullRequest: PRKey) {
+    /// What you wrote in a composer went: it's forgotten, unless you wrote more there since, as in the same composer in
+    /// another window while it went.
+    func sent(_ text: String, in composer: CopilotComposing, of pullRequest: PRKey) {
+        guard words(in: composer, of: pullRequest) == text else { return }
         keep("", in: composer, of: pullRequest)
     }
 
@@ -78,15 +80,21 @@ final class DetailsDrafts: ObservableObject {
     }
 
     /// Follows which pull requests the details show (`showing`): beside the list, with the pages over them (`panel`), and as
-    /// pages over a work item's details (`workItem`). Not what you went on from, to another work item, to come back to.
+    /// pages over a work item's details (`workItem`). Not what you went on from, to another work item, to come back to. As
+    /// they are once each move is done, which changes them one after the other: not as they are between, as while a pull
+    /// request's page over the details goes to show beside the list instead, its pages taken away first.
     func follow(_ panel: PullRequestDetailsStore, pagesOver workItem: WorkItemDetailsStore) {
-        following = Publishers.CombineLatest3(
-            panel.$selected.map { $0?.key.linkRef }.removeDuplicates(),
-            panel.$pages.removeDuplicates(),
-            workItem.$pages.removeDuplicates()
+        following = Publishers.Merge3(
+            panel.$selected.map { _ in () },
+            panel.$pages.map { _ in () },
+            workItem.$pages.map { _ in () }
         )
-        .sink { [weak self] selected, pages, workItemPages in
-            MainActor.assumeIsolated { self?.showing(Set(pages + workItemPages + [selected].compactMap { $0 })) }
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self, weak panel, weak workItem] in
+            MainActor.assumeIsolated {
+                let pages = (panel?.pages ?? []) + (workItem?.pages ?? [])
+                self?.showing(Set(pages + [panel?.selected?.key.linkRef].compactMap { $0 }))
+            }
         }
     }
 

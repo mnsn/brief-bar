@@ -58,9 +58,13 @@ import Testing
         #expect(drafts.words(in: .fixAll, of: key(4102)).isEmpty)
 
         drafts.keep("Why 30?", in: explain, of: key(4102))
-        drafts.sent(explain, of: key(4102))
+        drafts.sent("Why 30?", in: explain, of: key(4102))
         #expect(drafts.words(in: explain, of: key(4102)).isEmpty)
         #expect(drafts.words(in: fix, of: key(4102)) == "Cap it at 30 seconds, from RetryOptions")
+        // Written on while it went, as in the same composer in another window: what you wrote since stays.
+        drafts.keep("Why 30? And why not 45?", in: explain, of: key(4102))
+        drafts.sent("Why 30?", in: explain, of: key(4102))
+        #expect(drafts.words(in: explain, of: key(4102)) == "Why 30? And why not 45?")
         drafts.keep("", in: fix, of: key(4102))
         #expect(drafts.words(in: fix, of: key(4102)).isEmpty)
     }
@@ -131,7 +135,7 @@ import Testing
     /// Beside the list, where the threads you changed were stays while the details show their pull request: as a page opens
     /// over them, such as its Copilot session's, and you come back, and as a file's page shows in their place. Once they show
     /// another pull request, or close, it goes: back to it, a thread you resolved is with the resolved ones.
-    @Test func whereThreadsWereStaysWhileTheDetailsShowThePullRequest() throws {
+    @Test func whereThreadsWereStaysWhileTheDetailsShowThePullRequest() async throws {
         let drafts = DetailsDrafts()
         let panel = PullRequestDetailsStore()
         panel.itemsChanged(items)
@@ -140,28 +144,54 @@ import Testing
         drafts.hold(try thread(11, of: 4102), in: key(4102))
 
         panel.open(page: session)
+        await settled()
         panel.back()
         panel.open(file: "/src/Payments/PaymentsClient.cs", at: 11)
+        await settled()
         panel.closeFile()
         // A pull request's page over it, and back.
         panel.open(page: key(4088).linkRef)
+        await settled()
         panel.back()
         // Shown again, from the list: the same look at it.
         panel.show(try item(4102))
+        await settled()
         #expect(drafts.held(in: key(4102))[11] != nil)
 
         panel.show(try item(4088))
+        await settled()
         #expect(drafts.held(in: key(4102)).isEmpty)
 
         panel.show(try item(4102))
         drafts.hold(try thread(11, of: 4102), in: key(4102))
         panel.close()
+        await settled()
         #expect(drafts.held(in: key(4102)).isEmpty)
+    }
+
+    /// A pull request whose page shows over another's details, chosen in the list, shows beside it instead: where its threads
+    /// were stays, though its page goes before it shows there; the other's goes.
+    @Test func aPullRequestsPageChosenInTheListKeepsWhereItsThreadsWere() async throws {
+        let drafts = DetailsDrafts()
+        let panel = PullRequestDetailsStore()
+        panel.itemsChanged(items)
+        drafts.follow(panel, pagesOver: workItems())
+        panel.show(try item(4097))
+        drafts.hold(try thread(21, of: 4097), in: key(4097))
+        panel.open(page: key(4102).linkRef)
+        drafts.hold(try thread(11, of: 4102), in: key(4102))
+        await settled()
+        #expect(drafts.held(in: key(4097))[21] != nil && drafts.held(in: key(4102))[11] != nil)
+
+        panel.show(try item(4102))
+        await settled()
+        #expect(drafts.held(in: key(4102))[11] != nil)
+        #expect(drafts.held(in: key(4097)).isEmpty)
     }
 
     /// On a pull request's page over a work item's details, or over another pull request's, where its threads were stays
     /// while the page shows, a page over it included, and goes once you go back from it.
-    @Test func andWhileItsPageShowsOverAWorkItemOrAnotherPullRequest() throws {
+    @Test func andWhileItsPageShowsOverAWorkItemOrAnotherPullRequest() async throws {
         let drafts = DetailsDrafts()
         let panel = PullRequestDetailsStore()
         panel.itemsChanged(items)
@@ -174,9 +204,12 @@ import Testing
         drafts.hold(try thread(11, of: 4102), in: key(4102))
         // Its Copilot session's page over it, and back.
         workItems.open(page: session)
+        await settled()
         workItems.back()
+        await settled()
         #expect(drafts.held(in: key(4102))[11] != nil)
         workItems.back()
+        await settled()
         #expect(drafts.held(in: key(4102)).isEmpty)
 
         // Over another pull request's details beside the list.
@@ -184,13 +217,15 @@ import Testing
         panel.open(page: key(4102).linkRef)
         drafts.hold(try thread(11, of: 4102), in: key(4102))
         panel.open(page: session)
+        await settled()
         #expect(drafts.held(in: key(4102))[11] != nil)
         panel.back(toPage: nil)
+        await settled()
         #expect(drafts.held(in: key(4102)).isEmpty)
     }
 
     /// Azure DevOps keeps them for its details, beside the list and on its pages, and follows what they show.
-    @Test func azureDevOpsKeepsThemForItsDetails() throws {
+    @Test func azureDevOpsKeepsThemForItsDetails() async throws {
         let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
         let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
         source.start()
@@ -201,12 +236,20 @@ import Testing
         drafts.hold(try thread(11, of: 4102), in: key(4102))
         drafts.keep("Cap it", in: CopilotComposing(part: .thread(11), ask: .fix), of: key(4102))
         details.show(try item(4088))
+        await settled()
         #expect(drafts.held(in: key(4102)).isEmpty)
         #expect(drafts.words(in: CopilotComposing(part: .thread(11), ask: .fix), of: key(4102)) == "Cap it")
 
         // Stopped, all of it goes.
         source.stop()
         #expect(drafts.words(in: CopilotComposing(part: .thread(11), ask: .fix), of: key(4102)).isEmpty)
+    }
+
+    /// Once what waits on the main queue ran, as what the details show is followed once each of their moves is done.
+    private func settled() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
     }
 
     private struct NoTokens: AccessTokenProvider {

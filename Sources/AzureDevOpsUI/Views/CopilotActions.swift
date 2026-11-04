@@ -866,7 +866,8 @@ struct CopilotPartComposer<Options: View>: View {
         drafts.callOff(key)
         let asking = asking
         let words = text
-        // What you wrote goes once it's sent, or copied for you to paste.
+        // What you wrote goes once it's sent, or copied for you to paste: unless you wrote more there since, as in another
+        // window.
         let kept = kept
         if ask == .explain {
             guard let part = asking.part, let id = target.sessionID else { return }
@@ -895,7 +896,7 @@ struct CopilotPartComposer<Options: View>: View {
                     asking.question(words, earlier), asked: words, earlier: earlier, session: id, about: part, run: asking.run,
                     attempt: asking.attempt, head: asking.head?(), of: item.key
                 )
-                kept.sent(key, of: item.key)
+                kept.sent(words, in: key, of: item.key)
                 SpokenText.announce("Asking \(choice.map(PullRequestSession.name) ?? "the session")")
                 done(.sent)
             }
@@ -923,11 +924,11 @@ struct CopilotPartComposer<Options: View>: View {
             isSending = false
             switch outcome {
             case .sent:
-                kept.sent(key, of: item.key)
+                kept.sent(words, in: key, of: item.key)
                 SpokenText.announce("Sent to Copilot")
                 done(outcome)
             case .copied(let note):
-                kept.sent(key, of: item.key)
+                kept.sent(words, in: key, of: item.key)
                 SpokenText.announce(note)
                 done(outcome)
             case .notSent(let why):
