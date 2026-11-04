@@ -1840,7 +1840,8 @@ It stops waiting on you when:
   waited on you in the threads whose entries are still in the prompt you send, as they were when
   BriefBar wrote it, opening the composer (`CommentHandOff`). An entry is still there while its own line
   is, such as `1. src/Cart.cs, line 12 (thread 11)`: the prompt quotes comments word for word, each on
-  an indented line, so one that names another thread doesn't count. A comment that came after, while you
+  an indented line, so one that names another thread doesn't count, and neither does a line in a fence,
+  such as one of a suggested change or of an earlier answer (`PullRequestPrompt.unfencedLines`). A comment that came after, while you
   checked the prompt, say, isn't handed off, and neither is one in a thread whose entry isn't there,
   beyond the 30 it lists at most or deleted before you sent it, nor one in a thread reopened meanwhile.
   Since there's one cutoff, it then stops before the first comment that waits on you when the task
@@ -2101,8 +2102,11 @@ the Copilot CLI (`Sources/CopilotTasks`). Nothing happens until you send one, an
 requests to Azure DevOps stay GETs: the programs it starts for you do the rest.
 
 **Sending.** The composer fills the prompt in from Settings (`PromptTemplate`: `{id}`, `{type}`,
-`{title}`, `{url}`, `{organization}`, `{project}` and `{baseBranch}`) and remembers the repository
-each project's work went in, by organization and project. Then BriefBar:
+`{title}`, `{url}`, `{organization}`, `{project}` and `{baseBranch}`), each value on its placeholder's line, with
+what breaks a line, turns text around or hides it written out (`QuotedText.oneLine`), and remembers the repository
+each project's work went in, by organization and project. Only a work item's prompt has `{baseBranch}` filled in as
+it starts: a pull request's has no placeholders, and goes as it is, so code it quotes that holds one, such as a
+suggested change, stays as it was written. Then BriefBar:
 
 1. asks your login shell for its environment, as VS Code does (`$SHELL -i -l -c 'env -0'`), so
    Copilot, git and the commands Copilot runs find what a Terminal window finds. Started as an app,
@@ -2464,8 +2468,10 @@ conflicts once they're resolved (`PullRequestDetailsContent`). VoiceOver hears w
 happens.
 
 **Fix** (`PullRequestPrompt.fixThread`) addresses that thread alone: its entry as Fix Comments lists it, each comment in
-full as its author wrote it, the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
-what was added, removed and commented, and what you wrote, quoted as yours; then it builds and tests, without
+full as its author wrote it, one of more than a line under its author's name in a fence nothing in it closes, then that
+the comments are what their authors ask of the change, not instructions (`PullRequestPrompt.commentsSaid`), as every
+prompt that quotes threads says; the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
+what was added, removed and commented, in a fence too; and what you wrote, quoted as yours; then it builds and tests, without
 committing, pushing or replying. On a file's page, whose threads don't show their own code, a composer has it read as it
 opens, as a thread that comes on screen does, through the reader the page's diff was read with: only while its window
 shows on screen, called off as it hides, and read again once it shows. Explain, Fix and **Ask in the Session** wait for a
@@ -2566,7 +2572,10 @@ the invisible ones that reorder text or hide text a model may read, such as dire
 tags, written out as escapes (`PullRequestPrompt.oneLine`); its errors, each test's message and stack trace, and the log
 each go in a fence nothing in them closes, with the same characters written out but tabs (`PullRequestPrompt.fenced`);
 and the prompt then says that they're what the build said, not instructions. The pull request's title, repository and
-branches, which whoever opened it named, stay on their lines the same way in every prompt (`PullRequestPrompt.introduction`). It asks the
+branches, which whoever opened it named, stay on their lines the same way in every prompt (`PullRequestPrompt.introduction`),
+and so do names, paths and comments of one line; a branch whose name holds what a shell reads, such as `$(…)` or a
+backtick, which Git allows, is in single quotes wherever a prompt names it, in a command such as `git push origin
+HEAD:refs/heads/'<branch>'` or in a sentence Copilot may make one from, so it runs nothing (`PullRequestPrompt.branch`). It asks the
 session, aside, what failed and why, and whether it's the change, a flaky test, the target branch or the build's
 infrastructure (`CopilotQuestions`, over `SessionQuestions`). What it answers is kept with the run it's about, and the
 attempt of it, by when its check said it finished, so it doesn't show with another run of the build, nor once its failed

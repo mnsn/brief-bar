@@ -1,10 +1,13 @@
+import BriefBarCore
 import Foundation
 
 /// The prompt a task is sent with. It names the work item and leaves the rest to Copilot, which reads the work item
 /// with your own Azure DevOps tools. You can change it in Settings, and before each send.
 ///
 /// Placeholders: `{id}`, `{type}`, `{title}`, `{url}`, `{organization}`, `{project}` and `{baseBranch}`, the branch
-/// the worktree starts from. Others are left as they are.
+/// the worktree starts from. Others are left as they are. Each value stays on its placeholder's line, whatever a work
+/// item's title holds (`QuotedText.oneLine`), since Copilot runs the prompt with every tool. Only a work item's prompt is
+/// filled in: a pull request's has no placeholders, and quotes code that may look like one (`CopilotLauncher`).
 public enum PromptTemplate {
     public static let standard = """
         Fix Azure DevOps {type} {id}: {title}
@@ -50,19 +53,19 @@ public enum PromptTemplate {
     public static func render(_ template: String, item: TaskWorkItem, baseBranch: String? = nil) -> String {
         var values: [String: String] = [
             "id": String(item.id),
-            "type": item.type,
-            "title": item.title,
+            "type": QuotedText.oneLine(item.type),
+            "title": QuotedText.oneLine(item.title),
             "url": item.url.absoluteString,
-            "organization": item.organization,
-            "project": item.project,
+            "organization": QuotedText.oneLine(item.organization),
+            "project": QuotedText.oneLine(item.project),
         ]
-        if let baseBranch { values["baseBranch"] = baseBranch }
+        if let baseBranch { values["baseBranch"] = QuotedText.oneLine(baseBranch) }
         return fill(template, values)
     }
 
     /// Fills in only the base branch, once the repository says which it is: in a prompt you may have edited.
     public static func render(_ prompt: String, baseBranch: String) -> String {
-        fill(prompt, ["baseBranch": baseBranch])
+        fill(prompt, ["baseBranch": QuotedText.oneLine(baseBranch)])
     }
 
     /// One pass over the text, so a value that looks like a placeholder, such as a title with braces, stays as it is.
