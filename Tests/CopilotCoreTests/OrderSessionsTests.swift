@@ -71,6 +71,18 @@ import Testing
         #expect(!sessions.map(\.ref).contains(Self.ref(Self.helper)))
     }
 
+    /// A provider can also link a session to the pull request it started from, without saying how: that's still not its
+    /// work, whichever the app lists first, even when no session opened it.
+    @Test func aLinkToThePullRequestASessionStartedFromIsntItsWork() {
+        let sessions = OrderSessions.sessions([
+            Self.session(Self.reviewer, [Self.ado(4105), Self.ado(4105, .startedFrom), Self.ado(4106)]),
+            Self.session(Self.helper, [Self.gitHub(9, .startedFrom), Self.gitHub(9, nil)]),
+        ])
+
+        #expect(sessions.map(\.ref) == [Self.ref(Self.reviewer)])
+        #expect(sessions.map(\.pullRequests) == [[.pullRequest(organization: "contoso", number: 4106)]])
+    }
+
     @Test func whatBriefBarCantNameIsLeftOut() {
         let sessions = OrderSessions.sessions([
             Self.session("not-a-session", [Self.ado(4101, .opened)]),

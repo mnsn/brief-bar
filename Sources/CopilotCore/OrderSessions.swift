@@ -22,14 +22,17 @@ public enum OrderSessions {
         var listed: Set<ItemRef> = []
         return sessions.compactMap { session in
             guard let ref = ItemRef.session(session.id), listed.insert(ref).inserted else { return nil }
+            let links = session.links?.pullRequests ?? []
+            // A provider's link to the pull request it started from, whichever the app lists first, says no more.
+            let startedFrom = Set(links.filter { $0.role == .startedFrom }.compactMap(\.ref))
             var pullRequests: [ItemRef] = []
-            for recorded in session.links?.pullRequests ?? [] {
+            for recorded in links {
                 guard let pullRequest = recorded.ref, !pullRequests.contains(pullRequest) else { continue }
                 switch recorded.role {
                 case .opened:
                     pullRequests.append(pullRequest)
                 case nil:
-                    if !opened.contains(pullRequest) { pullRequests.append(pullRequest) }
+                    if !opened.contains(pullRequest), !startedFrom.contains(pullRequest) { pullRequests.append(pullRequest) }
                 case .startedFrom:
                     continue
                 }
