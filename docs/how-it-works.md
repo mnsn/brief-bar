@@ -1187,7 +1187,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
 | `PATCH {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}` | the same, when you set a thread's status, or after your reply with Reply & Resolve or Reply & Reactivate: once | the thread's status alone; Azure DevOps answers with the thread, its comments as it has them now |
-| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only in a pull request's details, for one whose lists don't carry its tags, such as one sent to you or that you watch: as they show on a window's page on screen, then ten minutes after they were read, and half a minute after a read of them failed, while they show; and after a change to its tags, or one called off as Make Changes in Azure DevOps goes off, below | its tags |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only in a pull request's details, for one whose lists don't carry its tags, such as one sent to you or that you watch: as they show on a window's page on screen, then ten minutes after they were read, and half a minute after a read of them failed, while they show; and after a change to its tags, as it settles, though Make Changes in Azure DevOps went off meanwhile, below | its tags |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only with Make Changes in Azure DevOps on, when you add a tag to an open pull request: once | the tag's name; Azure DevOps answers with the tag as the project has it, which it makes when the project has none of that name |
 | `DELETE {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels/{tag}` | the same, when you click a tag's ✕: once | nothing but the tag, by the project's tag's ID; the project keeps the tag |
 
@@ -1496,11 +1496,11 @@ one Azure DevOps didn't answer in time, the thread is read again before the same
 starts then, never one under way before, and nothing goes until it was (`ADOWriteProblem.unconfirmed`): a comment of
 yours that came since it was sent, and says the same as it would go, its first line's indent included, as Azure DevOps
 keeps it, its mentions as their IDs, or as the details show it, is it, whatever came after it, so it isn't sent twice
-(`ThreadChanges.Attempt`, which keeps a fingerprint of what it said, not what it said, `ThreadChanges.digest`); a reply
-that says something else goes without that read. **Resolve**, or **Reactivate** on a resolved thread, sets its status at
-once, without asking, since the same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps'
-own menu offers, Active, Pending, Resolved, Won't Fix and Closed, and By Design only for a thread that has it
-(`ThreadStatus.choices`).
+(`ThreadChanges.Attempt`, which keeps a fingerprint of what it said, not what it said, `ThreadChanges.digest`, for each
+reply on the thread that may have gone, until its own is checked); a reply that says something else goes without that
+read. **Resolve**, or **Reactivate** on a resolved thread, sets its status at once, without asking, since the same menu
+sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps' own menu offers, Active, Pending,
+Resolved, Won't Fix and Closed, and By Design only for a thread that has it (`ThreadStatus.choices`).
 
 What Azure DevOps answers shows at once (`ThreadChange`, which `PRDetails.apply` applies once, however often): the list
 applies it (`PRStore.changed`), so the details, Needs You, What's Left, the brief and the counts follow it, then the
@@ -1603,11 +1603,13 @@ again; when it may have happened all the same, as when Azure DevOps didn't answe
 before it doesn't cut short, and only by one that started since the change (`TagChanges.readAgain`, `unsure`); one taken
 off that Azure DevOps says isn't there is, when the tags read again don't have it, as you wanted. Each change goes in a
 task kept by pull request, which turning the setting off, Azure DevOps stopping or someone else signing in calls off
-(`TagChanges.forgetAll`): one that hasn't gone, as while it waits for a token, never does, and one called off does
-nothing more, though the setting is on again; as the setting goes off, the tags of a pull request whose change it called
-off are read again, as it may have gone all the same. It goes only as whom the list was read as when you clicked
-(`ADOClient.send(_:as:)`): when someone else signed in to the Azure CLI since, nothing goes, and the tags say so, with
-**Sign In…**.
+(`TagChanges.forgetAll`): one that hasn't gone, as while it waits for a token, never does, and says nothing. One that
+has, which Azure DevOps may make all the same, settles: the tags show what Azure DevOps answered, and are read again
+after it, as after any change, but nothing more happens, though the setting is on again; and one that may have been made
+without saying so, or a tag taken off that Azure DevOps says isn't there, has the tags read again once it settled, not
+as the setting goes off, while Azure DevOps may still be making it. It goes only as whom the list was read as when you
+clicked (`ADOClient.send(_:as:)`): when someone else signed in to the Azure CLI since, nothing goes, and the tags say
+so, with **Sign In…**.
 
 As you type, the field suggests (`TagChoices`) the tags you added in the pull request's project, the latest first, then
 those on the pull requests BriefBar read there, the most used first, then by name, but the pull request's own, six at
