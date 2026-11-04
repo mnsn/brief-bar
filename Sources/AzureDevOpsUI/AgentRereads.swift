@@ -10,7 +10,8 @@ import Foundation
 /// pull requests; the sprint, while something shows it; and the work item whose details show. What comes within
 /// `gathering` is one pass, and passes are `spacing` apart at least, so that agents can't make BriefBar read Azure DevOps
 /// more often than opening its panel again and again does (`PRStore.refreshIfStale`); and the engines' own caps hold
-/// (`PulseEngine.reread`, `LinkEngine.reread`).
+/// (`PulseEngine.reread`, `LinkEngine.reread`). Turning Updates from Copilot Sessions off or on forgets what waits for its
+/// pass, as it forgets what sessions asked before (`SessionUpdates.setOn`).
 @MainActor
 final class AgentRereads {
     /// How long a pass waits for more after the first request, so that a burst of calls is one pass.
@@ -35,7 +36,7 @@ final class AgentRereads {
     private var pending = Pass()
     private var lastPass: Date?
     private var scheduled: Task<Void, Never>?
-    private var subscription: AnyCancellable?
+    private var subscriptions: Set<AnyCancellable> = []
 
     /// - Parameters:
     ///   - organizations: the organizations BriefBar reads now.
@@ -71,16 +72,27 @@ final class AgentRereads {
         }
     }
 
-    /// Hears what agents ask to read again, until it stops.
+    /// Hears what agents ask to read again, until it stops; and as Updates from Copilot Sessions goes off or on, forgets
+    /// what waits for its pass.
     func started() -> Self {
-        subscription = updates.rereads.sink { [weak self] refs in
+        updates.rereads.sink { [weak self] refs in
             MainActor.assumeIsolated { self?.receive(refs) }
         }
+        .store(in: &subscriptions)
+        updates.$isOn.removeDuplicates().dropFirst().sink { [weak self] _ in
+            MainActor.assumeIsolated { self?.forgetWhatWaits() }
+        }
+        .store(in: &subscriptions)
         return self
     }
 
     func stop() {
-        subscription = nil
+        subscriptions = []
+        forgetWhatWaits()
+    }
+
+    /// Calls off the pass that waits, and forgets what it would have read.
+    private func forgetWhatWaits() {
         scheduled?.cancel()
         scheduled = nil
         pending = Pass()

@@ -62,6 +62,27 @@ import Testing
         rereads.stop()
     }
 
+    /// Turned off and on again while a pass waits, it forgets what that pass would have read, as it forgets what sessions
+    /// asked before: only what they ask after is read.
+    @Test func turningItOffAndOnForgetsWhatWaitsForItsPass() async throws {
+        var passes: [AgentRereads.Pass] = []
+        let updates = Self.updates()
+        let rereads = AgentRereads(
+            updates: updates, organizations: { ["contoso"] }, gathering: 0.05, spacing: 10
+        ) { passes.append($0) }.started()
+        rereads.receive([Self.pullRequest])
+        updates.setOn(false)
+        updates.setOn(true)
+        rereads.receive([Self.task])
+        // For as long as a busy machine could need.
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while passes.isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(passes == [AgentRereads.Pass(workItems: [WorkItemKey("contoso", 5124)])])
+        rereads.stop()
+    }
+
     @Test func itReadsOnceWhatGathersAndHearsWhatAgentsAsk() async throws {
         var passes: [AgentRereads.Pass] = []
         let defaults = MemoryDefaults()
