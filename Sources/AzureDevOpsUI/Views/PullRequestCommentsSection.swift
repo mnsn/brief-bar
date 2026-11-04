@@ -693,13 +693,18 @@ private struct CommentLine: View {
 struct CommentBody: View, Equatable {
     let markdown: String
     let isQuiet: Bool
+    /// How many of its blocks show, from the first; all of them when nil (`RichTextView.shownBlocks`).
+    var shownBlocks: Int?
+    /// It says where each of its blocks starts (`RichTextBlockTops`).
+    var reportsBlockTops = false
 
     var body: some View {
-        RichTextView(text: RichText(markdown: markdown), size: 12.5)
+        RichTextView(text: RichText(markdown: markdown), size: 12.5, shownBlocks: shownBlocks, reportsBlockTops: reportsBlockTops)
             .foregroundStyle(isQuiet ? .secondary : .primary)
     }
 
     nonisolated static func == (lhs: CommentBody, rhs: CommentBody) -> Bool {
-        lhs.isQuiet == rhs.isQuiet && lhs.markdown.utf8.elementsEqual(rhs.markdown.utf8)
+        lhs.isQuiet == rhs.isQuiet && lhs.shownBlocks == rhs.shownBlocks && lhs.reportsBlockTops == rhs.reportsBlockTops
+            && lhs.markdown.utf8.elementsEqual(rhs.markdown.utf8)
     }
 }

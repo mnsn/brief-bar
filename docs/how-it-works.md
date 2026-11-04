@@ -2474,7 +2474,9 @@ sends, call it all off as their parts go, for a file's page or with them, not as
 conflicts once they're resolved (`PullRequestDetailsContent`). VoiceOver hears what's sent, and what becomes of it, as it
 happens: what becomes of it once, though each view that shows it hears of it, as the same pull request's details in two
 windows, or two rows of a build that two policies run (`SpokenText.announce(_:once:)`). A long answer from Explain shows
-its first dozen or so lines, fading out, with **Show More** (`CopilotAnswerCard`).
+its first dozen or so lines, fading out, with **Show More** (`CopilotAnswerCard`): its blocks that start below them aren't
+there until you ask, for the keyboard's focus or VoiceOver to reach (`RichTextView.shownBlocks`), and what's hidden of the
+last that shows takes no clicks or scrolls.
 
 **Fix** (`PullRequestPrompt.fixThread`) addresses that thread alone: its entry as Fix Comments lists it, each comment in
 full as its author wrote it, the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with

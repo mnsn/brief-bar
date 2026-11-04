@@ -320,8 +320,9 @@ struct CopilotAnswerCard: View {
     @Environment(\.interfaceOptions) private var options
     /// All of a long answer shows, rather than its beginning.
     @LocalState private var showsAll = false
-    /// How tall all of the answer is, to tell whether it's long.
+    /// How tall all of the answer is, to tell whether it's long; and where each of its blocks starts, to tell which show.
     @LocalState private var answerHeight: CGFloat = 0
+    @LocalState private var blockTops: [Int: CGFloat] = [:]
 
     /// About how many lines of a long answer show until you ask for all of it, as a row's summary shows its first lines.
     static let shownLines: CGFloat = 12
@@ -336,6 +337,18 @@ struct CopilotAnswerCard: View {
     /// It's long: it shows its beginning, then Show More.
     private var isLong: Bool { answerHeight > Self.wholeLines * lineHeight }
     private var isCut: Bool { isLong && !showsAll }
+
+    /// While it's cut, how many of its blocks are there: those that start in what shows (`shown(of:in:)`).
+    private var shownBlocks: Int? {
+        guard isCut, !blockTops.isEmpty else { return nil }
+        return Self.shown(of: blockTops, in: shownHeight)
+    }
+
+    /// How many blocks start in what shows, from where each starts, by its index: the last of them may be cut, and those
+    /// after it aren't there at all, for the keyboard's focus or VoiceOver to reach. At least the first.
+    static func shown(of tops: [Int: CGFloat], in height: CGFloat) -> Int {
+        max(1, tops.values.filter { $0 < height }.count)
+    }
 
     /// What you asked, when you asked something.
     private var question: String? {
@@ -377,14 +390,13 @@ struct CopilotAnswerCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             // Parsed once for what it says, as a comment is. A long one shows its beginning, fading out, with Show More under
-            // it, and Show Less once it's all there.
-            CommentBody(markdown: answer, isQuiet: false)
+            // it, and Show Less once it's all there: only its blocks that start in what shows are there, and what shows of
+            // the last of them takes no clicks or scrolls below it.
+            CommentBody(markdown: answer, isQuiet: false, shownBlocks: shownBlocks)
                 .equatable()
                 .fixedSize(horizontal: false, vertical: true)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { answerHeight = $0 }
                 .frame(maxHeight: isCut ? shownHeight : nil, alignment: .top)
                 .clipped()
-                // What it hides takes no clicks or scrolls either, such as a code block's below what shows.
                 .contentShape(Rectangle())
                 .mask(alignment: .top) {
                     VStack(spacing: 0) {
@@ -394,6 +406,19 @@ struct CopilotAnswerCard: View {
                                 .frame(height: 28 * textScale)
                         }
                     }
+                }
+                // All of it, unseen, out of reach of the keyboard and VoiceOver: how tall it is, and where its blocks start.
+                .background(alignment: .topLeading) {
+                    CommentBody(markdown: answer, isQuiet: false, reportsBlockTops: true)
+                        .equatable()
+                        .fixedSize(horizontal: false, vertical: true)
+                        .hidden()
+                        .disabled(true)
+                        .accessibilityHidden(true)
+                        .allowsHitTesting(false)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { answerHeight = $0 }
+                        .onPreferenceChange(RichTextBlockTops.self) { blockTops = $0 }
+                        .transformPreference(RichTextBlockTops.self) { $0 = [:] }
                 }
             if isLong {
                 Button(showsAll ? "Show Less" : "Show More") {
