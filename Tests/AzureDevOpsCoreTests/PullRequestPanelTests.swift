@@ -90,7 +90,10 @@ import BriefBarCore
         #expect(standing.open.flatMap(\.threads).map(\.id) == [2, 5])
         #expect(standing.resolved.flatMap(\.threads).map(\.id) == [6, 4])
 
-        let held = panel.threads.arranged(holding: [2: .waitingOnYou, 4: .open, 5: .resolved])
+        let held = panel.threads.arranged(holding: [
+            2: .init(placement: .waitingOnYou, date: t(-2 * hour)), 4: .init(placement: .open, date: t(-3 * hour)),
+            5: .init(placement: .resolved, date: t(-4 * day)),
+        ])
         // 2 still first, as it waited on you; 4 among the open ones, by its line.
         #expect(held.open.flatMap(\.threads).map(\.id) == [2, 4])
         #expect(held.resolved.flatMap(\.threads).map(\.id) == [6, 5])
@@ -99,6 +102,27 @@ import BriefBarCore
         #expect(held.open.flatMap(\.threads).last?.isResolved == true)
         #expect(panel.threads.openByFile == standing.open)
         #expect(panel.threads.resolvedByFile == standing.resolved)
+    }
+
+    /// Among the threads on the pull request itself, which have no line, the latest show first: one you reply to stays where
+    /// it was as you first changed it, though it's the latest now, and doesn't wait on you.
+    @Test func aThreadYouReplyToStaysWhereItWasAmongTheLatest() throws {
+        let before = [
+            ReviewThread(id: 7, comments: [comment(1, People.alex, "Release notes?", at: t(-hour))]),
+            ReviewThread(id: 8, comments: [comment(1, People.priya, "Who reviews the SQL?", at: t(-2 * hour))]),
+            ReviewThread(id: 9, comments: [comment(1, People.alex, "Rename it?", at: t(-3 * hour))]),
+        ]
+        let open = try panel(record(makePR(created: t(-day)), threads: before), seen: t(-hour)).threads.arranged().open.flatMap(\.threads)
+        #expect(open.map(\.id) == [7, 8, 9])
+        #expect(open.map(\.waitsOnYou) == [true, true, true])
+        let held = PullRequestPanel.Thread.Held(try #require(open.first { $0.id == 8 }))
+
+        // You replied to 8: it's the latest now, and doesn't wait on you.
+        var after = before
+        after[1].comments.append(comment(2, me, "I will.", at: t(-minute)))
+        let replied = try panel(record(makePR(created: t(-day)), threads: after), seen: t(-hour)).threads
+        #expect(replied.arranged().open.flatMap(\.threads).map(\.id) == [7, 9, 8])
+        #expect(replied.arranged(holding: [8: held]).open.flatMap(\.threads).map(\.id) == [7, 8, 9])
     }
 
     /// A comment that needs you in a thread resolved since, as a new one in a resolved thread does, waits on you there too.
