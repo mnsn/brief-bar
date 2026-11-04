@@ -253,8 +253,8 @@ extension PullRequestPrompt {
     }
 
     /// Text a prompt quotes on one of its lines, from where anyone who can push code may write, such as a test's or a step's
-    /// name: its line breaks, and characters that control how text reads or hide text, written out as escapes, "\\n",
-    /// "\\u{202E}" (`isControl`), so that all of it stays on that line, nothing in it starts a line of the prompt's own, and
+    /// name: its line breaks, and characters that control how text reads or hide text, written out as escapes, "\n",
+    /// "\u{202E}" (`isControl`), so that all of it stays on that line, nothing in it starts a line of the prompt's own, and
     /// nothing in it is unseen.
     static func oneLine(_ text: String) -> String {
         var line = ""
@@ -265,7 +265,7 @@ extension PullRequestPrompt {
             case "\t": line += "\\t"
             default:
                 if isControl(scalar) {
-                    line += "\\u{" + String(scalar.value, radix: 16, uppercase: true) + "}"
+                    line += escaped(scalar)
                 } else {
                     line.unicodeScalars.append(scalar)
                 }
@@ -279,13 +279,28 @@ extension PullRequestPrompt {
     /// characters that control how text reads, a carriage return among them, written out as escapes, so that all of it
     /// stays what was said, whatever it says.
     static func fenced(_ text: String, indent: String = "") -> [String] {
-        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false).map { line in
-            line.unicodeScalars.map { scalar in
-                scalar != "\t" && isControl(scalar) ? "\\u{" + String(scalar.value, radix: 16, uppercase: true) + "}" : String(scalar)
-            }.joined()
+        let all = text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false)
+        let lines = all.map { (line: Substring) -> String in
+            var kept = ""
+            for scalar in line.unicodeScalars {
+                if scalar != "\t", isControl(scalar) {
+                    kept += escaped(scalar)
+                } else {
+                    kept.unicodeScalars.append(scalar)
+                }
+            }
+            return kept
         }
-        let fence = fence(for: lines.joined(separator: "\n"))
-        return [indent + fence] + lines.map { $0.isEmpty ? "" : indent + $0 } + [indent + fence]
+        let fence = indent + fence(for: lines.joined(separator: "\n"))
+        var fenced = [fence]
+        fenced += lines.map { (line: String) -> String in line.isEmpty ? "" : indent + line }
+        fenced.append(fence)
+        return fenced
+    }
+
+    /// A character written out as an escape: "\u{202E}".
+    private static func escaped(_ scalar: Unicode.Scalar) -> String {
+        "\\u{\(String(scalar.value, radix: 16, uppercase: true))}"
     }
 
     /// A character that controls how text reads, or hides text, rather than being seen: a control character, a line or
