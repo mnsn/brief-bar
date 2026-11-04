@@ -225,6 +225,25 @@ final class AgentsModel: ObservableObject {
     /// Pull Request Order is on, in Settings › General.
     var isOrderOn: Bool { PullRequestOrderSetting.isOn(in: defaults) }
 
+    /// BriefBar asked the Copilot CLI to add Pull Request Order's skill, and the CLI hasn't said since that it's gone: kept
+    /// in the preferences, so that a skill a removal couldn't take away still shows after BriefBar starts again.
+    static let orderSkillMayBeInstalledKey = "order.skillMayBeInstalled"
+
+    private var orderSkillMayBeInstalled: Bool {
+        get { defaults.bool(forKey: Self.orderSkillMayBeInstalledKey) }
+        set {
+            if newValue {
+                defaults.set(true, forKey: Self.orderSkillMayBeInstalledKey)
+            } else {
+                defaults.removeObject(forKey: Self.orderSkillMayBeInstalledKey)
+            }
+        }
+    }
+
+    /// Whether the Agents page shows the skill: while Pull Request Order is on, or while the Copilot CLI may still have it
+    /// without it, so that you can remove it. Until you turn Pull Request Order on, BriefBar doesn't even ask about it.
+    var showsOrderSkill: Bool { isOrderOn || orderSkillMayBeInstalled }
+
     /// Pull Request Order turned on or off: with agents on, Copilot gets its skill, which tells the sessions that open pull
     /// requests together when to tell BriefBar their order; turned off, the skill goes. Agents turned on later add it then,
     /// and turned off remove it. A copy of BriefBar without the plugin can remove it, but not install it.
@@ -232,6 +251,7 @@ final class AgentsModel: ObservableObject {
         if isOn {
             guard state == .on, hasPlugin else { return }
             Log.app.info("Adding Pull Request Order's skill")
+            orderSkillMayBeInstalled = true
             changeOrderSkill(demo: .installed(enabled: true)) { await $0.install() }
         } else {
             guard state == .on || orderSkill != .unknown else { return }
@@ -241,7 +261,7 @@ final class AgentsModel: ObservableObject {
     }
 
     private func refreshOrderSkill(force: Bool) {
-        guard orderSkill != .working, isOrderOn || orderSkill != .unknown else { return }
+        guard orderSkill != .working, showsOrderSkill || orderSkill != .unknown else { return }
         if !force, let orderCheckedAt, Date().timeIntervalSince(orderCheckedAt) < 30 { return }
         var demo = CopilotPluginRegistration.Status.absent
         if case .known(let status) = orderSkill { demo = status }
@@ -254,6 +274,7 @@ final class AgentsModel: ObservableObject {
     ) {
         guard isLive else {
             orderProgress = CopilotCLIProgress(status: demo)
+            note(demo)
             return
         }
         let request = orderProgress.ask()
@@ -261,7 +282,17 @@ final class AgentsModel: ObservableObject {
             guard let self else { return }
             orderProgress.answer(request, with: status)
             orderCheckedAt = Date()
+            note(status)
             Log.app.info("Pull Request Order's skill in the Copilot CLI: \(status.kind, privacy: .public)")
+        }
+    }
+
+    /// Remembers whether the Copilot CLI may have the skill, from what it said of it.
+    private func note(_ status: CopilotPluginRegistration.Status) {
+        switch status {
+        case .installed, .installedElsewhere: orderSkillMayBeInstalled = true
+        case .absent, .noCLI, .taken: orderSkillMayBeInstalled = false
+        case .failed: break
         }
     }
 
@@ -597,7 +628,7 @@ struct AgentsPage: View {
                     Divider()
                     SessionPromptsRow(agents: agents)
                         .padding(.vertical, 10)
-                    if agents.isOrderOn || agents.orderSkill != .unknown {
+                    if agents.showsOrderSkill {
                         Divider()
                         OrderSkillRow(agents: agents)
                             .padding(.vertical, 10)
@@ -1020,6 +1051,12 @@ private struct OrderSkillRow: View {
             }
         case .known(let status):
             switch status {
+            case .installed where !agents.isOrderOn, .installedElsewhere where !agents.isOrderOn:
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Still in the Copilot CLI, though \(PullRequestOrderSettingView.title) is off.")
+                        .foregroundStyle(.secondary)
+                    Button("Remove") { agents.pullRequestOrderChanged(false) }
+                }
             case .installed(enabled: true), .installedElsewhere:
                 Label(Self.installed, systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
