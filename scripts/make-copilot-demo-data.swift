@@ -154,6 +154,8 @@ struct Session {
     var context: (tokens: Int, limit: Int)
     /// The session that started it and coordinates it.
     var coordinator: String?
+    /// The link of the pull request it opened, which the app records with it.
+    var opened: String?
     var log: Log
 }
 
@@ -163,14 +165,19 @@ var sessions: [Session] = []
 func session(
     _ id: String, _ name: String, prompt: String? = nil, project: String?, branch: String = "main", mode: String = "interactive",
     running: Bool = false, started: Date, updated: Date? = nil, context: (Int, Int), coordinator: String? = nil,
-    _ build: (inout Log) -> Void
+    opened: String? = nil, _ build: (inout Log) -> Void
 ) {
     var log = Log()
     log.start(prompt ?? name, at: started)
     build(&log)
     sessions.append(Session(id: id, name: name, project: project, branch: branch, mode: mode, running: running,
                             createdAt: started, updatedAt: updated ?? started, context: context, coordinator: coordinator,
-                            log: log))
+                            opened: opened, log: log))
+}
+
+/// An Azure DevOps demo pull request's link, as the app records the one a session opened.
+func adoPullRequest(_ repository: String, _ number: Int) -> String {
+    "https://dev.azure.com/contoso/Storefront/_git/\(repository)/pullrequest/\(number)"
 }
 
 /// The checkpoints Copilot writes as it compacts a long session's conversation, by session: each one's title, when it
@@ -212,7 +219,8 @@ let rollout = "a3d9c5e1-7b2f-4e84-9c16-5f8e2d0b7a11"
 
 // Needs you: a question, a plan to approve and a permission prompt.
 session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01", "Add dark mode to settings", project: "shop-web", branch: "dark-mode",
-        running: true, started: ago(9 * minute), context: (46_000, 200_000), coordinator: rollout) { log in
+        running: true, started: ago(9 * minute), context: (46_000, 200_000), coordinator: rollout,
+        opened: adoPullRequest("shop-web", 4093)) { log in
     log.tool("view", ["path": "src/settings/SettingsPage.tsx"], at: ago(8 * minute))
     log.tool("ask_user", [
         "question": "Should dark mode follow the system appearance?",
@@ -259,7 +267,8 @@ session(rollout, "Roll out dark mode", project: nil, running: true, started: ago
 }
 // The other session the chat started, still working: with Nest Sessions Under Their Parents, it's under the chat.
 session("f2c6b8d4-0e3a-4d71-b9a5-7e1c3d5f9a12", "Add dark mode to emails", project: "shop-web", branch: "dark-mode-emails",
-        running: true, started: ago(4 * minute + 20), context: (38_000, 200_000), coordinator: rollout) { log in
+        running: true, started: ago(4 * minute + 20), context: (38_000, 200_000), coordinator: rollout,
+        opened: adoPullRequest("shop-web", 4118)) { log in
     log.tool("view", ["path": "emails/templates/layout.html"], at: ago(4 * minute))
     log.tool("bash", ["command": "npm run build:emails", "description": "Build the email templates"],
              at: ago(1 * minute), finished: false)
@@ -633,13 +642,31 @@ checkpoints[savedItemsTask] = [
         """),
 ]
 
+// A chat that started the sessions fixing the payments bugs, and told BriefBar the order their pull requests merge in
+// (the Azure DevOps demo's DemoPullRequestOrder), idle since.
+let payments = "e5b7d2c9-3f1a-4c86-9b20-7d4e1a8c6f17"
+session(payments, "Fix the payments bugs", project: nil, started: ago(27 * hour + 10 * minute), updated: ago(25 * hour),
+        context: (58_000, 200_000)) { log in
+    log.tool("create_session", ["name": "Retry backoff"], title: "Starting a session", at: ago(27 * hour + 5 * minute))
+    log.tool("create_session", ["name": "Remove the legacy coupon API"], title: "Starting a session", at: ago(26 * hour))
+    log.finish("Started both sessions, and told BriefBar the order their pull requests merge in.", at: ago(25 * hour))
+}
+session("4c8e2a6f-9d1b-4f37-a5c0-8e2d6b4f1a18", "Remove the legacy coupon API", project: "payments-api",
+        branch: "remove-legacy-coupons", started: ago(26 * hour), updated: ago(25 * hour + 20 * minute),
+        context: (41_000, 200_000), coordinator: payments, opened: adoPullRequest("payments-api", 3990)) { log in
+    log.tool("grep", ["pattern": "LegacyCouponController"], at: ago(26 * hour - 5 * minute))
+    log.finish("Removed the v1 coupon endpoints, and opened a pull request that waits for the coupon rounding fix.",
+               at: ago(25 * hour + 20 * minute))
+}
+
 // On the branches of the Azure DevOps demo's pull requests, for the line under their heading in their details, idle: the
-// one that wrote !4102's backoff; and two on !4079's branch, which go with it as well as each other, so its details ask
-// which is its.
+// one that wrote !4102's backoff, which opened it; and two on !4079's branch, which go with it as well as each other, so
+// its details ask which is its.
 session("2f8a4c6e-1b3d-4e5f-8a7b-9c0d1e2f3a14", "Retry backoff", prompt: """
         Add retry with exponential backoff to the payments client: start at 200 ms and double each time.
         """, project: "payments-api", branch: "payments-retry",
-        started: ago(27 * hour), updated: ago(26 * hour), context: (64_000, 200_000)) { log in
+        started: ago(27 * hour), updated: ago(26 * hour), context: (64_000, 200_000), coordinator: payments,
+        opened: adoPullRequest("payments-api", 4102)) { log in
     log.tool("view", ["path": "src/PaymentsClient.cs"], at: ago(27 * hour - 5 * minute))
     log.tool("bash", ["command": "dotnet test --filter PaymentsClientTests", "description": "Run the payments client's tests"],
              at: ago(26 * hour + 20 * minute))
@@ -702,7 +729,8 @@ func sql(_ value: String?) -> String {
 
 // Only the tables and columns BriefBar reads from the app's database.
 var statements = """
-    CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL);
+    CREATE TABLE projects (
+        id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, github_owner TEXT, github_repo TEXT, main_repo_path TEXT);
     CREATE TABLE sessions (
         id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL DEFAULT 'workspace', mode TEXT,
         is_running INTEGER NOT NULL DEFAULT 0, was_interrupted INTEGER NOT NULL DEFAULT 0,
@@ -710,7 +738,8 @@ var statements = """
     CREATE TABLE workspaces (
         id TEXT PRIMARY KEY NOT NULL, project_id TEXT NOT NULL, session_id TEXT, branch TEXT NOT NULL,
         name TEXT NOT NULL, creator_session_id TEXT, coordinating_creator_session_id TEXT, archived_at TEXT,
-        updated_at TEXT NOT NULL);
+        updated_at TEXT NOT NULL, source_pr_repo_full_name TEXT, source_pr_number INTEGER, source_pr_html_url TEXT,
+        created_pr_repo_full_name TEXT, created_pr_number INTEGER, created_pr_html_url TEXT);
     CREATE TABLE activity_items (
         id TEXT PRIMARY KEY NOT NULL, session_id TEXT, activity_type TEXT NOT NULL,
         preview TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
@@ -736,10 +765,10 @@ for (index, session) in sessions.enumerated() {
     if let project = session.project {
         statements += """
             INSERT INTO workspaces (id, project_id, session_id, branch, name, creator_session_id,
-                                    coordinating_creator_session_id, updated_at)
+                                    coordinating_creator_session_id, updated_at, created_pr_html_url)
             VALUES (\(sql("workspace-\(index + 1)")), \(sql("project-\(project)")), \(sql(session.id)),
                     \(sql(session.branch)), \(sql(session.name)), \(sql(session.coordinator)), \(sql(session.coordinator)),
-                    \(sql(iso(session.updatedAt))));
+                    \(sql(iso(session.updatedAt))), \(sql(session.opened)));
 
             """
     }
