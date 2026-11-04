@@ -3,8 +3,9 @@
 ## Unreleased
 
 - **Buttons and menus grow with Text Size in Windows.** At a bigger text size, in Settings › Appearance, the controls on
-  windows' pages grow with their text: the Pull Requests pages' By Status, List | Map and Open in Azure DevOps, rows'
-  Actions, a pull request's Explain, Fix, Reply, Resolve, Fix Grammar and Push & Reply…, and the composers' buttons.
+  windows' pages grow with their text: the pages' headers, such as By Status, List | Map and Open in Azure DevOps on the
+  Pull Requests pages, rows' Actions, a pull request's Explain, Fix, Reply, Resolve, Fix Grammar and Push & Reply…, and
+  the composers' buttons.
 - **In a narrow window, a page's header shows its buttons as symbols alone**, each named in its tooltip and to
   VoiceOver, so what the page says it's about isn't cut short.
 - **The fixes ready to push take two lines at most**, at the foot of a pull request's details: at a bigger text size,
@@ -14,7 +15,6 @@
 - **A file's diff folds only runs of four or more unchanged lines**: fewer show, where a fold saved no room.
 - **What's Left says a pull request set to complete automatically completes by itself**, as its heading does, rather
   than that you can complete it.
-- **Text that wraps among a pull request's details no longer overlaps what follows it** at a bigger text size.
 - **`--render` draws Settings with its chosen page highlighted in the sidebar**, where it drew a black capsule.
 
 ## 0.14.1 - 2026-11-04
