@@ -229,11 +229,18 @@ struct OrderMapNode: View {
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
+        .disabled(!canOpen)
         .opacity(isDimmed ? 0.45 : 1)
         .help(help)
         .accessibilityLabel([step.ref.shortOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "))
         .accessibilityValue([item?.status, OrderText.sentence(of: step)].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// Whether clicking it can show it or open it, as its placeholder row's click can: a source that's on lists it, or it's
+    /// on GitHub. One BriefBar can't see, such as an Azure DevOps pull request no list has, does nothing.
+    private var canOpen: Bool {
+        item?.open != nil || item?.show != nil || step.ref.kind == .gitHubPullRequest
     }
 
     private var help: String {
