@@ -136,6 +136,48 @@ extension SpokenText {
     static func announce(_ text: String) {
         AccessibilityNotification.Announcement(text).post()
     }
+
+    /// What became of something of a pull request that Copilot works on or was asked about, as VoiceOver hears it: each view
+    /// that shows it hears of it, as its details beside the list and its page over a work item's do in two windows, or the
+    /// rows of a build that two policies run, but VoiceOver hears it once (`announce(_:once:)`).
+    struct Outcome: Hashable {
+        var pullRequest: PRKey
+        var part: PullRequestPart
+        /// For a question about a build, the run it's about.
+        var run: Int?
+        /// What it says became of it, without which of its rows says so: "Fixed in ‘Retry backoff’, not pushed".
+        var said: String
+        /// Since when it stands so, which tells it from the same that comes again later: when Copilot's work ended or
+        /// started to wait for you, or when a question was answered.
+        var since: Date?
+    }
+
+    /// Says what became of something once, though each view that shows it says so as it hears of it (`SpokenOutcomes`).
+    @MainActor
+    static func announce(_ text: String, once outcome: Outcome) {
+        guard SpokenOutcomes.shared.isNew(outcome) else { return }
+        announce(text)
+    }
+}
+
+/// What VoiceOver heard of lately, of what became of Copilot's work and questions, for each to be said once, however many
+/// views hear of it.
+@MainActor
+final class SpokenOutcomes {
+    static let shared = SpokenOutcomes()
+
+    /// How long one is remembered.
+    static let remembered: TimeInterval = 600
+
+    private var said: [SpokenText.Outcome: Date] = [:]
+
+    /// Whether it's new, to say: then it isn't anymore, for a while.
+    func isNew(_ outcome: SpokenText.Outcome, at now: Date = Date()) -> Bool {
+        said = said.filter { now.timeIntervalSince($0.value) < Self.remembered }
+        guard said[outcome] == nil else { return false }
+        said[outcome] = now
+        return true
+    }
 }
 
 extension Check {
@@ -218,11 +260,11 @@ struct CopilotComposing: Hashable {
     var isReply: Bool { ask == nil && part != nil }
 }
 
-/// What you wrote in each composer in place in a part of a pull request's details, kept as you open another, until you send
-/// it; and what each sends, until it's done. Not observed: what you type redraws its own composer only.
+/// What each composer in place in a part of a pull request's details sends, until it's done, and what asks a session about
+/// something as a prompt: theirs, as they come and go. What you wrote in each is kept above them, by pull request, until you
+/// send it (`DetailsDrafts`). Not observed.
 @MainActor
 final class CopilotDrafts {
-    var texts: [CopilotComposing: String] = [:]
     /// What a composer sends, until it's done: called off as it closes or another opens (`callOff`), and as its page goes
     /// (`callOffAll`), when a prompt no session took yet is taken back; not as its card scrolls out of sight, as a lazy
     /// stack's do.
@@ -262,8 +304,8 @@ final class CopilotDrafts {
 // MARK: - What a session explained
 
 /// What a session said with Explain, under what it's about, as BriefBar shows what a model wrote: "Answer from
-/// ‘Retry backoff’ · 2m ago", what you asked, the answer in full, formatted as Copilot wrote it, Copy, ↗ to the session,
-/// and ✕ to dismiss it. Ask More and Fix, under it, build on it.
+/// ‘Retry backoff’ · 2m ago", what you asked, the answer, formatted as Copilot wrote it, a long one's beginning until Show
+/// More shows the rest, Copy, ↗ to the session, and ✕ to dismiss it. Ask More and Fix, under it, build on it.
 struct CopilotAnswerCard: View {
     let answer: String
     let asked: String?
@@ -276,6 +318,37 @@ struct CopilotAnswerCard: View {
 
     @Environment(\.textScale) private var textScale
     @Environment(\.interfaceOptions) private var options
+    /// All of a long answer shows, rather than its beginning.
+    @LocalState private var showsAll = false
+    /// How tall all of the answer is, to tell whether it's long; and where each of its blocks starts, to tell which show.
+    @LocalState private var answerHeight: CGFloat = 0
+    @LocalState private var blockTops: [Int: CGFloat] = [:]
+
+    /// About how many lines of a long answer show until you ask for all of it, as a row's summary shows its first lines.
+    static let shownLines: CGFloat = 12
+    /// About how many lines an answer has at most to show whole: one only a few lines longer than what a long one shows
+    /// doesn't hide those few behind Show More.
+    static let wholeLines: CGFloat = 16
+
+    /// A line of the answer, at the text size on windows' pages.
+    private var lineHeight: CGFloat { 16 * textScale }
+    private var shownHeight: CGFloat { Self.shownLines * lineHeight }
+
+    /// It's long: it shows its beginning, then Show More.
+    private var isLong: Bool { answerHeight > Self.wholeLines * lineHeight }
+    private var isCut: Bool { isLong && !showsAll }
+
+    /// While it's cut, how many of its blocks are there: those that start in what shows (`shown(of:in:)`).
+    private var shownBlocks: Int? {
+        guard isCut, !blockTops.isEmpty else { return nil }
+        return Self.shown(of: blockTops, in: shownHeight)
+    }
+
+    /// How many blocks start in what shows, from where each starts, by its index: the last of them may be cut, and those
+    /// after it aren't there at all, for the keyboard's focus or VoiceOver to reach. At least the first.
+    static func shown(of tops: [Int: CGFloat], in height: CGFloat) -> Int {
+        max(1, tops.values.filter { $0 < height }.count)
+    }
 
     /// What you asked, when you asked something.
     private var question: String? {
@@ -316,9 +389,48 @@ struct CopilotAnswerCard: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            // Parsed once for what it says, as a comment is.
-            CommentBody(markdown: answer, isQuiet: false)
+            // Parsed once for what it says, as a comment is. A long one shows its beginning, fading out, with Show More under
+            // it, and Show Less once it's all there: only its blocks that start in what shows are there, and what shows of
+            // the last of them takes no clicks or scrolls below it.
+            CommentBody(markdown: answer, isQuiet: false, shownBlocks: shownBlocks)
                 .equatable()
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxHeight: isCut ? shownHeight : nil, alignment: .top)
+                .clipped()
+                .contentShape(Rectangle())
+                .mask(alignment: .top) {
+                    VStack(spacing: 0) {
+                        Rectangle()
+                        if isCut {
+                            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                                .frame(height: 28 * textScale)
+                        }
+                    }
+                }
+                // All of it, unseen, out of reach of the keyboard and VoiceOver: how tall it is, and where its blocks start.
+                .background(alignment: .topLeading) {
+                    CommentBody(markdown: answer, isQuiet: false, reportsBlockTops: true)
+                        .equatable()
+                        .fixedSize(horizontal: false, vertical: true)
+                        .hidden()
+                        .disabled(true)
+                        .accessibilityHidden(true)
+                        .allowsHitTesting(false)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { answerHeight = $0 }
+                        .onPreferenceChange(RichTextBlockTops.self) { blockTops = $0 }
+                        .transformPreference(RichTextBlockTops.self) { $0 = [:] }
+                }
+            if isLong {
+                Button(showsAll ? "Show Less" : "Show More") {
+                    withAnimation(.easeOut(duration: 0.15)) { showsAll.toggle() }
+                }
+                .buttonStyle(.borderless)
+                .font(size: 11)
+                // In the tint, as a summary's is.
+                .foregroundStyle(.tint)
+                .fixedSize()
+                .help(showsAll ? "Show only the beginning of the answer" : "Show all of the answer")
+            }
             Text("Asked aside: the session's history didn't change.")
                 .font(size: 10.5)
                 .foregroundStyle(.secondary)
@@ -485,7 +597,7 @@ struct CopilotAsking {
         self.question = question
     }
 
-    /// Where its words are kept as you open another.
+    /// What its words are kept by, with its pull request (`DetailsDrafts`), and what it sends.
     var draftKey: CopilotComposing { CopilotComposing(part: part, ask: ask, row: row) }
 
     /// What a send quotes of what a session answered, once it's prepared: nothing once the branches the answer was about
@@ -513,7 +625,8 @@ struct CopilotPartComposer<Options: View>: View {
     let item: PRSnapshot
     /// The session that worked on it, by its ID, which it goes to first.
     let worked: String?
-    /// What you wrote in it before, kept as you open another.
+    /// What it sends, until it's done: what you wrote in it is kept by pull request, as you open another, or as the details
+    /// show something else for a while (`DetailsDrafts`).
     let drafts: CopilotDrafts
     /// What a session answered about it with Explain, while it shows: Ask More follows up on it, and a fix builds on it.
     var answer: CopilotAnswer?
@@ -532,6 +645,8 @@ struct CopilotPartComposer<Options: View>: View {
     @EnvironmentObject private var copilot: CopilotTasksStore
     @EnvironmentObject private var sessions: PullRequestSessions
     @EnvironmentObject private var questions: CopilotQuestions
+    /// What you wrote in it before, and haven't sent.
+    @EnvironmentObject private var kept: DetailsDrafts
     /// `--render` draws it as it is outside the demo, which sends nothing.
     @Environment(\.isRendering) private var isRendering
 
@@ -587,7 +702,14 @@ struct CopilotPartComposer<Options: View>: View {
             close: { done(nil) }
         )
         .task(id: target) { await check(target, choice: choice) }
-        .onChange(of: text) { if preview == nil { drafts.texts[asking.draftKey] = text } }
+        .onChange(of: text) { if preview == nil { kept.keep(text, in: asking.draftKey, of: item.key) } }
+        // The same composer elsewhere, as in another window: what you write there shows here, so neither writes over the
+        // other's words, nor sends what's out of date.
+        .onReceive(kept.wordsChanged) { changed in
+            guard preview == nil, changed == DetailsDrafts.Composer(pullRequest: item.key, composer: asking.draftKey) else { return }
+            let stored = kept.words(in: asking.draftKey, of: item.key)
+            if text != stored { text = stored }
+        }
         .onAppear {
             guard !hasAppeared else { return }
             hasAppeared = true
@@ -596,7 +718,7 @@ struct CopilotPartComposer<Options: View>: View {
                 chosen = preview.destination
                 return
             }
-            text = drafts.texts[asking.draftKey] ?? ""
+            text = kept.words(in: asking.draftKey, of: item.key)
         }
     }
 
@@ -778,6 +900,9 @@ struct CopilotPartComposer<Options: View>: View {
         drafts.callOff(key)
         let asking = asking
         let words = text
+        // What you wrote goes once it's sent, or copied for you to paste: unless you wrote more there since, as in another
+        // window.
+        let kept = kept
         if ask == .explain {
             guard let part = asking.part, let id = target.sessionID else { return }
             let earlier = answer
@@ -805,7 +930,7 @@ struct CopilotPartComposer<Options: View>: View {
                     asking.question(words, earlier), asked: words, earlier: earlier, session: id, about: part, run: asking.run,
                     attempt: asking.attempt, head: asking.head?(), of: item.key
                 )
-                drafts.texts[key] = nil
+                kept.sent(words, in: key, of: item.key)
                 SpokenText.announce("Asking \(choice.map(PullRequestSession.name) ?? "the session")")
                 done(.sent)
             }
@@ -827,17 +952,17 @@ struct CopilotPartComposer<Options: View>: View {
                 return
             }
             let fix = asking.fix(words, answer)
-            let outcome = await sending.fix(fix, to: target, choice: choice)
+            // What you wrote goes once it went, though the composer closed or its page went meanwhile, which called this
+            // off: a session that took it has it all the same. Only what the composer shows waits for it to be there.
+            let outcome = await kept.send(words, in: key, of: item.key) { await sending.fix(fix, to: target, choice: choice) }
             guard !Task.isCancelled else { return }
             drafts.sends[key] = nil
             isSending = false
             switch outcome {
             case .sent:
-                drafts.texts[key] = nil
                 SpokenText.announce("Sent to Copilot")
                 done(outcome)
             case .copied(let note):
-                drafts.texts[key] = nil
                 SpokenText.announce(note)
                 done(outcome)
             case .notSent(let why):

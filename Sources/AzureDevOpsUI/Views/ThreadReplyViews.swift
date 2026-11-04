@@ -17,6 +17,8 @@ struct ThreadReplyButtons: View {
     let thread: PullRequestPanel.Thread
     let item: PRSnapshot
     @Binding var composing: CopilotComposing?
+    /// Reply takes the keyboard's focus back as they show again, once your reply closed (`ThreadCard`).
+    @Binding var refocuses: Bool
     /// Keeps the thread where it is in the details as you change it.
     let hold: (PullRequestPanel.Thread) -> Void
 
@@ -28,37 +30,37 @@ struct ThreadReplyButtons: View {
     private var state: ThreadChanges.State? { preview?.states[thread.id] ?? changes.state(of: key) }
 
     var body: some View {
-        Group {
-            if case .sending(let sending)? = state {
-                HStack(spacing: 5) {
-                    ProgressView().controlSize(.mini)
-                    Text(Self.sendingTitle(sending))
+        if case .sending(let sending)? = state {
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini)
+                Text(Self.sendingTitle(sending))
+            }
+            .font(size: 11.5, weight: .medium)
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+        } else {
+            HStack(spacing: 6) {
+                Button {
+                    ThreadReplyArea.open(thread, composing: $composing, hold: hold)
+                } label: {
+                    Label(changes.draft(key).isEmpty ? "Reply" : "Reply (Draft)", systemImage: "arrowshape.turn.up.left")
                 }
-                .font(size: 11.5, weight: .medium)
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
-            } else {
-                HStack(spacing: 6) {
-                    Button {
-                        ThreadReplyArea.open(thread, composing: $composing, hold: hold)
-                    } label: {
-                        Label(changes.draft(key).isEmpty ? "Reply" : "Reply (Draft)", systemImage: "arrowshape.turn.up.left")
-                    }
-                    .focused($isReplyFocused)
-                    .help(changes.draft(key).isEmpty
-                        ? "Reply in this thread in Azure DevOps, as you"
-                        : "Go on with the reply you started, to send it in Azure DevOps, as you")
-                    ThreadStatusButton(thread: thread) { status in
-                        hold(thread)
-                        Task { await changes.setStatus(status, of: thread.thread, in: item.key) }
-                    }
+                .focused($isReplyFocused)
+                .help(changes.draft(key).isEmpty
+                    ? "Reply in this thread in Azure DevOps, as you"
+                    : "Go on with the reply you started, to send it in Azure DevOps, as you")
+                ThreadStatusButton(thread: thread) { status in
+                    hold(thread)
+                    Task { await changes.setStatus(status, of: thread.thread, in: item.key) }
                 }
             }
-        }
-        // Back from your reply, once it's sent or closed: the keyboard's focus is where it was.
-        .onAppear {
-            guard changes.takeFocus(key) else { return }
-            Task { @MainActor in isReplyFocused = true }
+            // Back from your reply, once it's sent or closed: the keyboard's focus is where it was, once Reply is there
+            // again, not what says it's being sent.
+            .onAppear {
+                guard refocuses else { return }
+                refocuses = false
+                Task { @MainActor in isReplyFocused = true }
+            }
         }
     }
 
@@ -151,6 +153,8 @@ struct ThreadReplyArea: View {
     let item: PRSnapshot
     let pullRequest: PullRequest?
     @Binding var composing: CopilotComposing?
+    /// Reply takes the keyboard's focus back as its buttons show again (`ThreadCard`).
+    @Binding var refocuses: Bool
     let hold: (PullRequestPanel.Thread) -> Void
 
     @EnvironmentObject private var changes: ThreadChanges
@@ -185,7 +189,11 @@ struct ThreadReplyArea: View {
             }
             if isReplying {
                 ThreadReplyComposer(thread: thread, item: item, hold: hold) {
-                    if composing == .reply(to: thread.id) { composing = nil }
+                    // Closed with ✕ or Esc, or sent, while it's still the composer open: Reply takes the keyboard's focus
+                    // back. Not for a reply that went once you'd moved on to another, which keeps it.
+                    guard composing == .reply(to: thread.id) else { return }
+                    composing = nil
+                    refocuses = true
                 }
                 // A new one for each thread, with its own words.
                 .id(thread.id)
@@ -289,7 +297,8 @@ struct ThreadReplyComposer: View {
     let thread: PullRequestPanel.Thread
     let item: PRSnapshot
     let hold: (PullRequestPanel.Thread) -> Void
-    /// It's closed: with ✕ or Esc, or once it's sent.
+    /// It's closed: with ✕ or Esc, or once it's sent. Reply takes the keyboard's focus back then, unless another composer
+    /// opened meanwhile, as while your reply was on its way (`ThreadReplyArea`).
     let close: () -> Void
 
     @EnvironmentObject private var changes: ThreadChanges
@@ -558,7 +567,6 @@ struct ThreadReplyComposer: View {
         changes.dismiss(key)
         Task {
             guard await changes.reply(markdown, then: status, to: thread.thread, of: item.key) else { return }
-            changes.focusAfter(key)
             close()
         }
     }
@@ -567,7 +575,6 @@ struct ThreadReplyComposer: View {
     private func closeKeepingFocus() {
         fixing?.cancel()
         fixing = nil
-        changes.focusAfter(key)
         close()
     }
 
