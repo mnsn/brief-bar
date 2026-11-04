@@ -9,14 +9,20 @@ public enum OrderSessions {
     /// A pull request goes with the sessions the app records opened it. When none did, it goes with those the app's
     /// providers link it to without saying how, as they do Azure DevOps pull requests. Never with a session that only
     /// started from it, such as to review it or fix its comments, which would put it with that session's work. Only what
-    /// was read counts: without its links (`SessionMeta.links`), a session has no pull requests.
-    /// - Parameter sessions: as the app lists them. One BriefBar can't name is left out, and so are a parent or
-    ///   coordinator it can't name.
-    public static func sessions(_ sessions: [SessionMeta]) -> [OrderSession] {
+    /// was read counts: without its links (`SessionMeta.links`), a session has no pull requests but those it told BriefBar
+    /// it opened, which count as the app's records of what it opened do.
+    /// - Parameters:
+    ///   - sessions: as the app lists them. One BriefBar can't name is left out, and so are a parent or coordinator it
+    ///     can't name.
+    ///   - told: the pull requests each session told BriefBar it opened (`SessionReports`).
+    public static func sessions(_ sessions: [SessionMeta], told: [ItemRef: [ItemRef]] = [:]) -> [OrderSession] {
         var opened: Set<ItemRef> = []
         for session in sessions {
             for recorded in session.links?.pullRequests ?? [] where recorded.role == .opened {
                 if let ref = recorded.ref { opened.insert(ref) }
+            }
+            if let ref = ItemRef.session(session.id) {
+                opened.formUnion((told[ref] ?? []).filter(\.kind.isPullRequest))
             }
         }
         var listed: Set<ItemRef> = []
@@ -36,6 +42,9 @@ public enum OrderSessions {
                 case .startedFrom:
                     continue
                 }
+            }
+            for pullRequest in told[ref] ?? [] where pullRequest.kind.isPullRequest && !pullRequests.contains(pullRequest) {
+                pullRequests.append(pullRequest)
             }
             guard !pullRequests.isEmpty else { return nil }
             return OrderSession(

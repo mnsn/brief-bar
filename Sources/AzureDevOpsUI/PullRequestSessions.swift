@@ -487,6 +487,7 @@ final class PullRequestSessions: ObservableObject {
             for origin in connection.origins {
                 switch origin {
                 case .copilot: reasons.insert(.recordedByCopilot)
+                case .session: reasons.insert(.toldBriefBar)
                 case .branch: reasons.insert(.onItsBranch)
                 case .you: reasons.insert(.linkedByYou)
                 case .azureDevOps: reasons.insert(.linked)
