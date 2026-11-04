@@ -340,7 +340,12 @@ struct ThreadReplyComposer: View {
         }
         .onAppear(perform: appear)
         // Fix Grammar is this reply's own: it stops as the reply closes. What it sends isn't: a reply you sent goes on.
-        .onDisappear { fixing?.cancel() }
+        // Off screen, as a file's page scrolls it away while keeping what it holds: Fix Grammar stops, and nothing waits on it
+        // as it comes back.
+        .onDisappear {
+            fixing?.cancel()
+            fixing = nil
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Reply")
     }
@@ -464,15 +469,24 @@ struct ThreadReplyComposer: View {
         .fixedSize()
     }
 
-    /// What it does, or why it didn't: what went wrong with your reply, or what the demo does; and, with a Copilot model,
-    /// what Fix Grammar costs, and where your reply goes.
+    /// What it does, or why it didn't: what went wrong with your reply, with Sign In when that's why, or what the demo
+    /// does; and, with a Copilot model, what Fix Grammar costs, and where your reply goes.
     @ViewBuilder
     private var notes: some View {
         let isDemo = store.mode == .demo
         let problem: ADOWriteProblem? = if case .failed(let problem, let sending)? = state, sending.kind == .reply { problem } else { nil }
         VStack(alignment: .leading, spacing: 3) {
             if let problem {
-                note(problem.sentence(.reply), symbol: "exclamationmark.triangle.fill", isWarning: true)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    note(problem.sentence(.reply), symbol: "exclamationmark.triangle.fill", isWarning: true)
+                    if problem == .signedOut, !isDemo {
+                        Button("Sign In…") { store.signIn() }
+                            .buttonStyle(.borderless)
+                            .font(size: 11, weight: .medium)
+                            .fixedSize()
+                            .help("Sign in to the Azure CLI, in Terminal: what you wrote stays here")
+                    }
+                }
             } else {
                 note(isDemo ? "Markdown. The demo changes only its made-up pull requests: nothing goes to Azure DevOps."
                     : "Markdown. ⌘Return replies in Azure DevOps, as you.", symbol: "info.circle")
@@ -519,6 +533,7 @@ struct ThreadReplyComposer: View {
     /// Closes it, keeping what you wrote, and the keyboard's focus goes back to Reply.
     private func closeKeepingFocus() {
         fixing?.cancel()
+        fixing = nil
         changes.focusAfter(key)
         close()
     }

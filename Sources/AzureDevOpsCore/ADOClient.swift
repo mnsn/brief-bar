@@ -124,15 +124,14 @@ public struct ADOClient: Sendable {
 
     /// Makes one of the changes `ADOWrite` lists, the only requests BriefBar sends that aren't GETs, and returns Azure
     /// DevOps' answer. It goes once: a failure isn't tried again, but for a sign-in Azure DevOps didn't take, which it
-    /// didn't act on. When Azure DevOps refuses it, the error says why, as it said it (`ADOError.refused`); and when it made
-    /// the change but its answer can't be read, the answer says so (`Answer.unreadable`), rather than that it failed. A tag's
-    /// change answered with nothing (204) was made all the same: taking one off says nothing more, whatever it answers.
+    /// didn't act on; and an answer that says it was made, any 2xx but 203, is taken as made, whatever it holds. When Azure
+    /// DevOps refuses it, the error says why, as it said it (`ADOError.refused`); and when it made the change but its answer
+    /// can't be read, the answer says so (`Answer.unreadable`), rather than that it failed. Taking a tag off says nothing
+    /// more than that it's done, whatever it answers. Called off before it goes, as when its setting is turned off while a
+    /// token comes, it never goes.
     public func send(_ write: ADOWrite) async throws -> ADOWrite.Answer {
-        let isRemoval = write.kind == .removeTag
-        let data = try await answer(
-            write.url, request: { Self.request(write, token: $0) }, isAnswer: isRemoval ? { _ in true } : Self.isJSON,
-            isAnswerWithNothing: write.kind.isTags, refusal: Self.refusal
-        ) { request, redirects in
+        let data = try await answer(write.url, request: { Self.request(write, token: $0) }, isAnswer: { _ in true }, isChange: true,
+                                    refusal: Self.refusal) { request, redirects in
             let (data, response) = try await session.data(for: request, delegate: redirects)
             return (data, response, true)
         }.data
@@ -153,13 +152,13 @@ public struct ADOClient: Sendable {
     /// retried with a fresh token once for each directory whose token is rejected, and once with a token for the
     /// organization's own directory if Azure DevOps names another one than the token's, following no redirect. Azure DevOps
     /// acts on no request it rejects the token of, so a change is retried only then. `isAnswer` tells what was asked for
-    /// from a sign-in page; `isAnswerWithNothing`, that an answer with nothing in it (204) is one, as for a change, rather
-    /// than nothing there; `refusal` tells, for a change, why Azure DevOps refused it, from its status and its answer; and
+    /// from a sign-in page; `refusal` tells, for a change, why Azure DevOps refused it, from its status and its answer; and
     /// `send` sends the request with the guard against redirects it's given, and gets the answer's body, and whether that's
-    /// all of it.
+    /// all of it. A change (`isChange`) takes any answer but 203 that says it was made, an empty one too, and is never sent
+    /// once it's called off.
     private func answer(
-        _ url: URL, request makeRequest: (String) -> URLRequest, isAnswer: (HTTPURLResponse) -> Bool,
-        isAnswerWithNothing: Bool = false, refusal: ((Int, Data) -> ADOError?)? = nil,
+        _ url: URL, request makeRequest: (String) -> URLRequest, isAnswer: (HTTPURLResponse) -> Bool, isChange: Bool = false,
+        refusal: ((Int, Data) -> ADOError?)? = nil,
         _ send: (URLRequest, RedirectGuard) async throws -> (Data, URLResponse, Bool)
     ) async throws -> (data: Data, isComplete: Bool) {
         if let wait = await gate.remainingWait(), wait > 0 {
@@ -182,6 +181,7 @@ public struct ADOClient: Sendable {
         var refreshed: Set<String?> = []
         var movedDirectory = false
         for _ in 0..<4 {
+            if isChange { try Task.checkCancellation() }
             let redirects = RedirectGuard()
             let (data, response, isComplete): (Data, URLResponse, Bool)
             do {
@@ -202,9 +202,7 @@ public struct ADOClient: Sendable {
                 await gate.hold(for: retryAfter)
             }
             switch http.statusCode {
-            case 204 where isAnswerWithNothing:
-                return (data, isComplete)
-            case 204:
+            case 204 where !isChange:
                 // Nothing there, such as the timeline of a run that has none yet: not a sign-in problem.
                 throw ADOError.notFound
             case 200..<300 where http.statusCode != 203 && isAnswer(http):

@@ -53,6 +53,65 @@ import Testing
         #expect(GrammarFix.request(for: "see\n~~~\nlet a = 1\nlet b").held == ["~~~\nlet a = 1\nlet b"])
     }
 
+    /// A fence closes only with as many of its characters or more, in the same quote: a shorter one inside is code, and a
+    /// quote's code is held back with its `>`s, to the end of its quote when it never closes.
+    @Test func holdsBackFencedCodeAsMarkdownClosesIt() {
+        let longer = "see:\n````md\n```swift\nlet x = 1\n```\n````\nworks for me"
+        #expect(GrammarFix.request(for: longer).held == ["````md\n```swift\nlet x = 1\n```\n````"])
+        #expect(GrammarFix.request(for: longer).text.contains("{{1}}\nworks for me"))
+        let closedLonger = "```\nlet x = 1\n`````\nworks"
+        #expect(GrammarFix.request(for: closedLonger).held == ["```\nlet x = 1\n`````"])
+        let quoted = "> ```\n> let x = retrys\n> ```\n> that fails\n\nwhy"
+        #expect(GrammarFix.request(for: quoted).held == ["> ```\n> let x = retrys\n> ```"])
+        let unclosed = "> ```\n> let x = 1\n\nit fails"
+        #expect(GrammarFix.request(for: unclosed).held == ["> ```\n> let x = 1"])
+        // Backticks inline aren't a fence.
+        #expect(GrammarFix.request(for: "```a``` b").held != ["```a``` b"])
+    }
+
+    /// Code indented four columns or more is held back, as Markdown reads it: after a line that says nothing, the text's or
+    /// its quote's start, a heading or a fenced block, with the lines that say nothing between its own, a tab as four.
+    @Test func holdsBackIndentedCode() {
+        let text = "this fails:\n\n    let retrys = 1\n    retrys += 1\n\nany idea why"
+        let request = GrammarFix.request(for: text)
+        #expect(request.held == ["    let retrys = 1\n    retrys += 1"])
+        #expect(request.text == "```\nthis fails:\n\n{{1}}\n\nany idea why\n```")
+        #expect(GrammarFix.request(for: "see:\n\n    let a = 1\n\n    let b = 2\nok").held == ["    let a = 1\n\n    let b = 2"])
+        #expect(GrammarFix.request(for: "see:\n\n\tlet a = `1`\n").held == ["\tlet a = `1`"])
+        #expect(GrammarFix.request(for: "    let a = 1\nworks").held == ["    let a = 1"])
+        #expect(GrammarFix.request(for: "> see:\n>\n>     let a = 1\n\nok").held == [">     let a = 1"])
+        #expect(GrammarFix.request(for: "# Retrys\n    let a = 1").held == ["    let a = 1"])
+        #expect(GrammarFix.request(for: "```\nx\n```\n    let a = 1").held == ["```\nx\n```", "    let a = 1"])
+        // Its own code, links and addresses are in it.
+        #expect(GrammarFix.request(for: "see `x`:\n\n    open(\"https://example.invalid\")").held == ["`x`", "    open(\"https://example.invalid\")"])
+        // Not in a list, an indented item is code, as Markdown has it.
+        #expect(GrammarFix.request(for: "text\n\n    - not an item").held == ["    - not an item"])
+    }
+
+    /// A paragraph's line indented, a nested list's items and what a list item says after a blank line aren't code; what's
+    /// four columns past where a list item starts is.
+    @Test func holdsBackNoListOrParagraphAsIndentedCode() {
+        #expect(GrammarFix.request(for: "this is a long\n    wraped line").held == [])
+        #expect(GrammarFix.request(for: "- one\n\n    - nested item\n- two").held == [])
+        #expect(GrammarFix.request(for: "1. step\n\n    more about the step").held == [])
+        #expect(GrammarFix.request(for: "- one\n  - nested\n\n      more about it").held == [])
+        #expect(GrammarFix.request(for: "- one\n\n      let a = 1\n- two").held == ["      let a = 1"])
+        #expect(GrammarFix.request(for: "1. step\n\n       let a = 1").held == ["       let a = 1"])
+        // A list that ended, and a break that isn't one, leave code as the text's.
+        #expect(GrammarFix.request(for: "- one\n\ntext\n\n    let a = 1").held == ["    let a = 1"])
+        #expect(GrammarFix.request(for: "- - -\n\n    let a = 1").held == ["    let a = 1"])
+    }
+
+    /// A link's address, or a web address, with parentheses in it is held back whole; the punctuation after one isn't.
+    @Test func holdsBackAddressesWithParenthesesWhole() {
+        #expect(GrammarFix.request(for: "see [docs](https://example.invalid/a_(b)) now").held == ["[docs](https://example.invalid/a_(b))"])
+        #expect(GrammarFix.request(for: "see [a [b]](x.md) \\(c)").held == ["[a [b]](x.md)"])
+        #expect(GrammarFix.request(for: "see https://example.invalid/a_(b).").held == ["https://example.invalid/a_(b)"])
+        #expect(GrammarFix.request(for: "(see https://example.invalid/y)").held == ["https://example.invalid/y"])
+        // Not a link: a task's box, and brackets alone.
+        #expect(GrammarFix.request(for: "- [ ] fix [it]").held.isEmpty)
+    }
+
     /// Markers the text has of its own aren't taken for its markers.
     @Test func picksMarkersTheTextDoesntHave() {
         let request = GrammarFix.request(for: "use {{name}} with `code`")
@@ -106,6 +165,13 @@ import Testing
         #expect(GrammarFix.corrected("I don't think it's right; I'll check tomorrow which branch.", for: sloppy)
             == .success("I don't think it's right; I'll check tomorrow which branch."))
         #expect(GrammarFix.corrected("OK.", for: GrammarFix.request(for: "ok")) == .success("OK."))
+        // However short: a translation, or an answer, keeps none of its words.
+        #expect(GrammarFix.corrected("Oui.", for: GrammarFix.request(for: "yes")) == .failure(.changedMore))
+        #expect(GrammarFix.corrected("It fails.", for: GrammarFix.request(for: "why?")) == .failure(.changedMore))
+        #expect(GrammarFix.corrected("Thanks a lot.", for: GrammarFix.request(for: "thx alot")) == .success("Thanks a lot."))
+        let rewritten = GrammarFix.request(for: "we was need to adding the cap for prevent the stall")
+        #expect(GrammarFix.corrected("We needed to add the cap to prevent the stall.", for: rewritten)
+            == .success("We needed to add the cap to prevent the stall."))
     }
 
     /// How far a correction may go, worked out within a band of the table, is what the whole table says.
@@ -178,6 +244,24 @@ import Testing
         #expect(GrammarFix.changes(from: "it is fine fine", to: "it is fine") == [
             .init("it is ", isChanged: false), .init("fine", isChanged: true),
         ])
+    }
+
+    /// A change to spaces alone shows on the word beside it, so that it's a change to use.
+    @Test func showsAChangeToSpacesOnTheWordBesideIt() {
+        let takenOut = GrammarFix.changes(from: "Hello , world.", to: "Hello, world.")
+        #expect(takenOut == [.init("Hello", isChanged: false), .init(",", isChanged: true), .init(" world.", isChanged: false)])
+        #expect(GrammarFix.changeCount(takenOut) == 1)
+        let putIn = GrammarFix.changes(from: "Hello,world.", to: "Hello, world.")
+        #expect(putIn == [.init("Hello, ", isChanged: false), .init("world", isChanged: true), .init(".", isChanged: false)])
+        // Spaces made one, or a tab a space, show on the word after them.
+        let spaced = GrammarFix.changes(from: "It  works.", to: "It works.")
+        #expect(spaced == [.init("It ", isChanged: false), .init("works", isChanged: true), .init(".", isChanged: false)])
+        #expect(GrammarFix.changeCount(spaced) == 1)
+        #expect(GrammarFix.changeCount(GrammarFix.changes(from: "a\tb", to: "a b")) == 1)
+        // With no word beside them, all of it shows: never nothing to correct.
+        #expect(GrammarFix.changes(from: "  ", to: " ") == [.init(" ", isChanged: true)])
+        // A line break a pasted text had otherwise isn't a change.
+        #expect(GrammarFix.changeCount(GrammarFix.changes(from: "one\r\ntwo", to: "one\ntwo")) == 0)
     }
 
     @Test func nothingChangedIsOneRun() {
