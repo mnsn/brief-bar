@@ -232,9 +232,40 @@ import Testing
         #expect(store.record?.details?.checks.map(\.name) == ["lint"])
         store.close()
         #expect(store.record == nil && !store.isListed && !store.isStillRead)
-        // Its heading says which: how it is now, or how it was.
-        #expect(PullRequestPanelHeading<EmptyView>.notListed(isStillRead: true).contains("still reads it"))
-        #expect(PullRequestPanelHeading<EmptyView>.notListed(isStillRead: false).contains("last read it open"))
+        // Its heading says which: how it is now, how it was when it was last read open, or how it was when it left them.
+        #expect(PullRequestPanelHeading<EmptyView>.notListed(isStillRead: true, wasReadOpen: true).contains("how it is now"))
+        #expect(PullRequestPanelHeading<EmptyView>.notListed(isStillRead: false, wasReadOpen: true).contains("last read it open"))
+        #expect(PullRequestPanelHeading<EmptyView>.notListed(isStillRead: false, wasReadOpen: false)
+            == "It's no longer in your lists: this is how it was when it left them.")
+    }
+
+    /// Your own pull request in Done, read completed, leaves your lists as its details show it, which sees it: they keep it
+    /// as it was read, completed, and their heading says how it was when it left them, not how it was when it was read open.
+    @Test func yourOwnInDoneSaysHowItWasWhenItLeftYourLists() async throws {
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        // What `loadOnce` makes the demo up as of.
+        let now = store.now
+        await store.loadOnce()
+        // Merged, with its pipelines done: Done keeps it until you've seen it.
+        var snapshot = DemoData.snapshot(now: now)
+        let index = try #require(snapshot.records.firstIndex { $0.role == .author && $0.pullRequest.status == .completed })
+        snapshot.records[index].merge = nil
+        store.receive(snapshot)
+        let details = PullRequestDetailsStore()
+        details.use(store)
+        let done = try #require(store.items.first { $0.key == snapshot.records[index].id })
+        #expect(done.group == .done)
+        details.show(done)
+        // The next refresh, once it's seen.
+        store.receive(snapshot)
+        #expect(!store.items.contains { $0.key == done.key })
+        #expect(!details.isListed && !details.isStillRead)
+        let record = try #require(details.record)
+        #expect(record.pullRequest.status != .active)
+        let panel = PullRequestPanel(try #require(details.selected), record: record)
+        #expect(panel.isClosed)
+        #expect(PullRequestPanelHeading<EmptyView>.notListed(isStillRead: details.isStillRead, wasReadOpen: !panel.isClosed)
+            == "It's no longer in your lists: this is how it was when it left them.")
     }
 
     @Test func someoneElseSigningInClosesIt() throws {

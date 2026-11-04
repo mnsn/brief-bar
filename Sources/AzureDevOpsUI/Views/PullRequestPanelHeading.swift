@@ -64,7 +64,10 @@ struct PullRequestPanelHeading<Tags: View>: View {
                 .accessibilityFocused($isTitleFocused)
             standing
             if !isListed {
-                Label(Self.notListed(isStillRead: isStillRead), systemImage: isStillRead ? "arrow.clockwise" : "clock.arrow.circlepath")
+                Label(
+                    Self.notListed(isStillRead: isStillRead, wasReadOpen: !panel.isClosed),
+                    systemImage: isStillRead ? "arrow.clockwise" : "clock.arrow.circlepath"
+                )
                     .font(size: 11.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -130,11 +133,13 @@ extension PullRequestPanelHeading where Tags == EmptyView {
 
 extension PullRequestPanelHeading {
     /// What its heading says of a pull request your lists don't have anymore: that BriefBar still reads it, as one sent to
-    /// you in a chat that you've seen, so what shows is how it is now; or else that what shows is how it was when it was
-    /// last read open.
-    static func notListed(isStillRead: Bool) -> String {
-        isStillRead
-            ? "It's no longer in your lists, but BriefBar still reads it while it's open: this is how it is now."
-            : "It's no longer in your lists: this is how it was when BriefBar last read it open."
+    /// you in a chat that you've seen, so what shows is how it is now; that what shows is how it was when BriefBar last read
+    /// it open (`wasReadOpen`), as a review that merged; or else, as your own in Done, read completed, how it was when it
+    /// left them.
+    static func notListed(isStillRead: Bool, wasReadOpen: Bool) -> String {
+        if isStillRead { return "It's no longer in your lists, but BriefBar still reads it while it's open: this is how it is now." }
+        return wasReadOpen
+            ? "It's no longer in your lists: this is how it was when BriefBar last read it open."
+            : "It's no longer in your lists: this is how it was when it left them."
     }
 }
