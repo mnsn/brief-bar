@@ -34,6 +34,9 @@
   Reply** does once it's done. **Resolve Conflicts with Copilot…** lists the files too, once the details read
   them. BriefBar reads them with one request as the details show a pull request with conflicts, keeps them in
   memory only, and, since Azure DevOps now reads this, asks you once to look at what it reads.
+- **BriefBar no longer quits as a minute passes while a summary shows.** With summaries on, a minute passing while a
+  summary showed, under a row or on a page, could make BriefBar quit, as it checked again, everywhere at once, where
+  what the summary sums up stands.
 - **Reply to comments, and resolve them, without opening Azure DevOps.** Turn on **Make Changes in Azure DevOps** in
   Azure DevOps' settings, off by default, and each comment thread in a pull request's details has **Reply** and
   **Resolve**, beside ✨ Explain and Fix. **Reply** opens a field under the comment, in Markdown: **Reply**, or ⌘Return,

@@ -180,6 +180,8 @@ package final class StorySummaries: ObservableObject {
     /// The summaries being written: which request writes each, which alone may say what was written, and its task.
     private var writing: [ItemRef: (token: Int, task: Task<Void, Never>)] = [:]
     private var nextToken = 0
+    /// Whether what shows a written summary looks again on the main actor's next turn (`lookAgain`).
+    private var looksAgain = false
     private var cancellables: Set<AnyCancellable> = []
 
     /// - Parameter isDemo: the demo shows made-up summaries, in preferences that are thrown away.
@@ -211,9 +213,22 @@ package final class StorySummaries: ObservableObject {
             .store(in: &cancellables)
     }
 
+    /// Has what shows a written summary look again, on the main actor's next turn: once for however many things changed
+    /// meanwhile, and never in the middle of AppKit's layout, where a view that asks for stories as it updates changes
+    /// them, and where each change marks its window again, until AppKit throws.
     private func lookAgain() {
-        guard states.values.contains(where: { if case .written = $0 { true } else { false } }) else { return }
-        objectWillChange.send()
+        guard !looksAgain, hasWritten else { return }
+        looksAgain = true
+        Task { [weak self] in
+            guard let self else { return }
+            looksAgain = false
+            if hasWritten { objectWillChange.send() }
+        }
+    }
+
+    /// Whether a summary is written, which what's linked or told may put out of date.
+    private var hasWritten: Bool {
+        states.values.contains { if case .written = $0 { true } else { false } }
     }
 
     /// Sets how a source knows your name, or, with nil, that it doesn't: Azure DevOps, once it read your pull requests, or

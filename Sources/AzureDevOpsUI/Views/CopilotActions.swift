@@ -426,6 +426,9 @@ struct CopilotAsking {
     /// For conflicts, the pull request's branches as what it asks is written for them, once it's prepared: a push or a
     /// retarget puts what a session answered out of date (`CopilotQuestions.dismissStale`).
     var head: (@MainActor () -> PullRequestFilesStore.Head?)?
+    /// For conflicts, the branches the answer it may build on was about (`CopilotQuestions.Question.head`): once they moved
+    /// while it waited, it's left out (`quoting`).
+    var answeredAbout: PullRequestFilesStore.Head?
 
     /// The words a composer says what it does in.
     struct Words {
@@ -457,7 +460,7 @@ struct CopilotAsking {
     init(
         ask: CopilotAsk, part: PullRequestPart?, action: PullRequestAction, title: String? = nil, sendTitle: String? = nil,
         prepare: (@MainActor () async -> Void)? = nil, run: Int? = nil, attempt: Date? = nil, row: String? = nil,
-        head: (@MainActor () -> PullRequestFilesStore.Head?)? = nil,
+        head: (@MainActor () -> PullRequestFilesStore.Head?)? = nil, answeredAbout: PullRequestFilesStore.Head? = nil,
         fix: @escaping @MainActor (_ how: String, _ answer: CopilotAnswer?) -> CopilotSending.Fix,
         question: @escaping @MainActor (_ asked: String, _ earlier: CopilotAnswer?) -> String
     ) {
@@ -472,12 +475,27 @@ struct CopilotAsking {
         self.attempt = attempt
         self.row = row
         self.head = head
+        self.answeredAbout = answeredAbout
         self.fix = fix
         self.question = question
     }
 
     /// Where its words are kept as you open another.
     var draftKey: CopilotComposing { CopilotComposing(part: part, ask: ask, row: row) }
+
+    /// What a send quotes of what a session answered, once it's prepared: nothing once the branches the answer was about
+    /// moved while it waited, as its prompt is written for them as they are now (`head`), and it says it left it out.
+    /// Builds' and comments' answers go as they are.
+    @MainActor
+    func quoting(_ answer: CopilotAnswer?) -> (answer: CopilotAnswer?, isLeftOut: Bool) {
+        guard let answer, let asked = answeredAbout, let now = head?(), asked != now else { return (answer, false) }
+        return (nil, true)
+    }
+
+    /// What its composer says once it left the answer out, with what to do: "… Resolve again to go without it."
+    var answerLeftOut: String {
+        "The answer was about the branches before they moved, so it's left out. \(sendTitle) again to go without it."
+    }
 }
 
 /// The composer in place for what you ask Copilot about something of a pull request (`CopilotAsking`): your words, where it
@@ -772,6 +790,12 @@ struct CopilotPartComposer<Options: View>: View {
                     SpokenText.announce(CopilotSending.pullRequestGone)
                     return
                 }
+                // The branches moved while it waited: it doesn't follow up on what was answered about them as they were.
+                guard !asking.quoting(earlier).isLeftOut else {
+                    problem = asking.answerLeftOut
+                    SpokenText.announce(asking.answerLeftOut)
+                    return
+                }
                 questions.ask(
                     asking.question(words, earlier), asked: words, earlier: earlier, session: id, about: part, run: asking.run,
                     attempt: asking.attempt, head: asking.head?(), of: item.key
@@ -789,6 +813,14 @@ struct CopilotPartComposer<Options: View>: View {
         drafts.sends[key] = Task {
             await asking.prepare?()
             guard !Task.isCancelled else { return }
+            // The branches moved while it waited: it doesn't build on what was answered about them as they were.
+            guard !asking.quoting(answer).isLeftOut else {
+                drafts.sends[key] = nil
+                isSending = false
+                problem = asking.answerLeftOut
+                SpokenText.announce(asking.answerLeftOut)
+                return
+            }
             let fix = asking.fix(words, answer)
             let outcome = await sending.fix(fix, to: target, choice: choice)
             guard !Task.isCancelled else { return }
@@ -832,6 +864,11 @@ struct CopilotPartComposer<Options: View>: View {
             guard let record = store.record(for: item.key), record.pullRequest.status == .active else {
                 problem = CopilotSending.pullRequestGone
                 SpokenText.announce(CopilotSending.pullRequestGone)
+                return
+            }
+            guard !asking.quoting(answer).isLeftOut else {
+                problem = asking.answerLeftOut
+                SpokenText.announce(asking.answerLeftOut)
                 return
             }
             let sending = CopilotSending(item: item, record: record, store: store, copilot: copilot, session: session)

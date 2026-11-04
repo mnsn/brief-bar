@@ -96,6 +96,44 @@ import Testing
         #expect(CopilotSending(item: listed, record: try #require(prs.record(for: listed.key)), store: prs, copilot: copilot, session: nil).isOpen)
     }
 
+    /// Sent while the pull request's branches move, as its conflicts are read again, a fix or a question doesn't build on
+    /// what a session answered about them as they were: it stops, saying so, and goes without it once sent again. Builds'
+    /// and comments' answers go as they are.
+    @Test func anAnswerAboutTheBranchesBeforeTheyMovedIsLeftOut() throws {
+        let pullRequest = try #require(DemoData.records(now: Date()).first).pullRequest
+        let asked = PullRequestFilesStore.Head(pullRequest)
+        var retargeted = pullRequest
+        retargeted.targetBranch = "release"
+        retargeted.targetCommit = "t2"
+        let moved = PullRequestFilesStore.Head(retargeted)
+        let answer = CopilotAnswer(question: nil, answer: "Keep main's Refunded, under the new names.")
+        func asking(
+            _ ask: CopilotAsk = .fix, part: PullRequestPart = .conflicts, now: PullRequestFilesStore.Head?, about: PullRequestFilesStore.Head?
+        ) -> CopilotAsking {
+            CopilotAsking(
+                ask: ask, part: part, action: .resolveConflicts, head: { now }, answeredAbout: about,
+                fix: { _, _ in CopilotSending.Fix(prompts: ("", ""), action: .resolveConflicts, parts: [part], handOff: nil) },
+                question: { _, _ in "" }
+            )
+        }
+        let resolve = asking(now: moved, about: asked)
+        let left = resolve.quoting(answer)
+        #expect(left.answer == nil)
+        #expect(left.isLeftOut)
+        #expect(resolve.answerLeftOut == "The answer was about the branches before they moved, so it's left out. Resolve again to go without it.")
+        #expect(asking(.explain, now: moved, about: asked).answerLeftOut.hasSuffix("Ask again to go without it."))
+        // The same branches: it goes.
+        let kept = asking(now: asked, about: asked).quoting(answer)
+        #expect(kept.answer == answer)
+        #expect(!kept.isLeftOut)
+        // Without an answer, nothing's left out.
+        #expect(!resolve.quoting(nil).isLeftOut)
+        // A build's answer, which isn't about branches, goes as it is.
+        let build = asking(part: .build(31), now: moved, about: nil).quoting(answer)
+        #expect(build.answer == answer)
+        #expect(!build.isLeftOut)
+    }
+
     @Test func theSessionThatWorkedOnItLeadsThenItsForkAndANewSession() {
         let picked = appChoice(app)
         let pullRequest = session(picked, candidates: [picked, taskChoice()], others: [appChoice(elsewhere, reasons: [])])
