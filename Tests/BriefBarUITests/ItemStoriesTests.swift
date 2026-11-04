@@ -157,6 +157,39 @@ import Testing
         #expect(asked.refs.count == 2)
     }
 
+    /// What views asked for this turn goes with what's forgotten before it's taken up: as a source stops and starts again,
+    /// as when someone else signs in, and as Show Links goes off, even if it comes back on before the next turn.
+    @Test func whatsAskedGoesWithWhatsForgotten() async throws {
+        let (links, stories) = hub()
+        let asked = Asked()
+        stories.register(.copilot, kinds: [.session]) { ref in
+            asked.refs.append(ref)
+            return ItemStory(sentence: "Working")
+        }
+        stories.request(item(session))
+        stories.withdraw(.copilot)
+        stories.register(.copilot, kinds: [.session]) { ref in
+            asked.refs.append(ref)
+            return ItemStory(sentence: "Working, for someone else")
+        }
+        #expect(!stories.isTelling(session))
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(asked.refs.isEmpty)
+        #expect(!stories.hasTold(session))
+
+        stories.request(item(session))
+        links.setOn(false)
+        links.setOn(true)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(asked.refs.isEmpty)
+        // Asked again, it's told.
+        stories.request(item(session))
+        for _ in 0..<200 where !stories.hasTold(session) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(asked.refs == [session])
+    }
+
     @Test func aSourceThatStopsTakesWhatItToldWithIt() async {
         let (_, stories) = hub()
         stories.register(.copilot, kinds: [.session]) { _ in ItemStory(sentence: "Asks: Use a new table?") }

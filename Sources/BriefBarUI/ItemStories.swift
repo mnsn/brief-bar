@@ -67,11 +67,13 @@ package final class ItemStories: ObservableObject {
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetAll() } }
     }
 
-    /// Forgets every story, and stops telling them: what's asked and not read yet isn't read.
+    /// Forgets every story, and stops telling them: what's asked and not read yet isn't read, nor what views asked for this
+    /// turn.
     private func forgetAll() {
         for telling in telling.values { telling.task.cancel() }
         told = [:]
         telling = [:]
+        requested = []
     }
 
     // MARK: The sources
@@ -103,6 +105,7 @@ package final class ItemStories: ObservableObject {
         for (ref, telling) in telling where kinds.contains(ref.kind) { telling.task.cancel() }
         told = told.filter { !kinds.contains($0.key.kind) }
         telling = telling.filter { !kinds.contains($0.key.kind) }
+        requested.removeAll { kinds.contains($0.ref.kind) }
     }
 
     // MARK: What views show
