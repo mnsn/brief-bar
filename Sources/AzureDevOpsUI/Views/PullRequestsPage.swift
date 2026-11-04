@@ -58,14 +58,15 @@ struct PullRequestsPage: View {
         PageScroll {
             VStack(alignment: .leading, spacing: 18) {
                 notices
-                if store.showsBrief, !options.compactBriefs {
+                // By Mission has no group to put a compact brief in: it shows above the missions.
+                if store.showsBrief, !options.compactBriefs || shownOrder == .byMission {
                     BriefView()
                         .padding(.horizontal, -4)
                 }
                 if shownOrder == .byMission {
                     PullRequestsByMission(
                         view: view ?? ordering.view, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
-                        isSelected: isSelected, select: select, rest: { AnyView(groups($0)) }
+                        isSelected: isSelected, select: select, rest: { AnyView(groups($0, showsBrief: false)) }
                     )
                 } else if shownOrder.isByDate {
                     byDate
@@ -78,11 +79,12 @@ struct PullRequestsPage: View {
     }
 
     /// The groups, each in a card: every pull request By Status, or those in no mission By Mission.
-    private func groups(_ items: [PRSnapshot]) -> some View {
+    /// - Parameter showsBrief: a compact brief goes after the first, unless the page shows it already.
+    private func groups(_ items: [PRSnapshot], showsBrief: Bool = true) -> some View {
         let shown = Self.shownGroups.filter { group in items.contains { $0.group == group } }
         return ForEach(shown, id: \.self) { group in
             section(group, items.filter { $0.group == group })
-            if options.compactBriefs, store.showsBrief, group == shown.first {
+            if showsBrief, options.compactBriefs, store.showsBrief, group == shown.first {
                 BriefView().padding(.horizontal, -4)
             }
         }
