@@ -195,8 +195,10 @@ package final class AzureDevOpsSource: BriefBarSource {
         details.openPage = { [services] in services.openWindow(.azureDevOpsSprint) }
         let pullRequestDetails = makePullRequestDetails(store: store)
         let buildInvestigations = BuildInvestigationStore(mode: store.mode, client: store.client)
-        // Fix the Build quotes what was read of a build that's open in its details.
-        store.investigation = { [weak buildInvestigations] buildId, key in buildInvestigations?.look(buildId, of: key)?.investigation }
+        // Fix the Build quotes what was read of a build that's open in its details, as it is now.
+        store.investigation = { [weak buildInvestigations] check, pullRequest in
+            check.buildId.flatMap { buildInvestigations?.current($0, check: check, of: pullRequest) }
+        }
         // The details beside the list stop showing a pull request: its builds fold, unless another's opened since, such as on
         // a pull request's page in a work item's details.
         pullRequestDetails.$selected.map { $0?.key }.removeDuplicates()

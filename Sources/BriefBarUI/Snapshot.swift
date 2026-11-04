@@ -5,28 +5,28 @@ import SwiftUI
 /// screen-recording permission), and for Settings' pictures of menu-bar items.
 @MainActor
 package enum Snapshot {
-    /// Draws a SwiftUI view at its fitting size, then lets the view go, with its window: a render keeps none of the
-    /// pictures it drew before, so that hundreds of them don't run SwiftUI out of room for their views.
+    /// Draws a SwiftUI view at its fitting size.
     package static func render<V: View>(_ view: V, appearance: NSAppearance?) -> NSBitmapImageRep? {
-        autoreleasepool {
-            let host = NSHostingView(rootView: view)
-            host.appearance = appearance
-            let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 400, height: 300),
-                                  styleMask: .borderless, backing: .buffered, defer: false)
-            window.isReleasedWhenClosed = false
-            window.appearance = appearance
-            window.contentView = host
-            // Let SwiftUI settle measured sizes (lists measure themselves) before sizing the image.
-            for _ in 0..<3 {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.15))
-                window.setContentSize(host.fittingSize)
-                host.layoutSubtreeIfNeeded()
-            }
-            let image = cache(host)
+        let host = NSHostingView(rootView: view)
+        host.appearance = appearance
+        let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 400, height: 300),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.appearance = appearance
+        window.contentView = host
+        // Gone once it's drawn, with the view and all SwiftUI keeps for it: `--render` draws hundreds of pictures in one
+        // process, which runs out of room for them otherwise.
+        window.isReleasedWhenClosed = false
+        defer {
             window.contentView = nil
             window.close()
-            return image
         }
+        // Let SwiftUI settle measured sizes (lists measure themselves) before sizing the image.
+        for _ in 0..<3 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+            window.setContentSize(host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+        }
+        return cache(host)
     }
 
     /// Draws an AppKit view at its current size, in an offscreen window with the given appearance.

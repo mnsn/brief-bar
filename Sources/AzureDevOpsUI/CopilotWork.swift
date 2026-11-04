@@ -184,6 +184,9 @@ struct CopilotWork: Equatable {
     var isTask: Bool
     /// When it was taken on, or, once it's over, when it ended.
     var since: Date
+    /// When it was taken on, whether it's over or not, and whichever task in its session keeps it now: a Push & Reply's,
+    /// when it started to push, which a run of the build that fails after it was a run of what it pushed, or since.
+    var takenAt: Date?
 
     /// Ongoing, rather than over.
     var isActive: Bool {
@@ -331,13 +334,13 @@ struct CopilotWork: Equatable {
             }
             return CopilotWork(
                 part: taken.part, purpose: purpose, state: state, session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask,
-                since: taken.since
+                since: taken.since, takenAt: taken.since
             )
         }
         let ended = entry.status.phase.isActive ? nil : entry.status.since
         return CopilotWork(
             part: taken.part, purpose: purpose, state: state(of: entry.status), session: entry.id, forkedFrom: entry.forkedFrom,
-            isTask: isTask, since: ended ?? taken.since
+            isTask: isTask, since: ended ?? taken.since, takenAt: taken.since
         )
     }
 
@@ -379,7 +382,8 @@ struct CopilotWork: Equatable {
         }
         if prompt.overlapped { state = .unknown(copied: prompt.copied) }
         return CopilotWork(
-            part: part, purpose: purpose, state: state, session: prompt.session, forkedFrom: prompt.forkedFrom, isTask: false, since: since
+            part: part, purpose: purpose, state: state, session: prompt.session, forkedFrom: prompt.forkedFrom, isTask: false, since: since,
+            takenAt: prompt.sentAt
         )
     }
 }
@@ -457,6 +461,12 @@ extension CopilotTasksStore {
     /// asked about one, isn't Copilot taking care of it.
     func onIt(_ record: PRRecord) -> [PRReadiness.Item.Kind: CopilotWork] {
         let key = record.pullRequest.key
+        return onIt(record) { work(on: $0, of: key, for: [.fix, .pushAndReply]) }
+    }
+
+    /// What Copilot does about each kind of what's left of a pull request, from what `work` says it does about each of its
+    /// threads, builds and conflicts: in pictures, as they draw it.
+    func onIt(_ record: PRRecord, work: (PullRequestPart) -> CopilotWork?) -> [PRReadiness.Item.Kind: CopilotWork] {
         let threads = (record.details?.threads ?? []).filter { !$0.isResolved }.map { PullRequestPart.thread($0.id) }
         var builds: [PullRequestPart] = []
         for case let part? in (record.details?.checks ?? []).map(\.part) where !builds.contains(part) {
@@ -465,7 +475,7 @@ extension CopilotTasksStore {
         let kinds: [(PRReadiness.Item.Kind, [PullRequestPart])] = [(.comments, threads), (.builds, builds), (.conflicts, [.conflicts])]
         var onIt: [PRReadiness.Item.Kind: CopilotWork] = [:]
         for (kind, parts) in kinds {
-            let works = parts.compactMap { work(on: $0, of: key, for: [.fix, .pushAndReply]) }
+            let works = parts.compactMap(work).filter { $0.purpose == .fix || $0.purpose == .pushAndReply }
             if let work = works.max(by: { Self.pressing($0) < Self.pressing($1) }), Self.pressing(work) > 0 {
                 onIt[kind] = work
             }

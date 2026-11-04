@@ -140,7 +140,7 @@ extension PullRequestPrompt {
     ) -> String {
         let pr = record.pullRequest
         var parts = [
-            "Pull request !\(pr.key.number) “\(oneLine(pr.title))” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch), has a build that failed:",
+            "\(introduction(pr)), has a build that failed:",
             build.described(1),
         ]
         parts.append(PullRequestPrompt.runSaid)
@@ -156,7 +156,7 @@ extension PullRequestPrompt {
     ) -> String {
         let pr = record.pullRequest
         var parts = [
-            "Pull request !\(pr.key.number) “\(oneLine(pr.title))” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch):\n\(pr.webURL.absoluteString)",
+            "\(introduction(pr)):\n\(pr.webURL.absoluteString)",
             "It has a build that failed:",
             build.described(1),
             PullRequestPrompt.runSaid,

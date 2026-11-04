@@ -19,6 +19,15 @@ import BriefBarCore
         #expect(try build("queued") == .queued)
         #expect(try build("queued", context: ["buildId": 1, "isExpired": true]) == .expired)
         #expect(try build("rejected", context: ["buildId": 1, "isExpired": true]) == .expired)
+        // How an expired one stood: one that failed is still to fix, not only to queue again.
+        func expiredFrom(_ status: String) throws -> Check.State? {
+            try check(Fixture.evaluation("Build", status: status, settings: ["displayName": "CI"], context: ["buildId": 1, "isExpired": true]))?
+                .expiredFrom
+        }
+        #expect(try expiredFrom("rejected") == .failed)
+        #expect(try expiredFrom("broken") == .failed)
+        #expect(try expiredFrom("queued") == nil)
+        #expect(try check(Fixture.evaluation("Build", status: "rejected", settings: ["displayName": "CI"], context: ["buildId": 1]))?.expiredFrom == nil)
         #expect(try build("queued", context: nil) == .notRun)
         #expect(try build("notApplicable") == .notApplicable)
 

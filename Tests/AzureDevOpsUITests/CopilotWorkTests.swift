@@ -142,6 +142,14 @@ import Testing
         #expect(store.work(on: pipeline, of: key)?.isReadyFix == true)
         #expect(store.readyFixes(of: key, among: record.partsToFix).map(\.parts) == [[pipeline]])
         #expect(store.readyFixes(of: key, among: record.partsToFix).first?.threads == [])
+        // Failed, then expired, as its target branch moved: still to fix, and its fix still ready.
+        record.details?.checks[build].state = .expired
+        record.details?.checks[build].expiredFrom = .failed
+        #expect(record.partsToFix.contains(pipeline))
+        #expect(store.readyFixes(of: key, among: record.partsToFix).map(\.parts) == [[pipeline]])
+        // Passed, then expired: to queue again, not to fix.
+        record.details?.checks[build].expiredFrom = nil
+        #expect(!record.partsToFix.contains(pipeline))
         // A rerun, or a push, that passes ends it.
         record.details?.checks[build].state = .passed
         #expect(!record.partsToFix.contains(pipeline))
@@ -167,14 +175,22 @@ import Testing
         func work(_ state: CopilotWork.State, _ purpose: CopilotWork.Purpose = .fix) -> CopilotWork {
             CopilotWork(part: .build(31), purpose: purpose, state: state, session: task, forkedFrom: nil, isTask: true, since: now)
         }
-        func check(_ state: Check.State, completedAt: Date? = nil) -> Check {
-            Check(name: "shop-web CI", kind: .build, state: state, completedAt: completedAt, buildId: 204_417, definitionId: 31)
+        func check(_ state: Check.State, completedAt: Date? = nil, expiredFrom: Check.State? = nil) -> Check {
+            Check(
+                name: "shop-web CI", kind: .build, state: state, completedAt: completedAt, buildId: 204_417, definitionId: 31,
+                expiredFrom: expiredFrom
+            )
         }
         #expect(work(.done(nil)).shows(onBuild: check(.failed)))
         #expect(work(.done(nil)).shows(onBuild: check(.running)))
         #expect(work(.done(nil)).shows(onBuild: nil))
         #expect(!work(.done(nil)).shows(onBuild: check(.passed)))
+        // Expired after it passed, as its target branch moved: it's to queue again, not to fix. After it failed, it's still
+        // to fix, and its fix stays; a run of what was pushed that failed, then expired, ends it as one that failed does.
         #expect(!work(.failed(nil)).shows(onBuild: check(.expired)))
+        #expect(work(.done(nil)).shows(onBuild: check(.expired, completedAt: now.addingTimeInterval(-900), expiredFrom: .failed)))
+        #expect(work(.done(nil)).shows(onBuild: check(.expired, completedAt: now.addingTimeInterval(600), expiredFrom: .failed)))
+        #expect(!work(.done(nil), .pushAndReply).shows(onBuild: check(.expired, completedAt: now.addingTimeInterval(600), expiredFrom: .failed)))
         #expect(!work(.stopped).shows(onBuild: check(.notApplicable)))
         // Copilot is still at it: it shows, though the build passed meanwhile.
         #expect(work(.working(nil)).shows(onBuild: check(.passed)))
@@ -186,6 +202,12 @@ import Testing
         #expect(!work(.done(nil), .pushAndReply).shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(600))))
         #expect(work(.done(nil)).shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(600))))
         #expect(work(.failed(nil), .pushAndReply).shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(600))))
+        // By when it started to push, not when it ended: a run of what it pushed that failed while it replied on threads
+        // ends it too, and so it stays as a later task in the session keeps it.
+        var replied = work(.done(nil), .pushAndReply)
+        replied.takenAt = now.addingTimeInterval(-600)
+        #expect(!replied.shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(-60))))
+        #expect(replied.shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(-900))))
     }
 
     /// What's Left says Copilot's on what's left by what works on its threads, builds and conflicts now, BriefBar's tasks and
@@ -229,6 +251,24 @@ import Testing
         settings.copilotSentPrompts = [fixing]
         settings.copilotEnabled = false
         #expect(store.onIt(record).isEmpty)
+    }
+
+    /// Two of a pull request's policies can run the same pipeline: each build's row has its own composer, words and send,
+    /// though what Copilot does is the pipeline's.
+    @Test func eachBuildsRowHasItsOwnComposer() {
+        let first = CopilotComposing(part: .build(31), ask: .fix, row: "build-1")
+        let second = CopilotComposing(part: .build(31), ask: .fix, row: "build-2")
+        #expect(first != second)
+        let drafts = CopilotDrafts()
+        drafts.texts[first] = "Skip weekends"
+        #expect(drafts.texts[second] == nil)
+        let asking = CopilotAsking(
+            ask: .fix, part: .build(31), action: .fixBuild, row: "build-2",
+            fix: { _, _ in CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }, question: { _, _ in "" }
+        )
+        #expect(asking.draftKey == second)
+        // A thread's has one row.
+        #expect(CopilotComposing(part: .thread(11), ask: .fix) == CopilotComposing(part: .thread(11), ask: .fix, row: nil))
     }
 
     /// The bar at the details' foot says what's ready by what it fixed: comments' fixes, builds', and the conflicts'
