@@ -176,6 +176,20 @@ private final class Clock {
         #expect(order.orders.plans.isEmpty && order.missions.isEmpty)
     }
 
+    /// A mission's bar stays within its width, however many pull requests it has: its parts narrow, then it's one bar.
+    @Test func aMissionsBarFitsItsWidthWhateverItsCount() throws {
+        #expect(try #require(OrderProgressBar.parts(5)) == (width: 9, gap: 2))
+        for count in 1...DeclaredOrders.mostPullRequests {
+            guard let parts = OrderProgressBar.parts(count) else {
+                #expect(count > 30)
+                continue
+            }
+            let total = CGFloat(count) * parts.width + CGFloat(count - 1) * parts.gap
+            #expect(total <= OrderProgressBar.widest + 0.001, "\(count) parts: \(total)")
+        }
+        #expect(OrderProgressBar.parts(DeclaredOrders.mostPullRequests) == nil)
+    }
+
     @Test func theMissionYouFocusOnComesFirstUntilItsOrderIsForgotten() throws {
         let defaults = try Self.defaults(on: true)
         let order = Self.service(defaults)

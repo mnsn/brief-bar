@@ -251,17 +251,45 @@ package struct MissionHeader: View {
 }
 
 /// A mission's progress: one segment for each of its pull requests, green once merged, grey once closed.
-struct OrderProgressBar: View {
+package struct OrderProgressBar: View {
     let mission: OrderMission
 
     @Environment(\.textScale) private var textScale
 
-    var body: some View {
-        HStack(spacing: 2 * textScale) {
-            ForEach(Array(mission.steps.enumerated()), id: \.offset) { _, step in
-                Capsule()
-                    .fill(color(step))
-                    .frame(width: 9 * textScale, height: 4 * textScale)
+    /// At most this wide, at 100% text, whatever its count: past 11 pull requests its parts narrow to fit, and past about
+    /// 40, it's one bar, filled as far as they merged.
+    package static let widest: CGFloat = 120
+
+    /// Each part's width and the gap between them, at 100% text, for this many pull requests; nil when they'd be too
+    /// thin to tell apart, and it's one bar.
+    package static func parts(_ count: Int) -> (width: CGFloat, gap: CGFloat)? {
+        let gap: CGFloat = count > 11 ? 1 : 2
+        let width = min(9, (widest - CGFloat(max(count - 1, 0)) * gap) / CGFloat(max(count, 1)))
+        return width >= 2 ? (width, gap) : nil
+    }
+
+    package var body: some View {
+        let steps = mission.steps
+        let widest = Self.widest * textScale
+        Group {
+            if let parts = Self.parts(steps.count) {
+                HStack(spacing: parts.gap * textScale) {
+                    ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+                        Capsule()
+                            .fill(color(step))
+                            .frame(width: parts.width * textScale, height: 4 * textScale)
+                    }
+                }
+            } else {
+                let merged = CGFloat(steps.filter { $0.status == .merged }.count) / CGFloat(steps.count)
+                let closed = CGFloat(steps.filter { $0.status == .closed }.count) / CGFloat(steps.count)
+                HStack(spacing: 0) {
+                    Rectangle().fill(Color.green).frame(width: widest * merged)
+                    Rectangle().fill(Color.gray.opacity(0.6)).frame(width: widest * closed)
+                    Rectangle().fill(Color.secondary.opacity(0.25))
+                }
+                .frame(width: widest, height: 4 * textScale)
+                .clipShape(Capsule())
             }
         }
         .accessibilityHidden(true)

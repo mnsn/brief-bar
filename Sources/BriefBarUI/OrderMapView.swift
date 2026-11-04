@@ -11,8 +11,9 @@ import SwiftUI
 package struct MissionBand: View {
     let mission: OrderMission
     let place: String?
-    /// The work item most of its pull requests are linked to, as a badge: "5101 Save items for later".
-    let badge: String?
+    /// Its badge is the work item most of its pull requests are linked to, "5101 Save items for later", as Show Links has
+    /// them now.
+    @ObservedObject var links: Links
     let isSelected: (ItemRef) -> Bool
     /// What clicking a node does: what clicking its row does, or opening it where it lives.
     let select: (ItemRef) -> Void
@@ -21,12 +22,12 @@ package struct MissionBand: View {
     @ObservedObject var order: PullRequestOrder
 
     package init(
-        mission: OrderMission, place: String?, badge: String?, order: PullRequestOrder, isSelected: @escaping (ItemRef) -> Bool,
+        mission: OrderMission, place: String?, links: Links, order: PullRequestOrder, isSelected: @escaping (ItemRef) -> Bool,
         select: @escaping (ItemRef) -> Void, list: @escaping () -> AnyView
     ) {
         self.mission = mission
         self.place = place
-        self.badge = badge
+        self.links = links
         self.order = order
         self.isSelected = isSelected
         self.select = select
@@ -36,6 +37,7 @@ package struct MissionBand: View {
     package var body: some View {
         if let map = OrderMap(mission) {
             VStack(alignment: .leading, spacing: 6) {
+                let badge = OrderBadge.workItem(of: mission, links: links)
                 MissionHeader(mission: mission, order: order, place: [place, badge].compactMap { $0 }.joined(separator: " · "))
                 ScrollView(.horizontal) {
                     OrderMapGrid(map: map, mission: mission, order: order, isSelected: isSelected, select: select)

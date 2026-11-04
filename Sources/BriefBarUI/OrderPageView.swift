@@ -86,7 +86,7 @@ package struct MissionsBody: View {
                 case .map:
                     ForEach(missions) { mission in
                         MissionBand(
-                            mission: mission, place: place(of: mission), badge: OrderBadge.workItem(of: mission, links: services.links),
+                            mission: mission, place: place(of: mission), links: services.links,
                             order: ordering, isSelected: isSelected, select: open, list: { AnyView(card(mission)) }
                         )
                     }
