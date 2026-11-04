@@ -1109,7 +1109,7 @@ enum AgentText {
         if let details = record.details {
             let threads = details.threads.filter { !$0.isResolved }
             lines.append("\n## Unresolved comment threads (\(threads.count))")
-            lines.append(threads.isEmpty ? "None." : PullRequestPrompt.list(threads, record: record))
+            lines.append(threads.isEmpty ? "None." : PullRequestPrompt.listed(threads, record: record))
         } else if pr.status == .active {
             lines.append("\nBriefBar hasn't read its comments and checks yet.")
         }

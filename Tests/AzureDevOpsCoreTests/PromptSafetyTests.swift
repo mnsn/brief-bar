@@ -207,8 +207,24 @@ import Testing
         #expect(PullRequestPrompt.branch("it's") == #"'it'\''s'"#)
         #expect(PullRequestPrompt.branch("users/robin/fix-total_2.1+x@y,z:w") == "users/robin/fix-total_2.1+x@y,z:w")
         #expect(PullRequestPrompt.branch("") == "")
+        // One that starts with backticks, which Git allows, keeps them in its quotes, which no fence starts with.
+        #expect(PullRequestPrompt.branch("```topic") == "'```topic'")
         record.pullRequest.sourceBranch = "users/robin/fix-total"
         #expect(PullRequestPrompt.pushAndReply(record).contains("git push origin HEAD:refs/heads/users/robin/fix-total."))
+    }
+
+    /// A command a prompt writes with a branch's name names that branch: a shell reads its word back as the name, whatever
+    /// a shell would otherwise run in it, and backticks at its start stay. (What controls how text reads is written out,
+    /// as everywhere a prompt quotes it, and Git allows no line break in a name.)
+    @Test(.timeLimit(.minutes(1)))
+    func aCommandNamesTheBranchItsWrittenWith() async throws {
+        for name in ["```topic", "fix$(echo ran)", "main`id`;rm", "it's", "users/robin/fix-total", "{a,b}*", "日本/修正"] {
+            let result = try await ProcessRunner().run(
+                URL(fileURLWithPath: "/bin/zsh"), arguments: ["-c", "printf '%s' origin/" + PullRequestPrompt.branch(name)],
+                environment: ["PATH": "/usr/bin:/bin"], timeout: 10
+            )
+            #expect(String(decoding: result.stdout, as: UTF8.self) == "origin/" + name, "\(name)")
+        }
     }
 
     /// A quoted line like a thread's entry, in a suggested change or in an earlier answer, is what was quoted: with the

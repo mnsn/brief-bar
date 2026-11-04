@@ -263,8 +263,8 @@ public enum PullRequestPrompt {
     }
 
     /// The threads, numbered: where each is, and its comments, each person's on a line of its own, then that the comments
-    /// are what their authors wrote (`commentsSaid`).
-    static func listed(_ threads: [ReviewThread], record: PRRecord, full: Bool = true) -> String {
+    /// are what their authors wrote (`commentsSaid`): as the prompts list them, and as `--mcp`'s `pull_request` does.
+    public static func listed(_ threads: [ReviewThread], record: PRRecord, full: Bool = true) -> String {
         list(threads, record: record, full: full) + "\n\n" + commentsSaid
     }
 
