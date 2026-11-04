@@ -1388,9 +1388,10 @@ extension AzureDevOpsSource {
 
 extension AzureDevOpsSource {
     /// The Pull Requests page with the details of the first of your pull requests that needs you, at their top: its tags
-    /// under its heading, with ✕ and +; the field that adds one, with what you typed and its suggestions; a change that
-    /// couldn't be made; and the tags as they show without Make Changes in Azure DevOps. In a narrow window too. Each from
-    /// made-up states, through `TagsPreview`: nothing's sent.
+    /// under its heading, with ✕ and Add Tag; the field that adds one, with what you typed and its suggestions; a change
+    /// Azure DevOps didn't allow, and one that couldn't go while offline; Undo, after a tag was taken off; and the tags as they
+    /// show without Make Changes in Azure DevOps. In a narrow window too. Each from made-up states, through `TagsPreview`:
+    /// nothing's sent.
     func tagRenderings() -> [(name: String, view: AnyView)] {
         guard let store, store.mode == .demo, let item = renderedPullRequests(store).first else { return [] }
         let wide = CGSize(width: 1_000, height: 640), narrow = CGSize(width: 560, height: 760)
@@ -1398,6 +1399,8 @@ extension AzureDevOpsSource {
             ("pull-requests-tags", TagsPreview(), [("", wide), ("-narrow", narrow)]),
             ("pull-requests-tags-add", TagsPreview(typed: "dep", highlighted: 0), [("", wide), ("-narrow", narrow)]),
             ("pull-requests-tags-failed", TagsPreview(state: .failed(.notAllowed, .add("deploy-us"))), [("", wide), ("-narrow", narrow)]),
+            ("pull-requests-tags-offline", TagsPreview(state: .failed(.offline, .remove(PullRequestTag("needs-qa")))), [("", wide)]),
+            ("pull-requests-tags-removed", TagsPreview(removed: PullRequestTag("hotfix")), [("", wide), ("-narrow", narrow)]),
             ("pull-requests-tags-read-only", TagsPreview(canChange: false), [("", wide)]),
         ]
         var renderings: [(name: String, view: AnyView)] = []

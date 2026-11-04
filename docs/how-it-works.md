@@ -1519,15 +1519,19 @@ doesn't carry them, leaves them as they were. They're on the pull request's reco
 request, so a change to them doesn't make its pipelines or its details read again.
 
 With **Make Changes in Azure DevOps** on, while the pull request is open and its tags known (`TagChanges.canChange`), its
-tags have ✕, and + opens a field that adds one, which is the details' one composer in place (`CopilotComposing.tags`).
+tags have ✕, and Add Tag opens a field that adds one, which is the details' one composer in place (`CopilotComposing.tags`);
+otherwise the tag glyph's tooltip, and VoiceOver, say why they can't be changed.
 Adding one is a `POST` of its name (`ADOWrite.addTag`); taking one off, a `DELETE` of it, by the project's tag's ID, so a
 name with a slash in it is no trouble, with no body (`ADOWrite.removeTag`), whose answer, whether nothing (204), an empty
 200 or JSON, says it's done. What Azure DevOps answers shows at once, the tag as the project spells it, and the engine
 reads the tags again, one request, for anyone else's change meanwhile (`PRStore.changedTags`, `PulseEngine.changedTags`);
 the list keeps the change over a snapshot read before it, which has the tags as they were, until one has it, or has
-tags changed since (`PRStore.pending`). A tag the pull request has already, ignoring letter case, isn't sent. A change that
-didn't happen says why under the tags (`ADOWriteProblem`), with **Try Again**, or **Sign In…**, and when it may have
-happened all the same, the tags are read again; one taken off that Azure DevOps says isn't there is, when the tags read
+tags changed since (`PRStore.pending`). A tag the pull request has already, ignoring letter case, isn't sent. Nothing asks
+first: after a tag is taken off, **Undo** adds it back, by its name (`TagChanges.removed`, `undoRemoval`), until the tags
+change again, you dismiss it, or nothing shows the pull request. A change that didn't happen says why under the tags
+(`ADOWriteProblem`), with **Try Again**, but not when Azure DevOps refused it, the pull request is closed or the tag isn't
+there, which trying again can't help, and **Sign In…** when that's why; when it may have happened all the same, the tags
+are read again; one taken off that Azure DevOps says isn't there is, when the tags read
 again don't have it, as you wanted. Each change goes in a task kept by pull request, which turning the setting off, Azure
 DevOps stopping or someone else signing in calls off (`TagChanges.forgetAll`): one that hasn't gone, as while it waits for
 a token, never does.
@@ -1535,9 +1539,11 @@ a token, never does.
 As you type, the field suggests (`TagChoices`) the tags you added in the pull request's project, the latest first, then
 those on the pull requests BriefBar read there, the most used first, then by name, but the pull request's own, six at most:
 those whose names start with what you typed, then those with a word that does, then those that have it anywhere,
-ignoring letter case; what you typed, when it's none of them nor one the pull request has, is a new tag, last. ↑ and ↓
-choose one, Return or Tab adds it, or what you typed, Tab moving on as it does anywhere when there's nothing, and Esc
-closes it (`InlineComposerOpen`). BriefBar remembers the tags you add, by their names, up to 20 for each project, by its
+ignoring letter case; what you typed, when it's none of them nor one the pull request has, is a new tag, last. The best
+match is chosen as you type, and with something typed one always is, so Return always adds a row that shows; VoiceOver
+hears which, and how many there are, as it changes. ↑ and ↓ choose another; Tab completes the one chosen in the field,
+sending nothing, and moves on, as it does anywhere, when there's nothing to complete; Return adds it; and Esc closes the
+field (`InlineComposerOpen`). BriefBar remembers the tags you add, by their names, up to 20 for each project, by its
 organization and ID, for the 20 projects you added tags in last (`UsedTags`, `ado.usedTags`), until you turn the setting
 off or delete Azure DevOps' saved data. It doesn't read Azure DevOps' own list of a project's tags (`_apis/wit/tags`),
 which work items share and which can hold many thousands, far more than one request reads in time. The demo's pull

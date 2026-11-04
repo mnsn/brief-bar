@@ -5,10 +5,11 @@ import BriefBarUI
 import SwiftUI
 
 /// A pull request's tags, under its heading in its details: capsules, as a work item's details show its own. With Make
-/// Changes in Azure DevOps on, while it's open, ✕ on each takes it off, and + opens a field that adds one, with suggestions as
-/// you type: ↑ and ↓ choose one, Return or Tab adds it, or what you typed, and Esc closes the field. The field is the details'
-/// one composer in place (`CopilotComposing.tags`). What went wrong shows under them, in a sentence. Nothing shows while the
-/// pull request has none and they can't be changed, nor while they're unknown, as for one sent to you until they're read.
+/// Changes in Azure DevOps on, while it's open, ✕ on each takes it off, with Undo after, and Add Tag opens a field that adds
+/// one, with suggestions as you type: ↑ and ↓ choose one, Tab completes it, Return adds it, or what you typed, and Esc closes
+/// the field. The field is the details' one composer in place (`CopilotComposing.tags`). What went wrong shows under them, in
+/// a sentence. Nothing shows while the pull request has none and they can't be changed, nor while they're unknown, as for one
+/// sent to you until they're read.
 struct PullRequestTagsRow: View {
     let item: PRSnapshot
     let record: PRRecord?
@@ -21,9 +22,12 @@ struct PullRequestTagsRow: View {
 
     /// What you typed in the field.
     @LocalState private var typed = ""
-    /// The row of the suggestions that ↑ and ↓ chose, which Return and Tab add; nil for what you typed.
+    /// The row of the suggestions that ↑ and ↓ chose, which Tab completes and Return adds: the best match as you type; nil
+    /// while nothing's typed and you chose none.
     @LocalState private var highlighted: Int?
-    /// + takes the keyboard's focus back as the field closes, and once the tag whose ✕ had it is taken off.
+    /// The row VoiceOver last heard was chosen.
+    @LocalState private var announced: String?
+    /// Add Tag takes the keyboard's focus back as the field closes, and once the tag whose ✕ had it is taken off.
     @LocalState private var refocusesAdd = false
     @FocusState private var focus: Focus?
 
@@ -35,6 +39,7 @@ struct PullRequestTagsRow: View {
 
     private var key: PRKey { item.key }
     private var state: TagChanges.State? { preview?.state ?? changes.state(of: key) }
+    private var removed: PullRequestTag? { preview?.removed ?? changes.removed[key] }
     private var canChange: Bool { preview?.canChange ?? changes.canChange(record) }
     private var isOpen: Bool { composing == .tags && canChange }
 
@@ -51,7 +56,7 @@ struct PullRequestTagsRow: View {
                         .font(size: 10.5, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .frame(height: chipHeight)
-                        .help("Tags")
+                        .help(readOnlyReason.map { "Tags: \($0)" } ?? "Tags")
                         .accessibilityHidden(true)
                     ForEach(tags, id: \.key) { tag in
                         capsule(tag)
@@ -60,7 +65,7 @@ struct PullRequestTagsRow: View {
                         if isOpen {
                             field
                         } else {
-                            addButton(isFirst: tags.isEmpty)
+                            addButton
                         }
                     }
                 }
@@ -68,13 +73,18 @@ struct PullRequestTagsRow: View {
                     suggestions
                 }
                 if case .failed(let problem, let change)? = state, canChange {
-                    ThreadChangeProblemLine(problem: problem, kind: change.kind, retry: retry(change), signIn: signIn(problem)) {
+                    ThreadChangeProblemLine(
+                        problem: problem, kind: change.kind, retry: retry(problem, change), signIn: signIn(problem)
+                    ) {
                         changes.dismiss(key)
                     }
+                } else if let removed, canChange, sending == nil {
+                    removedLine(removed)
                 }
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel(tags.isEmpty ? "Tags: none" : "Tags")
+            .accessibilityHint(readOnlyReason ?? "")
             .onAppear {
                 guard let preview, let typed = preview.typed else { return }
                 composing = .tags
@@ -90,6 +100,16 @@ struct PullRequestTagsRow: View {
 
     /// As tall as a capsule, at the text size on windows' pages.
     private var chipHeight: CGFloat { 18 * textScale }
+
+    /// Why the tags can't be changed here, when they can't: for their glyph's tooltip, and VoiceOver.
+    private var readOnlyReason: String? {
+        guard !canChange, let record else { return nil }
+        if record.pullRequest.status != .active { return "Azure DevOps takes no change to a completed or abandoned pull request." }
+        if !changes.settings.makesChanges {
+            return "Turn on Make Changes in Azure DevOps, in Settings › Azure DevOps, to add and remove them here."
+        }
+        return nil
+    }
 
     // MARK: The tags
 
@@ -113,8 +133,9 @@ struct PullRequestTagsRow: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(size: 7.5, weight: .bold)
-                            .frame(width: 12 * textScale, height: 12 * textScale)
-                            .contentShape(Circle())
+                            // As tall as the capsule, for a target bigger than the glyph.
+                            .frame(width: 15 * textScale, height: chipHeight)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.borderless)
                     .focused($focus, equals: .remove(tag.key))
@@ -126,7 +147,7 @@ struct PullRequestTagsRow: View {
         }
         .foregroundStyle(Color.secondary)
         .padding(.leading, 7)
-        .padding(.trailing, canChange ? 4 : 7)
+        .padding(.trailing, canChange ? 2 : 7)
         .frame(height: chipHeight)
         .background(Capsule().fill(Color.secondary.opacity(0.14)))
         .opacity(isRemoving ? 0.55 : 1)
@@ -134,19 +155,18 @@ struct PullRequestTagsRow: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// + after the tags, or "Add Tag" while there are none: it opens the field.
-    private func addButton(isFirst: Bool) -> some View {
+    /// Add Tag, after the tags: it opens the field.
+    private var addButton: some View {
         Button(action: open) {
             HStack(spacing: 3) {
                 Image(systemName: "plus")
                     .font(size: 9, weight: .bold)
-                if isFirst {
-                    Text("Add Tag")
-                        .font(size: 10.5, weight: .semibold)
-                }
+                Text("Add Tag")
+                    .font(size: 10.5, weight: .semibold)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, isFirst ? 7 : 5)
-            .frame(minWidth: chipHeight, minHeight: chipHeight)
+            .padding(.horizontal, 7)
+            .frame(minHeight: chipHeight)
             .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
             .contentShape(Capsule())
         }
@@ -158,6 +178,7 @@ struct PullRequestTagsRow: View {
             ? "Add a tag to this made-up pull request"
             : "Add a tag to this pull request in Azure DevOps, as you")
         .accessibilityLabel("Add a Tag")
+        .accessibilityHint("Opens a field with suggestions as you type.")
         .onAppear {
             guard refocusesAdd else { return }
             refocusesAdd = false
@@ -167,8 +188,8 @@ struct PullRequestTagsRow: View {
 
     // MARK: The field
 
-    /// What you type a tag's name in, with ✕, which Esc presses: Return or Tab adds the suggestion ↑ and ↓ chose, or what you
-    /// typed. While it's being added, a spinner.
+    /// What you type a tag's name in, with ✕, which Esc presses: Tab completes the suggestion ↑ and ↓ chose, without sending
+    /// anything, and Return adds it, or what you typed. While it's being added, a spinner.
     private var field: some View {
         let isAdding = if case .add? = sending { true } else { false }
         return HStack(spacing: 3) {
@@ -186,12 +207,14 @@ struct PullRequestTagsRow: View {
                     move(by: -1)
                     return .handled
                 }
-                .onKeyPress(.return) { complete() }
+                .onKeyPress(.return) { addChosen() }
                 .onKeyPress(.tab, phases: .down) { press in
-                    press.modifiers.contains(.shift) ? .ignored : complete(orMoveOn: true)
+                    press.modifiers.contains(.shift) ? .ignored : completeChosen()
                 }
                 .accessibilityLabel("New Tag")
-                .accessibilityHint("Suggestions follow as you type. Up and down arrows choose one; Return or Tab adds it, or what you typed. Escape closes.")
+                .accessibilityHint(
+                    "Suggestions follow as you type. Up and down arrows choose one, Tab completes it, and Return adds it. Escape closes."
+                )
             if isAdding {
                 ProgressView()
                     .controlSize(.mini)
@@ -222,8 +245,10 @@ struct PullRequestTagsRow: View {
             Task { @MainActor in focus = .field }
         }
         .onChange(of: typed) {
-            // What you typed chooses the best match; nothing typed, nothing chosen.
-            highlighted = PullRequestTag.name(typed) == nil || choices.rows.isEmpty ? nil : 0
+            // What you typed chooses the best match, which VoiceOver hears as it changes; nothing typed, nothing chosen.
+            let rows = choices.rows
+            highlighted = PullRequestTag.name(typed) == nil || rows.isEmpty ? nil : 0
+            announceChosen(rows)
         }
     }
 
@@ -250,8 +275,8 @@ struct PullRequestTagsRow: View {
                 note("Type a tag's name: an existing one, or a new one.", symbol: "keyboard")
             }
             Text(store.mode == .demo
-                ? "Return or Tab adds it to this made-up pull request: nothing goes to Azure DevOps. Esc closes."
-                : "Return or Tab adds it in Azure DevOps, as you. Esc closes.")
+                ? "Tab completes it, and Return adds it to this made-up pull request: nothing goes to Azure DevOps. Esc closes."
+                : "Tab completes it, and Return adds it in Azure DevOps, as you. Esc closes.")
                 .font(size: 10.5)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -344,32 +369,53 @@ struct PullRequestTagsRow: View {
         if composing == .tags { composing = nil }
     }
 
-    /// ↑ or ↓: the next suggestion, or, up from the first, what you typed.
+    /// ↑ or ↓: the next row. With something typed, one is always chosen, what you typed as a new tag among them; with
+    /// nothing typed, up from the first chooses none.
     private func move(by step: Int) {
         let rows = choices.rows
         guard !rows.isEmpty else { return }
-        let next: Int? = switch highlighted {
-        case nil: step > 0 ? 0 : nil
-        case let index?: index + step < 0 ? nil : min(index + step, rows.count - 1)
-        }
-        highlighted = next
-        SpokenText.announce(next.map { rows[$0] } ?? (typed.isEmpty ? "Nothing typed" : typed))
+        let lowest = PullRequestTag.name(typed) == nil ? -1 : 0
+        let next = min(max((highlighted ?? -1) + step, lowest), rows.count - 1)
+        highlighted = next < 0 ? nil : next
+        announceChosen(rows, always: true)
     }
 
-    /// Return or Tab: adds the suggestion chosen, or what you typed. With nothing typed or chosen, Tab moves on, as it does
-    /// anywhere, and Return beeps.
-    private func complete(orMoveOn movesOn: Bool = false) -> KeyPress.Result {
+    /// Says which row is chosen, and how many there are, as it changes, for VoiceOver: what Return would add.
+    private func announceChosen(_ rows: [String], always: Bool = false) {
+        guard preview == nil else { return }
+        let chosen = highlighted.flatMap { rows.indices.contains($0) ? rows[$0] : nil }
+        guard always || chosen != announced else { return }
+        announced = chosen
+        guard let chosen else {
+            if always { SpokenText.announce("No tag chosen") }
+            return
+        }
+        let isNew = chosen == choices.newTag
+        let count = rows.count == 1 ? "1 choice" : "\(rows.count) choices"
+        SpokenText.announce("\(chosen), \(isNew ? "new tag" : "suggested"). \(count)")
+    }
+
+    /// Tab: what you typed, completed to the suggestion chosen, without sending anything. With nothing to complete, Tab
+    /// moves on, as it does anywhere.
+    private func completeChosen() -> KeyPress.Result {
+        let choices = choices
+        guard let highlighted, choices.suggestions.indices.contains(highlighted) else { return .ignored }
+        let name = choices.suggestions[highlighted]
+        guard typed != name else { return .ignored }
+        typed = name
+        return .handled
+    }
+
+    /// Return: adds the row chosen, or what you typed; with neither, it beeps.
+    private func addChosen() -> KeyPress.Result {
         let rows = choices.rows
         if let highlighted, rows.indices.contains(highlighted) {
             add(rows[highlighted])
-            return .handled
-        }
-        if let name = PullRequestTag.name(typed) {
+        } else if let name = PullRequestTag.name(typed) {
             add(name)
-            return .handled
+        } else {
+            NSSound.beep()
         }
-        if movesOn { return .ignored }
-        NSSound.beep()
         return .handled
     }
 
@@ -405,10 +451,45 @@ struct PullRequestTagsRow: View {
         }
     }
 
-    /// What tries a change that didn't happen again.
-    private func retry(_ change: TagChanges.Change) -> (title: String, action: () -> Void)? {
+    /// What tries a change that didn't happen again: only when trying again may help, not when Azure DevOps refused it, nor
+    /// for a pull request or a tag that isn't there.
+    private func retry(_ problem: ADOWriteProblem, _ change: TagChanges.Change) -> (title: String, action: () -> Void)? {
+        switch problem {
+        case .notAllowed, .closed, .gone, .refused: return nil
+        default: break
+        }
         guard preview == nil else { return ("Try Again", {}) }
         return ("Try Again", { Task { await changes.retry(change, on: key) } })
+    }
+
+    /// The tag you just took off, with Undo, which adds it back, and ✕.
+    private func removedLine(_ tag: PullRequestTag) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "checkmark.circle")
+                .font(size: 11, weight: .semibold)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("Removed the tag \(tag.name).")
+                .font(size: 11.5)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Undo") {
+                guard preview == nil else { return }
+                Task { await changes.undoRemoval(on: key) }
+            }
+            .buttonStyle(.borderless)
+            .font(size: 11.5, weight: .medium)
+            .fixedSize()
+            .help(store.mode == .demo ? "Add the tag back" : "Add the tag back in Azure DevOps, as you")
+            .accessibilityLabel("Undo: Add the Tag \(tag.name) Back")
+            CopilotDismissButton { changes.dismissRemoval(on: key) }
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
+        .accessibilityElement(children: .contain)
     }
 
     private func signIn(_ problem: ADOWriteProblem) -> (() -> Void)? {
@@ -427,7 +508,9 @@ struct TagsPreview {
     var typed: String?
     var highlighted: Int?
     var state: TagChanges.State?
-    /// Whether they show + and ✕; nil for as Make Changes in Azure DevOps says.
+    /// The tag just taken off, which Undo adds back.
+    var removed: PullRequestTag?
+    /// Whether they show Add Tag and ✕; nil for as Make Changes in Azure DevOps says.
     var canChange: Bool?
 }
 

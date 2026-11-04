@@ -454,20 +454,22 @@ so, with **Choose a Model**. The demo changes only its own made-up pull requests
 and who wrote it, as a work item's details show its own, in the order of their names: those of your pull requests and the
 ones you review come with the lists BriefBar reads anyway, and those of a pull request sent to you or that you watch are
 read on their own, one request, as its details show on screen. With **Make Changes in Azure DevOps** on, while it's open,
-**✕** on a tag removes it, and **+**, **Add Tag** while it has none, opens a field. As you type, it suggests the tags you
+**✕** on a tag removes it, and **Add Tag**, after them, opens a field. As you type, it suggests the tags you
 added in that project, the latest first, then those on the pull requests BriefBar read there, the most used first, but
 the pull request's own: those whose names start with what you typed first, then those with a word that does, such as `eu`
 in `deploy-eu`, then those that have it anywhere, ignoring letter case. What you typed, when it's none of them, is a new
-tag, last. **↑** and **↓** choose one, **Return** or **Tab** adds it, or what you typed, and the field stays open for
-another; **Esc** or its **✕** closes it, and it's one at a time with Explain, Fix and Reply. BriefBar remembers the tags
+tag, last; the best match is chosen as you type, and VoiceOver says which. **↑** and **↓** choose another, **Tab**
+completes the one chosen in the field, without sending anything, and **Return** adds it, or what you typed, and the field
+stays open for another; **Esc** or its **✕** closes it, and it's one at a time with Explain, Fix and Reply. BriefBar remembers the tags
 you add, up to 20 for each project, in its settings, to suggest them, until you turn the setting off. It doesn't suggest
 from Azure DevOps' own list of a project's tags, which it shares with work items and can hold many thousands, more than
 one request can read in time. The tags show what Azure DevOps answered, as it spells the tag in that project, as soon as
-it answers, and BriefBar reads them again, for anyone else's change meanwhile; nothing asks first, since a tag removed is
-added back the same way. When it can't, a sentence under them says why, such as **Azure DevOps says you may not change
-this pull request's tags**, **You're offline**, or that the pull request is completed or abandoned, with **Try Again**, or
+it answers, and BriefBar reads them again, for anyone else's change meanwhile. Nothing asks first: after you remove one,
+**Undo**, under the tags, adds it back, until you change them again, dismiss it or close the details. When it can't, a
+sentence under them says why, such as **Azure DevOps says you may not change this pull request's tags**, **You're
+offline**, or that the pull request is completed or abandoned, with **Try Again** where trying again may help, or
 **Sign In…** when the Azure CLI isn't signed in. Without the setting, or on a pull request that's completed or abandoned,
-they show without ✕ or +. The demo has made-up tags, such as `deploy-eu`, `deploy-us` and `hotfix`, changes only those,
+they show without ✕ or Add Tag, and the tag glyph's tooltip says why. The demo has made-up tags, such as `deploy-eu`, `deploy-us` and `hotfix`, changes only those,
 and sends nothing.
 
 **See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
@@ -1039,7 +1041,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
 | | Sprint | on its page: **Everyone** or **Just Mine**, which team's sprint, and how wide you drag a work item's details |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
-| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **+** and **✕** on its tags, which add a tag or remove one; and **Fix Grammar** in a reply, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies you haven't sent and the tags you added, which adding one suggests, and stops a change that hasn't gone yet |
+| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **Add Tag** and **✕** on its tags, which add a tag or remove one; and **Fix Grammar** in a reply, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies you haven't sent and the tags you added, which adding one suggests, and stops a change that hasn't gone yet |
 | | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Move Viewed Sessions to Idle | off by default: when on, opening or viewing a finished or stopped session moves it to Idle |

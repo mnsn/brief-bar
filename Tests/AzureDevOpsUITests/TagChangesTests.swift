@@ -112,6 +112,35 @@ import Testing
         #expect(changes.state(of: key) == nil)
     }
 
+    /// After a tag's taken off, Undo adds it back, as it was spelled; it goes with the next change, or once nothing shows the
+    /// pull request.
+    @Test func undoAddsBackTheTagYouTookOff() async throws {
+        let (store, changes, azure) = live()
+        let record = try #require(store.record(for: key))
+        let page = "pull requests in window 1"
+        let following = Task { await changes.follow(key, on: page) }
+        try await Task.sleep(for: .milliseconds(20))
+        let tag = try #require(record.tags?.first { $0.name == "deploy-eu" })
+        await changes.remove(tag, from: key)
+        #expect(changes.removed[key] == tag)
+        await changes.undoRemoval(on: key)
+        #expect(changes.removed[key] == nil)
+        #expect(azure.sent == [
+            .removeTag(PullRequestAddress(record.pullRequest), tag: "demo-tag-deploy-eu"),
+            .addTag(PullRequestAddress(record.pullRequest), name: "deploy-eu"),
+        ])
+        #expect(tags(store) == ["deploy-eu", "needs-qa"])
+
+        await changes.remove(tag, from: key)
+        #expect(changes.removed[key] != nil)
+        changes.dismissRemoval(on: key)
+        #expect(changes.removed[key] == nil)
+        await changes.remove(PullRequestTag("needs-qa", tagId: "demo-tag-needs-qa"), from: key)
+        #expect(changes.removed[key]?.name == "needs-qa")
+        following.cancel()
+        try await waitUntil { changes.removed[key] == nil }
+    }
+
     /// A change that fails says why, by the tags, which stay as they were; one that may have gone reads them again. Try
     /// Again sends it again.
     @Test func aChangeThatFailsSaysWhy() async throws {

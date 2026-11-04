@@ -32,6 +32,9 @@ final class TagChanges: ObservableObject {
     }
 
     @Published private(set) var states: [PRKey: State] = [:]
+    /// The tag you took off each pull request last, which Undo adds back: until its tags change again, you dismiss it, or
+    /// its details stop showing it.
+    @Published private(set) var removed: [PRKey: PullRequestTag] = [:]
     /// The changes on their way, by pull request, which turning the setting off, Azure DevOps stopping or someone else
     /// signing in calls off (`forgetAll`): one that hasn't gone never does.
     private var inFlight: [PRKey: Task<ADOWrite.Answer, Error>] = [:]
@@ -52,7 +55,7 @@ final class TagChanges: ObservableObject {
         let client = store.client
         send = { try await client.send($0) }
         readTags = { [weak store] key in await store?.readTags(key) }
-        // Turned off, the tags show neither + nor ✕, a change on its way is called off, what went wrong goes, and so do the
+        // Turned off, the tags show neither Add Tag nor ✕, a change on its way is called off, what went wrong goes, and so do the
         // tags you added, which nothing suggests anymore.
         settings.$makesChanges.removeDuplicates().dropFirst()
             .sink { [weak self] on in
@@ -89,6 +92,17 @@ final class TagChanges: ObservableObject {
         if case .failed? = states[key] { states[key] = nil }
     }
 
+    /// Dismisses the tag you took off, which Undo would add back.
+    func dismissRemoval(on key: PRKey) {
+        removed[key] = nil
+    }
+
+    /// Adds back the tag you took off last, as Undo does.
+    func undoRemoval(on key: PRKey) async {
+        guard let tag = removed[key] else { return }
+        await add(tag.name, to: key)
+    }
+
     /// What adding a tag to a pull request offers as you type (`TagChoices`): the tags you added in its project, then those of
     /// the pull requests BriefBar read there, but its own.
     func choices(for typed: String, on record: PRRecord) -> TagChoices {
@@ -106,6 +120,7 @@ final class TagChanges: ObservableObject {
         guard let name = PullRequestTag.name(typed), !isSending(key), let store, let record = store.record(for: key),
               canChange(record), let current = record.tags
         else { return false }
+        removed[key] = nil
         if let had = current.first(where: { $0.key == name.lowercased() }) {
             states[key] = nil
             SpokenText.announce("It has the tag \(had.name) already")
@@ -151,6 +166,7 @@ final class TagChanges: ObservableObject {
               current.contains(where: { $0.key == tag.key })
         else { return }
         let change = Change.remove(tag)
+        removed[key] = nil
         states[key] = .sending(change)
         do {
             switch store.mode {
@@ -168,6 +184,7 @@ final class TagChanges: ObservableObject {
             // it's as you wanted.
             if problem == .gone, case .success(let read)? = await readTags(key), !read.contains(where: { $0.key == tag.key }) {
                 states[key] = nil
+                removed[key] = tag
                 SpokenText.announce("Removed the tag \(tag.name)")
                 return
             }
@@ -175,7 +192,8 @@ final class TagChanges: ObservableObject {
             return
         }
         states[key] = nil
-        SpokenText.announce("Removed the tag \(tag.name)")
+        removed[key] = tag
+        SpokenText.announce("Removed the tag \(tag.name). Undo adds it back.")
     }
 
     /// Sends a change, while you can make changes, in a task that's called off as they go (`forgetAll`): before it goes, as
@@ -242,7 +260,11 @@ final class TagChanges: ObservableObject {
     func follow(_ key: PRKey, on page: String?) async {
         let follower = UUID()
         followers[follower] = (key, page)
-        defer { followers[follower] = nil }
+        defer {
+            followers[follower] = nil
+            // Nothing shows it anymore: Undo goes with its details.
+            if !followers.values.contains(where: { $0.key == key }) { removed[key] = nil }
+        }
         readIfNeeded(key, on: page)
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(3_600))
@@ -298,6 +320,7 @@ final class TagChanges: ObservableObject {
         for task in inFlight.values { task.cancel() }
         inFlight = [:]
         states = [:]
+        removed = [:]
         readAt = [:]
         failedAt = [:]
     }

@@ -76,8 +76,8 @@ struct MakeChangesSetting: View {
 
     static let title = "Make Changes in Azure DevOps"
     static let explanation = """
-        Adds Reply and a status menu to each comment thread in a pull request's details in BriefBar's window, and + and ✕ \
-        to its tags. BriefBar then writes these to Azure DevOps, as you, with your Azure CLI sign-in, and only when you \
+        Adds Reply and a status menu to each comment thread in a pull request's details in BriefBar's window, and Add Tag \
+        and ✕ to its tags. BriefBar then writes these to Azure DevOps, as you, with your Azure CLI sign-in, and only when you \
         click: your reply in a thread, a thread's status, such as Resolved or Won't Fix, and a tag you add to a pull \
         request or remove from it. Nothing else, and never by itself: otherwise it only reads. It remembers the tags you \
         add, for each project, to suggest them. Fix Grammar, in a reply, uses Apple Intelligence on this Mac unless you \
