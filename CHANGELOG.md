@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.14.1 - 2026-11-04
 
 - **What you write to Copilot in a pull request's details stays until you send it.** What you type in **Explain**,
   **Fix**, **Resolve** or **Fix All** is there again when you open it after a page opened over the details, such as its
