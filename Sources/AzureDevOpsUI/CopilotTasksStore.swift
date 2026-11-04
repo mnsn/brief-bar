@@ -490,7 +490,12 @@ final class CopilotTasksStore: ObservableObject {
                     }
                 }
                 rekey(id, to: run.id)
-                run.taken = kept
+                // What it took on as it got ready, less what a pass ended meanwhile (`endWorkOnBuildsThatPassed`).
+                if let entry = pending.first(where: { $0.id == run.id }) {
+                    run.taken = entry.taken
+                } else {
+                    run.taken = kept
+                }
                 // Going on with one of the Copilot app's sessions: its turn is the next, after any prompt sent it before.
                 if let continuing { overlap(promptsIn: continuing.id, before: now) }
                 startedHere.insert(run.id)
@@ -530,6 +535,17 @@ final class CopilotTasksStore: ObservableObject {
 
     /// A fork's send, by the ID BriefBar gave it until the CLI made the fork, goes by the fork's from then on. Only then
     /// does it say it's working, by the fork's ID, which the notification that says how it ended, or stopping it, replaces.
+    /// Lets go of what the sends getting ready took on that's over (`endWorkOnBuildsThatPassed`): each launches with what's
+    /// left.
+    func letGoPending(_ isOver: (TakenPart, CopilotTaskEntry) -> Bool) {
+        for index in pending.indices {
+            guard let taken = pending[index].taken else { continue }
+            let entry = pending[index]
+            let kept = taken.filter { !isOver($0, entry) }
+            if kept.count != taken.count { pending[index].taken = kept.isEmpty ? nil : kept }
+        }
+    }
+
     private func rekey(_ id: String, to fork: String) {
         guard fork != id else { return }
         var moved: CopilotTaskEntry?

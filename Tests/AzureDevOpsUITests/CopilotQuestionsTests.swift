@@ -76,6 +76,48 @@ import Testing
         #expect(unknown.isAbout(run: 204_418, attempt: nil))
     }
 
+    /// As the pull requests are read again, what was asked about a build's run that its details don't list any more, or about
+    /// another attempt of it, goes, as Ask More and Fix would build on it: not what's about a run as it is now, a thread, or
+    /// a pull request whose builds weren't read.
+    @Test func anAnswerAboutAnotherRunOrAttemptGoes() async throws {
+        let (questions, _) = questions()
+        questions.askForTests = { _, _ in .success("main broke it.") }
+        let finished = Date().addingTimeInterval(-600)
+        var record = try #require(DemoData.records(now: Date()).first { $0.id == key })
+        record.details?.checks = [Check(name: "payments-api CI", kind: .build, state: .failed, completedAt: finished, buildId: 7, definitionId: 31)]
+        func ask(run: Int) async throws {
+            questions.ask("Why?", asked: nil, session: session, about: .build(31), run: run, attempt: finished, of: key)
+            try await settle { questions.question(about: .build(31), run: run, of: key)?.isAsking == false }
+        }
+        try await ask(run: 7)
+        questions.ask("Why?", asked: nil, session: session, about: .thread(11), of: key)
+        try await settle { questions.question(about: .thread(11), of: key)?.isAsking == false }
+        questions.dismissStale(of: [record])
+        #expect(questions.question(about: .build(31), run: 7, of: key) != nil)
+        // Its builds not read, or its policies, as when they're forbidden: kept.
+        var unread = record
+        unread.details = nil
+        questions.dismissStale(of: [unread])
+        #expect(questions.question(about: .build(31), run: 7, of: key) != nil)
+        var forbidden = record
+        forbidden.details?.checks = []
+        forbidden.details?.checksKnown = false
+        questions.dismissStale(of: [forbidden])
+        #expect(questions.question(about: .build(31), run: 7, of: key) != nil)
+        // Its failed jobs ran again under the same ID.
+        record.details?.checks[0].completedAt = finished.addingTimeInterval(300)
+        questions.dismissStale(of: [record])
+        #expect(questions.question(about: .build(31), run: 7, of: key) == nil)
+        // A newer run replaced it, as after a push.
+        record.details?.checks[0].completedAt = finished
+        try await ask(run: 7)
+        record.details?.checks[0].buildId = 8
+        questions.dismissStale(of: [record])
+        #expect(questions.question(about: .build(31), run: 7, of: key) == nil)
+        // A thread's stays.
+        #expect(questions.question(about: .thread(11), of: key) != nil)
+    }
+
     @Test func saysWhyItCouldntAnswer() async throws {
         let (questions, _) = questions()
         questions.askForTests = { _, _ in .failure(.unsupported(version: "1.0.80")) }
