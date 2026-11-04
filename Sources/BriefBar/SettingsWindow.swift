@@ -178,6 +178,7 @@ struct GeneralPage: View {
 
             LinksSetting(links: model.services.links)
             StorySummariesSetting(summaries: model.services.summaries, links: model.services.links)
+            PullRequestOrderSettingView(order: model.services.pullRequestOrder) { model.agents.pullRequestOrderChanged($0) }
 
             NotificationsSetting(recent: model.services.recentNotifications)
 

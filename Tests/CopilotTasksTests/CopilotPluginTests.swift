@@ -4,16 +4,18 @@ import Foundation
 import Testing
 @testable import CopilotTasks
 
-/// BriefBar's plugins for Copilot, as they are in `Resources/CopilotPlugin`: a marketplace on this Mac with two plugins in
-/// the Agent Plugins 1.0 format. One has one skill, `/briefbar`, which names only BriefBar's tools and the app's that it
-/// uses; the other, only BriefBar's extension for the app's sessions. The build adds BriefBar's version to them
-/// (scripts/build-app.sh), and scripts/check-app.sh checks that.
+/// BriefBar's plugins for Copilot, as they are in `Resources/CopilotPlugin`: a marketplace on this Mac with three plugins
+/// in the Agent Plugins 1.0 format. One has one skill, `/briefbar`, which names only BriefBar's tools and the app's that it
+/// uses; another, only BriefBar's extension for the app's sessions; the third, only Pull Request Order's skill, which names
+/// only its tools. The build adds BriefBar's version to them (scripts/build-app.sh), and scripts/check-app.sh checks that.
 @Suite struct CopilotPluginTests {
     static let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent().appendingPathComponent("Resources/CopilotPlugin", isDirectory: true)
     static let plugin = folder.appendingPathComponent("briefbar", isDirectory: true)
     static let skill = plugin.appendingPathComponent("skills/briefbar/SKILL.md")
     static let sessions = folder.appendingPathComponent("briefbar-sessions", isDirectory: true)
+    static let order = folder.appendingPathComponent("briefbar-pr-order", isDirectory: true)
+    static let orderSkill = order.appendingPathComponent("skills/briefbar-pr-order/SKILL.md")
     /// The fields of a plugin's manifest that the CLI reads: it ignores anything else.
     static let manifestFields: Set<String> = [
         "$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords", "extensions",
@@ -27,6 +29,14 @@ import Testing
         "coordinate_with_creator", "notify_on_idle", "once", "send_session_message", "fork_session", "list_sessions_and_chats",
         "navigate_to",
     ]
+
+    /// Pull Request Order's tools, which `--demo --mcp` lists, as Pull Request Order is on there. Its own skill tells
+    /// agents about them, not `/briefbar`, which leaves them out.
+    static let orderTools: Set<String> = ["order_pull_requests", "pull_request_order", "forget_pull_request_order"]
+
+    /// What Pull Request Order's skill may name besides its tools, their arguments and values: the todos with dependencies
+    /// that a session keeps.
+    static let orderVocabulary: Set<String> = ["briefbar", "todo_deps", "todo_id", "depends_on"]
 
     static func object(_ url: URL) throws -> [String: Any] {
         try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any], "\(url.path) isn't a JSON object")
@@ -51,7 +61,7 @@ import Testing
             #expect(!((plugin["description"] as? String) ?? "").isEmpty, "\(name)")
         }
         #expect(Self.folder.lastPathComponent == CopilotPluginRegistration.folderName)
-        #expect(try Self.contents(Self.folder) == ["briefbar", "briefbar-sessions", "marketplace.json"])
+        #expect(try Self.contents(Self.folder) == ["briefbar", "briefbar-pr-order", "briefbar-sessions", "marketplace.json"])
     }
 
     @Test func pluginFollowsAgentPlugins() throws {
@@ -86,23 +96,51 @@ import Testing
         #expect(try Self.contents(folder.appendingPathComponent("briefbar-sessions")) == ["extension.mjs", "outbox.mjs"])
     }
 
-    @Test func skillIsNamedForItsCommand() throws {
-        let text = try String(contentsOf: Self.skill, encoding: .utf8)
-        let lines = text.components(separatedBy: "\n")
-        #expect(lines.first == "---")
-        let end = try #require(lines.dropFirst().firstIndex(of: "---"))
-        let fields = Dictionary(lines[1..<end].compactMap { line -> (String, String)? in
-            guard let colon = line.firstIndex(of: ":") else { return nil }
-            return (String(line[..<colon]), line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces))
-        }, uniquingKeysWith: { first, _ in first })
-        #expect(fields["name"] == "briefbar")
-        let description = try #require(fields["description"])
-        #expect(!description.isEmpty && description.count <= 1024)
-        // Plain YAML scalars: a colon followed by a space, or a space followed by #, would end them, and the skill
-        // wouldn't load.
-        for (field, value) in fields {
-            #expect(!value.contains(": ") && !value.contains(" #"), "The skill's \(field) isn't a plain YAML scalar")
+    @Test func skillsAreNamedForTheirCommands() throws {
+        for (skill, name) in [(Self.skill, "briefbar"), (Self.orderSkill, "briefbar-pr-order")] {
+            let text = try String(contentsOf: skill, encoding: .utf8)
+            let lines = text.components(separatedBy: "\n")
+            #expect(lines.first == "---")
+            let end = try #require(lines.dropFirst().firstIndex(of: "---"))
+            let fields = Dictionary(lines[1..<end].compactMap { line -> (String, String)? in
+                guard let colon = line.firstIndex(of: ":") else { return nil }
+                return (String(line[..<colon]), line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces))
+            }, uniquingKeysWith: { first, _ in first })
+            #expect(fields["name"] == name)
+            let description = try #require(fields["description"])
+            #expect(!description.isEmpty && description.count <= 1024)
+            // Plain YAML scalars: a colon followed by a space, or a space followed by #, would end them, and the skill
+            // wouldn't load.
+            for (field, value) in fields {
+                #expect(!value.contains(": ") && !value.contains(" #"), "\(name)'s \(field) isn't a plain YAML scalar")
+            }
         }
+    }
+
+    /// Pull Request Order's plugin holds only its skill, which BriefBar installs only once you turn Pull Request Order on:
+    /// until then, no session sees it.
+    @Test func orderPluginHoldsOnlyItsSkill() throws {
+        let manifest = try Self.object(Self.order.appendingPathComponent("plugin.json"))
+        #expect(manifest["$schema"] as? String == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json")
+        #expect(manifest["name"] as? String == CopilotPluginRegistration.Plugin.order.rawValue)
+        #expect(manifest["version"] == nil)
+        #expect(((manifest["description"] as? String) ?? "").contains("when you turn on Pull Request Order"))
+        #expect(Set(manifest.keys).isSubset(of: Self.manifestFields), "\(Set(manifest.keys).subtracting(Self.manifestFields))")
+        #expect(try Self.contents(Self.order) == ["plugin.json", "skills"])
+        #expect(try Self.contents(Self.order.appendingPathComponent("skills")) == ["briefbar-pr-order"])
+    }
+
+    /// Without its tools, as when Pull Request Order or agents are off, the skill does nothing, and never asks the user to
+    /// turn it on; when they refuse, it stops; and it says BriefBar has an order only once BriefBar said so.
+    @Test func orderSkillDoesNothingWithoutItsTools() throws {
+        let points = Self.points(in: try String(contentsOf: Self.orderSkill, encoding: .utf8)).map { $0.lowercased() }
+        let absent = try #require(points.first { $0.contains("`order_pull_requests` isn't there") })
+        #expect(absent.contains("do nothing more") && absent.contains("never ask them to"))
+        #expect(absent.contains("never change briefbar's settings or files"))
+        let refused = try #require(points.first { $0.contains("pull request order is off in briefbar") })
+        #expect(refused.contains("stop there"))
+        let told = try #require(points.first { $0.contains("best effort") })
+        #expect(told.contains("only once `order_pull_requests` answered"))
     }
 
     /// The skill's points, each a line starting with "- " and the indented lines right after it.
@@ -267,22 +305,42 @@ import Testing
         let tools = try await Self.listedTools()
         let names = Set(tools.compactMap { $0["name"] as? String })
         #expect(names.isSuperset(of: ["needs_me", "pull_request_prompt", "copilot_sessions"]))
+        #expect(names.isSuperset(of: Self.orderTools))
         // Their arguments, and the values those take.
-        var arguments: Set<String> = []
-        for tool in tools {
-            let properties = (tool["inputSchema"] as? [String: Any])?["properties"] as? [String: [String: Any]] ?? [:]
-            for (name, schema) in properties {
-                arguments.insert(name)
-                arguments.formUnion(schema["enum"] as? [String] ?? [])
-            }
-        }
+        let arguments = tools.reduce(into: Set<String>()) { $0.formUnion(Self.vocabulary(of: $1["inputSchema"])) }
         let text = try String(contentsOf: Self.skill, encoding: .utf8)
         let named = Set(text.matches(of: /`([a-z][a-z0-9_]*)`/).map { String($0.output.1) })
         let unknown = named.subtracting(names).subtracting(arguments).subtracting(Self.appVocabulary)
         #expect(unknown.isEmpty, "The skill names what neither BriefBar nor the app has: \(unknown.sorted())")
-        // And it tells agents about every tool.
-        let missing = names.filter { !text.contains("`\($0)`") }
+        // And it tells agents about every tool but Pull Request Order's.
+        let missing = names.subtracting(Self.orderTools).filter { !text.contains("`\($0)`") }
         #expect(missing.isEmpty, "The skill doesn't mention \(missing.sorted())")
+    }
+
+    /// Pull Request Order's skill names only its tools, what they take, and a session's todos, and tells agents about
+    /// every one of its tools.
+    @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    func orderSkillNamesOnlyItsTools() async throws {
+        let tools = try await Self.listedTools().filter { Self.orderTools.contains($0["name"] as? String ?? "") }
+        #expect(Set(tools.compactMap { $0["name"] as? String }) == Self.orderTools)
+        let arguments = tools.reduce(into: Set<String>()) { $0.formUnion(Self.vocabulary(of: $1["inputSchema"])) }
+        let text = try String(contentsOf: Self.orderSkill, encoding: .utf8)
+        let named = Set(text.matches(of: /`([a-z][a-z0-9_]*)`/).map { String($0.output.1) })
+        let unknown = named.subtracting(Self.orderTools).subtracting(arguments).subtracting(Self.orderVocabulary)
+        #expect(unknown.isEmpty, "Pull Request Order's skill names what its tools don't have: \(unknown.sorted())")
+        let missing = Self.orderTools.filter { !text.contains("`\($0)`") }
+        #expect(missing.isEmpty, "Pull Request Order's skill doesn't mention \(missing.sorted())")
+    }
+
+    /// The names of a tool's arguments, at any depth, and the values they take.
+    static func vocabulary(of schema: Any?) -> Set<String> {
+        guard let schema = schema as? [String: Any] else { return [] }
+        var names = Set(schema["enum"] as? [String] ?? [])
+        for (name, property) in schema["properties"] as? [String: Any] ?? [:] {
+            names.insert(name)
+            names.formUnion(vocabulary(of: property))
+        }
+        return names.union(vocabulary(of: schema["items"]))
     }
 }
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **See the order your pull requests merge in, By Mission.** Turn on **Pull Request Order** in Settings, and the
+  window's Pull Requests pages, Azure DevOps' and GitHub's, can list them **By Mission**: the pull requests that go
+  together, each mission a card with its pull requests in the order they merge, drawn as a graph beside them, a solid
+  line for stacked and a dashed one for merge after, with a bar of how many merged, the Copilot sessions it goes with
+  and a ★ to keep it on top. **Map** shows each mission in merge waves instead. Every row says where it stands, such as
+  **Next to merge** or **After !4102**, By Status too, where that turns orange on one that's ready to complete before
+  what it goes after, and clicking it shows its mission. The order comes from the stacks BriefBar sees, GitHub stacks
+  and pull requests that target each other's branches, and from what Copilot sessions tell it: with agents on, sessions
+  get tools to tell BriefBar an order, and Copilot a skill that says when to. It never changes a pull request's status,
+  What's Left or the menu bar. It's off until you turn it on; then GitHub also reads each pull request's base branch
+  and its place in a stack, and Copilot which pull request each session opened, as their descriptions say.
+
 ## 0.13.0 - 2026-11-04
 
 - **Ask Copilot about a failed build, right where you read it.** With Send Work to Copilot on, a build that failed in a

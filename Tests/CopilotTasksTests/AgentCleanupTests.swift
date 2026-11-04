@@ -43,6 +43,22 @@ import Testing
             == "It timed out.")
     }
 
+    /// Turning agents off removes Pull Request Order's skill too: what's left of it says why, once BriefBar is done trying.
+    @Test func reportsWhatsLeftOfTheOrdersSkill() {
+        let left = AgentCleanup(server: .absent, plugin: .absent, order: .failed("It timed out."))
+        #expect(!left.isDone)
+        #expect(left.order == "It timed out." && left.sessionPrompts == nil)
+        #expect(AgentCleanup(server: .absent, plugin: .absent, order: .installed(enabled: false)).order == "The Copilot CLI still has it.")
+        #expect(AgentCleanup(server: .absent, plugin: .absent, order: .absent).isDone)
+
+        let done = CopilotCLIProgress<CopilotPluginRegistration.Status>(status: .absent)
+        var removing = CopilotCLIProgress<CopilotPluginRegistration.Status>()
+        let asked = removing.ask()
+        #expect(AgentCleanup.left(server: CopilotCLIProgress(status: .absent), plugin: done, sessionPrompts: done, order: removing) == nil)
+        removing.answer(asked, with: .failed("It timed out."))
+        #expect(AgentCleanup.left(server: CopilotCLIProgress(status: .absent), plugin: done, order: removing)?.order == "It timed out.")
+    }
+
     /// The CLI can't remove the plugin's marketplace when agents are turned off, so the page says why; Try Again removes
     /// what's left, and then nothing is.
     @Test func tryingAgainRemovesWhatsLeft() async {

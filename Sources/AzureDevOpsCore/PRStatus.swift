@@ -854,7 +854,7 @@ public enum PROrdering {
     /// In the order you chose: by status, as `sorted`; or by when each was created, whatever its group.
     public static func sorted(_ snapshots: [PRSnapshot], by order: PROrder) -> [PRSnapshot] {
         switch order {
-        case .status:
+        case .status, .byMission:
             return sorted(snapshots)
         case .newestFirst, .oldestFirst:
             let newestFirst = order == .newestFirst
@@ -872,7 +872,8 @@ public enum PROrdering {
     }
 }
 
-/// How the pull requests are listed: by what each needs from you, or by when each was created.
+/// How the pull requests are listed: by what each needs from you, or by when each was created; or, on a window's page while
+/// Pull Request Order is on, the ones that go together, in the order they merge.
 public enum PROrder: String, Sendable, Codable, CaseIterable {
     /// In their groups, Needs You first, the most recent first in each.
     case status
@@ -880,9 +881,12 @@ public enum PROrder: String, Sendable, Codable, CaseIterable {
     case newestFirst
     /// By when each was created, the ones open longest first.
     case oldestFirst
+    /// The pull requests that go together, as missions, in the order they merge, and the rest by status: on a window's
+    /// page, while Pull Request Order is on. Elsewhere, and while it's off, by status.
+    case byMission
 
     /// Whether the list is by when they were created, rather than in their groups.
-    public var isByDate: Bool { self != .status }
+    public var isByDate: Bool { self == .newestFirst || self == .oldestFirst }
 }
 
 public struct GroupCounts: Sendable, Equatable, Codable {

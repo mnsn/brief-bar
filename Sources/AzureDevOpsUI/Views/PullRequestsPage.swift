@@ -4,31 +4,41 @@ import BriefBarUI
 import SwiftUI
 
 /// The Pull Requests section's page in a window: the popover's groups, each in a card, with room for every detail; or, by
-/// date, every open pull request in one. A click on one shows its details beside the list, as wide as you drag them, or
-/// over it when the window is narrow.
+/// date, every open pull request in one; or, with Pull Request Order on, By Mission. A click on one shows its details beside
+/// the list, as wide as you drag them, or over it when the window is narrow.
 struct PullRequestsPage: View {
     /// The order to list them in, for pictures; nil for the one you chose.
     var order: PROrder? = nil
+    /// By Mission's view, for pictures; nil for the one you chose.
+    var view: OrderView? = nil
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var details: PullRequestDetailsStore
+    @EnvironmentObject private var ordering: PullRequestOrder
     @Environment(\.interfaceOptions) private var options
 
     @LocalState private var showIdle = false
 
     private static let shownGroups: [PRGroup] = [.needsYou, .answered, .failing, .ready, .toReview, .waiting, .done]
 
-    private var shownOrder: PROrder { order ?? settings.pullRequestOrder }
+    /// By Mission only while Pull Request Order is on: by status otherwise.
+    private var shownOrder: PROrder {
+        let chosen = order ?? settings.pullRequestOrder
+        return chosen == .byMission && !ordering.isOn ? .status : chosen
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             PageHeader(title: "Pull Requests", subtitle: subtitle) {
                 PageRefreshStatus(page: .pullRequests)
-                PullRequestOrderMenu(order: shownOrder, showsTitle: true)
+                PullRequestOrderMenu(order: shownOrder, showsTitle: true, offersByMission: ordering.isOn)
                     .menuStyle(.button)
                     .glassButtonStyle()
                     .fixedSize()
+                if shownOrder == .byMission {
+                    OrderViewPicker(order: ordering, shown: view)
+                }
                 Button {
                     store.openPullRequestsPage()
                 } label: {
@@ -48,27 +58,47 @@ struct PullRequestsPage: View {
         PageScroll {
             VStack(alignment: .leading, spacing: 18) {
                 notices
-                if store.showsBrief, !options.compactBriefs {
+                // By Mission has no group to put a compact brief in: it shows above the missions.
+                if store.showsBrief, !options.compactBriefs || shownOrder == .byMission {
                     BriefView()
                         .padding(.horizontal, -4)
                 }
-                if shownOrder.isByDate {
+                if shownOrder == .byMission {
+                    PullRequestsByMission(
+                        view: view ?? ordering.view, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
+                        isSelected: isSelected, select: select, rest: { AnyView(groups($0, showsBrief: false)) }
+                    )
+                } else if shownOrder.isByDate {
                     byDate
                 } else {
-                    ForEach(Self.shownGroups, id: \.self) { group in
-                        let items = store.items(in: group)
-                        if !items.isEmpty {
-                            section(group, items)
-                            if options.compactBriefs, store.showsBrief,
-                               group == Self.shownGroups.first(where: { !store.items(in: $0).isEmpty }) {
-                                BriefView().padding(.horizontal, -4)
-                            }
-                        }
-                    }
+                    groups(store.items)
                 }
                 idle
             }
         }
+    }
+
+    /// The groups, each in a card: every pull request By Status, or those in no mission By Mission.
+    /// - Parameter showsBrief: a compact brief goes after the first, unless the page shows it already.
+    private func groups(_ items: [PRSnapshot], showsBrief: Bool = true) -> some View {
+        let shown = Self.shownGroups.filter { group in items.contains { $0.group == group } }
+        return ForEach(shown, id: \.self) { group in
+            section(group, items.filter { $0.group == group })
+            if showsBrief, options.compactBriefs, store.showsBrief, group == shown.first {
+                BriefView().padding(.horizontal, -4)
+            }
+        }
+    }
+
+    /// Where a pull request stands in its mission, for its capsule, while Pull Request Order is on: from another list, a
+    /// click on it shows the mission By Mission.
+    private func rowOrder(_ item: PRSnapshot) -> OrderRowContext? {
+        guard ordering.isOn else { return nil }
+        let byMission = shownOrder == .byMission
+        return OrderRowContext.of(item.key.linkRef, in: ordering.missions, isReady: item.group == .ready, open: byMission ? nil : { key in
+            settings.pullRequestOrder = .byMission
+            ordering.reveal(key)
+        })
     }
 
     /// Shows a pull request's details, which sees it, as opening it does.
@@ -177,10 +207,7 @@ struct PullRequestsPage: View {
                 if index > 0 {
                     Divider().padding(.leading, 44).padding(.trailing, 12)
                 }
-                PRRowView(
-                    item: item, now: store.now, showsActions: true, showsCreated: showsCreated, isSelected: isSelected(item),
-                    openSource: source(item), stopWatching: watching(item), dismiss: dismissing(item), showDetails: { select(item) }
-                ) { store.open(item) }
+                row(item, showsCreated: showsCreated)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
             }
@@ -189,9 +216,21 @@ struct PullRequestsPage: View {
         .background(GlassCard(cornerRadius: 18))
     }
 
+    /// - Parameter order: where it stands in the mission whose card it's in; nil elsewhere, for the one its capsule speaks
+    ///   for.
+    private func row(_ item: PRSnapshot, showsCreated: Bool = false, order: OrderRowContext? = nil) -> PRRowView {
+        PRRowView(
+            item: item, now: store.now, showsActions: true, showsCreated: showsCreated, isSelected: isSelected(item),
+            openSource: source(item), stopWatching: watching(item), dismiss: dismissing(item), showDetails: { select(item) },
+            order: order ?? rowOrder(item)
+        ) { store.open(item) }
+    }
+
     @ViewBuilder
     private var idle: some View {
-        let idle = store.items(by: shownOrder).filter { $0.group == .idle }
+        let idle = store.items(by: shownOrder).filter { item in
+            item.group == .idle && !(shownOrder == .byMission && PullRequestsByMission.isIn(missions, item))
+        }
         if !idle.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Button {
@@ -216,7 +255,7 @@ struct PullRequestsPage: View {
                         ForEach(idle) { item in
                             PRRowView(item: item, now: store.now, compact: true, showsActions: true, showsCreated: shownOrder.isByDate,
                                       isSelected: isSelected(item), openSource: source(item), stopWatching: watching(item),
-                                      showDetails: { select(item) }) { store.open(item) }
+                                      showDetails: { select(item) }, order: rowOrder(item)) { store.open(item) }
                                 .padding(.horizontal, 6)
                         }
                     }
@@ -225,6 +264,11 @@ struct PullRequestsPage: View {
                 }
             }
         }
+    }
+
+    /// The missions with its pull requests, By Mission.
+    private var missions: [OrderMission] {
+        PullRequestsByMission.missions(ordering.missions)
     }
 
     private func source(_ item: PRSnapshot) -> (() -> Void)? {

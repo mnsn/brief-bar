@@ -16,6 +16,11 @@
       "name": "briefbar-sessions",
       "description": "Lets BriefBar send a prompt to one of the GitHub Copilot app's sessions, or to a fork of it, when you ask: Send Prompts to Copilot Sessions, in BriefBar's Settings › Agents.",
       "source": "./briefbar-sessions"
+    },
+    {
+      "name": "briefbar-pr-order",
+      "description": "Lets the sessions that open pull requests together tell BriefBar the order those must merge in: Pull Request Order, in BriefBar's Settings.",
+      "source": "./briefbar-pr-order"
     }
   ]
 }

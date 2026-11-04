@@ -22,7 +22,11 @@ struct MenuPanelView: View {
     /// What Needs You's Mark as Seen does, in the popover and on the window's page.
     static let markAsSeenHelp = "You've seen these: what's new moves on, and comments that wait on you stay until you reply, they're resolved, or you remove them"
 
-    private var shownOrder: PROrder { order ?? settings.pullRequestOrder }
+    /// By Mission is a window's page's only: here, by status.
+    private var shownOrder: PROrder {
+        let chosen = order ?? settings.pullRequestOrder
+        return chosen == .byMission ? .status : chosen
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -282,19 +286,22 @@ struct PullRequestRow: View {
     }
 }
 
-/// Lists the pull requests by status, or by when each was created, newest or oldest first: in the list's header.
+/// Lists the pull requests by status, or by when each was created, newest or oldest first, or, on a window's page while
+/// Pull Request Order is on, By Mission: in the list's header.
 struct PullRequestOrderMenu: View {
     /// The order the list shows.
     let order: PROrder
     /// The order's name beside its symbol, on a window's page; the symbol alone in a popover.
     var showsTitle = false
+    /// By Mission among the choices: on a window's page, while Pull Request Order is on.
+    var offersByMission = false
 
     @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         Menu {
             Picker("Sort", selection: $settings.pullRequestOrder) {
-                ForEach(PROrder.allCases, id: \.self) { order in
+                ForEach(PROrder.allCases.filter { offersByMission || $0 != .byMission }, id: \.self) { order in
                     Text(order.title).tag(order)
                 }
             }
@@ -307,9 +314,17 @@ struct PullRequestOrderMenu: View {
                 Image(systemName: "arrow.up.arrow.down")
             }
         }
-        .help("Sort: \(order.title). By Status groups them by what they need from you; Newest First and Oldest First list them by when each was created")
+        .help(offersByMission ? Self.helpWithMissions(order) : Self.help(order))
         .accessibilityLabel("Sort Pull Requests")
         .accessibilityValue(order.title)
+    }
+
+    private static func help(_ order: PROrder) -> String {
+        "Sort: \(order.title). By Status groups them by what they need from you; Newest First and Oldest First list them by when each was created"
+    }
+
+    private static func helpWithMissions(_ order: PROrder) -> String {
+        help(order) + "; By Mission lists the ones that go together, in the order they merge"
     }
 }
 

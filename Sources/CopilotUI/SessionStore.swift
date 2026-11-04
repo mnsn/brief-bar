@@ -19,6 +19,9 @@ final class SessionStore: ObservableObject {
     @Published private(set) var tasks: [String: SentTask] = [:]
     /// The Copilot app is on this Mac. Without it, sessions are the Copilot CLI's, and open in a terminal (`CLISession`).
     @Published private(set) var appInstalled: Bool
+    /// The sessions that opened, or work on, a pull request the app recorded, with the sessions that started and coordinate
+    /// them, for Pull Request Order (`OrderSessions`): none unless the engine reads where each session's work goes.
+    @Published private(set) var orderSessions: [OrderSession] = []
 
     private let settings: AppSettings
     private let openSession: @MainActor (String) -> Void
@@ -32,7 +35,7 @@ final class SessionStore: ObservableObject {
     private var state = EngineSnapshot()
     private var ticker: Timer?
     private var cancellables: Set<AnyCancellable> = []
-    /// Show Links: the engine reads where each session's work goes too.
+    /// Show Links or Pull Request Order: the engine reads where each session's work goes too.
     private var readsLinks = false
 
     /// - Parameters:
@@ -127,6 +130,7 @@ final class SessionStore: ObservableObject {
         state = EngineSnapshot()
         sessions = []
         tasks = [:]
+        orderSessions = []
         counts = PhaseCounts()
         problem = nil
         hasLoaded = false
@@ -136,7 +140,7 @@ final class SessionStore: ObservableObject {
         engine?.refresh()
     }
 
-    /// Whether to read where each session's work goes too, for Show Links.
+    /// Whether to read where each session's work goes too, for Show Links and Pull Request Order.
     func setReadsLinks(_ reads: Bool) {
         readsLinks = reads
         engine?.setReadsLinks(reads)
@@ -201,6 +205,9 @@ final class SessionStore: ObservableObject {
         self.state = state
         hasLoaded = true
         updateProblem()
+        // Before the sessions, which Pull Request Order reads them with.
+        let orderSessions = OrderSessions.sessions(state.records.map(\.meta))
+        if orderSessions != self.orderSessions { self.orderSessions = orderSessions }
         recompute()
     }
 

@@ -8,6 +8,8 @@ struct PRRowView: View {
     let item: GitHubPRSnapshot
     let now: Date
     var compact = false
+    /// Where it stands in its mission, for its order capsule, on the window's Pull Requests page with Pull Request Order on.
+    var order: OrderRowContext? = nil
     var action: () -> Void
 
     @LocalState private var isHovered = false
@@ -65,6 +67,7 @@ struct PRRowView: View {
                                 .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.color)
                                 .lineLimit(1)
                             LinkCapsules(linkRef)
+                            if let order { OrderCapsule(order) }
                         }
                         Text(item.pullRequest.reference)
                             .font(size: options.rowDetailSize)
@@ -83,9 +86,12 @@ struct PRRowView: View {
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(item.pullRequest.title), \(item.headline)")
-        .accessibilityValue([item.detail, item.pullRequest.reference].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue([item.detail, item.pullRequest.reference, order?.sentence].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint("Opens the pull request on GitHub")
-        .accessibilityActions { SummarizeMenuItems(linkRef, divided: false) }
+        .accessibilityActions {
+            SummarizeMenuItems(linkRef, divided: false)
+            if let open = order?.open { Button("Show Its Mission", action: open) }
+        }
         .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) {
             SummarizeMenuItems(linkRef)
             LinkMenuItems(linkRef)

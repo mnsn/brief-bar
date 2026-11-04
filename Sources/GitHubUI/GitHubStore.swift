@@ -31,6 +31,8 @@ final class GitHubStore: ObservableObject {
     let settings: AppSettings
     /// The GitHub CLI's tokens, made when it starts; tests give it a CLI that isn't there.
     private let makeTokens: () -> GitHubCLITokenProvider
+    /// Whether Pull Request Order is on: each read then sends the order's query, which reads what an order needs too.
+    var ordersOn: () -> Bool = { false }
     /// While it runs: they're made by `start()`, so nothing runs `gh` or connects before then.
     private(set) var tokens: GitHubCLITokenProvider?
     private var client: GitHubClient?
@@ -58,7 +60,7 @@ final class GitHubStore: ObservableObject {
         now = Date()
         switch mode {
         case .demo:
-            receive(GitHubDemoData.load(now: now))
+            receive(GitHubDemoData.load(now: now, order: ordersOn()))
         case .live:
             let tokens = makeTokens()
             self.tokens = tokens
@@ -122,10 +124,11 @@ final class GitHubStore: ObservableObject {
         lastAttempt = Date()
         isRefreshing = true
         let generation = self.generation
+        let order = ordersOn()
         task = Task { [weak self] in
             let result: Result<GitHubLoad, Error>
             do {
-                result = .success(try await GitHubReader.load(client: client))
+                result = .success(try await GitHubReader.load(client: client, order: order))
             } catch {
                 result = .failure(error)
             }
@@ -136,6 +139,24 @@ final class GitHubStore: ObservableObject {
             case .success(let load): self.receive(load)
             case .failure(let error): self.fail(error)
             }
+        }
+    }
+
+    /// Pull Request Order was turned on or off: read again now, with its query or without it. A read under way used the
+    /// setting as it was, so it's called off, and what it would have read goes nowhere.
+    func orderChanged() {
+        guard isStarted else { return }
+        switch mode {
+        case .demo:
+            receive(GitHubDemoData.load(now: Date(), order: ordersOn()))
+        case .live:
+            if let task {
+                generation += 1
+                task.cancel()
+                self.task = nil
+                isRefreshing = false
+            }
+            refresh()
         }
     }
 
@@ -184,10 +205,10 @@ final class GitHubStore: ObservableObject {
     func loadOnce() async {
         switch mode {
         case .demo:
-            receive(GitHubDemoData.load())
+            receive(GitHubDemoData.load(order: ordersOn()))
         case .live:
             do {
-                receive(try await GitHubReader.load(client: GitHubClient(tokens: makeTokens())))
+                receive(try await GitHubReader.load(client: GitHubClient(tokens: makeTokens()), order: ordersOn()))
             } catch {
                 fail(error)
             }

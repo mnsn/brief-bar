@@ -518,7 +518,7 @@ import Testing
 
     /// As turning agents off does, one after the other: then nothing of BriefBar's is left.
     @Test func removesBothOneAfterTheOther() async {
-        for first in CopilotPluginRegistration.Plugin.allCases {
+        for first: CopilotPluginRegistration.Plugin in [.skill, .sessions] {
             let cli = CLI(Self.both())
             let second: CopilotPluginRegistration.Plugin = first == .skill ? .sessions : .skill
             #expect(await cli.registration(plugin: first).remove() == .absent, "\(first)")

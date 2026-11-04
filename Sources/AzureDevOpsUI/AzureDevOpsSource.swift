@@ -110,6 +110,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var threadChanges: ThreadChanges?
     /// Pull requests' tags as you change them, with Make Changes in Azure DevOps on, and the tags their lists don't carry.
     private var tagChanges: TagChanges?
+    /// Tells Pull Request Order what Azure DevOps shows, while it's on.
+    private var orderFacts: PullRequestOrderFacts?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     /// For `--render`: a pull request's details with a build open, one that failed and one still going.
@@ -167,6 +169,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             .environmentObject(copilot)
             .environmentObject(settings)
             .environmentObject(services)
+            .environmentObject(services.pullRequestOrder)
             .environmentObject(services.loginItem))
     }
 
@@ -348,6 +351,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         pipelines?.start()
         copilot?.start()
         workLinks?.start()
+        orderFacts = PullRequestOrderFacts(
+            order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails
+        ).started()
         // Your name, as your pull requests have it, for a summary to call you "you".
         services.summaries.setYourName(.azureDevOps) { [weak store] in store?.reader }
         // The tasks sent to Copilot, for its list to show with your sessions: as they go, and with the titles the lists
@@ -404,6 +410,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         pipelines?.stop()
         copilot?.stop()
         workLinks?.stop()
+        orderFacts?.stop()
         details?.stop()
         pullRequestDetails?.stop()
         buildInvestigations?.stop()
@@ -420,6 +427,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         pipelines = nil
         copilot = nil
         workLinks = nil
+        orderFacts = nil
         details = nil
         pullRequestDetails = nil
         buildInvestigations = nil
@@ -453,6 +461,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         services.links.forget(.azureDevOps)
         // The tags you added, which adding one suggested.
         settings.usedTags = UsedTags()
+        // Its pull requests' places in orders, and what BriefBar saw become of them.
+        services.pullRequestOrder.forget(.azureDevOps)
         // What Copilot printed for each task: the demo never wrote any, and mustn't delete yours.
         if !services.isDemo {
             CopilotTasksStore.deleteOutput()
@@ -748,6 +758,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         await loadChangesForRendering(store: store)
         await pipelines?.loadOnce()
         await workLinks?.loadOnce()
+        orderFacts = PullRequestOrderFacts(
+            order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails
+        ).loadOnce()
         // Before Copilot's list loads, which shows them with the sessions.
         publishSentTasks()
         // The Copilot sessions of the pull requests whose details are drawn, read once: the first of yours that needs you,
@@ -868,6 +881,9 @@ package final class AzureDevOpsSource: BriefBarSource {
                 .environment(\.isRendering, true)
             renderings += [(name: "pull-requests-oldest-first", view: environment(panel)),
                            (name: "pull-requests-oldest-first-page", view: environment(page))]
+        }
+        if let store {
+            renderings += PullRequestsByMission.renderings(store: store, services: services) { self.environment($0) }
         }
         return renderings
     }

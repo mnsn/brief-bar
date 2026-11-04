@@ -12,6 +12,7 @@ final class AppSettings: ObservableObject {
 
     enum Key {
         static let refreshMinutes = "github.refreshMinutes"
+        static let listsByMission = "github.listsByMission"
     }
 
     private let defaults: UserDefaults
@@ -21,10 +22,18 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(refreshMinutes, forKey: Key.refreshMinutes) }
     }
 
+    // MARK: Pull Request Order
+
+    /// The window's Pull Requests page lists them By Mission, while Pull Request Order is on; by status otherwise.
+    @Published var listsByMission: Bool {
+        didSet { defaults.set(listsByMission, forKey: Key.listsByMission) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let minutes = defaults.integer(forKey: Key.refreshMinutes)
         refreshMinutes = Self.refreshChoices.contains { $0.minutes == minutes } ? minutes : Self.defaultRefreshMinutes
+        listsByMission = defaults.bool(forKey: Key.listsByMission)
     }
 
     var refreshInterval: TimeInterval { TimeInterval(refreshMinutes * 60) }
