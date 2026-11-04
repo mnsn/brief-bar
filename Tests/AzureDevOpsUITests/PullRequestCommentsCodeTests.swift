@@ -53,10 +53,12 @@ import Testing
         return AnyView(
             PullRequestCommentsSection(
                 item: item, panel: PullRequestPanel(item, record: record), pullRequest: record.pullRequest, me: record.me,
-                place: nil, highlighted: nil, composing: .constant(nil), drafts: CopilotDrafts(), held: .constant([:])
+                place: nil, highlighted: nil, composing: .constant(nil), drafts: CopilotDrafts()
             )
             .environmentObject(list)
             .environmentObject(code)
+            // Where the threads you changed were.
+            .environmentObject(DetailsDrafts())
             // Copilot's part in its threads, which Send Work to Copilot, off, leaves out.
             .environmentObject(copilot)
             .environmentObject(sessions)

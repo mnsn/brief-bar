@@ -533,8 +533,6 @@ final class CopilotTasksStore: ObservableObject {
         }
     }
 
-    /// A fork's send, by the ID BriefBar gave it until the CLI made the fork, goes by the fork's from then on. Only then
-    /// does it say it's working, by the fork's ID, which the notification that says how it ended, or stopping it, replaces.
     /// Lets go of what the sends getting ready took on that's over (`endWorkOnBuildsThatPassed`): each launches with what's
     /// left.
     func letGoPending(_ isOver: (TakenPart, CopilotTaskEntry) -> Bool) {
@@ -546,6 +544,8 @@ final class CopilotTasksStore: ObservableObject {
         }
     }
 
+    /// A fork's send, by the ID BriefBar gave it until the CLI made the fork, goes by the fork's from then on. Only then
+    /// does it say it's working, by the fork's ID, which the notification that says how it ended, or stopping it, replaces.
     private func rekey(_ id: String, to fork: String) {
         guard fork != id else { return }
         var moved: CopilotTaskEntry?

@@ -136,26 +136,35 @@ struct BuildWorkLine: View {
         // Under its name and status.
         .padding(.leading, 24)
         .padding(.top, shown?.isEmpty == false ? 6 : 0)
-        // VoiceOver hears what became of them as it happens, wherever they are: not what shows as they're read.
+        // VoiceOver hears what became of them as it happens, wherever they are: not what shows as they're read. Once, though
+        // the build shows in more than one place, or on two rows, as when two policies run its pipeline.
         .onChange(of: work?.state) { old, state in
             guard let old, CopilotWork.isOngoing(old), let work, let state else { return }
             switch state {
             case .done, .failed, .stopped, .needsYou:
-                SpokenText.announce("\(line.run.name): \(names.announcement(work))")
+                let said = names.announcement(work)
+                SpokenText.announce(
+                    "\(line.run.name): \(said)", once: .init(pullRequest: item.key, part: work.part, said: said, since: work.since)
+                )
             case .waiting, .working, .unknown:
                 break
             }
         }
         .onChange(of: question?.state) { old, state in
-            guard old == .asking, let question else { return }
+            guard old == .asking, let question, let part = line.check?.part else { return }
+            let said: String
             switch state {
             case .answered?:
-                SpokenText.announce("\(line.run.name): \(SpokenText.unquoted(names.place(question.session))) answered")
+                said = "\(SpokenText.unquoted(names.place(question.session))) answered"
             case .failed(let failure)?:
-                SpokenText.announce("\(line.run.name): couldn't explain it. \(failure.message(model: nil))")
+                said = "couldn't explain it. \(failure.message(model: nil))"
             case .asking?, nil:
-                break
+                return
             }
+            SpokenText.announce(
+                "\(line.run.name): \(said)",
+                once: .init(pullRequest: item.key, part: part, run: line.buildId, said: said, since: question.endedAt ?? question.askedAt)
+            )
         }
     }
 

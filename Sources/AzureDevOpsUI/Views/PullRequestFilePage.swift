@@ -21,9 +21,6 @@ struct PullRequestFilePage: View {
     let open: PullRequestDetailsStore.OpenFile
     /// Scrolls the details, which hold it, to a thread.
     let scroll: ScrollViewProxy
-    /// The threads you changed in the details, where each was as you first did, which the details keep as you go from its
-    /// comments to a file's page and back: each stays where it was, unfolded, however it stands now.
-    @Binding var held: [Int: PullRequestPanel.Thread.Held]
     /// Where the threads you marked as read in the details were then, which they stay at too, unless you changed them first.
     var readHolds: [Int: PullRequestPanel.Thread.Held] = [:]
     /// Which threads show, as you chose in the details' comments: all of them, or only the active ones; and All, from the
@@ -36,6 +33,10 @@ struct PullRequestFilePage: View {
     @EnvironmentObject private var files: PullRequestFilesStore
     @EnvironmentObject private var code: PullRequestCodeStore
     @EnvironmentObject private var store: PRStore
+    /// The threads you changed in the details, where each was as you first did, which the details keep as you go from its
+    /// comments to a file's page and back, and as other pages show over them: each stays where it was, unfolded, however it
+    /// stands now (`DetailsDrafts.held`).
+    @EnvironmentObject private var kept: DetailsDrafts
     @Environment(\.detailsRoom) private var room
     @Environment(\.shownSection) private var section
     @Environment(\.shownWindow) private var window
@@ -54,7 +55,8 @@ struct PullRequestFilePage: View {
     @LocalState private var unfoldedResolved: Set<Int> = []
     /// The threads it was taken to, which show with Active too, whatever their status.
     @LocalState private var revealedThreads: Set<Int> = []
-    /// The composer in place that's open on its threads, one at a time, and what you wrote in each.
+    /// The composer in place that's open on its threads, one at a time, and what each sends: what you wrote in each is the
+    /// details' (`DetailsDrafts`), the same as in their comments.
     @LocalState private var composing: CopilotComposing?
     @LocalState private var drafts = CopilotDrafts()
     /// VoiceOver goes to the file's name as its page opens, and as it goes to another file.
@@ -69,8 +71,8 @@ struct PullRequestFilePage: View {
     static let widestThread: CGFloat = 720
 
     /// The threads you changed in the details, and those you marked as read there, each where it was as you first did.
-    private var kept: [Int: PullRequestPanel.Thread.Held] {
-        PullRequestPanel.Thread.Held.kept(changed: held, read: readHolds)
+    private var holding: [Int: PullRequestPanel.Thread.Held] {
+        PullRequestPanel.Thread.Held.kept(changed: kept.held(in: item.key), read: readHolds)
     }
 
     /// The window's page it's on: nil outside one, where nothing is read.
@@ -90,11 +92,11 @@ struct PullRequestFilePage: View {
         let state = pullRequest.flatMap { files.list(of: $0.key, open.scope) }
         let threadFile = threadFile(state)
         // The thread it goes to shows, and stays once it's there.
-        let listing = threads.listed(filter, holding: kept, revealing: revealedThreads.union([open.thread].compactMap { $0 }))
+        let listing = threads.listed(filter, holding: holding, revealing: revealedThreads.union([open.thread].compactMap { $0 }))
         let shown: Shown? = if let pullRequest, case .read(let changes)? = state,
             let file = threadFile ?? changes.file(atPath: open.path) {
             Shown(
-                file: file, changes: changes, threads: listing.shown, hidden: listing.hidden, held: kept,
+                file: file, changes: changes, threads: listing.shown, hidden: listing.hidden, held: holding,
                 diff: diff(of: file, in: changes, pullRequest)
             )
         } else {
@@ -821,12 +823,12 @@ struct PullRequestFilePage: View {
     /// An open thread's card; a resolved one folded to a line, until you unfold it.
     @ViewBuilder
     private func threadView(_ thread: PullRequestPanel.Thread, showsCode: Bool) -> some View {
-        if Shown.isOpen(thread) || unfoldedResolved.contains(thread.id) || kept[thread.id] != nil {
+        if Shown.isOpen(thread) || unfoldedResolved.contains(thread.id) || holding[thread.id] != nil {
             ThreadCard(
                 thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now, isHighlighted: highlighted == thread.id,
                 composing: $composing, drafts: drafts, showsCode: showsCode,
                 // Resolved as you change it, it stays where it was, unfolded.
-                hold: { held[$0.id] = .holding($0, changed: held, read: readHolds) }, reading: reading
+                hold: { kept.hold($0, in: item.key, read: readHolds) }, reading: reading
             )
         } else {
             ResolvedThreadLine(thread: thread) {

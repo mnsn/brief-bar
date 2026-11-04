@@ -20,15 +20,16 @@ struct PullRequestCommentsSection: View {
     /// The thread the details just went to, pointed out for a moment.
     let highlighted: PullRequestDetailsStore.Anchor?
     /// The composer in place that's open in the details, one at a time in them, so Esc, Return and the keyboard's focus are
-    /// its own; and what you wrote in each.
+    /// its own; and what each sends.
     @Binding var composing: CopilotComposing?
     let drafts: CopilotDrafts
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var code: PullRequestCodeStore
     /// The threads you changed in the details, with your reply or their statuses, where each was as you first did: they
-    /// stay there, however they stand now, while the details show the pull request, which keep them as a file's page shows.
-    @Binding var held: [Int: PullRequestPanel.Thread.Held]
+    /// stay there, however they stand now, while the details show the pull request, which keep them as a file's page or
+    /// another page shows over them (`DetailsDrafts.held`).
+    @EnvironmentObject private var kept: DetailsDrafts
     /// Where the threads you marked as read there were then, which they stay at too, unless you changed them first.
     var readHolds: [Int: PullRequestPanel.Thread.Held] = [:]
     /// Which threads show, as you choose in the heading: all of them, or only the active ones (`AppSettings.commentFilter`).
@@ -41,8 +42,8 @@ struct PullRequestCommentsSection: View {
 
     var body: some View {
         let threads = panel.threads
-        let kept = PullRequestPanel.Thread.Held.kept(changed: held, read: readHolds)
-        let listing = threads.listed(filter.wrappedValue, holding: kept, revealing: revealed)
+        let holding = PullRequestPanel.Thread.Held.kept(changed: kept.held(in: item.key), read: readHolds)
+        let listing = threads.listed(filter.wrappedValue, holding: holding, revealing: revealed)
         let resolvedCount = listing.resolved.reduce(0) { $0 + $1.threads.count }
         VStack(alignment: .leading, spacing: 8) {
             // With Fix All, while comments wait on you on your pull request; and Active | All, once there are threads.
@@ -117,7 +118,7 @@ struct PullRequestCommentsSection: View {
                 ThreadCard(
                     thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now,
                     isHighlighted: highlighted == .thread(thread.id), composing: $composing, drafts: drafts,
-                    hold: { held[$0.id] = .holding($0, changed: held, read: readHolds) }, reading: reading
+                    hold: { kept.hold($0, in: item.key, read: readHolds) }, reading: reading
                 )
             }
         }
@@ -281,7 +282,7 @@ struct ThreadCard: View {
     let me: String?
     let now: Date
     let isHighlighted: Bool
-    /// The composer in place that's open in the comments, and what you wrote in each.
+    /// The composer in place that's open in the comments, and what each sends.
     @Binding var composing: CopilotComposing?
     let drafts: CopilotDrafts
     /// Whether it shows the code it's on: not on its file's page, around it already.
@@ -299,6 +300,10 @@ struct ThreadCard: View {
     @Environment(\.changedFileOpener) private var opener
     /// The comments folded between the first and the latest show.
     @LocalState private var isUnfolded = false
+    /// Its Reply takes the keyboard's focus back as its buttons show again, once your reply on it closes as the composer
+    /// open: with ✕ or Esc, or sent while you're still in it (`ThreadReplyArea`). Not once another composer opened
+    /// meanwhile, nor anywhere but in this card.
+    @LocalState private var refocusesReply = false
     /// VoiceOver goes to it as the details point it out, going to it or coming back to it.
     @AccessibilityFocusState private var isFocused: Bool
     /// How much wider its code's longest line is than the room it has.
@@ -317,7 +322,7 @@ struct ThreadCard: View {
             return AnyView(ThreadReadOnlyMark(reason: reason))
         }
         guard changes.canChange(pullRequest) else { return nil }
-        return AnyView(ThreadReplyButtons(thread: thread, item: item, composing: $composing, hold: hold))
+        return AnyView(ThreadReplyButtons(thread: thread, item: item, composing: $composing, refocuses: $refocusesReply, hold: hold))
     }
 
     /// The lines it's on, which its code shows.
@@ -339,7 +344,9 @@ struct ThreadCard: View {
             // What Copilot does about it, and, on an open one, Explain and Fix; and, with Make Changes in Azure DevOps on,
             // Reply and its status in their row, your reply open under it, or what went wrong with a change.
             ThreadCopilotActions(thread: thread, item: item, now: now, composing: $composing, drafts: drafts, yours: yours)
-            ThreadReplyArea(thread: thread, item: item, pullRequest: pullRequest, composing: $composing, hold: hold)
+            ThreadReplyArea(
+                thread: thread, item: item, pullRequest: pullRequest, composing: $composing, refocuses: $refocusesReply, hold: hold
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.04)))
@@ -390,6 +397,10 @@ struct ThreadCard: View {
         .onAppear { if isHighlighted { isFocused = true } }
         .onChange(of: isHighlighted) {
             if isHighlighted { isFocused = true }
+        }
+        // Another composer opened, or its own reply again: Reply doesn't take the keyboard's focus as its buttons show later.
+        .onChange(of: composing) { _, open in
+            if open != nil { refocusesReply = false }
         }
     }
 
@@ -798,13 +809,18 @@ private struct CommentLine: View {
 struct CommentBody: View, Equatable {
     let markdown: String
     let isQuiet: Bool
+    /// How many of its blocks show, from the first; all of them when nil (`RichTextView.shownBlocks`).
+    var shownBlocks: Int?
+    /// It says where each of its blocks starts (`RichTextBlockTops`).
+    var reportsBlockTops = false
 
     var body: some View {
-        RichTextView(text: RichText(markdown: markdown), size: 12.5)
+        RichTextView(text: RichText(markdown: markdown), size: 12.5, shownBlocks: shownBlocks, reportsBlockTops: reportsBlockTops)
             .foregroundStyle(isQuiet ? .secondary : .primary)
     }
 
     nonisolated static func == (lhs: CommentBody, rhs: CommentBody) -> Bool {
-        lhs.isQuiet == rhs.isQuiet && lhs.markdown.utf8.elementsEqual(rhs.markdown.utf8)
+        lhs.isQuiet == rhs.isQuiet && lhs.shownBlocks == rhs.shownBlocks && lhs.reportsBlockTops == rhs.reportsBlockTops
+            && lhs.markdown.utf8.elementsEqual(rhs.markdown.utf8)
     }
 }
