@@ -1841,7 +1841,8 @@ It stops waiting on you when:
   BriefBar wrote it, opening the composer (`CommentHandOff`). An entry is still there while its own line
   is, such as `1. src/Cart.cs, line 12 (thread 11)`: the prompt quotes comments word for word, each on
   an indented line, so one that names another thread doesn't count, and neither does a line in a fence,
-  such as one of a suggested change or of an earlier answer (`PullRequestPrompt.unfencedLines`). A comment that came after, while you
+  such as one of a suggested change or of an earlier answer, or one of backticks or tildes you add as you edit the
+  prompt (`PullRequestPrompt.unfencedLines`). A comment that came after, while you
   checked the prompt, say, isn't handed off, and neither is one in a thread whose entry isn't there,
   beyond the 30 it lists at most or deleted before you sent it, nor one in a thread reopened meanwhile.
   Since there's one cutoff, it then stops before the first comment that waits on you when the task
@@ -2103,7 +2104,8 @@ requests to Azure DevOps stay GETs: the programs it starts for you do the rest.
 
 **Sending.** The composer fills the prompt in from Settings (`PromptTemplate`: `{id}`, `{type}`,
 `{title}`, `{url}`, `{organization}`, `{project}` and `{baseBranch}`), each value on its placeholder's line, with
-what breaks a line, turns text around or hides it written out (`QuotedText.oneLine`), and remembers the repository
+what breaks a line, turns text around or hides it written out (`QuotedText.oneLine`), and the base branch in single
+quotes when a shell would read something in it, as a pull request's branches are (`QuotedText.commandWord`), and remembers the repository
 each project's work went in, by organization and project. Only a work item's prompt has `{baseBranch}` filled in as
 it starts: a pull request's has no placeholders, and goes as it is, so code it quotes that holds one, such as a
 suggested change, stays as it was written. Then BriefBar:

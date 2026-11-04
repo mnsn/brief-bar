@@ -249,6 +249,12 @@ import Testing
         let without = lines.joined(separator: "\n")
         #expect(PullRequestPrompt.threadsListed(in: without, among: [11]).isEmpty)
         #expect(handOff.handedOff(in: without) == nil)
+        // Nor in a fence of tildes you write as you edit the prompt, which backticks don't close; after it, it's one again.
+        let example = without + "\n~~~\n" + entry + "\n```\n~~~"
+        #expect(PullRequestPrompt.threadsListed(in: example, among: [11]).isEmpty)
+        #expect(handOff.handedOff(in: example) == nil)
+        #expect(PullRequestPrompt.threadsListed(in: example + "\n" + entry, among: [11]) == [11])
+        #expect(handOff.handedOff(in: example + "\n" + entry) == t(-hour))
     }
 
     /// A line that starts with what others wrote, a name before what its author said, or a build's hint that starts with

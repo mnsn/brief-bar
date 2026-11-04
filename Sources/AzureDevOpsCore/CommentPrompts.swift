@@ -270,13 +270,12 @@ extension PullRequestPrompt {
         QuotedText.fenced(text, indent: indent)
     }
 
-    /// A branch's name, which whoever made the branch chose, as a prompt writes it, in a sentence or in a command: in single
-    /// quotes when it has a character a shell reads, such as `$` or a backtick (`QuotedText.shellWord`), so that neither the
-    /// command the prompt writes with it nor one Copilot writes from it runs anything the name says; then on its line
-    /// (`oneLine`). Quoted, it starts with its quote, which no fence starts with, so a name that starts with backticks keeps
-    /// them, and the command names that branch. Empty stays empty.
+    /// A branch's name, which whoever made the branch chose, as a prompt writes it, in a sentence or in a command
+    /// (`QuotedText.commandWord`): in single quotes when it has a character a shell reads, such as `$` or a backtick, so
+    /// that neither the command the prompt writes with it nor one Copilot writes from it runs anything the name says; then
+    /// on its line, keeping backticks it starts with. Empty stays empty.
     static func branch(_ name: String) -> String {
-        name.isEmpty ? name : oneLine(QuotedText.shellWord(name))
+        QuotedText.commandWord(name)
     }
 
     /// What you wrote, quoted line by line as yours; nil when there's nothing.

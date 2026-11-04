@@ -41,6 +41,11 @@ import Testing
         #expect(QuotedText.shellWord("fix$(echo ran)") == "'fix$(echo ran)'")
         #expect(QuotedText.shellWord("it's") == #"'it'\''s'"#)
         #expect(QuotedText.shellWord("") == "''")
+        // As a prompt writes a branch: quoted, then on its line, so backticks it starts with stay.
+        #expect(QuotedText.commandWord("```topic") == "'```topic'")
+        #expect(QuotedText.commandWord("main\u{202E}") == "'main\\u{202E}'")
+        #expect(QuotedText.commandWord("main") == "main")
+        #expect(QuotedText.commandWord("") == "")
         let texts = [
             "fix$(echo ran)", "a`echo ran`b", "it's", "x;echo ran|cat&", "$HOME", "{a,b}", "*", "~", "#x", #"a\nb"#, "ünï", "!x",
             "=ls", "a b", #""q""#, "a>b<c", "users/robin/fix-total",

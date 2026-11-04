@@ -313,18 +313,21 @@ public enum PullRequestPrompt {
     }
 
     /// The lines of a prompt outside its fences, where its own lines are: what it quotes in a fence (`fenced`), whatever
-    /// that says, isn't. A fence opens with a line of three backticks or more, and closes with one of as many or more and
-    /// nothing else, as CommonMark has it; the prompt's fences are longer than any run of backticks in what they quote.
+    /// that says, isn't, and neither is what you put in one of your own as you edit it. A fence opens with a line of three
+    /// backticks or tildes or more, and closes with one of as many or more of the same and nothing else, as CommonMark has
+    /// it; the prompt's fences are longer than any run of backticks in what they quote.
     static func unfencedLines(_ prompt: String) -> [Substring] {
         var lines: [Substring] = []
-        var open: Int?
+        var open: (mark: Character, length: Int)?
         for line in prompt.split(whereSeparator: \.isNewline) {
             let trimmed = line.drop { $0 == " " || $0 == "\t" }
-            let run = trimmed.prefix { $0 == "`" }.count
-            if let length = open {
-                if run >= length, trimmed.dropFirst(run).allSatisfy({ $0 == " " || $0 == "\t" }) { open = nil }
-            } else if run >= 3, !trimmed.dropFirst(run).contains("`") {
-                open = run
+            let mark = trimmed.first
+            let run = mark == "`" || mark == "~" ? trimmed.prefix { $0 == mark }.count : 0
+            let rest = trimmed.dropFirst(run)
+            if let fence = open {
+                if mark == fence.mark, run >= fence.length, rest.allSatisfy({ $0 == " " || $0 == "\t" }) { open = nil }
+            } else if run >= 3, let mark, mark == "~" || !rest.contains("`") {
+                open = (mark, run)
             } else {
                 lines.append(line)
             }

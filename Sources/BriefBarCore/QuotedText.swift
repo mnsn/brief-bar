@@ -81,6 +81,14 @@ public enum QuotedText {
         return plain ? text : "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
+    /// A word a prompt writes in a sentence or in a command, such as a branch's name, which whoever made the branch chose:
+    /// in single quotes when a shell would read something in it (`shellWord`), then on its line (`oneLine`). Quoted, it
+    /// starts with its quote, which no fence starts with, so a name that starts with backticks, as Git allows, keeps them,
+    /// and a command names that branch. Empty stays empty.
+    public static func commandWord(_ text: String) -> String {
+        text.isEmpty ? text : oneLine(shellWord(text))
+    }
+
     /// A line that starts, after its spaces, with three backticks or tildes or more, as a fence does, those with no width
     /// between them too, with the first of them written out, so it opens none. Any other line as it is.
     private static func withoutFenceAtStart(_ line: String) -> String {

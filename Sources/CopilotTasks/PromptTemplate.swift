@@ -6,8 +6,10 @@ import Foundation
 ///
 /// Placeholders: `{id}`, `{type}`, `{title}`, `{url}`, `{organization}`, `{project}` and `{baseBranch}`, the branch
 /// the worktree starts from. Others are left as they are. Each value stays on its placeholder's line, whatever a work
-/// item's title holds (`QuotedText.oneLine`), since Copilot runs the prompt with every tool. Only a work item's prompt is
-/// filled in: a pull request's has no placeholders, and quotes code that may look like one (`CopilotLauncher`).
+/// item's title holds (`QuotedText.oneLine`), since Copilot runs the prompt with every tool; and the base branch is in
+/// single quotes when a shell would read something in it, as a pull request's branches are (`QuotedText.commandWord`).
+/// Only a work item's prompt is filled in: a pull request's has no placeholders, and quotes code that may look like one
+/// (`CopilotLauncher`).
 public enum PromptTemplate {
     public static let standard = """
         Fix Azure DevOps {type} {id}: {title}
@@ -59,13 +61,13 @@ public enum PromptTemplate {
             "organization": QuotedText.oneLine(item.organization),
             "project": QuotedText.oneLine(item.project),
         ]
-        if let baseBranch { values["baseBranch"] = QuotedText.oneLine(baseBranch) }
+        if let baseBranch { values["baseBranch"] = QuotedText.commandWord(baseBranch) }
         return fill(template, values)
     }
 
     /// Fills in only the base branch, once the repository says which it is: in a prompt you may have edited.
     public static func render(_ prompt: String, baseBranch: String) -> String {
-        fill(prompt, ["baseBranch": QuotedText.oneLine(baseBranch)])
+        fill(prompt, ["baseBranch": QuotedText.commandWord(baseBranch)])
     }
 
     /// One pass over the text, so a value that looks like a placeholder, such as a title with braces, stays as it is.
