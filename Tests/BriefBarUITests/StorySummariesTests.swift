@@ -283,6 +283,44 @@ import Testing
         #expect(summaries.state(for: workItem) == nil)
     }
 
+    /// Counts what summaries said they'd change.
+    private final class Changes {
+        var count = 0
+    }
+
+    /// What's linked, and what's told of each, changing may put a written summary out of date, so what shows it looks
+    /// again: once, on the main actor's next turn, however much changed meanwhile. Never in the middle of AppKit's layout,
+    /// where views ask for stories as they update, and where each change marks their window for another pass, until AppKit
+    /// throws.
+    @Test func whatShowsASummaryLooksAgainOnceOnTheNextTurn() async throws {
+        let (links, stories, summaries) = hub()
+        publish(links)
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest]) { _ in ItemStory(sentence: "Ready to complete") }
+        summaries.write = writer(Asked())
+        await summaries.summarizeAndWait(workItem)
+        guard case .written? = summaries.state(for: workItem) else {
+            Issue.record("Not written")
+            return
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        let changes = Changes()
+        let watching = summaries.objectWillChange.sink { _ in changes.count += 1 }
+        defer { watching.cancel() }
+        publish(links, status: "Approved")
+        publish(links, status: "Completed")
+        stories.invalidate(pullRequest)
+        #expect(changes.count == 0)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(changes.count == 1)
+        // Without a summary written, there's nothing to look at again.
+        summaries.dismiss(workItem)
+        try await Task.sleep(for: .milliseconds(20))
+        changes.count = 0
+        publish(links, status: "Abandoned")
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(changes.count == 0)
+    }
+
     @Test func aSummaryWaitsForAStoryBeingToldAlready() async throws {
         let (links, stories, summaries) = hub()
         publish(links)
