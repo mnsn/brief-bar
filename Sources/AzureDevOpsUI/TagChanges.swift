@@ -40,7 +40,7 @@ final class TagChanges: ObservableObject {
     /// signing in calls off (`forgetAll`): one that hasn't gone never does.
     private var inFlight: [PRKey: Task<ADOWrite.Answer, Error>] = [:]
     /// How many times what was going on was called off (`forgetAll`): a change asked for before then does nothing more as
-    /// it comes back from what it waited for, though the setting is on again.
+    /// it comes back from what it waited for, though the setting is on again, but for showing what Azure DevOps answered.
     private var generation = 0
 
     let settings: AppSettings
@@ -64,21 +64,18 @@ final class TagChanges: ObservableObject {
         send = { try await client.send($0, as: $1) }
         readTags = { [weak store] key in await store?.readTags(key) }
         readAfterChange = { [weak store] key, tags in await store?.readTags(afterChanging: key, to: tags) }
-        // Turned off, the tags show neither Add Tag nor ✕, a change on its way is called off, what went wrong goes, and so do the
-        // tags you added, which nothing suggests anymore. A change called off may have gone all the same: its tags are read
-        // again, as for one that failed so.
+        // Turned off, the tags show neither Add Tag nor ✕, a change that hasn't gone yet is called off, what went wrong goes,
+        // and so do the tags you added, which nothing suggests anymore. One that has gone goes on, since Azure DevOps may make
+        // it all the same, and settles: the tags show what it answered, or, when it may have been made without saying so,
+        // they're read again then, not now, while Azure DevOps may still be making it.
         settings.$makesChanges.removeDuplicates().dropFirst()
             .sink { [weak self] on in
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.objectWillChange.send()
                     if !on {
-                        let calledOff = Array(self.inFlight.keys)
                         self.forgetAll()
                         self.settings.usedTags = UsedTags()
-                        for key in calledOff {
-                            Task { [weak self] in await self?.readAgain(key) }
-                        }
                     }
                 }
             }
@@ -184,8 +181,6 @@ final class TagChanges: ObservableObject {
             case .live:
                 let write = ADOWrite.addTag(PullRequestAddress(record.pullRequest), name: name)
                 let answer = try await dispatch(write, for: key, as: account, in: generation)
-                // Called off as it went: the tags show what was made, when they're read, and nothing more happens.
-                guard generation == self.generation else { return false }
                 if case .tag(let answered) = answer, let tag = PullRequestTag.tags([answered]).first {
                     // As Azure DevOps spells it, with the tags as they are now, which a refresh may have read meanwhile.
                     added = tag.name
@@ -197,13 +192,20 @@ final class TagChanges: ObservableObject {
                 }
             }
         } catch is CancellationError {
-            // Called off, as the setting was turned off or someone else signed in: nothing to say.
+            // Called off before it went, as the setting was turned off or someone else signed in: nothing to say.
             return false
         } catch {
-            guard generation == self.generation else { return false }
-            fail(key, ADOWriteProblem(error, now: now()), change)
+            let problem = ADOWriteProblem(error, now: now())
+            // Called off as it went: the tags say nothing, but once it's settled, they're read again when it may have been
+            // made, to show how they stand.
+            guard generation == self.generation else {
+                if problem.mayHaveGone { await readAgain(key) }
+                return false
+            }
+            fail(key, problem, change)
             return false
         }
+        // Called off as it went: the tags show what Azure DevOps answered, and nothing more happens.
         guard generation == self.generation else { return false }
         states[key] = nil
         // Suggested first from now on, in its project, while the setting's on.
@@ -238,7 +240,6 @@ final class TagChanges: ObservableObject {
             case .live:
                 let write = ADOWrite.removeTag(PullRequestAddress(record.pullRequest), tag: tag.tagId ?? tag.name)
                 _ = try await dispatch(write, for: key, as: account, in: generation)
-                guard generation == self.generation else { return }
                 let tags = PullRequestTag.removing(tag, from: store.record(for: key)?.tags ?? current)
                 store.changedTags(key, to: tags)
                 readAgain(afterChanging: key, to: tags)
@@ -246,8 +247,13 @@ final class TagChanges: ObservableObject {
         } catch is CancellationError {
             return
         } catch {
-            guard generation == self.generation else { return }
             let problem = ADOWriteProblem(error, now: now())
+            // Called off as it went: once it's settled, the tags are read again when it may have been made, or Azure DevOps
+            // says the tag isn't on it, to show how they stand.
+            guard generation == self.generation else {
+                if problem.mayHaveGone || problem == .gone { await readAgain(key) }
+                return
+            }
             // Not on the pull request, as far as Azure DevOps knows: its tags, read again, tell whether that's so, and then
             // it's as you wanted.
             if problem == .gone, case .success(let read)? = await readCounting(key), !read.contains(where: { $0.key == tag.key }) {
@@ -273,7 +279,8 @@ final class TagChanges: ObservableObject {
 
     /// Sends a change, while you can make changes and nothing called it off since it was asked for (`generation`), as whom
     /// it was asked for as, in a task that's called off as they go (`forgetAll`): before it goes, as while it waits for a
-    /// token, it never does.
+    /// token, it never does, and throws `CancellationError`; once it's gone, it settles all the same, with Azure DevOps'
+    /// answer or why it failed (`ADOClient.send(_:as:)`).
     private func dispatch(_ write: ADOWrite, for key: PRKey, as account: String?, in generation: Int) async throws -> ADOWrite.Answer {
         guard generation == self.generation, !isStopped else { throw CancellationError() }
         guard settings.makesChanges else {
@@ -284,11 +291,7 @@ final class TagChanges: ObservableObject {
         let task = Task { try await send(write, account) }
         inFlight[key] = task
         defer { if inFlight[key] == task { inFlight[key] = nil } }
-        do {
-            return try await task.value
-        } catch where task.isCancelled {
-            throw CancellationError()
-        }
+        return try await task.value
     }
 
     /// Tries a change that didn't happen again.
@@ -487,9 +490,9 @@ final class TagChanges: ObservableObject {
 
     // MARK: Forgetting
 
-    /// Forgets what was going on, and calls off a change on its way, as the setting goes off, Azure DevOps stops or someone
-    /// else signs in. Not what's read: the tags of a pull request whose lists don't carry them are read again as they're
-    /// due (`isDue`), as the list has them.
+    /// Forgets what was going on, and calls off a change on its way that hasn't gone yet, as the setting goes off, Azure
+    /// DevOps stops or someone else signs in: one that has settles all the same (`add`, `remove`). Not what's read: the tags
+    /// of a pull request whose lists don't carry them are read again as they're due (`isDue`), as the list has them.
     func forgetAll() {
         generation += 1
         for task in inFlight.values { task.cancel() }
