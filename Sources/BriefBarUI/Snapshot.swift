@@ -7,6 +7,13 @@ import SwiftUI
 package enum Snapshot {
     /// Draws a SwiftUI view at its fitting size.
     package static func render<V: View>(_ view: V, appearance: NSAppearance?) -> NSBitmapImageRep? {
+        // The window, the hosting view and its view graph go once it's drawn, whatever AppKit and SwiftUI autoreleased
+        // for them: `--render` draws hundreds of pictures without going back to an event loop, which is what empties the
+        // main thread's pool.
+        autoreleasepool { draw(view, appearance: appearance) }
+    }
+
+    private static func draw<V: View>(_ view: V, appearance: NSAppearance?) -> NSBitmapImageRep? {
         let host = NSHostingView(rootView: view)
         host.appearance = appearance
         let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 400, height: 300),

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **BriefBar no longer takes a little more memory each time a list updates with summaries on.** Each time a list or
+  page that shows Apple Intelligence's summaries updated, such as Azure DevOps' Pull Requests page, BriefBar kept what
+  checking that Apple Intelligence was available took, until it quit.
+- **`--render` draws every picture.** With every source on, it stopped before the last ones, out of room for SwiftUI's
+  views, as it kept each picture's window and views until it quit.
 - **Your reply on a pull request someone sent you shows.** Once you'd seen a pull request sent to you in a chat, which
   leaves your lists, its details stopped following it: a reply, or a status you set there, went to Azure DevOps but
   didn't show, and replying again posted it twice. Its details now follow it while BriefBar still reads it, and its
