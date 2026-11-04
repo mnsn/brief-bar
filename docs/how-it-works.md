@@ -1582,8 +1582,9 @@ open, its details list them under **What's Left** (`PullRequestConflictsSection`
 resolved; once it has none, they go, and a place there goes to the details' top. Which files conflict, and how, is read
 with one GET (`MergeConflicts.read`, the preview API `pullRequests/{id}/conflicts`), a page of a hundred, more only
 for more, up to ten pages, stopping at a page that brings nothing new, as from a server that answers with the same page
-whatever it's asked (past ten full pages, or after a full page that brought nothing new, there may be more: the details
-then say at least how many files conflict, and the prompts that there may be more, `MergeConflicts.isComplete`); read
+whatever it's asked, those it doesn't number told apart by their paths, byte for byte, as Git tells paths apart
+(`GitPath`). Past ten full pages, or after a full page that brought nothing new, there may be more: the details then
+say at least how many files conflict, and the prompts that there may be more (`MergeConflicts.isComplete`). They're read
 as the details show it in a window that shows its page on screen, as for the code comments are on
 (`PullRequestConflictsStore`, which reads only as `PullRequestCodeStore` lets the details read), and again once
 its branch or its target moves (`PullRequestFilesStore.Head`). Once that window is minimized, hidden or covered, a read
@@ -1594,11 +1595,14 @@ later while they show, or at once with **↻**; one Azure DevOps doesn't have, o
 what each branch did to it (`MergeConflict.how`), from the type of conflict Azure DevOps names, by name or by number:
 **Changed on both branches** (`editEdit`), **Added on both branches** (`addAdd`), **Changed on rename-order-status,
 deleted on main** (`editDelete`) and the other way round (`deleteEdit`), and the renames, with the other path each
-branch gave the file, by its name in the same folder or else from the top of the repository: **Renamed to
+branch gave the file, by its name in the same folder, folders compared byte for byte, or else from the top of the
+repository: **Renamed to
 order-statuses.md on rename-order-status, and to docs/orders/states.md on main** (`rename1to2`), and so on; one someone
 resolved in Azure DevOps, which hasn't committed the merge yet, says so. They're in the order a change lists its files
 (`PullRequestPanel.listsFirst`). A click opens what the pull request changed in the file, its page in the details, at
-the path the pull request has it at (`pathInPullRequest`), as from **Files**, and back comes back to them. **↗** opens
+the path the pull request has it at (`pathInPullRequest`), as from **Files**, and back comes back to them; a folder on
+the pull request's branch, where the target has a file (`directoryFile`), has no changes of its own, so it opens the pull
+request's files in Azure DevOps there instead, with **↗** in place of **›** (`isFolderInPullRequest`). **↗** opens
 the pull request in Azure DevOps, where they can be resolved.
 
 With Send Work to Copilot on, what Copilot does about them shows under them, as on a thread (`CopilotWork`, for

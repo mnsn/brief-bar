@@ -126,6 +126,28 @@ import Testing
         #expect(MergeConflict(id: 1, path: "/a.md", kind: .renameDelete).pathInPullRequest == "/a.md")
         #expect(MergeConflict(id: 1, path: "/a.md", kind: .rename2to1, sourcePath: "/b.md").pathInPullRequest == "/a.md")
         #expect(MergeConflict(id: 1, path: "/a.md", kind: .editEdit).pathInPullRequest == "/a.md")
+        // A folder on the pull request's branch, where the target has a file, has no changes of its own to show.
+        #expect(MergeConflict(id: 1, path: "/docs", kind: .directoryFile).isFolderInPullRequest)
+        #expect(!MergeConflict(id: 1, path: "/docs", kind: .fileDirectory).isFolderInPullRequest)
+        #expect(!MergeConflict(id: 1, path: "/docs/a.md", kind: .directoryChild).isFolderInPullRequest)
+    }
+
+    /// Paths are told apart by their bytes, as Git tells them: "é" written as one character, and as "e" with an accent
+    /// after it, are two folders, and two files.
+    @Test func tellsPathsApartAsGitDoes() async throws {
+        // A rename into the other folder names it.
+        #expect(MergeConflict.named("/caf\u{E9}/a.md", beside: "/cafe\u{301}/b.md") == "caf\u{E9}/a.md")
+        #expect(MergeConflict.named("/caf\u{E9}/a.md", beside: "/caf\u{E9}/b.md") == "a.md")
+        let renamed = MergeConflict(id: 1, path: "/cafe\u{301}/b.md", kind: .rename2to1, sourcePath: "/caf\u{E9}/a.md", targetPath: "/cafe\u{301}/c.md")
+        #expect(renamed.how(source: "fix", target: "main") == "Both branches renamed a file to it: caf\u{E9}/a.md on fix, c.md on main")
+        // Two files Azure DevOps doesn't number are both kept.
+        let server = StubServer()
+        server.on("/pullRequests/7/conflicts", json: Fixture.list([
+            Self.conflict(nil, "/src/caf\u{E9}.cs", "editEdit"), Self.conflict(nil, "/src/cafe\u{301}.cs", "editEdit"),
+        ]))
+        let read = try await MergeConflicts.read(pullRequest, with: server.client())
+        #expect(read.files.count == 2)
+        #expect(Set(read.files.map { Array($0.path.utf8) }) == [Array("/src/caf\u{E9}.cs".utf8), Array("/src/cafe\u{301}.cs".utf8)])
     }
 
     @Test func areCurrentUntilEitherBranchMoves() {

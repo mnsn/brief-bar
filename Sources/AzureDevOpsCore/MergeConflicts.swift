@@ -182,6 +182,12 @@ public struct MergeConflict: Sendable, Equatable, Identifiable {
         FileChange.folder(of: path)
     }
 
+    /// Whether the pull request's branch has a folder at its path, where the target branch has a file (`directoryFile`):
+    /// it has no changes of its own to show.
+    public var isFolderInPullRequest: Bool {
+        kind == .directoryFile
+    }
+
     /// Where the pull request's change has the file, to show it: where it renamed it to, or its path.
     public var pathInPullRequest: String {
         switch kind {
@@ -245,10 +251,10 @@ public struct MergeConflict: Sendable, Equatable, Identifiable {
     }
 
     /// Another path a rename involves, as short as it can be said beside `path`: its name when it's in the same folder,
-    /// else from the top of the repository.
+    /// folders compared by their bytes, as Git tells them apart; else from the top of the repository.
     static func named(_ other: String, beside path: String) -> String {
-        let folder = FileChange.folder(of: other)
-        guard folder != FileChange.folder(of: path) else { return (other as NSString).lastPathComponent }
+        let folder = FileChange.folder(of: other).map(GitPath.init)
+        guard folder != FileChange.folder(of: path).map(GitPath.init) else { return (other as NSString).lastPathComponent }
         return other.hasPrefix("/") ? String(other.dropFirst()) : other
     }
 }
@@ -335,16 +341,17 @@ public struct MergeConflicts: Sendable, Equatable {
         return MergeConflicts(files: files, isComplete: isComplete, of: pullRequest)
     }
 
-    /// What tells a conflict from the others as pages repeat them: its number, else its path.
+    /// What tells a conflict from the others as pages repeat them: its number, else its path, by its bytes, as Git tells
+    /// paths apart.
     private enum Seen: Hashable {
         case id(Int)
-        case path(String)
+        case path(GitPath)
 
         init?(_ conflict: ADOConflict) {
             if let id = conflict.conflictId {
                 self = .id(id)
             } else if let path = conflict.conflictPath, !path.isEmpty {
-                self = .path(path)
+                self = .path(GitPath(path))
             } else {
                 return nil
             }
