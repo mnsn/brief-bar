@@ -1,8 +1,9 @@
 import BriefBarCore
-import BriefBarUI
 import Combine
 import Foundation
+import SwiftUI
 import Testing
+@testable import BriefBarUI
 
 /// The app's side of Updates from Copilot Sessions: what it reads of what sessions told, and passes on to read again.
 @MainActor
@@ -96,5 +97,23 @@ import Testing
         #expect(order.sessionsWorking(on: Self.pullRequest) == [Self.session, other].sorted())
         order.withdraw(.copilot)
         #expect(order.workingOn(Self.session).isEmpty)
+    }
+
+    /// At a session's lane on the Map: what it works on, in its capsule's word.
+    @Test func theMapSaysWhatALanesSessionWorksOn() {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false)
+        func describe(_ state: ItemState?) -> LinkedItem {
+            LinkedItem(ref: Self.session, label: "Retry backoff", title: "Retry backoff", symbol: "circle", color: .blue, state: state)
+        }
+        #expect(OrderMapGrid.working(of: Self.session, order: order) == nil)
+
+        order.publish(.copilot, items: [describe(.running)], working: [Self.session: [Self.task, Self.pullRequest]])
+        #expect(OrderMapGrid.working(of: Self.session, order: order)?.text == "Working on 5124 and !4102")
+        order.publish(.copilot, items: [describe(.needsYou)], working: [Self.session: [Self.task, Self.pullRequest, Self.gitHub]])
+        #expect(OrderMapGrid.working(of: Self.session, order: order)?.text == "Needs you · on 5124 and 2 more")
+        order.publish(.copilot, items: [describe(nil)], working: [Self.session: [Self.gitHub]])
+        #expect(OrderMapGrid.working(of: Self.session, order: order)?.text == "On #12")
     }
 }

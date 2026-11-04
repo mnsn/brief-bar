@@ -105,7 +105,8 @@ struct OrderMapGrid: View {
                 if let step = steps[node.ref] {
                     OrderMapNode(
                         step: step, item: order.describe(node.ref), isSelected: isSelected(node.ref),
-                        isDimmed: lit.map { !$0.contains(node.ref) } ?? false, width: metrics.nodeWidth, height: metrics.nodeHeight
+                        isDimmed: lit.map { !$0.contains(node.ref) } ?? false, width: metrics.nodeWidth, height: metrics.nodeHeight,
+                        workers: order.sessionsWorking(on: node.ref).compactMap(order.describe)
                     ) {
                         select(node.ref)
                     }
@@ -125,27 +126,61 @@ struct OrderMapGrid: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// The sessions' lanes: each one's name on the left, a quiet line between them.
+    /// The sessions' lanes: each one's name on the left, with what it told BriefBar it's working on now, a quiet line
+    /// between them.
     private func lanes(_ metrics: Metrics, width: CGFloat) -> some View {
         ForEach(Array(map.lanes.enumerated()), id: \.offset) { index, lane in
             let top = metrics.y(lane.row)
             let laneHeight = CGFloat(lane.height) * (metrics.nodeHeight + metrics.rowGap) - metrics.rowGap
+            let name = lane.session.flatMap(order.name(of:)).map { "‘\($0)’" } ?? "No session"
+            let working = lane.session.flatMap { Self.working(of: $0, order: order) }
             ZStack(alignment: .topLeading) {
                 if index > 0 {
                     Rectangle()
                         .fill(Color.secondary.opacity(0.15))
                         .frame(width: width, height: 1)
                         .offset(y: -metrics.rowGap / 2)
+                        .accessibilityHidden(true)
                 }
-                Text(lane.session.flatMap(order.name(of:)).map { "‘\($0)’" } ?? "No session")
-                    .font(size: 11, weight: .medium)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .frame(width: metrics.label - 12 * textScale, height: laneHeight, alignment: .leading)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name)
+                        .font(size: 11, weight: .medium)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(working == nil ? 2 : 1)
+                    if let working {
+                        Text(working.text)
+                            .font(size: 10, weight: .medium)
+                            .foregroundStyle(working.color)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .frame(width: metrics.label - 12 * textScale, height: laneHeight, alignment: .leading)
+                .help(working.map { "\(name): \($0.text)" } ?? "")
+                .accessibilityElement(children: .combine)
+                .accessibilityHidden(working == nil)
             }
             .offset(y: top)
-            .accessibilityHidden(true)
         }
+    }
+
+    /// What a lane's session told BriefBar it's working on now (`SessionUpdates`), with where it stands, in the color of
+    /// its capsule: "Working on 5124", "Needs you · on 5124 and !4102", "Done · on 5124 and 2 more". Nil when it told
+    /// nothing, or that doesn't show.
+    static func working(of session: ItemRef, order: PullRequestOrder) -> (text: String, color: Color)? {
+        let refs = order.workingOn(session)
+        guard !refs.isEmpty else { return nil }
+        let item = order.describe(session)
+        let labels = refs.map(\.shortOrderLabel)
+        let what = labels.count <= 2 ? labels.joined(separator: " and ") : "\(labels[0]) and \(labels.count - 1) more"
+        let text = if item?.state == .running {
+            "Working on \(what)"
+        } else if let word = item?.stateWord {
+            "\(word) · on \(what)"
+        } else {
+            "On \(what)"
+        }
+        return (text, item?.color ?? .secondary)
     }
 
     private func columnTitles(_ metrics: Metrics) -> some View {
@@ -202,6 +237,8 @@ struct OrderMapNode: View {
     let isDimmed: Bool
     let width: CGFloat
     let height: CGFloat
+    /// The sessions that told BriefBar they're working on it now (`SessionUpdates`).
+    var workers: [LinkedItem] = []
     let action: () -> Void
 
     var body: some View {
@@ -220,6 +257,11 @@ struct OrderMapNode: View {
                         .truncationMode(.tail)
                 }
                 Spacer(minLength: 0)
+                if let worker = workers.first {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(size: 9, weight: .semibold)
+                        .foregroundStyle(worker.color)
+                }
             }
             .padding(.horizontal, 8)
             .frame(width: width, height: height)
@@ -235,7 +277,7 @@ struct OrderMapNode: View {
         .opacity(isDimmed ? 0.45 : 1)
         .help(help)
         .accessibilityLabel([step.ref.shortOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "))
-        .accessibilityValue([item?.status, OrderText.sentence(of: step)].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue(([item?.status, OrderText.sentence(of: step)].compactMap { $0 } + workerLines).joined(separator: ", "))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -246,9 +288,16 @@ struct OrderMapNode: View {
     }
 
     private var help: String {
-        [[step.ref.fullOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "), item?.status, OrderText.sentence(of: step)]
-            .compactMap { $0 }
+        ([[step.ref.fullOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "), item?.status, OrderText.sentence(of: step)]
+            .compactMap { $0 } + workerLines)
             .joined(separator: "\n")
+    }
+
+    /// "‘Fix the review comments’ works on it: Working", for each session that told BriefBar so.
+    private var workerLines: [String] {
+        workers.map { worker in
+            "‘\(worker.label)’ works on it" + (worker.stateWord.map { ": \($0)" } ?? "")
+        }
     }
 }
 
