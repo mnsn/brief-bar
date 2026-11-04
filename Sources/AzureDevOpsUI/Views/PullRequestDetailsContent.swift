@@ -25,6 +25,7 @@ struct PullRequestDetailsContent: View {
     @EnvironmentObject private var services: AppServices
     @EnvironmentObject private var files: PullRequestFilesStore
     @EnvironmentObject private var changes: ThreadChanges
+    @EnvironmentObject private var tagChanges: TagChanges
     @Environment(\.itemNavigation) private var navigation
     /// The window's page it's on, which its Copilot session is read only while the window shows on screen.
     @Environment(\.shownSection) private var section
@@ -77,7 +78,9 @@ struct PullRequestDetailsContent: View {
                     scroll: scroll, held: $held
                 )
             } else {
-                PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact)
+                PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact) {
+                    PullRequestTagsRow(item: item, record: record, composing: $composing)
+                }
                     .id(PullRequestDetailsStore.Anchor.top)
                 PullRequestSessionLine(item: item)
                 // Its summary, of it and what's linked to it, under what it is.
@@ -132,6 +135,11 @@ struct PullRequestDetailsContent: View {
         .task(id: SessionFollowing(key: item.key, page: page)) {
             guard !isRendering else { return }
             await sessions.follow(item, record: record, on: page)
+        }
+        // Its tags, when its lists don't carry them, read while it shows on screen.
+        .task(id: SessionFollowing(key: item.key, page: page)) {
+            guard !isRendering else { return }
+            await tagChanges.follow(item.key, on: page)
         }
         .tellsStory(of: ref)
         // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details.

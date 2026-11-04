@@ -66,8 +66,8 @@ struct AzureDevOpsSettings: View {
     }
 }
 
-/// Make Changes in Azure DevOps, off by default: your replies in pull requests' comment threads, and their statuses, from
-/// their details, each when you click it; and nothing else. On its page in Settings, it says what it writes; in a menu,
+/// Make Changes in Azure DevOps, off by default: your replies in pull requests' comment threads, their statuses, and pull
+/// requests' tags, from their details, each when you click it; and nothing else. On its page in Settings, it says what it writes; in a menu,
 /// turning it on opens that page instead.
 struct MakeChangesSetting: View {
     @EnvironmentObject private var settings: AppSettings
@@ -76,11 +76,13 @@ struct MakeChangesSetting: View {
 
     static let title = "Make Changes in Azure DevOps"
     static let explanation = """
-        Adds Reply and a status menu to each comment thread in a pull request's details in BriefBar's window. BriefBar \
-        then writes two things to Azure DevOps, as you, with your Azure CLI sign-in, and only when you click: your reply in \
-        a thread, and a thread's status, such as Resolved or Won't Fix. Nothing else, and never by itself: otherwise it \
-        only reads. Fix Grammar, in a reply, uses Apple Intelligence on this Mac unless you choose a Copilot model, which \
-        sends the reply to GitHub Copilot. Agents get none of it. Turning it off forgets the replies you haven't sent.
+        Adds Reply and a status menu to each comment thread in a pull request's details in BriefBar's window, and Add Tag \
+        and ✕ to its tags. BriefBar then writes these to Azure DevOps, as you, with your Azure CLI sign-in, and only when you \
+        click: your reply in a thread, a thread's status, such as Resolved or Won't Fix, and a tag you add to a pull \
+        request or remove from it. Nothing else, and never by itself: otherwise it only reads. It remembers the tags you \
+        add, for each project, to suggest them. Fix Grammar, in a reply, uses Apple Intelligence on this Mac unless you \
+        choose a Copilot model, which sends the reply to GitHub Copilot. Agents get none of it. Turning it off forgets the \
+        replies you haven't sent and the tags you added.
         """
 
     var body: some View {

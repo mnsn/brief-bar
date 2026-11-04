@@ -48,6 +48,14 @@
   links and mentions: with Apple Intelligence on your Mac, unless you choose a Copilot model in its **▾**, one premium
   request each, and it shows the correction for you to use, with Undo. These are the only changes BriefBar makes in
   Azure DevOps, only when you click them, and never from agents. Azure DevOps' description says so.
+- **See a pull request's tags, and add or remove them.** A pull request's details show its tags under its heading.
+  With **Make Changes in Azure DevOps** on, **✕** on a tag removes it, with **Undo**, and **Add Tag** opens a field
+  that suggests tags as you type: those you added in that project, which BriefBar remembers, then those on the pull
+  requests it read there. **Tab** completes the one you chose, **Return** adds it, or what you typed as a new tag,
+  and **Esc** closes it. The tags show what Azure DevOps answered, and say in a sentence why a change didn't go,
+  such as no permission or being offline. Azure DevOps' description says so: it reads tags with the lists it reads
+  already, or with one request for a pull request sent to you or that you watch, and keeps the tags you add, up to
+  20 for each project, until you turn the setting off.
 
 ## 0.12.0 - 2026-11-03
 

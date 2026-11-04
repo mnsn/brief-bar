@@ -338,6 +338,50 @@ import Testing
         #expect(details.record == read)
     }
 
+    /// A pull request sent to you in a chat, which you're not on, leaves your lists as its details show it, which sees it.
+    /// They keep it as it was then, but for its tags, which the list still reads with it, as its details read them for one
+    /// whose lists don't carry them (`TagChanges`): those read since show, with when they were, and a change to them too.
+    @Test func oneThatLeftTheListsShowsTheTagsReadSince() async throws {
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        // What `loadOnce` makes the demo up as of.
+        let now = store.now
+        await store.loadOnce()
+        let details = PullRequestDetailsStore()
+        details.use(store)
+        // Its tags unknown, as for one read on its own.
+        var snapshot = DemoData.snapshot(now: now)
+        let index = try #require(snapshot.records.firstIndex { $0.id.number == 4113 })
+        #expect(snapshot.records[index].role == .linked)
+        snapshot.records[index].tags = nil
+        store.receive(snapshot)
+        let sent = try #require(store.items.first { $0.key.number == 4113 })
+        details.show(sent)
+        // The next refresh, after it was seen.
+        store.receive(snapshot)
+        #expect(!store.items.contains { $0.key == sent.key })
+        #expect(!details.isListed)
+        let kept = try #require(details.record)
+        #expect(kept.tags == nil)
+
+        // Its tags, read as its details show it.
+        snapshot.records[index].tags = [PullRequestTag("deploy-eu")]
+        snapshot.records[index].tagsReadAt = now
+        snapshot.records[index].pullRequest.title = "Read since"
+        store.receive(snapshot)
+        var expected = kept
+        expected.tags = [PullRequestTag("deploy-eu")]
+        expected.tagsReadAt = now
+        #expect(details.record == expected)
+        // A change to them.
+        store.changedTags(sent.key, to: [PullRequestTag("hotfix"), PullRequestTag("deploy-eu")])
+        #expect(details.record?.tags?.map(\.name) == ["deploy-eu", "hotfix"])
+        #expect(details.record?.pullRequest.title == kept.pullRequest.title)
+        // Once the list doesn't read it anymore, they stay as they were.
+        snapshot.records.remove(at: index)
+        store.receive(snapshot)
+        #expect(details.record?.tags?.map(\.name) == ["deploy-eu", "hotfix"])
+    }
+
     /// Your own pull request that completes while its details show stays listed, under Done, but the list doesn't read a
     /// closed one's threads and policies: its details keep those they read last. One that closed before they showed it has
     /// none, and doesn't get another's.

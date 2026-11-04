@@ -28,6 +28,9 @@ import Testing
                 ]))
             case .setStatus(let address, let status):
                 return .thread(try decode(ADOThread.self, ["id": address.id, "status": status.rawValue]))
+            case .addTag, .removeTag:
+                // Threads' changes never send one (TagChangesTests).
+                throw ADOError.http(400)
             }
         }
 
