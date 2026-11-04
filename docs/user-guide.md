@@ -386,10 +386,15 @@ help, as when you were offline, **↻** to try again.
 **Ask Copilot about a comment.** With Send Work to Copilot on, each open thread ends with
 **✨ Explain** and **Fix**, side by side, in the comments and on its file's page. Each opens a small composer under the comment, rather than a window: a field for
 what you want in your own words, where it goes, and its button, which Return presses, so a plain explanation or fix takes
-two clicks. One composer is open at a time, and each keeps what you wrote until you send it. **Explain** asks the session
+two clicks. One composer is open at a time, and each keeps what you wrote until you send it, while BriefBar runs, in memory
+only, as a reply does: as you open another, go to a page over the details or a file's page and back, where the same
+thread's composer has it too, or look at another pull request; a file's page closes the one that was open, so **‹**
+comes back to where you were rather than to it. The same composer open in two windows shows what you write in either.
+Turning Send Work to Copilot off, or someone else signing in to the Azure CLI, forgets it. **Explain** asks the session
 that worked on the thread, or else the pull request's own (its Copilot session, above), what you want to know, or else
 why you got the comment: why the reviewer wrote it, what they want, how the code relates, and a few ways to address it,
-with what each would change. The answer shows under the comment, with **↗** to the session. It's asked aside, in a copy
+with what each would change. The answer shows under the comment, a long one's first dozen or so lines until **Show More**,
+with **↗** to the session. It's asked aside, in a copy
 of the session's conversation that the Copilot CLI makes with no tools and deletes after, so it changes no file and the
 session's history stays as it was; it sends the conversation, with the comment and its code, to GitHub Copilot, as one
 premium request, and needs the Copilot CLI 1.0.95 or later. Once it answered, **Ask More** follows up on what it said,
@@ -424,7 +429,8 @@ fixed, from that session; they stay in the bar when Push & Reply fails or is sto
 **Copilot's on it** while Copilot fixes, or pushes, its comments, a build or its conflicts, whether with one of
 BriefBar's tasks or a prompt to one of the Copilot app's sessions, and **Copilot asks you** while that session waits for
 your answer in the app. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
-off, unless the session has it already. VoiceOver hears what becomes of each.
+off, unless the session has it already. VoiceOver hears what becomes of each, once, though it shows in two windows, or on
+two rows of a build that two policies run.
 
 **Reply and set a thread's status.** With **Make Changes in Azure DevOps** on, in Azure DevOps' settings (off by
 default), each thread on an open pull request ends with **Reply** and its status, in the row with Explain and Fix, in
@@ -435,51 +441,52 @@ and what you do shows; its heading says so. **Reply** opens a field under the th
 one at a time with them: write in Markdown, Return starting a new line, then **Reply**, or ⌘Return, sends it to the
 thread in Azure DevOps, as you, and **Reply & Resolve**, or ⇧⌘Return, sends it and resolves the thread; on a resolved
 thread, **Reply & Reactivate** reactivates it. ✕ or Esc closes the field, and what you wrote stays, until you send it,
-while BriefBar runs, in memory only. **Resolve**, beside Reply, resolves the thread, and **Reactivate** reactivates a
-resolved one; its **▾** has the statuses Azure DevOps' own menu offers, **Active**, **Pending**, **Resolved**, **Won't
-Fix** and **Closed**, and **By Design** for a thread that has it already. A status changes at once, without asking,
-since the same menu sets it back; a thread's right-click menu has Reply and its statuses too. The thread shows what you
-did as soon as Azure DevOps answers, as it answered, and stays where it is in the details while they show that pull
-request, however it stands now; then BriefBar reads the pull request again, so Needs You, What's Left, the brief and the
-counts follow: a thread you replied to, or resolved, doesn't wait on you anymore. When it can't, the thread says why in
-a sentence, such as **Azure DevOps says you may not reply here**, **You're offline**, for a pull request that's
-completed or abandoned, when the thread was deleted meanwhile, or when someone else signed in to the Azure CLI since,
-which sends nothing as them, with what may help, such as **Try Again** or **Sign In…**; a reply that didn't go keeps
-what you wrote, in its field, and one that Azure DevOps didn't answer in time is read again before you send it twice.
-**Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language
-you wrote it in, keeping your words, your Markdown, and your code, links and @mentions, which the model never sees; when
-a model does more, such as translate your reply or answer what it asks, it suggests nothing, and says so. It uses Apple
-Intelligence, on this Mac, free, unless you choose a Copilot model in its **▾**, from those summaries offer, which
-BriefBar remembers: each fix is then one premium request, and sends your reply's text to GitHub Copilot, through the
-Copilot CLI. It shows the correction under the field, what it changes marked, with **Use It**; once you use it, **Undo**
-puts back what you wrote. It never changes your reply without you, and never sends it. Where Apple Intelligence is
-turned off or can't run, it says so, with **Choose a Model**. The demo changes only its own made-up pull requests, and
-sends nothing.
-
-**See and change a pull request's tags.** A pull request's tags show under its heading in its details, after its branch
-and who wrote it, as a work item's details show its own, in the order of their names: those of your pull requests and
-the ones you review come with the lists BriefBar reads anyway, and those of a pull request sent to you or that you watch
-are read on their own, one request, as its details show on screen. With **Make Changes in Azure DevOps** on, while it's
-open, **✕** on a tag removes it, and **Add Tag**, after them, opens a field. As you type, it suggests the tags you added
-in that project, the latest first, then those on the pull requests BriefBar read there, the most used first, but the
-pull request's own: the tag that's what you typed first, then those whose names start with it, then those with a word
-that does, such as `eu` in `deploy-eu`, then those that have it anywhere, ignoring letter case. What you typed, when
-it's none of them, is a new tag, last; the best match is chosen as you type, and VoiceOver says which, but nothing is
-when the pull request has that tag already, which the field says; as its tags change while the field is open, as when
-someone else adds one, the same one stays chosen, or nothing, when it's the one they added. **↑** and **↓** choose
-another, **Tab** completes the one chosen in the field, without sending anything, and **Return** adds it, or what you
-typed, and the field stays open for another; **Esc** or its **✕** closes it, and it's one at a time with Explain, Fix
-and Reply. BriefBar remembers the tags you add, up to 20 for each project, in its settings, to suggest them, until you
-turn the setting off. It doesn't suggest from Azure DevOps' own list of a project's tags, which it shares with work
-items and can hold many thousands, more than one request can read in time. The tags show what Azure DevOps answered, as
-it spells the tag in that project, as soon as it answers, and BriefBar reads them again, for anyone else's change
-meanwhile. Nothing asks first: after you remove one, **Undo**, under the tags, adds it back, until you change them
-again, dismiss it or close the details, or someone else adds it back. When it can't, a sentence under them says why,
-such as **Azure DevOps says you may not change this pull request's tags**, **You're offline**, or that the pull request
-is completed, abandoned or no longer in your lists, with **Try Again** where trying again may help, or **Sign In…** when
-the Azure CLI isn't signed in. Without the setting, or on a pull request that's completed, abandoned or no longer in
-your lists, they show without ✕ or Add Tag, and the tag glyph's tooltip says why. The demo has made-up tags, such as
-`deploy-eu`, `deploy-us` and `hotfix`, changes only those, and sends nothing.
+while BriefBar runs, in memory only; the keyboard's focus goes back to **Reply**, as it does once your reply is sent,
+unless you've moved on to another composer meanwhile. **Resolve**, beside Reply, resolves the thread, and **Reactivate**
+reactivates a resolved one; its **▾** has the statuses Azure DevOps' own menu offers, **Active**, **Pending**,
+**Resolved**, **Won't Fix** and **Closed**, and **By Design** for a thread that has it already. A status changes at
+once, without asking, since the same menu sets it back; a thread's right-click menu has Reply and its statuses too. The
+thread shows what you did as soon as Azure DevOps answers, as it answered, and stays where it is in the details while
+they show that pull request, however it stands now, as pages open over them and you come back, and on its file's page;
+once they show another, or close, or you go back from its page, it shows where it stands, with the resolved ones once
+you resolved it; then BriefBar reads the pull request again, so Needs You, What's Left, the brief and the counts follow:
+a thread you replied to, or resolved, doesn't wait on you anymore. When it can't, the thread says why in a sentence,
+such as **Azure DevOps says you may not reply here**, **You're offline**, for a pull request that's completed or
+abandoned, when the thread was deleted meanwhile, or when someone else signed in to the Azure CLI since, which sends
+nothing as them, with what may help, such as **Try Again** or **Sign In…**; a reply that didn't go keeps what you wrote,
+in its field, and one that Azure DevOps didn't answer in time is read again before you send it twice. **Fix Grammar**,
+in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language you wrote it in,
+keeping your words, your Markdown, and your code, links and @mentions, which the model never sees; when a model does
+more, such as translate your reply or answer what it asks, it suggests nothing, and says so. It uses Apple Intelligence,
+on this Mac, free, unless you choose a Copilot model in its **▾**, from those summaries offer, which BriefBar remembers:
+each fix is then one premium request, and sends your reply's text to GitHub Copilot, through the Copilot CLI. It shows
+the correction under the field, what it changes marked, with **Use It**; once you use it, **Undo** puts back what you
+wrote. It never changes your reply without you, and never sends it. Where Apple Intelligence is turned off or can't run,
+it says so, with **Choose a Model**. The demo changes only its own made-up pull requests, and sends nothing. **See and
+change a pull request's tags.** A pull request's tags show under its heading in its details, after its branch and who
+wrote it, as a work item's details show its own, in the order of their names: those of your pull requests and the ones
+you review come with the lists BriefBar reads anyway, and those of a pull request sent to you or that you watch are read
+on their own, one request, as its details show on screen. With **Make Changes in Azure DevOps** on, while it's open,
+**✕** on a tag removes it, and **Add Tag**, after them, opens a field. As you type, it suggests the tags you added in
+that project, the latest first, then those on the pull requests BriefBar read there, the most used first, but the pull
+request's own: the tag that's what you typed first, then those whose names start with it, then those with a word that
+does, such as `eu` in `deploy-eu`, then those that have it anywhere, ignoring letter case. What you typed, when it's
+none of them, is a new tag, last; the best match is chosen as you type, and VoiceOver says which, but nothing is when
+the pull request has that tag already, which the field says; as its tags change while the field is open, as when someone
+else adds one, the same one stays chosen, or nothing, when it's the one they added. **↑** and **↓** choose another,
+**Tab** completes the one chosen in the field, without sending anything, and **Return** adds it, or what you typed, and
+the field stays open for another; **Esc** or its **✕** closes it, and it's one at a time with Explain, Fix and Reply.
+BriefBar remembers the tags you add, up to 20 for each project, in its settings, to suggest them, until you turn the
+setting off. It doesn't suggest from Azure DevOps' own list of a project's tags, which it shares with work items and can
+hold many thousands, more than one request can read in time. The tags show what Azure DevOps answered, as it spells the
+tag in that project, as soon as it answers, and BriefBar reads them again, for anyone else's change meanwhile. Nothing
+asks first: after you remove one, **Undo**, under the tags, adds it back, until you change them again, dismiss it or
+close the details, or someone else adds it back. When it can't, a sentence under them says why, such as **Azure DevOps
+says you may not change this pull request's tags**, **You're offline**, or that the pull request is completed, abandoned
+or no longer in your lists, with **Try Again** where trying again may help, or **Sign In…** when the Azure CLI isn't
+signed in. Without the setting, or on a pull request that's completed, abandoned or no longer in your lists, they show
+without ✕ or Add Tag, and the tag glyph's tooltip says why. The demo has made-up tags, such as `deploy-eu`, `deploy-us`
+and `hotfix`, changes only those, and sends nothing.
 
 **See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
 changes, folder by folder as Azure DevOps' Files page lists them, a click on a folder folding it: each with

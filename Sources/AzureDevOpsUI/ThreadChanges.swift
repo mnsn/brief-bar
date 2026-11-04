@@ -160,21 +160,6 @@ final class ThreadChanges: ObservableObject {
         if case .failed? = states[key] { states[key] = nil }
     }
 
-    /// The thread whose Reply the keyboard's focus goes back to as its buttons show again, once your reply on it is sent or
-    /// closed (`ThreadReplyButtons`).
-    private var focusing: Key?
-
-    func focusAfter(_ key: Key) {
-        focusing = key
-    }
-
-    /// Whether the keyboard's focus goes back to a thread's Reply now: once.
-    func takeFocus(_ key: Key) -> Bool {
-        guard focusing == key else { return false }
-        focusing = nil
-        return true
-    }
-
     /// What waits on you in a pull request, as its details show it, without what was in a thread you resolved here, up to
     /// when you did: its details keep what was new as it was when they showed it (`PullRequestDetailsStore.pendingEvents`),
     /// and a new comment in a resolved thread waits on you only while it's new.
@@ -433,7 +418,6 @@ final class ThreadChanges: ObservableObject {
         }
         resolved = [:]
         if !turnedOff { unsure = [:] }
-        focusing = nil
     }
 
     /// A change on its way as the setting went off has settled, and said what it could: its thread takes changes again.

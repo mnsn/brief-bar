@@ -1478,9 +1478,12 @@ up (`DemoThreadChanges`), in its made-up data only, while it runs.
 **Reply** opens a field under the thread, in place (`ThreadReplyComposer`), as a composer of Copilot's does, and it's
 the details' one composer in place (`CopilotComposing.reply(to:)`): opening it closes Explain's or Fix's, and the other
 way round, Esc closes it rather than the details (`InlineComposerOpen`), and it scrolls itself into view as it opens
-(`detailsScroll`). It's Markdown, in a text view as tall as what's in it, from three lines to ten, where Return starts a
-new line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘Return, sends it then resolves the thread, or
-**Reply & Reactivate** reactivates a resolved one, as Azure DevOps' own does. What you write is kept as you type
+(`detailsScroll`). Closed with ✕ or Esc, or sent while it's still the composer open, the keyboard's focus goes back to
+the thread's **Reply**, in that thread's card alone; not for a reply that lands once you've opened another composer, such
+as Reply on another thread, Add Tag or Explain (`ThreadCard`). It's Markdown, in a text view as tall as what's in it,
+from three lines to ten, where Return starts a new line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or
+⇧⌘Return, sends it then resolves the thread, or **Reply & Reactivate** reactivates a resolved one, as Azure DevOps' own
+does. What you write is kept as you type
 (`ThreadChanges.keep`), in memory only, for each thread, until it's sent: closing the field, or the details, keeps it,
 and **Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure
 CLI forgets it, and calls off the changes on their way (`ThreadChanges.forgetAll`): one that hasn't gone yet never does,
@@ -1520,37 +1523,37 @@ it was when they showed it, leave out what was in it until then (`ThreadChanges.
 pull request, a thread you change stays where it was as you first did, with the open ones or the resolved ones, with
 those that wait on you or not, and among them, by when something was last said in it then, though your reply is the
 latest now, however it stands now (`Threads.arranged(holding:)`), and on its file's page, unfolded, where it was among
-the threads on its line (`Threads.comments(on:in:holding:)`), as you go from one to the other and back, since the
-details keep them (`PullRequestDetailsContent`): so it doesn't move away as you reply or resolve it, and the menu that
-sets it back is where you left it. A change that didn't happen says why on the thread, in a sentence
-(`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help, or, for a reply, in its field,
-which stays open with what you wrote, and **Sign In…** when that's why; and a status set from the card's menu while your
-reply is open says how it goes above it, and why it didn't: no permission, a pull request that's completed or abandoned,
-a thread or pull request deleted meanwhile, offline, signed out, slowed down, until when Azure DevOps said, to the
-minute (`ADOWriteProblem.slowedDown`), or no answer in time, after which the pull request is read again, since it may
-have been made.
-
-**Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language
-it's written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its code blocks,
-fenced, found as Markdown closes them, in quotes too, or indented, as Markdown reads them, four columns past a list
-item's indent in a list, and inline code, links and pictures, web addresses, with the parentheses they have, and
-mentions, and characters that control how text reads, go to the model as markers, `{{1}}`, which it keeps, and are put
-back as they were; an answer that lost, repeated or moved one is turned down. The model is told to proofread, with an
-example, which Apple Intelligence corrects far more with, and gets the reply in a fence nothing in it closes, as what
-someone wrote rather than what to do. Each line keeps the Markdown the reply had before what it says, such as a quote's
-`>`, and the spaces after it, whatever the model did with them, and an answer that joined or split lines, kept fewer
-than half of its words, or changed more than half of what it says, or 2,000 characters of a long one, what it held back
-aside, as a translation or an answer to what it asks does, is turned down too (`GrammarFix.Failure.changedMore`): it's
-checked off the main thread, as what it holds back is found, so the field and **Stop** answer meanwhile, and its work is
-bounded, however long the reply. It shows the correction under the field, what it changes marked word by word
-(`GrammarFix.changes`), a change to spaces on the word beside it, so that a correction never shows as nothing to
-correct, with **Use It**, then **Undo**, while the reply is as it left it: it never changes your reply without you, nor
-sends it, and the field waits while it runs, with **Stop**. It uses Apple Intelligence, on this Mac (`OnDeviceModel`),
-unless you choose a Copilot model in its **▾**, from those summaries offer, which BriefBar keeps (`ado.grammar.model`):
-then the Copilot CLI gets the reply, as a summary does, with no tools, in a session of its own, "BriefBar grammar fix"
-(`CopilotSummarizer`), one premium request each time, which the field says. Where Apple Intelligence can't run, or is
-turned off, it says so, and offers the Copilot models (`GrammarFixer`): what it can't do never goes to Copilot by
-itself. The demo makes its corrections up (`GrammarFix.madeUp`), and runs no model.
+the threads on its line (`Threads.comments(on:in:holding:)`), as you go from one to the other and back, and as pages
+open over the details and you come back, since they're kept above the views that show them (`DetailsDrafts.held`): so it
+doesn't move away as you reply or resolve it, and the menu that sets it back is where you left it. Where it was is
+forgotten once no details show the pull request, beside the list or as a page over a work item's or another pull
+request's (`DetailsDrafts.follow`): as they show it again, the thread is where it stands. A change that didn't happen
+says why on the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may
+help, or, for a reply, in its field, which stays open with what you wrote, and **Sign In…** when that's why; and a
+status set from the card's menu while your reply is open says how it goes above it, and why it didn't: no permission, a
+pull request that's completed or abandoned, a thread or pull request deleted meanwhile, offline, signed out, slowed
+down, until when Azure DevOps said, to the minute (`ADOWriteProblem.slowedDown`), or no answer in time, after which the
+pull request is read again, since it may have been made. **Fix Grammar**, in the field, corrects your reply's spelling,
+grammar and punctuation, and only those, in the language it's written in, keeping its meaning, voice and Markdown
+(`GrammarFix`, in `Sources/BriefBarCore`): its code blocks, fenced, found as Markdown closes them, in quotes too, or
+indented, as Markdown reads them, four columns past a list item's indent in a list, and inline code, links and pictures,
+web addresses, with the parentheses they have, and mentions, and characters that control how text reads, go to the model
+as markers, `{{1}}`, which it keeps, and are put back as they were; an answer that lost, repeated or moved one is turned
+down. The model is told to proofread, with an example, which Apple Intelligence corrects far more with, and gets the
+reply in a fence nothing in it closes, as what someone wrote rather than what to do. Each line keeps the Markdown the
+reply had before what it says, such as a quote's `>`, and the spaces after it, whatever the model did with them, and an
+answer that joined or split lines, kept fewer than half of its words, or changed more than half of what it says, or
+2,000 characters of a long one, what it held back aside, as a translation or an answer to what it asks does, is turned
+down too (`GrammarFix.Failure.changedMore`): it's checked off the main thread, as what it holds back is found, so the
+field and **Stop** answer meanwhile, and its work is bounded, however long the reply. It shows the correction under the
+field, what it changes marked word by word (`GrammarFix.changes`), a change to spaces on the word beside it, so that a
+correction never shows as nothing to correct, with **Use It**, then **Undo**, while the reply is as it left it: it never
+changes your reply without you, nor sends it, and the field waits while it runs, with **Stop**. It uses Apple
+Intelligence, on this Mac (`OnDeviceModel`), unless you choose a Copilot model in its **▾**, from those summaries offer,
+which BriefBar keeps (`ado.grammar.model`): then the Copilot CLI gets the reply, as a summary does, with no tools, in a
+session of its own, "BriefBar grammar fix" (`CopilotSummarizer`), one premium request each time, which the field says.
+Where Apple Intelligence can't run, or is turned off, it says so, and offers the Copilot models (`GrammarFixer`): what
+it can't do never goes to Copilot by itself. The demo makes its corrections up (`GrammarFix.madeUp`), and runs no model.
 
 `--render` draws, in the demo, Reply open, with Fix Grammar's suggestion, once used, with Apple Intelligence turned off
 and with a Copilot model chosen; a reply and a status that couldn't be made; a pull request's threads read-only, as for
@@ -2466,8 +2469,16 @@ while comments wait on you. Each opens a composer in place (`CommentComposer`, o
 `CopilotAskComposer`, which a failed build and conflicts use too, each with what it asks about and the prompts it sends,
 `CopilotAsking`): a field for your words, where it goes, and its button, which Return in the field presses, with a beep
 while it can't send. One is open at a time in the details, in their comments, builds and conflicts alike
-(`CopilotComposing`, which `PullRequestDetailsContent` keeps, as a file's page does its own), which keep what you wrote
-in each until you send it (`CopilotDrafts`), and it scrolls itself into view as it opens. Where it goes (`CopilotDestinations`) is
+(`CopilotComposing`, which `PullRequestDetailsContent` keeps, as a file's page does its own), and it scrolls itself into
+view as it opens. A file's page closes the details' one as it opens, so that back from it they go to the file's row, or to
+where it opened from, rather than to the composer, which would open again, take the keyboard's focus and scroll to
+itself. What you wrote in each is kept above them, by pull request and composer (`DetailsDrafts`), until you send it,
+while BriefBar runs, in memory only, as your replies are: the details' comments and their files' pages share it, and it
+stays as the details come and go, for a page over them, a file's page or another pull request. Turning Send Work to
+Copilot off, Azure DevOps stopping or someone else signing in to the Azure CLI forgets it. Once a send went, or was copied
+for you to paste, its words go, though the composer closed meanwhile, which calls its send off: a session that took it
+has it all the same (`DetailsDrafts.send`). The same composer open in two windows follows what you write in either
+(`DetailsDrafts.wordsChanged`), so neither writes over the other, nor sends what's out of date. Where it goes (`CopilotDestinations`) is
 first the session that last worked on the thread, as its line says, when the pull request's
 session line knows it, else the pull request's own (`PullRequestSession.pick`), chosen unless the line asks which, or,
 for a fix while it's one of BriefBar's tasks and busy, a fork of it; for a fix, a fork of it and a new session; then the
@@ -2489,7 +2500,11 @@ out of sight in a file's diff (`CopilotDrafts.sends`): a prompt no session took 
 Copilot window closes, and nothing starts or opens after. The details, which keep their one composer and what each
 sends, call it all off as their parts go, for a file's page or with them, not as one part goes on its own, such as the
 conflicts once they're resolved (`PullRequestDetailsContent`). VoiceOver hears what's sent, and what becomes of it, as it
-happens.
+happens: what becomes of it once, though each view that shows it hears of it, as the same pull request's details in two
+windows, or two rows of a build that two policies run (`SpokenText.announce(_:once:)`). A long answer from Explain shows
+its first dozen or so lines, fading out, with **Show More** (`CopilotAnswerCard`): its blocks that start below them aren't
+there until you ask, for the keyboard's focus or VoiceOver to reach (`RichTextView.shownBlocks`), and what's hidden of the
+last that shows takes no clicks or scrolls.
 
 **Fix** (`PullRequestPrompt.fixThread`) addresses that thread alone: its entry as Fix Comments lists it, each comment in
 full as its author wrote it, the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
