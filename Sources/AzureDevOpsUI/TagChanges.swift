@@ -78,10 +78,11 @@ final class TagChanges: ObservableObject {
     // MARK: What you can do
 
     /// Whether you can change a pull request's tags, as its threads (`ThreadChanges.canChange`): Make Changes in Azure DevOps
-    /// is on, and it's open; and its tags are known. In the demo too, which changes only its made-up data.
+    /// is on, and it's open in your lists as they are now (`CopilotSending.isOpen`), not only as its details last saw it;
+    /// and its tags are known. In the demo too, which changes only its made-up data.
     func canChange(_ record: PRRecord?) -> Bool {
-        guard settings.makesChanges, let record, record.tags != nil else { return false }
-        return record.pullRequest.status == .active
+        guard settings.makesChanges, let record, record.tags != nil, let store else { return false }
+        return CopilotSending.isOpen(record.id, in: store)
     }
 
     func state(of key: PRKey) -> State? { states[key] }

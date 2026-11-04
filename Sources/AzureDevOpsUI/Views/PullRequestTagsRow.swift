@@ -105,6 +105,7 @@ struct PullRequestTagsRow: View {
     private var readOnlyReason: String? {
         guard !canChange, let record else { return nil }
         if record.pullRequest.status != .active { return "Azure DevOps takes no change to a completed or abandoned pull request." }
+        if store.record(for: key) == nil { return "This pull request is no longer in your lists, so its tags can't be changed here." }
         if !changes.settings.makesChanges {
             return "Turn on Make Changes in Azure DevOps, in Settings › Azure DevOps, to add and remove them here."
         }

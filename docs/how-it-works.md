@@ -1531,7 +1531,8 @@ them, so a refresh under way that answers after a change doesn't undo it, and a 
 doesn't carry them, leaves them as they were. They're on the pull request's record (`PRRecord.tags`), not on the pull
 request, so a change to them doesn't make its pipelines or its details read again.
 
-With **Make Changes in Azure DevOps** on, while the pull request is open and its tags known (`TagChanges.canChange`), its
+With **Make Changes in Azure DevOps** on, while the pull request is open in your lists as they are now
+(`CopilotSending.isOpen`), not only as its details last saw it, and its tags are known (`TagChanges.canChange`), its
 tags have ✕, and Add Tag opens a field that adds one, which is the details' one composer in place (`CopilotComposing.tags`);
 otherwise the tag glyph's tooltip, and VoiceOver, say why they can't be changed.
 Adding one is a `POST` of its name (`ADOWrite.addTag`); taking one off, a `DELETE` of it, by the project's tag's ID, so a

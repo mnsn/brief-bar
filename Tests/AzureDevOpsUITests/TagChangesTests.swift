@@ -76,6 +76,24 @@ import Testing
         #expect(azure.sent.isEmpty)
     }
 
+    /// Nor on one your lists don't have anymore, though its details still show it as it was when it left them, open.
+    @Test func nothingGoesForAPullRequestThatLeftYourLists() async throws {
+        let (store, changes, azure) = live()
+        let shown = try #require(store.record(for: key))
+        var snapshot = DemoData.snapshot(now: store.now)
+        snapshot.records.removeAll { $0.id == key }
+        store.receive(snapshot)
+        #expect(store.record(for: key) == nil)
+        #expect(shown.pullRequest.status == .active && shown.tags != nil)
+        #expect(!changes.canChange(shown))
+        #expect(await changes.add("hotfix", to: key) == false)
+        await changes.remove(PullRequestTag("deploy-eu"), from: key)
+        #expect(azure.sent.isEmpty)
+        // Back in your lists, it can be changed again.
+        store.receive(DemoData.snapshot(now: store.now))
+        #expect(changes.canChange(store.record(for: key)))
+    }
+
     /// A tag goes once, as you typed it, and shows as Azure DevOps answered, spelled as the project has it; it's remembered for
     /// its project, and comes first in what adding one suggests there.
     @Test func aTagGoesOnceAndShowsAsAzureDevOpsAnswered() async throws {
