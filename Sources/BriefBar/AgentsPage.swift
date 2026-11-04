@@ -1164,9 +1164,11 @@ enum SessionUpdatesText {
     static let title = "Updates from Copilot Sessions"
     static let explanation = """
         Sessions tell BriefBar what they're working on, which Show Links and By Mission then show, and what they changed \
-        in Azure DevOps, which BriefBar reads again then, at most every 30 seconds. It keeps references only, until a \
-        session stops, is archived or idles for a day, or you turn this off. Sessions change Azure DevOps with their own \
-        tools, never through BriefBar.
+        in Azure DevOps, which BriefBar reads again then, at most every 30 seconds. It keeps references only: what a \
+        session works on, until it says it stopped or a week has passed since it last said, and the pull requests it \
+        opened, for 30 days; and it forgets them all when you turn this off. What an archived session told doesn't show, \
+        nor what a session idle for a day works on. Sessions change Azure DevOps with their own tools, never through \
+        BriefBar.
         """
 }
 
