@@ -87,9 +87,13 @@ package final class CopilotSource: BriefBarSource {
                 }
             }
             .store(in: &linkObservers)
-        // What sessions told BriefBar, as they tell it, with Updates from Copilot Sessions on.
+        // What sessions told BriefBar, as they tell it, with Updates from Copilot Sessions on; and as time passes, which
+        // ends what an idle session works on, and what was told long enough ago.
         services.sessionUpdates.$reports.map { _ in () }
             .merge(with: services.sessionUpdates.$isOn.removeDuplicates().map { _ in () })
+            .merge(with: store.$now.dropFirst().filter { [weak self] _ in
+                MainActor.assumeIsolated { self?.services.sessionUpdates.isOn == true }
+            }.map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.sessionUpdatesChanged() } }
             .store(in: &linkObservers)

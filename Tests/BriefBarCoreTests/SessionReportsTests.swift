@@ -166,20 +166,48 @@ import Testing
 
     // MARK: What to read again
 
-    @Test func keepsWhatToReadAgainForTenMinutes() {
+    @Test func keepsWhatToReadAgainForTenMinutesAndTakesEachOnce() {
         let defaults = MemorySettings()
         RereadRequests.add([Self.task], id: "old", to: defaults, now: Self.now - 700)
         RereadRequests.add([Self.story], id: "new", to: defaults, now: Self.now - 120)
         RereadRequests.add([Self.pullRequest], id: "new", to: defaults, now: Self.now - 5)
-        let taken = RereadRequests.take(after: Self.now - 60, from: defaults, now: Self.now)
-        #expect(taken == [RereadRequests.Request(ref: Self.pullRequest, at: Self.now - 5)])
+        var (requests, taken) = RereadRequests.take(since: [:], from: defaults, now: Self.now)
+        #expect(requests.map(\.ref) == [Self.story, Self.pullRequest])
         #expect(defaults.object(forKey: RereadRequests.keyPrefix + "old") == nil)
-        #expect(RereadRequests.take(after: .distantPast, from: defaults, now: Self.now).map(\.ref) == [Self.story, Self.pullRequest])
+        #expect(RereadRequests.take(since: taken, from: defaults, now: Self.now).requests.isEmpty)
 
-        RereadRequests.add((1...60).map { ItemRef.workItem(organization: "contoso", id: $0) }, id: "many", to: defaults, now: Self.now)
-        let many = RereadRequests.take(after: Self.now - 1, from: defaults, now: Self.now)
-        #expect(many.count == RereadRequests.most)
-        #expect(many.contains { $0.ref == ItemRef.workItem(organization: "contoso", id: 60) })
+        // Saved after those were taken by a call that started before them, as two calls of one --mcp can: still taken.
+        RereadRequests.add([Self.task], id: "new", to: defaults, now: Self.now - 60)
+        (requests, taken) = RereadRequests.take(since: taken, from: defaults, now: Self.now)
+        #expect(requests.map(\.ref) == [Self.task])
+        // What's there as the app starts counts as taken.
+        RereadRequests.add([Self.story], id: "another", to: defaults, now: Self.now)
+        #expect(RereadRequests.take(since: RereadRequests.taken(in: defaults), from: defaults, now: Self.now).requests.isEmpty)
+
+        let many = MemorySettings()
+        RereadRequests.add((1...60).map { ItemRef.workItem(organization: "contoso", id: $0) }, id: "many", to: many, now: Self.now)
+        let all = RereadRequests.take(since: [:], from: many, now: Self.now).requests
+        #expect(all.count == RereadRequests.most)
+        #expect(all.contains { $0.ref == ItemRef.workItem(organization: "contoso", id: 60) })
+    }
+
+    /// What's past its time goes from the preferences too, not only from what's read: a record that tells nothing more,
+    /// and what's expired in another; one that can't be read stays.
+    @Test func prunesWhatsPastItsTimeFromThePreferences() {
+        let defaults = MemorySettings()
+        let then = Self.now - 8 * Self.day
+        SessionReports.change(Self.session, in: defaults, now: then) { $0.setWorkingOn([Self.task], at: then) }
+        SessionReports.change(Self.other, in: defaults, now: then) {
+            $0.setWorkingOn([Self.story], at: then)
+            $0.addOpened([Self.pullRequest], at: then)
+        }
+        defaults.set(Data("nonsense".utf8), forKey: SessionReports.keyPrefix + "nonsense")
+        SessionReports.prune(in: defaults, now: Self.now)
+        #expect(defaults.object(forKey: SessionReports.key(for: Self.session)) == nil)
+        let kept = SessionReports.load(Self.other, from: defaults)
+        #expect(kept?.workingOn.isEmpty == true)
+        #expect(kept?.opened == [Self.pullRequest: then])
+        #expect(defaults.object(forKey: SessionReports.keyPrefix + "nonsense") != nil)
     }
 
     // MARK: What agents name

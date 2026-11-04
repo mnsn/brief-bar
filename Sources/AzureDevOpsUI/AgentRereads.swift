@@ -52,11 +52,17 @@ final class AgentRereads {
         self.read = read
     }
 
-    /// With the source's stores, which it reads with.
+    /// With the source's stores, which it reads with. The organizations BriefBar reads are those you chose, those of the
+    /// pull requests its lists have, which include the ones you watch and those sent to you from elsewhere, and the
+    /// sprint's team's.
     convenience init(
         updates: SessionUpdates, store: PRStore, sprint: SprintStore?, workLinks: WorkLinksStore?, details: WorkItemDetailsStore?
     ) {
-        self.init(updates: updates, organizations: { [weak store] in store?.organizations ?? [] }) {
+        let organizations = { [weak store, weak sprint] () -> [String] in
+            guard let store else { return [] }
+            return store.organizations + store.items.map(\.key.organization) + [sprint?.board?.team.organization].compactMap { $0 }
+        }
+        self.init(updates: updates, organizations: organizations) {
             [weak store, weak sprint, weak workLinks, weak details] pass in
             store?.reread(pass.pullRequests)
             if !pass.workItems.isEmpty { sprint?.refresh() }

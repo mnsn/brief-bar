@@ -135,10 +135,20 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         try await until("the second read") { !store.isLoading }
         #expect(gate.asked.count == 2)
 
+        // Said while it's read: that read may be from before, so it's read once more after it.
+        store.reloadIfShowing([task.key])
+        try await until("the third read") { gate.asked.count == 3 }
+        store.reloadIfShowing([task.key])
+        try await gate.answer(read(5103))
+        try await until("the read after it") { gate.asked.count == 4 }
+        try await gate.answer(read(5103))
+        try await until("the fourth read") { !store.isLoading }
+        #expect(gate.asked.count == 4)
+
         store.setVisible(false, for: "window.test")
         store.reloadIfShowing([task.key])
         #expect(!store.isLoading)
-        #expect(gate.asked.count == 2)
+        #expect(gate.asked.count == 4)
     }
 
     @Test func showsWhatTheSprintKnowsThenItsDetails() throws {

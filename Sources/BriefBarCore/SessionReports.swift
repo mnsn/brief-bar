@@ -225,12 +225,27 @@ public struct SessionReports: Equatable, Sendable {
         }
     }
 
+    /// Takes away from what's kept what's past its time: a record that changes by it is saved again, or taken away once it
+    /// tells nothing, but only if it's still as it was read, so that a session telling something at that moment loses
+    /// nothing, as far as the preferences, which have no transactions, allow. A record that can't be read is left alone.
+    public static func prune(in defaults: some SettingsStorage, now: Date) {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
+            let data = defaults.data(forKey: key)
+            guard var report = report(data), Self.key(for: report.session) == key else { continue }
+            let kept = report
+            report.expire(now: now)
+            guard report != kept, defaults.data(forKey: key) == data else { continue }
+            save(report, to: defaults)
+        }
+    }
+
     /// Changes what a session told, as `--mcp` does, and saves it at once, its key alone; and, with more than
-    /// `mostSessions` kept, forgets those that told longest ago.
+    /// `mostSessions` kept, forgets those that told longest ago, once what's past its time is gone.
     @discardableResult
     public static func change(
         _ session: ItemRef, in defaults: some SettingsStorage, now: Date, _ body: (inout SessionReport) throws -> Void
     ) rethrows -> SessionReport {
+        prune(in: defaults, now: now)
         var report = load(session, from: defaults) ?? SessionReport(session: session)
         report.expire(now: now)
         try body(&report)
@@ -268,7 +283,9 @@ public struct SessionReports: Equatable, Sendable {
 
 /// What agents said they just changed in Azure DevOps (`changed_in_azure_devops`), for the app to read again sooner than
 /// its next refresh: each `--mcp` keeps its own under a key of its own (`sessionUpdates.rereads.<id>`), so that two
-/// writing at once lose nothing, for ten minutes; the app takes what's new as an agent's change arrives.
+/// writing at once lose nothing, for ten minutes, each numbered in the order it saved them. The app takes what each asked
+/// since it last took that one's (`Taken`), as an agent's change arrives, so that one saved late, by a call that started
+/// first, isn't lost.
 public enum RereadRequests {
     public struct Request: Equatable, Sendable {
         public var ref: ItemRef
@@ -280,48 +297,80 @@ public enum RereadRequests {
         }
     }
 
+    /// The number of the last request taken of each `--mcp`, by its key.
+    public typealias Taken = [String: Int]
+
     public static let keyPrefix = "sessionUpdates.rereads."
     /// How long a request is kept for the app to take.
     public static let lifetime: TimeInterval = 600
     /// At most this many kept for one `--mcp`, the newest.
     public static let most = 50
 
+    private struct Stored: Codable {
+        /// The number of the last request saved.
+        var last: Int
+        var requests: [Record]
+    }
+
     private struct Record: Codable {
         var ref: String
         var at: Date
+        var number: Int
     }
 
     /// Adds to what one `--mcp` asked, under its own key, without what's older than `lifetime`: the newest `most`.
     /// - Parameter id: the `--mcp`'s own, made as it starts.
     public static func add(_ refs: [ItemRef], id: String, to defaults: some SettingsStorage, now: Date) {
         let key = keyPrefix + id
-        var requests = requests(defaults.data(forKey: key)).filter { now.timeIntervalSince($0.at) < lifetime }
-        requests += refs.map { Request(ref: $0, at: now) }
-        requests = Array(requests.suffix(most))
+        var stored = stored(defaults.data(forKey: key)) ?? Stored(last: 0, requests: [])
+        stored.requests = stored.requests.filter { now.timeIntervalSince($0.at) < lifetime }
+        for ref in refs {
+            stored.last += 1
+            stored.requests.append(Record(ref: ref.description, at: now, number: stored.last))
+        }
+        stored.requests = Array(stored.requests.suffix(most))
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        if let data = try? encoder.encode(requests.map { Record(ref: $0.ref.description, at: $0.at) }) {
+        if let data = try? encoder.encode(stored) {
             defaults.set(data, forKey: key)
         }
     }
 
-    /// What every `--mcp` asked after `date`, the oldest first; and takes away the keys of those that asked nothing for
-    /// `lifetime`, such as one that ended.
-    public static func take(after date: Date, from defaults: some SettingsStorage, now: Date) -> [Request] {
-        var taken: [Request] = []
+    /// Everything every `--mcp` asked so far, as taken: from then on, only what's asked after is.
+    public static func taken(in defaults: some SettingsStorage) -> Taken {
+        var taken: Taken = [:]
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
-            let requests = requests(defaults.data(forKey: key))
-            guard let newest = requests.map(\.at).max(), now.timeIntervalSince(newest) < lifetime else {
-                defaults.removeObject(forKey: key)
-                continue
-            }
-            taken += requests.filter { $0.at > date && now.timeIntervalSince($0.at) < lifetime }
+            if let stored = stored(defaults.data(forKey: key)) { taken[key] = stored.last }
         }
-        return taken.sorted { ($0.at, $0.ref) < ($1.at, $1.ref) }
+        return taken
     }
 
-    private static func requests(_ data: Data?) -> [Request] {
-        guard let data, let records = try? JSONDecoder().decode([Record].self, from: data) else { return [] }
-        return records.compactMap { record in ItemRef(record.ref).map { Request(ref: $0, at: record.at) } }
+    /// What every `--mcp` asked since `taken`, the oldest first, within `lifetime`, and what's taken once these are; and
+    /// takes away the keys of those that asked nothing for `lifetime`, such as one that ended, if they're still as they
+    /// were read.
+    public static func take(
+        since taken: Taken, from defaults: some SettingsStorage, now: Date
+    ) -> (requests: [Request], taken: Taken) {
+        var requests: [Request] = []
+        var next: Taken = [:]
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
+            let data = defaults.data(forKey: key)
+            guard let stored = stored(data) else { continue }
+            let current = stored.requests.filter { now.timeIntervalSince($0.at) < lifetime }
+            guard !current.isEmpty else {
+                if defaults.data(forKey: key) == data { defaults.removeObject(forKey: key) }
+                continue
+            }
+            let after = taken[key] ?? 0
+            for record in current where record.number > after {
+                if let ref = ItemRef(record.ref) { requests.append(Request(ref: ref, at: record.at)) }
+            }
+            next[key] = stored.last
+        }
+        return (requests.sorted { ($0.at, $0.ref) < ($1.at, $1.ref) }, next)
+    }
+
+    private static func stored(_ data: Data?) -> Stored? {
+        data.flatMap { try? JSONDecoder().decode(Stored.self, from: $0) }
     }
 }

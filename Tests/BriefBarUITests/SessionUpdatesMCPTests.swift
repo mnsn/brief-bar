@@ -147,7 +147,7 @@ private final class Told: Sendable {
             It shows Pull Request !4102 as opened by this session.
             """)
         #expect(told.total == 2)
-        let reread = RereadRequests.take(after: .distantPast, from: defaults, now: Self.now).map(\.ref)
+        let reread = RereadRequests.take(since: [:], from: defaults, now: Self.now).requests.map(\.ref)
         #expect(Set(reread) == [Self.pullRequest, Self.task, .workItem(organization: "contoso", id: 5101)])
         #expect(defaults.object(forKey: RereadRequests.keyPrefix + "this") != nil)
         #expect(SessionReports.load(Self.sessionRef, from: defaults)?.opened == [Self.pullRequest: Self.now])
@@ -158,7 +158,7 @@ private final class Told: Sendable {
         let unknown = Self.tools(defaults, session: nil)
         let answer = try await Self.call(unknown["changed_in_azure_devops"], #"{"opened": ["4102"], "organization": "contoso"}"#)
         #expect(answer.contains("It can't tell which session opened Pull Request !4102"))
-        #expect(RereadRequests.take(after: .distantPast, from: defaults, now: Self.now).map(\.ref) == [Self.pullRequest])
+        #expect(RereadRequests.take(since: [:], from: defaults, now: Self.now).requests.map(\.ref) == [Self.pullRequest])
         #expect(SessionReports.load(from: defaults, now: Self.now).isEmpty)
 
         let noCopilot = Self.tools(defaults, sourcesOn: [.azureDevOps])

@@ -419,10 +419,13 @@ public actor PulseEngine {
     public static let mostRereads = 8
 
     /// Refreshes as soon as possible, reading these pull requests' details as one never read rather than when they're
-    /// due, as a Copilot session said it changed them: those the lists have, the first `mostRereads`. Nothing more than a
-    /// refresh reads otherwise, and nothing while Azure DevOps asked BriefBar to slow down.
+    /// due, as a Copilot session said it changed them: those the lists have, the first `mostRereads`. A read under way
+    /// that started before now may not have the change, and isn't taken, as after `mayHaveChanged(_:)`. Nothing more than
+    /// a refresh reads otherwise, and nothing while Azure DevOps asked BriefBar to slow down.
     public func reread(_ keys: Set<PRKey>) {
         for key in keys.filter({ active[$0] != nil }).sorted().prefix(Self.mostRereads) {
+            changes += 1
+            changedAt[key] = changes
             entries[key] = nil
         }
         waker.wake()

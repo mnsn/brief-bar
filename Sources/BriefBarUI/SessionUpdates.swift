@@ -20,9 +20,9 @@ package final class SessionUpdates: ObservableObject {
     private let now: () -> Date
     /// Hears about what agents tell through `--mcp`, while it's on.
     private var agentChanges: AnyObject?
-    /// When the last request to read again that it took was made: nothing older is taken, and nothing made before the app
-    /// started, which reads everything as it starts.
-    private var takenUpTo: Date
+    /// What it took of each `--mcp`'s requests to read again: nothing is taken twice, and nothing asked before it started
+    /// reading them, as the app reads everything as it starts.
+    private var taken: RereadRequests.Taken = [:]
 
     /// - Parameters:
     ///   - isDemo: the demo has it on, with what its sessions told in memory (`tellDemo`).
@@ -31,9 +31,11 @@ package final class SessionUpdates: ObservableObject {
         self.defaults = defaults
         self.isDemo = isDemo
         self.now = now
-        takenUpTo = now()
         isOn = isDemo || SessionUpdatesSetting.isOn(in: defaults)
-        if isOn { load() }
+        if isOn {
+            taken = RereadRequests.taken(in: defaults)
+            load()
+        }
     }
 
     /// Updates from Copilot Sessions, on the Agents page. Either way, what sessions told before is forgotten.
@@ -43,7 +45,7 @@ package final class SessionUpdates: ObservableObject {
         Log.app.info("Updates from Copilot Sessions \(on ? "on" : "off", privacy: .public)")
         isOn = on
         SessionReports.forgetAll(in: defaults)
-        takenUpTo = now()
+        taken = [:]
         if on {
             load()
         } else {
@@ -53,6 +55,7 @@ package final class SessionUpdates: ObservableObject {
     }
 
     private func load() {
+        if !isDemo { SessionReports.prune(in: defaults, now: now()) }
         reports = SessionReports.load(from: defaults, now: now())
         // The demo's agents keep what they're told in their own memory.
         if !isDemo, agentChanges == nil {
@@ -64,15 +67,16 @@ package final class SessionUpdates: ObservableObject {
     package func agentChanged() {
         guard isOn else { return }
         let date = now()
+        SessionReports.prune(in: defaults, now: date)
         let loaded = SessionReports.load(from: defaults, now: date)
         if loaded != reports { reports = loaded }
-        let taken = RereadRequests.take(after: takenUpTo, from: defaults, now: date)
-        guard let latest = taken.map(\.at).max() else { return }
-        takenUpTo = max(takenUpTo, latest)
+        let (requests, taken) = RereadRequests.take(since: taken, from: defaults, now: date)
+        self.taken = taken
         var refs: [ItemRef] = []
-        for request in taken where !refs.contains(request.ref) {
+        for request in requests where !refs.contains(request.ref) {
             refs.append(request.ref)
         }
+        guard !refs.isEmpty else { return }
         rereads.send(refs)
     }
 
