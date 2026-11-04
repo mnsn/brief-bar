@@ -457,6 +457,12 @@ extension CopilotTasksStore {
     /// asked about one, isn't Copilot taking care of it.
     func onIt(_ record: PRRecord) -> [PRReadiness.Item.Kind: CopilotWork] {
         let key = record.pullRequest.key
+        return onIt(record) { work(on: $0, of: key, for: [.fix, .pushAndReply]) }
+    }
+
+    /// What Copilot does about each kind of what's left of a pull request, from what `work` says it does about each of its
+    /// threads, builds and conflicts: in pictures, as they draw it.
+    func onIt(_ record: PRRecord, work: (PullRequestPart) -> CopilotWork?) -> [PRReadiness.Item.Kind: CopilotWork] {
         let threads = (record.details?.threads ?? []).filter { !$0.isResolved }.map { PullRequestPart.thread($0.id) }
         var builds: [PullRequestPart] = []
         for case let part? in (record.details?.checks ?? []).map(\.part) where !builds.contains(part) {
@@ -465,7 +471,7 @@ extension CopilotTasksStore {
         let kinds: [(PRReadiness.Item.Kind, [PullRequestPart])] = [(.comments, threads), (.builds, builds), (.conflicts, [.conflicts])]
         var onIt: [PRReadiness.Item.Kind: CopilotWork] = [:]
         for (kind, parts) in kinds {
-            let works = parts.compactMap { work(on: $0, of: key, for: [.fix, .pushAndReply]) }
+            let works = parts.compactMap(work).filter { $0.purpose == .fix || $0.purpose == .pushAndReply }
             if let work = works.max(by: { Self.pressing($0) < Self.pressing($1) }), Self.pressing(work) > 0 {
                 onIt[kind] = work
             }
