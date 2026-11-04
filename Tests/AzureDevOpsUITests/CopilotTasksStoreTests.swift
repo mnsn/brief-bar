@@ -369,7 +369,7 @@ import Testing
         #expect(note.userInfo == [CopilotTasksStore.taskKey: first, "url": pullRequest.url.absoluteString])
         // Fix, on one thread, though it keeps those it fixed before in the same session.
         var one = entry
-        one.threads = [TakenThread(id: 11, since: now.addingTimeInterval(-600), ended: .finished), TakenThread(id: 12, since: now)]
+        one.taken = [TakenPart(.thread(11), since: now.addingTimeInterval(-600), ended: .finished), TakenPart(.thread(12), since: now)]
         #expect(CopilotTasksStore.startedNotification(one, subject: "!4071 Fix totals").title == "Copilot is fixing a comment")
 
         let expected: [(PullRequestAction, String, String)] = [

@@ -21,6 +21,9 @@ struct PullRequestFilePage: View {
     let open: PullRequestDetailsStore.OpenFile
     /// Scrolls the details, which hold it, to a thread.
     let scroll: ScrollViewProxy
+    /// The threads you changed in the details, where each was as you first did, which the details keep as you go from its
+    /// comments to a file's page and back: each stays where it was, unfolded, however it stands now.
+    @Binding var held: [Int: PullRequestPanel.Thread.Held]
 
     @EnvironmentObject private var files: PullRequestFilesStore
     @EnvironmentObject private var code: PullRequestCodeStore
@@ -42,8 +45,8 @@ struct PullRequestFilePage: View {
     /// The resolved threads you unfolded.
     @LocalState private var unfoldedResolved: Set<Int> = []
     /// The composer in place that's open on its threads, one at a time, and what you wrote in each.
-    @LocalState private var composing: CommentComposing?
-    @LocalState private var drafts = CommentDrafts()
+    @LocalState private var composing: CopilotComposing?
+    @LocalState private var drafts = CopilotDrafts()
     /// VoiceOver goes to the file's name as its page opens, and as it goes to another file.
     @AccessibilityFocusState private var isNameFocused: Bool
     /// Its toolbar is at the details' top, where it stays as the code scrolls under it.
@@ -73,7 +76,7 @@ struct PullRequestFilePage: View {
         let threadFile = threadFile(state)
         let shown: Shown? = if let pullRequest, case .read(let changes)? = state,
             let file = threadFile ?? changes.file(atPath: open.path) {
-            Shown(file: file, changes: changes, threads: threads, diff: diff(of: file, in: changes, pullRequest))
+            Shown(file: file, changes: changes, threads: threads, held: held, diff: diff(of: file, in: changes, pullRequest))
         } else {
             nil
         }
@@ -200,12 +203,15 @@ struct PullRequestFilePage: View {
         /// Its open threads, in the order it shows them, to go through.
         var openThreads: [Int] = []
 
-        init(file: FileChange, changes: ChangedFiles, threads: PullRequestPanel.Threads, diff: PullRequestFilesStore.State<FileDiff>?) {
+        init(
+            file: FileChange, changes: ChangedFiles, threads: PullRequestPanel.Threads, held: [Int: PullRequestPanel.Thread.Held],
+            diff: PullRequestFilesStore.State<FileDiff>?
+        ) {
             self.file = file
             self.changes = changes
             index = changes.index(of: file.id) ?? 0
             self.diff = diff
-            let onFile = threads.comments(on: file, in: changes).threads
+            let onFile = threads.comments(on: file, in: changes, holding: held).threads
             guard case .read(let read)? = diff else {
                 apart = Self.asApart(onFile)
                 openThreads = apart.filter(Self.isOpen).map(\.id)
@@ -781,10 +787,12 @@ struct PullRequestFilePage: View {
     /// An open thread's card; a resolved one folded to a line, until you unfold it.
     @ViewBuilder
     private func threadView(_ thread: PullRequestPanel.Thread, showsCode: Bool) -> some View {
-        if Shown.isOpen(thread) || unfoldedResolved.contains(thread.id) {
+        if Shown.isOpen(thread) || unfoldedResolved.contains(thread.id) || held[thread.id] != nil {
             ThreadCard(
                 thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now, isHighlighted: highlighted == thread.id,
-                composing: $composing, drafts: drafts, showsCode: showsCode
+                composing: $composing, drafts: drafts, showsCode: showsCode,
+                // Resolved as you change it, it stays where it was, unfolded.
+                hold: { held[$0.id] = held[$0.id] ?? PullRequestPanel.Thread.Held($0) }
             )
         } else {
             ResolvedThreadLine(thread: thread) {

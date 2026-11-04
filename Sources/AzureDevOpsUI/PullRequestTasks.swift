@@ -47,6 +47,33 @@ enum PullRequestTasks {
         (record.details?.checks ?? []).filter { $0.kind == .build && $0.state == .failed && $0.isBlocking }
     }
 
+    /// What a task takes on, as its prompt does, for each to say what became of it: Fix Comments the threads it lists, Fix
+    /// the Build the builds that failed, Resolve Conflicts the conflicts, and Push & Reply what it ships, with the threads
+    /// its prompt lists; a review, nothing.
+    /// - Parameter shipping: for Push & Reply, what the fixes it ships took on, such as one session's: their threads, which
+    ///   its prompt lists alone, and their builds and conflicts. Without any, it lists the threads Fix Comments does.
+    static func parts(_ action: PullRequestAction, for record: PRRecord, shipping: [PullRequestPart] = []) -> [PullRequestPart] {
+        switch action {
+        case .fixComments:
+            return PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map { .thread($0.id) }
+        case .fixBuild:
+            return failedBuilds(record).compactMap(\.part)
+        case .resolveConflicts:
+            return [.conflicts]
+        case .pushAndReply:
+            let threads = PullRequestPrompt.shippedThreads(record, only: shippedThreads(shipping)).prefix(PullRequestPrompt.threadLimit)
+            return threads.map { .thread($0.id) } + shipping.filter { $0.thread == nil }
+        case .review:
+            return []
+        }
+    }
+
+    /// The threads a Push & Reply of these fixes ships, which its prompt lists and replies on: theirs, none for a build's
+    /// fix alone; nil, for those Fix Comments lists, without any fixes.
+    static func shippedThreads(_ shipping: [PullRequestPart]) -> [Int]? {
+        shipping.isEmpty ? nil : shipping.compactMap(\.thread)
+    }
+
     /// The pull request, as a task sent to Copilot knows it.
     static func task(for record: PRRecord) -> TaskPullRequest {
         let pr = record.pullRequest
@@ -69,36 +96,48 @@ enum PullRequestTasks {
     /// The prompts for an action, for both places Copilot may work: a worktree of BriefBar's, for a new session or an
     /// earlier task's; and wherever a session that's there already works, such as one of the Copilot app's. A failed
     /// build's errors are read once, for both.
-    /// - Parameter threads: for Push & Reply, the threads the fixes it ships took on, which it replies on alone.
+    /// - Parameters:
+    ///   - threads: for Push & Reply, the threads the fixes it ships took on, which it replies on alone.
+    ///   - investigations: what the pull request's details read of its builds, by run, which Fix the Build quotes.
+    ///   - conflicts: for Resolve Conflicts, the files that conflict, as its details read them, which it lists.
     static func prompts(
-        _ action: PullRequestAction, for record: PRRecord, client: ADOClient?, threads: [Int]? = nil
+        _ action: PullRequestAction, for record: PRRecord, client: ADOClient?, threads: [Int]? = nil,
+        investigations: [Int: BuildInvestigation] = [:], conflicts: MergeConflicts? = nil
     ) async -> (worktree: String, session: String) {
-        let failures = action == .fixBuild ? await reports(for: record, client: client) : []
+        let failures = action == .fixBuild ? await reports(for: record, client: client, investigations: investigations) : []
         return (
-            prompt(action, for: record, failures: failures, workplace: .worktree, threads: threads),
-            prompt(action, for: record, failures: failures, workplace: .agent, threads: threads)
+            prompt(action, for: record, failures: failures, workplace: .worktree, threads: threads, conflicts: conflicts),
+            prompt(action, for: record, failures: failures, workplace: .agent, threads: threads, conflicts: conflicts)
         )
     }
 
     private static func prompt(
         _ action: PullRequestAction, for record: PRRecord, failures: [FailedBuildReport], workplace: PullRequestPrompt.Workplace,
-        threads: [Int]? = nil
+        threads: [Int]? = nil, conflicts: MergeConflicts? = nil
     ) -> String {
         switch action {
         case .fixComments: return PullRequestPrompt.fixComments(record, workplace: workplace)
         case .fixBuild: return PullRequestPrompt.fixBuild(record, failures: failures, workplace: workplace)
-        case .resolveConflicts: return PullRequestPrompt.resolveConflicts(record, workplace: workplace)
+        case .resolveConflicts: return PullRequestPrompt.resolveConflicts(record, workplace: workplace, conflicts: conflicts)
         case .review: return PullRequestPrompt.review(record, workplace: workplace)
         case .pushAndReply: return PullRequestPrompt.pushAndReply(record, workplace: workplace, threads: threads)
         }
     }
 
-    /// Where each failed build of a pull request failed, and its errors, from the runs' timelines.
-    static func reports(for record: PRRecord, client: ADOClient?) async -> [FailedBuildReport] {
+    /// Where each failed build of a pull request failed, and its errors: as its details read it, once it was opened there
+    /// (`BuildInvestigation`), with the tests that failed and the end of its log; else from the run's timeline, one GET each.
+    /// - Parameter investigations: what the details read of its builds, by run.
+    static func reports(
+        for record: PRRecord, client: ADOClient?, investigations: [Int: BuildInvestigation] = [:]
+    ) async -> [FailedBuildReport] {
         let pr = record.pullRequest
         var reports: [FailedBuildReport] = []
         for check in failedBuilds(record) {
             guard let buildId = check.buildId else { continue }
+            if let investigation = investigations[buildId], investigation.run.id == buildId, investigation.run.status == .failed {
+                reports.append(FailedBuildReport(investigation, name: check.name))
+                continue
+            }
             var failure = check.failure
             var errors = failure?.message.map { [$0] } ?? []
             if let client, let timeline = try? await client.get(

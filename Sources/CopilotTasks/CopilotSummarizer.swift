@@ -5,8 +5,9 @@ import Foundation
 /// Asks the Copilot CLI to write a summary, with no tools at all: what it's given, which others wrote, such as pull
 /// requests' comments, is only ever something to write about. It can't run a command, read or change a file, or reach a
 /// web page for it. It runs in a folder of BriefBar's own, without your custom instructions or the built-in MCP servers,
-/// in a session of its own named "BriefBar summary", which the CLI keeps, as it keeps every session, and which the
-/// Copilot app doesn't list. Nothing runs unless you ask for a summary, and what runs stops when the summary's cancelled.
+/// in a session of its own named "BriefBar summary", or "BriefBar grammar fix" for Fix Grammar, which the CLI keeps, as it
+/// keeps every session, and which the Copilot app doesn't list. Nothing runs unless you ask for a summary, or a fix, and
+/// what runs stops when it's cancelled.
 public actor CopilotSummarizer {
     public enum Failure: Error, Sendable, Equatable {
         /// No `copilot` was found.
@@ -77,6 +78,8 @@ public actor CopilotSummarizer {
     public static let noTools = "briefbar_no_tools"
     /// The session's name, as `copilot --resume` lists it.
     public static let sessionName = "BriefBar summary"
+    /// The session's name when Fix Grammar asks it to correct what you wrote.
+    public static let grammarSessionName = "BriefBar grammar fix"
     /// How long a summary may take.
     public static let timeout: TimeInterval = 120
     /// Where it runs: a folder of BriefBar's own, with nothing in it, so no project's instructions, skills or MCP servers
@@ -104,21 +107,22 @@ public actor CopilotSummarizer {
     }
 
     /// The CLI's arguments for a summary: the prompt, the model, no tools, shell and writing denied as well, without the
-    /// built-in MCP servers or custom instructions, asking nothing, printing only the answer.
-    public static func arguments(prompt: String, options: CopilotRunOptions, folder: URL) -> [String] {
+    /// built-in MCP servers or custom instructions, asking nothing, printing only the answer, in a session named `name`.
+    public static func arguments(prompt: String, options: CopilotRunOptions, folder: URL, name: String = sessionName) -> [String] {
         var arguments = ["-p", prompt, "--model", options.model]
         if let effort = options.effort { arguments += ["--reasoning-effort", effort] }
         arguments += [
             "--available-tools=\(noTools)", "--deny-tool", "shell", "--deny-tool", "write",
             "--disable-builtin-mcps", "--no-custom-instructions", "--no-ask-user", "--no-color", "--silent",
-            "--name", sessionName, "-C", folder.path,
+            "--name", name, "-C", folder.path,
         ]
         return arguments
     }
 
-    /// What the model answered to the prompt, or why there's no answer. Cancelled, it runs nothing more: Copilot doesn't
-    /// start, or it's stopped, with whatever it started.
-    public func summarize(_ prompt: String, options: CopilotRunOptions) async -> Result<String, Failure> {
+    /// What the model answered to the prompt, or why there's no answer, in a session named `name`: a summary's, unless
+    /// it's asked for something else, such as Fix Grammar (`grammarSessionName`). Cancelled, it runs nothing more: Copilot
+    /// doesn't start, or it's stopped, with whatever it started.
+    public func summarize(_ prompt: String, options: CopilotRunOptions, name: String = sessionName) async -> Result<String, Failure> {
         guard let environment = await loadedEnvironment() else { return .failure(.cancelled) }
         guard let copilot = locate(environment) else { return .failure(.noCLI) }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -127,7 +131,7 @@ public actor CopilotSummarizer {
         let result: ProcessResult
         do {
             result = try await runner.run(
-                copilot, arguments: Self.arguments(prompt: prompt, options: options, folder: folder), environment: environment,
+                copilot, arguments: Self.arguments(prompt: prompt, options: options, folder: folder, name: name), environment: environment,
                 timeout: Self.timeout
             )
         } catch is CancellationError {

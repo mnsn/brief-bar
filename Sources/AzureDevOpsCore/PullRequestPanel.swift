@@ -5,9 +5,10 @@ import Foundation
 /// can complete, its comment threads, its builds and checks, and who reviews it. All of it is what BriefBar read already for
 /// the lists (`PRSnapshot`, `PRRecord`): nothing more is read for it.
 public struct PullRequestPanel: Sendable, Equatable {
-    /// A part of the details that what's left can lead to: its threads, its builds and checks, or its reviewers.
+    /// A part of the details that what's left can lead to: its threads, its merge conflicts, its builds and checks, or its
+    /// reviewers.
     public enum Section: String, Sendable, Hashable, CaseIterable {
-        case comments, checks, reviewers
+        case comments, conflicts, checks, reviewers
     }
 
     /// The branch it merges, and into which: "payments-retry → main"; nil when that isn't known.
@@ -30,6 +31,9 @@ public struct PullRequestPanel: Sendable, Equatable {
     public var hasDetails: Bool
     /// It's completed or abandoned: the list reads a pull request's threads and policies only while it's open.
     public var isClosed: Bool
+    /// It's open, and its merge with its target branch conflicts, as Azure DevOps says it: its details list the files that
+    /// conflict.
+    public var hasConflicts: Bool
     public var threads: Threads
     /// Its builds and status checks, and the pipelines that ran after it merged, what failed first.
     public var checks: [CheckLine]
@@ -56,6 +60,7 @@ public struct PullRequestPanel: Sendable, Equatable {
         hasDetails = details != nil
         isClosed = pullRequest.map { $0.status == .completed || $0.status == .abandoned }
             ?? (snapshot.group == .done || snapshot.merge != nil)
+        hasConflicts = pullRequest.map { $0.status == .active && $0.hasConflicts } ?? false
         threads = Threads(details?.threads ?? [], events: events ?? snapshot.pendingEvents)
         var checks = (details?.checks ?? []).compactMap { check in
             PullRequestStory.run(check, organization: snapshot.key.organization, project: snapshot.project).map {
@@ -68,14 +73,16 @@ public struct PullRequestPanel: Sendable, Equatable {
         reviewers = (pullRequest?.reviewers ?? []).map { ReviewerLine($0, me: record?.me) }.sorted(by: ReviewerLine.showsFirst)
     }
 
-    /// Where an item of what's left leads: comments to the threads, builds and checks to them, approvals and reviewers to
-    /// who reviews it; nil for what has no part of its own, such as a draft or a linked work item.
+    /// Where an item of what's left leads: comments to the threads, conflicts to the files that conflict, builds and checks
+    /// to them, approvals and reviewers to who reviews it; nil for what has no part of its own, such as a draft or a linked
+    /// work item.
     public static func section(of item: PRReadiness.Item) -> Section? {
         switch item.kind {
         case .comments: .comments
+        case .conflicts: .conflicts
         case .builds, .checks: .checks
         case .approvals, .requiredReviewers, .changesRequested: .reviewers
-        case .draft, .workItems, .policy, .conflicts, .mergeFailed, .unreadablePolicies: nil
+        case .draft, .workItems, .policy, .mergeFailed, .unreadablePolicies: nil
         }
     }
 }

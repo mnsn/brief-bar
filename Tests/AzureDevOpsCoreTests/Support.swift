@@ -195,6 +195,14 @@ actor FakeTokens: AccessTokenProvider {
     private var home: String?
     /// The other directories it's signed in to.
     private var others: Set<String> = []
+    /// Whom tokens for other directories are for, by directory, when it's a guest of its own there, as a real token's is:
+    /// otherwise `account`.
+    private var guests: [String: String] = [:]
+    /// Guests' tokens kept from before someone else signed in, by directory, as a cache keeps them: given until they're
+    /// invalidated.
+    private var kept: [String: String] = [:]
+    /// Whom each token it gave was for, in order.
+    private(set) var handedOut: [String?] = []
     private(set) var fetches = 0
     private(set) var invalidations = 0
     /// The directories asked for, in order: nil for your sign-in's.
@@ -214,8 +222,10 @@ actor FakeTokens: AccessTokenProvider {
             throw AuthError.signedOut("AADSTS50076: Sign in to \(tenant) with multi-factor authentication.")
         }
         let directory = tenant ?? home
+        let whom = tenant.flatMap { kept[$0] ?? guests[$0] } ?? account
+        handedOut.append(whom)
         return AccessToken(
-            value: directory.map { "\(value)@\($0)" } ?? value, expiresOn: .distantFuture, account: account, tenant: directory
+            value: directory.map { "\(value)@\($0)" } ?? value, expiresOn: .distantFuture, account: whom, tenant: directory
         )
     }
 
@@ -223,9 +233,10 @@ actor FakeTokens: AccessTokenProvider {
         self.account = account
     }
 
-    /// Signs in to another directory too, as `az login --tenant` does.
-    func signIn(to tenant: String) {
+    /// Signs in to another directory too, as `az login --tenant` does: with `guest`, as whom its tokens are for there.
+    func signIn(to tenant: String, as guest: String? = nil) {
         others.insert(tenant)
+        guests[tenant] = guest
     }
 
     /// Signs out of another directory.
@@ -233,8 +244,14 @@ actor FakeTokens: AccessTokenProvider {
         others.remove(tenant)
     }
 
+    /// Keeps a guest's token for a directory, as from before someone else signed in, until it's invalidated.
+    func keep(_ guest: String, for tenant: String) {
+        kept[tenant] = guest
+    }
+
     func invalidate(tenant: String?) {
         invalidations += 1
+        if let tenant { kept[tenant] = nil }
     }
 
     func fail(with error: AuthError?) {
@@ -261,6 +278,9 @@ final class StubServer: Sendable {
         var error: URLError?
         /// Where the request is redirected, with its headers, as a server's 307 would.
         var redirect: URL?
+        /// Answers only once this holds, while it answers other requests meanwhile, as a slow answer that comes after a
+        /// quicker one does; or after ten seconds, if it never does.
+        var waitsFor: (@Sendable () -> Bool)?
 
         static func json(_ object: Any, status: Int = 200, headers: [String: String] = [:]) -> Reply {
             var reply = Reply(status: status, body: Fixture.data(object))
@@ -375,6 +395,24 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         let reply = server.handle(request)
+        guard let isReady = reply.waitsFor else { return answer(reply, to: url) }
+        // On the thread that's loading it, as URLProtocol has it, once it may answer.
+        let thread = LoadingThread(runLoop: CFRunLoopGetCurrent())
+        DispatchQueue.global().async { [self] in
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: waitLimit)
+            while !isReady(), clock.now < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            CFRunLoopPerformBlock(thread.runLoop, CFRunLoopMode.commonModes.rawValue) { self.answer(reply, to: url) }
+            CFRunLoopWakeUp(thread.runLoop)
+        }
+    }
+
+    /// A loading thread's run loop, to answer on later.
+    private struct LoadingThread: @unchecked Sendable {
+        let runLoop: CFRunLoop
+    }
+
+    private func answer(_ reply: StubServer.Reply, to url: URL) {
         if let error = reply.error {
             client?.urlProtocol(self, didFailWithError: error)
             return
@@ -408,6 +446,9 @@ final class SnapshotCollector: Sendable {
     var count: Int { snapshots.withLock { $0.count } }
 
     var last: PulseSnapshot? { snapshots.withLock { $0.last } }
+
+    /// Every snapshot it collected, the first first.
+    var all: [PulseSnapshot] { snapshots.withLock { $0 } }
 
     @discardableResult
     func wait(_ what: String, timeout: Duration = waitLimit, until predicate: (PulseSnapshot) -> Bool) async throws -> PulseSnapshot {

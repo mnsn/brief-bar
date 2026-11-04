@@ -254,11 +254,11 @@ private final class TakenAt: Sendable {
         try hold(session, home: home)
 
         let before = Date()
-        let about = SentPrompt.About(pullRequest: PRKey("contoso", 4071), purpose: .fix, threads: [11])
+        let about = SentPrompt.About(pullRequest: PRKey("contoso", 4071), purpose: .fix, parts: [.thread(11)])
         #expect(await store.deliver("Fix this comment", to: choice(session), about: about) == .sent)
         let kept = try #require(store.settings.copilotSentPrompts.first)
         #expect(kept.session == session)
-        #expect(kept.threads == [11])
+        #expect(kept.parts == [.thread(11)])
         #expect(!kept.copied)
         let tookIt = try #require(taken.date)
         #expect(kept.sentAt >= before)
@@ -283,10 +283,10 @@ private final class TakenAt: Sendable {
         try hold(session, home: home)
         let key = PRKey("contoso", 4071)
         let earlier = try #require(SentPrompt(
-            SentPrompt.About(pullRequest: key, purpose: .fix, threads: [11]), session: session, sentAt: Date().addingTimeInterval(-60), copied: false
+            SentPrompt.About(pullRequest: key, purpose: .fix, parts: [.thread(11)]), session: session, sentAt: Date().addingTimeInterval(-60), copied: false
         ))
         store.settings.copilotSentPrompts = [earlier]
-        let about = SentPrompt.About(pullRequest: key, purpose: .fix, threads: [12])
+        let about = SentPrompt.About(pullRequest: key, purpose: .fix, parts: [.thread(12)])
 
         // Nothing went: it's followed again.
         store.delivering.insert(session)
@@ -298,8 +298,8 @@ private final class TakenAt: Sendable {
         #expect(await store.deliver("Fix this comment", to: choice(session), about: about) == .sent)
         #expect(pausedAsItShowed == [1])
         #expect(store.followingPaused.isEmpty)
-        #expect(store.settings.copilotSentPrompts.first { $0.threads == [11] }?.overlapped == true)
-        #expect(store.settings.copilotSentPrompts.first { $0.threads == [12] }?.isFollowed == true)
+        #expect(store.settings.copilotSentPrompts.first { $0.parts == [.thread(11)] }?.overlapped == true)
+        #expect(store.settings.copilotSentPrompts.first { $0.parts == [.thread(12)] }?.isFollowed == true)
     }
 
     /// A session that nothing has open loads as the app opens it, with BriefBar's extension, which takes the request that

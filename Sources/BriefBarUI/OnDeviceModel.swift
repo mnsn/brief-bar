@@ -19,19 +19,36 @@ package enum OnDeviceModel {
         case failed
     }
 
+    /// Why it can't run on this Mac now.
+    package enum Unavailability: Sendable, Equatable {
+        /// This Mac can't run it.
+        case notEligible
+        /// It's turned off in System Settings.
+        case notEnabled
+        /// It's still getting ready, as after it's turned on.
+        case notReady
+        case other
+    }
+
+    /// Why it can't run on this Mac now, or nil when it can.
+    package static var unavailability: Unavailability? {
+        switch SystemLanguageModel.default.availability {
+        case .available: nil
+        case .unavailable(.deviceNotEligible): .notEligible
+        case .unavailable(.appleIntelligenceNotEnabled): .notEnabled
+        case .unavailable(.modelNotReady): .notReady
+        case .unavailable: .other
+        }
+    }
+
     /// Why summaries aren't available, or nil when they are.
     package static var unavailableReason: String? {
-        switch SystemLanguageModel.default.availability {
-        case .available:
-            return nil
-        case .unavailable(.deviceNotEligible):
-            return "This Mac can't run Apple Intelligence."
-        case .unavailable(.appleIntelligenceNotEnabled):
-            return "Turn on Apple Intelligence in System Settings to get summaries."
-        case .unavailable(.modelNotReady):
-            return "Apple Intelligence is still getting ready."
-        case .unavailable:
-            return "Apple Intelligence isn't available."
+        switch unavailability {
+        case nil: nil
+        case .notEligible?: "This Mac can't run Apple Intelligence."
+        case .notEnabled?: "Turn on Apple Intelligence in System Settings to get summaries."
+        case .notReady?: "Apple Intelligence is still getting ready."
+        case .other?: "Apple Intelligence isn't available."
         }
     }
 

@@ -206,11 +206,18 @@ final class PullRequestCodeStore: ObservableObject {
             reads[key] = nil
             states[key] = nil
         }
-        forgot()
+        for forget in forgetting { forget() }
     }
 
-    /// Called once it's forgotten the pull requests nothing shows anymore: the files' store forgets them too.
-    var forgot: () -> Void = {}
+    /// What's called once it's forgotten the pull requests nothing shows anymore: the stores that read only as it allows,
+    /// the files' and the conflicts', forget them too.
+    private var forgetting: [() -> Void] = []
+
+    /// Has `forget` called once it's forgotten the pull requests nothing shows anymore, for a store that reads only as it
+    /// allows to forget them too.
+    func whenForgetting(_ forget: @escaping () -> Void) {
+        forgetting.append(forget)
+    }
 
     /// The reader of a pull request something shows, for its files: the one its threads' code is read with, so that a
     /// file read for one isn't read again for the other. Nil while nothing shows it.

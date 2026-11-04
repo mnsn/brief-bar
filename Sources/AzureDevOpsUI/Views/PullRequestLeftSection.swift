@@ -6,12 +6,15 @@ import SwiftUI
 
 /// What's left before you can complete one of your pull requests, in its details, as its row's line says it: the most
 /// pressing first, then what's done. What's yours to do says so, or that Copilot's on it, and an item with a part of its
-/// own below, its comments, its builds and checks or its reviewers, takes you there.
+/// own below, its comments, its merge conflicts, its builds and checks or its reviewers, takes you there.
 struct PullRequestLeftSection: View {
     let readiness: PRReadiness
     /// What the task Copilot is at work on for it does, while Send Work to Copilot is on: what it takes care of is
     /// Copilot's turn.
     var copilotAction: PullRequestAction?
+    /// What Copilot does now about each kind of what's left, while Send Work to Copilot is on, by a task of BriefBar's or a
+    /// prompt sent to one of the Copilot app's sessions (`CopilotTasksStore.onIt`).
+    var copilot: [PRReadiness.Item.Kind: CopilotWork] = [:]
     /// Takes the details to where an item leads (`PullRequestDetailsStore.Place.of(_:in:)`).
     let go: (PRReadiness.Item) -> Void
 
@@ -36,16 +39,22 @@ struct PullRequestLeftSection: View {
                             .opacity(0.6)
                             .padding(.leading, 34)
                     }
-                    LeftRow(
-                        item: item, section: PullRequestPanel.section(of: item),
-                        isCopilots: copilotAction?.takesCare(of: item.kind) == true, go: go
-                    )
+                    LeftRow(item: item, section: PullRequestPanel.section(of: item), copilot: turn(of: item), go: go)
                 }
             }
             .padding(.vertical, 3)
             .background(GlassCard(cornerRadius: 12, raised: true))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Copilot's part in it: at work on it, with the symbol its line has, or asking you something about it in the Copilot
+    /// app; or the task at work on the pull request takes care of it, whatever it took on.
+    private func turn(of item: PRReadiness.Item) -> LeftRow.CopilotTurn? {
+        if let work = copilot[item.kind] {
+            return work.state == .needsYou ? .asksYou : .onIt(symbol: work.look.symbol)
+        }
+        return copilotAction?.takesCare(of: item.kind) == true ? .onIt(symbol: "arrow.triangle.2.circlepath") : nil
     }
 }
 
@@ -54,21 +63,29 @@ struct PullRequestLeftSection: View {
 private struct LeftRow: View {
     let item: PRReadiness.Item
     let section: PullRequestPanel.Section?
-    /// Copilot's at work on it.
-    let isCopilots: Bool
+    /// Copilot's part in it, while it's at work on it.
+    let copilot: CopilotTurn?
     let go: (PRReadiness.Item) -> Void
+
+    /// Copilot at work on something that's left, or asking you something about it in the Copilot app.
+    enum CopilotTurn: Equatable {
+        /// With its line's symbol: at work, pushing, or sent and not taken up yet.
+        case onIt(symbol: String)
+        case asksYou
+    }
 
     @LocalState private var isHovered = false
 
     /// What you have to do yourself: a draft to publish, changes someone wants, comments to resolve, a build that failed;
     /// unless Copilot's at work on it.
     private var isYourTurn: Bool {
-        item.isRequired && (item.state == .needsYou || item.state == .failing) && !isCopilots
+        item.isRequired && (item.state == .needsYou || item.state == .failing) && copilot == nil
     }
 
     /// What Copilot's at work on, which would be yours otherwise.
-    private var isCopilotsTurn: Bool {
-        item.isRequired && (item.state == .needsYou || item.state == .failing) && isCopilots
+    private var copilotsTurn: CopilotTurn? {
+        guard item.isRequired, item.state == .needsYou || item.state == .failing else { return nil }
+        return copilot
     }
 
     var body: some View {
@@ -119,10 +136,15 @@ private struct LeftRow: View {
                     .font(size: 11, weight: .semibold)
                     .foregroundStyle(item.state?.textColor ?? .secondary)
                     .fixedSize()
-            } else if isCopilotsTurn {
-                Label("Copilot's on it", systemImage: "paperplane.fill")
+            } else if let turn = copilotsTurn {
+                // As its line in the details says it: blue while Copilot's at work, orange while it asks you something.
+                let (title, symbol, state): (String, String, ItemState) = switch turn {
+                case .onIt(let symbol): ("Copilot's on it", symbol, .running)
+                case .asksYou: ("Copilot asks you", "questionmark.circle.fill", .needsYou)
+                }
+                Label(title, systemImage: symbol)
                     .font(size: 11, weight: .semibold)
-                    .foregroundStyle(ItemState.running.textColor)
+                    .foregroundStyle(state.textColor)
                     .fixedSize()
             }
             if section != nil {
@@ -145,8 +167,8 @@ private struct LeftRow: View {
         var parts = [item.described]
         if isYourTurn {
             parts.append("your turn")
-        } else if isCopilotsTurn {
-            parts.append("Copilot's on it")
+        } else if let turn = copilotsTurn {
+            parts.append(turn == .asksYou ? "Copilot asks you something in the Copilot app" : "Copilot's on it")
         } else if item.isDone {
             parts.append("done")
         }
@@ -157,6 +179,7 @@ private struct LeftRow: View {
     static func hint(_ section: PullRequestPanel.Section) -> String {
         switch section {
         case .comments: "Shows its comments"
+        case .conflicts: "Shows the files that conflict"
         case .checks: "Shows its builds and checks"
         case .reviewers: "Shows its reviewers"
         }

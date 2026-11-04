@@ -31,9 +31,7 @@ public struct PRDetails: Sendable, Codable, Equatable {
 
     /// `evaluations` is nil when the policies couldn't be read.
     public init(fetchedAt: Date, pullRequest: PullRequest, evaluations: [ADOPolicyEvaluation]?, threads: [ADOThread]) {
-        var names: [String: String] = [:]
-        for reviewer in pullRequest.reviewers { names[reviewer.person.id] = reviewer.person.name }
-        names[pullRequest.author.id] = pullRequest.author.name
+        let names = Self.names(of: pullRequest)
 
         var reviewThreads: [ReviewThread] = []
         var activity: [Activity] = []
@@ -63,6 +61,15 @@ public struct PRDetails: Sendable, Codable, Equatable {
     /// Whether a check is still going, so the details are worth refreshing more often.
     public var hasChecksInProgress: Bool {
         checks.contains { $0.isBlocking && ($0.state == .running || $0.state == .queued) }
+    }
+
+    /// The names of the pull request's people, its reviewers and its author, by their lowercased IDs, for mentions in its
+    /// comments to say.
+    static func names(of pullRequest: PullRequest) -> [String: String] {
+        var names: [String: String] = [:]
+        for reviewer in pullRequest.reviewers { names[reviewer.person.id] = reviewer.person.name }
+        names[pullRequest.author.id] = pullRequest.author.name
+        return names
     }
 }
 
@@ -101,14 +108,21 @@ public struct Check: Sendable, Codable, Equatable {
     public var completedAt: Date?
     /// The run a build policy queued, in the pull request's project.
     public var buildId: Int?
+    /// The pipeline a build policy runs, its build definition's ID, which each of its runs shares; nil when the policy
+    /// doesn't say.
+    public var definitionId: Int?
     /// Where that build failed, and the first error there, once its timeline has been read.
     public var failure: PipelineFailure?
+    /// For a build that expired, how it stood before: failed, for a rejected or broken one, which is still to fix, not only
+    /// to queue again; nil for one that passed, or when Azure DevOps doesn't say.
+    public var expiredFrom: State?
     /// Lowercased identity IDs of the people and teams a required-reviewers policy requires; empty when it doesn't say.
     public var reviewerIds: [String]
 
     public init(
         name: String, kind: Kind, state: State, isBlocking: Bool = true, minimumApprovers: Int? = nil, completedAt: Date? = nil,
-        buildId: Int? = nil, failure: PipelineFailure? = nil, reviewerIds: [String] = []
+        buildId: Int? = nil, definitionId: Int? = nil, failure: PipelineFailure? = nil, reviewerIds: [String] = [],
+        expiredFrom: State? = nil
     ) {
         self.name = name
         self.kind = kind
@@ -117,8 +131,10 @@ public struct Check: Sendable, Codable, Equatable {
         self.minimumApprovers = minimumApprovers
         self.completedAt = completedAt
         self.buildId = buildId
+        self.definitionId = definitionId
         self.failure = failure
         self.reviewerIds = reviewerIds.map { $0.lowercased() }
+        self.expiredFrom = expiredFrom
     }
 
     /// Nil for a disabled policy.
@@ -136,7 +152,9 @@ public struct Check: Sendable, Codable, Equatable {
             name = Self.nonEmpty(settings?.displayName) ?? Self.nonEmpty(context?.buildDefinitionName) ?? "Build"
             switch status {
             case "approved": state = .passed
-            case "rejected", "broken": state = context?.isExpired == true ? .expired : .failed
+            case "rejected", "broken":
+                state = context?.isExpired == true ? .expired : .failed
+                if state == .expired { expiredFrom = .failed }
             case "running": state = .running
             case "notApplicable": state = .notApplicable
             default:
@@ -180,6 +198,7 @@ public struct Check: Sendable, Codable, Equatable {
         minimumApprovers = settings?.minimumApproverCount
         completedAt = evaluation.completedDate
         buildId = kind == .build ? context?.buildId : nil
+        definitionId = kind == .build ? settings?.buildDefinitionId ?? context?.buildDefinitionId : nil
         reviewerIds = kind == .reviewers ? (settings?.requiredReviewerIds ?? []).map { $0.lowercased() } : []
     }
 
@@ -227,19 +246,7 @@ public struct ReviewThread: Sendable, Codable, Equatable {
         for comment in thread.comments ?? [] {
             if let author = comment.author { names[author.id.lowercased()] = author.displayName }
         }
-        let comments = (thread.comments ?? []).compactMap { comment -> ReviewComment? in
-            guard comment.isDeleted != true, comment.commentType != "system", let author = comment.author,
-                  let content = comment.content, !content.isEmpty
-            else { return nil }
-            return ReviewComment(
-                id: comment.id,
-                author: Person(author),
-                text: CommentText.plain(content, names: names),
-                markdown: CommentText.naming(content, names: names),
-                mentions: CommentText.mentionedIds(content),
-                publishedAt: comment.publishedDate ?? thread.publishedDate ?? .distantPast
-            )
-        }
+        let comments = (thread.comments ?? []).compactMap { ReviewComment($0, names: names, published: thread.publishedDate) }
         guard !comments.isEmpty else { return nil }
         self.init(
             id: thread.id,
@@ -274,15 +281,40 @@ public struct ReviewComment: Sendable, Codable, Equatable {
     /// Lowercased IDs of the people it @mentions.
     public var mentions: [String]
     public var publishedAt: Date
+    /// All of it as Azure DevOps keeps it, each mention as its ID (`@<…>`), to tell a reply of yours that went from one to
+    /// send: nil for one made up, as the demo's.
+    public var content: String?
 
     /// `markdown` is `text` unless it's given.
-    public init(id: Int, author: Person, text: String, markdown: String? = nil, mentions: [String] = [], publishedAt: Date) {
+    public init(
+        id: Int, author: Person, text: String, markdown: String? = nil, mentions: [String] = [], publishedAt: Date, content: String? = nil
+    ) {
         self.id = id
         self.author = author
         self.text = text
         self.markdown = markdown ?? text
         self.mentions = mentions.map { $0.lowercased() }
         self.publishedAt = publishedAt
+        self.content = content
+    }
+
+    /// Nil for a deleted or system comment, or one without an author or anything to say.
+    /// - Parameters:
+    ///   - names: names by lowercased IDs, for its mentions.
+    ///   - published: when its thread was, for a comment that doesn't say when it was.
+    init?(_ comment: ADOComment, names: [String: String], published: Date?) {
+        guard comment.isDeleted != true, comment.commentType != "system", let author = comment.author,
+              let content = comment.content, !content.isEmpty
+        else { return nil }
+        self.init(
+            id: comment.id,
+            author: Person(author),
+            text: CommentText.plain(content, names: names),
+            markdown: CommentText.naming(content, names: names),
+            mentions: CommentText.mentionedIds(content),
+            publishedAt: comment.publishedDate ?? published ?? .distantPast,
+            content: content
+        )
     }
 }
 

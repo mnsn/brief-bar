@@ -114,6 +114,82 @@ import Testing
         #expect(asked.refs == [pullRequest])
     }
 
+    /// Counts what a store said it would change.
+    private final class Changes {
+        var count = 0
+    }
+
+    /// Views ask for stories as they update, in the middle of AppKit's layout, where each change to what they show marks
+    /// their window for another pass, and AppKit throws past as many passes as the window has views: asking changes nothing
+    /// until the main actor's next turn, then asks for each thing once, for the latest row asked for.
+    @Test func askingChangesNothingUntilTheNextTurn() async throws {
+        let (_, stories) = hub()
+        let asked = Asked()
+        stories.register(.azureDevOps, kinds: [.pullRequest]) { ref in
+            asked.refs.append(ref)
+            return ItemStory(sentence: "Waiting for reviewers")
+        }
+        stories.register(.copilot, kinds: [.session]) { ref in
+            asked.refs.append(ref)
+            return ItemStory(sentence: "Working")
+        }
+        let changes = Changes()
+        let watching = stories.objectWillChange.sink { _ in changes.count += 1 }
+        defer { watching.cancel() }
+        let approved = item(pullRequest, status: "Approved")
+        stories.request(item(pullRequest))
+        stories.request(item(session))
+        stories.request(approved)
+        #expect(changes.count == 0)
+        #expect(asked.refs.isEmpty)
+        // They say they're being told already, for the details to say so as they show.
+        #expect(stories.isTelling(pullRequest) && stories.isTelling(session))
+        for _ in 0..<200 where !stories.hasTold(pullRequest) || !stories.hasTold(session) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(changes.count > 0)
+        #expect(asked.refs.count == 2)
+        #expect(Set(asked.refs) == [pullRequest, session])
+        // Told for the row asked for last: asking for it again soon after asks nothing.
+        stories.request(approved)
+        #expect(!stories.isTelling(pullRequest))
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(asked.refs.count == 2)
+    }
+
+    /// What views asked for this turn goes with what's forgotten before it's taken up: as a source stops and starts again,
+    /// as when someone else signs in, and as Show Links goes off, even if it comes back on before the next turn.
+    @Test func whatsAskedGoesWithWhatsForgotten() async throws {
+        let (links, stories) = hub()
+        let asked = Asked()
+        stories.register(.copilot, kinds: [.session]) { ref in
+            asked.refs.append(ref)
+            return ItemStory(sentence: "Working")
+        }
+        stories.request(item(session))
+        stories.withdraw(.copilot)
+        stories.register(.copilot, kinds: [.session]) { ref in
+            asked.refs.append(ref)
+            return ItemStory(sentence: "Working, for someone else")
+        }
+        #expect(!stories.isTelling(session))
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(asked.refs.isEmpty)
+        #expect(!stories.hasTold(session))
+
+        stories.request(item(session))
+        links.setOn(false)
+        links.setOn(true)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(asked.refs.isEmpty)
+        // Asked again, it's told.
+        stories.request(item(session))
+        for _ in 0..<200 where !stories.hasTold(session) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(asked.refs == [session])
+    }
+
     @Test func aSourceThatStopsTakesWhatItToldWithIt() async {
         let (_, stories) = hub()
         stories.register(.copilot, kinds: [.session]) { _ in ItemStory(sentence: "Asks: Use a new table?") }

@@ -1,7 +1,9 @@
 import Foundation
 
-/// A failed build of a pull request, for the prompt that asks Copilot to fix it: where it failed, and its errors, from
-/// the run's timeline.
+/// A failed build of a pull request, for the prompts that ask Copilot to fix it or explain it: where it failed, and its
+/// errors, from the run's timeline; and, once it was opened in the pull request's details (`BuildInvestigation`), what was
+/// read of it there: the tests that failed with what each said, the end of the failed step's log, and whether it's the
+/// change's doing.
 public struct FailedBuildReport: Sendable, Equatable {
     /// The build policy's name, such as `shop-web CI`.
     public var name: String
@@ -9,15 +11,39 @@ public struct FailedBuildReport: Sendable, Equatable {
     /// The run's page.
     public var url: URL
     public var failure: PipelineFailure?
-    /// Its error messages, the first ones, each on one line.
+    /// Its error messages, the first ones, each on one line, with where each is when the run says.
     public var errors: [String]
+    /// Where it failed, from its stage to its task, as its run says: "Test", "Unit tests", "Run unit tests". Empty when
+    /// only its check said, as `failure` does.
+    public var place: [String]
+    /// The tests that failed, the first of them, each with what it said; and how its tests went, "2 of 320 failed", and
+    /// how many more failed.
+    public var tests: [FailedTest]
+    public var testsSummary: String?
+    public var moreTests: Int
+    /// The end of the failed step's log, as Azure DevOps keeps it, with its `##[error]` and `##[warning]` marks; and the
+    /// step's name.
+    public var log: [String]
+    public var logStep: String?
+    /// Whether it's the change's doing, in sentences: "main's latest run failed too: it may not be this change."
+    public var hints: [String]
 
-    public init(name: String, buildId: Int, url: URL, failure: PipelineFailure?, errors: [String]) {
+    public init(
+        name: String, buildId: Int, url: URL, failure: PipelineFailure?, errors: [String], place: [String] = [], tests: [FailedTest] = [],
+        testsSummary: String? = nil, moreTests: Int = 0, log: [String] = [], logStep: String? = nil, hints: [String] = []
+    ) {
         self.name = name
         self.buildId = buildId
         self.url = url
         self.failure = failure
         self.errors = errors
+        self.place = place
+        self.tests = tests
+        self.testsSummary = testsSummary
+        self.moreTests = moreTests
+        self.log = log
+        self.logStep = logStep
+        self.hints = hints
     }
 }
 
@@ -73,39 +99,34 @@ public enum PullRequestPrompt {
             """
     }
 
-    public static func fixBuild(_ record: PRRecord, failures: [FailedBuildReport], workplace: Workplace = .worktree) -> String {
-        let builds = failures.enumerated().map { index, report in
-            var lines = ["\(index + 1). \(report.name): \(report.url.absoluteString)"]
-            if let failure = report.failure {
-                lines.append("   Failed" + (failure.stage.map { " in \($0)," } ?? "") + " at \(failure.step).")
-            }
-            for error in report.errors.prefix(errorLimit) {
-                lines.append("   - \(error)")
-            }
-            return lines.joined(separator: "\n")
+    /// - Parameters:
+    ///   - how: what you want, in your words; nothing for nil or blank.
+    ///   - answer: what a session said of the build with Explain, which what you want may point to.
+    ///   - alone: it's about one build, of those that failed, as its own Fix in the pull request's details asks: it keeps
+    ///     to that one.
+    public static func fixBuild(
+        _ record: PRRecord, failures: [FailedBuildReport], workplace: Workplace = .worktree, how: String? = nil,
+        answer: CopilotAnswer? = nil, alone: Bool = false
+    ) -> String {
+        let builds = failures.enumerated().map { index, report in report.described(index + 1) }
+        let failed: String
+        if builds.isEmpty {
+            failed = "Its build failed, but BriefBar couldn't tell which run."
+        } else {
+            failed = (alone ? "This build of it failed:\n\n" : "Its build failed:\n\n") + builds.joined(separator: "\n\n") + "\n\n" + runSaid
         }
-        return """
-            \(header(record, workplace: workplace))
-
-            \(builds.isEmpty ? "Its build failed, but BriefBar couldn't tell which run." : "Its build failed:\n\n" + builds.joined(separator: "\n\n"))
-
+        var parts = [header(record, workplace: workplace), failed]
+        if let answer { parts.append(earlier(answer, why: "why this build failed", about: "this build")) }
+        if let how = yours(how) { parts.append("How I want it fixed, in my own words:\n\n" + how) }
+        parts.append("""
             Reproduce the failure here: build, and run the failing tests. Read the run's whole log with your Azure DevOps \
-            tools if these errors aren't enough. Fix the cause, in the code or the configuration, and build and test \
-            again until it passes. If it's the build's infrastructure or a flaky test rather than this change, say so, \
-            with the evidence, instead of changing code. Don't queue, retry or change pipelines. Don't commit or push: \
-            end with what caused it and what you changed.
-            """
-    }
-
-    public static func resolveConflicts(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
-        let target = record.pullRequest.targetBranch
-        return """
-            \(header(record, workplace: workplace))
-
-            It has merge conflicts with \(target). Fetch origin/\(target), merge it into \(workplace.here), and resolve the \
-            conflicts, keeping what each side meant. Build, and run the tests that cover what conflicted. Don't push: \
-            end with what conflicted and how you resolved it.
-            """
+            tools if this isn't enough. Fix the cause, in the code or the configuration, and build and test \
+            again until it passes.\(alone ? " Keep to this build: leave its other builds to their own fixes." : "") If it's \
+            the build's infrastructure or a flaky test rather than this change, say so, with the evidence, instead of \
+            changing code. Don't queue, retry or change pipelines. Don't commit or push: end with what caused it and what \
+            you changed.
+            """)
+        return parts.joined(separator: "\n\n")
     }
 
     public static func review(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
@@ -118,8 +139,8 @@ public enum PullRequestPrompt {
         return """
             \(header(record, workplace: workplace))
 
-            Review it for me. Fetch origin/\(pr.targetBranch), then read what it changes, \
-            git diff origin/\(pr.targetBranch)...HEAD, and the code around the changes.
+            Review it for me. Fetch origin/\(oneLine(pr.targetBranch)), then read what it changes, \
+            git diff origin/\(oneLine(pr.targetBranch))...HEAD, and the code around the changes.
             \(again)
             Its unresolved comment threads, so you don't repeat them:
 
@@ -131,21 +152,23 @@ public enum PullRequestPrompt {
             """
     }
 
-    /// The threads Push & Reply ships: `only`, those the fixes it ships took on, that are still open, in that order; else
-    /// those Fix Comments lists.
+    /// The threads Push & Reply ships: `only`, those the fixes it ships took on, that are still open, in that order, none
+    /// when they took on none, as a build's fix alone; else, for nil, those Fix Comments lists.
     public static func shippedThreads(_ record: PRRecord, only: [Int]?) -> [ReviewThread] {
-        guard let only, !only.isEmpty else { return waitingThreads(record) }
+        guard let only else { return waitingThreads(record) }
         let open = (record.details?.threads ?? []).filter { !$0.isResolved }
         return only.compactMap { id in open.first { $0.id == id } }
     }
 
     /// - Parameter only: the threads the fixes it ships took on, such as one session's when fixes are in more than one: it
-    ///   replies on those alone. Nil for the pull request's.
+    ///   replies on those alone, and on none when they took on none, as a build's fix alone. Nil for the pull request's.
     public static func pushAndReply(_ record: PRRecord, workplace: Workplace = .worktree, threads only: [Int]? = nil) -> String {
         let pr = record.pullRequest
-        let source = pr.sourceBranch
-        let scoped = only?.isEmpty == false
+        let source = oneLine(pr.sourceBranch)
+        let scoped = only != nil
         let threads = shippedThreads(record, only: only)
+        // Fixes of none of its threads, such as of a build: nothing to reply on.
+        let repliesOnNone = scoped && threads.isEmpty
         var steps: [String] = []
         let ifRejected: String
         switch workplace {
@@ -155,7 +178,7 @@ public enum PullRequestPrompt {
         case .agent:
             // Wherever the agent is, which may be another branch, or hold other work: it checks first, and never rebases.
             steps.append("""
-                First make sure it's safe: this must be a clone of \(pr.repositoryName), HEAD must contain origin/\(source) once \
+                First make sure it's safe: this must be a clone of \(oneLine(pr.repositoryName)), HEAD must contain origin/\(source) once \
                 you've fetched it (git merge-base --is-ancestor origin/\(source) HEAD), and everything you'd commit and push, \
                 in git status and git log origin/\(source)..HEAD, must have been made for this pull request. If any of that \
                 isn't so, stop and ask me before you commit or push anything.
@@ -165,7 +188,11 @@ public enum PullRequestPrompt {
         steps += [
             "Make sure it builds and the tests you ran pass, then commit your changes with a clear message.",
             "Push them to \(source), without force: git push origin HEAD:refs/heads/\(source). \(ifRejected)",
-            scoped
+        ]
+        if repliesOnNone {
+            steps.append("Don't reply on the pull request's comment threads: none that's still open is among what these changes take care of.")
+        } else {
+            steps.append(scoped
                 ? """
                 On the pull request, with your Azure DevOps tools, reply to each of the comment threads below that you \
                 addressed, saying what you changed, and resolve it. For one of them you didn't change, reply why, and leave \
@@ -174,17 +201,21 @@ public enum PullRequestPrompt {
                 : """
                 On the pull request, with your Azure DevOps tools, reply to each comment thread you addressed, saying what \
                 you changed, and resolve it. For a thread you didn't change, reply why, and leave it active.
-                """,
-        ]
+                """)
+        }
         let numbered = steps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
-        return """
-            Ship what you changed for pull request !\(pr.key.number) “\(pr.title)”, in \(workplace.here):
+        let shipped = """
+            Ship what you changed for pull request !\(pr.key.number) “\(oneLine(pr.title))”, in \(workplace.here):
             \(pr.webURL.absoluteString)
 
             \(numbered)
 
             Don't complete, approve or abandon the pull request, and don't change pipelines. End with the commit you \
-            pushed and the threads you replied to.
+            pushed\(repliesOnNone ? "." : " and the threads you replied to.")
+            """
+        guard !repliesOnNone else { return shipped }
+        return """
+            \(shipped)
 
             \(scoped ? "The comment threads these changes take care of:" : "Its unresolved comment threads:")
 
@@ -197,26 +228,33 @@ public enum PullRequestPrompt {
     /// What the pull request is, and where Copilot works on it.
     static func header(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
         let pr = record.pullRequest
+        let (repository, source) = (oneLine(pr.repositoryName), oneLine(pr.sourceBranch))
         let place: String
         switch workplace {
         case .worktree:
             place = """
-                You're in a git worktree of this repository, detached at origin/\(pr.sourceBranch), the pull request's latest \
+                You're in a git worktree of this repository, detached at origin/\(source), the pull request's latest \
                 commit.
                 """
         case .agent:
             place = """
-                Work on its branch in a clone of \(pr.repositoryName): fetch origin/\(pr.sourceBranch), the pull request's \
-                latest commit, and check it out. If you're not in a clone of \(pr.repositoryName), or it has changes of its \
+                Work on its branch in a clone of \(repository): fetch origin/\(source), the pull request's \
+                latest commit, and check it out. If you're not in a clone of \(repository), or it has changes of its \
                 own, ask me where to work before you change anything.
                 """
         }
         return """
-            Pull request !\(pr.key.number) “\(pr.title)” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch):
+            \(introduction(pr)):
             \(pr.webURL.absoluteString)
 
             \(place)
             """
+    }
+
+    /// "Pull request !4102 “Add retry with backoff” in payments-api, from payments-retry into main": its title, repository
+    /// and branches, which whoever opened it named, each on this line (`oneLine`).
+    static func introduction(_ pr: PullRequest) -> String {
+        "Pull request !\(pr.key.number) “\(oneLine(pr.title))” in \(oneLine(pr.repositoryName)), from \(oneLine(pr.sourceBranch)) into \(oneLine(pr.targetBranch))"
     }
 
     /// The threads, numbered: where each is, and its comments, each person's on a line of its own.

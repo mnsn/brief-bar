@@ -270,12 +270,18 @@ extension PullRequestPanel {
 extension PullRequestPanel.Threads {
     /// The threads on a file of the change: those Azure DevOps tracks on it, or else those on its path, after the change or
     /// before it (`isOn(_:_:in:)`). Those that wait on you first, then the other open ones, then the resolved ones; in each,
-    /// from the top of the file down.
-    public func comments(on file: FileChange, in changes: ChangedFiles) -> PullRequestPanel.FileComments {
-        func onFile(_ threads: [PullRequestPanel.Thread]) -> [PullRequestPanel.Thread] {
-            threads.filter { Self.isOn(file, $0.thread, in: changes) }.sorted(by: Self.fromTheTop)
+    /// from the top of the file down. A thread you changed in the details (`held`) is with those it was with as you first
+    /// did, however it stands now, so it doesn't move away as you reply or resolve it.
+    public func comments(
+        on file: FileChange, in changes: ChangedFiles, holding held: [Int: PullRequestPanel.Thread.Held] = [:]
+    ) -> PullRequestPanel.FileComments {
+        let grouped: [(placement: PullRequestPanel.Thread.Placement, thread: PullRequestPanel.Thread)] =
+            waitingOnYou.map { (.waitingOnYou, $0) } + open.map { (.open, $0) } + resolved.map { (.resolved, $0) }
+        func onFile(_ placement: PullRequestPanel.Thread.Placement) -> [PullRequestPanel.Thread] {
+            grouped.filter { (held[$0.thread.id]?.placement ?? $0.placement) == placement && Self.isOn(file, $0.thread.thread, in: changes) }
+                .map(\.thread).sorted(by: Self.fromTheTop)
         }
-        return PullRequestPanel.FileComments(threads: onFile(waitingOnYou) + onFile(open) + onFile(resolved))
+        return PullRequestPanel.FileComments(threads: onFile(.waitingOnYou) + onFile(.open) + onFile(.resolved))
     }
 
     /// The threads on each of a change's files, by the file, as `comments(on:in:)` finds them, but going through the

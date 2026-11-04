@@ -185,7 +185,11 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   `SourceDescription` and raise its `version`, so whoever turned it on sees the change before it reads
   more.
 - **Only Azure DevOps and GitHub use the network**, each only its own service: to Azure DevOps every
-  request a GET, and to GitHub one fixed GraphQL query, never a mutation. Neither ever writes.
+  request a GET, and to GitHub one fixed GraphQL query, never a mutation. Neither writes, but for the
+  changes `ADOWrite` lists, your reply in a pull request's thread and a thread's status, which only
+  `ADOClient.send(_:as:)` sends, only with **Make Changes in Azure DevOps** on, off by default, and only
+  when you click one: never by itself, from agents, the command line or the demo. A new kind of change
+  is a case there, behind the same setting, with its tests, and its description says it.
   Teams and Copilot make no network requests, and neither does anything else but the updater,
   Sparkle, which fetches only this project's releases, and only if you allow it. Networking code goes
   in `AzureDevOpsCore` or `GitHubCore`, and `make check-boundaries` fails if any other module uses

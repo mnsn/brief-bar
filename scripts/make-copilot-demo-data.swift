@@ -676,7 +676,7 @@ session("2f8a4c6e-1b3d-4e5f-8a7b-9c0d1e2f3a14", "Retry backoff", prompt: """
 session("7b1c9d3e-5f2a-4b8c-9d6e-0a1b2c3d4e15", "Rename the order status enum", project: "payments-api", branch: "rename-order-status",
         started: ago(4 * day + hour), updated: ago(4 * day), context: (88_000, 200_000)) { log in
     log.tool("grep", ["pattern": "OrderStatus"], at: ago(4 * day + 50 * minute))
-    log.finish("Renamed `OrderStatus` to `OrderState` everywhere in payments-api, and pushed rename-order-status.", at: ago(4 * day))
+    log.finish("Renamed `OrderStatusCode` to `OrderStatus`, and `Cancelled` to `Canceled`, everywhere in payments-api, and pushed rename-order-status.", at: ago(4 * day))
 }
 session("9e4d2c1b-8a7f-4e6d-b5c4-3a2b1c0d9e16", "Migrate stored order statuses", project: "payments-api", branch: "rename-order-status",
         started: ago(2 * day + 2 * hour), updated: ago(2 * day + hour), context: (52_000, 200_000)) { log in
