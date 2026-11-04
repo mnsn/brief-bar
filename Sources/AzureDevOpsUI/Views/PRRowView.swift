@@ -32,6 +32,8 @@ struct PRRowView: View {
     /// Its details show in BriefBar's window, from the menu bar or a widget, rather than in the window it's in: its menu
     /// says Show in BriefBar.
     var showsInWindow = false
+    /// Where it stands in its mission, for its order capsule, on a window's Pull Requests page with Pull Request Order on.
+    var order: OrderRowContext? = nil
     /// Opens it in Azure DevOps.
     var action: () -> Void
 
@@ -67,7 +69,10 @@ struct PRRowView: View {
                 .accessibilityHint(clickShows == nil ? "Opens the pull request in Azure DevOps"
                     : showsInWindow ? "Shows its details in BriefBar's window" : "Shows its details")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
-                .accessibilityActions { SummarizeMenuItems(item.key.linkRef, divided: false) }
+                .accessibilityActions {
+                    SummarizeMenuItems(item.key.linkRef, divided: false)
+                    if let open = order?.open { Button("Show Its Mission", action: open) }
+                }
                 RowSummary(subject: item.key.linkRef)
                     .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
                     .padding(.trailing, 8)
@@ -142,6 +147,7 @@ struct PRRowView: View {
                             .lineLimit(1)
                         PullRequestCopilotStatus(key: item.key, showsActions: showsActions)
                         PullRequestLinks(key: item.key)
+                        if let order { OrderCapsule(order) }
                     }
                     if let detail = item.detail {
                         Text(detail)
@@ -188,7 +194,7 @@ struct PRRowView: View {
     }
 
     private var accessibilityValue: String {
-        var parts = [isNew ? "New" : nil, item.repository, item.detail].compactMap { $0 }
+        var parts = [isNew ? "New" : nil, item.repository, item.detail, order?.sentence].compactMap { $0 }
         if let readiness = item.readiness, !readiness.items.isEmpty { parts += readiness.lines }
         // What a list by date is sorted by, which its time says.
         if showsCreated, let created = item.createdAt { parts.append("Created \(Elapsed.short(since: created, now: now)) ago") }

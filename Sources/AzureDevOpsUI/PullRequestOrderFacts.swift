@@ -51,10 +51,24 @@ final class PullRequestOrderFacts {
     }
 
     private func turned(on: Bool) {
-        if on, store.mode == .demo {
-            order.tellDemo(DemoPullRequestOrder.orders(now: store.now))
-        }
+        if on { tellDemo() }
         publish()
+    }
+
+    /// For `--render`: the demo's orders, and what the list read, once.
+    func loadOnce() -> PullRequestOrderFacts {
+        tellDemo()
+        publish()
+        return self
+    }
+
+    /// The demo's orders, as if its sessions had told them.
+    private func tellDemo() {
+        guard store.mode == .demo else { return }
+        let now = store.now
+        order.tellDemo(
+            DemoPullRequestOrder.orders(now: now), evidence: DemoPullRequestOrder.evidence(now: now), focus: DemoPullRequestOrder.focus
+        )
     }
 
     /// Tells what the list shows now, or, while Pull Request Order is off, nothing.

@@ -117,6 +117,7 @@ extension PROrder {
         case .status: return "By Status"
         case .newestFirst: return "Newest First"
         case .oldestFirst: return "Oldest First"
+        case .byMission: return "By Mission"
         }
     }
 }

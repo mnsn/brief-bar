@@ -2,21 +2,49 @@ import AzureDevOpsCore
 import BriefBarCore
 import Foundation
 
-/// The demo's order of pull requests, as if the Copilot demo's "Roll out dark mode" chat had told BriefBar the order its
-/// sessions' pull requests merge in: the account page's first (!4093, which the demo lists, ready to complete), then the
-/// checkout page's on GitHub (Priya's #412, which GitHub's demo lists), to be reviewed after it, and the emails' (!4118, which
-/// the demo doesn't list, so BriefBar can't see whether it merged).
+/// The demo's orders of pull requests, as if the Copilot demo's chats had told BriefBar the order their sessions' pull
+/// requests merge in (scripts/make-copilot-demo-data.swift):
+/// - "Fix the payments bugs": !4074, which BriefBar saw merge yesterday and no list has now; then the retry (!4102, which
+///   needs you); then the coupon rounding (!4091, ready to complete, so its capsule turns orange) and the order status
+///   rename (!4079), each after it; then the legacy coupon API's removal (!3990), after both, to be reviewed after the
+///   rounding. You focus on it.
+/// - "Roll out dark mode": the account page's (!4093, ready to complete), then the checkout page's on GitHub (Priya's #412,
+///   which GitHub's demo lists), to be reviewed after it, and the emails' (!4118, which the demo doesn't list, so BriefBar
+///   can't see whether it merged).
 enum DemoPullRequestOrder {
+    static let paymentsID = UUID(uuidString: "b81f4e27-6a3c-4d95-8e10-3c7a9d2f4b66")!
     static let id = UUID(uuidString: "d4a7c2e9-5b1f-4c83-9e60-2f8b7d1a3c55")!
-    /// The Copilot demo's "Roll out dark mode" (scripts/make-copilot-demo-data.swift).
+    /// The Copilot demo's "Fix the payments bugs".
+    static let payments = ItemRef.session("e5b7d2c9-3f1a-4c86-9b20-7d4e1a8c6f17")!
+    /// The Copilot demo's "Roll out dark mode".
     static let coordinator = ItemRef.session("a3d9c5e1-7b2f-4e84-9c16-5f8e2d0b7a11")!
-    static let accountPage = ItemRef.pullRequest(organization: DemoData.organization, number: 4093)
+    static let retryPolicy = pullRequest(4074)
+    static let retry = pullRequest(4102)
+    static let couponRounding = pullRequest(4091)
+    static let statusRename = pullRequest(4079)
+    static let legacyCoupons = pullRequest(3990)
+    static let accountPage = pullRequest(4093)
     static let checkoutPage = ItemRef.gitHubPullRequest(repository: "contoso/shop-web", number: 412)
-    static let emails = ItemRef.pullRequest(organization: DemoData.organization, number: 4118)
+    static let emails = pullRequest(4118)
 
-    /// Told when the chat started its sessions, and again when it started the emails' one.
+    static func pullRequest(_ number: Int) -> ItemRef {
+        .pullRequest(organization: DemoData.organization, number: number)
+    }
+
+    /// The payments' order, told when the chat started its sessions and again as they went; and the dark mode's, told when
+    /// the chat started its sessions, and again when it started the emails' one.
     static func orders(now: Date) -> DeclaredOrders {
         DeclaredOrders(plans: [
+            OrderPlan(
+                id: paymentsID, revision: 3, createdAt: now.addingTimeInterval(-27 * 3_600), updatedAt: now.addingTimeInterval(-3 * 3_600),
+                declaredBy: payments, entries: [
+                    OrderPlan.Entry(ref: retryPolicy),
+                    OrderPlan.Entry(ref: retry, after: [retryPolicy]),
+                    OrderPlan.Entry(ref: couponRounding, after: [retry]),
+                    OrderPlan.Entry(ref: statusRename, after: [retry]),
+                    OrderPlan.Entry(ref: legacyCoupons, after: [couponRounding, statusRename], review: .after([couponRounding], .sameCode)),
+                ]
+            ),
             OrderPlan(
                 id: id, revision: 2, createdAt: now.addingTimeInterval(-9 * 60), updatedAt: now.addingTimeInterval(-4 * 60),
                 declaredBy: coordinator, entries: [
@@ -27,4 +55,14 @@ enum DemoPullRequestOrder {
             ),
         ])
     }
+
+    /// What BriefBar saw become of the payments' first pull request, yesterday, while Done still listed it.
+    static func evidence(now: Date) -> OrderEvidence {
+        OrderEvidence(records: [
+            retryPolicy: OrderEvidence.Record(outcome: .merged, observedAt: now.addingTimeInterval(-22 * 3_600), witness: .list),
+        ])
+    }
+
+    /// The mission you focus on.
+    static let focus = MissionKey.plan(paymentsID)
 }

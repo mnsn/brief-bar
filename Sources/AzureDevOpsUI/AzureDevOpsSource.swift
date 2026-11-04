@@ -145,6 +145,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             .environmentObject(copilot)
             .environmentObject(settings)
             .environmentObject(services)
+            .environmentObject(services.pullRequestOrder)
             .environmentObject(services.loginItem))
     }
 
@@ -692,6 +693,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         await loadFilesForRendering(store: store)
         await pipelines?.loadOnce()
         await workLinks?.loadOnce()
+        orderFacts = PullRequestOrderFacts(
+            order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails
+        ).loadOnce()
         // Before Copilot's list loads, which shows them with the sessions.
         publishSentTasks()
         // The Copilot sessions of the pull requests whose details are drawn, read once: the first of yours that needs you,
@@ -808,6 +812,9 @@ package final class AzureDevOpsSource: BriefBarSource {
                 .environment(\.isRendering, true)
             renderings += [(name: "pull-requests-oldest-first", view: environment(panel)),
                            (name: "pull-requests-oldest-first-page", view: environment(page))]
+        }
+        if let store {
+            renderings += PullRequestsByMission.renderings(store: store, services: services) { self.environment($0) }
         }
         return renderings
     }
