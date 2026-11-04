@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "briefbar-pr-order",
+  "description": "Lets the sessions that open pull requests together tell BriefBar the order those must merge in, so that its Pull Requests pages show which can merge next and which wait. A skill, which uses BriefBar's MCP server. It comes with BriefBar.app, which installs it when you turn on Pull Request Order in its Settings, and updates it with itself.",
+  "author": {
+    "name": "BriefBar"
+  },
+  "homepage": "https://github.com/mnsn/brief-bar",
+  "repository": "https://github.com/mnsn/brief-bar",
+  "license": "GPL-3.0-or-later",
+  "keywords": ["briefbar", "pull-requests", "merge-order", "stacked-pull-requests"]
+}

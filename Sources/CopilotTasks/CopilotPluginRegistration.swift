@@ -2,15 +2,16 @@ import BriefBarCore
 import Foundation
 
 /// BriefBar's plugins among the Copilot CLI's plugins, which the GitHub Copilot app's sessions load too: `/briefbar`, its
-/// skill, which uses BriefBar's MCP server (`CopilotMCPRegistration`), and its extension for the app's sessions, which
-/// Send Prompts to Copilot Sessions turns on (`CopilotSessionPrompts`). They come with BriefBar.app, in a marketplace of
-/// its own on this Mac (`Contents/Resources/CopilotPlugin`), which the CLI loads in place: nothing is copied, and they
-/// update with BriefBar. Each registration installs and removes one of them, and their marketplace stays while either
-/// is installed. BriefBar asks the CLI itself (`copilot plugin marketplace list`, `add` and `remove`, and `copilot
-/// plugin list`, `install` and `uninstall`), and never reads or writes its files, where other plugins' and
-/// marketplaces' settings are. It changes a marketplace by its name only once it knows it's BriefBar's: this copy's,
-/// or one in another copy of BriefBar.app, by that app's bundle identifier. It never passes `--force`, which would
-/// uninstall whatever else a marketplace has.
+/// skill, which uses BriefBar's MCP server (`CopilotMCPRegistration`), its extension for the app's sessions, which
+/// Send Prompts to Copilot Sessions turns on (`CopilotSessionPrompts`), and Pull Request Order's skill, which uses the
+/// MCP server too. They come with BriefBar.app, in a marketplace of its own on this Mac
+/// (`Contents/Resources/CopilotPlugin`), which the CLI loads in place: nothing is copied, and they update with
+/// BriefBar. Each registration installs and removes one of them, and their marketplace stays while any is installed.
+/// BriefBar asks the CLI itself (`copilot plugin marketplace list`, `add` and `remove`, and `copilot plugin list`,
+/// `install` and `uninstall`), and never reads or writes its files, where other plugins' and marketplaces' settings
+/// are. It changes a marketplace by its name only once it knows it's BriefBar's: this copy's, or one in another copy of
+/// BriefBar.app, by that app's bundle identifier. It never passes `--force`, which would uninstall whatever else a
+/// marketplace has.
 public struct CopilotPluginRegistration: Sendable {
     /// BriefBar's plugins, in its marketplace.
     public enum Plugin: String, Sendable, CaseIterable {
@@ -18,6 +19,9 @@ public struct CopilotPluginRegistration: Sendable {
         case skill = "briefbar"
         /// The extension that sends prompts to the app's sessions, and forks them, when BriefBar asks.
         case sessions = "briefbar-sessions"
+        /// The skill with which the sessions that open pull requests together tell BriefBar the order those merge in,
+        /// for Pull Request Order.
+        case order = "briefbar-pr-order"
     }
 
     /// The name of BriefBar's marketplace, and of its first plugin, the skill.
