@@ -86,6 +86,34 @@ import Testing
         #expect(SessionReports.load(from: defaults, now: Self.now).isEmpty)
     }
 
+    /// What agents ask to read again is Azure DevOps': turning Copilot off keeps it, and turning Azure DevOps off forgets
+    /// it, and what was taken of it, so that an --mcp that goes on asking is heard.
+    @Test func whatToReadAgainGoesOnlyWithAzureDevOps() {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: SessionUpdatesSetting.defaultsKey)
+        var clock = Self.now
+        let updates = SessionUpdates(defaults: defaults, isDemo: false, now: { clock })
+        var passed: [[ItemRef]] = []
+        let subscription = updates.rereads.sink { passed.append($0) }
+        defer { subscription.cancel() }
+
+        RereadRequests.add([Self.task], id: "this", to: defaults, now: clock)
+        updates.agentChanged()
+        updates.forget(.copilot)
+        clock += 1
+        RereadRequests.add([Self.pullRequest], id: "this", to: defaults, now: clock)
+        updates.agentChanged()
+        #expect(passed == [[Self.task], [Self.pullRequest]])
+
+        updates.forget(.azureDevOps)
+        #expect(RereadRequests.taken(in: defaults).isEmpty)
+        clock += 1
+        RereadRequests.add([Self.task], id: "this", to: defaults, now: clock)
+        updates.agentChanged()
+        #expect(passed.last == [Self.task])
+        #expect(passed.count == 3)
+    }
+
     @Test func pullRequestOrderKeepsWhatSessionsWorkOnWithoutChangingMissions() {
         let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)

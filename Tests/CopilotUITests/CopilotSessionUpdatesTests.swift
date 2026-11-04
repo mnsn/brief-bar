@@ -44,6 +44,19 @@ import Testing
         return services
     }
 
+    private struct Timeout: Error, CustomStringConvertible {
+        let description: String
+    }
+
+    /// Lets the main queue deliver what the source hears until `condition` holds, for as long as a busy machine could need.
+    private static func until(_ what: String, _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while !condition() {
+            guard ContinuousClock.now < deadline else { throw Timeout(description: "Timed out waiting for \(what)") }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
     private static func pullRequest(_ ref: ItemRef) -> OrderPullRequest {
         OrderPullRequest(
             ref: ref, repository: "contoso/7a0c4e1d/shop-web", sourceBranch: "robin/\(ref.id)", targetBranch: "main",
@@ -57,7 +70,9 @@ import Testing
         source.start()
         source.store.receive(Self.state(updatedAt: Date()))
         // What the source hears of what sessions told arrives on the main queue.
-        try await Task.sleep(for: .milliseconds(50))
+        try await Self.until("the session's links, and the pull request it opened") {
+            services.links.graph.isLinked(Self.ref(Self.cart), Self.task) && !source.store.orderSessions.isEmpty
+        }
 
         let graph = services.links.graph
         #expect(graph.origins(Self.ref(Self.cart), Self.task) == [.session])
@@ -74,7 +89,7 @@ import Testing
         let source = CopilotSource(services: services, paths: nil)
         source.start()
         source.store.receive(Self.state(updatedAt: Date().addingTimeInterval(-2 * 86_400)))
-        try await Task.sleep(for: .milliseconds(50))
+        try await Self.until("the pull request it opened") { services.links.graph.isLinked(Self.ref(Self.cart), Self.opened) }
 
         let graph = services.links.graph
         #expect(!graph.isLinked(Self.ref(Self.cart), Self.task))
@@ -89,6 +104,7 @@ import Testing
         services.pullRequestOrder.publish(.azureDevOps, pullRequests: [Self.pullRequest(Self.opened)])
         source.start()
         source.store.receive(Self.state(updatedAt: Date()))
+        // Nothing comes: what would, comes from the main queue, which runs this first.
         try await Task.sleep(for: .milliseconds(50))
 
         #expect(services.links.graph.items.isEmpty)

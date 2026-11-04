@@ -50,7 +50,7 @@ private final class Hold: Sendable {
 
     /// Waits until a request has gone out as often as `times`.
     private static func until(_ server: StubServer, _ path: String, _ times: Int) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
         while count(server, path) < times {
             guard ContinuousClock.now < deadline else { throw CancellationError() }
             try await Task.sleep(for: .milliseconds(5))

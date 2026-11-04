@@ -81,10 +81,15 @@ package final class SessionUpdates: ObservableObject {
     }
 
     /// Forgets a source's things when you turn it off, whether this is on or not: every session's report with Copilot's,
-    /// the work items and pull requests of the others.
+    /// the work items and pull requests of the others, and, with Azure DevOps', what agents asked to read again, which is
+    /// all Azure DevOps', and what was taken of it.
     package func forget(_ source: SourceID) {
+        if source == .azureDevOps {
+            RereadRequests.forgetAll(in: defaults)
+            taken = [:]
+        }
         if source == .copilot {
-            SessionReports.forgetAll(in: defaults)
+            SessionReports.forgetReports(in: defaults)
         } else {
             let kinds = ItemRef.Kind.of(source)
             guard !kinds.isEmpty else { return }

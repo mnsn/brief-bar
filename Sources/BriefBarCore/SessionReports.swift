@@ -270,12 +270,17 @@ public struct SessionReports: Equatable, Sendable {
         }
     }
 
-    /// Forgets every report, and what agents asked to read again.
-    public static func forgetAll(in defaults: some SettingsStorage) {
-        for key in defaults.dictionaryRepresentation().keys
-        where key.hasPrefix(keyPrefix) || key.hasPrefix(RereadRequests.keyPrefix) {
+    /// Forgets every session's report.
+    public static func forgetReports(in defaults: some SettingsStorage) {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
             defaults.removeObject(forKey: key)
         }
+    }
+
+    /// Forgets every report, and what agents asked to read again.
+    public static func forgetAll(in defaults: some SettingsStorage) {
+        forgetReports(in: defaults)
+        RereadRequests.forgetAll(in: defaults)
     }
 }
 
@@ -368,6 +373,13 @@ public enum RereadRequests {
             next[key] = stored.last
         }
         return (requests.sorted { ($0.at, $0.ref) < ($1.at, $1.ref) }, next)
+    }
+
+    /// Forgets what every `--mcp` asked to read again: what the app took of them must start over too.
+    public static func forgetAll(in defaults: some SettingsStorage) {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     private static func stored(_ data: Data?) -> Stored? {

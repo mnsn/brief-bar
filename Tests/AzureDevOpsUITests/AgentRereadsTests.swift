@@ -72,7 +72,8 @@ import Testing
         ) { passes.append($0) }.started()
         RereadRequests.add([Self.pullRequest, Self.task], id: "this", to: defaults, now: Date().addingTimeInterval(1))
         updates.agentChanged()
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        // For as long as a busy machine could need.
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
         while passes.isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
