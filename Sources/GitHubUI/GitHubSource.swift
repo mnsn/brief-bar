@@ -9,8 +9,9 @@ import SwiftUI
 /// failing or are approved. It reads github.com with the GitHub CLI's sign-in, and is off until you turn it on.
 @MainActor
 package final class GitHubSource: BriefBarSource {
-    /// 2: each pull request's branch, and Show Links.
-    nonisolated package static let descriptionVersion = 2
+    /// 2: each pull request's branch, and Show Links. 3: with Pull Request Order on, what an order needs of each pull
+    /// request.
+    nonisolated package static let descriptionVersion = 3
 
     package let id = SourceID.github
     package let name = "GitHub"
@@ -18,8 +19,8 @@ package final class GitHubSource: BriefBarSource {
     package let description = SourceDescription(
         version: GitHubSource.descriptionVersion,
         summary: "Your GitHub pull requests: reviews requested from you, and which of yours need changes, are failing or are approved",
-        reads: "On github.com: the open pull requests that request your review by name, and your own open pull requests, with their checks, reviews, branches and whether they can merge. BriefBar keeps none of it: it reads them again each time. Only if you turn on Show Links: which of your Copilot sessions work on each one's branch, and the links you add to them or hide, which BriefBar keeps in its preferences as references only, never titles.",
-        network: "GitHub only: api.github.com, with the GitHub CLI's sign-in. One read-only GraphQL query (sent as a POST) each refresh, every 2 minutes by default. It never changes anything on GitHub.",
+        reads: "On github.com: the open pull requests that request your review by name, and your own open pull requests, with their checks, reviews, branches and whether they can merge. BriefBar keeps none of it: it reads them again each time. Only if you turn on Show Links: which of your Copilot sessions work on each one's branch, and the links you add to them or hide, which BriefBar keeps in its preferences as references only, never titles. New: only if you turn on Pull Request Order: also, in the same query, the branch each one merges into, whether its branch is a fork's, its repository's default branch, and its place in a GitHub stack, with where each of the stack's pull requests stands; BriefBar keeps which of those it saw merge or close, for the orders that name them, as references only.",
+        network: "GitHub only: api.github.com, with the GitHub CLI's sign-in. One read-only GraphQL query (sent as a POST) each refresh, every 2 minutes by default; with Pull Request Order on, a longer fixed one in its place, and the usual one again when GitHub can't answer it. It never changes anything on GitHub.",
         needs: "The GitHub CLI, signed in with gh auth login. No personal access token.",
         requirements: [.githubCLI]
     )
@@ -47,6 +48,7 @@ package final class GitHubSource: BriefBarSource {
         settings = AppSettings(defaults: services.defaults)
         // The demo shows only made-up pull requests: it never runs gh or connects to GitHub.
         store = GitHubStore(settings: settings, mode: services.isDemo ? .demo : .live)
+        store.ordersOn = { [weak order = services.pullRequestOrder] in order?.isOn ?? false }
     }
 
     private func environment<V: View>(_ view: V) -> some View {
@@ -55,6 +57,7 @@ package final class GitHubSource: BriefBarSource {
             .environmentObject(store)
             .environmentObject(settings)
             .environmentObject(services)
+            .environmentObject(services.pullRequestOrder)
             .environmentObject(services.loginItem)
     }
 
@@ -71,7 +74,22 @@ package final class GitHubSource: BriefBarSource {
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.publishLinks() } }
             .store(in: &linkObservers)
         store.$items
-            .sink { [weak self] items in MainActor.assumeIsolated { self?.publishLinks(items) } }
+            .sink { [weak self] items in
+                MainActor.assumeIsolated {
+                    self?.publishLinks(items)
+                    self?.publishOrder(items)
+                }
+            }
+            .store(in: &linkObservers)
+        // Pull Request Order turned on or off: read again, with its query or without it.
+        services.pullRequestOrder.$isOn.removeDuplicates().dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.store.orderChanged()
+                    self?.publishOrder()
+                }
+            }
             .store(in: &linkObservers)
         store.$login.removeDuplicates()
             .sink { [weak self] login in MainActor.assumeIsolated { self?.loginChanged(login) } }
@@ -95,13 +113,15 @@ package final class GitHubSource: BriefBarSource {
         store.stop()
         services.links.withdraw(.github)
         services.stories.withdraw(.github)
+        services.pullRequestOrder.withdraw(.github)
         account = nil
     }
 
     /// The list and the token are only ever in memory, and the refresh choice is a setting: only the links you added or
-    /// hid to its pull requests go.
+    /// hid to its pull requests go, and their places in orders, with what BriefBar saw become of them.
     package func deleteSavedData() {
         services.links.forget(.github)
+        services.pullRequestOrder.forget(.github)
     }
 
     /// Tells Show Links about the pull requests: what each one is, and the branch it merges, for the sessions on it.
@@ -111,8 +131,13 @@ package final class GitHubSource: BriefBarSource {
             links.withdraw(.github)
             return
         }
+        links.publish(.github, links: [], items: linkedItems(items ?? store.items))
+    }
+
+    /// What each pull request is, for others to show, and opening it on GitHub.
+    private func linkedItems(_ items: [GitHubPRSnapshot]) -> [LinkedItem] {
         let store = self.store
-        let shown = (items ?? store.items).map { item in
+        return items.map { item in
             let pullRequest = item.pullRequest
             return LinkedItem(
                 ref: .gitHubPullRequest(repository: pullRequest.repository, number: pullRequest.number), label: "#\(pullRequest.number)",
@@ -122,7 +147,18 @@ package final class GitHubSource: BriefBarSource {
                 date: item.since, open: { store.open(store.items.first { $0.id == item.id } ?? item) }
             )
         }
-        links.publish(.github, links: [], items: shown)
+    }
+
+    /// Tells Pull Request Order what GitHub shows, while it's on: each pull request, with what the order's query read of it,
+    /// and what it is.
+    private func publishOrder(_ items: [GitHubPRSnapshot]? = nil) {
+        let order = services.pullRequestOrder
+        guard order.isOn else {
+            order.withdraw(.github)
+            return
+        }
+        let items = items ?? store.items
+        order.publish(.github, pullRequests: items.compactMap(\.orderPullRequest), items: linkedItems(items))
     }
 
     /// Tells the details what's known of its pull requests, when they ask.
@@ -211,6 +247,10 @@ package final class GitHubSource: BriefBarSource {
         AnyView(environment(MenuPanelView()))
     }
 
+    package func page(for section: SectionID) -> AnyView {
+        AnyView(environment(PullRequestsPage()).environment(\.panelStyle, .page))
+    }
+
     package func panelWillShow(_ section: SectionID) {
         store.refreshIfStale()
     }
@@ -249,6 +289,22 @@ package final class GitHubSource: BriefBarSource {
     package func loadForRendering() async {
         tellStories()
         await store.loadOnce()
+        publishOrder()
+    }
+
+    /// The page By Mission, in List and on the Map, while Pull Request Order is on and it has a mission to show.
+    package func extraRenderings() -> [(name: String, view: AnyView)] {
+        let order = services.pullRequestOrder
+        guard order.isOn, !MissionsBody.missions(order.missions, kinds: PullRequestsPage.kinds).isEmpty else { return [] }
+        return [("pull-requests-by-mission", OrderView.list), ("pull-requests-by-mission-map", .map)].map { name, view in
+            let page = PullRequestsPage(byMission: true, view: view)
+                .environment(\.panelStyle, .page)
+                .textSize(from: services)
+                .frame(width: 1_000, height: 760)
+                .background(WindowBackdrop())
+                .environment(\.isRendering, true)
+            return (name: name, view: AnyView(environment(page)))
+        }
     }
 }
 
