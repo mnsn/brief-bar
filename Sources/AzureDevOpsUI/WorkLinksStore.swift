@@ -160,6 +160,12 @@ final class WorkLinksStore {
         Task { await engine.update(inputs) }
     }
 
+    /// Reads again now what a Copilot session said it changed, while Show Links reads anything (`LinkEngine.reread`).
+    func reread(pullRequests: Set<PRKey>, workItems: Set<WorkItemKey>) {
+        guard let engine else { return }
+        Task { await engine.reread(pullRequests: pullRequests, workItems: workItems) }
+    }
+
     private func refreshEngine() {
         guard let engine else { return }
         Task { await engine.refresh() }

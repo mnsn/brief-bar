@@ -265,6 +265,28 @@ public actor LinkEngine {
         links
     }
 
+    /// The most pull requests, and work items, a re-read reads again at once.
+    static let mostRereads = 10
+
+    /// Reads again now, rather than when they're due, what a Copilot session said it changed: the work items of these of
+    /// your pull requests, and what these linked pull requests no list shows are, the first `mostRereads` of each; the
+    /// sprint's pull requests, when it names one of the sprint's work items; and what these linked work items are. Only
+    /// what it reads anyway; one that failed still waits its hour.
+    public func reread(pullRequests: Set<PRKey>, workItems: Set<WorkItemKey>) async {
+        let named = Set(pullRequests.map { PRKey($0.organization.lowercased(), $0.number) })
+        for key in inputs.pullRequests.keys.filter(named.contains).sorted().prefix(Self.mostRereads) {
+            pullRequestsRead[key] = nil
+        }
+        for key in inputs.pullRequestLookups.filter(named.contains).sorted().prefix(Self.mostRereads) {
+            lookupsRead[key] = nil
+        }
+        if !inputs.sprintItems.isDisjoint(with: workItems) { sprintRead = nil }
+        for key in workItemsRead.keys.filter(workItems.contains).sorted().prefix(Self.mostRereads) {
+            workItemsRead[key] = nil
+        }
+        await refresh()
+    }
+
     private func readDue() async {
         let date = now()
         do {

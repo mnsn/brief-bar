@@ -167,6 +167,13 @@ final class WorkItemDetailsStore: ObservableObject {
         load(selected)
     }
 
+    /// Reads it again now if it's one of these, as a Copilot session said it changed it (`AgentRereads`): only while a
+    /// window shows the details, and not while it's being read.
+    func reloadIfShowing(_ keys: Set<WorkItemKey>) {
+        guard let selected, !viewers.isEmpty, loading == nil, keys.contains(selected.key) else { return }
+        load(selected)
+    }
+
     /// Reads it again when what shows was read a while ago: when its page shows again.
     func refreshIfStale() {
         guard let selected, loading == nil, !isFresh(cache[selected.key], for: selected) else { return }

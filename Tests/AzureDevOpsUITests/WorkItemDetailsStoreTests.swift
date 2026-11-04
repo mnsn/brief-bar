@@ -118,6 +118,29 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         return WorkItemDetailsStore.Read(result: .success(WorkItemDetails(item: read, readAt: clock.now)), account: account)
     }
 
+    /// A Copilot session said it changed the work item whose details show: they're read again now; not for another work
+    /// item, nor once nothing shows them.
+    @Test func readsTheShownWorkItemAgainWhenASessionSaysItChanged() async throws {
+        let gate = ReadGate()
+        let store = makeStore(reader: gate.reader)
+        let task = try item(5103)
+        store.show(task)
+        try await gate.answer(read(5103))
+        try await until("the first read") { !store.isLoading }
+
+        store.reloadIfShowing([WorkItemKey(DemoData.organization, 5104)])
+        #expect(gate.asked.count == 1)
+        store.reloadIfShowing([task.key])
+        try await gate.answer(read(5103))
+        try await until("the second read") { !store.isLoading }
+        #expect(gate.asked.count == 2)
+
+        store.setVisible(false, for: "window.test")
+        store.reloadIfShowing([task.key])
+        #expect(!store.isLoading)
+        #expect(gate.asked.count == 2)
+    }
+
     @Test func showsWhatTheSprintKnowsThenItsDetails() throws {
         let store = makeStore()
         let task = try item(5103)
