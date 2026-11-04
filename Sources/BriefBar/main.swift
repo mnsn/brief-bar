@@ -26,8 +26,11 @@ MainActor.assumeIsolated {
         let next = index + 1 < arguments.count ? arguments[index + 1] : nil
         var part: Int?
         if let partIndex = arguments.firstIndex(of: "--part") {
-            guard partIndex + 1 < arguments.count, let number = Int(arguments[partIndex + 1]), number > 0 else {
-                fputs("--part takes a number from 1.\n", stderr)
+            // Small enough that its pictures' numbers, a hundred times more, fit an Int.
+            guard partIndex + 1 < arguments.count, let number = Int(arguments[partIndex + 1]), number > 0,
+                  number <= Int.max / Renderer.picturesPerPart
+            else {
+                fputs("--part takes the number of a part, from 1.\n", stderr)
                 exit(2)
             }
             part = number
