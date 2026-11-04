@@ -154,7 +154,9 @@ struct PullRequestTagsRow: View {
         .foregroundStyle(Color.secondary)
         .focused($focus, equals: .add)
         .disabled(sending != nil)
-        .help(store.mode == .demo ? "Add a tag to this made-up pull request" : "Add a tag to this pull request in Azure DevOps, as you")
+        .help(store.mode == .demo
+            ? "Add a tag to this made-up pull request"
+            : "Add a tag to this pull request in Azure DevOps, as you")
         .accessibilityLabel("Add a Tag")
         .onAppear {
             guard refocusesAdd else { return }

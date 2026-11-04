@@ -54,8 +54,8 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
 }
 
 /// Reads from Azure DevOps, with GET requests only, but for the changes `ADOWrite` lists, which `send(_:)` alone makes, when
-/// you click them with Make Changes in Azure DevOps on: replies, threads' statuses and pull requests' tags. Each request goes only where it's sent: it follows no redirect
-/// (`RedirectGuard`).
+/// you click them with Make Changes in Azure DevOps on: replies, threads' statuses and pull requests' tags. Each request goes
+/// only where it's sent: it follows no redirect (`RedirectGuard`).
 public struct ADOClient: Sendable {
     public let tokens: any AccessTokenProvider
     let session: URLSession

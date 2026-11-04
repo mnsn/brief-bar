@@ -174,7 +174,9 @@ public struct TagChoices: Sendable, Equatable {
     ///   - used: the tags you added in the pull request's project, the latest first (`UsedTags`).
     ///   - seen: the tags of each pull request BriefBar read in that project.
     ///   - current: the pull request's own, which it doesn't suggest.
-    public init(typed: String, used: [String], seen: [[PullRequestTag]], current: [PullRequestTag], limit: Int = TagChoices.limit) {
+    public init(
+        typed: String, used: [String], seen: [[PullRequestTag]], current: [PullRequestTag], limit: Int = TagChoices.limit
+    ) {
         struct Candidate {
             var name: String
             /// How recently you added it: 0 for the latest; nil for one you didn't.

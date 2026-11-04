@@ -90,10 +90,8 @@ final class TagChanges: ObservableObject {
     /// the pull requests BriefBar read there, but its own.
     func choices(for typed: String, on record: PRRecord) -> TagChoices {
         let pullRequest = record.pullRequest
-        return TagChoices(
-            typed: typed, used: settings.usedTags.tags(organization: pullRequest.key.organization, projectId: pullRequest.projectId),
-            seen: store?.tags(inProjectOf: pullRequest) ?? [], current: record.tags ?? []
-        )
+        let used = settings.usedTags.tags(organization: pullRequest.key.organization, projectId: pullRequest.projectId)
+        return TagChoices(typed: typed, used: used, seen: store?.tags(inProjectOf: pullRequest) ?? [], current: record.tags ?? [])
     }
 
     // MARK: Changing
