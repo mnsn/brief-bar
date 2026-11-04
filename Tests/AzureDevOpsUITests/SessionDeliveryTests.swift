@@ -26,13 +26,13 @@ private final class ExtensionStandIn: Sendable {
         self.sessionId = sessionId
     }
 
-    /// What it was asked, in order: `fork`, or a send's prompt.
+    /// What it was asked, in order: `fork`, `stop`, or a send's prompt.
     var received: [String] { state.withLock { $0.received } }
 
-    func listen() throws {
+    func listen(kinds: [String] = ["send", "fork"]) throws {
         let started = DetachedProgram.startTime(of: getpid()) ?? Date()
         try Self.write([
-            "version": 1, "sessionId": sessionId, "pid": Int(getpid()), "kinds": ["send", "fork"],
+            "version": 1, "sessionId": sessionId, "pid": Int(getpid()), "kinds": kinds,
             "startedAt": started.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)),
         ], to: outbox.appendingPathComponent("listening"), named: "\(sessionId).json")
     }
@@ -51,7 +51,7 @@ private final class ExtensionStandIn: Sendable {
                           let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                           let kind = request["kind"] as? String, let requestId = request["requestId"] as? String
                     else { continue }
-                    state.withLock { $0.received.append(kind == "fork" ? "fork" : request["prompt"] as? String ?? "") }
+                    state.withLock { $0.received.append(kind == "send" ? request["prompt"] as? String ?? "" : kind) }
                     try? await Task.sleep(for: delay)
                     if let fields = answer(kind) {
                         let result = ["version": 1, "requestId": requestId, "sessionId": sessionId, "kind": kind].merging(fields) { $1 }
@@ -528,7 +528,8 @@ private final class TakenAt: Sendable {
         #expect(unanswered == .fellBack(SessionFallback(reason: SendFailure.unanswered.description, session: session)))
         #expect(copied == ["Fix the comments"])
         #expect(requests(home).isEmpty)
-        #expect(handed == 1)
+        // Copied, it's handed off only once its turn is seen to start (`copiedHandOffsWaitForTheirTurn`).
+        #expect(handed == 0)
         if case .fellBack(let fallback) = unanswered {
             #expect(CopilotComposerView.fallbackNote(fallback) == "BriefBar's extension in the session didn't answer. BriefBar copied the prompt and opened the session in the Copilot app: paste it there, and send it.")
         }
@@ -694,7 +695,8 @@ private final class TakenAt: Sendable {
         }
         #expect(fallback.wasForeseen)
         #expect(copied == ["Fix the comments"])
-        #expect(handed == 1)
+        // Copied, it's handed off only once its turn is seen to start.
+        #expect(handed == 0)
     }
 
     /// The session of a task that BriefBar started with the CLI isn't one of the app's, which the app could load: BriefBar
@@ -1268,6 +1270,87 @@ private final class TakenAt: Sendable {
         }
         #expect(fallback.mayHaveSent)
         #expect(CopilotComposerView.fallbackNote(fallback) == "The session didn't take the prompt: Timed out. BriefBar copied the prompt and opened the session in the Copilot app: paste it there, and send it. If the session has it already, don't.")
+    }
+
+    /// A prompt BriefBar copied for you to paste takes the comments it quotes off Needs You only once its turn is seen to
+    /// start in the session, which says you pasted it: one you don't paste, which BriefBar forgets, leaves them there.
+    @Test func copiedHandOffsWaitForTheirTurn() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.openForTests = { _, _ in true }
+        var handed: [String] = []
+        store.handedOff = { _, prompt in handed.append(prompt) }
+        // No extension listens in it: BriefBar copies the prompt.
+        try hold(session, home: home)
+        let about = SentPrompt.About(pullRequest: PRKey("contoso", 4071), purpose: .fix, parts: [.thread(11)])
+        guard case .fellBack = await store.deliver("Fix the comments", to: choice(session), handOff: handOff, about: about) else {
+            Issue.record("BriefBar didn't copy the prompt")
+            return
+        }
+        #expect(handed.isEmpty)
+        let prompt = try #require(store.settings.copilotSentPrompts.first)
+        #expect(store.copiedHandOffs[prompt.id] != nil)
+        func follow(at date: Date) async throws {
+            store.followSentPrompts(now: date)
+            for _ in 0..<400 where store.isFollowingPrompts {
+                try await Task.sleep(for: ExtensionStandIn.lookEvery)
+            }
+        }
+        // Not pasted yet.
+        try await follow(at: Date())
+        #expect(handed.isEmpty)
+        // Pasted: the session took a message since.
+        let stamp = Date().addingTimeInterval(1).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+        let line = #"{"type":"user.message","data":{"content":"Fix the comments"},"id":"a","timestamp":"\#(stamp)","parentId":null}"#
+        try (line + "\n").write(to: home.appendingPathComponent("session-state/\(session)/events.jsonl"), atomically: true, encoding: .utf8)
+        try await follow(at: Date().addingTimeInterval(2))
+        #expect(handed == ["Fix the comments"])
+        #expect(store.copiedHandOffs.isEmpty)
+
+        // One not pasted within half an hour goes, and hands nothing off.
+        try FileManager.default.removeItem(at: home.appendingPathComponent("session-state/\(session)/events.jsonl"))
+        store.settings.copilotSentPrompts = []
+        guard case .fellBack = await store.deliver("Fix them again", to: choice(session), handOff: handOff, about: about) else {
+            Issue.record("BriefBar didn't copy the prompt")
+            return
+        }
+        try await follow(at: Date().addingTimeInterval(SentPrompt.pasteWait + 60))
+        #expect(store.settings.copilotSentPrompts.isEmpty)
+        #expect(store.copiedHandOffs.isEmpty)
+        #expect(handed == ["Fix the comments"])
+    }
+
+    /// Stop, on a prompt's line, stops its session's turn through BriefBar's extension there, as the app's own Stop does.
+    /// An extension that can't, as one that started before it could, or Send Prompts to Copilot Sessions turned off, has
+    /// BriefBar show the session, to stop it there, and say so.
+    @Test func stopsASessionsTurnThroughItsExtension() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var shown: [String] = []
+        store.showForTests = { shown.append($0); return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen(kinds: ["send", "fork", "stop"])
+        ext.start()
+        defer { ext.stop() }
+        try hold(session, home: home)
+
+        #expect(await store.stopTurn(in: session) == nil)
+        #expect(ext.received == ["stop"])
+        #expect(shown.isEmpty)
+
+        // An extension from before BriefBar could ask it to stop.
+        try ext.listen(kinds: ["send", "fork"])
+        #expect(await store.stopTurn(in: session) == "BriefBar's extension in the session can't stop it. Stop it in the session, which BriefBar showed.")
+        #expect(ext.received == ["stop"])
+        #expect(shown == [session])
+
+        CopilotSessionPrompts.set(false, in: store.settings.defaults)
+        #expect(await store.stopTurn(in: session)?.hasPrefix("BriefBar can't stop it while \(CopilotSessionPrompts.title) is off.") == true)
+        #expect(requests(home).isEmpty)
+
+        // Nothing once Azure DevOps stopped.
+        store.stop()
+        #expect(await store.stopTurn(in: session) == CopilotTasksStore.cantSendNow)
     }
 
     /// The demo sends nothing, and reads nothing of yours.

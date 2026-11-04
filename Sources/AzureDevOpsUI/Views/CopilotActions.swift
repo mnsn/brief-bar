@@ -29,7 +29,7 @@ struct CopilotSessionNames {
     func name(_ id: String) -> String? {
         if let choice = choice(id) { return PullRequestSession.name(of: choice) }
         if let entry = copilot.entries.first(where: { $0.id == id }) {
-            if let action = entry.action { return action.title }
+            if let action = entry.actionTitle { return action }
             if let workItem = entry.workItem { return "Work Item \(workItem.id)" }
         }
         if links.isOn, let ref = ItemRef.session(id), links.isDescribed(ref) { return links.describe(ref).title }
@@ -78,13 +78,73 @@ struct CopilotSessionNames {
         )
     }
 
+    /// Where a Push & Reply of fixes starts: the session they're in, as the line knows it, or as BriefBar keeps its task;
+    /// else, before the line has read its sessions, or for one of the Copilot app's sessions that it doesn't list, that
+    /// session by its ID, as the fixes have it. Never another, such as the pull request's last task, which would ship what
+    /// that one changed in their place.
+    func start(of fixes: ReadyFixes) -> SessionChoice {
+        if let choice = start(fixes.session) { return choice }
+        let name = name(fixes.session) ?? "Its Session"
+        return SessionChoice(kind: .app(AppSession(id: fixes.session, name: name)), name: name, lastActive: fixes.latest, reasons: [])
+    }
+
     /// Whether a session is a task BriefBar runs with the Copilot CLI, which its task's row goes on with.
     func isTask(_ id: String) -> Bool {
         copilot.entries.contains { $0.id == id && $0.run?.isAppSession != true }
     }
+
+    /// Where Try Again sends a fix that failed or stopped: the session it was in, as the line lists it, or as BriefBar keeps
+    /// its task; a new session, for a task that couldn't start; a new fork of the session a fork it was in forked; else
+    /// nil, for where the composer goes.
+    func retryDestination(of work: CopilotWork) -> CopilotDestination? {
+        if choice(work.session) != nil { return .session(work.session) }
+        if let entry = copilot.entries.first(where: { $0.id == work.session }) {
+            return entry.run == nil ? .newSession : .session(work.session)
+        }
+        return work.forkedFrom.map(CopilotDestination.fork)
+    }
+
+    /// What a line's menu does about Copilot's work on something (`CopilotLineActions`), as what it says allows: Stop, which
+    /// says why once BriefBar couldn't stop it itself (`stopped`); Try Again, for a fix that can be sent again from there
+    /// (`tryAgain`); and Clear. `--render` draws Stop where it would be outside the demo, which runs nothing to stop.
+    func lineActions(
+        for work: CopilotWork, about part: PullRequestPart, of key: PRKey, isRendering: Bool = false, tryAgain: (() -> Void)?,
+        stopped: @escaping (String) -> Void
+    ) -> CopilotLineActions {
+        var actions = CopilotLineActions()
+        let copilot = copilot
+        if isRendering {
+            switch work.state {
+            case .working, .needsYou: actions.stop = {}
+            case .waiting, .done, .failed, .stopped, .unknown: break
+            }
+        } else if copilot.canStop(work, of: key) {
+            actions.stop = {
+                Task { @MainActor in
+                    if let why = await copilot.stop(work, of: key) {
+                        stopped(why)
+                        SpokenText.announce(why)
+                    }
+                }
+            }
+        }
+        if CopilotTasksStore.canTryAgain(work) { actions.tryAgain = tryAgain }
+        if CopilotTasksStore.canClear(work) { actions.clear = { copilot.clear(part, of: key) } }
+        return actions
+    }
 }
 
 extension CopilotWork {
+    /// Copilot is at a fix of it, or at pushing one, as it takes it up: another Fix would only wait for it, or work beside it.
+    /// Not one copied for you to paste, which you may not.
+    var isFixing: Bool {
+        guard purpose != .explain else { return false }
+        switch state {
+        case .working, .needsYou, .waiting(copied: false): return true
+        case .waiting(copied: true), .done, .failed, .stopped, .unknown: return false
+        }
+    }
+
     /// Its symbol, and its state's color: working, done, failing, or yours, as when its session asks you something.
     var look: (symbol: String, state: ItemState?) {
         switch state {
@@ -229,6 +289,13 @@ final class CopilotDrafts {
     var sends: [CopilotComposing: Task<Void, Never>] = [:]
     /// What asks a session about something as a prompt, Ask in the Session's, until it's done: called off as its page goes.
     var asks = Asks()
+    /// What Try Again asked of each composer: when, and where the fix it tries again went, for the composer to send its
+    /// words again as it opens, if it can go (`CopilotPartComposer`). Each is taken once, and only for a little while.
+    var retries: [CopilotComposing: (at: Date, destination: CopilotDestination?)] = [:]
+
+    /// How long a composer that Try Again opens has to open, for it to send at once: one that opens later, as when what it's
+    /// about wasn't read yet, opens with the words, for you to send.
+    static let retryWait: TimeInterval = 30
 
     /// What asks a session about something as a prompt, by what it's about, and, where more than one row is about it, as two
     /// policies' runs of a pipeline are, the row it's on (`CopilotComposing.row`): `asks[part]`, `asks[part, row: id]`.
@@ -353,16 +420,18 @@ struct CopilotAnswerCard: View {
     }
 }
 
-/// A note BriefBar left once it copied a prompt for you to paste, or why nothing went, until you dismiss it.
+/// A note BriefBar left once it copied a prompt for you to paste, or why nothing went, or why it didn't stop what Copilot
+/// is at, until you dismiss it.
 struct CopilotCopiedNote: View {
     let note: String
+    var symbol = "doc.on.clipboard"
     let dismiss: () -> Void
 
     @Environment(\.textScale) private var textScale
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "doc.on.clipboard")
+            Image(systemName: symbol)
                 .font(size: 11, weight: .semibold)
                 .foregroundStyle(ItemState.needsYou.color)
                 .accessibilityHidden(true)
@@ -597,7 +666,21 @@ struct CopilotPartComposer<Options: View>: View {
                 return
             }
             text = drafts.texts[asking.draftKey] ?? ""
+            retryIfAsked()
         }
+    }
+
+    /// Try Again opened it, a moment ago: it goes where the fix it tries again went, with the same words, now, if it can go;
+    /// else it stays open with them, saying why it can't.
+    private func retryIfAsked() {
+        guard let retry = drafts.retries.removeValue(forKey: asking.draftKey), Date().timeIntervalSince(retry.at) < CopilotDrafts.retryWait
+        else { return }
+        let destinations = destinations
+        if let destination = retry.destination, destination == .newSession || destinations.choice(for: destination) != nil {
+            chosen = destination
+        }
+        let target = retry.destination.flatMap { $0 == .newSession || destinations.choice(for: $0) != nil ? $0 : nil } ?? target
+        send(to: target, choice: destinations.choice(for: target))
     }
 
     @ViewBuilder
@@ -834,10 +917,12 @@ struct CopilotPartComposer<Options: View>: View {
             switch outcome {
             case .sent:
                 drafts.texts[key] = nil
+                remember(words, for: fix)
                 SpokenText.announce("Sent to Copilot")
                 done(outcome)
             case .copied(let note):
                 drafts.texts[key] = nil
+                remember(words, for: fix)
                 SpokenText.announce(note)
                 done(outcome)
             case .notSent(let why):
@@ -847,6 +932,13 @@ struct CopilotPartComposer<Options: View>: View {
                 sending.openWindow(fix, destination: target, choice: choice)
                 done(nil)
             }
+        }
+    }
+
+    /// The words a fix went with, for each thing it took on, for Try Again to send them again.
+    private func remember(_ words: String, for fix: CopilotSending.Fix) {
+        for part in fix.parts {
+            copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)] = words
         }
     }
 
@@ -1043,7 +1135,7 @@ struct ReadyFixesBar: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityHint("Shows" + Self.showHelp(first.parts).dropFirst("Show".count))
                 if ready.count > 1 {
-                    Menu("Push & Reply") {
+                    Menu(Self.pushTitle(ready)) {
                         ForEach(ready) { group in
                             Button(sentence(group, names: names) + "…") { pushAndReply(group, names: names) }
                         }
@@ -1053,9 +1145,11 @@ struct ReadyFixesBar: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .fixedSize()
-                    .help("Push the fixes of one session, and reply on the threads they addressed")
+                    .help(ready.contains { !$0.threads.isEmpty }
+                        ? "Push the fixes of one session, and reply on the threads they addressed"
+                        : "Push the fixes of one session")
                 } else {
-                    Button("Push & Reply…") { pushAndReply(first, names: names) }
+                    Button(Self.pushTitle([first]) + "…") { pushAndReply(first, names: names) }
                         .font(size: 12, weight: .semibold)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
@@ -1108,6 +1202,12 @@ struct ReadyFixesBar: View {
             : "Commit and push the fixes, and reply on the threads they addressed, as you, from \(place)"
     }
 
+    /// What pushing these fixes is called, for what it does: "Push & Reply" while one of them fixed a thread to reply on;
+    /// "Push" for builds' fixes, or the conflicts' resolution, alone.
+    static func pushTitle(_ groups: [ReadyFixes]) -> String {
+        PullRequestAction.pushAndReply.title(taking: groups.flatMap(\.parts))
+    }
+
     private func sentence(_ group: ReadyFixes, names: CopilotSessionNames) -> String {
         Self.sentence(group.parts, in: names.place(of: group))
     }
@@ -1132,10 +1232,7 @@ struct ReadyFixesBar: View {
     }
 
     private func pushAndReply(_ group: ReadyFixes, names: CopilotSessionNames) {
-        store.composeCopilot(
-            .pushAndReply, for: item, copilot: copilot, start: names.start(group.session).map { .session($0, forking: false) },
-            parts: group.parts
-        )
+        store.composeCopilot(.pushAndReply, for: item, copilot: copilot, start: .session(names.start(of: group), forking: false), parts: group.parts)
     }
 }
 

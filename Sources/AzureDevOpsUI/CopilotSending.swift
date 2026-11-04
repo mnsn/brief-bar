@@ -187,7 +187,7 @@ struct CopilotSending {
         guard !Task.isCancelled else { return .notSent(Self.calledOff) }
         // Gone from your lists, completed or abandoned while it waited for what its prompts quote: nothing goes.
         guard isOpen else { return .notSent(Self.pullRequestGone) }
-        let about = SentPrompt.About(pullRequest: item.key, purpose: .fix, parts: fix.parts)
+        let about = SentPrompt.About(pullRequest: item.key, purpose: .fix, parts: fix.parts, target: record.pullRequest.targetBranch)
         let subject = TaskSubject.pullRequest(task, fix.action)
         let options = copilot.settings.copilotOptions
         switch destination {
@@ -242,7 +242,7 @@ struct CopilotSending {
     func explainAsPrompt(_ prompt: String, about part: PullRequestPart, to choice: SessionChoice) async -> Outcome {
         guard copilot.canSend, copilot.isOn else { return .notSent(CopilotTasksStore.cantSendNow) }
         guard isOpen else { return .notSent(Self.pullRequestGone) }
-        let about = SentPrompt.About(pullRequest: item.key, purpose: .explain, parts: [part])
+        let about = SentPrompt.About(pullRequest: item.key, purpose: .explain, parts: [part], target: record.pullRequest.targetBranch)
         return Self.outcome(await copilot.deliver(prompt, to: choice, about: about))
     }
 

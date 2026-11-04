@@ -127,10 +127,12 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// older fix of it, elsewhere, not to be taken as its latest again. Push & Reply takes on what it ships
     /// (`TakenPart.ships`), the threads its prompt lists, to reply on, whether its runs or prompts sent to the session fixed
     /// them; the others stay as they were, since it doesn't reply on them. Nil when it keeps nothing.
-    /// - Parameter pullRequest: the pull request it's on, if it's on one.
+    /// - Parameters:
+    ///   - pullRequest: the pull request it's on, if it's on one.
+    ///   - target: the pull request's target branch, which the conflicts it takes on are with (`TakenPart.target`).
     public static func taken(
         goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?, taking parts: [PullRequestPart],
-        for action: PullRequestAction?, at now: Date
+        for action: PullRequestAction?, at now: Date, target: String? = nil
     ) -> [TakenPart]? {
         var kept: [TakenPart] = []
         if let previous, let before = previous.taken, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true,
@@ -147,7 +149,9 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
             taking.append(part)
         }
         let ships: Bool? = action == .pushAndReply ? true : nil
-        kept = kept.filter { !taking.contains($0.part) } + taking.map { TakenPart($0, since: now, ships: ships) }
+        kept = kept.filter { !taking.contains($0.part) } + taking.map { part in
+            TakenPart(part, since: now, ships: ships, target: part == .conflicts ? target : nil)
+        }
         return kept.isEmpty ? nil : kept
     }
 }

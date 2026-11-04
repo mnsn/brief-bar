@@ -33,12 +33,15 @@ struct ThreadCopilotActions: View {
     @EnvironmentObject private var code: PullRequestCodeStore
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.copilotActionsPreview) private var preview
+    @Environment(\.isRendering) private var isRendering
     /// The window's page it's on, which the code of its thread is read only while the window shows on screen.
     @Environment(\.shownSection) private var section
     @Environment(\.shownWindow) private var window
 
     /// What BriefBar said once it copied a prompt for you to paste, until you close it.
     @LocalState private var copied: String?
+    /// Why BriefBar didn't stop what Copilot is at on it itself, until you close it.
+    @LocalState private var stopNote: String?
     @LocalState private var isAskingInSession = false
     /// What it tells the code store it is, for its thread's code to be read for Ask in the Session.
     @LocalState private var viewer = UUID()
@@ -89,7 +92,7 @@ struct ThreadCopilotActions: View {
     var body: some View {
         let work = work
         let question = question
-        let hasLines = copilot.isOn && (question != nil || work != nil || copied != nil)
+        let hasLines = copilot.isOn && (question != nil || work != nil || copied != nil || stopNote != nil)
         // Your reply, open on it, takes the row's place, as a composer of Copilot's does: while you can reply.
         let isReplying = yours != nil && composing == .reply(to: thread.id)
         let showsRow = !isReplying && (canAct || yours != nil)
@@ -105,6 +108,9 @@ struct ThreadCopilotActions: View {
                     if let copied {
                         CopilotCopiedNote(note: copied) { self.copied = nil }
                     }
+                    if let stopNote {
+                        CopilotCopiedNote(note: stopNote, symbol: "stop.circle") { self.stopNote = nil }
+                    }
                 }
                 if canAct, let asking {
                     CommentComposer(
@@ -117,7 +123,7 @@ struct ThreadCopilotActions: View {
                     // A new composer for each, with its own words and where it goes.
                     .id(asking)
                 } else if showsRow {
-                    buttons(hasAnswer: question?.answer != nil, showsCopilot: canAct)
+                    buttons(hasAnswer: question?.answer != nil, showsCopilot: canAct, isFixing: work?.isFixing == true)
                 }
             }
             .padding(.horizontal, 10)
@@ -132,8 +138,8 @@ struct ThreadCopilotActions: View {
     }
 
     /// Explain and Fix, while you can ask Copilot about it, then your own actions on it, at the row's end: on one line while
-    /// they fit, else yours under Copilot's.
-    private func buttons(hasAnswer: Bool, showsCopilot: Bool) -> some View {
+    /// they fit, else yours under Copilot's. Not Fix while Copilot fixes it, or pushes its fix: its line's menu stops that.
+    private func buttons(hasAnswer: Bool, showsCopilot: Bool, isFixing: Bool) -> some View {
         let nobody = hasNobodyToAsk
         let explainTitle: String = hasAnswer ? "Ask More" : "Explain"
         let copilotButtons = HStack(spacing: 6) {
@@ -146,7 +152,7 @@ struct ThreadCopilotActions: View {
                 .focused($focused, equals: .explain)
                 .disabled(nobody)
                 .help(explainHelp(nobody: nobody, hasAnswer: hasAnswer))
-                if canFix {
+                if canFix, !isFixing {
                     Button {
                         open(.fix)
                     } label: {
@@ -199,7 +205,17 @@ struct ThreadCopilotActions: View {
     /// Opens its composer, closing any other in the comments, whose words stay for when it opens again.
     private func open(_ ask: CopilotAsk) {
         copied = nil
+        stopNote = nil
         composing = CopilotComposing(part: part, ask: ask)
+    }
+
+    /// Try Again, from its line's menu: Fix's composer, with the words the fix that failed or stopped went with, which sends
+    /// them again, where that fix went, as it opens, if it can go.
+    private func tryAgain(_ work: CopilotWork) {
+        let key = CopilotComposing(part: part, ask: .fix)
+        drafts.texts[key] = copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)] ?? drafts.texts[key]
+        drafts.retries[key] = (Date(), names.retryDestination(of: work))
+        open(.fix)
     }
 
     /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
@@ -211,9 +227,14 @@ struct ThreadCopilotActions: View {
 
     private func workLine(_ work: CopilotWork) -> some View {
         let look = work.look
+        let names = names
         return CopilotWorkLine(
             symbol: look.symbol, text: names.sentence(work), state: look.state, since: work.since, now: now, subtitle: work.step,
-            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation)
+            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation),
+            actions: names.lineActions(
+                for: work, about: part, of: item.key, isRendering: isRendering, tryAgain: canAct && canFix ? { tryAgain(work) } : nil,
+                stopped: { stopNote = $0 }
+            )
         )
     }
 

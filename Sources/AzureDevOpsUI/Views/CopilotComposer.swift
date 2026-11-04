@@ -222,7 +222,10 @@ struct CopilotComposerView: View {
         // Until the sessions are found: where a composer in place chose; else the last task's, as it was kept, with the
         // prompt for where it works, and sent to it in the Copilot app if it's one of the app's sessions.
         var initial = session?.choice ?? continuing.map { run in
-            SessionChoice(kind: .task(run), name: run.action?.title ?? "Its last task", place: nil, lastActive: run.startedAt, reasons: [.earlierTask])
+            SessionChoice(
+                kind: .task(run), name: run.action?.title(taken: run.taken) ?? "Its last task", place: nil, lastActive: run.startedAt,
+                reasons: [.earlierTask]
+            )
         }
         var delivery: Delivery = initial?.opensInApp == true ? .session : .cli
         switch start {
@@ -292,6 +295,11 @@ struct CopilotComposerView: View {
     /// Push & Reply ships what an earlier run changed: only in its session, and its worktree.
     private var mustContinue: Bool { pullRequest?.1 == .pushAndReply }
 
+    /// A Push & Reply that replies on no thread, as of a build's fix alone: it only pushes, and says so.
+    private var onlyPushes: Bool {
+        pullRequest?.1 == .pushAndReply && PullRequestAction.pushAndReply.title(taking: parts) != PullRequestAction.pushAndReply.title
+    }
+
     /// Send to a Fork is there for the session: the Copilot app can fork it, and it isn't for Push & Reply, which ships what
     /// its last task changed only in that task's session and worktree. A fork would push a copy of those changes from a
     /// worktree of its own, and leave them uncommitted where they are.
@@ -347,9 +355,9 @@ struct CopilotComposerView: View {
     /// What it does, in Copilot's colors, and what it's for. Dragging it moves the window.
     private var header: some View {
         HStack(alignment: .center, spacing: 14) {
-            ComposerTile(symbol: pullRequest?.1.symbol ?? "paperplane.fill", fill: .copilot, size: 44)
+            ComposerTile(symbol: onlyPushes ? "arrow.up.circle.fill" : pullRequest?.1.symbol ?? "paperplane.fill", fill: .copilot, size: 44)
             VStack(alignment: .leading, spacing: 4) {
-                Text(pullRequest.map { "\($0.1.title) with Copilot" } ?? "Send to Copilot")
+                Text(pullRequest.map { "\($0.1.title(taking: parts)) with Copilot" } ?? "Send to Copilot")
                     .font(size: 20, weight: .bold)
                     .lineLimit(1)
                 HStack(spacing: 6) {
@@ -810,6 +818,8 @@ struct CopilotComposerView: View {
         switch pullRequest?.1 {
         case nil:
             text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It pushes a branch and opens a pull request, as you."
+        case .pushAndReply? where onlyPushes:
+            text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It commits and pushes the pull request's branch, as you, and replies on none of its threads."
         case .pushAndReply?:
             text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It commits, pushes the pull request's branch, and replies on its threads, as you."
         case .review?:
@@ -1150,7 +1160,9 @@ struct CopilotComposerView: View {
         case .pushAndReply: purpose = .pushAndReply
         case .review: return nil
         }
-        return SentPrompt.About(pullRequest: PRKey(pullRequest.organization, pullRequest.id), purpose: purpose, parts: parts)
+        return SentPrompt.About(
+            pullRequest: PRKey(pullRequest.organization, pullRequest.id), purpose: purpose, parts: parts, target: pullRequest.targetBranch
+        )
     }
 
     private func send() {

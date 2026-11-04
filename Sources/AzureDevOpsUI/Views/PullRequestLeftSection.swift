@@ -9,9 +9,9 @@ import SwiftUI
 /// own below, its comments, its merge conflicts, its builds and checks or its reviewers, takes you there.
 struct PullRequestLeftSection: View {
     let readiness: PRReadiness
-    /// What the task Copilot is at work on for it does, while Send Work to Copilot is on: what it takes care of is
-    /// Copilot's turn.
-    var copilotAction: PullRequestAction?
+    /// What's left of it that the task Copilot is at work on for it takes care of, while Send Work to Copilot is on: those of
+    /// what it took on, or, for a task that doesn't record that, what its action takes care of (`kindsAtWork`).
+    var copilotKinds: Set<PRReadiness.Item.Kind> = []
     /// What Copilot does now about each kind of what's left, while Send Work to Copilot is on, by a task of BriefBar's or a
     /// prompt sent to one of the Copilot app's sessions (`CopilotTasksStore.onIt`).
     var copilot: [PRReadiness.Item.Kind: CopilotWork] = [:]
@@ -49,12 +49,12 @@ struct PullRequestLeftSection: View {
     }
 
     /// Copilot's part in it: at work on it, with the symbol its line has, or asking you something about it in the Copilot
-    /// app; or the task at work on the pull request takes care of it, whatever it took on.
+    /// app; or the task at work on the pull request takes care of it, as what it took on says.
     private func turn(of item: PRReadiness.Item) -> LeftRow.CopilotTurn? {
         if let work = copilot[item.kind] {
             return work.state == .needsYou ? .asksYou : .onIt(symbol: work.look.symbol)
         }
-        return copilotAction?.takesCare(of: item.kind) == true ? .onIt(symbol: "arrow.triangle.2.circlepath") : nil
+        return copilotKinds.contains(item.kind) ? .onIt(symbol: "arrow.triangle.2.circlepath") : nil
     }
 }
 

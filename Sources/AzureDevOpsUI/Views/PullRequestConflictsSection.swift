@@ -339,9 +339,12 @@ private struct ConflictsCopilotActions: View {
     @EnvironmentObject private var conflicts: PullRequestConflictsStore
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.copilotActionsPreview) private var preview
+    @Environment(\.isRendering) private var isRendering
 
     /// What BriefBar said once it copied a prompt for you to paste, or why nothing went, until you close it.
     @LocalState private var copied: String?
+    /// Why BriefBar didn't stop what Copilot is at on them itself, until you close it.
+    @LocalState private var stopNote: String?
     @LocalState private var isAskingInSession = false
     /// Explain or Resolve, for the keyboard's focus to go back to once its composer closes.
     @FocusState private var focused: CopilotAsk?
@@ -389,7 +392,7 @@ private struct ConflictsCopilotActions: View {
     var body: some View {
         let work = work
         let question = question
-        if copilot.isOn, work != nil || question != nil || copied != nil || canAct {
+        if copilot.isOn, work != nil || question != nil || copied != nil || stopNote != nil || canAct {
             VStack(alignment: .leading, spacing: 8) {
                 if let question {
                     questionView(question)
@@ -399,6 +402,9 @@ private struct ConflictsCopilotActions: View {
                 }
                 if let copied {
                     CopilotCopiedNote(note: copied) { self.copied = nil }
+                }
+                if let stopNote {
+                    CopilotCopiedNote(note: stopNote, symbol: "stop.circle") { self.stopNote = nil }
                 }
                 if canAct {
                     if let asking {
@@ -413,7 +419,7 @@ private struct ConflictsCopilotActions: View {
                         // A new composer for each, with its own words and where it goes.
                         .id(asking)
                     } else {
-                        buttons(hasAnswer: question?.answer != nil)
+                        buttons(hasAnswer: question?.answer != nil, isFixing: work?.isFixing == true)
                     }
                 }
             }
@@ -427,7 +433,8 @@ private struct ConflictsCopilotActions: View {
         }
     }
 
-    private func buttons(hasAnswer: Bool) -> some View {
+    /// Explain and Resolve; not Resolve while Copilot resolves them, or pushes the resolution: its line's menu stops that.
+    private func buttons(hasAnswer: Bool, isFixing: Bool) -> some View {
         let nobody = hasNobodyToAsk
         let target = record?.pullRequest.targetBranch ?? "the target branch"
         return HStack(spacing: 6) {
@@ -439,7 +446,7 @@ private struct ConflictsCopilotActions: View {
             .focused($focused, equals: .explain)
             .disabled(nobody)
             .help(explainHelp(nobody: nobody, hasAnswer: hasAnswer, target: target))
-            if canResolve {
+            if canResolve, !isFixing {
                 Button {
                     open(.fix)
                 } label: {
@@ -466,7 +473,17 @@ private struct ConflictsCopilotActions: View {
     /// Opens its composer, closing the other, whose words stay for when it opens again.
     private func open(_ ask: CopilotAsk) {
         copied = nil
+        stopNote = nil
         composing = CopilotComposing(part: part, ask: ask)
+    }
+
+    /// Try Again, from its line's menu: Resolve's composer, with the words the resolution that failed or stopped went with,
+    /// which sends them again, where it went, as it opens, if it can go.
+    private func tryAgain(_ work: CopilotWork) {
+        let key = CopilotComposing(part: part, ask: .fix)
+        drafts.texts[key] = copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)] ?? drafts.texts[key]
+        drafts.retries[key] = (Date(), names.retryDestination(of: work))
+        open(.fix)
     }
 
     /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
@@ -478,9 +495,14 @@ private struct ConflictsCopilotActions: View {
 
     private func workLine(_ work: CopilotWork) -> some View {
         let look = work.look
+        let names = names
         return CopilotWorkLine(
             symbol: look.symbol, text: names.sentence(work), state: look.state, since: work.since, now: now, subtitle: work.step,
-            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation)
+            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation),
+            actions: names.lineActions(
+                for: work, about: part, of: item.key, isRendering: isRendering, tryAgain: canAct && canResolve ? { tryAgain(work) } : nil,
+                stopped: { stopNote = $0 }
+            )
         )
     }
 

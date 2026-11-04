@@ -49,7 +49,7 @@ extension CopilotTaskEntry {
         case .finished where action != nil:
             switch action {
             case .review?: return "Wrote its review"
-            case .pushAndReply?: return "Pushed and replied"
+            case .pushAndReply?: return onlyPushes ? "Pushed" : "Pushed and replied"
             default: return "Changes ready to check, then Push & Reply"
             }
         case .finished: return pullRequest != nil ? "Opened a pull request" : "Finished, without a pull request"
@@ -143,7 +143,7 @@ struct CopilotRunMenuItems: View {
     @EnvironmentObject private var copilot: CopilotTasksStore
 
     var body: some View {
-        Text("\(entry.action.map { "\($0.title): " } ?? "")\(entry.sentence(now: Date())) · \(entry.options.title)")
+        Text("\(entry.actionTitle.map { "\($0): " } ?? "")\(entry.sentence(now: Date())) · \(entry.options.title)")
         if showsPullRequest, let key = entry.pullRequestKey, copilot.canShowPullRequest(key) {
             Button("Show Pull Request in BriefBar") { _ = copilot.showPullRequest(key) }
         }
@@ -251,7 +251,7 @@ struct CopilotRunsMenu: View {
     }
 
     private func title(_ entry: CopilotTaskEntry) -> String {
-        "\(copilot.subject(of: entry)) · \(entry.opensPullRequest ? "Pull Request" : entry.action.map { "\($0.title), \(entry.status.phase.title.lowercased())" } ?? entry.status.phase.title)"
+        "\(copilot.subject(of: entry)) · \(entry.opensPullRequest ? "Pull Request" : entry.actionTitle.map { "\($0), \(entry.status.phase.title.lowercased())" } ?? entry.status.phase.title)"
     }
 }
 
@@ -309,8 +309,8 @@ extension CopilotTasksStore {
 
     /// "Fix Comments: !4071 Fix the checkout total", "Work Item 4217: Show the order total in the cart".
     func name(of entry: CopilotTaskEntry) -> String {
-        if let action = entry.action {
-            return "\(action.title): \(subject(of: entry))"
+        if let action = entry.actionTitle {
+            return "\(action): \(subject(of: entry))"
         }
         if let workItem = entry.workItem {
             return "Work Item \(workItem.id)" + (title(workItem).map { ": \($0)" } ?? "")
@@ -331,32 +331,59 @@ extension CopilotTasksStore {
     }
 }
 
-/// A pull request's Copilot tasks, in its Actions and context menus.
+/// A pull request's Copilot tasks, in its Actions and context menus: what Copilot can do with it, Push & Reply for the fixes
+/// done and not pushed in each session, as the bar at the foot of its details offers it, and its last task's menu.
 struct PullRequestCopilotMenuItems: View {
     let item: PRSnapshot
 
     @EnvironmentObject private var copilot: CopilotTasksStore
     @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var sessions: PullRequestSessions
 
     var body: some View {
         if copilot.isOn {
             let last = copilot.latest(forPullRequest: item.key)
-            let actions = store.copilotActions(for: item, continuable: copilot.continuable(forPullRequest: item.key))
-            if !actions.isEmpty || last != nil {
+            let actions = store.copilotActions(for: item)
+            let pushes = store.record(for: item.key).map(copilot.pushes(of:)) ?? []
+            let isWorking = last?.status.phase.isActive == true
+            if !actions.isEmpty || !pushes.isEmpty || last != nil {
                 Divider()
             }
             ForEach(actions, id: \.self) { action in
-                Button(action == .pushAndReply ? "Push & Reply with Copilot…" : "\(action.title) with Copilot…") {
+                Button("\(action.title) with Copilot…") {
                     store.composeCopilot(action, for: item, copilot: copilot)
                 }
-                .disabled(last?.status.phase.isActive == true)
+                .disabled(isWorking)
             }
+            pushItems(pushes)
+                .disabled(isWorking)
             if let last {
                 Menu("Copilot's Last Task") {
                     CopilotRunMenuItems(entry: last, showsPullRequest: false)
                 }
             }
         }
+    }
+
+    /// Push & Reply, for one session's fixes; with fixes in more than one, a menu of them, each by what it fixed, and where:
+    /// "Push & Reply with Copilot…", "Push with Copilot…" for a build's fix alone.
+    @ViewBuilder
+    private func pushItems(_ pushes: [ReadyFixes]) -> some View {
+        let names = CopilotSessionNames(session: sessions.session(for: item.key), copilot: copilot, links: sessions.links)
+        if pushes.count > 1 {
+            Menu("\(ReadyFixesBar.pushTitle(pushes)) with Copilot") {
+                ForEach(pushes) { fixes in
+                    Button(ReadyFixesBar.sentence(fixes.parts, in: names.place(of: fixes)) + "…") { push(fixes, names: names) }
+                }
+            }
+        } else if let fixes = pushes.first {
+            Button("\(ReadyFixesBar.pushTitle([fixes])) with Copilot…") { push(fixes, names: names) }
+        }
+    }
+
+    /// Opens the Send to Copilot window to push these fixes, in their session, replying on the threads they fixed alone.
+    private func push(_ fixes: ReadyFixes, names: CopilotSessionNames) {
+        store.composeCopilot(.pushAndReply, for: item, copilot: copilot, start: .session(names.start(of: fixes), forking: false), parts: fixes.parts)
     }
 }
 
@@ -372,7 +399,7 @@ struct PullRequestCopilotStatus: View {
             let phase = entry.status.phase
             HStack(spacing: 3) {
                 Image(systemName: "paperplane.fill")
-                Text(entry.action?.title ?? "Copilot")
+                Text(entry.actionTitle ?? "Copilot")
                 Image(systemName: phase.symbol)
             }
             .font(size: 10, weight: .semibold)

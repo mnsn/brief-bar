@@ -221,9 +221,10 @@ extension CopilotTasksStore {
     /// with the Copilot app's own fork, and the fork's extension sends the fork the prompt; then the session, or the fork,
     /// shows (`show`). When the extension can't, BriefBar does what Open in Copilot did: it copies the prompt, or for a
     /// fork `/fork <prompt>`, which the app's own `/fork` takes, and shows the session to paste it in; or the fork, with
-    /// the prompt, once the session forked but the prompt didn't reach it. Once the prompt's sent, or copied and the
-    /// session showing, what `handOff` says it takes care of leaves Needs You. Only while Send Work to Copilot is on, never
-    /// in the demo, and one prompt at a time for each session.
+    /// the prompt, once the session forked but the prompt didn't reach it. Once the prompt's sent, what `handOff` says it
+    /// takes care of leaves Needs You; once it's copied, as its turn is seen to start, which says you pasted it
+    /// (`copiedHandOffs`), so a prompt you don't paste leaves the comments on Needs You. Only while Send Work to Copilot is
+    /// on, never in the demo, and one prompt at a time for each session.
     /// - Parameter about: what of the pull request it's about, its threads, a build or its conflicts, and what for: once it's
     ///   sent, or copied for you to paste, BriefBar keeps that, to follow its turn in the session (`SentPrompt`). Whatever
     ///   it's about, the turns of the prompts sent the session before that weren't seen to end aren't followed after
@@ -240,7 +241,8 @@ extension CopilotTasksStore {
         if !forking { pauseFollowing(choice.id) }
         defer { if !forking { resumeFollowing(choice.id) } }
         let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff)
-        keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt)
+        let kept = keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt)
+        if case .fellBack = outcome, let handOff, let kept { copiedHandOffs[kept.id] = (handOff, prompt) }
         return outcome
     }
 
@@ -268,9 +270,7 @@ extension CopilotTasksStore {
         if let checkout { deliveringFolders[id] = checkout }
         defer { deliveringFolders[id] = nil }
         if let why = reach.whyNot(forking: forking) {
-            return await fallBack(
-                prompt, in: id, forking: forking, reason: why, foreseen: true, promptsWereOn: promptsWereOn, handOff: handOff
-            )
+            return await fallBack(prompt, in: id, forking: forking, reason: why, foreseen: true, promptsWereOn: promptsWereOn)
         }
         if case .loads = reach, !canOpenInApp { return .notSent(Self.cantOpenInApp) }
 
@@ -350,23 +350,24 @@ extension CopilotTasksStore {
         case .notSent(let why):
             Log.app.error("Couldn't send a prompt to a session in the Copilot app: \(why.kind, privacy: .public)")
             guard goesOn else { return .notSent(Self.cantSendNow) }
-            return await fallBack(prompt, in: id, forking: forking, reason: why.description, mayHaveSent: why.mayHaveGone, handOff: handOff)
+            return await fallBack(prompt, in: id, forking: forking, reason: why.description, mayHaveSent: why.mayHaveGone)
         case .forkedNotSent(let fork, let why):
             Log.app.error("Forked a session in the Copilot app, but couldn't send the fork a prompt: \(why.kind, privacy: .public)")
             guard goesOn else { return .notSent(Self.cantSendNow) }
             return await fallBack(
-                prompt, in: fork, forking: forking, fork: fork, reason: why.description, mayHaveSent: why.mayHaveGone, handOff: handOff
+                prompt, in: fork, forking: forking, fork: fork, reason: why.description, mayHaveSent: why.mayHaveGone
             )
         }
     }
 
     /// Copies what to paste, and shows the session to paste it in: the prompt, or, to fork a session that hasn't forked,
-    /// `/fork <prompt>`. Hands it off once the session shows. Nothing's copied or shown once it's stopped, as when its
-    /// window closed, or once Send Work to Copilot is off, as looked at right before; nor once Send Prompts to Copilot
-    /// Sessions is off, unless the window said it would copy it because that was off as you sent it (`promptsWereOn`).
+    /// `/fork <prompt>`. It's handed off only once its turn is seen to start (`deliver`). Nothing's copied or shown once it's
+    /// stopped, as when its window closed, or once Send Work to Copilot is off, as looked at right before; nor once Send
+    /// Prompts to Copilot Sessions is off, unless the window said it would copy it because that was off as you sent it
+    /// (`promptsWereOn`).
     private func fallBack(
         _ prompt: String, in session: String, forking: Bool, fork: String? = nil, reason: String, foreseen: Bool = false,
-        mayHaveSent: Bool = false, promptsWereOn: Bool = true, handOff: CommentHandOff?
+        mayHaveSent: Bool = false, promptsWereOn: Bool = true
     ) async -> SessionDelivery {
         let way: Showing?
         if openForTests != nil {
@@ -406,7 +407,6 @@ extension CopilotTasksStore {
             return .notSent(Self.cantOpenInApp(fallback))
         }
         Log.app.info("Copied a prompt for a session in the Copilot app, and showed the session")
-        if let handOff { handedOff(handOff, prompt) }
         return .fellBack(fallback)
     }
 
@@ -434,6 +434,44 @@ extension CopilotTasksStore {
         guard !Task.isCancelled, maySendToSessions, let way else { return false }
         if let showForTests { return showForTests(id) }
         return Self.reveal(id, way)
+    }
+
+    /// Stops the turn that runs in one of the Copilot app's sessions, as the app's own Stop does, through BriefBar's
+    /// extension in it (`SessionSender.stop`): for a prompt BriefBar sent the session, whose line says Copilot is at it. When
+    /// the extension can't, as one that started before it could, or while Send Prompts to Copilot Sessions is off, BriefBar
+    /// shows the session, to stop it there. Only while Send Work to Copilot is on, never in the demo.
+    /// - Returns: what to say once BriefBar didn't stop it itself; nil once it did.
+    func stopTurn(in session: String) async -> String? {
+        guard canSend, isOn, !hasStopped, AppSessions.isSessionID(session) else { return Self.cantSendNow }
+        var why = "BriefBar can't stop it while \(CopilotSessionPrompts.title) is off."
+        if sessionPromptsAreOn {
+            let homes = await sessionHomes()
+            let appHome = appHome
+            let effects = SessionSender.Effects(
+                open: { _ in false },
+                isHeld: { id in homes.contains { AppSessions.isOpen(id, home: $0) } },
+                forkRecord: { id in AppSessions.forkRecord(of: id, home: appHome) },
+                mayGoOn: { [weak self] in await MainActor.run { self?.maySendToSessions ?? false } }
+            )
+            let sender = SessionSender(outbox: outbox, effects: effects, timing: deliveryTimingForTests ?? SessionSender.Timing())
+            let result = await Task.detached(priority: .userInitiated) { await sender.stop(session) }.value
+            guard canSend, isOn, !hasStopped else { return Self.cantSendNow }
+            switch result {
+            case .success:
+                Log.app.info("Stopped a session's turn in the Copilot app")
+                return nil
+            case .failure(let failure):
+                Log.app.error("Couldn't stop a session's turn in the Copilot app: \(failure.kind, privacy: .public)")
+                switch failure {
+                case .noListener, .unsupported: why = "BriefBar's extension in the session can't stop it."
+                default: why = failure.description
+                }
+            }
+        }
+        let way: Showing? = showForTests != nil ? .app : await showing(session)
+        guard canSend, isOn, !hasStopped else { return Self.cantSendNow }
+        let shown = way.map { way in showForTests?(session) ?? Self.reveal(session, way) } ?? false
+        return shown ? "\(why) Stop it in the session, which BriefBar showed." : "\(why) Stop it in the session, in the Copilot app."
     }
 
     /// How the session would show now: nil when nothing would show it, as without the Copilot app.

@@ -152,6 +152,20 @@ final class CopilotTasksStore: ObservableObject {
     @Published var promptTurns: [String: SessionTurn] = [:]
     /// When each of those turns was first seen over, to tell an ended turn from one that only paused.
     var promptsOver: [String: Date] = [:]
+    /// What each prompt copied for you to paste takes off Needs You, with the prompt, by the prompt (`SentPrompt.id`), until
+    /// its turn is seen to start, which says you pasted it (`followSentPrompts`): in memory only. One that BriefBar stops
+    /// following first, or forgets, hands nothing off.
+    var copiedHandOffs: [String: (handOff: CommentHandOff, prompt: String)] = [:]
+    /// What something of a pull request is, for what's kept about it in memory.
+    struct PartKey: Hashable {
+        var pullRequest: PRKey
+        var part: PullRequestPart
+    }
+    /// The words you last sent a fix of each thing of a pull request with, from its composer in place, for Try Again to
+    /// send them again: in memory only.
+    var fixWords: [PartKey: String] = [:]
+    /// What Clear let go of in the demo, whose made-up work is made anew each time: in memory only.
+    var clearedInDemo: Set<PartKey> = []
     var isFollowingPrompts = false
     /// The sessions another prompt is being sent to, by how many sends: the turns of the prompts sent them before aren't
     /// followed meanwhile (`pauseFollowing`).
@@ -254,9 +268,10 @@ final class CopilotTasksStore: ObservableObject {
         entries.first { $0.isOn(key) }
     }
 
-    /// The run a new task on a pull request goes on with: its latest one, ended, whose worktree is still there.
+    /// The run a new task on a pull request goes on with: its latest one, ended, whose worktree is still there. Not a fork's,
+    /// which works on the side, as the pull request's session doesn't (`lastTask(forPullRequest:)`).
     func continuable(forPullRequest key: PRKey) -> CopilotRun? {
-        guard let entry = latest(forPullRequest: key), !entry.status.phase.isActive, let run = entry.run,
+        guard let entry = entries.first(where: { $0.isOn(key) && $0.forkedFrom == nil }), !entry.status.phase.isActive, let run = entry.run,
               FileManager.default.fileExists(atPath: run.worktree.path)
         else { return nil }
         return run
@@ -338,6 +353,8 @@ final class CopilotTasksStore: ObservableObject {
                     // Off, nothing will say how the tasks still working end: the notifications that say they're working go.
                     if !self.isOn {
                         self.notifier?.remove(self.entries.filter(\.status.phase.isActive).map { Self.notificationID($0.id) })
+                        self.copiedHandOffs = [:]
+                        self.fixWords = [:]
                     }
                     // Copilot's logs are read only while the feature is on; turned back on, its runs are followed again.
                     self.refresh()
@@ -350,6 +367,8 @@ final class CopilotTasksStore: ObservableObject {
         timer?.invalidate()
         timer = nil
         hasStopped = true
+        copiedHandOffs = [:]
+        fixWords = [:]
     }
 
     // MARK: Sending
@@ -388,10 +407,12 @@ final class CopilotTasksStore: ObservableObject {
         handOff: CommentHandOff? = nil, start: ComposerStart? = nil, parts: [PullRequestPart] = []
     ) {
         let key = PRKey(pullRequest.organization, pullRequest.id)
+        // Where it starts, once something chose it, rather than the last task's session: Push & Reply ships what's in the
+        // session it starts in.
         CopilotComposer.shared.show(
             subject: .pullRequest(pullRequest, action), prompt: prompt, sessionPrompt: sessionPrompt, createdAt: createdAt,
-            options: settings.copilotOptions, continuing: continuable(forPullRequest: key), handOff: handOff, session: start,
-            parts: parts, store: self
+            options: settings.copilotOptions, continuing: start == nil ? continuable(forPullRequest: key) : nil, handOff: handOff,
+            session: start, parts: parts, store: self
         )
     }
 
@@ -426,6 +447,7 @@ final class CopilotTasksStore: ObservableObject {
         let launched = LaunchedSession(id)
         let now = Date()
         var action: PullRequestAction?
+        var target: String?
         var entry = CopilotTaskEntry(id: id, workItem: nil, options: options, startedAt: now, status: RunStatus(phase: .preparing, since: now))
         switch subject {
         case .workItem(let item):
@@ -435,10 +457,11 @@ final class CopilotTasksStore: ObservableObject {
             entry.action = what
             entry.pullRequest = pullRequest.url
             action = what
+            target = pullRequest.targetBranch.isEmpty ? nil : pullRequest.targetBranch
         }
         // What it keeps, with what the session it goes on with took on before, as that session is kept now.
         let previous = continuing.map { continuing in settings.copilotRuns.first { $0.id == continuing.id } ?? continuing }
-        let kept = CopilotRun.taken(goingOnWith: previous, on: entry.onPullRequest, taking: parts, for: action, at: now)
+        let kept = CopilotRun.taken(goingOnWith: previous, on: entry.onPullRequest, taking: parts, for: action, at: now, target: target)
         entry.taken = kept
         entry.forkedFrom = forking?.id ?? continuing?.forkedFrom
         pending.removeAll { $0.id == id }
@@ -490,7 +513,7 @@ final class CopilotTasksStore: ObservableObject {
                     }
                 }
                 rekey(id, to: run.id)
-                // What it took on as it got ready, less what a pass ended meanwhile (`endWorkOnBuildsThatPassed`).
+                // What it took on as it got ready, less what a pass ended meanwhile (`endWorkThatsOver`).
                 if let entry = pending.first(where: { $0.id == run.id }) {
                     run.taken = entry.taken
                 } else {
@@ -535,7 +558,7 @@ final class CopilotTasksStore: ObservableObject {
 
     /// A fork's send, by the ID BriefBar gave it until the CLI made the fork, goes by the fork's from then on. Only then
     /// does it say it's working, by the fork's ID, which the notification that says how it ended, or stopping it, replaces.
-    /// Lets go of what the sends getting ready took on that's over (`endWorkOnBuildsThatPassed`): each launches with what's
+    /// Lets go of what the sends getting ready took on that's over (`endWorkThatsOver`): each launches with what's
     /// left.
     func letGoPending(_ isOver: (TakenPart, CopilotTaskEntry) -> Bool) {
         for index in pending.indices {
@@ -735,7 +758,7 @@ final class CopilotTasksStore: ObservableObject {
         case .finished where entry.action != nil:
             switch entry.action {
             case .review?: heading = "Copilot's review is ready"
-            case .pushAndReply?: heading = "Copilot pushed and replied"
+            case .pushAndReply?: heading = entry.onlyPushes ? "Copilot pushed" : "Copilot pushed and replied"
             default: heading = "Copilot's changes are ready"
             }
             body = Self.firstLine(status.detail)
@@ -791,8 +814,10 @@ final class CopilotTasksStore: ObservableObject {
             heading = "Copilot is reviewing the pull request"
             body = "It drafts your review, and changes or posts nothing."
         case .pushAndReply?:
-            heading = "Copilot is pushing and replying"
-            body = "It commits, pushes the branch and replies on the threads it addressed, as you."
+            heading = entry.onlyPushes ? "Copilot is pushing" : "Copilot is pushing and replying"
+            body = entry.onlyPushes
+                ? "It commits and pushes the branch, as you."
+                : "It commits, pushes the branch and replies on the threads it addressed, as you."
         case nil:
             heading = "Copilot is working on it"
             body = "It works on its own in a new worktree, then opens a pull request."
