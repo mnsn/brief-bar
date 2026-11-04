@@ -350,16 +350,18 @@ struct ThreadReplyComposer: View {
             suggestion = preview.suggestion
             undo = preview.undo
             grammarProblem = preview.grammarProblem
-            return
+        } else {
+            text = changes.draft(key)
+            guard !isRendering else { return }
+            isFocused = true
         }
-        text = changes.draft(key)
-        guard !isRendering else { return }
-        isFocused = true
-        // All of it in view, once it's laid out, however far down it opened.
+        // All of it in view, once it's laid out, however far down it opened: in `--render`'s pictures too, once the details
+        // went to its thread, as at the largest text, where it opens below what shows.
         guard let scroll else { return }
+        let isRendering = isRendering
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(80))
-            withAnimation(.easeOut(duration: 0.2)) { scroll.scrollTo(Self.scrollID) }
+            try? await Task.sleep(for: .milliseconds(isRendering ? 200 : 80))
+            withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { scroll.scrollTo(Self.scrollID) }
         }
     }
 
