@@ -12,6 +12,8 @@ import SwiftUI
 /// sent to you until they're read.
 struct PullRequestTagsRow: View {
     let item: PRSnapshot
+    /// The pull request as its details show it, which keep it as it was once it left your lists, but for its tags
+    /// (`PullRequestDetailsStore.followTags`).
     let record: PRRecord?
     @Binding var composing: CopilotComposing?
 
@@ -112,8 +114,12 @@ struct PullRequestTagsRow: View {
     /// Why the tags can't be changed here, when they can't: for their glyph's tooltip, and VoiceOver.
     private var readOnlyReason: String? {
         guard !canChange, let record else { return nil }
-        if record.pullRequest.status != .active { return "Azure DevOps takes no change to a completed or abandoned pull request." }
-        if store.record(for: key) == nil { return "This pull request is no longer in your lists, so its tags can't be changed here." }
+        // As the list has it now, while it has it: its details keep one that left your lists as it was.
+        let listed = store.record(for: key)
+        if (listed ?? record).pullRequest.status != .active {
+            return "Azure DevOps takes no change to a completed or abandoned pull request."
+        }
+        if listed == nil { return "This pull request is no longer in your lists, so its tags can't be changed here." }
         if !changes.settings.makesChanges {
             return "Turn on Make Changes in Azure DevOps, in Settings › Azure DevOps, to add and remove them here."
         }
@@ -253,12 +259,17 @@ struct PullRequestTagsRow: View {
             guard preview == nil else { return }
             Task { @MainActor in focus = .field }
         }
-        .onChange(of: typed) {
-            // What you typed chooses the best match, which VoiceOver hears as it changes; nothing typed, or a tag the pull
-            // request has, nothing chosen, so Return doesn't add another.
-            let choices = choices
-            highlighted = PullRequestTag.name(typed) == nil || choices.rows.isEmpty || choices.alreadyOn != nil ? nil : 0
-            announceChosen(choices.rows)
+        .onChange(of: choices) { old, new in
+            // As you type, the best match is chosen; as the tags are read again while you don't, the same one, while it's
+            // offered; and nothing for a tag the pull request has, so Return doesn't add another (`TagChoices.chosen`).
+            // VoiceOver hears which as it changes, and when the pull request has the tag typed.
+            highlighted = new.chosen(highlighted, before: old)
+            if let already = new.alreadyOn, already != old.alreadyOn, preview == nil {
+                announced = nil
+                SpokenText.announce("It has the tag \(already) already")
+            } else {
+                announceChosen(new.rows)
+            }
         }
     }
 

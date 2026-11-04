@@ -122,6 +122,50 @@ import Testing
         #expect(had.newTag == nil)
     }
 
+    /// As you type, the best match is chosen. As the choices change while you don't, as when the pull request's tags are read
+    /// again, the same tag is, where it's still offered, though its row moved or it's spelled another way, or else the best
+    /// match. None is for a tag the pull request has, as when someone else added the one chosen, so Return doesn't add the
+    /// next; nor while nothing's typed, but for the one you chose, while it's offered.
+    @Test func keepsTheTagChosenAsTheChoicesChange() {
+        func tags(_ names: [[String]]) -> [[PullRequestTag]] { names.map { $0.map { PullRequestTag($0) } } }
+        let seen = tags([["hotfix", "hotfix-2", "deploy-eu"]])
+        func choices(_ typed: String, current: [String] = [], seen: [[PullRequestTag]] = seen) -> TagChoices {
+            TagChoices(typed: typed, used: [], seen: seen, current: current.map { PullRequestTag($0) })
+        }
+        // As you type: the best match.
+        let hot = choices("hot")
+        #expect(hot.rows == ["hotfix", "hotfix-2", "hot"])
+        #expect(hot.chosen(nil, before: choices("ho")) == 0)
+        #expect(hot.chosen(1, before: choices("ho")) == 0)
+        // Read again while you don't type: the same tag, though its row moved, or it's spelled another way.
+        let moved = choices("hot", seen: seen + tags([["hotfix-2"], ["hotfix-2"]]))
+        #expect(moved.rows == ["hotfix-2", "hotfix", "hot"])
+        #expect(moved.chosen(0, before: hot) == 1)
+        #expect(moved.chosen(2, before: hot) == 2)
+        #expect(choices("hot", seen: tags([["HotFix-2"]])).chosen(1, before: hot) == 0)
+        // Not offered anymore: the best match.
+        let gone = choices("hot", seen: tags([["hotfix-2"]]))
+        #expect(gone.rows == ["hotfix-2", "hot"])
+        #expect(gone.chosen(0, before: hot) == 0)
+        // Someone else added the one chosen: nothing is, as the field says it has it; then the best match again, once it
+        // doesn't.
+        let typed = choices("hotfix")
+        let added = choices("hotfix", current: ["hotfix"])
+        #expect(typed.rows == ["hotfix", "hotfix-2"])
+        #expect(added.rows == ["hotfix-2"])
+        #expect(added.alreadyOn == "hotfix")
+        #expect(added.chosen(0, before: typed) == nil)
+        #expect(typed.chosen(nil, before: added) == 0)
+        // Nothing typed: the one you chose, while it's offered; else none.
+        let all = choices("")
+        #expect(all.rows == ["deploy-eu", "hotfix", "hotfix-2"])
+        #expect(all.chosen(nil, before: all) == nil)
+        #expect(choices("", current: ["deploy-eu"]).chosen(1, before: all) == 0)
+        #expect(choices("", current: ["hotfix"]).chosen(1, before: all) == nil)
+        // Nothing to choose from.
+        #expect(choices("", seen: []).chosen(0, before: all) == nil)
+    }
+
     /// What you typed is a new tag, unless it's a suggestion, or the pull request has it, ignoring letter case.
     @Test func offersWhatYouTypedAsANewTag() {
         let seen = [["deploy-us", "deploy-eu"].map { PullRequestTag($0) }]

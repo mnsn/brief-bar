@@ -135,7 +135,9 @@ final class TagChanges: ObservableObject {
     /// whether it has it now: then what you typed is done with; otherwise the tags say why.
     @discardableResult
     func add(_ typed: String, to key: PRKey) async -> Bool {
-        guard let name = PullRequestTag.name(typed), !isSending(key), let store, settings.makesChanges else { return false }
+        guard let name = PullRequestTag.name(typed), !isStopped, !isSending(key), let store, settings.makesChanges else {
+            return false
+        }
         if let problem = refusal(key, in: store) {
             fail(key, problem, .add(name))
             return false
@@ -189,7 +191,7 @@ final class TagChanges: ObservableObject {
     /// Takes a tag off a pull request, by the project's tag's ID, as its ✕ does: it can be added back the same way, so
     /// nothing asks first.
     func remove(_ tag: PullRequestTag, from key: PRKey) async {
-        guard !isSending(key), let store, settings.makesChanges else { return }
+        guard !isStopped, !isSending(key), let store, settings.makesChanges else { return }
         if let problem = refusal(key, in: store) {
             fail(key, problem, .remove(tag))
             return
@@ -218,7 +220,7 @@ final class TagChanges: ObservableObject {
             let problem = ADOWriteProblem(error)
             // Not on the pull request, as far as Azure DevOps knows: its tags, read again, tell whether that's so, and then
             // it's as you wanted.
-            if problem == .gone, case .success(let read)? = await readTags(key), !read.contains(where: { $0.key == tag.key }) {
+            if problem == .gone, case .success(let read)? = await readCounting(key), !read.contains(where: { $0.key == tag.key }) {
                 guard generation == self.generation else { return }
                 states[key] = nil
                 removed[key] = tag
@@ -239,7 +241,7 @@ final class TagChanges: ObservableObject {
     /// it was asked for as, in a task that's called off as they go (`forgetAll`): before it goes, as while it waits for a
     /// token, it never does.
     private func dispatch(_ write: ADOWrite, for key: PRKey, as account: String?, in generation: Int) async throws -> ADOWrite.Answer {
-        guard generation == self.generation else { throw CancellationError() }
+        guard generation == self.generation, !isStopped else { throw CancellationError() }
         guard settings.makesChanges else {
             states[key] = nil
             throw CancellationError()
@@ -276,24 +278,57 @@ final class TagChanges: ObservableObject {
     /// DevOps didn't say how. When they can't be read now, as when it asked BriefBar to wait, after a 503, or you're offline,
     /// they're read as soon as they can be, while its details show (`unsure`).
     private func readAgain(_ key: PRKey) async {
+        guard !isStopped else { return }
         let started = now()
         unsure[key] = started
-        switch await readTags(key) {
+        switch await readCounting(key) {
         case .success?:
             read(key, startedAt: started)
         case .failure?:
             failedAt[key] = now()
         case nil:
-            // The demo, which reads nothing.
+            // The demo, which reads nothing; or Azure DevOps stopped.
             unsure[key] = nil
         }
     }
 
     /// A pull request's tags were read, by a read that started at `startedAt`: they're sure, unless a change may have
-    /// changed them since it started.
+    /// changed them since it started; and reading them works again, unless one that failed since it started says otherwise.
     private func read(_ key: PRKey, startedAt: Date) {
-        failedAt[key] = nil
+        if let failed = failedAt[key], failed <= startedAt { failedAt[key] = nil }
         if let since = unsure[key], since <= startedAt { unsure[key] = nil }
+    }
+
+    /// Reads a pull request's tags (`readNow`), counted while it's under way (`reading`), so its details don't read them too
+    /// meanwhile.
+    private func readCounting(_ key: PRKey) async -> Result<[PullRequestTag], ADOError>? {
+        reading[key, default: 0] += 1
+        let result = await readNow(key)
+        doneReading(key)
+        return result
+    }
+
+    private func doneReading(_ key: PRKey) {
+        let left = reading[key, default: 0] - 1
+        reading[key] = left > 0 ? left : nil
+    }
+
+    /// Whether a pull request's tags are being read now, which tests wait for: what it read is done with once they aren't.
+    func isReading(_ key: PRKey) -> Bool { reading[key] != nil }
+
+    /// Reads a pull request's tags (`readTags`), in a task that stopping calls off, as Azure DevOps is turned off, as one
+    /// that waits for the Azure CLI's sign-in: none starts once it's stopped, and one that answers after says nothing (nil),
+    /// as in the demo, which reads nothing. Turning Make Changes in Azure DevOps off doesn't call them off: those it reads
+    /// after a change called off show how the tags stand.
+    private func readNow(_ key: PRKey) async -> Result<[PullRequestTag], ADOError>? {
+        guard !isStopped else { return nil }
+        let readTags = readTags
+        let id = UUID()
+        let task = Task { await readTags(key) }
+        readTasks[id] = task
+        let result = await task.value
+        readTasks[id] = nil
+        return isStopped || task.isCancelled ? nil : result
     }
 
     // MARK: Tags lists don't carry
@@ -310,12 +345,18 @@ final class TagChanges: ObservableObject {
     private var visiblePages: Set<String> = []
     /// The pull requests whose details show, by what shows them, with the window's page they're on.
     private var followers: [UUID: (key: PRKey, page: String?)] = [:]
-    private var reading: Set<PRKey> = []
+    /// How many reads of each pull request's tags are under way: the details' own (`readIfNeeded`), and those after a change
+    /// (`readCounting`). The details don't start another while one is.
+    private var reading: [PRKey: Int] = [:]
     /// When a read here of a pull request's tags failed last: it's tried again half a minute later.
     private var failedAt: [PRKey: Date] = [:]
     /// The pull requests whose tags a change may have changed though Azure DevOps didn't say how, with when, until a read
     /// that started since goes: due whatever their lists carry (`readAgain`).
     private var unsure: [PRKey: Date] = [:]
+    /// The reads of tags under way, which stopping calls off (`readNow`).
+    private var readTasks: [UUID: Task<Result<[PullRequestTag], ADOError>?, Never>] = [:]
+    /// Azure DevOps stopped: nothing more is read or changed (`stop`).
+    private var isStopped = false
 
     /// Follows a pull request's tags while its details show it on a window's page, until the task that follows it is
     /// cancelled, as when they close or show another: tags its lists don't carry are read, one request, while a window shows
@@ -332,7 +373,7 @@ final class TagChanges: ObservableObject {
         }
         readIfNeeded(key, on: page)
         let pause = checkEvery
-        while !Task.isCancelled {
+        while !Task.isCancelled, !isStopped {
             try? await Task.sleep(for: pause)
             guard !Task.isCancelled else { break }
             readIfNeeded(key, on: page)
@@ -364,17 +405,18 @@ final class TagChanges: ObservableObject {
     /// Reads a pull request's tags when they're due (`isDue`), or a change may have changed them (`unsure`). Not on a page
     /// that isn't on screen, while they're being read, within half a minute of a read here that failed, or in the demo.
     private func readIfNeeded(_ key: PRKey, on page: String?) {
-        guard let page, visiblePages.contains(page), !reading.contains(key), let store, store.mode == .live,
+        guard !isStopped, let page, visiblePages.contains(page), reading[key] == nil, let store, store.mode == .live,
               let record = store.record(for: key)
         else { return }
         let now = now()
         if let failed = failedAt[key], now.timeIntervalSince(failed) < Self.retryAfter { return }
         guard unsure[key] != nil || Self.isDue(record, at: now) else { return }
-        reading.insert(key)
+        // Counted now, so that another look doesn't start one too before this one does.
+        reading[key, default: 0] += 1
         Task { [weak self] in
             guard let self else { return }
-            let result = await readTags(key)
-            reading.remove(key)
+            let result = await readNow(key)
+            doneReading(key)
             switch result {
             case .success?:
                 read(key, startedAt: now)
@@ -399,11 +441,16 @@ final class TagChanges: ObservableObject {
         removed = [:]
     }
 
-    /// Stops for good, when Azure DevOps stops.
+    /// Stops for good, when Azure DevOps stops: the reads of tags under way are called off, and nothing more is read or
+    /// changed.
     func stop() {
+        isStopped = true
         forgetAll()
+        for task in readTasks.values { task.cancel() }
+        readTasks = [:]
         visiblePages = []
         followers = [:]
+        reading = [:]
         failedAt = [:]
         unsure = [:]
     }

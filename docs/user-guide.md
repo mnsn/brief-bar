@@ -462,20 +462,21 @@ in that project, the latest first, then those on the pull requests BriefBar read
 pull request's own: the tag that's what you typed first, then those whose names start with it, then those with a word
 that does, such as `eu` in `deploy-eu`, then those that have it anywhere, ignoring letter case. What you typed, when
 it's none of them, is a new tag, last; the best match is chosen as you type, and VoiceOver says which, but nothing is
-when the pull request has that tag already, which the field says. **↑** and **↓** choose another, **Tab** completes the
-one chosen in the field, without sending anything, and **Return** adds it, or what you typed, and the field stays open
-for another; **Esc** or its **✕** closes it, and it's one at a time with Explain, Fix and Reply. BriefBar remembers the
-tags you add, up to 20 for each project, in its settings, to suggest them, until you turn the setting off. It doesn't
-suggest from Azure DevOps' own list of a project's tags, which it shares with work items and can hold many thousands,
-more than one request can read in time. The tags show what Azure DevOps answered, as it spells the tag in that project,
-as soon as it answers, and BriefBar reads them again, for anyone else's change meanwhile. Nothing asks first: after you
-remove one, **Undo**, under the tags, adds it back, until you change them again, dismiss it or close the details. When
-it can't, a sentence under them says why, such as **Azure DevOps says you may not change this pull request's tags**,
-**You're offline**, or that the pull request is completed, abandoned or no longer in your lists, with **Try Again**
-where trying again may help, or **Sign In…** when the Azure CLI isn't signed in. Without the setting, or on a pull
-request that's completed, abandoned or no longer in your lists, they show without ✕ or Add Tag, and the tag glyph's
-tooltip says why. The demo has made-up tags, such as `deploy-eu`, `deploy-us` and `hotfix`, changes only those, and
-sends nothing.
+when the pull request has that tag already, which the field says; as its tags change while the field is open, as when
+someone else adds one, the same one stays chosen, or nothing, when it's the one they added. **↑** and **↓** choose
+another, **Tab** completes the one chosen in the field, without sending anything, and **Return** adds it, or what you
+typed, and the field stays open for another; **Esc** or its **✕** closes it, and it's one at a time with Explain, Fix
+and Reply. BriefBar remembers the tags you add, up to 20 for each project, in its settings, to suggest them, until you
+turn the setting off. It doesn't suggest from Azure DevOps' own list of a project's tags, which it shares with work
+items and can hold many thousands, more than one request can read in time. The tags show what Azure DevOps answered, as
+it spells the tag in that project, as soon as it answers, and BriefBar reads them again, for anyone else's change
+meanwhile. Nothing asks first: after you remove one, **Undo**, under the tags, adds it back, until you change them
+again, dismiss it or close the details. When it can't, a sentence under them says why, such as **Azure DevOps says you
+may not change this pull request's tags**, **You're offline**, or that the pull request is completed, abandoned or no
+longer in your lists, with **Try Again** where trying again may help, or **Sign In…** when the Azure CLI isn't signed
+in. Without the setting, or on a pull request that's completed, abandoned or no longer in your lists, they show without
+✕ or Add Tag, and the tag glyph's tooltip says why. The demo has made-up tags, such as `deploy-eu`, `deploy-us` and
+`hotfix`, changes only those, and sends nothing.
 
 **See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
 changes, folder by folder as Azure DevOps' Files page lists them, a click on a folder folding it: each with

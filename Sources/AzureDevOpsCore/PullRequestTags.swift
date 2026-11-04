@@ -156,6 +156,8 @@ extension ADOClient {
 /// first, then those whose names start with it, then those with a word that does, such as eu in deploy-eu, then those that
 /// have it anywhere, ignoring letter case. What you typed is a new tag when it's none of them, nor one the pull request has.
 public struct TagChoices: Sendable, Equatable {
+    /// What you typed, which they're for.
+    public var typed: String
     /// The tags to add, the best first, as Azure DevOps spells them.
     public var suggestions: [String]
     /// What you typed, as a new tag: when no suggestion and none of the pull request's tags is it.
@@ -214,6 +216,7 @@ public struct TagChoices: Sendable, Equatable {
                 return PullRequestTag.precedes(lhs.1.name, rhs.1.name)
             }
         suggestions = ranked.prefix(limit).map(\.1.name)
+        self.typed = typed
         let typedName = PullRequestTag.name(typed)
         alreadyOn = typedName.flatMap { name in current.first { $0.key == name.lowercased() }?.name }
         if let typedName, alreadyOn == nil, !suggestions.contains(where: { $0.lowercased() == typedName.lowercased() }) {
@@ -221,6 +224,19 @@ public struct TagChoices: Sendable, Equatable {
         } else {
             newTag = nil
         }
+    }
+
+    /// The row chosen once the choices change from `old` to these, when `chosen` was chosen in `old`, as Return would add it:
+    /// as you type, the best match, the first; as they change while you don't, as when the pull request's tags are read
+    /// again, the same tag, where it's still offered, or else the best match. None while the pull request has the tag you
+    /// typed, so Return doesn't add another, nor while nothing's typed, but for the one you chose, while it's offered.
+    public func chosen(_ chosen: Int?, before old: TagChoices) -> Int? {
+        guard alreadyOn == nil, !rows.isEmpty else { return nil }
+        if old.typed == typed, let chosen, old.rows.indices.contains(chosen) {
+            let name = old.rows[chosen].lowercased()
+            if let index = rows.firstIndex(where: { $0.lowercased() == name }) { return index }
+        }
+        return PullRequestTag.name(typed) == nil ? nil : 0
     }
 
     /// How well a name matches what you typed, the best first: 0 when it's what you typed, 1 when it starts with it, 2 when

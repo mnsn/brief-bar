@@ -388,7 +388,7 @@ import Testing
         changes.setVisible(true, for: page)
         let following = Task { await changes.follow(key, on: page) }
         defer { following.cancel() }
-        try await waitUntil { engine.reads == 1 }
+        try await waitUntil { engine.reads == 1 && !changes.isReading(key) }
         #expect(store.record(for: key)?.tagsReadAt == start)
 
         changes.settings.makesChanges = false
@@ -399,7 +399,8 @@ import Testing
         // Ten minutes later, while they still show: read again, though this one fails.
         engine.answer = .failure(.offline)
         engine.now = start.addingTimeInterval(TagChanges.readAgainAfter)
-        try await waitUntil { engine.reads == 2 }
+        // Done with, as it failed then, before the clock moves on.
+        try await waitUntil { engine.reads == 2 && !changes.isReading(key) }
         changes.settings.makesChanges = false
         changes.settings.makesChanges = true
         engine.now = start.addingTimeInterval(TagChanges.readAgainAfter + TagChanges.retryAfter - 1)
@@ -407,7 +408,7 @@ import Testing
         #expect(engine.reads == 2)
         engine.answer = .success([PullRequestTag("deploy-eu")])
         engine.now = start.addingTimeInterval(TagChanges.readAgainAfter + TagChanges.retryAfter)
-        try await waitUntil { engine.reads == 3 }
+        try await waitUntil { engine.reads == 3 && !changes.isReading(key) }
 
         // In its lists again, which carry them: not on its own anymore.
         engine.listsCarry(key)
@@ -417,8 +418,9 @@ import Testing
     }
 
     /// A stand-in for the engine's reads of tags, on a clock the test moves: it answers as Azure DevOps has them when the read
-    /// starts, keeps what it reads in the list's snapshot, with when the read started, and publishes it before it answers, as
-    /// the engine does. It can hold a read, as a slow answer, until it's let go.
+    /// starts, keeps what it reads in the list's snapshot, with when the read started, but for a pull request whose lists
+    /// carry its tags, and publishes it before it answers, as the engine does. It can hold a read, as a slow answer, until
+    /// it's let go.
     @MainActor final class Engine {
         var now: Date
         var answer: Result<[PullRequestTag], ADOError> = .success([PullRequestTag("deploy-eu")])
@@ -429,6 +431,8 @@ import Testing
         private var held: CheckedContinuation<Void, Never>?
         private let store: PRStore
         private var snapshot: PulseSnapshot
+        /// The pull requests whose lists carry their tags.
+        private var carried: Set<PRKey> = []
 
         init(store: PRStore, snapshot: PulseSnapshot, now: Date) {
             self.store = store
@@ -447,7 +451,7 @@ import Testing
             }
             if case .success(let read) = answer, let index = snapshot.records.firstIndex(where: { $0.id == key }) {
                 snapshot.records[index].tags = read
-                snapshot.records[index].tagsReadAt = startedAt
+                snapshot.records[index].tagsReadAt = carried.contains(key) ? nil : startedAt
                 store.receive(snapshot)
             }
             return answer
@@ -458,8 +462,9 @@ import Testing
             held = nil
         }
 
-        /// The lists carry its tags again: nothing says when they were read.
+        /// Its lists carry its tags, as again: nothing says when they were read.
         func listsCarry(_ key: PRKey) {
+            carried.insert(key)
             guard let index = snapshot.records.firstIndex(where: { $0.id == key }) else { return }
             snapshot.records[index].tagsReadAt = nil
             store.receive(snapshot)
@@ -502,6 +507,7 @@ import Testing
         let (store, changes, azure) = live()
         let start = Date()
         let engine = Engine(store: store, snapshot: DemoData.snapshot(now: store.now), now: start)
+        engine.listsCarry(key)
         changes.now = { engine.now }
         changes.checkEvery = .milliseconds(10)
         changes.readTags = { key in await engine.readTags(key) }
@@ -516,7 +522,7 @@ import Testing
         engine.answer = .failure(.throttled(retryAfter: 60))
         #expect(await changes.add("hotfix", to: key) == false)
         #expect(changes.state(of: key) == .failed(.unanswered, .add("hotfix")))
-        try await waitUntil { engine.reads == 1 }
+        try await waitUntil { engine.reads == 1 && !changes.isReading(key) }
         #expect(tags(store) == ["deploy-eu", "needs-qa"])
         try await Task.sleep(for: .milliseconds(80))
         #expect(engine.reads == 1)
@@ -525,9 +531,37 @@ import Testing
         engine.now = start.addingTimeInterval(TagChanges.retryAfter)
         try await waitUntil { engine.reads == 2 }
         #expect(tags(store) == ["deploy-eu", "hotfix", "needs-qa"])
-        engine.now = start.addingTimeInterval(TagChanges.retryAfter * 5)
+        engine.now = start.addingTimeInterval(TagChanges.readAgainAfter * 10)
         try await Task.sleep(for: .milliseconds(80))
         #expect(engine.reads == 2)
+    }
+
+    /// While the tags are read again after a change that may have gone, its details, on screen, don't read them too: one
+    /// request, which settles them.
+    @Test func readsAChangesTagsOnceWhileTheyShow() async throws {
+        let (store, changes, azure) = live()
+        let start = Date()
+        let engine = Engine(store: store, snapshot: DemoData.snapshot(now: store.now), now: start)
+        engine.listsCarry(key)
+        changes.now = { engine.now }
+        changes.checkEvery = .milliseconds(10)
+        changes.readTags = { key in await engine.readTags(key) }
+        let page = "pull requests in window 1"
+        changes.setVisible(true, for: page)
+        let following = Task { await changes.follow(key, on: page) }
+        defer { following.cancel() }
+        azure.fails = .network(ADOClient.unansweredMessage)
+        engine.answer = .success(["deploy-eu", "hotfix", "needs-qa"].map { PullRequestTag($0) })
+        engine.holdsNext = true
+        #expect(await changes.add("hotfix", to: key) == false)
+        try await waitUntil { engine.isHolding }
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(engine.reads == 1)
+        engine.letGo()
+        try await waitUntil { !engine.isHolding && !changes.isReading(key) }
+        #expect(tags(store) == ["deploy-eu", "hotfix", "needs-qa"])
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(engine.reads == 1)
     }
 
     /// A read of the tags that started before a change Azure DevOps may have made, and answers after it, has them as they were
@@ -558,13 +592,53 @@ import Testing
         #expect(await changes.add("hotfix", to: key) == false)
         try await waitUntil { engine.reads == 2 }
         engine.letGo()
-        try await waitUntil { !engine.isHolding }
+        try await waitUntil { !engine.isHolding && !changes.isReading(key) }
         #expect(tags(store) == ["deploy-eu", "needs-qa"])
-        // Half a minute after that read failed: read again, though the one that started before the change answered since.
+        // The one that started before the change answered since, as the tags were: not again before half a minute after
+        // the read that failed, as nothing could go meanwhile.
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(engine.reads == 2)
+        // Then read again, with the change.
         engine.answer = .success(["deploy-eu", "hotfix", "needs-qa"].map { PullRequestTag($0) })
         engine.now = start.addingTimeInterval(1 + TagChanges.retryAfter)
-        try await waitUntil { engine.reads == 3 }
-        #expect(tags(store) == ["deploy-eu", "hotfix", "needs-qa"])
+        try await waitUntil { tags(store) == ["deploy-eu", "hotfix", "needs-qa"] }
+    }
+
+    /// Azure DevOps turned off calls off the reads of tags under way, as one waiting for the Azure CLI's sign-in: what it
+    /// answers after does nothing, and nothing more is read or changed, though the details still show.
+    @Test func stoppingCallsOffTheReadsUnderWay() async throws {
+        let (store, changes, azure) = live()
+        var snapshot = DemoData.snapshot(now: store.now)
+        snapshot.records[try #require(snapshot.records.firstIndex { $0.id == key })].tags = nil
+        store.receive(snapshot)
+        var started = 0
+        var calledOff = false
+        changes.readTags = { _ in
+            started += 1
+            // Waits, as for a token, until it's called off.
+            do {
+                try await Task.sleep(for: .seconds(30))
+            } catch {
+                calledOff = true
+            }
+            return .success([PullRequestTag("deploy-eu")])
+        }
+        changes.checkEvery = .milliseconds(10)
+        let page = "pull requests in window 1"
+        changes.setVisible(true, for: page)
+        let following = Task { await changes.follow(key, on: page) }
+        defer { following.cancel() }
+        try await waitUntil { started == 1 }
+        changes.stop()
+        try await waitUntil { calledOff }
+        changes.setVisible(true, for: page)
+        let again = Task { await changes.follow(key, on: page) }
+        defer { again.cancel() }
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(started == 1)
+        #expect(await changes.add("hotfix", to: key) == false)
+        #expect(azure.sent.isEmpty)
+        #expect(tags(store) == nil)
     }
 
     /// Tags are due to be read on their own when they're unknown, or when the lists don't carry them and they were read ten

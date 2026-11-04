@@ -1548,14 +1548,18 @@ The lists BriefBar reads anyway carry them, leaving them out of a pull request t
 or that you watch, has them read on their own, one request (`PulseEngine.readTags`), only while its details show on a
 window's page on screen, as the code its comments are on is: as they come on screen, then ten minutes after they were
 read, which details that stay on screen look at every half minute (`TagChanges.follow`, `isDue`); until then it shows
-none. When they were read is the engine's, on the record of each pull request the latest refresh's lists didn't carry
-(`PRRecord.tagsReadAt`): a read of its own, or, for one that left its lists but stays, as one sent to you, its lists'
-last; so turning the setting off and on, which forgets what was going on, doesn't hold it up, and an organization whose
-lists couldn't be read keeps what they carried. The engine keeps each pull request's tags with when the read they're
-from started, and a read that started earlier never replaces them, so a refresh under way that answers after a change
-doesn't undo it, and a single pull request's read, which doesn't carry them, leaves them as they were. They're on the
-pull request's record (`PRRecord.tags`), not on the pull request, so a change to them doesn't make its pipelines or its
-details read again.
+none. Its details keep a pull request that left your lists as it was then, as one sent to you in a chat that you're not
+on once you've seen it, but for its tags, and when they were read, which follow the list's while it still reads it
+(`PullRequestDetailsStore.followTags`), so those read as they show do. Azure DevOps stopping calls off the reads of tags
+under way, as one that waits for the Azure CLI's sign-in, whose answer then does nothing, and nothing more is read or
+changed (`TagChanges.stop`). When they were read is the engine's, on the record of each pull request the latest
+refresh's lists didn't carry (`PRRecord.tagsReadAt`): a read of its own, or, for one that left its lists but stays, as
+one sent to you, its lists' last; so turning the setting off and on, which forgets what was going on, doesn't hold it
+up, and an organization whose lists couldn't be read keeps what they carried. The engine keeps each pull request's tags
+with when the read they're from started, and a read that started earlier never replaces them, so a refresh under way
+that answers after a change doesn't undo it, and a single pull request's read, which doesn't carry them, leaves them as
+they were. They're on the pull request's record (`PRRecord.tags`), not on the pull request, so a change to them doesn't
+make its pipelines or its details read again.
 
 With **Make Changes in Azure DevOps** on, while the pull request is open in your lists as they are now
 (`CopilotSending.isOpen`), not only as its details last saw it, and its tags are known (`TagChanges.canChange`), its
@@ -1575,27 +1579,31 @@ completed or abandoned, or left your lists, goes nowhere and says so, as a threa
 what the tags say stays once they can't be changed, with nothing to try again; when it may have happened all the same,
 as when Azure DevOps didn't answer in time, or Azure Front Door answered 503 once it took too long, the tags are read
 again, and, when they can't be yet, as nothing goes out for a while after a 503, as soon as they can be while its
-details show (`TagChanges.readAgain`, `unsure`); one taken off that Azure DevOps says isn't there is, when the tags read
-again don't have it, as you wanted. Each change goes in a task kept by pull request, which turning the setting off,
-Azure DevOps stopping or someone else signing in calls off (`TagChanges.forgetAll`): one that hasn't gone, as while it
-waits for a token, never does, and one called off does nothing more, though the setting is on again; as the setting goes
-off, the tags of a pull request whose change it called off are read again, as it may have gone all the same. It goes
-only as whom the list was read as when you clicked (`ADOClient.send(_:as:)`): when someone else signed in to the Azure
-CLI since, nothing goes, and the tags say so, with **Sign In…**.
+details show, half a minute after the read that couldn't, which one that started before it doesn't cut short, and only
+by one that started since the change (`TagChanges.readAgain`, `unsure`); one taken off that Azure DevOps says isn't
+there is, when the tags read again don't have it, as you wanted. Each change goes in a task kept by pull request, which
+turning the setting off, Azure DevOps stopping or someone else signing in calls off (`TagChanges.forgetAll`): one that
+hasn't gone, as while it waits for a token, never does, and one called off does nothing more, though the setting is on
+again; as the setting goes off, the tags of a pull request whose change it called off are read again, as it may have
+gone all the same. It goes only as whom the list was read as when you clicked (`ADOClient.send(_:as:)`): when someone
+else signed in to the Azure CLI since, nothing goes, and the tags say so, with **Sign In…**.
 
 As you type, the field suggests (`TagChoices`) the tags you added in the pull request's project, the latest first, then
-those on the pull requests BriefBar read there, the most used first, then by name, but the pull request's own, six at most:
-the one that's what you typed, then those whose names start with it, then those with a word that does, then those that
-have it anywhere, ignoring letter case; what you typed, when it's none of them nor one the pull request has, is a new tag,
-last. The best match is chosen as you type, and with something typed one always is, so Return always adds a row that
-shows, but for a tag the pull request has already, when none is and the field says so; VoiceOver
-hears which, and how many there are, as it changes. ↑ and ↓ choose another; Tab completes the one chosen in the field,
-sending nothing, and moves on, as it does anywhere, when there's nothing to complete; Return adds it; and Esc closes the
-field (`InlineComposerOpen`). BriefBar remembers the tags you add, by their names, up to 20 for each project, by its
-organization and ID, for the 20 projects you added tags in last (`UsedTags`, `ado.usedTags`), until you turn the setting
-off or delete Azure DevOps' saved data. It doesn't read Azure DevOps' own list of a project's tags (`_apis/wit/tags`),
-which work items share and which can hold many thousands, far more than one request reads in time. The demo's pull
-requests have made-up tags (`DemoTags`), and its changes are made up too, in its data only, while it runs.
+those on the pull requests BriefBar read there, the most used first, then by name, but the pull request's own, six at
+most: the one that's what you typed, then those whose names start with it, then those with a word that does, then those
+that have it anywhere, ignoring letter case; what you typed, when it's none of them nor one the pull request has, is a
+new tag, last. The best match is chosen as you type, and with something typed one always is, so Return always adds a row
+that shows, but for a tag the pull request has already, when none is and the field says so; as the tags are read again
+while the field is open, the same row stays chosen, where it's still offered, or else the best match, and none once the
+pull request has the tag typed, as when someone else added it (`TagChoices.chosen`). VoiceOver hears which, and how many
+there are, as it changes, and when the pull request has the tag typed. ↑ and ↓ choose another; Tab completes the one
+chosen in the field, sending nothing, and moves on, as it does anywhere, when there's nothing to complete; Return adds
+it; and Esc closes the field (`InlineComposerOpen`). BriefBar remembers the tags you add, by their names, up to 20 for
+each project, by its organization and ID, for the 20 projects you added tags in last (`UsedTags`, `ado.usedTags`), until
+you turn the setting off or delete Azure DevOps' saved data. It doesn't read Azure DevOps' own list of a project's tags
+(`_apis/wit/tags`), which work items share and which can hold many thousands, far more than one request reads in time.
+The demo's pull requests have made-up tags (`DemoTags`), and its changes are made up too, in its data only, while it
+runs.
 
 `--render` draws, in the demo, the first of your pull requests that needs you with its tags; the field open with what you
 typed and its suggestions; a change that couldn't be made; and the tags without the setting (`TagsPreview`,
