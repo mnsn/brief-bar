@@ -235,10 +235,31 @@ import Testing
         #expect(server.requests.map(\.tenant) == [Tenants.home, Tenants.other])
         let invalidations = await tokens.invalidations
 
+        // Sam signed in since: the guest's token, read fresh, then your directory's, which says so.
         await tokens.signIn(as: "\(Tenants.home)/sam")
         await #expect(throws: ADOError.otherAccount) { try await client.send(sample(.reply), as: robin) }
         #expect(server.requests.count == 2)
-        #expect(await tokens.invalidations == invalidations + 1)
+        #expect(await tokens.invalidations == invalidations + 2)
+    }
+
+    /// A guest's token kept from before someone else signed in isn't used for a change: it's read again fresh, as the Azure
+    /// CLI gets it for whom it's signed in to now, and your directory's after it says that's you.
+    @Test func aGuestsTokenKeptFromBeforeIsntUsedForAChange() async throws {
+        let server = StubServer()
+        server.put(Fixture.org, in: Tenants.other)
+        server.on("/threads/12/comments") { _ in .json(Fixture.comment(4, People.me, "Thanks, done", at: t(0))) }
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let robin = "\(Tenants.home)/robin"
+        await tokens.signIn(as: robin)
+        await tokens.signIn(to: Tenants.other, as: "\(Tenants.other)/robin-guest")
+        let client = server.client(tokens: tokens)
+        _ = try await client.send(sample(.reply), as: robin)
+
+        await tokens.keep("\(Tenants.other)/sam-guest", for: Tenants.other)
+        let handed = await tokens.handedOut.count
+        _ = try await client.send(sample(.reply), as: robin)
+        #expect(Array(await tokens.handedOut.dropFirst(handed)) == ["\(Tenants.other)/sam-guest", "\(Tenants.other)/robin-guest", robin])
+        #expect(server.requests.map(\.tenant) == [Tenants.home, Tenants.other, Tenants.other])
     }
 
     /// A change goes only where it's sent, as a read does.

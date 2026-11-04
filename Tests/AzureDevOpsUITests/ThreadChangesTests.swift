@@ -281,6 +281,26 @@ import Testing
         #expect(azure.sent.count == 1)
     }
 
+    /// A reply that may have gone, made code since, isn't the one that went: its first line's indent is part of what it
+    /// says, and it goes.
+    @Test func aReplyMadeCodeSinceItMayHaveGoneGoes() async throws {
+        let (store, changes, azure) = live()
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply("let retrys = 1", to: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        var read = try thread(store)
+        read.comments.append(ReviewComment(id: 3, author: DemoData.me, text: "let retrys = 1", publishedAt: store.now, content: "let retrys = 1"))
+        let threads = [read]
+        changes.readThreads = { _ in threads }
+        #expect(await changes.reply("    let retrys = 1", to: try thread(store), of: key))
+        let replies = azure.sent.compactMap { write -> String? in
+            if case .reply(_, let markdown, _) = write { return markdown }
+            return nil
+        }
+        #expect(replies == ["let retrys = 1", "    let retrys = 1"])
+    }
+
     /// The same reply of yours from before the one that may have gone isn't it: read, the thread hasn't it, and it goes.
     @Test func aReplyLikeOneYouSentBeforeIsntTakenForIt() async throws {
         let (store, changes, azure) = live()

@@ -169,10 +169,17 @@ public struct ADOClient: Sendable {
         let organization = Self.organization(of: url)
         var tenant: String?
         if let organization { tenant = await directories.tenant(of: organization) }
-        // Each token it gets, for a change only if it's for whom the change was asked for as.
+        // Each token it gets, for a change only if it's for whom the change was asked for as: a guest's in another
+        // directory, which may have been kept from before someone else signed in, fresh, as the Azure CLI gets every
+        // directory's for whom it's signed in to now.
         func signedIn(_ tenant: String?) async throws -> AccessToken {
-            let token = try await accessToken(tenant: tenant, for: organization)
-            if isChange { try await check(token, isFor: account) }
+            var token = try await accessToken(tenant: tenant, for: organization)
+            guard isChange else { return token }
+            if Self.isGuest(token, of: account) {
+                await tokens.invalidate(tenant: tenant)
+                token = try await accessToken(tenant: tenant, for: organization)
+            }
+            try await check(token, isFor: account)
             return token
         }
         var token: AccessToken
@@ -249,17 +256,24 @@ public struct ADOClient: Sendable {
     }
 
     /// Throws when a change's token isn't for whom it was asked for as, `account`: when someone else signed in to the Azure
-    /// CLI since. A token from that account's own directory says whom it's for; one from another directory is a guest's
-    /// there, with an ID of its own, and maybe kept from before, so then the sign-in in the account's directory is read
-    /// again, fresh, to tell. When either doesn't say, it goes.
+    /// CLI since. A token from that account's own directory says whom it's for. One from another directory is a guest's
+    /// there, with an ID of its own that nothing in it ties to yours; but the Azure CLI gets it, fresh, as it does every
+    /// directory's, for whom it's signed in to now: so the sign-in in the account's own directory, read again fresh after
+    /// it, tells. When either doesn't say, it goes.
     private func check(_ token: AccessToken, isFor account: String?) async throws {
         guard let account = account?.lowercased(), var signedIn = token.account?.lowercased() else { return }
-        if AccessToken.tenant(ofAccount: signedIn) != AccessToken.tenant(ofAccount: account) {
+        if Self.isGuest(token, of: account) {
             await tokens.invalidate(tenant: nil)
             guard let home = try await accessToken(tenant: nil, for: nil).account?.lowercased() else { return }
             signedIn = home
         }
         if signedIn != account { throw ADOError.otherAccount }
+    }
+
+    /// Whether a token is from another directory than `account`'s own, a guest's there, when both say.
+    private static func isGuest(_ token: AccessToken, of account: String?) -> Bool {
+        guard let account, let signedIn = token.account else { return false }
+        return AccessToken.tenant(ofAccount: signedIn.lowercased()) != AccessToken.tenant(ofAccount: account.lowercased())
     }
 
     /// A token for `tenant`'s directory, or for your sign-in's. When the Azure CLI isn't signed in to an organization's

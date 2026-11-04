@@ -198,6 +198,11 @@ actor FakeTokens: AccessTokenProvider {
     /// Whom tokens for other directories are for, by directory, when it's a guest of its own there, as a real token's is:
     /// otherwise `account`.
     private var guests: [String: String] = [:]
+    /// Guests' tokens kept from before someone else signed in, by directory, as a cache keeps them: given until they're
+    /// invalidated.
+    private var kept: [String: String] = [:]
+    /// Whom each token it gave was for, in order.
+    private(set) var handedOut: [String?] = []
     private(set) var fetches = 0
     private(set) var invalidations = 0
     /// The directories asked for, in order: nil for your sign-in's.
@@ -217,9 +222,10 @@ actor FakeTokens: AccessTokenProvider {
             throw AuthError.signedOut("AADSTS50076: Sign in to \(tenant) with multi-factor authentication.")
         }
         let directory = tenant ?? home
+        let whom = tenant.flatMap { kept[$0] ?? guests[$0] } ?? account
+        handedOut.append(whom)
         return AccessToken(
-            value: directory.map { "\(value)@\($0)" } ?? value, expiresOn: .distantFuture,
-            account: tenant.flatMap { guests[$0] } ?? account, tenant: directory
+            value: directory.map { "\(value)@\($0)" } ?? value, expiresOn: .distantFuture, account: whom, tenant: directory
         )
     }
 
@@ -238,8 +244,14 @@ actor FakeTokens: AccessTokenProvider {
         others.remove(tenant)
     }
 
+    /// Keeps a guest's token for a directory, as from before someone else signed in, until it's invalidated.
+    func keep(_ guest: String, for tenant: String) {
+        kept[tenant] = guest
+    }
+
     func invalidate(tenant: String?) {
         invalidations += 1
+        if let tenant { kept[tenant] = nil }
     }
 
     func fail(with error: AuthError?) {
