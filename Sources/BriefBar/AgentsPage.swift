@@ -154,6 +154,9 @@ final class AgentsModel: ObservableObject {
             // With Pull Request Order on, which you turned on before agents.
             if isOrderOn { pullRequestOrderChanged(true) }
         } else {
+            // Pull Request Order, turned on while agents waited for you to see what they get: its skill, unless BriefBar
+            // added it before, which leaves it as you have it in the Copilot CLI, turned off there or not.
+            if isOrderOn, !orderSkillMayBeInstalled { pullRequestOrderChanged(true) }
             refresh(force: true)
         }
     }
@@ -177,6 +180,7 @@ final class AgentsModel: ObservableObject {
 
     /// Asks the Copilot CLI whether it has BriefBar and its plugins: when the page shows, unless it asked a moment ago.
     func refresh(force: Bool = false) {
+        removeOwedOrderSkill()
         guard state == .on else { return }
         if registration != .working, force || checkedAt.map({ Date().timeIntervalSince($0) >= 30 }) ?? true {
             change(demo: .added(enabled: true)) { await $0.status() }
@@ -260,6 +264,15 @@ final class AgentsModel: ObservableObject {
         }
     }
 
+    /// The Copilot CLI may still have Pull Request Order's skill though agents or Pull Request Order are off, as a removal
+    /// that couldn't take it away before BriefBar quit leaves it: BriefBar tries again once as the Agents page shows. If it
+    /// still can't, the page says so, with Try Again.
+    private func removeOwedOrderSkill() {
+        guard orderSkillMayBeInstalled, state == .off || !isOrderOn, orderSkill == .unknown else { return }
+        Log.app.info("Removing Pull Request Order's skill, which a removal before couldn't")
+        changeOrderSkill(demo: .absent) { await $0.remove() }
+    }
+
     private func refreshOrderSkill(force: Bool) {
         guard orderSkill != .working, showsOrderSkill || orderSkill != .unknown else { return }
         if !force, let orderCheckedAt, Date().timeIntervalSince(orderCheckedAt) < 30 { return }
@@ -291,8 +304,9 @@ final class AgentsModel: ObservableObject {
     private func note(_ status: CopilotPluginRegistration.Status) {
         switch status {
         case .installed, .installedElsewhere: orderSkillMayBeInstalled = true
-        case .absent, .noCLI, .taken: orderSkillMayBeInstalled = false
-        case .failed: break
+        case .absent, .taken: orderSkillMayBeInstalled = false
+        // Without the CLI, or its answer, BriefBar can't tell whether it's gone.
+        case .noCLI, .failed: break
         }
     }
 
