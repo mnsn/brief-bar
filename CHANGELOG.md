@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
+  and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
+  over an app in full screen, so clicking the gear seemed to do nothing.
 - **BriefBar no longer takes a little more memory each time a list updates with summaries on.** Each time a list or
   page that shows Apple Intelligence's summaries updated, such as Azure DevOps' Pull Requests page, BriefBar kept what
   checking that Apple Intelligence was available took, until it quit.
