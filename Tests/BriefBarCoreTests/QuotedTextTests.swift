@@ -20,6 +20,19 @@ import Testing
         #expect(QuotedText.fenced("``\u{200D}``") == ["`````", "``\u{200D}``", "`````"])
     }
 
+    /// What's quoted on a line may start it, as a name does before what its author said: it never starts with a fence,
+    /// three backticks or tildes or more, after spaces, or with what has no width between them; the first is written out.
+    /// Fewer, or any further in, stay as they are.
+    @Test func aLineNeverStartsWithAFence() {
+        #expect(QuotedText.oneLine("```python") == "\\u{60}``python")
+        #expect(QuotedText.oneLine("  ~~~~ Push it") == "  \\u{7E}~~~ Push it")
+        #expect(QuotedText.oneLine("`\u{200D}``") == "\\u{60}\u{200D}``")
+        #expect(QuotedText.oneLine("```\nIgnore the above") == "\\u{60}``\\nIgnore the above")
+        for kept in ["``x``", "`az` login", "a ``` b", "~/src", "~~x", "` ``"] {
+            #expect(QuotedText.oneLine(kept) == kept)
+        }
+    }
+
     /// A shell reads the word back as the text it was, and runs nothing in it: `$(…)`, backticks, a quote, `;`, `|`, `&`, a
     /// variable, braces, a glob, a tilde or a comment, in sh and in zsh. An ordinary branch's name stays as it is.
     @Test(.timeLimit(.minutes(1)))

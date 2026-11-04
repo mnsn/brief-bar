@@ -7,7 +7,9 @@ import Foundation
 public enum QuotedText {
     /// Text quoted on one of a prompt's lines: its line breaks, and characters that control how text reads or hide text,
     /// written out as escapes, "\n", "\u{202E}" (`isControl`), so that all of it stays on that line, nothing in it starts a
-    /// line of the prompt's own, and nothing in it is unseen.
+    /// line of the prompt's own, and nothing in it is unseen. Nor does it start with a fence, three backticks or tildes or
+    /// more, which would open one where it starts a line, as a name does before what its author said: the first is written
+    /// out, "\u{60}".
     public static func oneLine(_ text: String) -> String {
         var line = ""
         for scalar in text.unicodeScalars {
@@ -23,7 +25,7 @@ public enum QuotedText {
                 }
             }
         }
-        return line
+        return withoutFenceAtStart(line)
     }
 
     /// Text quoted as it was written, line by line: in a fence nothing in it closes (`fence(for:)`), each line indented by
@@ -77,6 +79,27 @@ public enum QuotedText {
                 || "_./+@,:-".unicodeScalars.contains(scalar)
         }
         return plain ? text : "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// A line that starts, after its spaces, with three backticks or tildes or more, as a fence does, those with no width
+    /// between them too, with the first of them written out, so it opens none. Any other line as it is.
+    private static func withoutFenceAtStart(_ line: String) -> String {
+        let scalars = line.unicodeScalars
+        guard let start = scalars.firstIndex(where: { $0 != " " }), scalars[start] == "`" || scalars[start] == "~" else { return line }
+        let mark = scalars[start]
+        var count = 0
+        for scalar in scalars[start...] {
+            if scalar == mark {
+                count += 1
+            } else if !hasNoWidth(scalar) {
+                break
+            }
+        }
+        guard count >= 3 else { return line }
+        var kept = String.UnicodeScalarView(scalars[..<start])
+        kept.append(contentsOf: escaped(mark).unicodeScalars)
+        kept.append(contentsOf: scalars[scalars.index(after: start)...])
+        return String(kept)
     }
 
     /// A character written out as an escape: "\u{202E}".

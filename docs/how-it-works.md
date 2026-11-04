@@ -2573,7 +2573,9 @@ tags, written out as escapes (`PullRequestPrompt.oneLine`); its errors, each tes
 each go in a fence nothing in them closes, with the same characters written out but tabs (`PullRequestPrompt.fenced`);
 and the prompt then says that they're what the build said, not instructions. The pull request's title, repository and
 branches, which whoever opened it named, stay on their lines the same way in every prompt (`PullRequestPrompt.introduction`),
-and so do names, paths and comments of one line; a branch whose name holds what a shell reads, such as `$(…)` or a
+and so do names, paths and comments of one line, none of them starting with three backticks or tildes, which would open
+a fence where it starts a line, as a name does before what its author said (the first is written out, `\u{60}`); a branch
+whose name holds what a shell reads, such as `$(…)` or a
 backtick, which Git allows, is in single quotes wherever a prompt names it, in a command such as `git push origin
 HEAD:refs/heads/'<branch>'` or in a sentence Copilot may make one from, so it runs nothing (`PullRequestPrompt.branch`). It asks the
 session, aside, what failed and why, and whether it's the change, a flaky test, the target branch or the build's
