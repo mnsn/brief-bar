@@ -69,6 +69,39 @@ import Testing
         #expect(GrammarFix.request(for: "```a``` b").held != ["```a``` b"])
     }
 
+    /// Code indented four columns or more is held back, as Markdown reads it: after a line that says nothing, the text's or
+    /// its quote's start, a heading or a fenced block, with the lines that say nothing between its own, a tab as four.
+    @Test func holdsBackIndentedCode() {
+        let text = "this fails:\n\n    let retrys = 1\n    retrys += 1\n\nany idea why"
+        let request = GrammarFix.request(for: text)
+        #expect(request.held == ["    let retrys = 1\n    retrys += 1"])
+        #expect(request.text == "```\nthis fails:\n\n{{1}}\n\nany idea why\n```")
+        #expect(GrammarFix.request(for: "see:\n\n    let a = 1\n\n    let b = 2\nok").held == ["    let a = 1\n\n    let b = 2"])
+        #expect(GrammarFix.request(for: "see:\n\n\tlet a = `1`\n").held == ["\tlet a = `1`"])
+        #expect(GrammarFix.request(for: "    let a = 1\nworks").held == ["    let a = 1"])
+        #expect(GrammarFix.request(for: "> see:\n>\n>     let a = 1\n\nok").held == [">     let a = 1"])
+        #expect(GrammarFix.request(for: "# Retrys\n    let a = 1").held == ["    let a = 1"])
+        #expect(GrammarFix.request(for: "```\nx\n```\n    let a = 1").held == ["```\nx\n```", "    let a = 1"])
+        // Its own code, links and addresses are in it.
+        #expect(GrammarFix.request(for: "see `x`:\n\n    open(\"https://example.invalid\")").held == ["`x`", "    open(\"https://example.invalid\")"])
+        // Not in a list, an indented item is code, as Markdown has it.
+        #expect(GrammarFix.request(for: "text\n\n    - not an item").held == ["    - not an item"])
+    }
+
+    /// A paragraph's line indented, a nested list's items and what a list item says after a blank line aren't code; what's
+    /// four columns past where a list item starts is.
+    @Test func holdsBackNoListOrParagraphAsIndentedCode() {
+        #expect(GrammarFix.request(for: "this is a long\n    wraped line").held == [])
+        #expect(GrammarFix.request(for: "- one\n\n    - nested item\n- two").held == [])
+        #expect(GrammarFix.request(for: "1. step\n\n    more about the step").held == [])
+        #expect(GrammarFix.request(for: "- one\n  - nested\n\n      more about it").held == [])
+        #expect(GrammarFix.request(for: "- one\n\n      let a = 1\n- two").held == ["      let a = 1"])
+        #expect(GrammarFix.request(for: "1. step\n\n       let a = 1").held == ["       let a = 1"])
+        // A list that ended, and a break that isn't one, leave code as the text's.
+        #expect(GrammarFix.request(for: "- one\n\ntext\n\n    let a = 1").held == ["    let a = 1"])
+        #expect(GrammarFix.request(for: "- - -\n\n    let a = 1").held == ["    let a = 1"])
+    }
+
     /// A link's address, or a web address, with parentheses in it is held back whole; the punctuation after one isn't.
     @Test func holdsBackAddressesWithParenthesesWhole() {
         #expect(GrammarFix.request(for: "see [docs](https://example.invalid/a_(b)) now").held == ["[docs](https://example.invalid/a_(b))"])
@@ -220,6 +253,13 @@ import Testing
         #expect(GrammarFix.changeCount(takenOut) == 1)
         let putIn = GrammarFix.changes(from: "Hello,world.", to: "Hello, world.")
         #expect(putIn == [.init("Hello, ", isChanged: false), .init("world", isChanged: true), .init(".", isChanged: false)])
+        // Spaces made one, or a tab a space, show on the word after them.
+        let spaced = GrammarFix.changes(from: "It  works.", to: "It works.")
+        #expect(spaced == [.init("It ", isChanged: false), .init("works", isChanged: true), .init(".", isChanged: false)])
+        #expect(GrammarFix.changeCount(spaced) == 1)
+        #expect(GrammarFix.changeCount(GrammarFix.changes(from: "a\tb", to: "a b")) == 1)
+        // With no word beside them, all of it shows: never nothing to correct.
+        #expect(GrammarFix.changes(from: "  ", to: " ") == [.init(" ", isChanged: true)])
         // A line break a pasted text had otherwise isn't a change.
         #expect(GrammarFix.changeCount(GrammarFix.changes(from: "one\r\ntwo", to: "one\ntwo")) == 0)
     }

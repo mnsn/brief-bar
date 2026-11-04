@@ -256,9 +256,9 @@ public enum GrammarFix {
 
     // MARK: What it holds back
 
-    /// The first span the model mustn't change: a fenced code block, inline code, a link or a picture in Markdown, an
-    /// autolink or an HTML tag, a web address, a mention, whether Azure DevOps' (`@<…>`) or a name after `@`, or characters
-    /// that control how text reads.
+    /// The first span the model mustn't change: a code block, indented or fenced, inline code, a link or a picture in
+    /// Markdown, an autolink or an HTML tag, a web address, a mention, whether Azure DevOps' (`@<…>`) or a name after `@`, or
+    /// characters that control how text reads.
     static func firstHeld(in text: Substring) -> Range<Substring.Index>? {
         let patterns: [Regex<Substring>] = [
             // Inline code, between backticks.
@@ -273,7 +273,10 @@ public enum GrammarFix {
             guard let match = try? pattern.firstMatch(in: text) else { continue }
             if first.map({ match.range.lowerBound < $0.lowerBound }) ?? true { first = match.range }
         }
-        let found = [firstFencedCode(in: text), firstLink(in: text), firstWebAddress(in: text), firstMention(in: text), firstControl(in: text)]
+        let found = [
+            firstIndentedCode(in: text), firstFencedCode(in: text), firstLink(in: text), firstWebAddress(in: text), firstMention(in: text),
+            firstControl(in: text),
+        ]
         for range in found.compactMap({ $0 }) where first.map({ range.lowerBound < $0.lowerBound }) ?? true {
             first = range
         }
@@ -309,6 +312,125 @@ public enum GrammarFix {
             lineStart = lineEnd < text.endIndex ? text.index(after: lineEnd) : text.endIndex
         }
         return nil
+    }
+
+    /// The first indented code block, as Markdown reads one: lines indented four columns or more past where what's around
+    /// them starts, the text's own or its list item's, from one after a line that says nothing, the text's or its quote's
+    /// start, or a heading, a break or a fenced block, which a paragraph's line isn't; with the lines that say nothing
+    /// between them, and their quote's `>`s. A nested list's items start within those four columns, so they aren't code.
+    /// The text is read from its start, which the lines before it decide.
+    static func firstIndentedCode(in text: Substring) -> Range<Substring.Index>? {
+        let base = text.base
+        // The columns where the list items open around a line start what they say, innermost last.
+        var lists: [Int] = []
+        var depth = 0
+        var canStart = true
+        var code: Range<String.Index>?
+        func found(_ code: Range<String.Index>?) -> Range<Substring.Index>? {
+            guard let code, code.upperBound > text.startIndex, code.lowerBound < text.endIndex else { return nil }
+            return max(code.lowerBound, text.startIndex)..<min(code.upperBound, text.endIndex)
+        }
+        var lineStart = base.startIndex
+        while lineStart < base.endIndex {
+            let lineEnd = base[lineStart...].firstIndex(of: "\n") ?? base.endIndex
+            let next = lineEnd < base.endIndex ? base.index(after: lineEnd) : base.endIndex
+            let (lineDepth, content) = quoteMarkers(of: base[lineStart..<lineEnd])
+            if lineDepth != depth {
+                // Another quote: what was in the last one ended with it.
+                if let range = found(code) { return range }
+                code = nil
+                lists = []
+                canStart = true
+                depth = lineDepth
+            }
+            if content.allSatisfy({ $0 == " " || $0 == "\t" }) {
+                canStart = true
+                lineStart = next
+                continue
+            }
+            let width = columns(of: content)
+            if canStart { lists.removeAll { $0 > width } }
+            let column = lists.last ?? 0
+            if width >= column + 4, canStart || code != nil {
+                code = (code?.lowerBound ?? lineStart)..<lineEnd
+                canStart = false
+                lineStart = next
+                continue
+            }
+            if let range = found(code) { return range }
+            code = nil
+            if fence(opening: content) != nil, let fenced = firstFencedCode(in: base[lineStart...]) {
+                canStart = true
+                lineStart = fenced.upperBound < base.endIndex ? base.index(after: fenced.upperBound) : base.endIndex
+                continue
+            }
+            let rest = content.drop { $0 == " " || $0 == "\t" }
+            if let item = listItemColumn(rest, at: width) {
+                lists.removeAll { $0 > width }
+                lists.append(item)
+                canStart = false
+            } else {
+                canStart = isBlockLine(rest)
+            }
+            lineStart = next
+        }
+        return found(code)
+    }
+
+    /// How deep in quotes a line is, by its `>`s, each with up to three spaces before it and the one space after it that's
+    /// its own, and what's in it after them, its indent kept.
+    private static func quoteMarkers(of line: Substring) -> (depth: Int, content: Substring) {
+        var depth = 0
+        var rest = line
+        while true {
+            let spaces = rest.prefix { $0 == " " }.count
+            guard spaces <= 3, rest.dropFirst(spaces).first == ">" else { break }
+            rest = rest.dropFirst(spaces + 1)
+            if rest.first == " " { rest = rest.dropFirst() }
+            depth += 1
+        }
+        return (depth, rest)
+    }
+
+    /// How many columns a line's indent takes, a tab to the next of every four.
+    private static func columns(of line: Substring) -> Int {
+        var column = 0
+        for character in line {
+            if character == " " {
+                column += 1
+            } else if character == "\t" {
+                column += 4 - column % 4
+            } else {
+                break
+            }
+        }
+        return column
+    }
+
+    /// The column where a list item starts what it says, for a line that opens one, `-`, `*`, `+`, `1.` or `1)` and a
+    /// space, its indent `width` columns; nil for another line, a break such as `- - -` included.
+    private static func listItemColumn(_ rest: Substring, at width: Int) -> Int? {
+        guard !isBreak(rest), let match = rest.prefixMatch(of: /(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/) else { return nil }
+        let marker = rest[match.range].trimmingCharacters(in: .whitespaces).count
+        let after = rest.dropFirst(marker)
+        let spaces = columns(of: after)
+        // Nothing after it, or five spaces or more: what it says starts after one, and the rest is its indent.
+        let says = after.contains { $0 != " " && $0 != "\t" }
+        return width + marker + (says && spaces <= 4 ? spaces : 1)
+    }
+
+    /// Whether a line, without its indent, is a heading, a break, or a heading's underline, after which code may start.
+    private static func isBlockLine(_ rest: Substring) -> Bool {
+        if rest.prefixMatch(of: /#{1,6}(?:[ \t]|$)/) != nil || isBreak(rest) { return true }
+        let marks = rest.filter { $0 != " " && $0 != "\t" }
+        return !marks.isEmpty && marks.allSatisfy { $0 == "=" }
+    }
+
+    /// Whether a line, without its indent, is a break: three or more of `-`, `*` or `_`, the same, and spaces.
+    private static func isBreak(_ rest: Substring) -> Bool {
+        let marks = rest.filter { $0 != " " && $0 != "\t" }
+        guard marks.count >= 3, let mark = marks.first, "-*_".contains(mark) else { return false }
+        return marks.allSatisfy { $0 == mark }
     }
 
     /// How deep in quotes a line is, by its `>`s, and what's in it after them and its indent.
@@ -552,13 +674,16 @@ public enum GrammarFix {
             if !trailing.isEmpty { trimmed.append(Piece(trailing, isChanged: false)) }
         }
         // Runs of the same kind, joined.
-        return trimmed.reduce(into: []) { result, piece in
+        let runs: [Piece] = trimmed.reduce(into: []) { result, piece in
             if let last = result.last, last.isChanged == piece.isChanged {
                 result[result.count - 1].text += piece.text
             } else {
                 result.append(piece)
             }
         }
+        // A change no word shows, as one to spaces alone with no word beside them, is all of it: never nothing to correct.
+        if before != after, !runs.contains(where: \.isChanged) { return [Piece(corrected, isChanged: true)] }
+        return runs
     }
 
     /// Words, runs of spaces, and each other character, such as a comma.
