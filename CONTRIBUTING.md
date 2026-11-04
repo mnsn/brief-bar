@@ -143,7 +143,7 @@ other data:
 | `BRIEFBAR_AZ` | Another `az` |
 | `BRIEFBAR_COPILOT_CLI` | Another `copilot`, for Send Work to Copilot |
 | `BRIEFBAR_CHAT_LINKS_DB` | Another Notification Center database for Azure DevOps' pull requests sent in chats, such as one the tests make, which needs no Full Disk Access |
-| `BRIEFBAR_RENDER_SUMMARIES=1` | `--render` summarizes Teams' unread chats first, and words the brief across sources, with the on-device model |
+| `BRIEFBAR_RENDER_SUMMARIES=1` | `--render` summarizes Teams' unread chats first, and words the brief across sources, with the on-device model, in its likeliest words: the same each time, and in each part that `--part` draws |
 | `BRIEFBAR_RENDER_TEXT_SIZE=150` | `--render` draws windows' pages with that text size, as **Text Size in Windows** does (100 to 150) |
 
 With `--demo`, Teams and Copilot read only what these variables name, never your own data. Chats from

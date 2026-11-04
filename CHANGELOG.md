@@ -9,6 +9,11 @@
   a closed thread, say, as soon as you've read it. **Active | All**, beside **Comments**, shows only the threads that are
   active or pending, in every pull request's details and their files' pages, and says how many it hides; BriefBar
   remembers which you chose.
+- **BriefBar no longer takes a little more memory each time a list updates with summaries on.** Each time a list or
+  page that shows Apple Intelligence's summaries updated, such as Azure DevOps' Pull Requests page, BriefBar kept what
+  checking that Apple Intelligence was available took, until it quit.
+- **`--render` draws every picture.** With every source on, it stopped before the last ones, out of room for SwiftUI's
+  views, as it kept each picture's window and views until it quit.
 
 ## 0.14.0 - 2026-11-04
 
