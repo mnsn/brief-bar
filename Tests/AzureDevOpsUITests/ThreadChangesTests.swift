@@ -458,6 +458,21 @@ import Testing
         #expect(azure.sent.count == 1)
     }
 
+    /// Asked to slow down, as when Azure DevOps asked a build's reads to wait five minutes, which holds every request, a
+    /// change says until when, rather than in a minute; and nothing is read again, since nothing went.
+    @Test func aChangeAskedToSlowDownSaysUntilWhen() async throws {
+        let (store, changes, azure) = live()
+        let at = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        changes.now = { at }
+        var readAgain: [PRKey] = []
+        changes.readAgain = { readAgain.append($0) }
+        azure.fails = .throttled(retryAfter: 300)
+        await changes.setStatus(.fixed, of: try thread(store), in: key)
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        #expect(changes.state(of: threadKey) == .failed(.slowedDown(until: at.addingTimeInterval(300)), .status(.fixed)))
+        #expect(readAgain.isEmpty)
+    }
+
     /// Turned off while a reply goes, after it may have gone, its pull request is read again, to show it if it did, so that
     /// it isn't sent twice once it's on again; nothing says it failed.
     @Test func turnedOffWhileAReplyGoesItsPullRequestIsReadAgain() async throws {

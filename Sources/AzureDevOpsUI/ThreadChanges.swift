@@ -242,7 +242,7 @@ final class ThreadChanges: ObservableObject {
         } catch {
             // Called off meanwhile: what's on its thread now is someone else's to say.
             guard generation == self.generation else { return false }
-            let problem = ADOWriteProblem(error)
+            let problem = ADOWriteProblem(error, now: now())
             if problem.mayHaveGone { unsure[key] = Attempt(markdown: markdown, before: Set(thread.comments.map(\.id))) }
             fail(key, problem, .reply(then: status), pullRequest: pullRequest)
             return false
@@ -288,7 +288,7 @@ final class ThreadChanges: ObservableObject {
             return
         } catch {
             guard generation == self.generation else { return }
-            fail(key, ADOWriteProblem(error), .status(status), pullRequest: pullRequest)
+            fail(key, ADOWriteProblem(error, now: now()), .status(status), pullRequest: pullRequest)
             return
         }
         guard generation == self.generation else { return }

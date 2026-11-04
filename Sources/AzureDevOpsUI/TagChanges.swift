@@ -201,7 +201,7 @@ final class TagChanges: ObservableObject {
             return false
         } catch {
             guard generation == self.generation else { return false }
-            fail(key, ADOWriteProblem(error), change)
+            fail(key, ADOWriteProblem(error, now: now()), change)
             return false
         }
         guard generation == self.generation else { return false }
@@ -247,7 +247,7 @@ final class TagChanges: ObservableObject {
             return
         } catch {
             guard generation == self.generation else { return }
-            let problem = ADOWriteProblem(error)
+            let problem = ADOWriteProblem(error, now: now())
             // Not on the pull request, as far as Azure DevOps knows: its tags, read again, tell whether that's so, and then
             // it's as you wanted.
             if problem == .gone, case .success(let read)? = await readCounting(key), !read.contains(where: { $0.key == tag.key }) {
