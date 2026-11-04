@@ -2583,7 +2583,8 @@ the app's own Stop does; where it can't, BriefBar shows the session, to stop it 
 opens its composer anew, even one that's open already (`CopilotComposerID`), with the words that fix went with, as its
 composer sent them, kept in memory only and only for that fix, not one sent another way since, such as from the Send to
 Copilot window (`CopilotTasksStore.words(for:of:)`), and sends them where that fix went, never elsewhere: for one that
-couldn't start, a new fork of the session it was to fork, or a new session (`CopilotSessionNames.retryDestination`). When
+couldn't start, a new fork of the session it was to fork, or a new session (`CopilotSessionNames.retryDestination`). Its
+▾ leads with that session, so that it's there to send to, even when it isn't the pull request's (`retryLead`). When
 BriefBar can't find that session now, or it can't go there, the composer says so and waits for you to choose
 (`CopilotDrafts.retry`, `CopilotDrafts.retryGone`). Without those words, as once BriefBar restarted, it opens with what
 you wrote in it, for you to send; and what Try Again asked of a composer that didn't open for it, as a build that wasn't

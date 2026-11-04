@@ -144,6 +144,10 @@ import Testing
         #expect(fix.preselected == .session(task))
         // Without one that worked on it, the pull request's.
         #expect(CopilotDestinations.make(pullRequest, worked: nil, ask: .fix).preselected == .session(app))
+        // Its fork is there only while it leads, as Try Again has a fork of it that couldn't start lead: then it's there to
+        // send to (`CopilotPartComposer.retryLead`).
+        #expect(CopilotDestinations.make(pullRequest, worked: nil, ask: .fix).choice(for: .fork(task)) == nil)
+        #expect(CopilotDestinations.make(pullRequest, worked: CopilotDestination.fork(task).sessionID, ask: .fix).choice(for: .fork(task))?.id == task)
         let explain = CopilotDestinations.make(pullRequest, worked: nil, ask: .explain)
         #expect(explain.first.map(\.destination) == [.session(app)])
         #expect(explain.all.allSatisfy { if case .session = $0.destination { true } else { false } })

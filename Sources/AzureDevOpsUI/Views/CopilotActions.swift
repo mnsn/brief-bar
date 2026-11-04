@@ -639,6 +639,9 @@ struct CopilotPartComposer<Options: View>: View {
     /// How it would reach where it goes, once checked.
     @LocalState private var checked: Check?
     @LocalState private var hasAppeared = false
+    /// The session Try Again sends where the fix went, or forks again: ▾ leads with it, rather than with the session that
+    /// worked on it last or the pull request's, so that it's there to send to, as for a fork of a session that isn't either.
+    @LocalState private var retryLead: String?
 
     /// What's known of how a prompt would reach where it goes.
     struct Check: Equatable {
@@ -652,7 +655,7 @@ struct CopilotPartComposer<Options: View>: View {
     private var record: PRRecord? { store.record(for: item.key) }
     private var session: PullRequestSession? { sessions.session(for: item.key) }
     private var names: CopilotSessionNames { CopilotSessionNames(session: session, copilot: copilot, links: sessions.links) }
-    private var destinations: CopilotDestinations { CopilotDestinations.make(session, worked: worked, ask: ask) }
+    private var destinations: CopilotDestinations { CopilotDestinations.make(session, worked: retryLead ?? worked, ask: ask) }
     private var target: CopilotDestination? { chosen ?? destinations.preselected }
 
     /// "Ask More" once a session answered Explain; else its own.
@@ -698,15 +701,18 @@ struct CopilotPartComposer<Options: View>: View {
 
     /// Try Again opened it, a moment ago: it goes where the fix it tries again went, with the same words, now, if it can go;
     /// else it stays open with them, saying why it can't, and goes nowhere else on its own, such as where it would go first.
+    /// ▾ leads with that session from then on (`retryLead`).
     private func retryIfAsked() {
         guard let retry = drafts.retries.removeValue(forKey: asking.draftKey), Date().timeIntervalSince(retry.at) < CopilotDrafts.retryWait
         else { return }
-        let destinations = destinations
+        let lead = retry.destination?.sessionID
+        let destinations = CopilotDestinations.make(session, worked: lead ?? worked, ask: ask)
         guard let destination = retry.destination, destination == .newSession || destinations.choice(for: destination) != nil else {
             problem = CopilotDrafts.retryGone
             SpokenText.announce(CopilotDrafts.retryGone)
             return
         }
+        retryLead = lead
         chosen = destination
         send(to: destination, choice: destinations.choice(for: destination))
     }
