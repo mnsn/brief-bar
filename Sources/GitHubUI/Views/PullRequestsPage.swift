@@ -115,7 +115,12 @@ struct PullRequestsPage: View {
         return MissionsBody(
             view: view ?? ordering.view, ordering: ordering, kinds: Self.kinds, elsewhere: "Azure DevOps",
             openElsewhere: services.hasPage(.azureDevOpsPullRequests) ? { services.openWindow(.azureDevOpsPullRequests) } : nil,
-            listed: store.items.map(Self.ref(of:)), row: { ref in byRef[ref].map { AnyView(row($0)) } },
+            listed: store.items.map(Self.ref(of:)),
+            row: { step, mission in
+                byRef[step.ref].map { item in
+                    AnyView(row(item, order: OrderRowContext(step: step, mission: mission, isReady: item.group == .ready)))
+                }
+            },
             place: { byRef[$0]?.pullRequest.repository }, isSelected: { _ in false },
             select: { ref in
                 guard let item = byRef[ref] else { return false }
@@ -164,8 +169,10 @@ struct PullRequestsPage: View {
         }
     }
 
-    private func row(_ item: GitHubPRSnapshot) -> PRRowView {
-        PRRowView(item: item, now: store.now, order: rowOrder(item)) { store.open(item) }
+    /// - Parameter order: where it stands in the mission whose card it's in; nil elsewhere, for the one its capsule speaks
+    ///   for.
+    private func row(_ item: GitHubPRSnapshot, order: OrderRowContext? = nil) -> PRRowView {
+        PRRowView(item: item, now: store.now, order: order ?? rowOrder(item)) { store.open(item) }
     }
 
     /// Where a pull request stands in its mission, for its capsule, while Pull Request Order is on: By Status, a click on

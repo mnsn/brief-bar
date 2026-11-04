@@ -64,7 +64,7 @@ struct PullRequestsPage: View {
                 }
                 if shownOrder == .byMission {
                     PullRequestsByMission(
-                        view: view ?? ordering.view, ordering: ordering, items: store.items, row: { AnyView(row($0)) },
+                        view: view ?? ordering.view, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
                         isSelected: isSelected, select: select, rest: { AnyView(groups($0)) }
                     )
                 } else if shownOrder.isByDate {
@@ -214,11 +214,13 @@ struct PullRequestsPage: View {
         .background(GlassCard(cornerRadius: 18))
     }
 
-    private func row(_ item: PRSnapshot, showsCreated: Bool = false) -> PRRowView {
+    /// - Parameter order: where it stands in the mission whose card it's in; nil elsewhere, for the one its capsule speaks
+    ///   for.
+    private func row(_ item: PRSnapshot, showsCreated: Bool = false, order: OrderRowContext? = nil) -> PRRowView {
         PRRowView(
             item: item, now: store.now, showsActions: true, showsCreated: showsCreated, isSelected: isSelected(item),
             openSource: source(item), stopWatching: watching(item), dismiss: dismissing(item), showDetails: { select(item) },
-            order: rowOrder(item)
+            order: order ?? rowOrder(item)
         ) { store.open(item) }
     }
 

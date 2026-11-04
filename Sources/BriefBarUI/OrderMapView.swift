@@ -252,18 +252,21 @@ struct OrderMapNode: View {
 
 /// Under the Map: the pull requests it doesn't draw, as they're in no mission, and the way to List.
 package struct NotInAMissionLine: View {
-    let count: Int
+    let inNoMission: Int
+    /// Those stacked with a mission's pull requests but not in its order.
+    let notInOrder: Int
     let showList: () -> Void
 
-    package init(count: Int, showList: @escaping () -> Void) {
-        self.count = count
+    package init(inNoMission: Int, notInOrder: Int = 0, showList: @escaping () -> Void) {
+        self.inNoMission = inNoMission
+        self.notInOrder = notInOrder
         self.showList = showList
     }
 
     package var body: some View {
-        if count > 0 {
+        if let text = OrderText.notOnTheMap(inNoMission: inNoMission, notInOrder: notInOrder) {
             HStack(spacing: 6) {
-                Text(OrderText.notInAMission(count))
+                Text(text)
                     .foregroundStyle(.secondary)
                 Button("Show List", action: showList)
                     .buttonStyle(.borderless)

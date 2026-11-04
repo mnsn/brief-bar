@@ -16,10 +16,11 @@ package struct MissionsBody: View {
     let openElsewhere: (() -> Void)?
     /// The pull requests the page lists here, in its order: all but those it keeps apart, such as Idle's.
     let listed: [ItemRef]
-    /// How many more the page lists apart, in no mission, which the Map counts too.
-    let apart: Int
-    /// A pull request's row, as the page draws it; nil for one it doesn't list.
-    let row: (ItemRef) -> AnyView?
+    /// Those the page lists apart, such as Idle's, which the Map counts too when it doesn't draw them.
+    let apart: [ItemRef]
+    /// A pull request's row in a mission's card, as the page draws it, with where it stands in that mission, which can
+    /// differ from where it stands in another; nil for one the page doesn't list.
+    let row: (OrderStep, MissionKey) -> AnyView?
     /// The repository a pull request is in, as the page names it.
     let place: (ItemRef) -> String?
     let isSelected: (ItemRef) -> Bool
@@ -33,7 +34,8 @@ package struct MissionsBody: View {
 
     package init(
         view: OrderView, ordering: PullRequestOrder, kinds: Set<ItemRef.Kind>, elsewhere: String, openElsewhere: (() -> Void)?,
-        listed: [ItemRef], apart: Int = 0, row: @escaping (ItemRef) -> AnyView?, place: @escaping (ItemRef) -> String?,
+        listed: [ItemRef], apart: [ItemRef] = [], row: @escaping (OrderStep, MissionKey) -> AnyView?,
+        place: @escaping (ItemRef) -> String?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, rest: @escaping ([ItemRef]) -> AnyView
     ) {
         self.view = view
@@ -88,7 +90,8 @@ package struct MissionsBody: View {
                             order: ordering, isSelected: isSelected, select: open, list: { AnyView(card(mission)) }
                         )
                     }
-                    NotInAMissionLine(count: rest.count + apart) { ordering.setView(.list) }
+                    let undrawn = OrderMap.undrawn(listed + apart, in: missions)
+                    NotInAMissionLine(inNoMission: undrawn.inNoMission, notInOrder: undrawn.notInOrder) { ordering.setView(.list) }
                 }
             }
             .onChange(of: ordering.revealed) { _, key in reveal(key, with: proxy) }
@@ -101,7 +104,7 @@ package struct MissionsBody: View {
             mission: mission, kinds: kinds, place: place(of: mission), elsewhere: elsewhere, openElsewhere: openElsewhere,
             order: ordering
         ) { step in
-            row(step.ref)
+            row(step, mission.key)
         }
     }
 

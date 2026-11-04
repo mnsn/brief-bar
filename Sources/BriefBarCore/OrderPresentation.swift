@@ -182,6 +182,51 @@ extension OrderText {
     }
 }
 
+// MARK: - What the Map doesn't draw
+
+extension OrderMap {
+    /// Of the pull requests a page lists, how many the Map doesn't draw: those in no mission, and those stacked with a
+    /// mission's pull requests but not in its order, which List shows under it. A mission too big for the Map shows its
+    /// list instead, with them all.
+    public static func undrawn(_ refs: [ItemRef], in missions: [OrderMission]) -> (inNoMission: Int, notInOrder: Int) {
+        var shown: Set<ItemRef> = []
+        for mission in missions {
+            shown.formUnion(mission.steps.map(\.ref))
+            if mission.steps.count > mostPullRequests { shown.formUnion(mission.attached.map(\.ref)) }
+        }
+        var counts = (inNoMission: 0, notInOrder: 0)
+        for ref in Set(refs) where !shown.contains(ref) {
+            if missions.contains(where: { $0.contains(ref) }) {
+                counts.notInOrder += 1
+            } else {
+                counts.inNoMission += 1
+            }
+        }
+        return counts
+    }
+}
+
+extension OrderText {
+    /// What the Map says of a page's pull requests it doesn't draw: "3 pull requests aren't in a mission. List shows
+    /// them.", "1 pull request isn't in its mission's order. List shows it.", or both. Nil when it draws them all.
+    public static func notOnTheMap(inNoMission: Int, notInOrder: Int) -> String? {
+        switch (inNoMission, notInOrder) {
+        case (0, 0):
+            return nil
+        case (_, 0):
+            return notInAMission(inNoMission)
+        case (0, 1):
+            return "1 pull request isn't in its mission's order. List shows it."
+        case (0, _):
+            return "\(notInOrder) pull requests aren't in their mission's order. List shows them."
+        default:
+            let none = inNoMission == 1 ? "1 pull request isn't" : "\(inNoMission) pull requests aren't"
+            let order = notInOrder == 1 ? "1 isn't in its" : "\(notInOrder) aren't in their"
+            return "\(none) in a mission, and \(order) mission's order. List shows them."
+        }
+    }
+}
+
 // MARK: - Paths
 
 extension OrderLine {

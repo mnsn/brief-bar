@@ -12,8 +12,8 @@ struct PullRequestsByMission: View {
     @ObservedObject var ordering: PullRequestOrder
     /// The pull requests the list has, in its order.
     let items: [PRSnapshot]
-    /// A pull request's row, as the page draws it.
-    let row: (PRSnapshot) -> AnyView
+    /// A pull request's row in a mission's card, as the page draws it, with where it stands in that mission.
+    let row: (PRSnapshot, OrderRowContext) -> AnyView
     let isSelected: (PRSnapshot) -> Bool
     let select: (PRSnapshot) -> Void
     /// The pull requests in no mission, by status, as the page groups them.
@@ -25,13 +25,16 @@ struct PullRequestsByMission: View {
 
     var body: some View {
         let byRef = Dictionary(items.map { ($0.key.linkRef, $0) }, uniquingKeysWith: { first, _ in first })
-        let missions = Self.missions(ordering.missions)
         let listed = items.filter { $0.group != .idle }.map(\.key.linkRef)
-        let apart = items.filter { $0.group == .idle && !Self.isIn(missions, $0) }.count
+        let apart = items.filter { $0.group == .idle }.map(\.key.linkRef)
         MissionsBody(
             view: view, ordering: ordering, kinds: Self.kinds, elsewhere: "GitHub",
             openElsewhere: services.hasPage(.githubPullRequests) ? { services.openWindow(.githubPullRequests) } : nil,
-            listed: listed, apart: apart, row: { ref in byRef[ref].map(row) }, place: { byRef[$0]?.repository },
+            listed: listed, apart: apart,
+            row: { step, mission in
+                byRef[step.ref].map { item in row(item, OrderRowContext(step: step, mission: mission, isReady: item.group == .ready)) }
+            },
+            place: { byRef[$0]?.repository },
             isSelected: { ref in byRef[ref].map(isSelected) ?? false },
             select: { ref in
                 guard let item = byRef[ref] else { return false }

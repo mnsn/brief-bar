@@ -182,6 +182,42 @@ import Testing
             == "#412 · GitHub is off")
     }
 
+    // MARK: What the Map doesn't draw
+
+    @Test func theMapCountsWhatItDoesntDrawAndSaysWhy() {
+        let ordered = Self.mission(
+            [Self.step(Self.pr(4101), .next), Self.step(Self.pr(4102), .waiting(open: [Self.pr(4101)], unknown: []))],
+            attached: [Self.step(Self.pr(4103), .notInOrder)]
+        )
+        let page = [4101, 4102, 4103, 4200, 4201, 4201].map(Self.pr)
+
+        let counts = OrderMap.undrawn(page, in: [ordered])
+
+        #expect(counts.inNoMission == 2 && counts.notInOrder == 1)
+        // A mission too big for the Map shows its list, which has the ones stacked with it.
+        let big = Self.mission(
+            (1...31).map { Self.step(Self.pr(5000 + $0), .anyTime) }, attached: [Self.step(Self.pr(4103), .notInOrder)]
+        )
+        #expect(OrderMap.undrawn([Self.pr(4103), Self.pr(5001)], in: [big]) == (inNoMission: 0, notInOrder: 0))
+    }
+
+    @Test func itsLineSaysWhichAreInNoMissionAndWhichArentInTheirOrder() {
+        #expect(OrderText.notOnTheMap(inNoMission: 0, notInOrder: 0) == nil)
+        #expect(OrderText.notOnTheMap(inNoMission: 3, notInOrder: 0) == "3 pull requests aren't in a mission. List shows them.")
+        #expect(OrderText.notOnTheMap(inNoMission: 0, notInOrder: 1) == "1 pull request isn't in its mission's order. List shows it.")
+        #expect(
+            OrderText.notOnTheMap(inNoMission: 0, notInOrder: 2) == "2 pull requests aren't in their mission's order. List shows them."
+        )
+        #expect(
+            OrderText.notOnTheMap(inNoMission: 1, notInOrder: 1)
+                == "1 pull request isn't in a mission, and 1 isn't in its mission's order. List shows them."
+        )
+        #expect(
+            OrderText.notOnTheMap(inNoMission: 3, notInOrder: 2)
+                == "3 pull requests aren't in a mission, and 2 aren't in their mission's order. List shows them."
+        )
+    }
+
     // MARK: Paths
 
     @Test func hoveringOneLightsWhatGoesBeforeItAndAfterItThroughOthers() {
