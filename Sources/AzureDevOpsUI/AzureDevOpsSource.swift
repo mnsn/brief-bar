@@ -31,10 +31,10 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// 16: asking a session about a failed build, and having Copilot fix it, which send what its details read of it: its
     /// errors, the messages and stack traces of the first tests that failed, and the end of its log; and the builds and
     /// conflicts that tasks and prompts take on.
-    /// 17: Make Changes in Azure DevOps, the first changes BriefBar makes there: your reply in a pull request's comment
+    /// 18: Make Changes in Azure DevOps, the first changes BriefBar makes there: your reply in a pull request's comment
     /// thread, and a thread's status, each when you click it; what you write in a reply, kept in memory until it's sent;
     /// and Fix Grammar, which sends the reply to GitHub Copilot when you choose a Copilot model for it.
-    nonisolated package static let descriptionVersion = 17
+    nonisolated package static let descriptionVersion = 18
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
