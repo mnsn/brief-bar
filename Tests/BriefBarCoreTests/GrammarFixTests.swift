@@ -53,6 +53,32 @@ import Testing
         #expect(GrammarFix.request(for: "see\n~~~\nlet a = 1\nlet b").held == ["~~~\nlet a = 1\nlet b"])
     }
 
+    /// A fence closes only with as many of its characters or more, in the same quote: a shorter one inside is code, and a
+    /// quote's code is held back with its `>`s, to the end of its quote when it never closes.
+    @Test func holdsBackFencedCodeAsMarkdownClosesIt() {
+        let longer = "see:\n````md\n```swift\nlet x = 1\n```\n````\nworks for me"
+        #expect(GrammarFix.request(for: longer).held == ["````md\n```swift\nlet x = 1\n```\n````"])
+        #expect(GrammarFix.request(for: longer).text.contains("{{1}}\nworks for me"))
+        let closedLonger = "```\nlet x = 1\n`````\nworks"
+        #expect(GrammarFix.request(for: closedLonger).held == ["```\nlet x = 1\n`````"])
+        let quoted = "> ```\n> let x = retrys\n> ```\n> that fails\n\nwhy"
+        #expect(GrammarFix.request(for: quoted).held == ["> ```\n> let x = retrys\n> ```"])
+        let unclosed = "> ```\n> let x = 1\n\nit fails"
+        #expect(GrammarFix.request(for: unclosed).held == ["> ```\n> let x = 1"])
+        // Backticks inline aren't a fence.
+        #expect(GrammarFix.request(for: "```a``` b").held != ["```a``` b"])
+    }
+
+    /// A link's address, or a web address, with parentheses in it is held back whole; the punctuation after one isn't.
+    @Test func holdsBackAddressesWithParenthesesWhole() {
+        #expect(GrammarFix.request(for: "see [docs](https://example.invalid/a_(b)) now").held == ["[docs](https://example.invalid/a_(b))"])
+        #expect(GrammarFix.request(for: "see [a [b]](x.md) \\(c)").held == ["[a [b]](x.md)"])
+        #expect(GrammarFix.request(for: "see https://example.invalid/a_(b).").held == ["https://example.invalid/a_(b)"])
+        #expect(GrammarFix.request(for: "(see https://example.invalid/y)").held == ["https://example.invalid/y"])
+        // Not a link: a task's box, and brackets alone.
+        #expect(GrammarFix.request(for: "- [ ] fix [it]").held.isEmpty)
+    }
+
     /// Markers the text has of its own aren't taken for its markers.
     @Test func picksMarkersTheTextDoesntHave() {
         let request = GrammarFix.request(for: "use {{name}} with `code`")
@@ -106,6 +132,13 @@ import Testing
         #expect(GrammarFix.corrected("I don't think it's right; I'll check tomorrow which branch.", for: sloppy)
             == .success("I don't think it's right; I'll check tomorrow which branch."))
         #expect(GrammarFix.corrected("OK.", for: GrammarFix.request(for: "ok")) == .success("OK."))
+        // However short: a translation, or an answer, keeps none of its words.
+        #expect(GrammarFix.corrected("Oui.", for: GrammarFix.request(for: "yes")) == .failure(.changedMore))
+        #expect(GrammarFix.corrected("It fails.", for: GrammarFix.request(for: "why?")) == .failure(.changedMore))
+        #expect(GrammarFix.corrected("Thanks a lot.", for: GrammarFix.request(for: "thx alot")) == .success("Thanks a lot."))
+        let rewritten = GrammarFix.request(for: "we was need to adding the cap for prevent the stall")
+        #expect(GrammarFix.corrected("We needed to add the cap to prevent the stall.", for: rewritten)
+            == .success("We needed to add the cap to prevent the stall."))
     }
 
     /// How far a correction may go, worked out within a band of the table, is what the whole table says.
@@ -178,6 +211,17 @@ import Testing
         #expect(GrammarFix.changes(from: "it is fine fine", to: "it is fine") == [
             .init("it is ", isChanged: false), .init("fine", isChanged: true),
         ])
+    }
+
+    /// A change to spaces alone shows on the word beside it, so that it's a change to use.
+    @Test func showsAChangeToSpacesOnTheWordBesideIt() {
+        let takenOut = GrammarFix.changes(from: "Hello , world.", to: "Hello, world.")
+        #expect(takenOut == [.init("Hello", isChanged: false), .init(",", isChanged: true), .init(" world.", isChanged: false)])
+        #expect(GrammarFix.changeCount(takenOut) == 1)
+        let putIn = GrammarFix.changes(from: "Hello,world.", to: "Hello, world.")
+        #expect(putIn == [.init("Hello, ", isChanged: false), .init("world", isChanged: true), .init(".", isChanged: false)])
+        // A line break a pasted text had otherwise isn't a change.
+        #expect(GrammarFix.changeCount(GrammarFix.changes(from: "one\r\ntwo", to: "one\ntwo")) == 0)
     }
 
     @Test func nothingChangedIsOneRun() {

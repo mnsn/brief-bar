@@ -109,7 +109,8 @@ public enum GrammarFix {
         guard positions == positions.sorted() else { return .failure(.changedHeld) }
         // A marker it made up, such as the next number, is something that was never there.
         if said.ranges(of: request.marker(request.held.count + 1)).count > 0 { return .failure(.changedHeld) }
-        guard var text = relined(said, as: request.masked), isCorrection(of: request.masked, text) else { return .failure(.changedMore) }
+        guard var text = relined(said, as: request.masked), isCorrection(of: request.masked, text), keepsWords(of: request.masked, text)
+        else { return .failure(.changedMore) }
         for (index, original) in request.held.enumerated().reversed() {
             text = text.replacingOccurrences(of: request.marker(index + 1), with: original)
         }
@@ -186,6 +187,61 @@ public enum GrammarFix {
         return previous[after.count] <= limit
     }
 
+    /// Whether `answer` keeps the words of `text`, as a correction does: at least half of them, case and apostrophes aside,
+    /// as they were or with a typo fixed. A translation, or an answer in words of its own, keeps few or none of them, however
+    /// short the text: "yes" isn't corrected into "oui", nor "why?" into "It fails."
+    static func keepsWords(of text: String, _ answer: String) -> Bool {
+        let before = words(text)
+        guard !before.isEmpty else { return true }
+        var left: [String: Int] = [:]
+        for word in words(answer) { left[word, default: 0] += 1 }
+        var kept = 0
+        var missing: [String] = []
+        for word in before {
+            if let count = left[word], count > 0 {
+                left[word] = count - 1
+                kept += 1
+            } else {
+                missing.append(word)
+            }
+        }
+        // Those it didn't keep as they were, with a typo fixed: few, in a correction.
+        var others = left.flatMap { word, count in Array(repeating: word, count: count) }.sorted()
+        for word in missing {
+            guard let index = others.firstIndex(where: { isSameWord(word, $0) }) else { continue }
+            others.remove(at: index)
+            kept += 1
+        }
+        return kept * 2 >= before.count
+    }
+
+    /// A text's words, in lowercase and without apostrophes: "Don't" is "dont".
+    private static func words(_ text: String) -> [String] {
+        tokens(text).filter { $0.first.map { $0.isLetter || $0.isNumber } ?? false }.map { word in
+            String(word.lowercased().filter { $0 != "'" && $0 != "’" })
+        }
+    }
+
+    /// Whether a word is another with a typo fixed: one in three of its letters, and at least one, added, taken out,
+    /// changed, or swapped with the next, as "teh" is "the".
+    private static func isSameWord(_ lhs: String, _ rhs: String) -> Bool {
+        let a = Array(lhs), b = Array(rhs)
+        let allowed = max(1, max(a.count, b.count) / 3)
+        guard abs(a.count - b.count) <= allowed else { return false }
+        // The edit distance, with a swap of two letters side by side as one edit.
+        var table = [[Int]](repeating: [Int](repeating: 0, count: b.count + 1), count: a.count + 1)
+        for i in 0...a.count { table[i][0] = i }
+        for j in 0...b.count { table[0][j] = j }
+        for i in stride(from: 1, through: a.count, by: 1) {
+            for j in stride(from: 1, through: b.count, by: 1) {
+                let cost = a[i - 1] == b[j - 1] ? 0 : 1
+                table[i][j] = min(table[i - 1][j] + 1, table[i][j - 1] + 1, table[i - 1][j - 1] + cost)
+                if i > 1, j > 1, a[i - 1] == b[j - 2], a[i - 2] == b[j - 1] { table[i][j] = min(table[i][j], table[i - 2][j - 2] + 1) }
+            }
+        }
+        return table[a.count][b.count] <= allowed
+    }
+
     /// A backtick fence that nothing in `text` closes, so that all of it stays what someone wrote, whatever it says: one
     /// longer than its longest run of backticks, and at least three, as a pull request's prompts fence what they quote.
     static func fence(for text: String) -> String {
@@ -205,29 +261,141 @@ public enum GrammarFix {
     /// that control how text reads.
     static func firstHeld(in text: Substring) -> Range<Substring.Index>? {
         let patterns: [Regex<Substring>] = [
-            // Fenced code, to its closing fence, or else to the end.
-            /(?m)^[ \t]*```[^\n]*\n(?:.*\n)*?[ \t]*```[ \t]*$/,
-            /(?m)^[ \t]*~~~[^\n]*\n(?:.*\n)*?[ \t]*~~~[ \t]*$/,
-            /(?m)^[ \t]*(?:```|~~~)[\s\S]*/,
             // Inline code, between backticks.
             /``[^`](?:[^`]|`[^`])*?``|`[^`\n]+`/,
-            // A link or a picture: its text and where it goes.
-            /!?\[[^\]\n]*\]\([^)\n]*\)/,
             // A mention as Azure DevOps keeps it.
             /@<[^<>\s]+>/,
             // An autolink, or an HTML tag.
             /<[^<>\n]+>/,
-            // A web address.
-            /(?i)(?:https?:\/\/|www\.)[^\s<>()]*[^\s<>().,;:!?'"]/,
         ]
         var first: Range<Substring.Index>?
         for pattern in patterns {
             guard let match = try? pattern.firstMatch(in: text) else { continue }
             if first.map({ match.range.lowerBound < $0.lowerBound }) ?? true { first = match.range }
         }
-        if let mention = firstMention(in: text), first.map({ mention.lowerBound < $0.lowerBound }) ?? true { first = mention }
-        if let control = firstControl(in: text), first.map({ control.lowerBound < $0.lowerBound }) ?? true { first = control }
+        let found = [firstFencedCode(in: text), firstLink(in: text), firstWebAddress(in: text), firstMention(in: text), firstControl(in: text)]
+        for range in found.compactMap({ $0 }) where first.map({ range.lowerBound < $0.lowerBound }) ?? true {
+            first = range
+        }
         return first
+    }
+
+    /// The first fenced code block, from a line whose Markdown, after any quote's `>`, starts with three backticks or tildes
+    /// or more, to the line in the same quote that closes it, with as many of the same or more, and nothing else; or, for
+    /// one that never closes, to the end of its quote, or of the text. The lines in it, a shorter fence's included, are
+    /// code.
+    static func firstFencedCode(in text: Substring) -> Range<Substring.Index>? {
+        // The text starts a line only where a line starts: not after a span held back before it on its line.
+        var startsLine = text.startIndex == text.base.startIndex || text.base[text.base.index(before: text.startIndex)] == "\n"
+        var lineStart = text.startIndex
+        while lineStart < text.endIndex {
+            let lineEnd = text[lineStart...].firstIndex(of: "\n") ?? text.endIndex
+            if startsLine, let opening = fence(opening: text[lineStart..<lineEnd]) {
+                var end = lineEnd
+                var next = lineEnd
+                while next < text.endIndex {
+                    next = text.index(after: next)
+                    let nextEnd = text[next...].firstIndex(of: "\n") ?? text.endIndex
+                    let (depth, content) = quote(of: text[next..<nextEnd])
+                    // Its quote ended, and the code with it.
+                    if depth < opening.depth { break }
+                    end = nextEnd
+                    if depth == opening.depth, closes(content, opening) { break }
+                    next = nextEnd
+                }
+                return lineStart..<end
+            }
+            startsLine = true
+            lineStart = lineEnd < text.endIndex ? text.index(after: lineEnd) : text.endIndex
+        }
+        return nil
+    }
+
+    /// How deep in quotes a line is, by its `>`s, and what's in it after them and its indent.
+    private static func quote(of line: Substring) -> (depth: Int, content: Substring) {
+        var depth = 0
+        var index = line.startIndex
+        while true {
+            while index < line.endIndex, line[index] == " " || line[index] == "\t" { index = line.index(after: index) }
+            guard index < line.endIndex, line[index] == ">" else { break }
+            depth += 1
+            index = line.index(after: index)
+        }
+        return (depth, line[index...])
+    }
+
+    /// A fence that opens a code block on a line: its character, how many, and how deep in quotes; nil for another line, as
+    /// one whose backticks are inline code is.
+    private static func fence(opening line: Substring) -> (character: Character, count: Int, depth: Int)? {
+        let (depth, content) = quote(of: line)
+        guard let character = content.first, character == "`" || character == "~" else { return nil }
+        let count = content.prefix { $0 == character }.count
+        guard count >= 3 else { return nil }
+        if character == "`", content.dropFirst(count).contains("`") { return nil }
+        return (character, count, depth)
+    }
+
+    /// Whether what's in a line closes a fence: as many of its characters or more, and nothing else but spaces.
+    private static func closes(_ content: Substring, _ opening: (character: Character, count: Int, depth: Int)) -> Bool {
+        let count = content.prefix { $0 == opening.character }.count
+        return count >= opening.count && content.dropFirst(count).allSatisfy { $0 == " " || $0 == "\t" }
+    }
+
+    /// The first link or picture in Markdown, `[text](where)` or `![text](where)`, on one line: its text to the bracket that
+    /// closes it, and where it goes to the parenthesis that closes it, those inside balanced, as `a_(b)` in an address
+    /// has them, and escaped ones skipped.
+    static func firstLink(in text: Substring) -> Range<Substring.Index>? {
+        var search = text.startIndex
+        while let open = text[search...].firstIndex(of: "[") {
+            if let end = closing("[", "]", in: text, after: open), end < text.endIndex, text[end] == "(",
+               let close = closing("(", ")", in: text, after: end) {
+                let start = open > text.startIndex && text[text.index(before: open)] == "!" ? text.index(before: open) : open
+                return start..<text.index(after: close)
+            }
+            search = text.index(after: open)
+        }
+        return nil
+    }
+
+    /// Where the bracket at `open` closes, on its line, those inside balanced and escaped ones skipped; past it, for a
+    /// square bracket, where what comes next is.
+    private static func closing(_ opening: Character, _ closing: Character, in text: Substring, after open: Substring.Index) -> Substring.Index? {
+        var depth = 0
+        var index = open
+        while index < text.endIndex {
+            let character = text[index]
+            if character == "\n" { return nil }
+            if character == "\\" {
+                index = text.index(after: index)
+                if index < text.endIndex { index = text.index(after: index) }
+                continue
+            }
+            if character == opening { depth += 1 }
+            if character == closing {
+                depth -= 1
+                if depth == 0 { return opening == "[" ? text.index(after: index) : index }
+            }
+            index = text.index(after: index)
+        }
+        return nil
+    }
+
+    /// The first web address, `https://`, `http://` or `www.`, to the space after it: without the punctuation that ends a
+    /// sentence after it, nor a closing parenthesis it didn't open, as GitHub's links take them.
+    static func firstWebAddress(in text: Substring) -> Range<Substring.Index>? {
+        guard let match = try? /(?i)(?:https?:\/\/|www\.)[^\s<>]+/.firstMatch(in: text) else { return nil }
+        let start = match.range.lowerBound
+        var end = match.range.upperBound
+        while end > start {
+            let last = text[text.index(before: end)]
+            let address = text[start..<end]
+            if ".,;:!?'\"*_~".contains(last) || last == ")" && address.filter({ $0 == ")" }).count > address.filter({ $0 == "(" }).count {
+                end = text.index(before: end)
+            } else {
+                break
+            }
+        }
+        return start..<end
     }
 
     /// The first run of characters that control how text reads rather than being read, such as one that overrides the
@@ -310,7 +478,8 @@ public enum GrammarFix {
     /// took out marks the word after it, or else the one before, so that every change shows. All of it changed, for texts
     /// too long to compare.
     public static func changes(from original: String, to corrected: String) -> [Piece] {
-        let before = tokens(original)
+        // Line breaks as the correction has them, whichever the original had.
+        let before = tokens(original.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n"))
         let after = tokens(corrected)
         guard before.count * after.count <= 1_000_000 else { return [Piece(corrected, isChanged: true)] }
         // The longest common run of tokens, as a table of what's left of each from each place.
@@ -332,17 +501,19 @@ public enum GrammarFix {
                 i += 1
                 j += 1
             } else if lengths[(i + 1) * columns + j] >= lengths[i * columns + j + 1] {
-                // Taken out of the original.
-                if !isSpace(before[i]) { takenOutBefore[j] = true }
+                // Taken out of the original, spaces too.
+                takenOutBefore[j] = true
                 i += 1
             } else {
                 j += 1
             }
         }
-        if i < before.count, before[i...].contains(where: { !isSpace($0) }) { takenOutBefore[after.count] = true }
+        if i < before.count { takenOutBefore[after.count] = true }
         var changed = kept.map { !$0 }
-        // A word taken out shows on the word where it was: the next, or else the one before.
-        for index in 0...after.count where takenOutBefore[index] {
+        // What was taken out, and spaces put in, show on the word where they were: the next, or else the one before. A space
+        // alone shows no change.
+        let spacesPutIn = after.indices.filter { changed[$0] && isSpace(after[$0]) }
+        for index in (0...after.count).filter({ takenOutBefore[$0] }) + spacesPutIn {
             if let next = (index..<after.count).first(where: { !isSpace(after[$0]) }) {
                 changed[next] = true
             } else if let previous = (0..<index).last(where: { !isSpace(after[$0]) }) {
