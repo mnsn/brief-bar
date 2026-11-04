@@ -92,6 +92,9 @@ final class PRStore: ObservableObject {
     private var openViewers: Set<String> = []
     private var isPanelOpen: Bool { !openViewers.isEmpty }
     private var isOnline = true
+    /// The changes you made to pull requests' threads (`changed(_:by:)`), as Azure DevOps answered them, or as the demo made
+    /// them up, by pull request: each shows from then on, until the engine's snapshots have it; the demo's, while it runs.
+    private var madeChanges: [PRKey: [ThreadChange]] = [:]
     private var cancellables: Set<AnyCancellable> = []
 
     init(
@@ -595,6 +598,10 @@ final class PRStore: ObservableObject {
         // Your sign-in's directory, and where the account is from, kept for after a restart: a sign-in that your own
         // directory wants again then isn't taken for someone else's, nor another directory's default for yours.
         if mode == .live, snapshot.account != nil { Task { await keepSignIn() } }
+        // With the changes you made to threads that it doesn't have yet: the demo's, always, since it reads nothing.
+        var snapshot = snapshot
+        if mode == .live { madeChanges = Self.pending(madeChanges, in: snapshot.records) }
+        snapshot.records = Self.applying(madeChanges, to: snapshot.records)
         state = snapshot
         let authored = snapshot.records.filter { $0.role == .author && $0.pullRequest.status == .active }
             .map(\.pullRequest).sorted { ($0.createdAt, $0.key) > ($1.createdAt, $1.key) }
@@ -710,6 +717,51 @@ final class PRStore: ObservableObject {
     var demoNotifications: [(notification: BriefBarNotification, date: Date)] {
         guard mode == .demo else { return [] }
         return DemoData.notifications(for: items).map { (Self.notification($0), $0.at) }
+    }
+
+    // MARK: Changes in Azure DevOps
+
+    /// A change you made to one of a pull request's threads, with Make Changes in Azure DevOps on (`ThreadChanges`), as
+    /// Azure DevOps answered it: it shows at once, and the pull request is read again, so Needs You, what's left, the brief
+    /// and the counts follow it. In the demo, which reads nothing, the made-up change stays in its made-up data while it runs.
+    func changed(_ key: PRKey, by change: ThreadChange) {
+        madeChanges[key, default: []].append(change)
+        state.records = Self.applying(madeChanges, to: state.records)
+        recompute()
+        refreshed.send()
+        guard mode == .live, let engine else { return }
+        Task { await engine.changed(key, by: change) }
+    }
+
+    /// Reads a pull request again now, as after a change that may have been made though Azure DevOps didn't say so in time;
+    /// nothing in the demo.
+    func readAgain(_ key: PRKey) {
+        guard mode == .live, let engine else { return }
+        Task { await engine.readAgain(key) }
+    }
+
+    /// The pull requests with the changes made to their threads.
+    static func applying(_ changes: [PRKey: [ThreadChange]], to records: [PRRecord]) -> [PRRecord] {
+        guard !changes.isEmpty else { return records }
+        return records.map { record in
+            guard let made = changes[record.id], var details = record.details else { return record }
+            for change in made { details.apply(change) }
+            var record = record
+            record.details = details
+            return record
+        }
+    }
+
+    /// The changes that pull requests as read don't have yet: one they have, which changes nothing applied again, is done
+    /// with, and so are those of a pull request that isn't there, or whose threads weren't read.
+    static func pending(_ changes: [PRKey: [ThreadChange]], in records: [PRRecord]) -> [PRKey: [ThreadChange]] {
+        var pending: [PRKey: [ThreadChange]] = [:]
+        for (key, made) in changes {
+            guard let details = records.first(where: { $0.id == key })?.details else { continue }
+            let left = made.filter { details.applying($0) != details }
+            if !left.isEmpty { pending[key] = left }
+        }
+        return pending
     }
 
     // MARK: Summaries

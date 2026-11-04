@@ -118,6 +118,16 @@ final class AppSettings: ObservableObject {
     @Published var copilotEnabled: Bool {
         didSet { defaults.set(copilotEnabled, forKey: Key.copilotEnabled) }
     }
+    /// Make Changes in Azure DevOps: your replies in pull requests' comment threads, and their statuses, from their details,
+    /// each when you click it (`ADOWrite`). Off by default: BriefBar then writes nothing to Azure DevOps, and threads show
+    /// neither.
+    @Published var makesChanges: Bool {
+        didSet { defaults.set(makesChanges, forKey: Key.makesChanges) }
+    }
+    /// The model Fix Grammar corrects a reply with: Apple Intelligence, on this Mac, unless you chose one through Copilot.
+    @Published var grammarModel: String {
+        didSet { defaults.set(grammarModel, forKey: Key.grammarModel) }
+    }
     /// What a task is sent with, unless you choose otherwise.
     @Published var copilotOptions: CopilotRunOptions {
         didSet { Self.store(copilotOptions, in: defaults, forKey: Key.copilotOptions) }
@@ -206,6 +216,8 @@ final class AppSettings: ObservableObject {
         pullRequestDetailsWidth = Self.width(defaults.object(forKey: Key.pullRequestDetailsWidth))
         pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
         copilotEnabled = defaults.bool(forKey: Key.copilotEnabled)
+        makesChanges = defaults.bool(forKey: Key.makesChanges)
+        grammarModel = defaults.string(forKey: Key.grammarModel).flatMap { $0.isEmpty ? nil : $0 } ?? StorySummaries.appleIntelligenceModel
         copilotOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotOptions) ?? CopilotModel.standard
         copilotQuickOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotQuickOptions) ?? CopilotModel.quick
         copilotPrompt = defaults.string(forKey: Key.copilotPrompt)
@@ -555,6 +567,8 @@ enum SettingsKey {
     static let pullRequestDetailsWidth = "ado.pullRequestDetailsWidth"
     static let pinnedPipelines = "ado.pinnedPipelines"
     static let copilotEnabled = "ado.copilot.enabled"
+    static let makesChanges = "ado.makeChanges"
+    static let grammarModel = "ado.grammar.model"
     static let copilotOptions = "ado.copilot.options"
     static let copilotQuickOptions = "ado.copilot.quickOptions"
     static let copilotPrompt = "ado.copilot.prompt"
