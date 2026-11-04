@@ -2601,15 +2601,19 @@ the app's own Stop does; where it can't, BriefBar shows the session, to stop it 
 (`CopilotTasksStore.canStop(_:of:)`, `stop(_:of:)`, `stopTurn(in:)`). **Try Again**, for a fix that failed or stopped,
 opens its composer anew, even one that's open already (`CopilotComposerID`), with the words that fix went with, as its
 composer sent them, kept in memory only and only for that very attempt, as when it took on what it's about tells, not
-another sent meanwhile or since, such as from the Send to Copilot window (`CopilotTasksStore.words(for:of:)`), and sends
+another sent meanwhile or since, such as from the Send to Copilot window (`CopilotTasksStore.retryWords(for:of:)`), and sends
 them where that fix went, never elsewhere: for one that
 couldn't start, a new fork of the session it was to fork, or a new session; never a new fork of the session that a fork
 it went to forked, which wouldn't have what the fork did (`CopilotSessionNames.retryDestination`). Its
 ▾ leads with that session, so that it's there to send to, even when it isn't the pull request's (`retryLead`). When
 BriefBar can't find that session now, or it can't go there, the composer says so and waits for you to choose
-(`CopilotDrafts.retry`, `CopilotDrafts.retryGone`). Without those words, as once BriefBar restarted, it opens going
-there, with what you wrote in it, for you to send; and what Try Again asked of a composer that didn't open for it, as a build that wasn't
-read, goes as you open the composer yourself, or close it. On a closed build's row, it's there only for a failed build,
+(`CopilotDrafts.retry`, `CopilotDrafts.retryGone`). It quotes the answer that fix quoted, and no other, as **Include the
+answer above** was then (`CopilotTasksStore.FixWords.answer`). It sends at once only as it opens right after Try Again,
+and only while that answer, if it quoted one, still shows; else, as for a build that took a while to read, it opens with
+those words, going there, for you to send. Without those words, as once BriefBar restarted, it opens going there, with
+what you wrote in it, for you to send. What Try Again asked of a composer that didn't open for it goes as you open the
+composer yourself, or close it; and the words aren't kept once Send Work to Copilot is off, or Azure DevOps stopped,
+though a send ends after (`CopilotTasksStore.remember`). On a closed build's row, it's there only for a failed build,
 which opens to its Fix.
 **Clear**, once it's over, or copied for you to paste, lets go of what each task and prompt took on of it, and of what a
 send that couldn't start keeps of it, or one getting ready carries from before, so the line goes and nothing older takes

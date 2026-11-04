@@ -87,7 +87,7 @@ enum BuildCopilot {
     ) {
         guard let part = line.check?.part else { return }
         let composer = CopilotComposing(part: part, ask: .fix, row: line.id)
-        let words = names.copilot.words(for: work, of: key)
+        let words = names.copilot.retryWords(for: work, of: key)
         drafts.retry(composer, words: words, to: names.retryDestination(of: work))
         composing.wrappedValue = composer
     }

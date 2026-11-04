@@ -1435,8 +1435,10 @@ import Testing
     @Test func tryAgainSendsOnlyTheWordsItKnows() {
         let drafts = CopilotDrafts()
         let composer = CopilotComposing(part: .thread(11), ask: .fix)
-        drafts.retry(composer, words: "Use the shared helper", to: .session(session))
-        #expect(drafts.retries[composer]?.words == "Use the shared helper")
+        let answer = CopilotAnswer(question: nil, answer: "Cap it at 30 seconds.")
+        drafts.retry(composer, words: CopilotTasksStore.FixWords(text: "Use the shared helper", takenAt: now, answer: answer), to: .session(session))
+        #expect(drafts.retries[composer]?.words?.text == "Use the shared helper")
+        #expect(drafts.retries[composer]?.words?.answer == answer)
         #expect(drafts.retries[composer]?.destination == .session(session))
         drafts.retry(composer, words: nil, to: .session(session))
         #expect(drafts.retries[composer]?.destination == .session(session))
@@ -1450,16 +1452,22 @@ import Testing
     @Test func tryAgainSendsTheWordsOfThatFixAlone() {
         let store = store()
         let taken = now.addingTimeInterval(-600)
-        store.fixWords[CopilotTasksStore.PartKey(pullRequest: key, part: .thread(11))] = CopilotTasksStore.FixWords(
-            text: "Use the shared helper", takenAt: taken
-        )
+        store.remember(CopilotTasksStore.FixWords(text: "Use the shared helper", takenAt: taken), for: [.thread(11)], of: key)
         func work(takenAt: Date) -> CopilotWork {
             CopilotWork(part: .thread(11), purpose: .fix, state: .failed(nil), session: session, isTask: false, since: takenAt, takenAt: takenAt)
         }
-        #expect(store.words(for: work(takenAt: taken), of: key) == "Use the shared helper")
-        #expect(store.words(for: work(takenAt: taken.addingTimeInterval(0.5)), of: key) == nil)
-        #expect(store.words(for: work(takenAt: now), of: key) == nil)
-        #expect(store.words(for: work(takenAt: taken), of: PRKey("contoso", 4099)) == nil)
+        #expect(store.retryWords(for: work(takenAt: taken), of: key)?.text == "Use the shared helper")
+        #expect(store.retryWords(for: work(takenAt: taken.addingTimeInterval(0.5)), of: key) == nil)
+        #expect(store.retryWords(for: work(takenAt: now), of: key) == nil)
+        #expect(store.retryWords(for: work(takenAt: taken), of: PRKey("contoso", 4099)) == nil)
+        // Not kept once Send Work to Copilot is off, or Azure DevOps stopped, as a send that took a while may end after.
+        store.settings.copilotEnabled = false
+        store.remember(CopilotTasksStore.FixWords(text: "Later", takenAt: now), for: [.thread(12)], of: key)
+        store.settings.copilotEnabled = true
+        store.stop()
+        store.remember(CopilotTasksStore.FixWords(text: "Later", takenAt: now), for: [.thread(13)], of: key)
+        #expect(store.fixWords[CopilotTasksStore.PartKey(pullRequest: key, part: .thread(12))] == nil)
+        #expect(store.fixWords[CopilotTasksStore.PartKey(pullRequest: key, part: .thread(13))] == nil)
         // A task's send says when it took them on, as its parts keep it.
         let settings = AppSettings(defaults: MemoryDefaults())
         let sending = self.store(settings)

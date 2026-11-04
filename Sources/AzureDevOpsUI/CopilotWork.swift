@@ -955,14 +955,25 @@ extension CopilotTasksStore {
         }
     }
 
-    /// The words a fix that Try Again tries again went with, as its composer sent them: only for that very attempt, as
-    /// when it took on what it's about tells (`FixWords.takenAt`), not another sent meanwhile or since, such as from the
-    /// Send to Copilot window, whose words BriefBar doesn't keep. Nil otherwise, and once BriefBar restarted.
-    func words(for work: CopilotWork, of key: PRKey) -> String? {
+    /// The words a fix that Try Again tries again went with, as its composer sent them, with the answer it quoted: only for
+    /// that very attempt, as when it took on what it's about tells (`FixWords.takenAt`), not another sent meanwhile or
+    /// since, such as from the Send to Copilot window, whose words BriefBar doesn't keep. Nil otherwise, and once BriefBar
+    /// restarted.
+    func retryWords(for work: CopilotWork, of key: PRKey) -> FixWords? {
         guard let words = fixWords[PartKey(pullRequest: key, part: work.part)],
               abs(words.takenAt.timeIntervalSince(work.takenAt ?? work.since)) < 0.001
         else { return nil }
-        return words.text
+        return words
+    }
+
+    /// Keeps the words a fix went with, for each thing it took on, for Try Again (`retryWords(for:of:)`), in memory only: not
+    /// once Send Work to Copilot is off, or Azure DevOps stopped, which forgot them, as a send that took a while may end
+    /// after.
+    func remember(_ words: FixWords, for parts: [PullRequestPart], of key: PRKey) {
+        guard isOn, !hasStopped else { return }
+        for part in parts {
+            fixWords[PartKey(pullRequest: key, part: part)] = words
+        }
     }
 
     /// Lets go of Copilot's work on something of a pull request, as its line's Clear does, as Dismiss does for an answer:

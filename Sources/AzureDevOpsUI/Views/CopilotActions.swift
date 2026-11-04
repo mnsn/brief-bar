@@ -339,13 +339,13 @@ final class CopilotDrafts {
     /// What asks a session about something as a prompt, Ask in the Session's, until it's done: called off as its page goes.
     var asks = Asks()
     /// What Try Again asked of each composer: when, where the fix it tries again went, for the composer to go there as it
-    /// opens, if it can, and the words it went with, to send again then, once they're known (`CopilotPartComposer`).
-    /// Each is taken once, and only for a little while; and let go of as you open the composer yourself, or close it, so it
-    /// then waits for you to send.
-    var retries: [CopilotComposing: (at: Date, destination: CopilotDestination?, words: String?)] = [:]
+    /// opens, if it can, and the words it went with, with the answer it quoted, to send again then, once they're known
+    /// (`CopilotPartComposer`). Each is taken once; and let go of as you open the composer yourself, or close it, so it then
+    /// waits for you to send.
+    var retries: [CopilotComposing: (at: Date, destination: CopilotDestination?, words: CopilotTasksStore.FixWords?)] = [:]
 
     /// How long a composer that Try Again opens has to open, for it to send at once: one that opens later, as when what it's
-    /// about wasn't read yet, opens with the words, for you to send.
+    /// about wasn't read yet, opens with the words, going where the fix went, for you to send.
     static let retryWait: TimeInterval = 30
 
     /// What a composer that Try Again opened says when the session the fix went to isn't there to go to again.
@@ -355,7 +355,7 @@ final class CopilotDrafts {
     /// to send them there as it opens (`CopilotPartComposer`). Without those words, as once BriefBar restarted, it opens
     /// going there, with what you wrote in it, for you to send. Whoever opens it should open it anew, as one already open
     /// would only take it once it opens again (`CopilotComposerID`).
-    func retry(_ composer: CopilotComposing, words: String?, to destination: CopilotDestination?) {
+    func retry(_ composer: CopilotComposing, words: CopilotTasksStore.FixWords?, to destination: CopilotDestination?) {
         retries[composer] = (Date(), destination, words)
     }
 
@@ -815,13 +815,17 @@ struct CopilotPartComposer<Options: View>: View {
         }
     }
 
-    /// Try Again opened it, a moment ago: it goes where the fix it tries again went, with the same words, now, if it can go;
-    /// else it stays open with them, saying why it can't, and goes nowhere else on its own, such as where it would go first.
-    /// ▾ leads with that session from then on (`retryLead`). Without the words, it only goes there, for you to send.
+    /// Try Again opened it: it goes where the fix it tries again went, with the same words, quoting the answer that fix
+    /// quoted, and no other, now, if it can go; else it stays open with them, saying why it can't, and goes nowhere else on
+    /// its own, such as where it would go first. ▾ leads with that session from then on (`retryLead`). It only goes there,
+    /// with them, for you to send, without the words, when it opened later than a moment after Try Again, as a build that
+    /// took a while to read, or when the answer that fix quoted doesn't show now.
     private func retryIfAsked() {
-        guard let retry = drafts.retries.removeValue(forKey: asking.draftKey), Date().timeIntervalSince(retry.at) < CopilotDrafts.retryWait
-        else { return }
-        if let words = retry.words { text = words }
+        guard let retry = drafts.retries.removeValue(forKey: asking.draftKey) else { return }
+        if let words = retry.words {
+            text = words.text
+            includesAnswer = words.answer != nil
+        }
         let lead = retry.destination?.sessionID
         let destinations = CopilotDestinations.make(session, worked: lead ?? worked, ask: ask)
         guard let destination = retry.destination, destination == .newSession || destinations.choice(for: destination) != nil else {
@@ -831,7 +835,9 @@ struct CopilotPartComposer<Options: View>: View {
         }
         retryLead = lead
         chosen = destination
-        guard retry.words != nil else { return }
+        guard let words = retry.words, Date().timeIntervalSince(retry.at) < CopilotDrafts.retryWait,
+              words.answer == nil || words.answer == answer
+        else { return }
         send(to: destination, choice: destinations.choice(for: destination))
     }
 
@@ -1070,7 +1076,9 @@ struct CopilotPartComposer<Options: View>: View {
             // for it to be there.
             let outcome = await kept.send(words, in: key, of: item.key) {
                 let sent = await sending.fix(fix, to: target, choice: choice)
-                remember(words, for: fix, takenAt: sent.takenAt)
+                if let takenAt = sent.takenAt {
+                    copilot.remember(CopilotTasksStore.FixWords(text: words, takenAt: takenAt, answer: answer), for: fix.parts, of: item.key)
+                }
                 return sent.outcome
             }
             guard !Task.isCancelled else { return }
@@ -1090,15 +1098,6 @@ struct CopilotPartComposer<Options: View>: View {
                 sending.openWindow(fix, destination: target, choice: choice)
                 done(nil)
             }
-        }
-    }
-
-    /// The words a fix went with, for each thing it took on, with when it took it on, for Try Again to send them again for
-    /// that fix alone (`CopilotTasksStore.words(for:of:)`).
-    private func remember(_ words: String, for fix: CopilotSending.Fix, takenAt: Date?) {
-        guard let takenAt else { return }
-        for part in fix.parts {
-            copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)] = CopilotTasksStore.FixWords(text: words, takenAt: takenAt)
         }
     }
 
