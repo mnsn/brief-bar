@@ -113,7 +113,7 @@ public enum PullRequestPrompt {
         if builds.isEmpty {
             failed = "Its build failed, but BriefBar couldn't tell which run."
         } else {
-            failed = (alone ? "This build of it failed:\n\n" : "Its build failed:\n\n") + builds.joined(separator: "\n\n")
+            failed = (alone ? "This build of it failed:\n\n" : "Its build failed:\n\n") + builds.joined(separator: "\n\n") + "\n\n" + runSaid
         }
         var parts = [header(record, workplace: workplace), failed]
         if let answer { parts.append(earlier(answer, why: "why this build failed", about: "this build")) }
@@ -254,7 +254,7 @@ public enum PullRequestPrompt {
                 """
         }
         return """
-            Pull request !\(pr.key.number) “\(pr.title)” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch):
+            Pull request !\(pr.key.number) “\(oneLine(pr.title))” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch):
             \(pr.webURL.absoluteString)
 
             \(place)

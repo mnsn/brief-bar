@@ -40,6 +40,25 @@ struct CopilotSessionNames {
         work.sentence(name: name(work.session), forkOf: work.forkedFrom.flatMap(name))
     }
 
+    /// Where a session is, in a sentence's middle, by its ID: "‘Retry backoff’"; a task of BriefBar's as one, "the ‘Fix the
+    /// Build’ task"; "its session" when BriefBar doesn't know it.
+    func place(_ id: String) -> String {
+        CopilotWork.place(name(id), isFork: false, forkOf: nil, isTask: isTask(id))
+    }
+
+    /// Where fixes are, in a sentence's middle: in a session, "‘Retry backoff’", or a fork of one, "a fork of the ‘Fix the
+    /// Build’ task".
+    func place(of fixes: ReadyFixes) -> String {
+        CopilotWork.place(name(fixes.session), isFork: fixes.forkedFrom != nil, forkOf: fixes.forkedFrom.flatMap(name), isTask: fixes.isTask)
+    }
+
+    /// What VoiceOver hears as Copilot's work on something ends: its sentence, and the first line of what Copilot said.
+    func announcement(_ work: CopilotWork) -> String {
+        let sentence = SpokenText.unquoted(sentence(work))
+        guard let said = CopilotTasksStore.firstLine(work.said) else { return sentence }
+        return "\(sentence). \(said)"
+    }
+
     /// What a click on a session's line does: shows its page in the details while Show Links describes it; opens one of the
     /// Copilot app's sessions in the app. Nothing for a task BriefBar runs with the CLI, which its task's row goes on with.
     func opener(_ id: String, isTask: Bool, navigation: ItemNavigation?) -> (perform: () -> Void, help: String)? {
@@ -86,7 +105,7 @@ extension CopilotWork {
         return nil
     }
 
-    /// What Copilot said when it ended, for the line's tooltip.
+    /// What Copilot said when it ended, under its line: what it did, or why it couldn't.
     var said: String? {
         switch state {
         case .done(let summary): summary
@@ -560,7 +579,7 @@ struct CopilotPartComposer<Options: View>: View {
     /// "Ask ‘Retry backoff’", "In ‘Retry backoff’", "In a fork of ‘Retry backoff’", "In a new session", "Choose a Session":
     /// a name a paragraph long cut short in its middle, which ▾'s tooltip and menu say in full.
     private func destinationTitle(_ target: CopilotDestination?, choice: SessionChoice?) -> String {
-        let name = "‘\(Self.short(choice.map(PullRequestSession.name) ?? "Session"))’"
+        let name = CopilotWork.quoted(Self.short(choice.map(PullRequestSession.name) ?? "Session"), isTask: choice.map(Self.isTask) ?? false)
         switch target {
         case .session?: return ask == .explain ? "Ask \(name)" : "In \(name)"
         case .fork?: return "In a fork of \(name)"
@@ -574,6 +593,11 @@ struct CopilotPartComposer<Options: View>: View {
         CopilotDestinationNames.short(name)
     }
 
+    /// Whether a session is a task of BriefBar's, which sentences call one.
+    static func isTask(_ choice: SessionChoice) -> Bool {
+        choice.run.map { $0.isAppSession != true } ?? false
+    }
+
     /// ▾'s symbol, for where it goes: a session, a fork of one, or a new one.
     static func symbol(of target: CopilotDestination?, ask: CopilotAsk) -> String {
         switch target {
@@ -585,7 +609,7 @@ struct CopilotPartComposer<Options: View>: View {
 
     /// What happens once it's sent, as things stand, or why it can't be: and whether that's a warning.
     private func note(_ target: CopilotDestination?, choice: SessionChoice?) -> (text: String?, isWarning: Bool) {
-        let name = choice.map { "‘\(PullRequestSession.name(of: $0))’" } ?? "the session"
+        let name = choice.map { CopilotWork.quoted(PullRequestSession.name(of: $0), isTask: Self.isTask($0)) } ?? "the session"
         let isLive = copilot.mode == .live || isRendering
         let words = asking.words
         if ask == .explain {
@@ -613,13 +637,16 @@ struct CopilotPartComposer<Options: View>: View {
         case .fork?:
             guard let choice else { return (CopilotSending.gone, true) }
             if CopilotDestinations.forksWithTheCLI(choice) {
-                return ("The CLI forks \(name), with its history, into a worktree of its own, to \(words.toDo): \(name) stays as it is.", false)
+                return (
+                    "The Copilot CLI forks \(name), with its history, into a worktree of its own, to \(words.toDo): \(leavesOut). The task stays as it is.",
+                    false
+                )
             }
             let reach = checked?.destination == target ? checked?.forkReach : nil
             if let why = reach?.whyNot(forking: true) {
                 return ("BriefBar copies /fork and the prompt, and opens \(name) in the Copilot app, for you to paste. " + why, false)
             }
-            return ("The Copilot app forks \(name), and BriefBar sends the fork the prompt, as yours: \(name) stays as it is.", false)
+            return ("The Copilot app forks \(name), and BriefBar sends the fork the prompt, as yours: \(leavesOut). The session stays as it is.", false)
         case .session?:
             guard let choice else { return (CopilotSending.gone, true) }
             switch delivery(for: target, choice: choice) {
@@ -935,7 +962,7 @@ struct ReadyFixesBar: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .fixedSize()
-                        .help(Self.pushHelp(first, from: CopilotWork.place(names.name(first.session), isFork: first.forkedFrom != nil, forkOf: first.forkedFrom.flatMap(names.name))))
+                        .help(Self.pushHelp(first, from: names.place(of: first)))
                 }
             }
             .padding(.horizontal, 14)
@@ -983,10 +1010,21 @@ struct ReadyFixesBar: View {
             : "Commit and push the fixes, and reply on the threads they addressed, as you, from \(place)"
     }
 
-    /// "2 fixes ready in ‘Retry backoff’", "1 fix ready in a fork of ‘Retry backoff’".
     private func sentence(_ group: ReadyFixes, names: CopilotSessionNames) -> String {
-        let place = CopilotWork.place(names.name(group.session), isFork: group.forkedFrom != nil, forkOf: group.forkedFrom.flatMap(names.name))
-        return (group.parts.count == 1 ? "1 fix" : "\(group.parts.count) fixes") + " ready in \(place)"
+        Self.sentence(group.parts, in: names.place(of: group))
+    }
+
+    /// What's ready, by what it fixed, and where: "2 fixes ready in ‘Retry backoff’", "1 fix and the conflicts' resolution
+    /// ready in ‘Retry backoff’", "A build's fix ready in the ‘Fix the Build’ task".
+    static func sentence(_ parts: [PullRequestPart], in place: String) -> String {
+        let threads = parts.filter { $0.thread != nil }.count
+        let builds = parts.filter { $0.build != nil }.count
+        var what: [String] = []
+        if threads > 0 { what.append(threads == 1 ? "1 fix" : "\(threads) fixes") }
+        if builds > 0 { what.append(builds == 1 ? "a build's fix" : "\(builds) builds' fixes") }
+        if parts.contains(.conflicts) { what.append("the conflicts' resolution") }
+        let listed = what.count > 1 ? what.dropLast().joined(separator: ", ") + " and " + what[what.count - 1] : what.first ?? "Nothing"
+        return listed.prefix(1).uppercased() + listed.dropFirst() + " ready in \(place)"
     }
 
     /// Takes the details to the first thing they fixed.

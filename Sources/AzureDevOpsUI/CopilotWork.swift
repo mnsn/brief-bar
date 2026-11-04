@@ -208,23 +208,32 @@ struct CopilotWork: Equatable {
         }
     }
 
-    /// Where it is, in a sentence's middle: "‘Retry backoff’", "a fork of ‘Retry backoff’", "its session".
+    /// Where it is, in a sentence's middle: "‘Retry backoff’", "a fork of ‘Retry backoff’", "its session"; a task of
+    /// BriefBar's as one, "the ‘Fix the Build’ task" (`quoted(_:isTask:)`).
     /// - Parameters:
     ///   - name: the session's name; nil when it isn't known.
     ///   - forkOf: for a fork, the name of the session it forked, when that's known.
-    static func place(_ name: String?, isFork: Bool, forkOf: String?) -> String {
-        guard isFork else { return name.map { "‘\($0)’" } ?? "its session" }
-        return "a fork of " + (forkOf.map { "‘\($0)’" } ?? "its session")
+    ///   - isTask: the session, or the one a fork forked, is a task of BriefBar's.
+    static func place(_ name: String?, isFork: Bool, forkOf: String?, isTask: Bool = false) -> String {
+        let place = (isFork ? forkOf : name).map { quoted($0, isTask: isTask) } ?? "its session"
+        return isFork ? "a fork of " + place : place
+    }
+
+    /// A session's name, quoted, as a sentence says it: "‘Retry backoff’"; a task of BriefBar's, named for what it does, as
+    /// a task, "the ‘Fix the Build’ task", so that it doesn't read as a command.
+    static func quoted(_ name: String, isTask: Bool) -> String {
+        isTask ? "the ‘\(name)’ task" : "‘\(name)’"
     }
 
     /// What it says on what it's about, in a sentence: "Copilot is fixing this in ‘Retry backoff’", "Fixing this build in a
-    /// fork of ‘Retry backoff’", "Fixed in ‘Retry backoff’, not pushed", "Couldn't fix it: …".
+    /// fork of ‘Retry backoff’", "Fixed in ‘Retry backoff’, not pushed", "Couldn't fix it in ‘Retry backoff’". What Copilot
+    /// said as it ended, such as why it couldn't, goes under it (`said`).
     /// - Parameters:
     ///   - name: the session's name; nil when it isn't known.
     ///   - forkOf: for a fork, the name of the session it forked.
     func sentence(name: String?, forkOf: String?) -> String {
         let fork = forkedFrom != nil
-        let place = Self.place(name, isFork: fork, forkOf: forkOf)
+        let place = Self.place(name, isFork: fork, forkOf: forkOf, isTask: isTask)
         let words = Words(part)
         switch (purpose, state) {
         case (_, .waiting(copied: true)):
@@ -245,10 +254,9 @@ struct CopilotWork: Equatable {
             return "Answered in \(place)"
         case (.pushAndReply, .done):
             return "\(words.pushed) from \(place)"
-        case (_, .failed(let reason)):
+        case (_, .failed):
             let what = purpose == .explain ? "explain it" : purpose == .pushAndReply ? "push it" : words.fixIt
-            guard let reason = reason.flatMap(CopilotTasksStore.firstLine) else { return "Couldn't \(what) in \(place)" }
-            return "Couldn't \(what): \(reason)"
+            return "Couldn't \(what) in \(place)"
         case (_, .stopped):
             let what = purpose == .explain ? "answered" : purpose == .pushAndReply ? "pushed it" : words.fixedIt
             return "Stopped in \(place) before it \(what)"
@@ -440,6 +448,40 @@ extension CopilotTasksStore {
             groups[work.session] = group
         }
         return groups.values.sorted { ($0.latest, $0.session) > ($1.latest, $1.session) }
+    }
+
+    /// What Copilot does now about each kind of what's left of a pull request (`PRReadiness`), its comments, builds and
+    /// conflicts: the most pressing of the fixes, and Push & Reply, under way on their threads, builds or conflicts, by a task
+    /// of BriefBar's or a prompt sent to one of the Copilot app's sessions (`work(on:of:)`); asking you something first,
+    /// then at work, then sent and not taken up yet. A prompt copied for you to paste, which waits on you, or a question
+    /// asked about one, isn't Copilot taking care of it.
+    func onIt(_ record: PRRecord) -> [PRReadiness.Item.Kind: CopilotWork] {
+        let key = record.pullRequest.key
+        let threads = (record.details?.threads ?? []).filter { !$0.isResolved }.map { PullRequestPart.thread($0.id) }
+        var builds: [PullRequestPart] = []
+        for case let part? in (record.details?.checks ?? []).map(\.part) where !builds.contains(part) {
+            builds.append(part)
+        }
+        let kinds: [(PRReadiness.Item.Kind, [PullRequestPart])] = [(.comments, threads), (.builds, builds), (.conflicts, [.conflicts])]
+        var onIt: [PRReadiness.Item.Kind: CopilotWork] = [:]
+        for (kind, parts) in kinds {
+            let works = parts.compactMap { work(on: $0, of: key, for: [.fix, .pushAndReply]) }
+            if let work = works.max(by: { Self.pressing($0) < Self.pressing($1) }), Self.pressing(work) > 0 {
+                onIt[kind] = work
+            }
+        }
+        return onIt
+    }
+
+    /// How pressing Copilot's work is for what's left: it asks you something, then it's at work, then it's sent; none once
+    /// it's over, or copied for you to paste.
+    private static func pressing(_ work: CopilotWork) -> Int {
+        switch work.state {
+        case .needsYou: 3
+        case .working: 2
+        case .waiting(copied: false): 1
+        case .waiting(copied: true), .done, .failed, .stopped, .unknown: 0
+        }
     }
 
     /// The builds and conflicts of a pull request whose fixes are done in a session and not pushed, as each says

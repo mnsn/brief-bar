@@ -93,9 +93,6 @@ struct PullRequestCommentsSection: View {
             }
             code.release(hold)
         }
-        // What a composer sends is called off as the comments go, with the details, or for another pull request, file or page;
-        // as it closes, or another opens, the details call it off.
-        .onDisappear { drafts.callOffAll() }
     }
 
     private func files(_ files: [PullRequestPanel.FileThreads]) -> some View {

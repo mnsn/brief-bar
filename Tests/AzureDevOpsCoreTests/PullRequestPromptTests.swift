@@ -56,8 +56,11 @@ import BriefBarCore
         #expect(prompt.contains("""
             1. web-ci: https://dev.azure.com/contoso/Shop/_build/results?buildId=41
                Failed in Test, at Run unit tests.
+               Its errors:
+               ```
                - 2 failed.
                - CheckoutTests.Rounds: expected 3
+               ```
             """))
         #expect(prompt.contains("Don't queue, retry or change pipelines. Don't commit or push"))
         #expect(PullRequestPrompt.fixBuild(record(), failures: []).contains("couldn't tell which run"))
