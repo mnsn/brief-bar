@@ -682,7 +682,7 @@ struct AgentsDescriptionBox: View {
                 """),
             .init(title: "What agents can change", symbol: "slider.horizontal.3", text: """
                 Only which pull requests BriefBar watches and which pipelines it pins and, with Pull Request Order on, the \
-                orders it keeps. Nothing in Azure DevOps or on GitHub, where BriefBar only reads.
+                orders it keeps. Nothing in Azure DevOps or on GitHub: BriefBar gives agents no way to change them.
                 """),
         ])
     }
