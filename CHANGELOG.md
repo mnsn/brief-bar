@@ -5,11 +5,12 @@
 - **Your reply on a pull request someone sent you shows.** Once you'd seen a pull request sent to you in a chat, which
   leaves your lists, its details stopped following it: a reply, or a status you set there, went to Azure DevOps but
   didn't show, and replying again posted it twice. Its details now follow it while BriefBar still reads it, and its
-  heading says whether what it shows is how it is now or how it was when BriefBar last read it open.
+  heading says whether what it shows is how it is now.
 - **"Slow down" says until when.** When Azure DevOps asks BriefBar to slow down, a reply, a status or a tag it held back
   says until when, rather than "try again in a minute".
-- **Nothing goes twice when you turn Make Changes off.** Turning off **Make Changes in Azure DevOps** while a reply or a
-  status is on its way reads the pull request again, so it shows if it went.
+- **Nothing goes twice when you turn Make Changes off.** Turning off **Make Changes in Azure DevOps** stops a reply or a
+  status that hasn't gone yet. One that has finishes and shows; turned back on, its thread waits for it, and a reply
+  that may have gone is checked before it's sent again.
 - **A build stops being read when you're done with it.** A build you opened in a pull request's details stops being read
   as you close them or show another pull request, or as someone else signs in to the Azure CLI.
 - **Azure DevOps' description says when it reads again.** It now says that a pull request's updates and Files are read

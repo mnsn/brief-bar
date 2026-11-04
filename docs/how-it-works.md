@@ -1312,8 +1312,9 @@ another one or closing them does: then what you've seen is seen there too. One t
 keeps its last row; what was read of it follows while the list still reads it open, as one sent to you in a chat that
 you're not on once you've seen it (`PullRequestDetailsStore.isStillRead`), so that your reply, or a status you set,
 shows, and its heading says "It's no longer in your lists, but BriefBar still reads it while it's open: this is how it
-is now"; read closed, as a review that merged, or not read anymore, it stays as it was last read open, and its heading
-says that instead.
+is now"; read closed, as a review that merged, or not read anymore, it stays as it was last read, and its heading says
+"…this is how it was when BriefBar last read it open" when that was open, or else, as your own pull request in Done,
+which was read completed, "…this is how it was when it left them".
 
 A pull request opens there from anywhere else in BriefBar too, as the one place it opens
 (`PullRequestDetailsStore`): from the window's other pages, the Overview's rows and its brief (`BriefLine.show`),
@@ -1454,23 +1455,24 @@ VoiceOver (`ThreadReadOnlyMark`), and a change that finds it so says so on the t
 Azure DevOps' samples send (`content`, `parentCommentId` and `commentType` 1, text), and a thread's status, a `PATCH` of
 only that (`status`, by the number the API takes for it). `ADOClient.send(_:as:)` alone sends them, with a GET's
 sign-in, headers and redirect guard, from the same request path, once: it sends one again only when Azure DevOps
-rejected the sign-in, which it never acts on, so a change that fails otherwise, or times out, isn't made twice. When
-Azure DevOps refuses one, the error says why, as it said it (`ADOError.refused`, TF401181 for a pull request that's
-completed or abandoned), which shows on the thread but never goes to the log. Any answer from 200 to 299 says the change
-was made, but 203, a sign-in page's: an empty 204 too, and one whose answer can't be read, which says so
-(`ADOWrite.Answer.unreadable`), and the pull request is read again instead. A change called off before it goes, as when
-the setting is turned off while it waits for a token, never goes. A 503, which Azure Front Door answers once Azure
-DevOps takes too long, which may make the change all the same, counts as no answer in time
-(`ADOWriteProblem.unanswered`): the thread is read again before it goes again; a 429 only asks it to slow down. And it
-goes only as whom the list was read as when you clicked (`send(_:as:)`): when someone else signed in to the Azure CLI
-since, as the list doesn't know yet, nothing goes, and the thread says so, with **Sign In…** (`ADOError.otherAccount`).
-A token from your own directory says whom it's for. For an organization in another directory, whose tokens are a guest's
-there, with an ID of their own that nothing in them ties to yours, the guest's token is read again, fresh, since one
-kept from before someone else signed in may be theirs, and the Azure CLI gets every directory's for whom it's signed in
-to now; then your own directory's sign-in, fresh, says who that is. `WriteTests` goes through every kind of change
-(`ADOWrite.Kind`), and checks that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET. Agents
-(`--mcp`) and the command line get none of it, and the demo sends nothing: its changes are made up
-(`DemoThreadChanges`), in its made-up data only, while it runs.
+rejected the sign-in, which it never acts on, so a change that fails otherwise, or times out, isn't made twice. Once it
+has gone, nothing calls it off, as turning the setting off would, since that wouldn't take it back, only lose what Azure
+DevOps answers: it settles with that, or with why it failed. When Azure DevOps refuses one, the error says why, as it
+said it (`ADOError.refused`, TF401181 for a pull request that's completed or abandoned), which shows on the thread but
+never goes to the log. Any answer from 200 to 299 says the change was made, but 203, a sign-in page's: an empty 204 too,
+and one whose answer can't be read, which says so (`ADOWrite.Answer.unreadable`), and the pull request is read again
+instead. A change called off before it goes, as when the setting is turned off while it waits for a token, never goes. A
+503, which Azure Front Door answers once Azure DevOps takes too long, which may make the change all the same, counts as
+no answer in time (`ADOWriteProblem.unanswered`): the thread is read again before it goes again; a 429 only asks it to
+slow down. And it goes only as whom the list was read as when you clicked (`send(_:as:)`): when someone else signed in
+to the Azure CLI since, as the list doesn't know yet, nothing goes, and the thread says so, with **Sign In…**
+(`ADOError.otherAccount`). A token from your own directory says whom it's for. For an organization in another directory,
+whose tokens are a guest's there, with an ID of their own that nothing in them ties to yours, the guest's token is read
+again, fresh, since one kept from before someone else signed in may be theirs, and the Azure CLI gets every directory's
+for whom it's signed in to now; then your own directory's sign-in, fresh, says who that is. `WriteTests` goes through
+every kind of change (`ADOWrite.Kind`), and checks that nothing else in `AzureDevOpsCore` makes a request or sets a
+method but GET. Agents (`--mcp`) and the command line get none of it, and the demo sends nothing: its changes are made
+up (`DemoThreadChanges`), in its made-up data only, while it runs.
 
 **Reply** opens a field under the thread, in place (`ThreadReplyComposer`), as a composer of Copilot's does, and it's
 the details' one composer in place (`CopilotComposing.reply(to:)`): opening it closes Explain's or Fix's, and the other
@@ -1481,17 +1483,23 @@ new line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘R
 (`ThreadChanges.keep`), in memory only, for each thread, until it's sent: closing the field, or the details, keeps it,
 and **Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure
 CLI forgets it, and calls off the changes on their way (`ThreadChanges.forgetAll`): one that hasn't gone yet never does,
-nothing says it failed, and one called off does nothing more as what it waited for comes back, though the setting is on
-again and another change on its thread is under way; and since one called off may have gone all the same, its pull
-request is read again, to show it if it did. A reply goes as you wrote it, but for the lines that say nothing before it
-and the spaces after it (`ThreadChanges.posted`): its first line's indent stays, which can make it code. After a reply
-that may have gone, as one Azure DevOps didn't answer in time, the thread is read again before it's sent again, by a
-read that starts then, never one under way before, and nothing goes until it was (`ADOWriteProblem.unconfirmed`): a
-comment of yours that came since it was sent, and says the same as it would go, its first line's indent included, as
-Azure DevOps keeps it, its mentions as their IDs, or as the details show it, is it, whatever came after it, so it isn't
-sent twice (`ThreadChanges.Attempt`). **Resolve**, or **Reactivate** on a resolved thread, sets its status at once,
-without asking, since the same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps' own
-menu offers, Active, Pending, Resolved, Won't Fix and Closed, and By Design only for a thread that has it
+and nothing says it failed. One that has, which Azure DevOps may make all the same, settles: what Azure DevOps answers
+shows, as any change's does, but nothing more happens, such as the status after a reply, though the setting is on again;
+and one that may have been made without saying so, as one it didn't answer in time, has its pull request read again once
+it settled, not as the setting goes off, while Azure DevOps may still be making it. As the setting goes off, a change
+under way keeps its thread until it settles: on again, the thread shows it on its way and takes no other change
+(`ThreadChanges.settling`), and then a reply that may have gone is checked before the same goes again, as below, though
+what you wrote went with the setting. Someone else signing in doesn't wait for it, nor check theirs against it: it was
+the last one's. A reply goes as you wrote it, but for the lines that say nothing before it and the spaces after it
+(`ThreadChanges.posted`): its first line's indent stays, which can make it code. After a reply that may have gone, as
+one Azure DevOps didn't answer in time, the thread is read again before the same reply is sent again, by a read that
+starts then, never one under way before, and nothing goes until it was (`ADOWriteProblem.unconfirmed`): a comment of
+yours that came since it was sent, and says the same as it would go, its first line's indent included, as Azure DevOps
+keeps it, its mentions as their IDs, or as the details show it, is it, whatever came after it, so it isn't sent twice
+(`ThreadChanges.Attempt`, which keeps a fingerprint of what it said, not what it said, `ThreadChanges.digest`); a reply
+that says something else goes without that read. **Resolve**, or **Reactivate** on a resolved thread, sets its status at
+once, without asking, since the same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps'
+own menu offers, Active, Pending, Resolved, Won't Fix and Closed, and By Design only for a thread that has it
 (`ThreadStatus.choices`).
 
 What Azure DevOps answers shows at once (`ThreadChange`, which `PRDetails.apply` applies once, however often): the list
@@ -1738,40 +1746,41 @@ its first test runs with failures: ten requests, and one more for each hundred t
 five hundred. What was read is kept in memory, by run, for the last twenty runs opened, until someone else signs in to
 the Azure CLI or Azure DevOps is turned off, which stops the reads under way too, even those it let go of when someone
 else signed in (`BuildInvestigator.stop`). A read nobody waits for anymore, as the details close or show another pull
-request, is called off, unless someone else asks for the run meanwhile (`BuildInvestigator.giveUp`), and so are the
-reads and looks under way as someone else signs in (`forget`). It's used for ten minutes, or half a minute while the run
-is still going, unless its check says the run got further since, as when it started or finished (`PipelineRun.Phase`):
-opening it again, which always asks the investigator, within that time reads only the run, to tell whether it ran again
-since, which reads it all again, or nothing while it's going; what was read before shows meanwhile, for the builds still
-open and the last five that folded. Something that couldn't be read isn't kept, and says so, and a run that's gone, or
-that you can't read any more, lets go of what was read of it, as does one that ran again since, as a look at it or its
-check says, when it can't be read again (`BuildInvestigator.RunReplaced`); **Read Again**, beside when it was read,
-reads it anew. So does a change of its check, as the list reads it, such as a run that finished or runs again under the
-same ID; and a push or a retarget of its pull request, or Azure DevOps merging it again as its target moves, asks the
-investigator again, which says again whether the run built the latest commit, or reads it for the new target branch: at
-once while it's open, or as it opens again (`BuildInvestigationStore.Stamp`). The investigator shares a read under way
-with whoever asks for the run meanwhile, even to read it anew, so a read asked for then waits for it, and starts after,
-unless what's being read is what's asked for by then, as when a pull request is retargeted and back; one that comes back
-with the run not as far along as its check says by then, as when it finished meanwhile, is read again, once; and one
-that had read the run before they asked, and found it finished, is checked with a look at the run, which reads it again
-if it ran again since. Only one pull request's builds are open at a time, wherever its details show, beside the list or
-as a page over a work item's or another pull request's: opening one of another's folds them, and so do the details
-beside the list showing another pull request, or closing, for the one they showed; what shows of them goes, and so does
-what shows of a run its builds and checks don't list any more, such as one a newer run replaced. It shows, from what was
-read (`BuildInvestigationPanel.swift`): its stages, as the Pipelines page draws them (`StageFlow`); where it failed,
-from its stage to its task, without a name said twice in a row (`failurePlace`), or what it does while it's going
-(`progress`); whether it's the change's doing, the comparison's hints (`BuildHint`), each a sentence in its state's
-color, orange for an older commit or a pass on the same commit before, red when the target branch fails too, green when
-it passes, each but the first opening the run it names, and "may be flaky" only for a pass on the very same commit;
-while Send Work to Copilot is on, what Copilot does about it, and **✨ Explain the Failure** and **Fix** for one that
-failed ([About a failed build](#about-a-failed-build)); **Open Run**, and when it was read; its errors, each with where
-it is, unless its message starts with that very place, as a compiler writes it, its code, unless its message names it,
-and its step, unless it's the one that failed; how its tests went (`BuildTests.summary`), which, when they couldn't all
-be read, says how many failed at least, or that no failures are known rather than that none failed, and the first that
-failed, each with its class, how long it ran, its message, its first six lines with **Show More** for the rest, and,
-when you ask, its stack trace, with **Open Tests**; and the last 20 lines of the failed step's log, numbered, errors
-red, warnings orange and commands blue, in one text you can select across and scroll sideways, all 200 that were read
-with **Show All**, and **Open Log** for the rest.
+request, is called off, unless someone else asks for the run meanwhile (`BuildInvestigator.giveUp`), and as someone else
+signs in, so are the reads and looks under way, and whoever waits for them, or for a look at whether a run kept from
+before ran again, gets nothing read as the last one (`forget`). It's used for ten minutes, or half a minute while the
+run is still going, unless its check says the run got further since, as when it started or finished
+(`PipelineRun.Phase`): opening it again, which always asks the investigator, within that time reads only the run, to
+tell whether it ran again since, which reads it all again, or nothing while it's going; what was read before shows
+meanwhile, for the builds still open and the last five that folded. Something that couldn't be read isn't kept, and says
+so, and a run that's gone, or that you can't read any more, lets go of what was read of it, as does one that ran again
+since, as a look at it or its check says, when it can't be read again (`BuildInvestigator.RunReplaced`); **Read Again**,
+beside when it was read, reads it anew. So does a change of its check, as the list reads it, such as a run that finished
+or runs again under the same ID; and a push or a retarget of its pull request, or Azure DevOps merging it again as its
+target moves, asks the investigator again, which says again whether the run built the latest commit, or reads it for the
+new target branch: at once while it's open, or as it opens again (`BuildInvestigationStore.Stamp`). The investigator
+shares a read under way with whoever asks for the run meanwhile, even to read it anew, so a read asked for then waits
+for it, and starts after, unless what's being read is what's asked for by then, as when a pull request is retargeted and
+back; one that comes back with the run not as far along as its check says by then, as when it finished meanwhile, is
+read again, once; and one that had read the run before they asked, and found it finished, is checked with a look at the
+run, which reads it again if it ran again since. Only one pull request's builds are open at a time, wherever its details
+show, beside the list or as a page over a work item's or another pull request's: opening one of another's folds them,
+and so do the details beside the list showing another pull request, or closing, for the one they showed; what shows of
+them goes, and so does what shows of a run its builds and checks don't list any more, such as one a newer run replaced.
+It shows, from what was read (`BuildInvestigationPanel.swift`): its stages, as the Pipelines page draws them
+(`StageFlow`); where it failed, from its stage to its task, without a name said twice in a row (`failurePlace`), or what
+it does while it's going (`progress`); whether it's the change's doing, the comparison's hints (`BuildHint`), each a
+sentence in its state's color, orange for an older commit or a pass on the same commit before, red when the target
+branch fails too, green when it passes, each but the first opening the run it names, and "may be flaky" only for a pass
+on the very same commit; while Send Work to Copilot is on, what Copilot does about it, and **✨ Explain the Failure** and
+**Fix** for one that failed ([About a failed build](#about-a-failed-build)); **Open Run**, and when it was read; its
+errors, each with where it is, unless its message starts with that very place, as a compiler writes it, its code, unless
+its message names it, and its step, unless it's the one that failed; how its tests went (`BuildTests.summary`), which,
+when they couldn't all be read, says how many failed at least, or that no failures are known rather than that none
+failed, and the first that failed, each with its class, how long it ran, its message, its first six lines with **Show
+More** for the rest, and, when you ask, its stack trace, with **Open Tests**; and the last 20 lines of the failed step's
+log, numbered, errors red, warnings orange and commands blue, in one text you can select across and scroll sideways, all
+200 that were read with **Show All**, and **Open Log** for the rest.
 
 #### Its merge conflicts
 
