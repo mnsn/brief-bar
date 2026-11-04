@@ -21,6 +21,8 @@ enum CLI {
             "                     answers only once you let agents use BriefBar, in its Settings, under Agents",
             "  --render <dir>     Draw the menu bar with each list open, the widgets, the window and Settings",
             "                     into PNGs (light and dark)",
+            "  --part <n>         With --render, draw only the n-th hundred of those pictures, as make screenshots",
+            "                     does, a process for each: it exits with 3 when another part follows",
             "  --window           Run the app, and open its window",
             "  --source <name>    Only this source: teams, ado, copilot or github (repeatable). Without it, the modes",
             "                     cover the sources that are on in the app.",
