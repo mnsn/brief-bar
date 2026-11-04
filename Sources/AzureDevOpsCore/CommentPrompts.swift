@@ -92,7 +92,7 @@ extension PullRequestPrompt {
     ) -> String {
         let pr = record.pullRequest
         var parts = [
-            "Pull request !\(pr.key.number) “\(pr.title)” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch), has this review comment thread:",
+            "\(introduction(pr)), has this review comment thread:",
             quoted(thread, record: record),
         ]
         if let code { parts.append(codeSection(code, thread: thread, record: record)) }
@@ -108,7 +108,7 @@ extension PullRequestPrompt {
     ) -> String {
         let pr = record.pullRequest
         var parts = [
-            "Pull request !\(pr.key.number) “\(pr.title)” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch):\n\(pr.webURL.absoluteString)",
+            "\(introduction(pr)):\n\(pr.webURL.absoluteString)",
             "It has this review comment thread:",
             quoted(thread, record: record),
         ]
@@ -253,8 +253,9 @@ extension PullRequestPrompt {
     }
 
     /// Text a prompt quotes on one of its lines, from where anyone who can push code may write, such as a test's or a step's
-    /// name: its line breaks, and other characters that control how text reads, written out as escapes, "\\n", "\\u{202E}",
-    /// so that all of it stays on that line, and nothing in it starts a line of the prompt's own.
+    /// name: its line breaks, and characters that control how text reads or hide text, written out as escapes, "\\n",
+    /// "\\u{202E}" (`isControl`), so that all of it stays on that line, nothing in it starts a line of the prompt's own, and
+    /// nothing in it is unseen.
     static func oneLine(_ text: String) -> String {
         var line = ""
         for scalar in text.unicodeScalars {
@@ -287,12 +288,15 @@ extension PullRequestPrompt {
         return [indent + fence] + lines.map { $0.isEmpty ? "" : indent + $0 } + [indent + fence]
     }
 
-    /// A character that controls how text reads rather than being read: a control character, a line or paragraph
-    /// separator, or one that overrides or isolates the direction text reads in.
+    /// A character that controls how text reads, or hides text, rather than being seen: a control character, a line or
+    /// paragraph separator, and an invisible one that formats text, such as a mark, override or isolate of the direction
+    /// text reads in, or a tag, which a model may read as text that nobody sees ("ASCII smuggling"); but not the joiners
+    /// words and emoji are written with. And the variation selectors past those of emoji, which can hide text the same way.
     private static func isControl(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.properties.generalCategory {
         case .control, .lineSeparator, .paragraphSeparator: return true
-        default: return (0x202A...0x202E).contains(scalar.value) || (0x2066...0x2069).contains(scalar.value)
+        case .format: return scalar != "\u{200C}" && scalar != "\u{200D}"
+        default: return (0xE0000...0xE007F).contains(scalar.value) || (0xE0100...0xE01EF).contains(scalar.value)
         }
     }
 
