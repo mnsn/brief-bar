@@ -359,7 +359,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails
         ).started()
         agentRereads = AgentRereads(
-            updates: services.sessionUpdates, store: store, sprint: sprint, workLinks: workLinks, details: details
+            updates: services.sessionUpdates, store: store, sprint: sprint, workLinks: workLinks, details: details, tags: tagChanges
         ).started()
         // Your name, as your pull requests have it, for a summary to call you "you".
         services.summaries.setYourName(.azureDevOps) { [weak store] in store?.reader }

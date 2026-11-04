@@ -6,12 +6,13 @@ import Foundation
 
 /// Reads again, sooner than its next refresh, what Copilot sessions say they just changed in Azure DevOps
 /// (`changed_in_azure_devops`), with Updates from Copilot Sessions on: only what BriefBar reads anyway, in the organizations
-/// it reads. Your pull requests' lists, with the named ones' details; with Show Links on, their work items and the sprint's
-/// pull requests; the sprint, while something shows it; and the work item whose details show. What comes within
-/// `gathering` is one pass, and passes are `spacing` apart at least, so that agents can't make BriefBar read Azure DevOps
-/// more often than opening its panel again and again does (`PRStore.refreshIfStale`); and the engines' own caps hold
-/// (`PulseEngine.reread`, `LinkEngine.reread`). Turning Updates from Copilot Sessions off or on forgets what waits for its
-/// pass, as it forgets what sessions asked before (`SessionUpdates.setOn`).
+/// it reads. Your pull requests' lists, with the named ones' details, and their tags that the lists don't carry, as their
+/// details show (`TagChanges.changedElsewhere`); with Show Links on, their work items and the sprint's pull requests; the
+/// sprint, while something shows it; and the work item whose details show. What comes within `gathering` is one pass, and
+/// passes are `spacing` apart at least, so that agents can't make BriefBar read Azure DevOps more often than opening its
+/// panel again and again does (`PRStore.refreshIfStale`); and the engines' own caps hold (`PulseEngine.reread`,
+/// `LinkEngine.reread`). Turning Updates from Copilot Sessions off or on forgets what waits for its pass, as it forgets
+/// what sessions asked before (`SessionUpdates.setOn`).
 @MainActor
 final class AgentRereads {
     /// How long a pass waits for more after the first request, so that a burst of calls is one pass.
@@ -57,15 +58,17 @@ final class AgentRereads {
     /// pull requests its lists have, which include the ones you watch and those sent to you from elsewhere, and the
     /// sprint's team's.
     convenience init(
-        updates: SessionUpdates, store: PRStore, sprint: SprintStore?, workLinks: WorkLinksStore?, details: WorkItemDetailsStore?
+        updates: SessionUpdates, store: PRStore, sprint: SprintStore?, workLinks: WorkLinksStore?, details: WorkItemDetailsStore?,
+        tags: TagChanges?
     ) {
         let organizations = { [weak store, weak sprint] () -> [String] in
             guard let store else { return [] }
             return store.organizations + store.items.map(\.key.organization) + [sprint?.board?.team.organization].compactMap { $0 }
         }
         self.init(updates: updates, organizations: organizations) {
-            [weak store, weak sprint, weak workLinks, weak details] pass in
+            [weak store, weak sprint, weak workLinks, weak details, weak tags] pass in
             store?.reread(pass.pullRequests)
+            tags?.changedElsewhere(pass.pullRequests)
             if !pass.workItems.isEmpty { sprint?.refresh() }
             workLinks?.reread(pullRequests: pass.pullRequests, workItems: pass.workItems)
             details?.reloadIfShowing(pass.workItems)
