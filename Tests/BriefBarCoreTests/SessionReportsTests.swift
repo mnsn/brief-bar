@@ -139,7 +139,9 @@ import Testing
 
         let listing = SessionReports.Listing(sessions: [Self.session])
         #expect(reports.workingOn(listing, now: Self.now) == [Self.session: [Self.task]])
-        #expect(reports.opened(listing) == [Self.session: [Self.pullRequest]])
+        #expect(reports.opened(listing, now: Self.now) == [Self.session: [Self.pullRequest]])
+        #expect(reports.opened(listing, now: Self.now + 31 * Self.day).isEmpty)
+        #expect(reports.workingOn(listing, now: Self.now + 8 * Self.day).isEmpty)
         #expect(Set(reports.links(listing, now: Self.now)) == [
             ItemLink(Self.session, Self.task, origin: .session)!, ItemLink(Self.session, Self.pullRequest, origin: .copilot)!,
         ])

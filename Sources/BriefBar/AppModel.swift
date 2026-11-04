@@ -183,6 +183,8 @@ final class AppModel: ObservableObject {
         source.deleteSavedData()
         services.notifier.removeDelivered(from: id)
         services.recentNotifications.forget(id)
+        // What sessions told BriefBar of its things, or, for Copilot's, all of it.
+        services.sessionUpdates.forget(id)
         choices.turnOff(id)
         choices.save(to: services.defaults)
         Log.app.info("Turned off \(id.rawValue, privacy: .public)")

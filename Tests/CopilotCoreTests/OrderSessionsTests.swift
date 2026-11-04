@@ -34,6 +34,31 @@ import Testing
         ItemRef.session(id)!
     }
 
+    /// A pull request a session told BriefBar it opened goes with it, as one the app records it opened does: even without
+    /// what the app read of its work, ahead of a session the app links to it without saying how, and never with another
+    /// session that only started from it.
+    @Test func thePullRequestsASessionToldBriefBarItOpenedGoWithIt() {
+        let pullRequest = ItemRef.pullRequest(organization: "contoso", number: 4102)
+        let sessions = OrderSessions.sessions(
+            [
+                Self.session(Self.coordinator, sessionType: "chat"),
+                Self.session(Self.cart, parent: Self.coordinator, coordinator: Self.coordinator),
+                Self.session(Self.helper, [Self.ado(4102)]),
+                Self.session(Self.reviewer, [Self.ado(4102, .startedFrom)]),
+            ],
+            told: [
+                Self.ref(Self.cart): [pullRequest, .workItem(organization: "contoso", id: 5124)],
+                Self.ref(Self.rounding): [.pullRequest(organization: "contoso", number: 4118)],
+            ]
+        )
+        #expect(sessions == [
+            OrderSession(
+                ref: Self.ref(Self.cart), parent: Self.ref(Self.coordinator), coordinator: Self.ref(Self.coordinator),
+                pullRequests: [pullRequest]
+            ),
+        ])
+    }
+
     /// The usual shape: a coordinator starts a session for each pull request, which opens it.
     @Test func eachSessionGoesWithThePullRequestsItOpenedUnderItsCoordinator() {
         let sessions = OrderSessions.sessions([

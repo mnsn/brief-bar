@@ -116,21 +116,24 @@ public struct SessionReports: Equatable, Sendable {
         }
     }
 
-    /// What each listed session works on, as it told: nothing for one that's been idle for a day or more.
+    /// What each listed session works on, as it told: nothing for one that's been idle for a day or more, or that last
+    /// told it longer ago than it's kept.
     public func workingOn(_ listing: Listing, now: Date) -> [ItemRef: [ItemRef]] {
         var working: [ItemRef: [ItemRef]] = [:]
-        for (session, report) in reports where listing.sessions.contains(session) && !report.workingOn.isEmpty {
+        for (session, var report) in reports where listing.sessions.contains(session) {
             if let idle = listing.idleSince[session], now.timeIntervalSince(idle) >= Self.idleAfter { continue }
-            working[session] = report.workingOn
+            report.expire(now: now)
+            if !report.workingOn.isEmpty { working[session] = report.workingOn }
         }
         return working
     }
 
-    /// The pull requests each listed session told it opened.
-    public func opened(_ listing: Listing) -> [ItemRef: [ItemRef]] {
+    /// The pull requests each listed session told it opened, but those told longer ago than they're kept.
+    public func opened(_ listing: Listing, now: Date) -> [ItemRef: [ItemRef]] {
         var opened: [ItemRef: [ItemRef]] = [:]
-        for (session, report) in reports where listing.sessions.contains(session) && !report.opened.isEmpty {
-            opened[session] = report.opened.keys.sorted()
+        for (session, var report) in reports where listing.sessions.contains(session) {
+            report.expire(now: now)
+            if !report.opened.isEmpty { opened[session] = report.opened.keys.sorted() }
         }
         return opened
     }
@@ -142,7 +145,7 @@ public struct SessionReports: Equatable, Sendable {
         for (session, refs) in workingOn(listing, now: now) {
             links += refs.compactMap { ItemLink(session, $0, origin: .session) }
         }
-        for (session, refs) in opened(listing) {
+        for (session, refs) in opened(listing, now: now) {
             links += refs.compactMap { ItemLink(session, $0, origin: .copilot) }
         }
         return links
