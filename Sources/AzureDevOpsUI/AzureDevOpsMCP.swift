@@ -1047,63 +1047,75 @@ enum AgentText {
         return text + "\n  \(item.url.absoluteString)"
     }
 
-    /// One pull request, for the `pull_request` tool.
+    /// One pull request, for the `pull_request` tool. What others named or wrote in it, its title, names, checks, branches
+    /// and comments, stays on its line, as the prompts quote it (`QuotedText.oneLine`), with its branches as a command may
+    /// hold them (`QuotedText.commandWord`), and what people wrote follows a note that it isn't instructions.
     /// - Parameter session: its Copilot session, as its details show it, if there's something to say.
     static func details(
         _ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], session: AgentSession? = nil,
         now: Date
     ) -> String {
         let pr = record.pullRequest
-        var lines = ["# !\(pr.key.number) “\(pr.title)”", pr.webURL.absoluteString, ""]
-        lines.append("- \(pr.repositoryName), in \(pr.projectName) (\(pr.key.organization)), from \(pr.sourceBranch) into \(pr.targetBranch)")
-        var state = [record.role == .author ? "Yours, opened \(ago(pr.createdAt, now: now))" : "By \(pr.author.name), opened \(ago(pr.createdAt, now: now))"]
+        let (source, target) = (QuotedText.commandWord(pr.sourceBranch), QuotedText.commandWord(pr.targetBranch))
+        var lines = ["# !\(pr.key.number) “\(QuotedText.oneLine(pr.title))”", pr.webURL.absoluteString, ""]
+        lines.append(
+            "- \(QuotedText.oneLine(pr.repositoryName)), in \(QuotedText.oneLine(pr.projectName)) "
+                + "(\(QuotedText.oneLine(pr.key.organization))), from \(source) into \(target)"
+        )
+        var state = [
+            record.role == .author
+                ? "Yours, opened \(ago(pr.createdAt, now: now))" : "By \(QuotedText.oneLine(pr.author.name)), opened \(ago(pr.createdAt, now: now))"
+        ]
         state.append(pr.status.rawValue)
         if pr.isDraft { state.append("a draft") }
         if pr.autoComplete { state.append("set to complete automatically") }
         if let closed = pr.closedAt, pr.status != .active { state.append("closed \(ago(closed, now: now))") }
         lines.append("- " + state.joined(separator: ", "))
         if let item {
-            var status = "- In BriefBar: \(item.group.title), \(item.headline)"
+            var status = "- In BriefBar: \(item.group.title), \(QuotedText.inLine(item.headline))"
             if let since = item.since { status += ", \(ago(since, now: now))" }
-            if let detail = item.detail, !detail.isEmpty { status += ". \(detail)" }
+            if let detail = item.detail, !detail.isEmpty { status += ". \(QuotedText.oneLine(detail))" }
             lines.append(status)
         }
         let reviewers = pr.reviewers.map { reviewer in
-            var name = reviewer.person.name
+            var name = QuotedText.oneLine(reviewer.person.name)
             if reviewer.isRequired { name += " (required)" }
             return "\(name): \(reviewer.hasDeclined ? "declined" : Self.vote(reviewer.vote))"
         }
         if !reviewers.isEmpty { lines.append("- Reviewers: " + reviewers.joined(separator: "; ")) }
         if let details = record.details {
             let checks = details.checks.filter { $0.state != .notApplicable }.map { check in
-                var text = "\(check.name): \(Self.state(check.state))"
+                var text = "\(QuotedText.oneLine(check.name)): \(Self.state(check.state))"
                 if !check.isBlocking { text += " (optional)" }
                 if check.state == .failed, let failure = check.failure {
-                    text += ", at " + [failure.stage, failure.summary].compactMap { $0 }.joined(separator: " › ")
+                    text += ", at " + [failure.stage, failure.summary].compactMap { $0 }.map(QuotedText.oneLine).joined(separator: " › ")
                 }
                 return text
             }
             if !checks.isEmpty { lines.append("- Checks:\n" + checks.map { "  - \($0)" }.joined(separator: "\n")) }
         }
-        if pr.hasConflicts { lines.append("- It has merge conflicts with \(pr.targetBranch).") }
-        if let problem = pr.mergeProblem { lines.append("- \(problem.detail).") }
+        if pr.hasConflicts { lines.append("- It has merge conflicts with \(target).") }
+        if let problem = pr.mergeProblem(naming: QuotedText.commandWord) { lines.append("- \(problem.detail).") }
         if let merge = record.merge {
-            lines.append("- After it merged into \(merge.targetBranch) \(ago(merge.mergedAt, now: now)):")
+            lines.append("- After it merged into \(QuotedText.commandWord(merge.targetBranch)) \(ago(merge.mergedAt, now: now)):")
             for status in merge.pipelines {
                 lines += Self.pipeline(status, now: now).map { "  \($0)" }
             }
         }
 
+        // What people wrote is quoted below the first of these headings, after the note that it isn't instructions.
         let pending = item?.pendingEvents ?? []
+        var said = pending.contains { $0.text?.isEmpty == false } ? [PullRequestPrompt.commentsSaid] : []
         let news = pending.filter(\.isNew)
         if !news.isEmpty {
             lines.append("\n## New for you")
-            lines += news.map { Self.event($0, now: now) }
+            lines += said + news.map { Self.event($0, now: now) }
+            said = []
         }
         let seen = pending.filter { !$0.isNew }
         if !seen.isEmpty {
             lines.append("\n## Seen, still waiting on you")
-            lines += seen.map { Self.event($0, now: now) }
+            lines += said + seen.map { Self.event($0, now: now) }
         }
 
         if let details = record.details {
@@ -1137,12 +1149,12 @@ enum AgentText {
         case .newSession:
             return "Its session: a new one. The user chose in BriefBar that its work goes to a new Copilot session, rather than one that's there."
         case .undecided(let choices):
-            let sessions = choices.map { "“\($0.name)” (\(names($0.reasons.map(\.phrase))), session \($0.id))" }
+            let sessions = choices.map { "“\(QuotedText.oneLine($0.name))” (\(names($0.reasons.map(\.phrase))), session \($0.id))" }
             return "Its session isn't settled: \(names(sessions)) go with it as well as each other, so BriefBar asks the user "
                 + "which before it sends its work to one. Ask them which, too."
         case .guess(let choice):
             return "It has no Copilot session of its own: BriefBar sends its work to a new session unless the user chooses one. "
-                + "“\(choice.name)”, in the Copilot app, has a link to it and was there before it was created, so it may have "
+                + "“\(QuotedText.oneLine(choice.name))”, in the Copilot app, has a link to it and was there before it was created, so it may have "
                 + "opened it.\n  " + (appFacts(choice, now: now) + ["session \(choice.id)"]).joined(separator: " · ")
         }
     }
@@ -1161,7 +1173,7 @@ enum AgentText {
             case .openedIt: why = "the session of the work item's task that opened it"
             default: why = "the session of its last task"
             }
-            facts.append("worktree \(run.worktree.path)")
+            facts.append("worktree \(QuotedText.inLine(run.worktree.path))")
         case .app:
             why = session.basis == .chosenByYou ? "which the user chose for it" : names(choice.reasons.map(\.phrase))
             facts += appFacts(choice, now: now)
@@ -1169,7 +1181,7 @@ enum AgentText {
         let place = session.isInApp ? "in the Copilot app" : "which BriefBar runs with the Copilot CLI and the Copilot app doesn't have"
         let parts = choice.appSession != nil ? [place, why] : [why, place]
         facts.append("session \(choice.id)")
-        var text = "Its session, where BriefBar sends its work unless you choose another: “\(choice.name)”, "
+        var text = "Its session, where BriefBar sends its work unless you choose another: “\(QuotedText.oneLine(choice.name))”, "
             + parts.filter { !$0.isEmpty }.joined(separator: ", ") + "."
         if choice.isBusy {
             text += " Copilot is still working in it, for a task BriefBar sent: nothing more goes to it until that's done."
@@ -1182,7 +1194,7 @@ enum AgentText {
     /// Where one of the Copilot app's sessions works, whether it runs a turn now, and when it was last active.
     private static func appFacts(_ choice: SessionChoice, now: Date) -> [String] {
         var facts: [String] = []
-        if let place = choice.place { facts.append(place) }
+        if let place = choice.place { facts.append(QuotedText.inLine(place)) }
         if choice.appSession?.isRunning == true { facts.append("working now") }
         let active = ago(choice.lastActive, now: now)
         if !active.isEmpty { facts.append("active \(active)") }
@@ -1212,8 +1224,9 @@ enum AgentText {
         }
     }
 
+    /// Something that happened on a pull request, with who did it and what they wrote, each on its line (`QuotedText`).
     static func event(_ event: PREvent, now: Date) -> String {
-        let who = event.actor ?? "Someone"
+        let who = event.actor.map(QuotedText.oneLine) ?? "Someone"
         var text: String
         switch event.kind {
         case .mention: text = "\(who) mentioned you"
@@ -1227,13 +1240,14 @@ enum AgentText {
         case .approved: text = "\(who) approved it"
         }
         text = "- \(text), \(ago(event.at, now: now))"
-        if let quote = event.text, !quote.isEmpty { text += ": “\(quote)”" }
+        if let quote = event.text, !quote.isEmpty { text += ": “\(QuotedText.oneLine(quote))”" }
         return text
     }
 
-    /// A pipeline as `--pipelines` prints it, as a list item, with its latest run's link.
+    /// A pipeline as `--pipelines` prints it, as a list item, with its latest run's link: each of its lines one line, whatever
+    /// its pipeline, stages, branch or errors are named (`QuotedText.inLine`).
     static func pipeline(_ status: PipelineStatus, now: Date) -> [String] {
-        var lines = WorkCLI.pipelineLines(status, now: now)
+        var lines = WorkCLI.pipelineLines(status, now: now).map(QuotedText.inLine)
         guard !lines.isEmpty else { return [] }
         lines[0] = "- " + lines[0]
         if let run = status.latest { lines.append("  \(run.webURL.absoluteString)") }
@@ -1247,9 +1261,11 @@ enum AgentText {
         var subject: String
         if let pullRequest = task.onPullRequest {
             let key = PRKey(pullRequest.organization, pullRequest.id)
-            subject = "\(task.action?.title ?? "Work") on !\(pullRequest.id)" + (titles[key].map { " “\($0)”" } ?? "") + " in \(pullRequest.repository)"
+            subject = "\(task.action?.title ?? "Work") on !\(pullRequest.id)" + (titles[key].map { " “\(QuotedText.oneLine($0))”" } ?? "")
+                + " in \(QuotedText.oneLine(pullRequest.repository))"
         } else if let workItem = task.workItem {
-            subject = "Work item \(workItem.id)" + (workItems[workItem.id].map { " “\($0)”" } ?? "") + " in \(workItem.project)"
+            subject = "Work item \(workItem.id)" + (workItems[workItem.id].map { " “\(QuotedText.oneLine($0))”" } ?? "")
+                + " in \(QuotedText.oneLine(workItem.project))"
         } else {
             subject = "A task"
         }
@@ -1258,9 +1274,9 @@ enum AgentText {
         if let since = status.since ?? (status.phase.isActive ? task.startedAt : nil) {
             line += status.phase.isActive ? ", started \(ago(task.startedAt, now: now))" : ", \(ago(since, now: now))"
         }
-        if let detail = status.detail, !detail.isEmpty { line += ". \(detail)" }
+        if let detail = status.detail, !detail.isEmpty { line += ". \(QuotedText.inLine(detail))" }
         var facts = [task.options.title]
-        if let run = task.run { facts += ["worktree \(run.worktree.path)", "session \(run.id)"] } else { facts.append("session \(task.id)") }
+        if let run = task.run { facts += ["worktree \(QuotedText.inLine(run.worktree.path))", "session \(run.id)"] } else { facts.append("session \(task.id)") }
         line += "\n  " + facts.joined(separator: " · ")
         if let link = task.pullRequest { line += "\n  \(link.absoluteString)" }
         return line

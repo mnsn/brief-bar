@@ -8,7 +8,8 @@ public enum QuotedText {
     /// Text quoted on one of a prompt's lines: its line breaks, and characters that control how text reads or hide text,
     /// written out as escapes (`inLine`), so that all of it stays on that line, nothing in it starts a line of the prompt's
     /// own, and nothing in it is unseen. Nor does it start with a fence, three backticks or tildes or more, which would open
-    /// one where it starts a line, as a name does before what its author said: the first is written out, "\u{60}".
+    /// one where it starts a line, as a name does before what its author said, after a space or a joiner or not: the first
+    /// is written out, "\u{60}" (`withoutFenceAtStart`).
     public static func oneLine(_ text: String) -> String {
         withoutFenceAtStart(inLine(text))
     }
@@ -59,14 +60,15 @@ public enum QuotedText {
     }
 
     /// A backtick fence that nothing in `text` closes, so all of it stays quoted, whatever it says: one longer than its
-    /// longest run of backticks, and at least three, as CommonMark has it. A character with no width of its own between
-    /// two backticks, such as a joiner, an accent or a variation selector, doesn't end their run, since nobody sees it, and
-    /// a model may not either.
+    /// longest run of backticks, and at least three, as CommonMark has it. What becomes a backtick once text is normalized,
+    /// such as a Greek varia (`fenceMark`), counts as one, and a character with no width of its own between two of them,
+    /// such as a joiner, an accent or a variation selector, doesn't end their run, since nobody sees it, and a model may not
+    /// either.
     public static func fence(for text: String) -> String {
         var longest = 0
         var run = 0
         for scalar in text.unicodeScalars {
-            if scalar == "`" {
+            if fenceMark(scalar) == "`" {
                 run += 1
                 longest = max(longest, run)
             } else if !hasNoWidth(scalar) {
@@ -74,6 +76,18 @@ public enum QuotedText {
             }
         }
         return String(repeating: "`", count: max(3, longest + 1))
+    }
+
+    /// The characters `fenced` writes out of `text` as escapes, each once, in the order they first come, as it writes them:
+    /// "\u{200B}". Empty when it writes none.
+    public static func writtenOut(in text: String) -> [String] {
+        var seen: Set<Unicode.Scalar> = []
+        var written: [String] = []
+        for scalar in text.replacingOccurrences(of: "\r\n", with: "\n").unicodeScalars
+        where scalar != "\t" && scalar != "\n" && isControl(scalar) && seen.insert(scalar).inserted {
+            written.append(escaped(scalar))
+        }
+        return written
     }
 
     /// A word for a shell, as a command in a prompt holds it, such as a branch's name: as it is when it's only ASCII
@@ -96,15 +110,18 @@ public enum QuotedText {
         text.isEmpty ? text : inLine(shellWord(text))
     }
 
-    /// A line that starts, after its spaces, with three backticks or tildes or more, as a fence does, those with no width
-    /// between them too, with the first of them written out, so it opens none. Any other line as it is.
+    /// A line that starts with three backticks or tildes or more, as a fence does, with the first of them written out, so
+    /// it opens none. Before them may be anything that reads as space or isn't seen at all, a no-break space or a joiner
+    /// say, and between them what has no width; and what becomes a backtick or a tilde once text is normalized counts as
+    /// one (`fenceMark`), as a model may read it. Any other line as it is.
     private static func withoutFenceAtStart(_ line: String) -> String {
         let scalars = line.unicodeScalars
-        guard let start = scalars.firstIndex(where: { $0 != " " }), scalars[start] == "`" || scalars[start] == "~" else { return line }
-        let mark = scalars[start]
+        guard let start = scalars.firstIndex(where: { !$0.properties.isWhitespace && !hasNoWidth($0) }),
+              let mark = fenceMark(scalars[start])
+        else { return line }
         var count = 0
         for scalar in scalars[start...] {
-            if scalar == mark {
+            if fenceMark(scalar) == mark {
                 count += 1
             } else if !hasNoWidth(scalar) {
                 break
@@ -112,9 +129,30 @@ public enum QuotedText {
         }
         guard count >= 3 else { return line }
         var kept = String.UnicodeScalarView(scalars[..<start])
-        kept.append(contentsOf: escaped(mark).unicodeScalars)
+        kept.append(contentsOf: escaped(scalars[start]).unicodeScalars)
         kept.append(contentsOf: scalars[scalars.index(after: start)...])
         return String(kept)
+    }
+
+    /// The fence character a character is, or becomes once text is normalized, as a model may read it: a backtick for a
+    /// backtick, a Greek varia (U+1FEF, which is one canonically) or a fullwidth grave accent (U+FF40); a tilde for a tilde
+    /// or a fullwidth one (U+FF5E). Nil for any other. Only a symbol or punctuation that changes once normalized is looked
+    /// up, so most text costs nothing.
+    static func fenceMark(_ scalar: Unicode.Scalar) -> Unicode.Scalar? {
+        if scalar == "`" || scalar == "~" { return scalar }
+        guard !scalar.isASCII, scalar.properties.changesWhenNFKCCaseFolded else { return nil }
+        switch scalar.properties.generalCategory {
+        case .modifierSymbol, .mathSymbol, .otherSymbol, .currencySymbol, .otherPunctuation, .dashPunctuation,
+             .connectorPunctuation, .openPunctuation, .closePunctuation, .initialPunctuation, .finalPunctuation:
+            break
+        default:
+            return nil
+        }
+        switch String(scalar).precomposedStringWithCompatibilityMapping {
+        case "`": return "`"
+        case "~": return "~"
+        default: return nil
+        }
     }
 
     /// A character written out as an escape: "\u{202E}".

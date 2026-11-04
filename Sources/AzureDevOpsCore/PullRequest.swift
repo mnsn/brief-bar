@@ -207,10 +207,14 @@ public struct PullRequest: Sendable, Codable, Equatable, Identifiable {
     /// What went wrong with the merge Azure DevOps checks it with, other than conflicts, in a word or two and then in a
     /// line: the merge failed, or a policy rejected it. It can't be completed until it merges, usually once you push again.
     /// Nil while nothing did.
-    public var mergeProblem: (headline: String, detail: String)? {
+    public var mergeProblem: (headline: String, detail: String)? { mergeProblem(naming: { $0 }) }
+
+    /// The same, with its branches named as `naming` writes them: as agents get them, say, in single quotes when a shell
+    /// would read something in them (`QuotedText.commandWord`).
+    public func mergeProblem(naming: (String) -> String) -> (headline: String, detail: String)? {
         switch mergeStatus {
-        case "failure"?: ("Merge failed", "Azure DevOps couldn't merge \(sourceBranch) into \(targetBranch)")
-        case "rejectedByPolicy"?: ("Merge rejected", "A policy rejected merging \(sourceBranch) into \(targetBranch)")
+        case "failure"?: ("Merge failed", "Azure DevOps couldn't merge \(naming(sourceBranch)) into \(naming(targetBranch))")
+        case "rejectedByPolicy"?: ("Merge rejected", "A policy rejected merging \(naming(sourceBranch)) into \(naming(targetBranch))")
         default: nil
         }
     }

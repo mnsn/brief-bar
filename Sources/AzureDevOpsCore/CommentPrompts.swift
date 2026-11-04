@@ -191,7 +191,21 @@ extension PullRequestPrompt {
         let reviewer = reviewer(of: thread, me: record.me).map { " as \(oneLine($0.name)) saw it" } ?? ""
         var heading = "The code it's on, in \(file),\(reviewer) (> marks the lines it's on, + what the change added, - what it removed)"
         if excerpt.changedSince == true { heading += ". The file changed since: look at it as it is now before you change it" }
-        return heading + ":\n\n" + fenced(codeLines(excerpt)).joined(separator: "\n")
+        let code = codeLines(excerpt)
+        let section = heading + ":\n\n" + fenced(code).joined(separator: "\n")
+        return unseen(in: code, "the file has the character itself", "the file has the characters themselves").map { section + "\n\n" + $0 } ?? section
+    }
+
+    /// That what the fence of `code` wrote out as escapes (`QuotedText.writtenOut`), such as a zero-width space, stands for
+    /// characters nobody sees, which the code has, so that it's still applied and found exactly as it's written: "In it,
+    /// \u{200B} stands for a character nobody sees, which BriefBar wrote out: " and `one`, or `many` for more than one. Nil
+    /// when it wrote out none.
+    static func unseen(in code: String, _ one: String, _ many: String) -> String? {
+        let written = QuotedText.writtenOut(in: code)
+        guard let last = written.last else { return nil }
+        guard written.count > 1 else { return "In it, \(last) stands for a character nobody sees, which BriefBar wrote out: \(one)." }
+        return "In it, \(written.dropLast().joined(separator: ", ")) and \(last) each stand for a character nobody sees, which BriefBar "
+            + "wrote out: \(many)."
     }
 
     /// Each line of an excerpt: whether the thread is on it, its number, how the change left it, and its text.
@@ -222,7 +236,8 @@ extension PullRequestPrompt {
 
     /// Applying a suggested change as it's written, to the lines the thread is on, which Copilot finds in the file as it is
     /// now: their numbers are from when the thread was written, and a push since may have moved them. The change is in a
-    /// fence nothing in it closes (`fenced`).
+    /// fence nothing in it closes (`fenced`), and what it wrote out there that nobody sees is said to be the character
+    /// itself (`unseen`).
     /// - Parameter codeShown: the prompt shows them, as its reviewer saw them, above.
     static func applying(_ suggestion: CommentSuggestion, to thread: ReviewThread, codeShown: Bool = false) -> String {
         // ", line 88 of src/PaymentsClient.cs when it was written"
@@ -242,12 +257,16 @@ extension PullRequestPrompt {
             return "Apply the change \(author) suggested, as it's written: remove the lines the thread is on\(when). " + find
         }
         let place = when.isEmpty ? "the lines the thread is on" : "the lines the thread is on\(when),"
+        let written = unseen(
+            in: suggestion.code, "write it as that character, or as the language's own escape for it",
+            "write each as that character, or as the language's own escape for it"
+        ).map { $0 + "\n\n" } ?? ""
         return """
             Apply the change \(author) suggested, exactly as it's written: replace \(place) with
 
             \(fenced(suggestion.code).joined(separator: "\n"))
 
-            \(find)
+            \(written)\(find)
             """
     }
 
