@@ -153,12 +153,9 @@ extension PRRecord {
     var partsToFix: [PullRequestPart] {
         var parts = (details?.threads ?? []).filter { !$0.isResolved }.map { PullRequestPart.thread($0.id) }
         for check in details?.checks ?? [] {
-            guard let part = check.part, !parts.contains(part) else { continue }
-            switch check.state {
-            case .passed, .expired, .notApplicable: continue
-            case .failed, .running, .queued, .notRun, .pending: break
-            }
-            // Another policy that runs the same pipeline may pass while this one doesn't: one that doesn't is enough.
+            // One that failed, then expired, is still to fix (`Check.needsNoFix`). Another policy that runs the same
+            // pipeline may pass while this one doesn't: one that doesn't is enough.
+            guard let part = check.part, !parts.contains(part), !check.needsNoFix else { continue }
             parts.append(part)
         }
         if pullRequest.hasConflicts { parts.append(.conflicts) }
@@ -200,6 +197,9 @@ struct CopilotComposing: Hashable {
     /// What it's about; nil for Fix All.
     var part: PullRequestPart?
     var ask: CopilotAsk
+    /// Which row it's on, where more than one is about the same part: a build's, since two of a pull request's policies can
+    /// run the same pipeline, and each has its own composer, words and send, though Copilot's work is the pipeline's.
+    var row: String?
 
     static let fixAll = CopilotComposing(part: nil, ask: .fixAll)
 }
@@ -213,17 +213,35 @@ final class CopilotDrafts {
     /// (`callOffAll`), when a prompt no session took yet is taken back; not as its card scrolls out of sight, as a lazy
     /// stack's do.
     var sends: [CopilotComposing: Task<Void, Never>] = [:]
-    /// What asks a session about something as a prompt, by what it's about, until it's done: called off as its page goes.
-    var asks: [PullRequestPart: Task<Void, Never>] = [:]
+    /// What asks a session about something as a prompt, Ask in the Session's, until it's done: called off as its page goes.
+    var asks = Asks()
+
+    /// What asks a session about something as a prompt, by what it's about, and, where more than one row is about it, as two
+    /// policies' runs of a pipeline are, the row it's on (`CopilotComposing.row`): `asks[part]`, `asks[part, row: id]`.
+    struct Asks {
+        private struct Key: Hashable {
+            var part: PullRequestPart
+            var row: String?
+        }
+
+        private var tasks: [Key: Task<Void, Never>] = [:]
+
+        subscript(part: PullRequestPart, row row: String? = nil) -> Task<Void, Never>? {
+            get { tasks[Key(part: part, row: row)] }
+            set { tasks[Key(part: part, row: row)] = newValue }
+        }
+
+        var all: [Task<Void, Never>] { Array(tasks.values) }
+    }
 
     func callOff(_ composer: CopilotComposing) {
         sends.removeValue(forKey: composer)?.cancel()
     }
 
     func callOffAll() {
-        for task in Array(sends.values) + Array(asks.values) { task.cancel() }
+        for task in Array(sends.values) + asks.all { task.cancel() }
         sends = [:]
-        asks = [:]
+        asks = Asks()
     }
 }
 
@@ -391,8 +409,11 @@ struct CopilotAsking {
     var fix: @MainActor (_ how: String, _ answer: CopilotAnswer?) -> CopilotSending.Fix
     /// Explain's question, asked aside: what you asked, following up on what the session answered before.
     var question: @MainActor (_ asked: String, _ earlier: CopilotAnswer?) -> String
-    /// For a build, the run Explain asks about.
+    /// For a build, the run Explain asks about, and when the attempt of it that it asks about finished, as its check said.
     var run: Int?
+    var attempt: Date?
+    /// Which row it's on, where more than one is about the same part, as a build's (`CopilotComposing.row`).
+    var row: String?
 
     /// The words a composer says what it does in.
     struct Words {
@@ -423,7 +444,7 @@ struct CopilotAsking {
     /// With its words and titles for what it's about.
     init(
         ask: CopilotAsk, part: PullRequestPart?, action: PullRequestAction, title: String? = nil, sendTitle: String? = nil,
-        prepare: (@MainActor () async -> Void)? = nil, run: Int? = nil,
+        prepare: (@MainActor () async -> Void)? = nil, run: Int? = nil, attempt: Date? = nil, row: String? = nil,
         fix: @escaping @MainActor (_ how: String, _ answer: CopilotAnswer?) -> CopilotSending.Fix,
         question: @escaping @MainActor (_ asked: String, _ earlier: CopilotAnswer?) -> String
     ) {
@@ -435,12 +456,14 @@ struct CopilotAsking {
         words = Words(ask == .fixAll ? nil : part)
         self.prepare = prepare
         self.run = run
+        self.attempt = attempt
+        self.row = row
         self.fix = fix
         self.question = question
     }
 
     /// Where its words are kept as you open another.
-    var draftKey: CopilotComposing { CopilotComposing(part: part, ask: ask) }
+    var draftKey: CopilotComposing { CopilotComposing(part: part, ask: ask, row: row) }
 }
 
 /// The composer in place for what you ask Copilot about something of a pull request (`CopilotAsking`): your words, where it
@@ -729,7 +752,7 @@ struct CopilotPartComposer<Options: View>: View {
                 drafts.sends[key] = nil
                 isSending = false
                 questions.ask(
-                    asking.question(words, earlier), asked: words, earlier: earlier, session: id, about: part, run: asking.run, of: item.key
+                    asking.question(words, earlier), asked: words, earlier: earlier, session: id, about: part, run: asking.run, attempt: asking.attempt, of: item.key
                 )
                 drafts.texts[key] = nil
                 SpokenText.announce("Asking \(choice.map(PullRequestSession.name) ?? "the session")")
