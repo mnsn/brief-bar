@@ -13,7 +13,8 @@ import Foundation
 /// in to the Azure CLI; where the threads were, once the details show their pull request no more (`showing`).
 @MainActor
 final class DetailsDrafts: ObservableObject {
-    /// What you wrote in each composer, by pull request. Not published: what you type redraws its own composer only.
+    /// What you wrote in each composer, by pull request. Not published: what you type redraws its own composer only, and
+    /// those that show the same composer elsewhere, which follow it (`wordsChanged`).
     private var words: [PRKey: [CopilotComposing: String]] = [:]
     /// Where each thread you changed was as you first did, by pull request, then by thread.
     private var held: [PRKey: [Int: PullRequestPanel.Thread.Held]] = [:]
@@ -23,12 +24,22 @@ final class DetailsDrafts: ObservableObject {
     /// Which pull requests the details show (`follow`).
     private var following: AnyCancellable?
 
+    /// A composer of a pull request's details.
+    struct Composer: Hashable {
+        var pullRequest: PRKey
+        var composer: CopilotComposing
+    }
+
+    /// Which composer's words changed, as you write in it or they go: one that's open follows them, so the same composer open
+    /// elsewhere, as in another window, neither writes over what you wrote there nor sends what's out of date.
+    let wordsChanged = PassthroughSubject<Composer, Never>()
+
     /// - Parameter settings: what you wrote goes as Send Work to Copilot is turned off, which takes its composers away.
     init(settings: AppSettings? = nil) {
         settings?.$copilotEnabled.removeDuplicates().dropFirst()
             .sink { [weak self] isOn in
                 guard !isOn else { return }
-                MainActor.assumeIsolated { self?.words = [:] }
+                MainActor.assumeIsolated { self?.forgetWords() }
             }
             .store(in: &cancellables)
     }
@@ -42,9 +53,11 @@ final class DetailsDrafts: ObservableObject {
 
     /// Keeps what you wrote in a composer, until you send it: nothing once you've emptied it.
     func keep(_ text: String, in composer: CopilotComposing, of pullRequest: PRKey) {
+        guard words(in: composer, of: pullRequest) != text else { return }
         var kept = words[pullRequest] ?? [:]
         kept[composer] = text.isEmpty ? nil : text
         words[pullRequest] = kept.isEmpty ? nil : kept
+        wordsChanged.send(Composer(pullRequest: pullRequest, composer: composer))
     }
 
     /// What you wrote in a composer went: it's forgotten, unless you wrote more there since, as in the same composer in
@@ -52,6 +65,28 @@ final class DetailsDrafts: ObservableObject {
     func sent(_ text: String, in composer: CopilotComposing, of pullRequest: PRKey) {
         guard words(in: composer, of: pullRequest) == text else { return }
         keep("", in: composer, of: pullRequest)
+    }
+
+    /// Sends what you wrote in a composer (`deliver`), and forgets it once it went, or was copied for you to paste: whatever
+    /// became of the composer meanwhile. One that closed, or whose page went, calls its send off, but a session that took it
+    /// has it all the same, as BriefBar's extension waits for what it does with it once it claimed it.
+    func send(
+        _ text: String, in composer: CopilotComposing, of pullRequest: PRKey,
+        deliver: () async -> CopilotSending.Outcome
+    ) async -> CopilotSending.Outcome {
+        let outcome = await deliver()
+        switch outcome {
+        case .sent, .copied: sent(text, in: composer, of: pullRequest)
+        case .notSent, .needsWindow: break
+        }
+        return outcome
+    }
+
+    /// Forgets what you wrote, in every composer, which those open follow.
+    private func forgetWords() {
+        let gone = words.flatMap { pullRequest, composers in composers.keys.map { Composer(pullRequest: pullRequest, composer: $0) } }
+        words = [:]
+        for composer in gone { wordsChanged.send(composer) }
     }
 
     // MARK: Where threads were
@@ -103,7 +138,7 @@ final class DetailsDrafts: ObservableObject {
     /// Forgets all of it, as Azure DevOps stops or someone else signs in.
     func forgetAll() {
         objectWillChange.send()
-        words = [:]
+        forgetWords()
         held = [:]
     }
 

@@ -703,6 +703,13 @@ struct CopilotPartComposer<Options: View>: View {
         )
         .task(id: target) { await check(target, choice: choice) }
         .onChange(of: text) { if preview == nil { kept.keep(text, in: asking.draftKey, of: item.key) } }
+        // The same composer elsewhere, as in another window: what you write there shows here, so neither writes over the
+        // other's words, nor sends what's out of date.
+        .onReceive(kept.wordsChanged) { changed in
+            guard preview == nil, changed == DetailsDrafts.Composer(pullRequest: item.key, composer: asking.draftKey) else { return }
+            let stored = kept.words(in: asking.draftKey, of: item.key)
+            if text != stored { text = stored }
+        }
         .onAppear {
             guard !hasAppeared else { return }
             hasAppeared = true
@@ -945,17 +952,17 @@ struct CopilotPartComposer<Options: View>: View {
                 return
             }
             let fix = asking.fix(words, answer)
-            let outcome = await sending.fix(fix, to: target, choice: choice)
+            // What you wrote goes once it went, though the composer closed or its page went meanwhile, which called this
+            // off: a session that took it has it all the same. Only what the composer shows waits for it to be there.
+            let outcome = await kept.send(words, in: key, of: item.key) { await sending.fix(fix, to: target, choice: choice) }
             guard !Task.isCancelled else { return }
             drafts.sends[key] = nil
             isSending = false
             switch outcome {
             case .sent:
-                kept.sent(words, in: key, of: item.key)
                 SpokenText.announce("Sent to Copilot")
                 done(outcome)
             case .copied(let note):
-                kept.sent(words, in: key, of: item.key)
                 SpokenText.announce(note)
                 done(outcome)
             case .notSent(let why):

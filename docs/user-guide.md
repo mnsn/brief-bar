@@ -389,8 +389,8 @@ what you want in your own words, where it goes, and its button, which Return pre
 two clicks. One composer is open at a time, and each keeps what you wrote until you send it, while BriefBar runs, in memory
 only, as a reply does: as you open another, go to a page over the details or a file's page and back, where the same
 thread's composer has it too, or look at another pull request; a file's page closes the one that was open, so **‹**
-comes back to where you were rather than to it. Turning Send Work to Copilot off, or someone else signing in to the
-Azure CLI, forgets it. **Explain** asks the session
+comes back to where you were rather than to it. The same composer open in two windows shows what you write in either.
+Turning Send Work to Copilot off, or someone else signing in to the Azure CLI, forgets it. **Explain** asks the session
 that worked on the thread, or else the pull request's own (its Copilot session, above), what you want to know, or else
 why you got the comment: why the reviewer wrote it, what they want, how the code relates, and a few ways to address it,
 with what each would change. The answer shows under the comment, a long one's first dozen or so lines until **Show More**,

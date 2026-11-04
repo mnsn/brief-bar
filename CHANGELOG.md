@@ -5,7 +5,8 @@
 - **What you write to Copilot in a pull request's details stays until you send it.** What you type in **Explain**,
   **Fix**, **Resolve** or **Fix All** is there again when you open it after a page opened over the details, such as its
   Copilot session's, after its file's page, where the same thread's composer has it too, and after you looked at another
-  pull request: while BriefBar runs, in memory only, as your replies are. A thread you just replied to or resolved stays
+  pull request: while BriefBar runs, in memory only, as your replies are. The same composer open in two windows shows what
+  you write in either. A thread you just replied to or resolved stays
   where it was too, while the details show its pull request, pages over them included, rather than folding away with
   the resolved ones as you come back.
 - **Back from a file's page, the details are where you left them.** A composer that was open closes as a file's page

@@ -69,6 +69,55 @@ import Testing
         #expect(drafts.words(in: fix, of: key(4102)).isEmpty)
     }
 
+    /// A send called off once the session took it, as when its composer closes or its page goes while it says it's sending,
+    /// went all the same: what you wrote goes, so that the composer doesn't open with it again, to send it twice. So does
+    /// what was copied for you to paste. What didn't go stays: nothing went, or the Send to Copilot window takes it.
+    @Test func whatWentIsForgottenThoughItsSendWasCalledOff() async {
+        let drafts = DetailsDrafts()
+        let fix = CopilotComposing(part: .thread(11), ask: .fix)
+        let outcomes: [(CopilotSending.Outcome, forgets: Bool)] = [
+            (.sent, true), (.copied("Copied the prompt, for you to paste"), true), (.notSent("The session is busy"), false), (.needsWindow, false),
+        ]
+        for (outcome, forgets) in outcomes {
+            drafts.keep("Cap it at 30 seconds", in: fix, of: key(4102))
+            let send = Task { @MainActor in
+                await drafts.send("Cap it at 30 seconds", in: fix, of: key(4102)) {
+                    // Taken: the session's answer comes, though the send was called off meanwhile.
+                    while !Task.isCancelled { await Task.yield() }
+                    return outcome
+                }
+            }
+            send.cancel()
+            #expect(await send.value == outcome)
+            #expect(drafts.words(in: fix, of: key(4102)).isEmpty == forgets)
+        }
+    }
+
+    /// What you write in a composer, and its going, says which composer's words changed, for the same composer open
+    /// elsewhere to follow: not the same words again.
+    @Test func whichComposersWordsChangedIsSaid() {
+        final class Heard {
+            var composers: [DetailsDrafts.Composer] = []
+        }
+        let drafts = DetailsDrafts()
+        let heard = Heard()
+        let subscription = drafts.wordsChanged.sink { heard.composers.append($0) }
+        defer { subscription.cancel() }
+        let fix = CopilotComposing(part: .thread(11), ask: .fix)
+        drafts.keep("Cap it", in: fix, of: key(4102))
+        drafts.keep("Cap it", in: fix, of: key(4102))
+        drafts.keep("Cap it at 30", in: fix, of: key(4102))
+        // Not what's kept now: nothing goes.
+        drafts.sent("Cap it", in: fix, of: key(4102))
+        drafts.sent("Cap it at 30", in: fix, of: key(4102))
+        let thread = DetailsDrafts.Composer(pullRequest: key(4102), composer: fix)
+        #expect(heard.composers == [thread, thread, thread])
+        drafts.keep("Skip weekends", in: .fixAll, of: key(4088))
+        drafts.forgetAll()
+        let fixAll = DetailsDrafts.Composer(pullRequest: key(4088), composer: .fixAll)
+        #expect(heard.composers == [thread, thread, thread, fixAll, fixAll])
+    }
+
     /// Send Work to Copilot turned off takes the composers away, and what you wrote in them goes: it doesn't come back as it's
     /// turned on again. Where threads were stays: that's your replies'.
     @Test func whatYouWroteGoesAsSendWorkToCopilotIsTurnedOff() throws {
@@ -270,16 +319,68 @@ import Testing
     /// is kept as you type it. Fix on thread 11 of !4102, drawn in a window off screen.
     @Test func aComposerOpensWithWhatYouWroteWhereverItOpensAgain() async throws {
         _ = NSApplication.shared
+        let drafts = DetailsDrafts()
+        let fix = CopilotComposing(part: .thread(11), ask: .fix)
+        let composer = try fixComposer(drafts)
+        drafts.keep("Cap it at 30 seconds", in: fix, of: key(4102))
+        let (window, host) = window(showing: composer())
+        defer { window.contentView = nil }
+        try await settle { fields(in: host).contains("Cap it at 30 seconds") }
+        #expect(fields(in: host).contains("Cap it at 30 seconds"))
+
+        // You type on.
+        try type(", from RetryOptions", in: host)
+        try await settle { drafts.words(in: fix, of: key(4102)) == "Cap it at 30 seconds, from RetryOptions" }
+        #expect(drafts.words(in: fix, of: key(4102)) == "Cap it at 30 seconds, from RetryOptions")
+
+        // Gone, as a page opens over the details, then made anew as you come back: with what you wrote.
+        host.rootView = AnyView(Color.clear.frame(width: 440, height: 100))
+        try await settle { fields(in: host).isEmpty }
+        host.rootView = composer()
+        try await settle { fields(in: host).contains("Cap it at 30 seconds, from RetryOptions") }
+        #expect(fields(in: host).contains("Cap it at 30 seconds, from RetryOptions"))
+    }
+
+    /// The same composer open in two windows, as Fix on a thread beside the list and on its pull request's page over a work
+    /// item's details: what you write in either shows in the other, so neither writes over what you wrote in the other, nor
+    /// sends what's out of date; and once it went, it's gone from both.
+    @Test func theSameComposerInTwoWindowsFollowsWhatYouWrite() async throws {
+        _ = NSApplication.shared
+        let drafts = DetailsDrafts()
+        let fix = CopilotComposing(part: .thread(11), ask: .fix)
+        let composer = try fixComposer(drafts)
+        let (first, firstHost) = window(showing: composer())
+        let (second, secondHost) = window(showing: composer())
+        defer {
+            first.contentView = nil
+            second.contentView = nil
+        }
+        try await settle { !fields(in: firstHost).isEmpty && !fields(in: secondHost).isEmpty }
+
+        try type("Cap it at 30 seconds", in: firstHost)
+        try await settle { fields(in: secondHost).contains("Cap it at 30 seconds") }
+        #expect(fields(in: secondHost).contains("Cap it at 30 seconds"))
+        try type(", from RetryOptions", in: secondHost)
+        try await settle { fields(in: firstHost).contains("Cap it at 30 seconds, from RetryOptions") }
+        #expect(fields(in: firstHost).contains("Cap it at 30 seconds, from RetryOptions"))
+        #expect(drafts.words(in: fix, of: key(4102)) == "Cap it at 30 seconds, from RetryOptions")
+
+        drafts.sent("Cap it at 30 seconds, from RetryOptions", in: fix, of: key(4102))
+        try await settle { !(fields(in: firstHost) + fields(in: secondHost)).contains { $0.contains("Cap it") } }
+        #expect(!(fields(in: firstHost) + fields(in: secondHost)).contains { $0.contains("Cap it") })
+    }
+
+    /// Fix on thread 11 of !4102, as its composer draws it, with made-up stores and what `drafts` keeps: each call makes
+    /// another, as each window that shows it does.
+    private func fixComposer(_ drafts: DetailsDrafts) throws -> () -> AnyView {
         let list = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         let copilot = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo, notifier: nil)
         let sessions = PullRequestSessions(copilot: copilot, links: Links(defaults: MemoryDefaults(), isDemo: false))
         let questions = CopilotQuestions(copilot: copilot)
         let code = PullRequestCodeStore(demo: true, client: ADOClient(tokens: NoTokens()))
-        let drafts = DetailsDrafts()
-        let fix = CopilotComposing(part: .thread(11), ask: .fix)
         let item = try item(4102)
         let thread = try thread(11, of: 4102).thread
-        func composer() -> AnyView {
+        return {
             AnyView(
                 CommentComposer(ask: .fix, thread: thread, item: item, worked: nil, drafts: CopilotDrafts()) { _ in }
                     .environmentObject(list)
@@ -291,28 +392,35 @@ import Testing
                     .frame(width: 440)
             )
         }
-        drafts.keep("Cap it at 30 seconds", in: fix, of: item.key)
-        let host = NSHostingView(rootView: composer())
+    }
+
+    /// A window off screen that shows `view`.
+    private func window(showing view: AnyView) -> (NSWindow, NSHostingView<AnyView>) {
+        let host = NSHostingView(rootView: view)
         let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 440, height: 400), styleMask: .borderless,
                               backing: .buffered, defer: false)
         window.contentView = host
-        defer { window.contentView = nil }
-        try await settle { fields(in: host).contains("Cap it at 30 seconds") }
-        #expect(fields(in: host).contains("Cap it at 30 seconds"))
+        return (window, host)
+    }
 
-        // You type on.
-        let field = try #require(textView(in: host))
-        field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0))
-        field.insertText(", from RetryOptions", replacementRange: field.selectedRange())
-        try await settle { drafts.words(in: fix, of: item.key) == "Cap it at 30 seconds, from RetryOptions" }
-        #expect(drafts.words(in: fix, of: item.key) == "Cap it at 30 seconds, from RetryOptions")
+    /// Types at the end of the field the window shows, as you would: in it, once it's being edited.
+    private func type(_ text: String, in view: NSView) throws {
+        let editor: NSTextView
+        if let editing = textView(in: view) {
+            editor = editing
+        } else {
+            let field = try #require(textField(in: view))
+            #expect(field.window?.makeFirstResponder(field) == true)
+            editor = try #require(field.currentEditor() as? NSTextView)
+        }
+        editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+        editor.insertText(text, replacementRange: editor.selectedRange())
+    }
 
-        // Gone, as a page opens over the details, then made anew as you come back: with what you wrote.
-        host.rootView = AnyView(Color.clear.frame(width: 440, height: 100))
-        try await settle { fields(in: host).isEmpty }
-        host.rootView = composer()
-        try await settle { fields(in: host).contains("Cap it at 30 seconds, from RetryOptions") }
-        #expect(fields(in: host).contains("Cap it at 30 seconds, from RetryOptions"))
+    /// The field the window shows, as AppKit has it while it isn't being edited.
+    private func textField(in view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField, field.isEditable { return field }
+        return view.subviews.lazy.compactMap(textField(in:)).first
     }
 
     /// Lets SwiftUI lay the window out and run what its views start, until `done`.

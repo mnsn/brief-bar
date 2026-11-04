@@ -2450,7 +2450,10 @@ where it opened from, rather than to the composer, which would open again, take 
 itself. What you wrote in each is kept above them, by pull request and composer (`DetailsDrafts`), until you send it,
 while BriefBar runs, in memory only, as your replies are: the details' comments and their files' pages share it, and it
 stays as the details come and go, for a page over them, a file's page or another pull request. Turning Send Work to
-Copilot off, Azure DevOps stopping or someone else signing in to the Azure CLI forgets it. Where it goes (`CopilotDestinations`) is
+Copilot off, Azure DevOps stopping or someone else signing in to the Azure CLI forgets it. Once a send went, or was copied
+for you to paste, its words go, though the composer closed meanwhile, which calls its send off: a session that took it
+has it all the same (`DetailsDrafts.send`). The same composer open in two windows follows what you write in either
+(`DetailsDrafts.wordsChanged`), so neither writes over the other, nor sends what's out of date. Where it goes (`CopilotDestinations`) is
 first the session that last worked on the thread, as its line says, when the pull request's
 session line knows it, else the pull request's own (`PullRequestSession.pick`), chosen unless the line asks which, or,
 for a fix while it's one of BriefBar's tasks and busy, a fork of it; for a fix, a fork of it and a new session; then the
