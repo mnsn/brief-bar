@@ -112,6 +112,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var tagChanges: TagChanges?
     /// What you wrote in pull requests' details' Copilot composers, and where the threads you changed there were.
     private(set) var detailsDrafts: DetailsDrafts?
+    /// For `--render`: each picture has drafts of its own, as if it were the only one shown, rather than what an earlier
+    /// picture of the same pull request left there, such as its resolved threads unfolded.
+    private var picturesHaveTheirOwnDrafts = false
     /// Tells Pull Request Order what Azure DevOps shows, while it's on.
     private var orderFacts: PullRequestOrderFacts?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
@@ -167,7 +170,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             .environmentObject(copilotQuestions)
             .environmentObject(threadChanges)
             .environmentObject(tagChanges)
-            .environmentObject(detailsDrafts)
+            .environmentObject(picturesHaveTheirOwnDrafts ? DetailsDrafts() : detailsDrafts)
             .environmentObject(pipelines)
             .environmentObject(copilot)
             .environmentObject(settings)
@@ -759,6 +762,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     // MARK: Rendering
 
     package func loadForRendering() async {
+        picturesHaveTheirOwnDrafts = true
         let store = makeStores(notifier: nil)
         await store.loadOnce()
         await sprint?.loadOnce()
