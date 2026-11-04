@@ -248,7 +248,7 @@ private struct BuildActions: View {
         Button {
             AzureDevOps.open(investigation.run.webURL)
         } label: {
-            Label("Open Run", systemImage: "arrow.up.forward.app")
+            ControlLabel("Open Run", systemImage: "arrow.up.forward.app")
         }
         .glassButtonStyle()
         .help("Open \(investigation.run.number) in Azure DevOps, with its whole log")
@@ -557,12 +557,13 @@ private struct BuildReadFailure: View {
             .font(size: 12)
             HStack(spacing: 8) {
                 if problem.offersSignIn {
-                    Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: problem) }
-                        .textSizedButtonStyle(.borderedProminent)
+                    Button { store.signIn(for: problem) } label: {
+                        ControlLabel(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…")
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                Button("Try Again", action: readAgain)
+                Button(action: readAgain) { ControlLabel("Try Again") }
             }
-            .textSizedButtonStyle(.bordered)
             .controlSize(.small)
             .font(size: 11)
         }

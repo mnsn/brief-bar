@@ -34,7 +34,7 @@ struct PullRequestsPage: View {
                 PageRefreshStatus(page: .pullRequests)
                 PullRequestOrderMenu(order: shownOrder, showsTitle: true, offersByMission: ordering.isOn)
                     .menuStyle(.button)
-                    .glassMenuStyle()
+                    .glassButtonStyle()
                     .fixedSize()
                 if shownOrder == .byMission {
                     OrderViewPicker(order: ordering, shown: view)
@@ -42,7 +42,7 @@ struct PullRequestsPage: View {
                 Button {
                     store.openPullRequestsPage()
                 } label: {
-                    Label("Open in Azure DevOps", systemImage: "arrow.up.forward.app")
+                    ControlLabel("Open in Azure DevOps", systemImage: "arrow.up.forward.app")
                 }
                 .glassButtonStyle()
                 .help("Open in Azure DevOps")

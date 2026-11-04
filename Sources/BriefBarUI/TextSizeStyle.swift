@@ -67,21 +67,13 @@ private struct TextSizeEnvironment: ViewModifier {
 
 // MARK: - Controls
 
-// AppKit draws a bordered, prominent or glass control's title itself, in the control's own font, whatever font is around
-// it, so it would keep its designed size at any text size. It draws a button's label as SwiftUI does once the label sets
-// its own font, and a menu's title in the font its text sets: these give them the control's font, as much bigger as the
-// text on windows' pages is. A segmented control and a menu with a primary action draw their titles in their own fonts
-// whatever their labels say: AppKit's own controls, given the font, take their place (`SegmentedPicker`,
-// `SplitMenuButton`).
+// AppKit draws a bordered, prominent or glass button's title, and a menu's, in the control's own font, whatever font is
+// around it, so it would keep its designed size at any text size. Once its label sets its own font, as `ControlLabel`
+// does, it's drawn in that font: the control's, as much bigger as the text on windows' pages is. A segmented control and
+// a menu with a primary action draw their titles in their own fonts whatever their labels say: AppKit's own controls,
+// given the font, take their place (`SegmentedPicker`, `SplitMenuButton`).
 
 extension View {
-    /// A button style, such as `.bordered` or `.glass`, whose buttons' titles are as big as the text on windows' pages, in
-    /// their control's font. A menu takes no such style, and keeps the automatic one under it: its label sets its own
-    /// font instead (`ControlLabel`).
-    package func textSizedButtonStyle<S: PrimitiveButtonStyle>(_ style: S) -> some View {
-        buttonStyle(TextSizedButtonStyle(style: style))
-    }
-
     /// A menu drawn as its label alone, as `.borderlessButton` draws one, but by SwiftUI, so its label's fonts follow the
     /// text size on windows' pages, which AppKit's never would: its label shows its own ▾ where it should have one
     /// (`MenuChevron`).
@@ -116,23 +108,9 @@ package struct MenuLabelStyle: LabelStyle {
     }
 }
 
-/// The button again, its label in the control's font, which SwiftUI draws.
-private struct TextSizedButtonStyle<Style: PrimitiveButtonStyle>: PrimitiveButtonStyle {
-    let style: Style
-    @Environment(\.controlSize) private var controlSize
-    @Environment(\.textScale) private var scale
-
-    func makeBody(configuration: Configuration) -> some View {
-        Button(role: configuration.role, action: configuration.trigger) {
-            configuration.label.font(.control(controlSize, by: scale))
-        }
-        .buttonStyle(style)
-    }
-}
-
-/// A control's title, its symbol before it, in the control's font, as big as the text on windows' pages: for a menu,
-/// whose title AppKit draws in the control's own font but for a text that sets one, as this does, and its symbol. Its
-/// symbol alone with `labelStyle(.iconOnly)`, as in a page's header too narrow for titles.
+/// A bordered, prominent or glass button's title, or a menu's, its symbol before it, in the control's font as big as the
+/// text on windows' pages, which AppKit draws once the label sets it. Its symbol alone with `labelStyle(.iconOnly)`, as in
+/// a page's header too narrow for titles.
 package struct ControlLabel: View {
     let title: String?
     let systemImage: String?

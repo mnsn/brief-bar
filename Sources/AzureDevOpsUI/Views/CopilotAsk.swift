@@ -319,13 +319,13 @@ struct CopilotAskComposer<Destinations: View, Options: View>: View {
             if isSending {
                 HStack(spacing: 5) {
                     ProgressView().controlSize(.mini)
-                    Text("Sending…")
+                    ControlLabel("Sending…")
                 }
             } else {
-                Text(sendTitle)
+                ControlLabel(sendTitle)
             }
         }
-        .textSizedButtonStyle(.borderedProminent)
+        .buttonStyle(.borderedProminent)
         .controlSize(.small)
         .fixedSize()
         .disabled(!canSend || isSending)

@@ -43,7 +43,7 @@ struct ThreadReplyButtons: View {
                 Button {
                     ThreadReplyArea.open(thread, composing: $composing, hold: hold)
                 } label: {
-                    Label(changes.draft(key).isEmpty ? "Reply" : "Reply (Draft)", systemImage: "arrowshape.turn.up.left")
+                    ControlLabel(changes.draft(key).isEmpty ? "Reply" : "Reply (Draft)", systemImage: "arrowshape.turn.up.left")
                 }
                 .focused($isReplyFocused)
                 .help(changes.draft(key).isEmpty
@@ -490,15 +490,15 @@ struct ThreadReplyComposer: View {
                 .font(size: 12, weight: .medium)
                 .foregroundStyle(.secondary)
             } else {
-                Button("Reply & \(ThreadStatusButton.title(thread))") { send(then: then) }
-                    .textSizedButtonStyle(.bordered)
+                Button { send(then: then) } label: { ControlLabel("Reply & \(ThreadStatusButton.title(thread))") }
+                    .buttonStyle(.bordered)
                     .keyboardShortcut(.return, modifiers: [.command, .shift])
                     .help(thread.isResolved
                         ? "Reply, then reactivate the thread, in Azure DevOps, as you (⇧⌘Return)"
                         : "Reply, then resolve the thread, in Azure DevOps, as you (⇧⌘Return)")
                     .disabled(!canSend)
-                Button("Reply") { send(then: nil) }
-                    .textSizedButtonStyle(.borderedProminent)
+                Button { send(then: nil) } label: { ControlLabel("Reply") }
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: .command)
                     .help("Reply in Azure DevOps, as you (⌘Return)")
                     .disabled(!canSend)
@@ -824,8 +824,8 @@ struct GrammarSuggestionView: View {
                     .textSelection(.enabled)
                     .accessibilityLabel("Suggested: \(suggestion.corrected)")
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Button("Use It", action: use)
-                        .textSizedButtonStyle(.borderedProminent)
+                    Button(action: use) { ControlLabel("Use It") }
+                        .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .help("Put the correction in your reply: Undo puts back what you wrote")
                     Text("Nothing goes until you reply.")

@@ -141,7 +141,7 @@ struct ThreadCopilotActions: View {
                 Button {
                     open(.explain)
                 } label: {
-                    Label(explainTitle, systemImage: CopilotAsk.explain.symbol)
+                    ControlLabel(explainTitle, systemImage: CopilotAsk.explain.symbol)
                 }
                 .focused($focused, equals: .explain)
                 .disabled(nobody)
@@ -150,7 +150,7 @@ struct ThreadCopilotActions: View {
                     Button {
                         open(.fix)
                     } label: {
-                        Label("Fix", systemImage: CopilotAsk.fix.symbol)
+                        ControlLabel("Fix", systemImage: CopilotAsk.fix.symbol)
                     }
                     .focused($focused, equals: .fix)
                     .help(fixHelp(hasAnswer: hasAnswer))
@@ -175,7 +175,7 @@ struct ThreadCopilotActions: View {
                 }
             }
         }
-        .textSizedButtonStyle(.bordered)
+        .buttonStyle(.bordered)
         .controlSize(.small)
         .font(size: 11.5, weight: .medium)
     }
@@ -544,9 +544,9 @@ struct CommentsHeader: View {
                         copied = nil
                         composing = .fixAll
                     } label: {
-                        Label(title, systemImage: CopilotAsk.fixAll.symbol)
+                        ControlLabel(title, systemImage: CopilotAsk.fixAll.symbol)
                     }
-                    .textSizedButtonStyle(.bordered)
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
                     .font(size: 11.5, weight: .medium)
                     .focused($isFocused)

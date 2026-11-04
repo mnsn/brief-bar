@@ -73,7 +73,7 @@ struct SprintPage: View {
                     .frame(maxWidth: 190 * textScale)
             }
             .menuStyle(.button)
-            .glassMenuStyle()
+            .glassButtonStyle()
             .fixedSize()
             .help(sprint.board.map { "\($0.team.name): choose the team whose sprint to show" } ?? "Choose the team whose sprint to show")
         }
@@ -83,7 +83,7 @@ struct SprintPage: View {
         Button {
             sprint.openBoard()
         } label: {
-            Image(systemName: "arrow.up.forward.app")
+            ControlLabel(nil, systemImage: "arrow.up.forward.app")
         }
         .glassButtonStyle()
         .help("Open the sprint's task board in Azure DevOps")

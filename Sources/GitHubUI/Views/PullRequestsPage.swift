@@ -37,7 +37,7 @@ struct PullRequestsPage: View {
                 Button {
                     store.openPullRequestsPage()
                 } label: {
-                    Label("Open on GitHub", systemImage: "arrow.up.forward.app")
+                    ControlLabel("Open on GitHub", systemImage: "arrow.up.forward.app")
                 }
                 .glassButtonStyle()
                 .help("Open on GitHub")
@@ -75,7 +75,7 @@ struct PullRequestsPage: View {
             ControlLabel(listsByMission ? "By Mission" : "By Status", systemImage: "arrow.up.arrow.down")
         }
         .menuStyle(.button)
-        .glassMenuStyle()
+        .glassButtonStyle()
         .fixedSize()
         .help("By Status groups them by what they need from you; By Mission lists the ones that go together, in the order they merge")
         .accessibilityLabel("Sort Pull Requests")

@@ -238,7 +238,7 @@ struct CopilotRunsMenu: View {
                     .labelStyle(.titleAndIcon)
             }
             .menuStyle(.button)
-            .glassMenuStyle()
+            .glassButtonStyle()
             .fixedSize()
             .help(copilot.activeCount > 0
                 ? "Copilot is working on \(copilot.activeCount) of the work items you sent it"

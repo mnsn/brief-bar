@@ -17,7 +17,7 @@ struct NotificationsPage: View {
                 Button {
                     recent.clear()
                 } label: {
-                    Label("Clear All", systemImage: "xmark.circle")
+                    ControlLabel("Clear All", systemImage: "xmark.circle")
                 }
                 .glassButtonStyle()
                 .disabled(recent.history.isEmpty)

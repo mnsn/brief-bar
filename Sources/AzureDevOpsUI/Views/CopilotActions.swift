@@ -1231,8 +1231,8 @@ struct ReadyFixesBar: View {
             .fixedSize()
             .help("Push the fixes of one session, and reply on the threads they addressed")
         } else if let first = ready.first {
-            Button("Push & Reply…") { pushAndReply(first, names: names) }
-                .textSizedButtonStyle(.borderedProminent)
+            Button { pushAndReply(first, names: names) } label: { ControlLabel("Push & Reply…") }
+                .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .fixedSize()
                 .help(Self.pushHelp(first, from: names.place(of: first)))

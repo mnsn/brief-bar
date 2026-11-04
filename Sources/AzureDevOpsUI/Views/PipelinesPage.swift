@@ -19,7 +19,7 @@ struct PipelinesPage: View {
                 Button {
                     add()
                 } label: {
-                    Label("Add Pipeline", systemImage: "plus")
+                    ControlLabel("Add Pipeline", systemImage: "plus")
                 }
                 .glassButtonStyle()
                 .help("Add Pipeline: pin pipelines to follow here and in widgets")
@@ -28,7 +28,7 @@ struct PipelinesPage: View {
                 if pipelines.hasLoaded || pipelines.settings.pinnedPipelines.isEmpty {
                     EmptyPage(symbol: "point.3.connected.trianglepath.dotted", title: "Follow your pipelines",
                               message: "Pin pipelines to follow their runs here and in widgets. Your active pull requests' pipelines also appear here, grouped by pull request.") {
-                        Button("Add Pipeline…") { add() }
+                        Button { add() } label: { ControlLabel("Add Pipeline…") }
                             .buttonStyle(.borderedProminent)
                     }
                 } else {

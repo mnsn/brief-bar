@@ -359,7 +359,7 @@ struct WorkItemDetailsPanel: View {
             Button {
                 details.openInAzureDevOps()
             } label: {
-                Label("Open in Azure DevOps", systemImage: "arrow.up.forward.app")
+                ControlLabel("Open in Azure DevOps", systemImage: "arrow.up.forward.app")
             }
             .glassButtonStyle()
             .help("Open it in Azure DevOps, to change it there")
@@ -374,9 +374,9 @@ struct WorkItemDetailsPanel: View {
                         copilot.compose(item)
                     } label: {
                         if compact {
-                            Image(systemName: "paperplane")
+                            ControlLabel(nil, systemImage: "paperplane")
                         } else {
-                            Label("Send to Copilot…", systemImage: "paperplane")
+                            ControlLabel("Send to Copilot…", systemImage: "paperplane")
                         }
                     }
                     .glassButtonStyle()
@@ -715,12 +715,13 @@ private struct FailureView: View {
             .font(size: 12)
             HStack(spacing: 8) {
                 if problem.offersSignIn {
-                    Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: problem) }
-                        .textSizedButtonStyle(.borderedProminent)
+                    Button { store.signIn(for: problem) } label: {
+                        ControlLabel(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…")
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                Button("Try Again") { details.reload() }
+                Button { details.reload() } label: { ControlLabel("Try Again") }
             }
-            .textSizedButtonStyle(.bordered)
             .controlSize(.small)
         }
         .padding(12)

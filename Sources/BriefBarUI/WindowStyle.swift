@@ -170,32 +170,14 @@ extension View {
         modifier(FloatingPanel(cornerRadius: cornerRadius))
     }
 
-    /// A glass button, and a bordered one offscreen, where glass doesn't draw: its title as big as the text on windows'
-    /// pages (`textSizedButtonStyle(_:)`).
+    /// A glass button, and a bordered one offscreen, where glass doesn't draw. Its title follows the text size on windows'
+    /// pages once its label sets its font (`ControlLabel`).
     package func glassButtonStyle() -> some View {
         modifier(GlassButtonStyle())
-    }
-
-    /// A glass menu, and a bordered one offscreen: AppKit's own, which a menu needs, its label as big as the text on
-    /// windows' pages once it sets its own font (`ControlLabel`).
-    package func glassMenuStyle() -> some View {
-        modifier(GlassMenuStyle())
     }
 }
 
 private struct GlassButtonStyle: ViewModifier {
-    @Environment(\.isRendering) private var isRendering
-
-    func body(content: Content) -> some View {
-        if isRendering {
-            content.textSizedButtonStyle(.bordered)
-        } else {
-            content.textSizedButtonStyle(.glass)
-        }
-    }
-}
-
-private struct GlassMenuStyle: ViewModifier {
     @Environment(\.isRendering) private var isRendering
 
     func body(content: Content) -> some View {
