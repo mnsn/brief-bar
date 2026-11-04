@@ -436,9 +436,32 @@ final class AppSettings: ObservableObject {
     }
 
     /// Puts a thread back as it was read before you marked it, as Mark as Unread does: up to `date`, or, for nil, not
-    /// marked as read; for `account`, where `markRead` keeps it.
+    /// marked as read; for `account`, where `markRead` keeps it now (`sentInChat`). A pull request can move between the
+    /// two since, as one you stop watching that someone also sent you does, into memory: the mark it had in the other
+    /// goes too.
     func setRead(_ thread: Int, of key: PRKey, to date: Date?, for account: String?, sentInChat: Bool = false) {
+        if account == seen.account {
+            let name = SeenState.name(of: key)
+            if !sentInChat, readSentInChats[name]?[thread] != nil {
+                var inMemory = SeenState(baseline: seen.baseline, readThreads: readSentInChats.filter { $0.key == name })
+                inMemory.setRead(thread, of: key, to: nil)
+                readSentInChats[name] = inMemory.readThreads[name]
+            }
+            if sentInChat, seen.readThreads[name]?[thread] != nil {
+                var updated = seen
+                updated.setRead(thread, of: key, to: nil)
+                seen = updated
+                persistSeen()
+            }
+        }
         changeRead(of: key, for: account, sentInChat: sentInChat) { $0.setRead(thread, of: key, to: date) }
+    }
+
+    /// The comment threads of a pull request that `account` marked as read: the one signed in now, as `readThreads(of:)`
+    /// has them, or another you've signed in with; nil for one BriefBar doesn't remember.
+    func readThreads(of key: PRKey, for account: String?) -> [Int: Date]? {
+        guard account != seen.account else { return readThreads(of: key) }
+        return account.flatMap { otherSeen[$0] }?.readThreads(of: key)
     }
 
     private func changeRead(of key: PRKey, for account: String?, sentInChat: Bool, _ change: (inout SeenState) -> Void) {

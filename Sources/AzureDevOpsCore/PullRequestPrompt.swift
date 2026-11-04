@@ -376,9 +376,11 @@ public struct CommentHandOff: Sendable, Equatable {
     /// one reopened since it was written, or one that came since. A thread answered or resolved meanwhile doesn't wait
     /// on you, and doesn't hold it back. Without it, that's one that waited on you in a thread whose entry isn't in the
     /// prompt, as it was written. A thread's entry is still there while its own line is: a comment in another entry
-    /// that names it doesn't count. A thread you'd marked as read doesn't hold it back either, up to when you did. Nil when
-    /// none of them is still there.
-    public func handedOff(in prompt: String, now: PRRecord? = nil) -> Date? {
+    /// that names it doesn't count. A thread you've marked as read doesn't hold it back either, up to when you did: as the
+    /// marks are then (`read`), when they're known, such as after Mark as Unread since; else as they were. Nil when none of
+    /// them is still there.
+    public func handedOff(in prompt: String, now: PRRecord? = nil, read current: [Int: Date]? = nil) -> Date? {
+        let read = current ?? self.read
         let lines = Set(prompt.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         let kept = waiting.filter { $0.entry.map(lines.contains) ?? false }
         guard let last = kept.map(\.last).max() else { return nil }

@@ -325,5 +325,8 @@ import BriefBarCore
         more[0].comments.append(comment(2, People.priya, "Ping", at: t(-90 * minute)))
         #expect(handOff.handedOff(in: prompt, now: record(more)) == t(-90 * minute).addingTimeInterval(-0.001))
         #expect(CommentHandOff(record(threads), dismissedCutoff: t(-3 * day), read: read, account: nil).waiting.map(\.thread) == [11])
+        // Marked as unread before the prompt goes: as the marks are then, it holds the cutoff back again.
+        #expect(handOff.handedOff(in: prompt, now: record(threads), read: [:]) == t(-2 * hour).addingTimeInterval(-0.001))
+        #expect(handOff.handedOff(in: prompt, now: record(threads), read: read) == t(-hour))
     }
 }

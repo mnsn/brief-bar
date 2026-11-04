@@ -512,7 +512,9 @@ final class PRStore: ObservableObject {
     /// leaves the Needs You of the account the prompt was written with, even if another has signed in to the Azure CLI
     /// since.
     func sentToCopilot(_ handOff: CommentHandOff, prompt: String) {
-        guard let through = handOff.handedOff(in: prompt, now: record(for: handOff.key)) else { return }
+        // With the threads its account has marked as read as they are now, such as one marked as unread since.
+        let read = settings.readThreads(of: handOff.key, for: handOff.account)
+        guard let through = handOff.handedOff(in: prompt, now: record(for: handOff.key), read: read) else { return }
         settings.dismiss([(handOff.key, through)], for: handOff.account)
     }
 
@@ -925,7 +927,6 @@ final class PRStore: ObservableObject {
     struct ReadMark: Equatable {
         var before: Date?
         var account: String?
-        var sentInChat: Bool
     }
 
     /// Marks one of a pull request's comment threads as read, up to `date`, the latest comment in it as its details show
@@ -935,14 +936,16 @@ final class PRStore: ObservableObject {
     /// listed only because someone sent it to you, in memory only. Returns what Mark as Unread puts back.
     @discardableResult
     func markRead(_ thread: Int, of key: PRKey, upTo date: Date) -> ReadMark {
-        let mark = ReadMark(before: settings.readThreads(of: key)[thread], account: settings.account, sentInChat: sentInChats([key]).contains(key))
-        settings.markRead(thread, of: key, upTo: date, for: mark.account, sentInChat: mark.sentInChat)
+        let mark = ReadMark(before: settings.readThreads(of: key)[thread], account: settings.account)
+        settings.markRead(thread, of: key, upTo: date, for: mark.account, sentInChat: sentInChats([key]).contains(key))
         return mark
     }
 
     /// Puts a thread you marked as read back as it was before, as Mark as Unread does: what waited on you there does again.
+    /// Where the pull request's marks are kept now, which may have changed since, as for one you stopped watching that
+    /// someone also sent you.
     func markUnread(_ thread: Int, of key: PRKey, as mark: ReadMark) {
-        settings.setRead(thread, of: key, to: mark.before, for: mark.account, sentInChat: mark.sentInChat)
+        settings.setRead(thread, of: key, to: mark.before, for: mark.account, sentInChat: sentInChats([key]).contains(key))
     }
 
     /// What Copilot can do with a pull request now (`PullRequestTasks.actions`): Push & Reply once a task that changed

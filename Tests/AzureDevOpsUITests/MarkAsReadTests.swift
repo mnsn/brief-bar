@@ -65,7 +65,7 @@ import Testing
         let latest = try #require(thread.comments.last?.publishedAt)
 
         let mark = store.markRead(11, of: key, upTo: latest)
-        #expect(mark == PRStore.ReadMark(before: nil, account: demo.settings.account, sentInChat: false))
+        #expect(mark == PRStore.ReadMark(before: nil, account: demo.settings.account))
         demo.refresh()
         let read = try #require(demo.item(4102))
         #expect(read.group != .needsYou)
@@ -123,8 +123,7 @@ import Testing
         demo.refresh()
         #expect(try #require(demo.item(4113)).pendingEvents.contains { $0.threadId == 70 })
 
-        let mark = demo.store.markRead(70, of: sent.key, upTo: mention.publishedAt)
-        #expect(mark.sentInChat)
+        demo.store.markRead(70, of: sent.key, upTo: mention.publishedAt)
         demo.refresh()
         #expect(demo.item(4113).map { !$0.pendingEvents.contains { $0.threadId == 70 } } ?? true)
         #expect(demo.settings.readSentInChats[SeenState.name(of: sent.key)] == [70: mention.publishedAt])
@@ -208,6 +207,37 @@ import Testing
         details.markUnread(23)
         // It stays read: Mark as Unread was for while they showed it.
         #expect(demo.settings.readThreads(of: review.key).keys.sorted() == [23])
+    }
+
+    /// Mark as Unread puts it back wherever the pull request's marks are kept now: one you stopped watching, which someone
+    /// also sent you, keeps them in memory since the next refresh, and one you watch now in the preferences.
+    @Test func markAsUnreadFindsTheMarkWhereverItIsKeptNow() throws {
+        let settings = AppSettings(defaults: MemoryDefaults(), now: Date(timeIntervalSince1970: 1_792_317_600))
+        let key = PRKey(DemoData.organization, 4113)
+        let latest = Date(timeIntervalSince1970: 1_792_317_000)
+        settings.markRead(5, of: key, upTo: latest, for: settings.account)
+        settings.keepSeenInMemory([key])
+        #expect(settings.readSentInChats[SeenState.name(of: key)] == [5: latest])
+        settings.setRead(5, of: key, to: nil, for: settings.account, sentInChat: true)
+        #expect(settings.readThreads(of: key).isEmpty)
+
+        settings.markRead(6, of: key, upTo: latest, for: settings.account, sentInChat: true)
+        settings.setRead(6, of: key, to: nil, for: settings.account, sentInChat: false)
+        #expect(settings.readThreads(of: key).isEmpty)
+        #expect(settings.readSentInChats.isEmpty)
+    }
+
+    /// A task's hand-off goes by the read marks of the account it was written for, as they are when it starts.
+    @Test func eachAccountsMarksAreFoundForAHandOff() {
+        let now = Date(timeIntervalSince1970: 1_792_317_600)
+        let settings = AppSettings(defaults: MemoryDefaults(), now: now)
+        let key = PRKey(DemoData.organization, 4102)
+        #expect(!settings.useAccount("tenant/robin", now: now))
+        settings.markRead(12, of: key, upTo: now, for: "tenant/robin")
+        #expect(settings.useAccount("tenant/sam", now: now))
+        #expect(settings.readThreads(of: key, for: "tenant/robin") == [12: now])
+        #expect(settings.readThreads(of: key, for: "tenant/sam") == [:])
+        #expect(settings.readThreads(of: key, for: "tenant/avery") == nil)
     }
 
     /// Active or All, as you chose last, for every pull request and after a restart; All until you choose, and for what's
