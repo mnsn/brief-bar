@@ -28,7 +28,12 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// 14: a pull request's whole change, in its details' Files: which files it touched, and each one before and after it.
     /// 15: asking a session about a comment, which sends its conversation, with the comment and its code, to GitHub Copilot;
     /// the forks BriefBar still has to delete; and following a prompt about comments in the Copilot app's session it went to.
-    nonisolated package static let descriptionVersion = 15
+    /// 16: asking a session about a failed build, and having Copilot fix it, which send what its details read of it: its
+    /// errors, the messages and stack traces of the first tests that failed, and the end of its log; and the builds and
+    /// conflicts that tasks and prompts take on.
+    /// 17: which files conflict with a pull request's target branch, and how, as its details show it; and asking a
+    /// session about them, or having Copilot resolve them, which send those files' paths and how each conflicts.
+    nonisolated package static let descriptionVersion = 17
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
@@ -36,8 +41,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     package let description = SourceDescription(
         version: AzureDevOpsSource.descriptionVersion,
         summary: "Your pull requests: which need you, which are failing and which are ready to complete; and your team's sprint and your pipelines",
-        reads: "Your pull requests and the ones you review, in the organizations you choose, and the ones you watch, by their links, with their builds, policies and comment threads, from Azure DevOps; and, after you merge one, while Done keeps it, the runs of the pipelines that build its merge and of the ones those start, unless you turn Follow Pipelines After You Merge off. While its Sprint or Pipelines section is on screen: your team's current sprint, with its stories, bugs and tasks and who has them, and the recent runs of the pipelines you pin; for Pipelines, also the latest validation runs of each active pull request you authored, including their stages, failure details and commit information. When you open one of its work items: its fields, description and other text, the work items it links to, its attachments' names and its latest comments, which BriefBar keeps in memory only, and forgets a quarter of an hour after reading them unless they're still on screen. New: when you open a pull request's details: for each comment thread on lines of code, as it comes on screen, the file it's on, before and after the change the comment was made on, and which files each update of the pull request changed, which BriefBar keeps in memory only, while those details show. New: as their Files come on screen, which files the pull request's change touched, all of it or what changed since you last looked; and, one file at a time, each file whose row comes on screen, before and after the change, to count the lines it adds and removes, and the file you open, to show its changes, which BriefBar keeps in memory only too. New: when you open a pull request's build that failed or is still going, in its details: its run, its steps and their errors, the last 200 lines of the log of the step that failed, the tests it published, with the names, messages and stack traces of the first that failed, and the pipeline's other runs on the pull request and its latest on the target branch, to tell whether the failure is the change's doing. BriefBar keeps them in memory only, for the last 20 builds you opened, until you open others, someone else signs in or you turn Azure DevOps off. BriefBar keeps which pull requests you've seen, your organizations, the pull requests you watch, your team and your pipelines. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages, and only in memory. Only if you turn on Send Work to Copilot, and send a work item or a pull request: the git repository you choose, and Copilot's log of the session it starts or goes on with, until it ends; for a pull request's failed build, the run's timeline, for its errors; and, as the window that sends it opens, the Copilot app's sessions it could go to instead, read-only from ~/.copilot: their names, projects and branches, the pull requests the app records with them and which run a turn now, from its database; the folder each works in, from its session state; which ones the app has open; and which of those active lately link to it in their logs. Only if you also turn on Send Prompts to Copilot Sessions, in Settings › Agents, and send a prompt to a session or a fork of it: which sessions BriefBar's extension listens in, and what it says became of the prompt, from files only you can read in BriefBar's own folder, which the prompt goes through too, until the extension is done with it; and, for a fork, which session the Copilot app records it came from, and when it was made. BriefBar keeps which work items and pull requests you sent, what for, where, with which model, and the pull request Copilot opened; and, in a file only you can read, what Copilot printed when it ended. New: only if you turn on Send Work to Copilot, as a pull request's details come on screen and every ten seconds while they stay there: what the window that sends work reads of the Copilot app's sessions it could go to, to name the one its work goes to; and, only if you also turn on Send Prompts to Copilot Sessions, which sessions BriefBar's extension listens in, to say how a prompt would reach that one. BriefBar keeps the session you choose for a pull request's work, by its ID only. New: only if you turn on Send Work to Copilot: when you send a prompt about a pull request's comments to one of the Copilot app's sessions, or to a fork of it, or BriefBar copies it for you to paste there, every few seconds from then until Copilot is done with it, to say on each comment what became of it: that session's log and whether something has it open, which of the app's sessions run a turn now, from its database, and, for one copied as /fork, the fork the app records it made of the session, and when. When you ask a session about a comment with Explain, the session's conversation, which the Copilot CLI copies into a fork it deletes after, goes to GitHub Copilot with the comment and its code, and the answer stays in memory only. BriefBar keeps the comment threads each task or prompt took on, and which session a prompt about comments went to and when, by their IDs only, and the IDs of the forks it made to ask a session about a comment, until it has deleted them. Only if you turn on Show Links: the work items linked to each of your pull requests, the pull requests linked to the sprint's work items while the sprint is on screen, and what the linked work items and pull requests that your lists don't show are; BriefBar keeps the links you add or hide, as references only, never titles. Only when a summary is written, or, for one ten minutes old or more, again as you open it, to tell whether it's still current: for the things it sums up, each pull request's description and comment threads, and each work item's details, as when you open one. With Apple Intelligence, what a summary is written from stays on this Mac; with a Copilot model, BriefBar sends it to GitHub Copilot through the Copilot CLI, which keeps a copy in its session history. BriefBar keeps none of it.",
-        network: "Azure DevOps only: dev.azure.com, and app.vssps.visualstudio.com to find your organizations, with your Azure CLI sign-in. Every request is a GET, so it never changes anything there: about 10 to 25 small requests a minute, a few more while the Sprint or Pipelines section is on screen, two or three when you open a work item's details and when it changes while they show, a few for each comment thread on code that comes on screen in a pull request's details (its updates and the files they changed, read once, and the file before and after the change, each read once, up to 1 MB), and for their Files, two to list the files the change touched and two for each file, one file at a time, as its row comes on screen or you open it (the file before and after the change, each read once, up to 1 MB), about ten when you open a pull request's build in its details, up to fourteen for one with hundreds of test runs, and again once it finished, runs again or its pull request is retargeted, but at most one, to tell whether it ran again since, when you open it again within ten minutes, or half a minute while it's going, or someone pushes to its pull request, a few more after you merge a pull request, while its pipelines run, and, with Show Links on, one for each pull request's work items every quarter of an hour, a few for the sprint's links while it's on screen, and, as a summary is written, or checked as you open one ten minutes old or more, up to two for each pull request it sums up and two or three for each work item whose details aren't on screen. When a summary is written with a Copilot model, the Copilot CLI sends what it covers to GitHub Copilot. When you ask a Copilot session about a comment, the Copilot CLI sends the session's conversation, with the comment and its code, to GitHub Copilot, as one premium request. When you send a work item or a pull request to Copilot, BriefBar itself still connects nowhere, but the programs it starts for you do: git fetches the repository, and the Copilot CLI uses GitHub Copilot and your MCP servers, pushes a branch, opens a pull request or replies on one, as you.",
+        reads: "Your pull requests and the ones you review, in the organizations you choose, and the ones you watch, by their links, with their builds, policies and comment threads, from Azure DevOps; and, after you merge one, while Done keeps it, the runs of the pipelines that build its merge and of the ones those start, unless you turn Follow Pipelines After You Merge off. While its Sprint or Pipelines section is on screen: your team's current sprint, with its stories, bugs and tasks and who has them, and the recent runs of the pipelines you pin; for Pipelines, also the latest validation runs of each active pull request you authored, including their stages, failure details and commit information. When you open one of its work items: its fields, description and other text, the work items it links to, its attachments' names and its latest comments, which BriefBar keeps in memory only, and forgets a quarter of an hour after reading them unless they're still on screen. New: when you open a pull request's details: for each comment thread on lines of code, as it comes on screen, the file it's on, before and after the change the comment was made on, and which files each update of the pull request changed, which BriefBar keeps in memory only, while those details show. New: as their Files come on screen, which files the pull request's change touched, all of it or what changed since you last looked; and, one file at a time, each file whose row comes on screen, before and after the change, to count the lines it adds and removes, and the file you open, to show its changes, which BriefBar keeps in memory only too. New: when you open a pull request's build that failed or is still going, in its details: its run, its steps and their errors, the last 200 lines of the log of the step that failed, the tests it published, with the names, messages and stack traces of the first that failed, and the pipeline's other runs on the pull request and its latest on the target branch, to tell whether the failure is the change's doing. BriefBar keeps them in memory only, for the last 20 builds you opened, until you open others, someone else signs in or you turn Azure DevOps off. New: when you open the details of a pull request that has merge conflicts: which files conflict with its target branch, and how, read again once its branch or its target moves, which BriefBar keeps in memory only, while those details show. BriefBar keeps which pull requests you've seen, your organizations, the pull requests you watch, your team and your pipelines. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages, and only in memory. Only if you turn on Send Work to Copilot, and send a work item or a pull request: the git repository you choose, and Copilot's log of the session it starts or goes on with, until it ends; for a pull request's failed build, the run's timeline, for its errors; and, as the window that sends it opens, the Copilot app's sessions it could go to instead, read-only from ~/.copilot: their names, projects and branches, the pull requests the app records with them and which run a turn now, from its database; the folder each works in, from its session state; which ones the app has open; and which of those active lately link to it in their logs. Only if you also turn on Send Prompts to Copilot Sessions, in Settings › Agents, and send a prompt to a session or a fork of it: which sessions BriefBar's extension listens in, and what it says became of the prompt, from files only you can read in BriefBar's own folder, which the prompt goes through too, until the extension is done with it; and, for a fork, which session the Copilot app records it came from, and when it was made. BriefBar keeps which work items and pull requests you sent, what for, where, with which model, and the pull request Copilot opened; and, in a file only you can read, what Copilot printed when it ended. New: only if you turn on Send Work to Copilot, as a pull request's details come on screen and every ten seconds while they stay there: what the window that sends work reads of the Copilot app's sessions it could go to, to name the one its work goes to; and, only if you also turn on Send Prompts to Copilot Sessions, which sessions BriefBar's extension listens in, to say how a prompt would reach that one. BriefBar keeps the session you choose for a pull request's work, by its ID only. New: only if you turn on Send Work to Copilot: when you send a prompt about a pull request's comments, builds or merge conflicts to one of the Copilot app's sessions, or to a fork of it, or BriefBar copies it for you to paste there, every few seconds from then until Copilot is done with it, to say on each comment or build, or on the conflicts, what became of it: that session's log and whether something has it open, which of the app's sessions run a turn now, from its database, and, for one copied as /fork, the fork the app records it made of the session, and when. When you ask a session about a comment with Explain, the session's conversation, which the Copilot CLI copies into a fork it deletes after, goes to GitHub Copilot with the comment and its code, and the answer stays in memory only. New: when you ask a session about a failed build with Explain the Failure, the same goes with what BriefBar read of the build as you opened it in its details: its errors, the messages and stack traces of the first tests that failed, the last 40 lines of the log of the step that failed, and whether it's the change's doing; and the prompt that has Copilot fix a build you opened there quotes them too. New: when you ask a session about a pull request's merge conflicts with Explain, the same goes with which files conflict and how, as its details read them; and the prompt that has Copilot resolve them lists them too. BriefBar keeps the comment threads, builds and conflicts each task or prompt took on, and which session a prompt about them went to and when, by their IDs only, and the IDs of the forks it made to ask a session about a comment, a build or merge conflicts, until it has deleted them. Only if you turn on Show Links: the work items linked to each of your pull requests, the pull requests linked to the sprint's work items while the sprint is on screen, and what the linked work items and pull requests that your lists don't show are; BriefBar keeps the links you add or hide, as references only, never titles. Only when a summary is written, or, for one ten minutes old or more, again as you open it, to tell whether it's still current: for the things it sums up, each pull request's description and comment threads, and each work item's details, as when you open one. With Apple Intelligence, what a summary is written from stays on this Mac; with a Copilot model, BriefBar sends it to GitHub Copilot through the Copilot CLI, which keeps a copy in its session history. BriefBar keeps none of it.",
+        network: "Azure DevOps only: dev.azure.com, and app.vssps.visualstudio.com to find your organizations, with your Azure CLI sign-in. Every request is a GET, so it never changes anything there: about 10 to 25 small requests a minute, a few more while the Sprint or Pipelines section is on screen, two or three when you open a work item's details and when it changes while they show, a few for each comment thread on code that comes on screen in a pull request's details (its updates and the files they changed, read once, and the file before and after the change, each read once, up to 1 MB), and for their Files, two to list the files the change touched and two for each file, one file at a time, as its row comes on screen or you open it (the file before and after the change, each read once, up to 1 MB), about ten when you open a pull request's build in its details, up to fourteen for one with hundreds of test runs, and again once it finished, runs again or its pull request is retargeted, but at most one, to tell whether it ran again since, when you open it again within ten minutes, or half a minute while it's going, or someone pushes to its pull request, one when you open the details of a pull request with merge conflicts, to list the files that conflict, or one for each hundred of them, and again once its branch or its target moves, a few more after you merge a pull request, while its pipelines run, and, with Show Links on, one for each pull request's work items every quarter of an hour, a few for the sprint's links while it's on screen, and, as a summary is written, or checked as you open one ten minutes old or more, up to two for each pull request it sums up and two or three for each work item whose details aren't on screen. When a summary is written with a Copilot model, the Copilot CLI sends what it covers to GitHub Copilot. When you ask a Copilot session about a comment, a failed build or merge conflicts, the Copilot CLI sends the session's conversation, with the comment and its code, what BriefBar read of the build, or which files conflict and how, to GitHub Copilot, as one premium request. When you send a work item or a pull request to Copilot, BriefBar itself still connects nowhere, but the programs it starts for you do: git fetches the repository, and the Copilot CLI uses GitHub Copilot and your MCP servers, pushes a branch, opens a pull request or replies on one, as you.",
         needs: "The Azure CLI, signed in with az login: BriefBar gets its tokens from it, so there's no personal access token, and runs it without any of BriefBar's own permissions. And permission to post notifications, which macOS asks for when you turn it on. Pull Requests Sent in Chats also needs Full Disk Access, which macOS grants once, to all of BriefBar. Send Work to Copilot needs the Copilot CLI, signed in, which BriefBar runs with your shell's environment and without any of BriefBar's own permissions.",
         requirements: [.azureCLI, .notifications]
     )
@@ -89,10 +94,13 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var pullRequestCode: PullRequestCodeStore?
     /// Pull requests' changed files and their diffs, read as their Files come on screen, through the same readers.
     private var pullRequestFiles: PullRequestFilesStore?
+    /// The files that conflict with pull requests' target branches, read as their details show them, while the code store
+    /// lets them read.
+    private var pullRequestConflicts: PullRequestConflictsStore?
     /// The Copilot session of the pull request whose details show.
     private var pullRequestSessions: PullRequestSessions?
     /// What you ask Copilot sessions about pull requests' comment threads with Explain, and their answers, in memory.
-    private var commentQuestions: CommentQuestions?
+    private var copilotQuestions: CopilotQuestions?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     /// For `--render`: a pull request's details with a build open, one that failed and one still going.
@@ -124,7 +132,7 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     private func environment<V: View>(_ view: V) -> AnyView {
         guard let store, let sprint, let pipelines, let copilot, let details, let pullRequestDetails, let buildInvestigations,
-              let pullRequestCode, let pullRequestFiles, let pullRequestSessions, let commentQuestions
+              let pullRequestCode, let pullRequestFiles, let pullRequestConflicts, let pullRequestSessions, let copilotQuestions
         else {
             return AnyView(EmptyView())
         }
@@ -137,8 +145,9 @@ package final class AzureDevOpsSource: BriefBarSource {
             .environmentObject(buildInvestigations)
             .environmentObject(pullRequestCode)
             .environmentObject(pullRequestFiles)
+            .environmentObject(pullRequestConflicts)
             .environmentObject(pullRequestSessions)
-            .environmentObject(commentQuestions)
+            .environmentObject(copilotQuestions)
             .environmentObject(pipelines)
             .environmentObject(copilot)
             .environmentObject(settings)
@@ -183,6 +192,10 @@ package final class AzureDevOpsSource: BriefBarSource {
         details.openPage = { [services] in services.openWindow(.azureDevOpsSprint) }
         let pullRequestDetails = makePullRequestDetails(store: store)
         let buildInvestigations = BuildInvestigationStore(mode: store.mode, client: store.client)
+        // Fix the Build quotes what was read of a build that's open in its details, as it is now.
+        store.investigation = { [weak buildInvestigations] check, pullRequest in
+            check.buildId.flatMap { buildInvestigations?.current($0, check: check, of: pullRequest) }
+        }
         // The details beside the list stop showing a pull request: its builds fold, unless another's opened since, such as on
         // a pull request's page in a work item's details.
         pullRequestDetails.$selected.map { $0?.key }.removeDuplicates()
@@ -197,14 +210,21 @@ package final class AzureDevOpsSource: BriefBarSource {
         pullRequestCode.follow(pullRequestDetails)
         self.pullRequestCode = pullRequestCode
         pullRequestFiles = PullRequestFilesStore(code: pullRequestCode)
+        let pullRequestConflicts = PullRequestConflictsStore(code: pullRequestCode, demo: store.mode == .demo, client: store.client)
+        self.pullRequestConflicts = pullRequestConflicts
+        // What Resolve Conflicts lists, from the details' Actions menu too, once they read it, as the pull request is then.
+        store.conflicts = { [weak pullRequestConflicts, weak store] key in
+            await pullRequestConflicts?.forPrompt(key) { store?.record(for: key) }
+        }
         // Someone else signed in to the Azure CLI: the details read as the last one go, and what was told of them.
         store.$authoredPullRequestList.map(\.account).removeDuplicates()
-            .sink { [weak details, weak workLinks, weak pullRequestDetails, weak buildInvestigations] account in
+            .sink { [weak details, weak workLinks, weak pullRequestDetails, weak buildInvestigations, weak pullRequestConflicts] account in
                 MainActor.assumeIsolated {
                     details?.accountChanged(account)
                     workLinks?.accountChanged(account)
                     pullRequestDetails?.accountChanged(account)
                     buildInvestigations?.accountChanged(account)
+                    pullRequestConflicts?.accountChanged(account)
                 }
             }
             .store(in: &cancellables)
@@ -215,7 +235,22 @@ package final class AzureDevOpsSource: BriefBarSource {
         let sessions = PullRequestSessions(copilot: copilot, links: services.links)
         sessions.record = { [weak store] key in store?.record(for: key) }
         pullRequestSessions = sessions
-        commentQuestions = CommentQuestions(copilot: copilot)
+        let questions = CopilotQuestions(copilot: copilot)
+        copilotQuestions = questions
+        // Each time the pull requests are read again, whether their rows changed or not, as when an optional build passed:
+        // what Copilot took on of a build that a run passed after is over, so its fix doesn't come back as a later run fails;
+        // and what a session answered about a build's run, or attempt, that isn't the one its details list any more goes.
+        store.refreshed
+            .receive(on: DispatchQueue.main)
+            .sink { [weak store, weak copilot, weak questions] in
+                MainActor.assumeIsolated {
+                    guard let store else { return }
+                    let records = store.items.compactMap { store.record(for: $0.key) }
+                    copilot?.endWorkOnBuildsThatPassed(in: records)
+                    questions?.dismissStale(of: records)
+                }
+            }
+            .store(in: &cancellables)
         // A pull request that a task or a link names shows in its details, on the window's page, while the list has it.
         copilot.canShowPullRequest = { [weak store, weak pullRequestDetails] key in
             guard let store, let pullRequestDetails else { return false }
@@ -354,8 +389,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         pullRequestDetails?.stop()
         buildInvestigations?.stop()
         pullRequestCode?.stop()
+        pullRequestConflicts?.stop()
         pullRequestSessions?.stopAll()
-        commentQuestions?.stopAll()
+        copilotQuestions?.stopAll()
         services.sentTasks.withdraw(.azureDevOps)
         services.summaries.setYourName(.azureDevOps, nil)
         store = nil
@@ -368,8 +404,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         buildInvestigations = nil
         pullRequestCode = nil
         pullRequestFiles = nil
+        pullRequestConflicts = nil
         pullRequestSessions = nil
-        commentQuestions = nil
+        copilotQuestions = nil
         services.fullDiskAccess.unregister(.azureDevOps)
     }
 
@@ -681,6 +718,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         await loadInvestigationsForRendering(store: store)
         await loadCodeForRendering(store: store)
         await loadFilesForRendering(store: store)
+        await loadConflictsForRendering(store: store)
         await pipelines?.loadOnce()
         await workLinks?.loadOnce()
         // Before Copilot's list loads, which shows them with the sessions.
@@ -765,7 +803,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         renderings += buildInvestigationRenderings()
         renderings += pullRequestThreadRenderings()
         renderings += commentActionRenderings()
+        renderings += buildCopilotRenderings()
         renderings += pullRequestFilesRenderings()
+        renderings += pullRequestConflictRenderings()
         if let copilot, let item = sprint?.board?.myWork.first(where: { copilot.latest(for: $0) == nil }) {
             let composer = CopilotComposerView(item: item.copilotTask, options: settings.copilotOptions, template: settings.copilotPromptTemplate) {}
                 .environment(\.isRendering, true)
@@ -1007,7 +1047,7 @@ extension AzureDevOpsSource {
     /// about another thread above them, and the fixes ready to push at the foot; Explain's composer open, then asking, then
     /// answered; Fix's composer open, on it and on a thread with a suggested change; Copilot fixing it, in its session and in
     /// a fork of it; fixed; failing; sent, how it went unknown; and Fix All's composer open. In a narrow window too, for the first two. Each from made-up
-    /// states, through `CommentActionsPreview`: nothing's sent or asked.
+    /// states, through `CopilotActionsPreview`: nothing's sent or asked.
     func commentActionRenderings() -> [(name: String, view: AnyView)] {
         guard let store, store.mode == .demo, let item = renderedPullRequests(store).first, let record = store.record(for: item.key) else {
             return []
@@ -1019,61 +1059,61 @@ extension AzureDevOpsSource {
         let now = store.now
         let session = SentPrompt.demoSession
         let fork = "5c1e7a90-3b2d-4f68-9a1c-2e8d7b6f4a05"
-        func work(_ state: CommentWork.State, ago minutes: Double, forkedFrom: String? = nil) -> CommentWork {
-            CommentWork(
-                purpose: .fix, state: state, session: forkedFrom == nil ? session : fork, forkedFrom: forkedFrom, isTask: false,
+        func work(_ state: CopilotWork.State, ago minutes: Double, forkedFrom: String? = nil) -> CopilotWork {
+            CopilotWork(
+                part: .thread(waiting.id), purpose: .fix, state: state, session: forkedFrom == nil ? session : fork, forkedFrom: forkedFrom, isTask: false,
                 since: now.addingTimeInterval(-minutes * 60)
             )
         }
         let question = "Isn't 30 seconds too short when the provider is down for minutes?"
         let how = "Cap it with a MaxDelay on RetryOptions, as Priya suggests, 30 seconds by default"
-        let ready = suggested.map { [ReadyFixes(session: session, forkedFrom: nil, isTask: false, threads: [waiting.id, $0.id], latest: now)] }
-        var shown: [(name: String, thread: Int, preview: CommentActionsPreview, sizes: [(suffix: String, size: CGSize)])] = [
-            ("pull-requests-comment-actions", waiting.id, CommentActionsPreview(), [("", CGSize(width: 1_000, height: 900)), ("-narrow", CGSize(width: 560, height: 900))]),
-            ("pull-requests-comment-explain", waiting.id, CommentActionsPreview(composers: [
-                .init(thread: waiting.id, ask: .explain, text: question, destination: .session(session)),
+        let ready = suggested.map { [ReadyFixes(session: session, forkedFrom: nil, isTask: false, parts: [.thread(waiting.id), .thread($0.id)], latest: now)] }
+        var shown: [(name: String, thread: Int, preview: CopilotActionsPreview, sizes: [(suffix: String, size: CGSize)])] = [
+            ("pull-requests-comment-actions", waiting.id, CopilotActionsPreview(), [("", CGSize(width: 1_000, height: 900)), ("-narrow", CGSize(width: 560, height: 900))]),
+            ("pull-requests-comment-explain", waiting.id, CopilotActionsPreview(composers: [
+                .init(part: .thread(waiting.id), ask: .explain, text: question, destination: .session(session)),
             ]), [("", CGSize(width: 1_000, height: 900)), ("-narrow", CGSize(width: 560, height: 900))]),
-            ("pull-requests-comment-explaining", waiting.id, CommentActionsPreview(questions: [
-                waiting.id: .init(session: session, asked: question, askedAt: now.addingTimeInterval(-40), state: .asking),
+            ("pull-requests-comment-explaining", waiting.id, CopilotActionsPreview(questions: [
+                .thread(waiting.id): .init(session: session, asked: question, askedAt: now.addingTimeInterval(-40), state: .asking),
             ]), [("", CGSize(width: 1_000, height: 900))]),
-            ("pull-requests-comment-answer", waiting.id, CommentActionsPreview(questions: [
-                waiting.id: .init(
+            ("pull-requests-comment-answer", waiting.id, CopilotActionsPreview(questions: [
+                .thread(waiting.id): .init(
                     session: session, asked: question, askedAt: now.addingTimeInterval(-150),
                     state: .answered(DemoData.explanation(ofThread: waiting.id, pullRequest: item.key.number)), endedAt: now.addingTimeInterval(-90)
                 ),
             ]), [("", CGSize(width: 1_000, height: 1_100))]),
             // Fix, building on what the session answered.
-            ("pull-requests-comment-fix-answer", waiting.id, CommentActionsPreview(
-                composers: [.init(thread: waiting.id, ask: .fix, text: "The second way, with 45 seconds by default", destination: .session(session))],
+            ("pull-requests-comment-fix-answer", waiting.id, CopilotActionsPreview(
+                composers: [.init(part: .thread(waiting.id), ask: .fix, text: "The second way, with 45 seconds by default", destination: .session(session))],
                 questions: [
-                    waiting.id: .init(
+                    .thread(waiting.id): .init(
                         session: session, asked: question, askedAt: now.addingTimeInterval(-150),
                         state: .answered(DemoData.explanation(ofThread: waiting.id, pullRequest: item.key.number)), endedAt: now.addingTimeInterval(-90)
                     ),
                 ]
             ), [("", CGSize(width: 1_000, height: 1_500))]),
-            ("pull-requests-comment-fix", waiting.id, CommentActionsPreview(composers: [
-                .init(thread: waiting.id, ask: .fix, text: how, destination: .session(session)),
+            ("pull-requests-comment-fix", waiting.id, CopilotActionsPreview(composers: [
+                .init(part: .thread(waiting.id), ask: .fix, text: how, destination: .session(session)),
             ]), [("", CGSize(width: 1_000, height: 900)), ("-narrow", CGSize(width: 560, height: 900))]),
-            ("pull-requests-comment-fixing", waiting.id, CommentActionsPreview(work: [waiting.id: work(.working("Run PaymentsClientTests"), ago: 2)]),
+            ("pull-requests-comment-fixing", waiting.id, CopilotActionsPreview(work: [.thread(waiting.id): work(.working("Run PaymentsClientTests"), ago: 2)]),
              [("", CGSize(width: 1_000, height: 900))]),
-            ("pull-requests-comment-fork", waiting.id, CommentActionsPreview(work: [waiting.id: work(.working(nil), ago: 2, forkedFrom: session)]),
+            ("pull-requests-comment-fork", waiting.id, CopilotActionsPreview(work: [.thread(waiting.id): work(.working(nil), ago: 2, forkedFrom: session)]),
              [("", CGSize(width: 1_000, height: 900))]),
-            ("pull-requests-comment-fixed", waiting.id, CommentActionsPreview(
-                work: [waiting.id: work(.done("Capped the backoff at RetryOptions.MaxDelay, 30 seconds by default. The tests pass."), ago: 1)],
+            ("pull-requests-comment-fixed", waiting.id, CopilotActionsPreview(
+                work: [.thread(waiting.id): work(.done("Capped the backoff at RetryOptions.MaxDelay, 30 seconds by default. The tests pass."), ago: 1)],
                 ready: ready
             ), [("", CGSize(width: 1_000, height: 900))]),
-            ("pull-requests-comment-failed", waiting.id, CommentActionsPreview(
-                work: [waiting.id: work(.failed("The build failed: CS0103 The name 'MaxDelay' does not exist in the current context."), ago: 3)]
+            ("pull-requests-comment-failed", waiting.id, CopilotActionsPreview(
+                work: [.thread(waiting.id): work(.failed("The build failed: CS0103 The name 'MaxDelay' does not exist in the current context."), ago: 3)]
             ), [("", CGSize(width: 1_000, height: 900))]),
             // Another prompt went to the session before its turn ended: how it went isn't known.
-            ("pull-requests-comment-unknown", waiting.id, CommentActionsPreview(work: [waiting.id: work(.unknown(copied: false), ago: 6)], ready: []),
+            ("pull-requests-comment-unknown", waiting.id, CopilotActionsPreview(work: [.thread(waiting.id): work(.unknown(copied: false), ago: 6)], ready: []),
              [("", CGSize(width: 1_000, height: 900))]),
         ]
         if let suggested {
-            shown.append(("pull-requests-comment-suggestion", suggested.id, CommentActionsPreview(
-                composers: [.init(thread: suggested.id, ask: .fix, text: "", destination: .session(session), appliesSuggestion: true)],
-                quiet: [suggested.id], ready: []
+            shown.append(("pull-requests-comment-suggestion", suggested.id, CopilotActionsPreview(
+                composers: [.init(part: .thread(suggested.id), ask: .fix, text: "", destination: .session(session), appliesSuggestion: true)],
+                quiet: [.thread(suggested.id)], ready: []
             ), [("", CGSize(width: 1_000, height: 900))]))
         }
         var renderings: [(name: String, view: AnyView)] = []
@@ -1083,7 +1123,7 @@ extension AzureDevOpsSource {
             }
         }
         // Fix All's composer, under the comments' heading.
-        let fixAll = CommentActionsPreview(composers: [.init(thread: nil, ask: .fixAll, text: "Keep the public API as it is", destination: .session(session))])
+        let fixAll = CopilotActionsPreview(composers: [.init(part: nil, ask: .fixAll, text: "Keep the public API as it is", destination: .session(session))])
         let details = PullRequestDetailsStore()
         details.readRecord = { [weak store] key in store?.record(for: key) }
         details.itemsChanged(store.items)
@@ -1094,7 +1134,7 @@ extension AzureDevOpsSource {
 
     /// The Pull Requests page with a pull request's details taken to one of its threads, in a store of its own, since each
     /// scrolls its details there once.
-    private func commentsPage(_ item: PRSnapshot, at thread: Int, preview: CommentActionsPreview, size: CGSize) -> some View {
+    private func commentsPage(_ item: PRSnapshot, at thread: Int, preview: CopilotActionsPreview, size: CGSize) -> some View {
         let details = PullRequestDetailsStore()
         details.readRecord = { [weak store] key in store?.record(for: key) }
         details.itemsChanged(store?.items ?? [])
@@ -1102,15 +1142,99 @@ extension AzureDevOpsSource {
         return page(details, preview: preview, size: size)
     }
 
-    private func page(_ details: PullRequestDetailsStore, preview: CommentActionsPreview, size: CGSize) -> some View {
+    private func page(_ details: PullRequestDetailsStore, preview: CopilotActionsPreview, size: CGSize) -> some View {
         PullRequestsPage()
             .environmentObject(details)
-            .environment(\.commentActionsPreview, preview)
+            .environment(\.copilotActionsPreview, preview)
             .environment(\.panelStyle, .page)
             .textSize(from: services)
             .frame(width: size.width, height: size.height)
             .background(WindowBackdrop())
             .environment(\.isRendering, true)
+    }
+}
+
+// MARK: - Asking Copilot about a failed build, for --render
+
+extension AzureDevOpsSource {
+    /// The Pull Requests page with the details of the first failing pull request taken to its build that failed, open, with
+    /// what you can ask Copilot about it, in each state: Explain the Failure and Fix, under where it failed; Explain's
+    /// composer open, then asking, then answered; Fix's composer open, building on the answer; Copilot fixing it, as the
+    /// demo's Fix the Build task does; fixed, with the fixes ready to push at the foot; and failing. In a narrow window too,
+    /// for the first three. Each from made-up states, through `CopilotActionsPreview`: nothing's sent or asked.
+    func buildCopilotRenderings() -> [(name: String, view: AnyView)] {
+        guard let store, store.mode == .demo,
+              let (_, item, investigations) = renderedInvestigations.first(where: { $0.name == "pull-requests-build-failure" }),
+              let record = store.record(for: item.key),
+              let line = PullRequestPanel(item, record: record).checks.first(where: { $0.canInvestigate && $0.run.state == .failing }),
+              let part = line.check?.part, let buildId = line.buildId
+        else { return [] }
+        let now = store.now
+        // The demo's Fix the Build task on it (`CopilotTaskEntry.demo`).
+        let task = "1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b03"
+        func work(_ state: CopilotWork.State, ago minutes: Double) -> CopilotWork {
+            CopilotWork(part: part, purpose: .fix, state: state, session: task, forkedFrom: nil, isTask: true, since: now.addingTimeInterval(-minutes * 60))
+        }
+        let question = "Did this pull request break it, or was it broken on main?"
+        let answered = CopilotQuestions.Question(
+            session: task, asked: nil, askedAt: now.addingTimeInterval(-150), state: .answered(DemoData.buildExplanation(pullRequest: item.key.number)),
+            endedAt: now.addingTimeInterval(-90), run: buildId
+        )
+        let how = "Fix it here: skip weekends in AddBusinessDays, and compare the cutoff in the warehouse's time zone"
+        let wide = CGSize(width: 1_000, height: 1_100), narrow = CGSize(width: 560, height: 1_100)
+        let fixed = work(.done("AddBusinessDays skips weekends, and the cutoff is compared in the warehouse's time zone. The tests pass."), ago: 1)
+        let shown: [(name: String, preview: CopilotActionsPreview, sizes: [(suffix: String, size: CGSize)])] = [
+            ("pull-requests-build-actions", CopilotActionsPreview(quiet: [part], ready: []), [("", wide), ("-narrow", narrow)]),
+            ("pull-requests-build-explain", CopilotActionsPreview(
+                composers: [.init(part: part, ask: .explain, text: question, destination: .session(task))], quiet: [part], ready: []
+            ), [("", wide), ("-narrow", narrow)]),
+            ("pull-requests-build-explaining", CopilotActionsPreview(
+                quiet: [part],
+                questions: [part: .init(session: task, asked: question, askedAt: now.addingTimeInterval(-40), state: .asking, run: buildId)],
+                ready: []
+            ), [("", wide)]),
+            ("pull-requests-build-answer", CopilotActionsPreview(quiet: [part], questions: [part: answered], ready: []), [("", wide), ("-narrow", narrow)]),
+            // Where it goes unless you choose: a fork of the task, which is busy.
+            ("pull-requests-build-fix", CopilotActionsPreview(
+                composers: [.init(part: part, ask: .fix, text: how, destination: nil)], quiet: [part], questions: [part: answered], ready: []
+            ), [("", CGSize(width: 1_000, height: 1_500))]),
+            ("pull-requests-build-fixing", CopilotActionsPreview(work: [part: work(.working("Run DeliveryEstimateTests"), ago: 9)], ready: []), [("", wide)]),
+            ("pull-requests-build-fixed", CopilotActionsPreview(
+                work: [part: fixed], ready: [ReadyFixes(session: task, forkedFrom: nil, isTask: true, parts: [part], latest: now.addingTimeInterval(-60))]
+            ), [("", wide)]),
+            ("pull-requests-build-fix-failed", CopilotActionsPreview(
+                work: [part: work(.failed("The tests still fail: EstimateUsesTheWarehouseTimeZone expects 2 days and gets 3."), ago: 2)], ready: []
+            ), [("", wide)]),
+            // Closed, its row says them: what it answered since it fixed it, then the fix.
+            ("pull-requests-build-closed", CopilotActionsPreview(
+                work: [part: work(.done("AddBusinessDays skips weekends, and the cutoff is compared in the warehouse's time zone. The tests pass."), ago: 12)],
+                questions: [part: answered],
+                ready: [ReadyFixes(session: task, forkedFrom: nil, isTask: true, parts: [part], latest: now.addingTimeInterval(-720))]
+            ), [("", wide), ("-narrow", narrow)]),
+        ]
+        var renderings: [(name: String, view: AnyView)] = []
+        for (name, preview, sizes) in shown {
+            for (suffix, size) in sizes {
+                // A store for each, since each scrolls its details to its builds once.
+                let details = PullRequestDetailsStore()
+                details.readRecord = { [weak store] key in store?.record(for: key) }
+                details.itemsChanged(store.items)
+                details.show(item, at: .section(.checks))
+                // Closed, in a store that hasn't opened it.
+                let opened = name.hasSuffix("-closed") ? BuildInvestigationStore(mode: store.mode, client: store.client) : investigations
+                let view = PullRequestsPage()
+                    .environmentObject(details)
+                    .environmentObject(opened)
+                    .environment(\.copilotActionsPreview, preview)
+                    .environment(\.panelStyle, .page)
+                    .textSize(from: services)
+                    .frame(width: size.width, height: size.height)
+                    .background(WindowBackdrop())
+                    .environment(\.isRendering, true)
+                renderings.append((name: name + suffix, view: environment(view)))
+            }
+        }
+        return renderings
     }
 }
 
@@ -1223,6 +1347,106 @@ extension AzureDevOpsSource {
         }
         return renderings
     }
+}
+
+// MARK: - A pull request's merge conflicts, for --render
+
+extension AzureDevOpsSource {
+    /// The first of your open pull requests whose merge conflicts, whose details `--render` draws at them.
+    private func conflictingPullRequest(_ store: PRStore) -> PRSnapshot? {
+        store.items.first { item in
+            guard item.role == .author, let pullRequest = store.record(for: item.key)?.pullRequest else { return false }
+            return pullRequest.status == .active && pullRequest.hasConflicts
+        }
+    }
+
+    /// Reads which files conflict before `--render` draws them, as the details would as they come on screen in a window
+    /// that shows them: in the demo, for each pull request with conflicts; otherwise for those whose details it draws. And
+    /// the files of the one whose details it draws at its conflicts, which show under them.
+    func loadConflictsForRendering(store: PRStore) async {
+        guard let code = pullRequestCode, let conflicts = pullRequestConflicts else { return }
+        let drawn = conflictingPullRequest(store)
+        let items = store.mode == .demo ? store.items : renderedPullRequests(store) + [drawn].compactMap { $0 }
+        for item in items {
+            guard let pullRequest = store.record(for: item.key)?.pullRequest, pullRequest.hasConflicts else { continue }
+            // Held while `--render` draws.
+            _ = code.hold(item.key)
+            await conflicts.readAll(of: pullRequest)
+        }
+        if let drawn, let pullRequest = store.record(for: drawn.key)?.pullRequest, pullRequestFiles?.list(of: drawn.key, .whole) == nil {
+            await pullRequestFiles?.readAll(of: pullRequest, counting: 20)
+        }
+    }
+
+    /// The Pull Requests page with the details of the first of your pull requests whose merge conflicts, taken to its
+    /// conflicts, as What's Left takes them there, beside the list as in a big window and over it in a narrow one; and, in
+    /// the demo, with what you can ask Copilot about them in each state: Resolve's composer open, with your words, Copilot
+    /// resolving them in the pull request's session, resolved and not pushed, with the fix ready to push at the foot, and
+    /// what the session explained of them. Each from made-up states, through `CopilotActionsPreview`: nothing's sent or
+    /// asked.
+    func pullRequestConflictRenderings() -> [(name: String, view: AnyView)] {
+        guard let store, let item = conflictingPullRequest(store) else { return [] }
+        let wide = CGSize(width: 1_000, height: 900)
+        let narrow = CGSize(width: 560, height: 900)
+        var shown: [(name: String, preview: CopilotActionsPreview?, sizes: [(suffix: String, size: CGSize)])] = [
+            ("pull-requests-conflicts", nil, [("", wide), ("-narrow", narrow)]),
+        ]
+        if store.mode == .demo {
+            // As of the demo's now, however long rendering takes.
+            let now = store.now
+            let session = Self.renderedConflictsSession
+            func work(_ state: CopilotWork.State, ago minutes: Double) -> CopilotWork {
+                CopilotWork(
+                    part: .conflicts, purpose: .fix, state: state, session: session, forkedFrom: nil, isTask: false,
+                    since: now.addingTimeInterval(-minutes * 60)
+                )
+            }
+            let how = "Keep main's Refunded, under the new names, and drop the legacy mapper as main did"
+            shown += [
+                ("pull-requests-conflicts-resolve", CopilotActionsPreview(composers: [
+                    .init(part: .conflicts, ask: .fix, text: how, destination: .session(session)),
+                ]), [("", wide), ("-narrow", narrow)]),
+                ("pull-requests-conflicts-resolving", CopilotActionsPreview(
+                    work: [.conflicts: work(.working("Run the order tests"), ago: 3)], ready: []
+                ), [("", wide)]),
+                ("pull-requests-conflicts-resolved", CopilotActionsPreview(
+                    work: [.conflicts: work(.done(
+                        "Merged main in: kept Refunded under the new names, let LegacyOrderMapper go as main did, and put both sets of tests in OrderStatusTests.cs. The tests pass."
+                    ), ago: 1)],
+                    ready: [ReadyFixes(session: session, forkedFrom: nil, isTask: false, parts: [.conflicts], latest: now)]
+                ), [("", wide)]),
+                ("pull-requests-conflicts-explained", CopilotActionsPreview(questions: [
+                    .conflicts: .init(
+                        session: session, asked: nil, askedAt: now.addingTimeInterval(-150),
+                        state: .answered(DemoData.conflictsExplanation(pullRequest: item.key.number)), endedAt: now.addingTimeInterval(-90)
+                    ),
+                ], ready: []), [("", CGSize(width: 1_000, height: 1_100))]),
+            ]
+        }
+        var renderings: [(name: String, view: AnyView)] = []
+        for (name, preview, sizes) in shown {
+            for (suffix, size) in sizes {
+                // A store for each, since each scrolls its details there once.
+                let details = PullRequestDetailsStore()
+                details.readRecord = { [weak store] key in store?.record(for: key) }
+                details.itemsChanged(store.items)
+                details.show(item, at: .section(.conflicts))
+                let view = PullRequestsPage()
+                    .environmentObject(details)
+                    .environment(\.copilotActionsPreview, preview)
+                    .environment(\.panelStyle, .page)
+                    .textSize(from: services)
+                    .frame(width: size.width, height: size.height)
+                    .background(WindowBackdrop())
+                    .environment(\.isRendering, true)
+                renderings.append((name: name + suffix, view: environment(view)))
+            }
+        }
+        return renderings
+    }
+
+    /// The Copilot demo's session that renamed !4079's enum, ‘Rename the order status enum’ (scripts/make-copilot-demo-data.swift).
+    private static let renderedConflictsSession = "7b1c9d3e-5f2a-4b8c-9d6e-0a1b2c3d4e15"
 }
 
 /// How the Azure CLI's sign-in and notifications stand, on Azure DevOps' page in Settings.

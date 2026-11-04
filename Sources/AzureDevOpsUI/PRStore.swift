@@ -53,6 +53,9 @@ final class PRStore: ObservableObject {
     var chatAccessChanged: ((AccessStatus) -> Void)?
     /// Opens a pull request's link: in the browser, or, in tests, where they say.
     var openLink: (URL) -> Void = { AzureDevOps.open($0) }
+    /// What the details read of one of a pull request's builds, while it's open there, as its check and the pull request are
+    /// now (`BuildInvestigationStore.current`): Fix the Build's prompt quotes it, rather than only its errors.
+    var investigation: (_ check: Check, _ pullRequest: PullRequest) -> BuildInvestigation? = { _, _ in nil }
 
     let settings: AppSettings
     let summarizer: Summarizer
@@ -775,38 +778,71 @@ final class PRStore: ObservableObject {
     }
 
     /// Writes the prompts for what Copilot should do with a pull request, then opens the composer with them: for a failed
-    /// build, once each failed build's errors have been read. Fix Comments and Push & Reply take on the threads their
-    /// prompts list, for each to say what became of it.
+    /// build, once each failed build's errors have been read; for its conflicts, with the files that conflict, once its
+    /// details read them (`conflicts`). Each takes on what its prompt does, for each to say what became of it
+    /// (`PullRequestTasks.parts`).
     /// - Parameters:
     ///   - start: where it goes to begin with, rather than BriefBar's suggestion, such as the session whose fixes Push &
     ///     Reply ships.
-    ///   - threads: for Push & Reply, the threads whose fixes it ships, which its prompt lists alone; without them, it lists
-    ///     those Fix Comments does.
+    ///   - parts: for Push & Reply, what the fixes it ships took on: its prompt lists their threads alone, and replies on
+    ///     those alone, or on none for a build's fix alone; without any, it lists those Fix Comments does.
     func composeCopilot(
-        _ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore, start: ComposerStart? = nil, threads: [Int] = []
+        _ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore, start: ComposerStart? = nil,
+        parts: [PullRequestPart] = []
     ) {
         guard let record = record(for: item.key) else { return }
         let pr = record.pullRequest
-        let task = PullRequestTasks.task(for: record)
-        let client = mode == .live ? client : nil
-        // Push & Reply for some threads, such as one session's fixes when they're in more than one, ships, replies on and
-        // hands off those alone.
-        let scope = action == .pushAndReply && !threads.isEmpty ? threads : nil
+        // Push & Reply for some fixes, such as one session's when they're in more than one, ships, replies on and hands off
+        // their threads alone.
+        let scope = action == .pushAndReply ? PullRequestTasks.shippedThreads(parts) : nil
         let handOff = commentHandOff(action, for: record, threads: scope)
-        // The threads it takes on, as its prompt lists them, for each to say what became of it.
-        let threads: [Int] = switch action {
-        case .fixComments: PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map(\.id)
-        case .pushAndReply: PullRequestPrompt.shippedThreads(record, only: scope).prefix(PullRequestPrompt.threadLimit).map(\.id)
-        default: threads
+        let taken = PullRequestTasks.parts(action, for: record, shipping: action == .pushAndReply ? parts : [])
+        // What its details read of its builds, which Fix the Build quotes rather than only their errors.
+        var investigations: [Int: BuildInvestigation] = [:]
+        if action == .fixBuild {
+            for check in PullRequestTasks.failedBuilds(record) {
+                if let buildId = check.buildId, let investigation = investigation(check, pr) { investigations[buildId] = investigation }
+            }
         }
         Task {
-            let prompts = await PullRequestTasks.prompts(action, for: record, client: client, threads: scope)
+            // Gone from your lists while it waited for the files that conflict: nothing opens.
+            guard let written = await copilotPrompts(action, for: record, threads: scope, investigations: investigations) else { return }
             copilot.compose(
-                task, action: action, prompt: prompts.worktree, sessionPrompt: prompts.session, createdAt: pr.createdAt, handOff: handOff,
-                start: start, threads: threads
+                PullRequestTasks.task(for: written.record), action: action, prompt: written.prompts.worktree,
+                sessionPrompt: written.prompts.session, createdAt: pr.createdAt, handOff: handOff, start: start, parts: taken
             )
         }
     }
+
+    /// The prompts `composeCopilot` opens the composer with, and the pull request as they're written for: for its conflicts,
+    /// once a read of them under way ends, the pull request as the list has it then, with the files read for it (`conflicts`),
+    /// so they're listed even when you ask before they're read, and a push or a retarget meanwhile is taken in; nil once the
+    /// list has it no more, or it was completed or abandoned meanwhile.
+    /// - Parameters:
+    ///   - threads: for Push & Reply, the threads it ships alone.
+    ///   - investigations: what the details read of its builds, by run, which Fix the Build quotes.
+    func copilotPrompts(
+        _ action: PullRequestAction, for record: PRRecord, threads: [Int]? = nil, investigations: [Int: BuildInvestigation] = [:]
+    ) async -> (record: PRRecord, prompts: (worktree: String, session: String))? {
+        var record = record
+        var files: MergeConflicts?
+        if action == .resolveConflicts, let conflicts {
+            guard let current = await conflicts(record.pullRequest.key), current.record.pullRequest.status == .active else { return nil }
+            record = current.record
+            files = current.conflicts
+        }
+        let client = mode == .live ? client : nil
+        let prompts = await PullRequestTasks.prompts(
+            action, for: record, client: client, threads: threads, investigations: investigations, conflicts: files
+        )
+        return (record, prompts)
+    }
+
+    /// The files that conflict with a pull request's target branch, as its details read them, once a read of them under way
+    /// ends, with the pull request as the list has it then, or nil once it has it no more: the source's
+    /// (`PullRequestConflictsStore.forPrompt`). Nil without a store that reads them, as in tests, where the prompt goes
+    /// without them.
+    var conflicts: (@MainActor (PRKey) async -> (record: PRRecord, conflicts: MergeConflicts?)?)?
 
     /// What a task takes off Needs You once you send it: for Fix Comments and Push & Reply on your pull request, the comments
     /// that wait on you as the prompt is written from `record`, not as they are when you send it, for the account signed in

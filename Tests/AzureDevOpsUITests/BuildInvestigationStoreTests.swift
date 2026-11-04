@@ -144,6 +144,36 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(store.look(1, of: slowQueries.key) == nil)
     }
 
+    /// Fix the Build quotes what shows of a run while it's open, as its check and pull request are now: not what's kept of
+    /// one that's folded, nor what was read before it ran again, under the same ID, until it's read again.
+    @Test func fixTheBuildQuotesOnlyWhatsCurrent() async throws {
+        let gate = InvestigationGate()
+        let store = makeStore(gate)
+        let failed = Check(name: "shop-web CI", kind: .build, state: .failed, completedAt: now, buildId: 1, definitionId: 31)
+        #expect(store.current(1, check: failed, of: delivery) == nil)
+        store.expand(1, of: delivery, check: failed)
+        try await gate.answer(.success(investigation(1)))
+        try await until("the read") { store.look(1, of: delivery.key)?.isReading == false }
+        #expect(store.current(1, check: failed, of: delivery) == investigation(1))
+        // It ran again under the same ID, and failed again: what shows is the attempt before's, until it's read.
+        var again = failed
+        again.completedAt = now.addingTimeInterval(600)
+        #expect(store.current(1, check: again, of: delivery) == nil)
+        store.changed(1, of: delivery, check: again)
+        let second = investigation(1, number: "20261102.4", readAt: now.addingTimeInterval(601))
+        try await gate.answer(.success(second))
+        try await until("the read again") { store.look(1, of: delivery.key)?.investigation == second }
+        #expect(store.current(1, check: again, of: delivery) == second)
+        // Pushed to since: another commit.
+        var pushed = delivery
+        pushed.sourceCommit = "f00d"
+        #expect(store.current(1, check: again, of: pushed) == nil)
+        // Folded, it isn't read again as it changes.
+        store.collapse(1, of: delivery.key)
+        #expect(store.look(1, of: delivery.key)?.investigation == second)
+        #expect(store.current(1, check: again, of: delivery) == nil)
+    }
+
     @Test func readingAgainShowsWhatWasReadUntilItsAnswered() async throws {
         let gate = InvestigationGate()
         let store = makeStore(gate)

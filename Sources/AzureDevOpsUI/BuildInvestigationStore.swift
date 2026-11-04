@@ -145,6 +145,16 @@ final class BuildInvestigationStore: ObservableObject {
         pullRequest == key ? looks[buildId] : nil
     }
 
+    /// What shows of a run that's open in its pull request's details, while it's of the run as its check and pull request
+    /// are now: not what's kept of one that's folded, which isn't read again as it changes, nor what was read before it ran
+    /// again, under the same ID, or before its pull request changed. Fix the Build quotes it.
+    func current(_ buildId: Int, check: Check?, of pr: PullRequest) -> BuildInvestigation? {
+        guard isExpanded(buildId, of: pr.key), let look = looks[buildId], look.shownFor == Stamp(check: check, pullRequest: pr) else {
+            return nil
+        }
+        return look.investigation
+    }
+
     /// Opens a run under its row, and asks the investigator for it, which answers with what it keeps while that's fresh,
     /// and reads it otherwise; anew when its check changed since it was read. What was read before shows meanwhile.
     /// - Parameter check: the run's check, as the list has it now.

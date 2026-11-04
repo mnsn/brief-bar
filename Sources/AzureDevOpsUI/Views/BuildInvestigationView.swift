@@ -5,8 +5,9 @@ import CopilotTasks
 import SwiftUI
 
 /// One of a pull request's builds, open under its row in the details: its stages, where it failed, whether it's the
-/// change's doing, what to do about it, its errors, the tests that failed and the end of the failed step's log, as read
-/// when it opened (`BuildInvestigationStore`); for one still going, its stages as they are, and what it's doing.
+/// change's doing, what to do about it, with Copilot too (`BuildCopilotActions`), its errors, the tests that failed and the
+/// end of the failed step's log, as read when it opened (`BuildInvestigationStore`); for one still going, its stages as they
+/// are, and what it's doing.
 struct BuildInvestigationView: View {
     let line: PullRequestPanel.CheckLine
     let item: PRSnapshot
@@ -14,6 +15,9 @@ struct BuildInvestigationView: View {
     let buildId: Int
     let look: BuildInvestigationStore.Look?
     let now: Date
+    /// The composer in place that's open in the builds and checks, and what you wrote in each.
+    @Binding var composing: CopilotComposing?
+    let drafts: CopilotDrafts
 
     @EnvironmentObject private var investigations: BuildInvestigationStore
 
@@ -29,7 +33,13 @@ struct BuildInvestigationView: View {
                         }
                     }
                 }
-                BuildActions(line: line, item: item, investigation: investigation, look: look, now: now, readAgain: readAgain)
+                // What Copilot can do about it, then Open Run and when it was read.
+                BuildCopilotActions(
+                    line: line, item: item, pullRequest: pullRequest, investigation: investigation, now: now, composing: $composing,
+                    drafts: drafts
+                ) {
+                    BuildActions(investigation: investigation, look: look, now: now, readAgain: readAgain)
+                }
                 if let unread = investigation.unreadSentence {
                     note(unread, symbol: "exclamationmark.triangle")
                 }
@@ -226,62 +236,23 @@ extension BuildHint {
 
 // MARK: - What to do
 
-/// Fixing it with Copilot, as the pull request's menu offers, or that Copilot's on it; opening its run; and when it was
-/// read, to read it again.
+/// Opening its run, and when it was read, to read it again: after what Copilot can do about it, in one row
+/// (`BuildCopilotActions`).
 private struct BuildActions: View {
-    let line: PullRequestPanel.CheckLine
-    let item: PRSnapshot
     let investigation: BuildInvestigation
     let look: BuildInvestigationStore.Look?
     let now: Date
     let readAgain: () -> Void
 
-    @EnvironmentObject private var copilot: CopilotTasksStore
-    @EnvironmentObject private var store: PRStore
-
     var body: some View {
-        FlowLayout(spacing: 8, lineSpacing: 8) {
-            copilotAction
-            Button {
-                AzureDevOps.open(investigation.run.webURL)
-            } label: {
-                Label("Open Run", systemImage: "arrow.up.forward.app")
-            }
-            .glassButtonStyle()
-            .help("Open \(investigation.run.number) in Azure DevOps, with its whole log")
-            readStatus
+        Button {
+            AzureDevOps.open(investigation.run.webURL)
+        } label: {
+            Label("Open Run", systemImage: "arrow.up.forward.app")
         }
-        .controlSize(.small)
-        // A small button's own size, which follows the window's text size, as what's beside them does.
-        .font(size: 11)
-    }
-
-    /// While Send Work to Copilot is on: that Copilot's at work on its builds, or Fix the Build with Copilot, for a required
-    /// build that failed on your pull request.
-    @ViewBuilder
-    private var copilotAction: some View {
-        if copilot.isOn {
-            let last = copilot.latest(forPullRequest: item.key)
-            let isActive = last?.status.phase.isActive == true
-            if isActive, last?.action?.takesCare(of: .builds) == true {
-                Label("Copilot's on it", systemImage: "paperplane.fill")
-                    .font(size: 11.5, weight: .semibold)
-                    .foregroundStyle(ItemState.running.textColor)
-                    .padding(.vertical, 3)
-                    .help("Copilot is at work on this pull request's builds: its task shows under Also Linked")
-            } else if line.isRequired, line.run.state == .failing,
-                      store.copilotActions(for: item, continuable: copilot.continuable(forPullRequest: item.key)).contains(.fixBuild) {
-                Button {
-                    store.composeCopilot(.fixBuild, for: item, copilot: copilot)
-                } label: {
-                    Label("Fix the Build with Copilot…", systemImage: PullRequestAction.fixBuild.symbol)
-                }
-                .glassButtonStyle()
-                .disabled(isActive)
-                .help(isActive ? "Copilot is at work on this pull request: wait until it's done"
-                    : "Ask Copilot to reproduce the failure and fix it, without pushing")
-            }
-        }
+        .glassButtonStyle()
+        .help("Open \(investigation.run.number) in Azure DevOps, with its whole log")
+        readStatus
     }
 
     /// "Read 2m ago ↻", or that it's being read again.
