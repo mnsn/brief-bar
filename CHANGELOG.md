@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.0 - 2026-11-04
+## Unreleased
 
 - **See the order your pull requests merge in, By Mission.** Turn on **Pull Request Order** in Settings, and the
   window's Pull Requests pages, Azure DevOps' and GitHub's, can list them **By Mission**: the pull requests that go
@@ -13,6 +13,9 @@
   get tools to tell BriefBar an order, and Copilot a skill that says when to. It never changes a pull request's status,
   What's Left or the menu bar. It's off until you turn it on; then GitHub also reads each pull request's base branch
   and its place in a stack, and Copilot which pull request each session opened, as their descriptions say.
+
+## 0.13.0 - 2026-11-04
+
 - **Ask Copilot about a failed build, right where you read it.** With Send Work to Copilot on, a build that failed in a
   pull request's details has **✨ Explain the Failure** and **Fix** under where it failed, which open a small composer
   there, as a comment's do. **Explain the Failure** asks the Copilot session that worked on the build, or the pull
