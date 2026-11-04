@@ -39,9 +39,17 @@ final class TagChanges: ObservableObject {
     /// The changes on their way, by pull request, which turning the setting off, Azure DevOps stopping or someone else
     /// signing in calls off (`forgetAll`): one that hasn't gone never does.
     private var inFlight: [PRKey: Task<ADOWrite.Answer, Error>] = [:]
+    /// The changes on their way as the setting went off, which may have gone already, by pull request, with when they were
+    /// asked for (`generation`): they settle all the same (`ADOClient.send(_:as:)`), and until they have, the tags, on
+    /// again, show them on their way and take no other change, so that an answer that comes late doesn't undo a later one.
+    private var settling: [PRKey: Int] = [:]
     /// How many times what was going on was called off (`forgetAll`): a change asked for before then does nothing more as
     /// it comes back from what it waited for, though the setting is on again, but for showing what Azure DevOps answered.
     private var generation = 0
+    /// How many times what was going on ended, as someone else signed in or Azure DevOps stopped (`forgetAll`): a change sent
+    /// before then does nothing more as it settles, whatever Azure DevOps answers, since it was the last one's; one called
+    /// off only as the setting went off settles all the same.
+    private var lifetime = 0
 
     let settings: AppSettings
     private weak var store: PRStore?
@@ -66,15 +74,15 @@ final class TagChanges: ObservableObject {
         readAfterChange = { [weak store] key, tags in await store?.readTags(afterChanging: key, to: tags) }
         // Turned off, the tags show neither Add Tag nor ✕, a change that hasn't gone yet is called off, what went wrong goes,
         // and so do the tags you added, which nothing suggests anymore. One that has gone goes on, since Azure DevOps may make
-        // it all the same, and settles: the tags show what it answered, or, when it may have been made without saying so,
-        // they're read again then, not now, while Azure DevOps may still be making it.
+        // it all the same: the tags take no other change until it settles, and then show what it answered, or, when it may
+        // have been made without saying so, they're read again then, not now, while Azure DevOps may still be making it.
         settings.$makesChanges.removeDuplicates().dropFirst()
             .sink { [weak self] on in
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.objectWillChange.send()
                     if !on {
-                        self.forgetAll()
+                        self.forgetAll(turnedOff: true)
                         self.settings.usedTags = UsedTags()
                     }
                 }
@@ -171,7 +179,7 @@ final class TagChanges: ObservableObject {
             return true
         }
         let change = Change.add(name)
-        let generation = generation, account = account
+        let generation = generation, lifetime = lifetime, account = account
         states[key] = .sending(change)
         var added = name
         do {
@@ -181,6 +189,8 @@ final class TagChanges: ObservableObject {
             case .live:
                 let write = ADOWrite.addTag(PullRequestAddress(record.pullRequest), name: name)
                 let answer = try await dispatch(write, for: key, as: account, in: generation)
+                // Someone else signed in, or Azure DevOps stopped, as it went: it was the last one's, and does nothing more.
+                guard lifetime == self.lifetime else { return false }
                 if case .tag(let answered) = answer, let tag = PullRequestTag.tags([answered]).first {
                     // As Azure DevOps spells it, with the tags as they are now, which a refresh may have read meanwhile.
                     added = tag.name
@@ -193,20 +203,27 @@ final class TagChanges: ObservableObject {
             }
         } catch is CancellationError {
             // Called off before it went, as the setting was turned off or someone else signed in: nothing to say.
+            settled(key, sentIn: generation)
             return false
         } catch {
+            guard lifetime == self.lifetime else { return false }
             let problem = ADOWriteProblem(error, now: now())
-            // Called off as it went: the tags say nothing, but once it's settled, they're read again when it may have been
-            // made, to show how they stand.
+            // Called off as it went, as the setting was turned off: the tags say nothing, but once it's settled, they're read
+            // again when it may have been made, to show how they stand.
             guard generation == self.generation else {
                 if problem.mayHaveGone { await readAgain(key) }
+                settled(key, sentIn: generation)
                 return false
             }
             fail(key, problem, change)
             return false
         }
-        // Called off as it went: the tags show what Azure DevOps answered, and nothing more happens.
-        guard generation == self.generation else { return false }
+        // Called off as it went, as the setting was turned off: the tags show what Azure DevOps answered, and nothing more
+        // happens.
+        guard generation == self.generation else {
+            settled(key, sentIn: generation)
+            return false
+        }
         states[key] = nil
         // Suggested first from now on, in its project, while the setting's on.
         if settings.makesChanges {
@@ -228,7 +245,7 @@ final class TagChanges: ObservableObject {
               current.contains(where: { $0.key == tag.key })
         else { return }
         let change = Change.remove(tag)
-        let generation = generation, account = account
+        let generation = generation, lifetime = lifetime, account = account
         // Undo is for the details that show it as you click: not once they've closed, though they show it again.
         let closing = closings[key, default: 0]
         removed[key] = nil
@@ -240,18 +257,22 @@ final class TagChanges: ObservableObject {
             case .live:
                 let write = ADOWrite.removeTag(PullRequestAddress(record.pullRequest), tag: tag.tagId ?? tag.name)
                 _ = try await dispatch(write, for: key, as: account, in: generation)
+                guard lifetime == self.lifetime else { return }
                 let tags = PullRequestTag.removing(tag, from: store.record(for: key)?.tags ?? current)
                 store.changedTags(key, to: tags)
                 readAgain(afterChanging: key, to: tags)
             }
         } catch is CancellationError {
+            settled(key, sentIn: generation)
             return
         } catch {
+            guard lifetime == self.lifetime else { return }
             let problem = ADOWriteProblem(error, now: now())
-            // Called off as it went: once it's settled, the tags are read again when it may have been made, or Azure DevOps
-            // says the tag isn't on it, to show how they stand.
+            // Called off as it went, as the setting was turned off: once it's settled, the tags are read again when it may
+            // have been made, or Azure DevOps says the tag isn't on it, to show how they stand.
             guard generation == self.generation else {
                 if problem.mayHaveGone || problem == .gone { await readAgain(key) }
+                settled(key, sentIn: generation)
                 return
             }
             // Not on the pull request, as far as Azure DevOps knows: its tags, read again, tell whether that's so, and then
@@ -267,7 +288,10 @@ final class TagChanges: ObservableObject {
             fail(key, problem, change)
             return
         }
-        guard generation == self.generation else { return }
+        guard generation == self.generation else {
+            settled(key, sentIn: generation)
+            return
+        }
         states[key] = nil
         guard closings[key, default: 0] == closing else {
             SpokenText.announce("Removed the tag \(tag.name)")
@@ -491,14 +515,30 @@ final class TagChanges: ObservableObject {
     // MARK: Forgetting
 
     /// Forgets what was going on, and calls off a change on its way that hasn't gone yet, as the setting goes off, Azure
-    /// DevOps stops or someone else signs in: one that has settles all the same (`add`, `remove`). Not what's read: the tags
-    /// of a pull request whose lists don't carry them are read again as they're due (`isDue`), as the list has them.
-    func forgetAll() {
+    /// DevOps stops or someone else signs in. As the setting goes off (`turnedOff`), one that has settles all the same, and
+    /// keeps its pull request's tags until it has (`settling`); otherwise what was going on was the last one's, or ends, and
+    /// does nothing more as it settles (`lifetime`). Not what's read: the tags of a pull request whose lists don't carry them
+    /// are read again as they're due (`isDue`), as the list has them.
+    func forgetAll(turnedOff: Bool = false) {
+        if turnedOff {
+            for key in inFlight.keys { settling[key] = generation }
+        } else {
+            settling = [:]
+            lifetime += 1
+        }
         generation += 1
         for task in inFlight.values { task.cancel() }
         inFlight = [:]
-        states = [:]
+        // A change still settling shows on its way.
+        states = states.filter { settling[$0.key] != nil }
         removed = [:]
+    }
+
+    /// A change on its way as the setting went off has settled, and said what it could: its tags take changes again.
+    private func settled(_ key: PRKey, sentIn generation: Int) {
+        guard settling[key] == generation else { return }
+        settling[key] = nil
+        states[key] = nil
     }
 
     /// Stops for good, when Azure DevOps stops: the reads of tags under way are called off, and nothing more is read or
