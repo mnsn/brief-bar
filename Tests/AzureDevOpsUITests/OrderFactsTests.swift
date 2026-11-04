@@ -134,19 +134,22 @@ import Testing
         #expect(missions.first?.steps.map(\.ref.id) == ["4103", "4104"])
     }
 
-    /// The demo's order is one an agent could tell: BriefBar would keep it as it is.
-    @Test func theDemosOrderIsOneAnAgentCouldTell() throws {
-        let demo = try #require(DemoPullRequestOrder.orders(now: Date()).plans.first)
-        var checked = DeclaredOrders()
-        let told = try checked.apply(OrderRequest(session: demo.declaredBy?.id, entries: demo.entries.map { entry in
-            let review: OrderRequest.Review? = switch entry.review {
-            case nil: nil
-            case .now?: .now
-            case .after(let refs, let reason)?: .after(refs.map(Self.link), reason: reason.rawValue)
-            }
-            return OrderRequest.Entry(link: Self.link(entry.ref), after: entry.after.map(Self.link), review: review)
-        }))
-        #expect(told.entries == demo.entries && told.declaredBy == DemoPullRequestOrder.coordinator)
+    /// The demo's orders are ones an agent could tell: BriefBar would keep them as they are.
+    @Test func theDemosOrdersAreOnesAnAgentCouldTell() throws {
+        let demos = DemoPullRequestOrder.orders(now: Date()).plans
+        #expect(demos.map(\.declaredBy) == [DemoPullRequestOrder.payments, DemoPullRequestOrder.coordinator])
+        for demo in demos {
+            var checked = DeclaredOrders()
+            let told = try checked.apply(OrderRequest(session: demo.declaredBy?.id, entries: demo.entries.map { entry in
+                let review: OrderRequest.Review? = switch entry.review {
+                case nil: nil
+                case .now?: .now
+                case .after(let refs, let reason)?: .after(refs.map(Self.link), reason: reason.rawValue)
+                }
+                return OrderRequest.Entry(link: Self.link(entry.ref), after: entry.after.map(Self.link), review: review)
+            }))
+            #expect(told.entries == demo.entries && told.declaredBy == demo.declaredBy)
+        }
     }
 
     /// In the demo, it's on, with the demo's order: the account page's next, and the emails' can't be seen.
@@ -164,5 +167,34 @@ import Testing
         #expect(steps[DemoPullRequestOrder.emails]?.status == .unknown(.notListed))
         #expect(steps[DemoPullRequestOrder.checkoutPage]?.review == .after([DemoPullRequestOrder.accountPage], .buildsOnChanges))
         #expect(mission.sessions.first == DemoPullRequestOrder.coordinator)
+    }
+
+    /// The payments' order, which you focus on: the first merged yesterday, the retry is next, and the coupon rounding,
+    /// ready to complete before it, says so in orange.
+    @Test func theDemosPaymentsOrderIsFocusedWithOneMerged() async throws {
+        let store = await Self.demoStore()
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+        order.tellDemo(
+            DemoPullRequestOrder.orders(now: store.now), evidence: DemoPullRequestOrder.evidence(now: store.now),
+            focus: DemoPullRequestOrder.focus
+        )
+
+        facts.publish()
+
+        let mission = try #require(order.missions.first)
+        #expect(mission.key == DemoPullRequestOrder.focus && mission.isFocused)
+        #expect(OrderText.progress(mission) == "1 of 5 merged")
+        let steps = Dictionary(uniqueKeysWithValues: mission.steps.map { ($0.ref, $0) })
+        #expect(steps[DemoPullRequestOrder.retryPolicy]?.status == .merged)
+        #expect(steps[DemoPullRequestOrder.retry]?.standing == .next)
+        let rounding = try #require(steps[DemoPullRequestOrder.couponRounding])
+        #expect(rounding.standing == .waiting(open: [DemoPullRequestOrder.retry], unknown: []))
+        let ready = try #require(store.items.first { $0.key.linkRef == DemoPullRequestOrder.couponRounding })
+        #expect(ready.group == .ready)
+        #expect(OrderText.tone(of: rounding, isReady: ready.group == .ready) == .warning)
+        #expect(OrderText.capsule(rounding) == "After !4102")
+        #expect(steps[DemoPullRequestOrder.legacyCoupons]?.review == .after([DemoPullRequestOrder.couponRounding], .sameCode))
+        #expect(OrderBoard.step(for: DemoPullRequestOrder.retry, in: order.missions)?.mission.key == DemoPullRequestOrder.focus)
     }
 }

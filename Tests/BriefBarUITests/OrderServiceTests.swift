@@ -1,5 +1,6 @@
 import BriefBarCore
 import BriefBarUI
+import Combine
 import Foundation
 import SwiftUI
 import Testing
@@ -270,5 +271,88 @@ private final class Clock {
         let real = Self.service(try Self.defaults(on: true, order: [.init(link: Self.link(4120))]))
         real.tellDemo(demo)
         #expect(real.orders.plans.map(\.refs) == [[Self.ref(4120)]])
+    }
+
+    // MARK: The pages
+
+    @Test func listOrMapIsOneChoiceBothPagesRemember() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        #expect(order.view == .list)
+
+        order.setView(.map)
+
+        #expect(order.view == .map)
+        #expect(defaults.string(forKey: OrderView.defaultsKey) == "map")
+        #expect(Self.service(defaults).view == .map)
+    }
+
+    @Test func aRowsCapsuleAsksByMissionToShowItsMission() throws {
+        let order = Self.service(try Self.defaults(on: true))
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")])
+        var shown: [MissionKey] = []
+        let context = try #require(OrderRowContext.of(Self.ref(4102), in: order.missions, isReady: true) { key in
+            shown.append(key)
+            order.reveal(key)
+        })
+
+        #expect(context.mission == .plan(Self.planID))
+        #expect(context.sentence == "Merge after !4101 · completing it now would go against its order")
+        context.open?()
+        #expect(shown == [.plan(Self.planID)] && order.revealed == .plan(Self.planID))
+        // Where it shows already, it has nothing to open, and one in no mission has no capsule.
+        #expect(OrderRowContext.of(Self.ref(4102), in: order.missions, isReady: false)?.open == nil)
+        #expect(OrderRowContext.of(Self.ref(4999), in: order.missions, isReady: false) == nil)
+    }
+
+    @Test func itSaysWhetherItKeepsAnythingWhileOffAndForgettingRedrawsWhatAsks() throws {
+        #expect(!Self.service(MemoryDefaults()).keepsAnything)
+        let defaults = try Self.defaults(on: false)
+        let order = Self.service(defaults)
+        #expect(order.keepsAnything && order.orders.plans.isEmpty)
+        var changes = 0
+        let watching = order.objectWillChange.sink { changes += 1 }
+
+        order.forgetAll()
+
+        #expect(!order.keepsAnything && changes > 0)
+        withExtendedLifetime(watching) {}
+        order.setOn(true)
+        order.setFocus(.plan(Self.planID))
+        #expect(order.keepsAnything)
+    }
+
+    @Test func itNamesWhatTheSourcesDescribe() throws {
+        let order = Self.service(try Self.defaults(on: true))
+        let item = LinkedItem(
+            ref: Self.ref(4101), label: "!4101", title: "Round coupon totals", symbol: "arrow.triangle.pull", color: .blue
+        )
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding")], items: [item])
+
+        #expect(order.name(of: Self.ref(4101)) == "Round coupon totals")
+        #expect(order.name(of: Self.ref(4102)) == nil)
+    }
+
+    /// The demo tells what BriefBar saw merge before, and the mission you focus on, once: what's kept stays.
+    @Test func theDemoTellsWhatMergedBeforeAndWhatYouFocusOn() throws {
+        let clock = Clock()
+        let order = Self.service(MemoryDefaults(), isDemo: true, clock: clock)
+        var demo = DeclaredOrders()
+        try demo.apply(
+            OrderRequest(entries: [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])]), newID: Self.planID
+        )
+        let merged = OrderEvidence(records: [
+            Self.ref(4100): OrderEvidence.Record(outcome: .merged, observedAt: clock.now.addingTimeInterval(-3_600), witness: .list),
+        ])
+
+        order.tellDemo(demo, evidence: merged, focus: .plan(Self.planID))
+        order.tellDemo(demo, evidence: OrderEvidence(), focus: .chain(Self.ref(4101)))
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding")])
+
+        #expect(order.focus == .plan(Self.planID))
+        let mission = try #require(order.missions.first)
+        #expect(mission.key == .plan(Self.planID) && mission.isFocused)
+        #expect(mission.steps.map(\.status) == [.merged, .open])
+        #expect(mission.steps.last?.standing == .next)
     }
 }
