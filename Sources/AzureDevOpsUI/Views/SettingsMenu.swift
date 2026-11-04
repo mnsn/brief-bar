@@ -61,7 +61,39 @@ struct AzureDevOpsSettings: View {
 
         SettingsDivider()
 
+        MakeChangesSetting()
         CopilotSetting()
+    }
+}
+
+/// Make Changes in Azure DevOps, off by default: your replies in pull requests' comment threads, and their statuses, from
+/// their details, each when you click it; and nothing else. On its page in Settings, it says what it writes; in a menu,
+/// turning it on opens that page instead.
+struct MakeChangesSetting: View {
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var services: AppServices
+    @Environment(\.inSettingsForm) private var inSettingsForm
+
+    static let title = "Make Changes in Azure DevOps"
+    static let explanation = """
+        Adds Reply and a status menu to each comment thread in a pull request's details in BriefBar's window. BriefBar \
+        then writes two things to Azure DevOps, as you, with your Azure CLI sign-in, and only when you click: your reply in \
+        a thread, and a thread's status, such as Resolved or Won't Fix. Nothing else, and never by itself: otherwise it \
+        only reads. Fix Grammar, in a reply, uses Apple Intelligence on this Mac unless you choose a Copilot model, which \
+        sends the reply to GitHub Copilot. Agents get none of it. Turning it off forgets the replies you haven't sent.
+        """
+
+    var body: some View {
+        if inSettingsForm || settings.makesChanges {
+            Toggle(isOn: $settings.makesChanges) {
+                Text(Self.title)
+                if inSettingsForm {
+                    Text(Self.explanation)
+                }
+            }
+        } else {
+            Button(Self.title + "…") { services.openSettings(.source(.azureDevOps)) }
+        }
     }
 }
 

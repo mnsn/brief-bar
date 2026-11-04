@@ -13,7 +13,8 @@ import SwiftUI
 
 /// Copilot's part in a comment thread, at its foot, while Send Work to Copilot is on: what Copilot does about it, in a
 /// sentence; what a session said of it with Explain; and, on an open thread, ✨ Explain, or Ask More once it answered, and
-/// Fix side by side, each opening a small composer in place, one at a time in the comments.
+/// Fix side by side, each opening a small composer in place, one at a time in the comments. Your own actions on it, Reply and
+/// its status, share their row, which shows for them alone too (`yours`).
 struct ThreadCopilotActions: View {
     let thread: PullRequestPanel.Thread
     let item: PRSnapshot
@@ -21,6 +22,9 @@ struct ThreadCopilotActions: View {
     /// The composer in place that's open in the comments.
     @Binding var composing: CopilotComposing?
     let drafts: CopilotDrafts
+    /// Your own actions on it, Reply and its status, while you can make changes in Azure DevOps (`ThreadReplyButtons`), at
+    /// the row's end; nil while you can't.
+    var yours: AnyView?
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
@@ -85,31 +89,35 @@ struct ThreadCopilotActions: View {
     var body: some View {
         let work = work
         let question = question
-        if copilot.isOn, work != nil || question != nil || copied != nil || canAct {
+        let hasLines = copilot.isOn && (question != nil || work != nil || copied != nil)
+        // Your reply, open on it, takes the row's place, as a composer of Copilot's does: while you can reply.
+        let isReplying = yours != nil && composing == .reply(to: thread.id)
+        let showsRow = !isReplying && (canAct || yours != nil)
+        if hasLines || (canAct && asking != nil) || showsRow {
             VStack(alignment: .leading, spacing: 8) {
-                if let question {
-                    questionView(question)
-                }
-                if let work, question?.isAsking != true {
-                    workLine(work)
-                }
-                if let copied {
-                    CopilotCopiedNote(note: copied) { self.copied = nil }
-                }
-                if canAct {
-                    if let asking {
-                        CommentComposer(
-                            ask: asking, thread: thread.thread, item: item, worked: work?.session, drafts: drafts, answer: question?.answer,
-                            preview: preview?.composer(about: part), fixInstead: canFix ? { open(.fix) } : nil
-                        ) { result in
-                            if case .copied(let note)? = result { copied = note }
-                            close(asking)
-                        }
-                        // A new composer for each, with its own words and where it goes.
-                        .id(asking)
-                    } else {
-                        buttons(hasAnswer: question?.answer != nil)
+                if copilot.isOn {
+                    if let question {
+                        questionView(question)
                     }
+                    if let work, question?.isAsking != true {
+                        workLine(work)
+                    }
+                    if let copied {
+                        CopilotCopiedNote(note: copied) { self.copied = nil }
+                    }
+                }
+                if canAct, let asking {
+                    CommentComposer(
+                        ask: asking, thread: thread.thread, item: item, worked: work?.session, drafts: drafts, answer: question?.answer,
+                        preview: preview?.composer(about: part), fixInstead: canFix ? { open(.fix) } : nil
+                    ) { result in
+                        if case .copied(let note)? = result { copied = note }
+                        close(asking)
+                    }
+                    // A new composer for each, with its own words and where it goes.
+                    .id(asking)
+                } else if showsRow {
+                    buttons(hasAnswer: question?.answer != nil, showsCopilot: canAct)
                 }
             }
             .padding(.horizontal, 10)
@@ -123,26 +131,48 @@ struct ThreadCopilotActions: View {
         }
     }
 
-    private func buttons(hasAnswer: Bool) -> some View {
+    /// Explain and Fix, while you can ask Copilot about it, then your own actions on it, at the row's end: on one line while
+    /// they fit, else yours under Copilot's.
+    private func buttons(hasAnswer: Bool, showsCopilot: Bool) -> some View {
         let nobody = hasNobodyToAsk
         let explainTitle: String = hasAnswer ? "Ask More" : "Explain"
-        return HStack(spacing: 6) {
-            Button {
-                open(.explain)
-            } label: {
-                Label(explainTitle, systemImage: CopilotAsk.explain.symbol)
-            }
-            .focused($focused, equals: .explain)
-            .disabled(nobody)
-            .help(explainHelp(nobody: nobody, hasAnswer: hasAnswer))
-            if canFix {
+        let copilotButtons = HStack(spacing: 6) {
+            if showsCopilot {
                 Button {
-                    open(.fix)
+                    open(.explain)
                 } label: {
-                    Label("Fix", systemImage: CopilotAsk.fix.symbol)
+                    Label(explainTitle, systemImage: CopilotAsk.explain.symbol)
                 }
-                .focused($focused, equals: .fix)
-                .help(fixHelp(hasAnswer: hasAnswer))
+                .focused($focused, equals: .explain)
+                .disabled(nobody)
+                .help(explainHelp(nobody: nobody, hasAnswer: hasAnswer))
+                if canFix {
+                    Button {
+                        open(.fix)
+                    } label: {
+                        Label("Fix", systemImage: CopilotAsk.fix.symbol)
+                    }
+                    .focused($focused, equals: .fix)
+                    .help(fixHelp(hasAnswer: hasAnswer))
+                }
+            }
+        }
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                copilotButtons
+                if let yours {
+                    Spacer(minLength: 8)
+                    yours
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                if showsCopilot { copilotButtons }
+                if let yours {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        yours
+                    }
+                }
             }
         }
         .buttonStyle(.bordered)

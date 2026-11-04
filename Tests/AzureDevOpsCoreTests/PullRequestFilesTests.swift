@@ -381,6 +381,24 @@ private enum ChangeFixture {
         #expect(PullRequestPanel.FileComments(threads: [threads.resolved[0]]).spoken == "1 resolved comment")
     }
 
+    /// A thread you changed in the details stays where it was on its file's page, as you first did: resolving the first of
+    /// two on a line doesn't move it below the other.
+    @Test func aThreadYouChangeStaysWhereItWasOnItsFile() {
+        let first = PullRequestPanel.Thread(thread: thread(1, line: 30), waitsOnYou: true, isNew: false)
+        let second = PullRequestPanel.Thread(thread: thread(2, line: 30), waitsOnYou: true, isNew: false)
+        let changes = ChangedFiles(scope: .whole, comparison: ReviewThread.Comparison(base: 2), iterations: [], files: [file])
+        let before = PullRequestPanel.Threads(waitingOnYou: [first, second], open: [], resolved: [])
+        #expect(before.comments(on: file, in: changes).threads.map(\.id) == [1, 2])
+
+        let resolved = PullRequestPanel.Thread(thread: thread(1, line: 30, status: "fixed"), waitsOnYou: false, isNew: false)
+        let after = PullRequestPanel.Threads(waitingOnYou: [second], open: [], resolved: [resolved])
+        #expect(after.comments(on: file, in: changes).threads.map(\.id) == [2, 1])
+        let held = after.comments(on: file, in: changes, holding: [1: PullRequestPanel.Thread.Held(first)])
+        #expect(held.threads.map(\.id) == [1, 2])
+        // It counts as it stands.
+        #expect(held.resolved == 1)
+    }
+
     @Test func saysHowManyThreadsThereAreWithoutCountingAnyTwice() {
         func comments(waiting: Int, open: Int, resolved: Int) -> PullRequestPanel.FileComments {
             let waitingThreads = (0..<waiting).map { PullRequestPanel.Thread(thread: thread($0), waitsOnYou: true, isNew: false) }

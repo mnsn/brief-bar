@@ -53,7 +53,7 @@ import Testing
         return AnyView(
             PullRequestCommentsSection(
                 item: item, panel: PullRequestPanel(item, record: record), pullRequest: record.pullRequest, me: record.me,
-                place: nil, highlighted: nil, composing: .constant(nil), drafts: CopilotDrafts()
+                place: nil, highlighted: nil, composing: .constant(nil), drafts: CopilotDrafts(), held: .constant([:])
             )
             .environmentObject(list)
             .environmentObject(code)
@@ -61,6 +61,8 @@ import Testing
             .environmentObject(copilot)
             .environmentObject(sessions)
             .environmentObject(CopilotQuestions(copilot: copilot))
+            // Your replies and statuses, which the demo's list turns on.
+            .environmentObject(ThreadChanges(store: list, settings: list.settings))
             // On a window's Pull Requests page, as `WindowView` says.
             .environment(\.shownSection, .azureDevOpsPullRequests)
             .environment(\.shownWindow, "test")

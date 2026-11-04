@@ -24,6 +24,7 @@ struct PullRequestDetailsContent: View {
     @EnvironmentObject private var sessions: PullRequestSessions
     @EnvironmentObject private var services: AppServices
     @EnvironmentObject private var files: PullRequestFilesStore
+    @EnvironmentObject private var changes: ThreadChanges
     @Environment(\.itemNavigation) private var navigation
     /// The window's page it's on, which its Copilot session is read only while the window shows on screen.
     @Environment(\.shownSection) private var section
@@ -37,6 +38,10 @@ struct PullRequestDetailsContent: View {
     /// them come and go on their own. A file's page has its own, since it shows in their place.
     @LocalState private var composing: CopilotComposing?
     @LocalState private var drafts = CopilotDrafts()
+    /// The threads you changed here, with your reply or their statuses, where each was as you first did: they stay there,
+    /// however they stand now, while the details show the pull request, in its comments and on its files' pages, as you go
+    /// from one to the other.
+    @LocalState private var held: [Int: PullRequestPanel.Thread.Held] = [:]
     /// `--render` draws it without waiting for animations, which it doesn't run.
     @Environment(\.isRendering) private var isRendering
     /// For `--render`: what Copilot does about its comments, builds and conflicts, as each picture draws it.
@@ -61,13 +66,15 @@ struct PullRequestDetailsContent: View {
 
     var body: some View {
         let record = record
-        let panel = PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record))
+        // What waits on you, as when they showed it, but in a thread you resolved here since.
+        let events = changes.waiting(details.pendingEvents(of: item, record: record), of: item.key)
+        let panel = PullRequestPanel(item, record: record, events: events)
         let ref = item.key.linkRef
         VStack(alignment: .leading, spacing: 20) {
             if let file = isShown ? details.file : nil {
                 PullRequestFilePage(
                     details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, me: record?.me, open: file,
-                    scroll: scroll
+                    scroll: scroll, held: $held
                 )
             } else {
                 PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact)
@@ -87,7 +94,7 @@ struct PullRequestDetailsContent: View {
                 }
                 PullRequestCommentsSection(
                     item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place,
-                    highlighted: highlighted, composing: $composing, drafts: drafts
+                    highlighted: highlighted, composing: $composing, drafts: drafts, held: $held
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.comments))
                     // A thread's file opens here, at the thread, in all of the change, which has it whatever the Files show.

@@ -242,6 +242,8 @@ private struct AccentedCode: CodeSource {
         let comment = try #require(thread.comments.first)
         // Someone the pull request doesn't name is "someone", as in its plain text.
         #expect(comment.markdown == "@Sam Rivera **Why** `200 ms`? @someone\n\n" + long)
+        // And as Azure DevOps keeps it, each mention as its ID.
+        #expect(comment.content == content)
         #expect(comment.text.count == 500)
         #expect(comment.markdown.count > 1_000)
         // Made without its Markdown, a comment's is its text.

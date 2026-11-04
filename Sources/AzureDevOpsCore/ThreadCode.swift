@@ -163,8 +163,8 @@ public enum ThreadCode {
     public static func mayPass(_ problem: ThreadExcerpt.Problem) -> Bool {
         guard case .unreadable(let error) = problem else { return false }
         switch error {
-        case .notFound, .forbidden, .decoding, .redirected: return false
-        case .auth, .unauthorized, .otherDirectory, .throttled, .offline, .http, .network: return true
+        case .notFound, .forbidden, .decoding, .redirected, .refused: return false
+        case .auth, .unauthorized, .otherDirectory, .otherAccount, .throttled, .offline, .http, .network: return true
         }
     }
 }

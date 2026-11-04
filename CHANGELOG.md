@@ -37,6 +37,17 @@
 - **BriefBar no longer quits as a minute passes while a summary shows.** With summaries on, a minute passing while a
   summary showed, under a row or on a page, could make BriefBar quit, as it checked again, everywhere at once, where
   what the summary sums up stands.
+- **Reply to comments, and resolve them, without opening Azure DevOps.** Turn on **Make Changes in Azure DevOps** in
+  Azure DevOps' settings, off by default, and each comment thread in a pull request's details has **Reply** and
+  **Resolve**, beside ✨ Explain and Fix. **Reply** opens a field under the comment, in Markdown: **Reply**, or ⌘Return,
+  sends it as you, and **Reply & Resolve** resolves the thread too. **Resolve**'s **▾** sets any status Azure DevOps
+  offers, such as **Won't Fix** or **Closed**, and **Reactivate** brings a resolved thread back. The thread shows it at
+  once, stays where it is, and stops waiting on you, and Needs You and what's left follow. What you write is kept until
+  you send it, and a thread says in a sentence why something didn't go, such as no permission or being offline.
+  **Fix Grammar** corrects a reply's spelling, grammar and punctuation, in its own language, keeping your words, code,
+  links and mentions: with Apple Intelligence on your Mac, unless you choose a Copilot model in its **▾**, one premium
+  request each, and it shows the correction for you to use, with Undo. These are the only changes BriefBar makes in
+  Azure DevOps, only when you click them, and never from agents. Azure DevOps' description says so.
 
 ## 0.12.0 - 2026-11-03
 

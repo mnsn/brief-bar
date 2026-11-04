@@ -192,16 +192,25 @@ extension PullRequestAction {
 // MARK: - Which composer is open
 
 /// Which composer in place is open in a part of a pull request's details: one at a time, so Esc, Return and the keyboard's
-/// focus are its own.
+/// focus are its own. One that asks Copilot, or your reply on a thread (`reply(to:)`), which you write yourself.
 struct CopilotComposing: Hashable {
     /// What it's about; nil for Fix All.
     var part: PullRequestPart?
-    var ask: CopilotAsk
+    /// What it asks Copilot; nil for your reply on a thread.
+    var ask: CopilotAsk?
     /// Which row it's on, where more than one is about the same part: a build's, since two of a pull request's policies can
     /// run the same pipeline, and each has its own composer, words and send, though Copilot's work is the pipeline's.
     var row: String?
 
     static let fixAll = CopilotComposing(part: nil, ask: .fixAll)
+
+    /// Your reply on a thread, which BriefBar sends Azure DevOps (`ThreadChanges`).
+    static func reply(to thread: Int) -> CopilotComposing {
+        CopilotComposing(part: .thread(thread), ask: nil)
+    }
+
+    /// Whether it's your reply on a thread, rather than something you ask Copilot.
+    var isReply: Bool { ask == nil }
 }
 
 /// What you wrote in each composer in place in a part of a pull request's details, kept as you open another, until you send
