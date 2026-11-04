@@ -410,13 +410,19 @@ with it, for the whole prompt, the model and more. **Fix All**, at the top of th
 same composer; it says **Fix 1 Comment** when others wait on someone else, which it leaves. Once Copilot works on a
 thread, a line above its buttons says so, in its state's color, with since when and the step it's at: **Copilot is
 explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Retry backoff’ · 2m**, **Fixed in ‘Retry
-backoff’, not pushed** or **Couldn't fix it: …**; click it to see the session. When you send a session something else
+backoff’, not pushed** or **Couldn't fix it in ‘Retry backoff’**, with what Copilot said under it, such as why it
+couldn't; click it to see the session. One of BriefBar's own tasks, named for what it does, is called a task there,
+**Fixed in the ‘Fix Comments’ task, not pushed**. When you send a session something else
 before it's done with what you sent it, BriefBar can't tell from the session which of them ended how, so the earlier
 thread says **Sent to ‘Retry backoff’ · see the session** instead. Once fixes are done, of comments or of a build
 (below), a bar at the foot of the details, or of a pull request's
-page over a work item's or another pull request's, says **2 fixes ready in ‘Retry backoff’**, which takes you to what
-they fixed, with **Push & Reply…**, which opens the Send to Copilot window to commit them, push, and reply on the threads
-they fixed, from that session; they stay in the bar when Push & Reply fails or is stopped, to try again. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
+page over a work item's or another pull request's, says what's ready, by what it fixed, **2 fixes ready in ‘Retry
+backoff’** or **1 fix and the conflicts' resolution ready in ‘Retry backoff’**, which takes you to what they fixed,
+with **Push & Reply…**, which opens the Send to Copilot window to commit them, push, and reply on the threads they
+fixed, from that session; they stay in the bar when Push & Reply fails or is stopped, to try again. What's Left says
+**Copilot's on it** while Copilot fixes, or pushes, its comments, a build or its conflicts, whether with one of
+BriefBar's tasks or a prompt to one of the Copilot app's sessions, and **Copilot asks you** while that session waits for
+your answer in the app. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
 off, unless the session has it already. VoiceOver hears what becomes of each.
 
 **See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
@@ -461,8 +467,8 @@ can't read it again, what it read stays, with why, unless the run ran again sinc
 to read.
 
 **Ask Copilot about a failed build, where you read it.** With Send Work to Copilot on, a build that failed has
-**✨ Explain the Failure** and **Fix** under where it failed, beside **Open Run**, and each opens a small composer there,
-as a comment's do: your words, where it goes, one **▾** away, and its button,
+**✨ Explain the Failure** and **Fix** under where it failed, above **Open Run**, and each opens a small composer in their
+place, as a comment's do: your words, where it goes, one **▾** away, and its button,
 which Return presses. **Explain the Failure** asks the Copilot session that worked on the build, or else the pull
 request's own, what you want to know, or else what failed and why, and whether it's this change, a flaky test, the
 target branch or the build's infrastructure, from what BriefBar read of the run: where it failed, its errors, the tests
@@ -470,10 +476,12 @@ that failed with what each said, the last 40 lines of the failed step's log, and
 Its answer shows under the run, asked aside as a comment's is, so nothing changes; **Ask More** follows up on it.
 **Fix**, on your own pull request, has Copilot reproduce the failure and fix it, as you say in **Tell Copilot how
 (optional)**, building on the answer if you like, in the pull request's session by default, a fork of it, a new
-session or another; it doesn't commit, push or touch pipelines. The build's row then says what Copilot does about it,
-in its state's color, open or not, such as **Copilot is fixing this build in ‘Retry backoff’ · 2m** or **Fixed in
-‘Retry backoff’, not pushed**, and the fix counts in the bar at the details' foot, whose **Push & Reply…** pushes it;
-a rerun, or a push, that passes ends it.
+session or another; it doesn't commit, push or touch pipelines. The build then says what Copilot does about it, in its
+state's color, above its buttons while it's open, under its name while it's closed, such as **Copilot is fixing this
+build in ‘Retry backoff’ · 2m** or **Fixed in ‘Retry backoff’, not pushed**, with what Copilot said once it's done; and,
+closed, that a session is explaining it, with **Stop**, or answered, with **Show**, which opens it. The fix counts in the
+bar at the details' foot, whose **Push & Reply…** pushes it; a rerun, or a push, that passes ends it, and so does a run
+that fails after its push, for you to fix it again.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
