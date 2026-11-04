@@ -30,11 +30,22 @@ struct PullRequestDetailsContent: View {
 
     /// The thread, the build or the check it just went to, pointed out for a moment.
     @LocalState private var highlighted: PullRequestDetailsStore.Anchor?
+    /// The composer in place that's open in its comments, builds or conflicts: one at a time in all of them, so Esc, Return,
+    /// the keyboard's focus and the scroll that shows it as it opens are its own; and what you wrote in each, until you send
+    /// it. What one sends is called off as it closes or another opens, and all of it as its parts go, here, whichever of
+    /// them come and go on their own. A file's page has its own, since it shows in their place.
+    @LocalState private var composing: CopilotComposing?
+    @LocalState private var drafts = CopilotDrafts()
     /// `--render` draws it without waiting for animations, which it doesn't run.
     @Environment(\.isRendering) private var isRendering
+    /// For `--render`: what Copilot does about its comments, builds and conflicts, as each picture draws it.
+    @Environment(\.copilotActionsPreview) private var preview
 
     /// Whether `details` shows this pull request yet: a page's own store shows it once the page appears.
     private var isShown: Bool { details.selected?.key == item.key }
+
+    /// A file's page shows in place of its parts.
+    private var showsFile: Bool { isShown && details.file != nil }
 
     /// What the list read of it: as `details` keeps it, once it shows it; as the list has it until then.
     private var record: PRRecord? {
@@ -64,13 +75,13 @@ struct PullRequestDetailsContent: View {
                 // Its summary, of it and what's linked to it, under what it is.
                 PageSummary(ref: ref)
                 if let readiness = panel.readiness, !readiness.items.isEmpty {
-                    PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction) { left in
+                    PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction, copilot: copilotOnIt(record)) { left in
                         if let place = PullRequestDetailsStore.Place.of(left, in: panel) { details.go(to: place) }
                     }
                 }
                 PullRequestCommentsSection(
                     item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place,
-                    highlighted: highlighted
+                    highlighted: highlighted, composing: $composing, drafts: drafts
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.comments))
                     // A thread's file opens here, at the thread, in all of the change, which has it whatever the Files show.
@@ -84,7 +95,8 @@ struct PullRequestDetailsContent: View {
                 )
                     .id(PullRequestDetailsStore.Anchor.files)
                 PullRequestChecksSection(
-                    item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted
+                    item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted,
+                    composing: $composing, drafts: drafts
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.checks))
                 PullRequestReviewersSection(panel: panel)
@@ -97,6 +109,12 @@ struct PullRequestDetailsContent: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: details.place, initial: true) { go(in: panel) }
+        // What a composer sends is called off as it closes, with ✕ or Esc, or another opens, in any of its parts; and all of
+        // it as they go: for a file's page, which shows in their place, or with the details, or for another pull request or
+        // page. Not as a part goes on its own, such as its conflicts once they're resolved.
+        .onChange(of: composing) { old, _ in if let old { drafts.callOff(old) } }
+        .onChange(of: showsFile) { _, shows in if shows { drafts.callOffAll() } }
+        .onDisappear { drafts.callOffAll() }
         // Its Copilot session, kept up to date while it shows on screen; in pictures, as it was read for them (`prepare`).
         .task(id: SessionFollowing(key: item.key, page: page)) {
             guard !isRendering else { return }
@@ -133,10 +151,19 @@ struct PullRequestDetailsContent: View {
         let page: String?
     }
 
-    /// What the task Copilot is at work on for the pull request does, while Send Work to Copilot is on.
+    /// What the task Copilot is at work on for the pull request does, while Send Work to Copilot is on; in pictures, what
+    /// they draw Copilot doing about each part says it (`copilotOnIt`).
     private var copilotAction: PullRequestAction? {
-        guard copilot.isOn, let entry = copilot.latest(forPullRequest: item.key), entry.status.phase.isActive else { return nil }
+        guard preview == nil, copilot.isOn, let entry = copilot.latest(forPullRequest: item.key), entry.status.phase.isActive else { return nil }
         return entry.action
+    }
+
+    /// What Copilot does now about each kind of what's left (`CopilotTasksStore.onIt`); in pictures, as they draw it.
+    private func copilotOnIt(_ record: PRRecord?) -> [PRReadiness.Item.Kind: CopilotWork] {
+        guard let record else { return [:] }
+        guard let preview else { return copilot.onIt(record) }
+        let key = record.pullRequest.key
+        return copilot.onIt(record) { part in preview.work(on: part) { copilot.work(on: part, of: key) } }
     }
 
     /// To where they were asked to go, once it shows, pointing out a thread, a file's row, a build or a check for a moment:

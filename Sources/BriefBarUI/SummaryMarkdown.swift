@@ -4,7 +4,7 @@ import SwiftUI
 /// What a summary says beyond its headline and next step, in the little Markdown a summary has: a point a line, after
 /// "- ", each starting with a word or two in bold, and **bold** and `code` within a line. Never a link: what a model
 /// writes may come from anyone's comment, so a link shows as its words only.
-enum SummaryMarkdown {
+public enum SummaryMarkdown {
     enum Block: Equatable {
         case point(String)
         case text(String)
@@ -64,7 +64,7 @@ enum SummaryMarkdown {
     }
 
     /// All of it in one text, a point a line after "•", for a row, where it's cut to a few lines.
-    static func joined(_ text: String) -> AttributedString {
+    public static func joined(_ text: String) -> AttributedString {
         var all = AttributedString()
         for (index, block) in blocks(text).enumerated() {
             if index > 0 { all += AttributedString("\n") }

@@ -56,8 +56,11 @@ import BriefBarCore
         #expect(prompt.contains("""
             1. web-ci: https://dev.azure.com/contoso/Shop/_build/results?buildId=41
                Failed in Test, at Run unit tests.
+               Its errors:
+               ```
                - 2 failed.
                - CheckoutTests.Rounds: expected 3
+               ```
             """))
         #expect(prompt.contains("Don't queue, retry or change pipelines. Don't commit or push"))
         #expect(PullRequestPrompt.fixBuild(record(), failures: []).contains("couldn't tell which run"))
@@ -99,10 +102,24 @@ import BriefBarCore
         #expect(ship.contains("The comment threads these changes take care of:\n\n1. General comment (thread 9)\n   Priya Shah: Please add a test."))
         #expect(!ship.contains("thread 7"))
         #expect(ship.contains("Don't reply on its other threads: other changes take care of them."))
-        // One resolved since is left out; none, or no list, is the pull request's.
+        // One resolved since is left out; no list is the pull request's.
         #expect(PullRequestPrompt.shippedThreads(record(), only: [12, 9]).map(\.id) == [9])
         #expect(PullRequestPrompt.shippedThreads(record(), only: nil).map(\.id) == [7, 9])
-        #expect(PullRequestPrompt.pushAndReply(record(), threads: []).contains("Its unresolved comment threads:"))
+        #expect(PullRequestPrompt.pushAndReply(record()).contains("Its unresolved comment threads:"))
+    }
+
+    /// Fixes of none of its threads, such as a build's alone, are pushed without replying on any thread.
+    @Test func pushAndReplyForNoThreadsRepliesOnNone() {
+        #expect(PullRequestPrompt.shippedThreads(record(), only: []).isEmpty)
+        let ship = PullRequestPrompt.pushAndReply(record(), threads: [])
+        #expect(ship.contains("git push origin HEAD:refs/heads/fix-total"))
+        #expect(ship.contains("3. Don't reply on the pull request's comment threads"))
+        #expect(!ship.contains("thread 7") && !ship.contains("thread 9"))
+        #expect(!ship.contains("with your Azure DevOps tools"))
+        #expect(ship.hasSuffix("End with the commit you pushed."))
+        // Nor does it take what waits on you off Needs You.
+        let handOff = CommentHandOff(record(), dismissedCutoff: .distantPast, account: nil, threads: [])
+        #expect(handOff.handedOff(in: ship) == nil)
     }
 
     /// The threads a prompt takes on are those whose entries are still in it, as you send it.

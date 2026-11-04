@@ -19,6 +19,15 @@ import BriefBarCore
         #expect(try build("queued") == .queued)
         #expect(try build("queued", context: ["buildId": 1, "isExpired": true]) == .expired)
         #expect(try build("rejected", context: ["buildId": 1, "isExpired": true]) == .expired)
+        // How an expired one stood: one that failed is still to fix, not only to queue again.
+        func expiredFrom(_ status: String) throws -> Check.State? {
+            try check(Fixture.evaluation("Build", status: status, settings: ["displayName": "CI"], context: ["buildId": 1, "isExpired": true]))?
+                .expiredFrom
+        }
+        #expect(try expiredFrom("rejected") == .failed)
+        #expect(try expiredFrom("broken") == .failed)
+        #expect(try expiredFrom("queued") == nil)
+        #expect(try check(Fixture.evaluation("Build", status: "rejected", settings: ["displayName": "CI"], context: ["buildId": 1]))?.expiredFrom == nil)
         #expect(try build("queued", context: nil) == .notRun)
         #expect(try build("notApplicable") == .notApplicable)
 
@@ -27,6 +36,16 @@ import BriefBarCore
         #expect(named.kind == .build)
         let unnamed = try #require(try check(Fixture.evaluation("Build", status: "approved")))
         #expect(unnamed.name == "Build")
+        #expect(unnamed.definitionId == nil)
+        // The pipeline it runs, as its settings say, else as its run does: each of its runs shares it.
+        let pipeline = try #require(try check(Fixture.evaluation("Build", status: "rejected", settings: ["buildDefinitionId": 31],
+                                                                 context: ["buildId": 204_417, "buildDefinitionId": 99])))
+        #expect(pipeline.definitionId == 31)
+        #expect(pipeline.buildId == 204_417)
+        let fromItsRun = try #require(try check(Fixture.evaluation("Build", status: "rejected", context: ["buildId": 1, "buildDefinitionId": 32])))
+        #expect(fromItsRun.definitionId == 32)
+        let status = try #require(try check(Fixture.evaluation("Status", status: "rejected", settings: ["buildDefinitionId": 31])))
+        #expect(status.definitionId == nil)
     }
 
     @Test func statusPolicies() throws {

@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+- **Ask Copilot about a failed build, right where you read it.** With Send Work to Copilot on, a build that failed
+  in a pull request's details has **✨ Explain the Failure** and **Fix** under where it failed, which open a small
+  composer there, as a comment's do. **Explain the Failure** asks the Copilot session that worked on the build, or the
+  pull request's own, what failed and why, and whether it's this change, a flaky test, the target branch or the
+  build's infrastructure, from what BriefBar read of the run: its errors, the tests that failed with what each said,
+  and the last lines of its log. Its answer shows under the run, and asking changes nothing. **Fix** has Copilot
+  reproduce the failure and fix it, as you say, building on the answer if you like, in the pull request's session, a
+  fork of it or a new one, without committing, pushing or touching pipelines. The build then says what Copilot does
+  about it, above its buttons while it's open and under its name while it's closed, such as **Copilot is fixing this
+  build in ‘Retry backoff’ · 2m** or **Fixed in ‘Retry backoff’, not pushed**, and the fix counts in the fixes ready to
+  push at the foot of the details, until a rerun, or a push, that passes ends it. **Fix the Build with Copilot…**, in a
+  pull request's menu, quotes the same of a build you opened, and its builds say what Copilot does about them too.
+  Azure DevOps' description says what's sent.
+- **What Copilot said, under its line.** Once Copilot is done with a comment or a build, its line says what it said
+  under it, such as why it couldn't fix it, rather than cutting it short, and BriefBar's own tasks read as tasks, as in
+  **Fixed in the ‘Fix Comments’ task, not pushed**. What's Left says **Copilot's on it** for a prompt sent to one of the
+  Copilot app's sessions too, not only for BriefBar's tasks, and **Copilot asks you** while that session waits for your
+  answer; the fixes ready to push at the foot of the details say what they fixed, such as **1 fix and a build's fix
+  ready in ‘Retry backoff’**.
+- **Comments fixed with Copilot before this update no longer say so.** What tasks and prompts took on before isn't
+  read any more, so those comments lose the line that said what Copilot did, and the bar of fixes ready to push
+  forgets them. **Push & Reply with Copilot…**, in the pull request's menu, still pushes them from their session.
+
 ## 0.12.0 - 2026-11-03
 
 - **BriefBar now needs macOS 26 or later.** On macOS 15, BriefBar keeps the version it has: its updater doesn't

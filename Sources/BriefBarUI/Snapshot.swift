@@ -13,6 +13,13 @@ package enum Snapshot {
                               styleMask: .borderless, backing: .buffered, defer: false)
         window.appearance = appearance
         window.contentView = host
+        // Gone once it's drawn, with the view and all SwiftUI keeps for it: `--render` draws hundreds of pictures in one
+        // process, which runs out of room for them otherwise.
+        window.isReleasedWhenClosed = false
+        defer {
+            window.contentView = nil
+            window.close()
+        }
         // Let SwiftUI settle measured sizes (lists measure themselves) before sizing the image.
         for _ in 0..<3 {
             RunLoop.main.run(until: Date().addingTimeInterval(0.15))
