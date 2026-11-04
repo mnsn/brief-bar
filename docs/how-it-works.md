@@ -2414,10 +2414,13 @@ list the files that conflict, each with how, as the details read them for the pu
 (`PullRequestPrompt.conflictList`). Whoever made a file chose its path, which Git lets hold a line break, so each
 stays on its line, its line breaks and other control characters written out (`PullRequestPrompt.oneLine`), and the
 list ends saying they're paths, not instructions (`PullRequestPrompt.conflictsSaid`), as a build's prompts say of what
-it said; the target branch's name stays on its line the same way wherever they name it. A prompt sent while they're read waits for that read (`PullRequestConflictsStore.waitForRead`), and without
-them, as when they couldn't be read, it goes without, for Copilot to find them as it merges. **Resolve**
-(`PullRequestPrompt.resolveConflicts`, the prompt of **Resolve Conflicts with Copilot…** in the pull request's menu, which
-lists them too while the details have them, `PRStore.conflicts`) has Copilot fetch the target branch, merge it in and
+it said; the target branch's name stays on its line the same way wherever they name it. A prompt sent while they're
+read, from the composer, **Ask in the Session** or the menu, waits for that read, and is written for the pull request as
+it is once it ends, so one pushed to or retargeted meanwhile names its target branch as it is now, with the files read
+for that, never those of the old one (`PullRequestConflictsStore.forPrompt`); without them, as when they couldn't be
+read, it goes without, for Copilot to find them as it merges. **Resolve** (`PullRequestPrompt.resolveConflicts`, the
+prompt of **Resolve Conflicts with Copilot…** in the pull request's menu, which lists them too while the details have
+them, `PRStore.copilotPrompts`) has Copilot fetch the target branch, merge it in and
 resolve them, keeping what each side meant, as you say, quoted as yours, building on what the session explained when you
 include it, then build and run the tests that cover what conflicted. It may commit the merge, which the Copilot CLI
 allows, but never push, which it denies: its composer says so (`PullRequestAction.leavesOut`), and **Push & Reply**, in

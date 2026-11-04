@@ -138,6 +138,17 @@ final class PullRequestConflictsStore: ObservableObject {
         }
     }
 
+    /// What a prompt about a pull request's conflicts goes with as it's sent: once a read of them under way ends, the pull
+    /// request as the list has it then, and the files read for it as it is then. So one sent while they're read lists them,
+    /// and one whose pull request was pushed to or retargeted while it waited names its target branch as it is now, with the
+    /// files read for that, or none while they aren't. Nil once the list has the pull request no more.
+    /// - Parameter record: the pull request as the list has it now, asked for once the read ends.
+    func forPrompt(_ key: PRKey, record: () -> PRRecord?) async -> (record: PRRecord, conflicts: MergeConflicts?)? {
+        await waitForRead(of: key)
+        guard let record = record() else { return nil }
+        return (record, conflicts(for: record.pullRequest))
+    }
+
     private static func read(_ pullRequest: PullRequest, with reader: Reader) async -> Result<MergeConflicts, ADOError> {
         do {
             return .success(try await reader(pullRequest))

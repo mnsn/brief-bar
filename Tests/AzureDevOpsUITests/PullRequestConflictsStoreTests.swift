@@ -1,5 +1,6 @@
 import AzureDevOpsCore
 import BriefBarCore
+import BriefBarUI
 import Foundation
 import Testing
 @testable import AzureDevOpsUI
@@ -251,6 +252,70 @@ import Testing
         // With nothing under way, at once.
         await store.waitForRead(of: key)
         await store.waitForRead(of: PRKey("contoso", 8))
+    }
+
+    /// The pull request as the list has it, which a test changes.
+    @MainActor
+    private final class Records {
+        var record: PRRecord?
+
+        init(_ record: PRRecord?) {
+            self.record = record
+        }
+    }
+
+    /// Resolve Conflicts with Copilot…, chosen from the pull request's menu while its details read the files that conflict,
+    /// waits for them, and lists them.
+    @Test func resolveConflictsFromTheMenuWaitsForTheReadUnderWay() async throws {
+        let reader = Reader()
+        let (conflicts, _, _) = makeStores(reader)
+        await reader.hold(true)
+        conflicts.show(pullRequest, on: page)
+        try await settle { await reader.isHolding }
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        let record = PRRecord(pullRequest: pullRequest, role: .author, details: nil, me: "a")
+        store.conflicts = { key in await conflicts.forPrompt(key) { record } }
+        let written = Task { await store.copilotPrompts(.resolveConflicts, for: record) }
+        try await Task.sleep(for: .milliseconds(30))
+        await reader.release()
+        let prompts = await written.value.prompts
+        #expect(prompts.worktree.contains("1. src/c1.cs: changed on both branches"))
+        #expect(prompts.session.contains("1. src/c1.cs: changed on both branches"))
+        // Without a store that reads them, it goes without.
+        let alone = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        #expect(!(await alone.copilotPrompts(.resolveConflicts, for: record)).prompts.worktree.contains("Azure DevOps lists"))
+    }
+
+    /// A prompt sent while the files are read, as from Resolve, Explain or Ask in the Session, is written for the pull
+    /// request as it is once they're read: retargeted meanwhile, it names its new target, and lists the files read for it,
+    /// not those read for the old one, nor none.
+    @Test func aPromptSentAcrossARetargetIsWrittenForThePullRequestAsItIsNow() async throws {
+        let reader = Reader()
+        let (conflicts, _, _) = makeStores(reader)
+        await reader.hold(true)
+        conflicts.show(pullRequest, on: page)
+        try await settle { await reader.isHolding }
+        let records = Records(PRRecord(pullRequest: pullRequest, role: .author, details: nil, me: "a"))
+        let sent = Task { await conflicts.forPrompt(key) { records.record } }
+        // Retargeted while it waits: the list says so, and the details read the files again.
+        var retargeted = pullRequest
+        retargeted.targetBranch = "release"
+        retargeted.targetCommit = "t2"
+        records.record = PRRecord(pullRequest: retargeted, role: .author, details: nil, me: "a")
+        conflicts.show(retargeted, on: page)
+        try await settle { await reader.asked.count == 2 }
+        await reader.release()
+        try await settle { await !reader.isHolding }
+        await reader.release()
+        let current = try #require(await sent.value)
+        #expect(current.record.pullRequest.targetBranch == "release")
+        #expect(current.conflicts?.isCurrent(for: retargeted) == true)
+        let prompt = PullRequestPrompt.resolveConflicts(current.record, conflicts: current.conflicts)
+        #expect(prompt.contains("It has merge conflicts with release. Fetch origin/release, merge it into"))
+        #expect(prompt.contains("1. src/c1.cs: changed on both branches"))
+        // Once the list has it no more, nothing is sent for it.
+        records.record = nil
+        #expect(await conflicts.forPrompt(key) { records.record } == nil)
     }
 
     /// Resolve Conflicts lists the files its details read, in both places Copilot may work.

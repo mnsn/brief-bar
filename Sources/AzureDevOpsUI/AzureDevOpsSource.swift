@@ -212,8 +212,10 @@ package final class AzureDevOpsSource: BriefBarSource {
         pullRequestFiles = PullRequestFilesStore(code: pullRequestCode)
         let pullRequestConflicts = PullRequestConflictsStore(code: pullRequestCode, demo: store.mode == .demo, client: store.client)
         self.pullRequestConflicts = pullRequestConflicts
-        // What Resolve Conflicts lists, from the details' Actions menu too, once they read it.
-        store.conflicts = { [weak pullRequestConflicts] pullRequest in pullRequestConflicts?.conflicts(for: pullRequest) }
+        // What Resolve Conflicts lists, from the details' Actions menu too, once they read it, as the pull request is then.
+        store.conflicts = { [weak pullRequestConflicts, weak store] key in
+            await pullRequestConflicts?.forPrompt(key) { store?.record(for: key) }
+        }
         // Someone else signed in to the Azure CLI: the details read as the last one go, and what was told of them.
         store.$authoredPullRequestList.map(\.account).removeDuplicates()
             .sink { [weak details, weak workLinks, weak pullRequestDetails, weak buildInvestigations, weak pullRequestConflicts] account in

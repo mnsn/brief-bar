@@ -517,17 +517,25 @@ private struct ConflictsCopilotActions: View {
     /// Asks the session as a prompt it takes up itself, for when it can't be asked aside: in its own history, where it reads
     /// the code and the target branch too, but changes nothing.
     private func askInSession(_ choice: SessionChoice, question: CopilotQuestions.Question) {
-        guard let record else { return }
-        let sending = CopilotSending(item: item, record: record, store: store, copilot: copilot, session: sessions.session(for: item.key))
+        guard record != nil else { return }
         isAskingInSession = true
         let part = part
         let conflicts = conflicts
+        let store = store
+        let key = item.key
         drafts.asks[part]?.cancel()
         drafts.asks[part] = Task {
-            await conflicts.waitForRead(of: item.key)
+            // As the pull request is once the read under way ends, pushed to or retargeted meanwhile or not.
+            let current = await conflicts.forPrompt(key) { store.record(for: key) }
             guard !Task.isCancelled else { return }
+            guard let current else {
+                drafts.asks[part] = nil
+                isAskingInSession = false
+                return
+            }
+            let sending = CopilotSending(item: item, record: current.record, store: store, copilot: copilot, session: sessions.session(for: key))
             let prompt = PullRequestPrompt.askAboutConflicts(
-                record, conflicts: conflicts.conflicts(for: record.pullRequest), question: question.asked, earlier: question.earlier
+                current.record, conflicts: current.conflicts, question: question.asked, earlier: question.earlier
             )
             let outcome = await sending.explainAsPrompt(prompt, about: part, to: choice)
             guard !Task.isCancelled else { return }
@@ -595,37 +603,48 @@ private struct ConflictsComposer: View {
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var conflicts: PullRequestConflictsStore
 
-    /// What it asks, and the prompts it sends, with the files that conflict as they're read when it's sent.
+    /// What it asks, and the prompts it sends, for the pull request as it is when it's sent, with the files that conflict
+    /// as they're read for it then.
     private var asking: CopilotAsking {
-        let record = store.record(for: item.key)
+        let store = store
         let conflicts = conflicts
         let key = item.key
-        // The files are read before it's sent, while they're being read: its prompts list them once they are.
+        let sent = Sent()
+        // The files are read before it's sent, while they're being read: its prompts list them once they are, for the pull
+        // request as it is then, pushed to or retargeted meanwhile or not.
         var prepare: (@MainActor () async -> Void)?
         if conflicts.state(of: key) == .reading {
-            prepare = { await conflicts.waitForRead(of: key) }
+            prepare = { sent.current = await conflicts.forPrompt(key) { store.record(for: key) } }
         }
-        let read = { () -> MergeConflicts? in record.flatMap { conflicts.conflicts(for: $0.pullRequest) } }
+        // Without a read under way, as it is when it's sent.
+        let current = { () -> (record: PRRecord, conflicts: MergeConflicts?)? in
+            sent.current ?? store.record(for: key).map { ($0, conflicts.conflicts(for: $0.pullRequest)) }
+        }
         return CopilotAsking(
             ask: ask, part: .conflicts, action: .resolveConflicts, prepare: prepare,
             fix: { how, answer in
-                guard let record else {
+                guard let now = current() else {
                     return CopilotSending.Fix(prompts: ("", ""), action: .resolveConflicts, parts: [], handOff: nil)
                 }
-                let files = read()
                 return CopilotSending.Fix(
                     prompts: (
-                        PullRequestPrompt.resolveConflicts(record, workplace: .worktree, conflicts: files, note: how, answer: answer),
-                        PullRequestPrompt.resolveConflicts(record, workplace: .agent, conflicts: files, note: how, answer: answer)
+                        PullRequestPrompt.resolveConflicts(now.record, workplace: .worktree, conflicts: now.conflicts, note: how, answer: answer),
+                        PullRequestPrompt.resolveConflicts(now.record, workplace: .agent, conflicts: now.conflicts, note: how, answer: answer)
                     ),
                     action: .resolveConflicts, parts: [.conflicts], handOff: nil
                 )
             },
             question: { asked, earlier in
-                guard let record else { return "" }
-                return PullRequestPrompt.explainConflicts(record, conflicts: read(), question: asked, earlier: earlier)
+                guard let now = current() else { return "" }
+                return PullRequestPrompt.explainConflicts(now.record, conflicts: now.conflicts, question: asked, earlier: earlier)
             }
         )
+    }
+
+    /// What a send's wait for the files found: the pull request then, and the files read for it.
+    @MainActor
+    private final class Sent {
+        var current: (record: PRRecord, conflicts: MergeConflicts?)?
     }
 
     var body: some View {
