@@ -569,25 +569,32 @@ private struct ConflictsCopilotActions: View {
         }
     }
 
-    /// What VoiceOver hears as Explain ends: who answered, or why it couldn't.
+    /// What VoiceOver hears as Explain ends: who answered, or why it couldn't. Once, though the conflicts show in more than
+    /// one place.
     private func announce(_ state: CopilotQuestions.Question.State?) {
         guard let question else { return }
+        let said: String
         switch state {
         case .answered?:
-            SpokenText.announce("The conflicts: \(SpokenText.unquoted(names.place(question.session))) answered")
+            said = "\(SpokenText.unquoted(names.place(question.session))) answered"
         case .failed(let failure)?:
-            SpokenText.announce("The conflicts: couldn't explain them. \(failure.message(model: nil))")
+            said = "couldn't explain them. \(failure.message(model: nil))"
         case .asking?, nil:
-            break
+            return
         }
+        SpokenText.announce(
+            "The conflicts: \(said)", once: .init(pullRequest: item.key, part: part, said: said, since: question.endedAt ?? question.askedAt)
+        )
     }
 
-    /// What VoiceOver hears as Copilot's work on them ends, or waits for you.
+    /// What VoiceOver hears as Copilot's work on them ends, or waits for you. Once, though the conflicts show in more than
+    /// one place.
     private func announce(_ state: CopilotWork.State?) {
         guard let work, let state else { return }
         switch state {
         case .done, .failed, .stopped, .needsYou:
-            SpokenText.announce("The conflicts: \(names.announcement(work))")
+            let said = names.announcement(work)
+            SpokenText.announce("The conflicts: \(said)", once: .init(pullRequest: item.key, part: part, said: said, since: work.since))
         case .waiting, .working, .unknown:
             break
         }

@@ -371,9 +371,11 @@ import Testing
         let first = CopilotComposing(part: .build(31), ask: .fix, row: "build-1")
         let second = CopilotComposing(part: .build(31), ask: .fix, row: "build-2")
         #expect(first != second)
+        let kept = DetailsDrafts()
+        let key = PRKey(DemoData.organization, 4088)
+        kept.keep("Skip weekends", in: first, of: key)
+        #expect(kept.words(in: second, of: key).isEmpty)
         let drafts = CopilotDrafts()
-        drafts.texts[first] = "Skip weekends"
-        #expect(drafts.texts[second] == nil)
         let asking = CopilotAsking(
             ask: .fix, part: .build(31), action: .fixBuild, row: "build-2",
             fix: { _, _ in CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }, question: { _, _ in "" }
