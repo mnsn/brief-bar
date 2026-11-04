@@ -617,6 +617,38 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(store.pullRequest == nil && store.expanded.isEmpty && store.looks.isEmpty)
     }
 
+    /// Showing another pull request calls off the reads under way, which the investigator calls off in turn once nobody
+    /// waits for them (`BuildInvestigator.giveUp`): so do closing the details and someone else signing in.
+    @Test(.timeLimit(.minutes(1)))
+    func lettingGoCallsOffTheReadsUnderWay() async throws {
+        let (started, startedOne) = AsyncStream<Int>.makeStream()
+        let (calledOff, calledOffOne) = AsyncStream<Int>.makeStream()
+        let store = BuildInvestigationStore(mode: .live, client: ADOClient(tokens: NoTokens()), now: { [now] in now }) { buildId, _, _, _ in
+            startedOne.yield(buildId)
+            do {
+                while true { try await Task.sleep(for: .milliseconds(5)) }
+            } catch {
+                calledOffOne.yield(buildId)
+                throw error
+            }
+        }
+        var startedIterator = started.makeAsyncIterator()
+        var calledOffIterator = calledOff.makeAsyncIterator()
+        store.expand(1, of: delivery)
+        #expect(await startedIterator.next() == 1)
+        store.show(slowQueries.key)
+        #expect(await calledOffIterator.next() == 1)
+        store.expand(3, of: slowQueries)
+        #expect(await startedIterator.next() == 3)
+        store.close(slowQueries.key)
+        #expect(await calledOffIterator.next() == 3)
+        store.accountChanged("home/robin")
+        store.expand(1, of: delivery)
+        #expect(await startedIterator.next() == 1)
+        store.accountChanged("home/sam")
+        #expect(await calledOffIterator.next() == 1)
+    }
+
     @Test func someoneElseSigningInLetsGoOfWhatWasRead() async throws {
         let gate = InvestigationGate()
         let store = makeStore(gate)

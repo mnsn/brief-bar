@@ -1060,7 +1060,9 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(await investigator.keptBuilds == [77])
     }
 
-    @Test func aReadUnderWayWhenItForgetsIsntKept() async throws {
+    /// A read under way as it forgets, as someone else signs in, was asked for as the last one: it's called off, reads
+    /// nothing more, and isn't kept; whoever asks next reads the run anew.
+    @Test func aReadUnderWayWhenItForgetsIsCalledOff() async throws {
         let server = StubServer()
         FailedRun.serve(server)
         let tokens = HeldTokens(server.id, holdAt: 1)
@@ -1069,8 +1071,80 @@ private actor GatedTokens: AccessTokenProvider {
         try await waitUntilHeld(tokens)
         await investigator.forget()
         await tokens.release()
-        #expect(try await read.value.run.id == 77)
+        await #expect(throws: CancellationError.self) { try await read.value }
+        #expect(requests(server, to: "/timeline").isEmpty)
+        #expect(requests(server, to: "/logs").isEmpty)
         #expect(await investigator.keptBuilds.isEmpty)
+        #expect(try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest).run.id == 77)
+        #expect(requests(server, to: "/timeline").count == 1)
+    }
+
+    /// A read whose only caller is called off, as when the details close or show another pull request, is called off too:
+    /// it reads nothing more, and whoever asks next reads the run anew.
+    @Test(.timeLimit(.minutes(1)))
+    func aReadNobodyWaitsForIsCalledOff() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first request, for the run, held.
+        let tokens = HeldTokens(server.id, holdAt: 1)
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+        let read = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntilHeld(tokens)
+        #expect(await investigator.asking == 1)
+        read.cancel()
+        try await waitUntil("the read to be given up") { await investigator.asking == 0 }
+        await tokens.release()
+        await #expect(throws: CancellationError.self) { try await read.value }
+        #expect(requests(server, to: "/timeline").isEmpty)
+        #expect(requests(server, to: "/logs").isEmpty)
+        #expect(await investigator.keptBuilds.isEmpty)
+        #expect(try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest).run.id == 77)
+        #expect(requests(server, to: "/timeline").count == 1)
+        #expect(await investigator.keptBuilds == [77])
+    }
+
+    /// A read two callers wait for goes on when one of them is called off: the other gets it, and it's kept.
+    @Test(.timeLimit(.minutes(1)))
+    func aReadAnotherCallerWaitsForGoesOn() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        let tokens = HeldTokens(server.id, holdAt: 1)
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+        let one = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntilHeld(tokens)
+        let two = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntil("both to wait for the read") { await investigator.asking == 2 }
+        one.cancel()
+        try await waitUntil("one to stop waiting") { await investigator.asking == 1 }
+        await tokens.release()
+        await #expect(throws: CancellationError.self) { try await one.value }
+        #expect(try await two.value.run.id == 77)
+        #expect(requests(server, to: "/timeline").count == 1)
+        #expect(await investigator.keptBuilds == [77])
+        #expect(await investigator.asking == 0)
+    }
+
+    /// A caller called off while it looks at a kept run, one GET, starts no read of it, though the look finds it ran again.
+    @Test(.timeLimit(.minutes(1)))
+    func aCallerCalledOffWhileItLooksAtAKeptRunReadsNothingInstead() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests, then the look at the run it kept.
+        let tokens = HeldTokens(server.id, holdAt: 9)
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        clock.advance(10)
+        // It ran again since, as the look finds.
+        var again = FailedRun.build()
+        again["finishTime"] = iso(t(-minute))
+        server.on("/_apis/build/builds/77", json: again)
+        let looking = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntilHeld(tokens)
+        looking.cancel()
+        await tokens.release()
+        await #expect(throws: CancellationError.self) { try await looking.value }
+        #expect(requests(server, to: "/timeline").count == 1)
     }
 
     @Test func stoppingStopsAReadUnderWayAndReadsNothingMore() async throws {
