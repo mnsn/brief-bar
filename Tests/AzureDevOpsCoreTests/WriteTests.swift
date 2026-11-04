@@ -3,7 +3,7 @@ import Testing
 @testable import AzureDevOpsCore
 
 /// What BriefBar changes in Azure DevOps, with Make Changes in Azure DevOps on: a reply in a thread and a thread's status
-/// (`ADOWrite`), which only `ADOClient.send(_:)` sends; and nothing else, which every other request, a GET, can't.
+/// (`ADOWrite`), which only `ADOClient.send(_:as:)` sends; and nothing else, which every other request, a GET, can't.
 @Suite struct WriteTests {
     let pullRequest = makePR(7)
     var address: ThreadAddress { ThreadAddress(pullRequest, thread: 12) }
@@ -98,7 +98,7 @@ import Testing
         server.on("/pullRequests/7/threads/12/comments") { _ in
             .json(Fixture.comment(4, People.me, "Thanks, done", at: t(0)))
         }
-        let answer = try await server.client().send(sample(.reply))
+        let answer = try await server.client().send(sample(.reply), as: nil)
         guard case .comment(let comment) = answer else {
             Issue.record("Expected a comment, got \(answer)")
             return
@@ -120,7 +120,7 @@ import Testing
         server.on("/pullRequests/7/threads/12") { _ in
             .json(Fixture.thread(12, comments: [Fixture.comment(1, People.sam, "Cap it?", at: t(-hour))], status: "fixed", published: t(-hour)))
         }
-        let answer = try await server.client().send(sample(.setStatus))
+        let answer = try await server.client().send(sample(.setStatus), as: nil)
         guard case .thread(let thread) = answer else {
             Issue.record("Expected a thread, got \(answer)")
             return
@@ -140,14 +140,14 @@ import Testing
             attempts.increment() == 1 ? .status(401) : .json(Fixture.comment(4, People.me, "Thanks, done", at: t(0)))
         }
         let tokens = server.tokens
-        _ = try await server.client(tokens: tokens).send(sample(.reply))
+        _ = try await server.client(tokens: tokens).send(sample(.reply), as: nil)
         #expect(server.requests.count == 2)
         #expect(await tokens.invalidations == 1)
 
         for reply in [StubServer.Reply.status(500), .failure(.timedOut), .failure(.networkConnectionLost), .status(400)] {
             let failing = StubServer()
             failing.on("/threads/12/comments") { _ in reply }
-            await #expect(throws: ADOError.self) { try await failing.client().send(sample(.reply)) }
+            await #expect(throws: ADOError.self) { try await failing.client().send(sample(.reply), as: nil) }
             #expect(failing.requests.count == 1)
         }
     }
@@ -174,7 +174,7 @@ import Testing
         for (reply, expected) in cases {
             let server = StubServer()
             server.on("/threads/12") { _ in reply }
-            await #expect(throws: expected) { try await server.client().send(sample(.setStatus)) }
+            await #expect(throws: expected) { try await server.client().send(sample(.setStatus), as: nil) }
         }
         // What it said stays out of the log, where errors' descriptions go.
         #expect(ADOError.refused(nil, message: "A thread can have up to 500 comments.").description == "Azure DevOps refused the change.")
@@ -193,7 +193,7 @@ import Testing
         for reply in answers {
             let server = StubServer()
             server.on("/threads/12/comments") { _ in reply }
-            let answer = try await server.client().send(sample(.reply))
+            let answer = try await server.client().send(sample(.reply), as: nil)
             guard case .unreadable = answer else {
                 Issue.record("Expected an unreadable answer for \(reply.status), got \(answer)")
                 continue
@@ -211,10 +211,50 @@ import Testing
         let write = sample(.setStatus)
         let task = Task {
             withUnsafeCurrentTask { $0?.cancel() }
-            return try await client.send(write)
+            return try await client.send(write, as: nil)
         }
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(server.requests.isEmpty)
+    }
+
+    /// A change goes only as whom it was asked for as, the account the list was read as: when someone else signed in to the
+    /// Azure CLI since, as the list doesn't know yet, it sends nothing. When that isn't known, it goes.
+    @Test func aChangeGoesOnlyAsWhomItWasAskedFor() async throws {
+        let server = StubServer()
+        server.on("/threads/12/comments") { _ in .json(Fixture.comment(4, People.me, "Thanks, done", at: t(0))) }
+        let tokens = server.tokens
+        await tokens.signIn(as: "home/robin")
+        let client = server.client(tokens: tokens)
+        _ = try await client.send(sample(.reply), as: "home/robin")
+        #expect(server.requests.count == 1)
+
+        await tokens.signIn(as: "home/sam")
+        await #expect(throws: ADOError.otherAccount) { try await client.send(sample(.reply), as: "home/robin") }
+        #expect(server.requests.count == 1)
+        _ = try await client.send(sample(.reply), as: nil)
+        #expect(server.requests.count == 2)
+    }
+
+    /// In an organization in another directory, a token is a guest's there, with an ID of its own, and may have been kept
+    /// from before someone else signed in: whom your sign-in is for is read again, fresh, to tell.
+    @Test func aChangeInAnotherDirectoryReadsWhoSignedInFresh() async throws {
+        let server = StubServer()
+        server.put(Fixture.org, in: Tenants.other)
+        server.on("/threads/12/comments") { _ in .json(Fixture.comment(4, People.me, "Thanks, done", at: t(0))) }
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let robin = "\(Tenants.home)/robin"
+        await tokens.signIn(as: robin)
+        await tokens.signIn(to: Tenants.other, as: "\(Tenants.other)/robin-guest")
+        let client = server.client(tokens: tokens)
+        // Your directory's token first, which Azure DevOps names the organization's directory for; then that one's, a guest's.
+        _ = try await client.send(sample(.reply), as: robin)
+        #expect(server.requests.map(\.tenant) == [Tenants.home, Tenants.other])
+        let invalidations = await tokens.invalidations
+
+        await tokens.signIn(as: "\(Tenants.home)/sam")
+        await #expect(throws: ADOError.otherAccount) { try await client.send(sample(.reply), as: robin) }
+        #expect(server.requests.count == 2)
+        #expect(await tokens.invalidations == invalidations + 1)
     }
 
     /// A change goes only where it's sent, as a read does.
@@ -222,7 +262,7 @@ import Testing
     func followsNoRedirectWithAChange() async {
         let server = StubServer()
         server.on("/threads/12") { _ in .redirect(to: "https://elsewhere.example/contoso/_apis/threads/12") }
-        await #expect(throws: ADOError.redirected) { try await server.client().send(sample(.setStatus)) }
+        await #expect(throws: ADOError.redirected) { try await server.client().send(sample(.setStatus), as: nil) }
         #expect(server.requests.count == 1)
     }
 
@@ -244,7 +284,7 @@ import Testing
         server.on("/pullRequests/7/labels") { _ in
             .json(["id": "0f5d2c1e-tag", "name": "Deploy-EU", "active": true, "url": NSNull()])
         }
-        let answer = try await server.client().send(sample(.addTag))
+        let answer = try await server.client().send(sample(.addTag), as: nil)
         guard case .tag(let tag) = answer else {
             Issue.record("Expected a tag, got \(answer)")
             return
@@ -270,7 +310,7 @@ import Testing
         for reply in replies {
             let server = StubServer()
             server.on("/pullRequests/7/labels/0f5d2c1e-tag") { _ in reply }
-            let answer = try await server.client().send(sample(.removeTag))
+            let answer = try await server.client().send(sample(.removeTag), as: nil)
             guard case .done = answer else {
                 Issue.record("Expected it done, got \(answer) for \(reply.status)")
                 continue
@@ -288,7 +328,7 @@ import Testing
         signedOut.on("/pullRequests/7/labels/0f5d2c1e-tag") { _ in
             attempts.increment() == 1 ? .status(401) : StubServer.Reply(status: 204, headers: [:], body: Data())
         }
-        guard case .done = try await signedOut.client().send(sample(.removeTag)) else {
+        guard case .done = try await signedOut.client().send(sample(.removeTag), as: nil) else {
             Issue.record("Expected it done after a fresh sign-in")
             return
         }
@@ -308,7 +348,7 @@ import Testing
             for (reply, expected) in cases {
                 let server = StubServer()
                 server.on("/pullRequests/7/labels") { _ in reply }
-                await #expect(throws: expected) { try await server.client().send(sample(kind)) }
+                await #expect(throws: expected) { try await server.client().send(sample(kind), as: nil) }
                 #expect(server.requests.count == 1)
             }
         }
@@ -348,7 +388,7 @@ import Testing
     }
 
     /// Only the client makes requests in AzureDevOpsCore, and it sets a method only twice: GET for every read, and a change's
-    /// own, one of `ADOWrite`'s, for `send(_:)`.
+    /// own, one of `ADOWrite`'s, for `send(_:as:)`.
     @Test func onlyTheClientMakesRequestsAndOnlyGETsOrTheChangesItLists() throws {
         let sources = try coreSources()
         #expect(sources.filter { $0.text.contains("URLRequest(") }.map(\.name) == ["ADOClient.swift"])
@@ -423,6 +463,7 @@ import Testing
             (ADOError.auth(.signedOut("Run az login")), .signedOut),
             (ADOError.throttled(retryAfter: 30), .slowedDown),
             (ADOError.network(ADOClient.unansweredMessage), .unanswered),
+            (ADOError.otherAccount, .otherAccount),
             (ADOError.http(500), .failed("Azure DevOps answered with HTTP 500.")),
         ]
         for (error, problem) in cases {
@@ -441,6 +482,9 @@ import Testing
         #expect(ADOWriteProblem.unconfirmed.mayHaveGone)
         #expect(!ADOWriteProblem.notAllowed.mayHaveGone)
         #expect(!ADOWriteProblem.closed.mayHaveGone)
+        // Nothing went as someone else.
+        #expect(!ADOWriteProblem.otherAccount.mayHaveGone)
+        #expect(ADOWriteProblem.otherAccount.sentence(.reply).contains("sent nothing as them"))
     }
 
     // MARK: Helpers

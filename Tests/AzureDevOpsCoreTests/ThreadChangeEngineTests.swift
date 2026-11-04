@@ -15,6 +15,11 @@ import Testing
         snapshot?.records.first { $0.id == key }?.details?.threads.first { $0.id == 7 }
     }
 
+    /// How the pull request's comment requirements stand, as its policies said.
+    private func requirement(in snapshot: PulseSnapshot?) -> Check.State? {
+        snapshot?.records.first { $0.id == key }?.details?.checks.first { $0.name == "Comment requirements" }?.state
+    }
+
     private func threadReads(_ server: StubServer) -> Int {
         server.requests.filter { $0.url?.path.hasSuffix("/pullRequests/1/threads") == true }.count
     }
@@ -141,6 +146,65 @@ import Testing
         #expect(last.status == "fixed")
     }
 
+    /// A change that may have been made, as one Azure DevOps didn't answer in time: a read that started before it, and
+    /// answers last, is taken neither for its threads nor for its policies, which a thread's status changes; and the read
+    /// again for it says how the threads are, as it read them.
+    @Test(.timeLimit(.minutes(1)))
+    func aReadThatStartedBeforeAChangeThatMayHaveBeenMadeIsntTaken() async throws {
+        let now = Date()
+        let server = StubServer()
+        server.serveOrganization(mine: [Fixture.pullRequest(1, created: now.addingTimeInterval(-day))])
+        let question = Fixture.comment(1, People.sam, "Cap it?", at: now.addingTimeInterval(-hour))
+        let before = threads([question], at: now.addingTimeInterval(-hour))
+        server.on("/pullRequests/1/threads", json: before)
+        let unresolved = Fixture.list([Fixture.evaluation("Comment requirements", status: "rejected")])
+        server.on("/_apis/policy/evaluations", json: unresolved)
+        let changeRead = Locked(false)
+        let key = self.key
+        let engine = PulseEngine(client: server.client(), configuration: PulseEngine.Configuration(
+            organizations: [Fixture.org], planner: RefreshPlanner.Options(busyInterval: 0, activeInterval: 0, quietInterval: 0)
+        )) { snapshot in
+            let thread = snapshot.records.first { $0.id == key }?.details?.threads.first { $0.id == 7 }
+            if thread?.status == "fixed" { changeRead.set(true) }
+        }
+        await engine.refreshNow()
+        #expect(requirement(in: await engine.currentSnapshot()) == .pending)
+
+        // The next read's policies answer as they were before the change, at once, and its threads too, once the read again
+        // for it was taken; those after, as they are after it, resolved.
+        var held = StubServer.Reply.json(before)
+        held.waitsFor = { changeRead.value }
+        let stale = held
+        let after = StubServer.Reply.json(threads(
+            [question, Fixture.comment(2, People.me, "Capped", at: now)], status: "fixed", at: now.addingTimeInterval(-hour)
+        ))
+        let reads = Locked(0)
+        server.on("/pullRequests/1/threads") { _ in reads.increment() == 1 ? stale : after }
+        let made = Locked(false)
+        let policyReads = Locked(0)
+        let unresolvedReply = StubServer.Reply.json(unresolved)
+        let resolved = StubServer.Reply.json(Fixture.list([Fixture.evaluation("Comment requirements", status: "approved")]))
+        server.on("/_apis/policy/evaluations") { _ in
+            _ = policyReads.increment()
+            return made.value ? resolved : unresolvedReply
+        }
+        let refresh = Task { await engine.refreshNow() }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: waitLimit)
+        while reads.value < 1 || policyReads.value < 1, clock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(reads.value >= 1 && policyReads.value >= 1)
+        made.set(true)
+        let read = await engine.mayHaveChanged(key)
+        await refresh.value
+
+        #expect(changeRead.value)
+        #expect(read?.first { $0.id == 7 }?.comments.map(\.id) == [1, 2])
+        let last = try #require(thread(in: await engine.currentSnapshot()))
+        #expect(last.comments.map(\.id) == [1, 2])
+        #expect(last.status == "fixed")
+        #expect(requirement(in: await engine.currentSnapshot()) == .passed)
+    }
+
     /// Read again, as after a change Azure DevOps didn't answer in time: two requests, now.
     @Test func readsAPullRequestAgainWhenAsked() async throws {
         let now = Date()
@@ -154,12 +218,13 @@ import Testing
 
         server.on("/pullRequests/1/threads", json: threads([question, Fixture.comment(2, People.me, "Capped", at: now)],
                                                           at: now.addingTimeInterval(-hour)))
-        await engine.readAgain(key)
+        let read = await engine.readAgain(key)
+        #expect(read?.first { $0.id == 7 }?.comments.map(\.id) == [1, 2])
         #expect(thread(in: await engine.currentSnapshot())?.comments.map(\.id) == [1, 2])
         #expect(server.requests.count == requests + 2)
 
         // One it doesn't list is read at no time.
-        await engine.readAgain(PRKey(Fixture.org, 99))
+        #expect(await engine.readAgain(PRKey(Fixture.org, 99)) == nil)
         #expect(server.requests.count == requests + 2)
     }
 }

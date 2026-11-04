@@ -83,23 +83,30 @@ extension PullRequestPanel.Threads {
 
     /// The threads by file, the open ones and the resolved ones apart, as the details list them while you change some of
     /// them there (`held`): each of those stays where it was as you first changed it, with the open ones or the resolved
-    /// ones, and with those that wait on you or not, however it stands now, so it doesn't move away as you reply or resolve
-    /// it.
+    /// ones, with those that wait on you or not, and among them, by when something was said in it then, however it stands
+    /// now, so it doesn't move away as you reply or resolve it.
     public func arranged(
-        holding held: [Int: PullRequestPanel.Thread.Placement] = [:]
+        holding held: [Int: PullRequestPanel.Thread.Held] = [:]
     ) -> (open: [PullRequestPanel.FileThreads], resolved: [PullRequestPanel.FileThreads]) {
-        func placement(_ thread: PullRequestPanel.Thread) -> PullRequestPanel.Thread.Placement { held[thread.id] ?? thread.placement }
+        func placement(_ thread: PullRequestPanel.Thread) -> PullRequestPanel.Thread.Placement {
+            held[thread.id]?.placement ?? thread.placement
+        }
+        func date(_ thread: PullRequestPanel.Thread) -> Date? {
+            if let kept = held[thread.id] { return kept.date }
+            return thread.date
+        }
         let all = all
         return (
-            Self.byFile(all.filter { placement($0) != .resolved }) { placement($0) == .waitingOnYou },
-            Self.byFile(all.filter { placement($0) == .resolved }) { placement($0) == .waitingOnYou }
+            Self.byFile(all.filter { placement($0) != .resolved }, waitsFirst: { placement($0) == .waitingOnYou }, date: date),
+            Self.byFile(all.filter { placement($0) == .resolved }, waitsFirst: { placement($0) == .waitingOnYou }, date: date)
         )
     }
 
     /// By file as Git tells files apart, by their paths' bytes, rather than as Swift's strings compare them; in each, those
-    /// that `waitsFirst` first.
+    /// that `waitsFirst` first, then by line, then the latest first, by `date`.
     static func byFile(
-        _ threads: [PullRequestPanel.Thread], waitsFirst: (PullRequestPanel.Thread) -> Bool = \.waitsOnYou
+        _ threads: [PullRequestPanel.Thread], waitsFirst: (PullRequestPanel.Thread) -> Bool = \.waitsOnYou,
+        date: (PullRequestPanel.Thread) -> Date? = \.date
     ) -> [PullRequestPanel.FileThreads] {
         var general: [PullRequestPanel.Thread] = []
         var byPath: [GitPath: [PullRequestPanel.Thread]] = [:]
@@ -112,22 +119,26 @@ extension PullRequestPanel.Threads {
         }
         let files = byPath.sorted { PullRequestPanel.listsFirst($0.key.string, $1.key.string) }
             .map { file in
-                PullRequestPanel.FileThreads(path: file.key.string, threads: file.value.sorted { showsFirst($0, $1, waitsFirst: waitsFirst) })
+                PullRequestPanel.FileThreads(
+                    path: file.key.string, threads: file.value.sorted { showsFirst($0, $1, waitsFirst: waitsFirst, date: date) }
+                )
             }
-        let onItself = general.sorted { showsFirst($0, $1, waitsFirst: waitsFirst) }
+        let onItself = general.sorted { showsFirst($0, $1, waitsFirst: waitsFirst, date: date) }
         return (general.isEmpty ? [] : [PullRequestPanel.FileThreads(path: nil, threads: onItself)]) + files
     }
 
     /// Those that wait on you first; then from the top of the file down, those on the whole file first; then the latest
     /// first.
     private static func showsFirst(
-        _ lhs: PullRequestPanel.Thread, _ rhs: PullRequestPanel.Thread, waitsFirst: (PullRequestPanel.Thread) -> Bool
+        _ lhs: PullRequestPanel.Thread, _ rhs: PullRequestPanel.Thread, waitsFirst: (PullRequestPanel.Thread) -> Bool,
+        date: (PullRequestPanel.Thread) -> Date?
     ) -> Bool {
         if waitsFirst(lhs) != waitsFirst(rhs) { return waitsFirst(lhs) }
         let lhsLine = ThreadCode.span(of: lhs.thread)?.lines.lowerBound ?? lhs.thread.line ?? 0
         let rhsLine = ThreadCode.span(of: rhs.thread)?.lines.lowerBound ?? rhs.thread.line ?? 0
         if lhsLine != rhsLine { return lhsLine < rhsLine }
-        if lhs.date != rhs.date { return (lhs.date ?? .distantPast) > (rhs.date ?? .distantPast) }
+        let lhsDate = date(lhs), rhsDate = date(rhs)
+        if lhsDate != rhsDate { return (lhsDate ?? .distantPast) > (rhsDate ?? .distantPast) }
         return lhs.id > rhs.id
     }
 }
@@ -141,6 +152,23 @@ extension PullRequestPanel.Thread {
     /// Where the details list it as it stands.
     public var placement: Placement {
         waitsOnYou ? .waitingOnYou : isResolved ? .resolved : .open
+    }
+
+    /// Where the details listed a thread as you first changed it there: with which ones, and when something was last said
+    /// in it then, which orders it among them.
+    public struct Held: Sendable, Hashable {
+        public var placement: Placement
+        public var date: Date?
+
+        public init(placement: Placement, date: Date?) {
+            self.placement = placement
+            self.date = date
+        }
+
+        /// Where it is now.
+        public init(_ thread: PullRequestPanel.Thread) {
+            self.init(placement: thread.placement, date: thread.date)
+        }
     }
     /// How many comments a thread has at most for all of them to show; past that, the first and the latest show, and those
     /// between them fold until you ask for them.

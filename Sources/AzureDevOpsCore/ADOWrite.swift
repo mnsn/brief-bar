@@ -3,7 +3,7 @@ import Foundation
 /// The only changes BriefBar makes in Azure DevOps, each when you click it, with **Make Changes in Azure DevOps** on: your
 /// reply in a pull request's comment thread, a thread's status, and a tag you add to a pull request or take off it. Every
 /// other request BriefBar sends Azure DevOps is a GET
-/// (`ADOClient.get`); these go only through `ADOClient.send(_:)`, which sends nothing else, with the same sign-in, to the same
+/// (`ADOClient.get`); these go only through `ADOClient.send(_:as:)`, which sends nothing else, with the same sign-in, to the same
 /// host, following no redirect. Each is on a pull request (`pullRequest`), and a thread's on one of its threads (`thread`).
 /// A change BriefBar comes to make later is another case here, and a kind of its own (`Kind`), which the tests go through.
 public enum ADOWrite: Sendable, Equatable {
@@ -296,6 +296,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
     case unconfirmed
     /// Azure DevOps refused it, with what it said, when it said something: never logged.
     case refused(String?)
+    /// Someone else signed in to the Azure CLI since you asked for it: nothing went as them.
+    case otherAccount
     /// Anything else, as BriefBar says it.
     case failed(String)
 
@@ -312,6 +314,7 @@ public enum ADOWriteProblem: Sendable, Equatable {
         case .throttled: self = .slowedDown
         case .network(ADOClient.unansweredMessage): self = .unanswered
         case .refused(let reason, let message): self = reason == .notEditable ? .closed : .refused(message)
+        case .otherAccount: self = .otherAccount
         case .http, .network, .decoding, .redirected: self = .failed(error.description)
         }
     }
@@ -350,6 +353,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
             return "Azure DevOps refused it: \(said)"
         case .refused(nil):
             return "Azure DevOps refused it."
+        case .otherAccount:
+            return "Someone else is signed in to the Azure CLI now, so BriefBar sent nothing as them: sign in as yourself, then try again."
         case .failed(let why):
             return (kind == .reply ? "Couldn't reply: " : "Couldn't change its status: ") + why
         }
@@ -381,6 +386,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
             "Azure DevOps refused it: \(said)"
         case .refused(nil):
             "Azure DevOps refused it."
+        case .otherAccount:
+            "Someone else is signed in to the Azure CLI now, so BriefBar sent nothing as them: sign in as yourself, then try again."
         case .failed(let why):
             (kind == .addTag ? "Couldn't add the tag: " : "Couldn't remove the tag: ") + why
         }

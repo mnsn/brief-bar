@@ -495,7 +495,7 @@ struct PullRequestTagsRow: View {
     }
 
     private func signIn(_ problem: ADOWriteProblem) -> (() -> Void)? {
-        guard problem == .signedOut, store.mode == .live else { return nil }
+        guard problem == .signedOut || problem == .otherAccount, store.mode == .live else { return nil }
         return { store.signIn() }
     }
 }

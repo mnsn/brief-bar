@@ -281,15 +281,21 @@ public struct ReviewComment: Sendable, Codable, Equatable {
     /// Lowercased IDs of the people it @mentions.
     public var mentions: [String]
     public var publishedAt: Date
+    /// All of it as Azure DevOps keeps it, each mention as its ID (`@<…>`), to tell a reply of yours that went from one to
+    /// send: nil for one made up, as the demo's.
+    public var content: String?
 
     /// `markdown` is `text` unless it's given.
-    public init(id: Int, author: Person, text: String, markdown: String? = nil, mentions: [String] = [], publishedAt: Date) {
+    public init(
+        id: Int, author: Person, text: String, markdown: String? = nil, mentions: [String] = [], publishedAt: Date, content: String? = nil
+    ) {
         self.id = id
         self.author = author
         self.text = text
         self.markdown = markdown ?? text
         self.mentions = mentions.map { $0.lowercased() }
         self.publishedAt = publishedAt
+        self.content = content
     }
 
     /// Nil for a deleted or system comment, or one without an author or anything to say.
@@ -306,7 +312,8 @@ public struct ReviewComment: Sendable, Codable, Equatable {
             text: CommentText.plain(content, names: names),
             markdown: CommentText.naming(content, names: names),
             mentions: CommentText.mentionedIds(content),
-            publishedAt: comment.publishedDate ?? published ?? .distantPast
+            publishedAt: comment.publishedDate ?? published ?? .distantPast,
+            content: content
         )
     }
 }

@@ -46,7 +46,7 @@ import Testing
         store.receive(DemoData.snapshot(now: store.now))
         let changes = TagChanges(store: store, settings: settings)
         let azure = AzureDevOps()
-        changes.send = { try azure.send($0) }
+        changes.send = { write, _ in try azure.send(write) }
         changes.readTags = { _ in nil }
         return (store, changes, azure)
     }
@@ -218,7 +218,7 @@ import Testing
         let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         await store.loadOnce()
         let changes = TagChanges(store: store, settings: settings)
-        changes.send = { _ in
+        changes.send = { _, _ in
             Issue.record("The demo sent a change")
             return .done
         }
@@ -243,11 +243,30 @@ import Testing
         #expect(changes.state(of: key) == nil)
     }
 
+    /// A change goes as whom the list was read as when you clicked: someone else signed in since, and Azure DevOps' client sends
+    /// nothing (`ADOClient.send(_:as:)`), which the tags say, with Sign In.
+    @Test func aChangeGoesAsWhomTheListWasReadAs() async throws {
+        let (store, changes, azure) = live()
+        changes.accountChanged("robin@contoso.example")
+        var accounts: [String?] = []
+        changes.send = { write, account in
+            accounts.append(account)
+            if account == "robin@contoso.example", case .removeTag = write { throw ADOError.otherAccount }
+            return try azure.send(write)
+        }
+        #expect(await changes.add("hotfix", to: key))
+        await changes.remove(PullRequestTag("needs-qa", tagId: "demo-tag-needs-qa"), from: key)
+        #expect(accounts == ["robin@contoso.example", "robin@contoso.example"])
+        #expect(changes.state(of: key) == .failed(.otherAccount, .remove(PullRequestTag("needs-qa", tagId: "demo-tag-needs-qa"))))
+        #expect(tags(store) == ["deploy-eu", "hotfix", "needs-qa"])
+        #expect(ADOWriteProblem.otherAccount.sentence(.removeTag).hasPrefix("Someone else is signed in to the Azure CLI now"))
+    }
+
     /// A change on its way, as one waiting for a token, is called off as the setting goes off, or someone else signs in: it
     /// never goes, and says nothing.
     @Test func aChangeOnItsWayIsCalledOffAsItGoesOff() async throws {
         let (store, changes, azure) = live()
-        changes.send = { write in
+        changes.send = { write, _ in
             // Waits, as for a token, until it's called off.
             try await Task.sleep(for: .seconds(30))
             return try azure.send(write)

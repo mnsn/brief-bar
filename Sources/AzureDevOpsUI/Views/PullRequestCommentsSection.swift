@@ -29,7 +29,7 @@ struct PullRequestCommentsSection: View {
     @LocalState private var showsResolved = false
     /// The threads you changed here, with your reply or their statuses, where each was as you first did: they stay there,
     /// however they stand now, while the details show the pull request.
-    @LocalState private var held: [Int: PullRequestPanel.Thread.Placement] = [:]
+    @LocalState private var held: [Int: PullRequestPanel.Thread.Held] = [:]
 
     var body: some View {
         let threads = panel.threads
@@ -101,7 +101,7 @@ struct PullRequestCommentsSection: View {
                 ThreadCard(
                     thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now,
                     isHighlighted: highlighted == .thread(thread.id), composing: $composing, drafts: drafts,
-                    hold: { held[$0.id] = held[$0.id] ?? $0.placement }
+                    hold: { held[$0.id] = held[$0.id] ?? PullRequestPanel.Thread.Held($0) }
                 )
             }
         }

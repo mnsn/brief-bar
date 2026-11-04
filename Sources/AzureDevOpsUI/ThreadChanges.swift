@@ -49,6 +49,9 @@ final class ThreadChanges: ObservableObject {
     /// The changes on their way to Azure DevOps, by thread: called off as replies go, when the setting is turned off, Azure
     /// DevOps stops or someone else signs in, so that one that hasn't gone yet, as one waiting for a token, never does.
     private var inFlight: [Key: Task<ADOWrite.Answer, Error>] = [:]
+    /// How many times what was going on was called off (`forgetAll`): a change asked for before then does nothing more, as
+    /// it comes back from what it waited for, though the setting is on again and another change on its thread is under way.
+    private var generation = 0
 
     /// A reply that may have gone: what it said, and the comments its thread had before it was sent, by their IDs. A comment
     /// of yours that came since, which says the same, is it, whatever came after it.
@@ -61,8 +64,9 @@ final class ThreadChanges: ObservableObject {
     /// Fix Grammar's models, for what you write in a reply.
     let grammar: GrammarFixer
     private weak var store: PRStore?
-    /// Sends a change to Azure DevOps: the client's; a test's stand-in. Never in the demo.
-    var send: (ADOWrite) async throws -> ADOWrite.Answer
+    /// Sends a change to Azure DevOps, as whom it was asked for as, when that's known: the client's; a test's stand-in.
+    /// Never in the demo.
+    var send: (ADOWrite, String?) async throws -> ADOWrite.Answer
     /// A pull request's threads as Azure DevOps has them now, read again for it, or nil when they couldn't be: the list's; a
     /// test's stand-in.
     var readThreads: @MainActor (PRKey) async -> [ReviewThread]?
@@ -74,7 +78,7 @@ final class ThreadChanges: ObservableObject {
         self.settings = settings
         grammar = GrammarFixer(isDemo: store.mode == .demo)
         let client = store.client
-        send = { try await client.send($0) }
+        send = { try await client.send($0, as: $1) }
         readThreads = { [weak store] key in await store?.threadsReadAgain(key) }
         // The demo shows them: they change only its made-up data.
         if store.mode == .demo { settings.makesChanges = true }
@@ -147,24 +151,26 @@ final class ThreadChanges: ObservableObject {
 
     // MARK: Changing
 
-    /// Sends your reply to a thread, then, with `status`, sets the thread's status, as Reply & Resolve does. Returns whether
-    /// the reply went: then what you wrote is forgotten; otherwise it's kept, and the thread says why. After one that may
-    /// have gone, as one Azure DevOps didn't answer in time, the thread is read again first, and nothing goes until it was:
-    /// if it went, it isn't sent again, whatever came after it.
+    /// Sends your reply to a thread, as you wrote it (`posted(_:)`), then, with `status`, sets the thread's status, as Reply &
+    /// Resolve does. Returns whether the reply went, and was still yours to finish: then what you wrote is forgotten;
+    /// otherwise it's kept, and the thread says why. After one that may have gone, as one Azure DevOps didn't answer in
+    /// time, the thread is read again first, and nothing goes until it was: if it went, it isn't sent again, whatever came
+    /// after it. Called off meanwhile (`forgetAll`), it does nothing more, though it's turned back on.
     @discardableResult
     func reply(_ text: String, then status: ThreadStatus? = nil, to thread: ReviewThread, of pullRequest: PRKey) async -> Bool {
         let key = Key(pullRequest: pullRequest, thread: thread.id)
-        let markdown = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let markdown = Self.posted(text)
         guard !markdown.isEmpty, !isSending(key), let store else { return false }
         guard let record = store.record(for: pullRequest), canChange(record.pullRequest) else { return false }
+        let generation = generation, account = account
         // As the list read it last, which may have more than the view had; or, after a reply that may have gone, as Azure
         // DevOps has it now.
         var thread = record.details?.threads.first { $0.id == thread.id } ?? thread
         if let attempt = unsure[key] {
             states[key] = .sending(.reply(then: status))
             let threads = await readThreads(pullRequest)
-            // Turned off meanwhile, or someone else signed in: what you wrote is gone, and nothing goes.
-            guard settings.makesChanges, states[key] != nil else { return false }
+            // Turned off meanwhile, or someone else signed in: what you wrote is gone, and nothing goes, though it's on again.
+            guard generation == self.generation, settings.makesChanges else { return false }
             guard let read = threads?.first(where: { $0.id == thread.id }) else {
                 states[key] = .failed(.unconfirmed, .reply(then: status))
                 SpokenText.announce(ADOWriteProblem.unconfirmed.sentence(.reply))
@@ -191,22 +197,26 @@ final class ThreadChanges: ObservableObject {
             case .demo:
                 store.changed(pullRequest, by: DemoThreadChanges.reply(markdown, to: thread, at: now()))
             case .live:
-                let answer = try await dispatch(write, for: key)
+                let answer = try await dispatch(write, for: key, as: account, in: generation)
                 if let change = ThreadChange(answer, to: write, pullRequest: record.pullRequest, known: thread) {
                     store.changed(pullRequest, by: change)
                 } else {
-                    store.readAgain(pullRequest)
+                    store.mayHaveChanged(pullRequest)
                 }
             }
         } catch is CancellationError {
             // Called off, as the setting was turned off or someone else signed in, with what you wrote: nothing to say.
             return false
         } catch {
+            // Called off meanwhile: what's on its thread now is someone else's to say.
+            guard generation == self.generation else { return false }
             let problem = ADOWriteProblem(error)
             if problem.mayHaveGone { unsure[key] = Attempt(markdown: markdown, before: Set(thread.comments.map(\.id))) }
             fail(key, problem, .reply(then: status), pullRequest: pullRequest)
             return false
         }
+        // It went, but was called off as it did: the thread shows it, and nothing more happens.
+        guard generation == self.generation else { return false }
         drafts[key] = nil
         if let status {
             states[key] = nil
@@ -222,6 +232,7 @@ final class ThreadChanges: ObservableObject {
     func setStatus(_ status: ThreadStatus, of thread: ReviewThread, in pullRequest: PRKey, afterReply: Bool = false) async {
         let key = Key(pullRequest: pullRequest, thread: thread.id)
         guard !isSending(key), let store, let record = store.record(for: pullRequest), canChange(record.pullRequest) else { return }
+        let generation = generation, account = account
         states[key] = .sending(.status(status))
         let write = ADOWrite.setStatus(ThreadAddress(record.pullRequest, thread: thread.id), status)
         do {
@@ -229,19 +240,21 @@ final class ThreadChanges: ObservableObject {
             case .demo:
                 store.changed(pullRequest, by: DemoThreadChanges.status(status, of: thread))
             case .live:
-                let answer = try await dispatch(write, for: key)
+                let answer = try await dispatch(write, for: key, as: account, in: generation)
                 if let change = ThreadChange(answer, to: write, pullRequest: record.pullRequest, known: thread) {
                     store.changed(pullRequest, by: change)
                 } else {
-                    store.readAgain(pullRequest)
+                    store.mayHaveChanged(pullRequest)
                 }
             }
         } catch is CancellationError {
             return
         } catch {
+            guard generation == self.generation else { return }
             fail(key, ADOWriteProblem(error), .status(status), pullRequest: pullRequest)
             return
         }
+        guard generation == self.generation else { return }
         states[key] = nil
         if status.isResolved {
             // Up to its latest comment, as Azure DevOps dates them: what comes after needs you again.
@@ -256,15 +269,17 @@ final class ThreadChanges: ObservableObject {
         SpokenText.announce(afterReply ? "Replied, and set to \(status.title)" : "Set to \(status.title)")
     }
 
-    /// Sends a change, while you can make changes, in a task that's called off as replies go (`forgetAll`): before it goes,
-    /// as while it waits for a token, it never does.
-    private func dispatch(_ write: ADOWrite, for key: Key) async throws -> ADOWrite.Answer {
+    /// Sends a change, while you can make changes and nothing called it off since it was asked for (`generation`), as whom
+    /// it was asked for as, in a task that's called off as replies go (`forgetAll`): before it goes, as while it waits for a
+    /// token, it never does.
+    private func dispatch(_ write: ADOWrite, for key: Key, as account: String?, in generation: Int) async throws -> ADOWrite.Answer {
+        guard generation == self.generation else { throw CancellationError() }
         guard settings.makesChanges else {
             states[key] = nil
             throw CancellationError()
         }
         let send = send
-        let task = Task { try await send(write) }
+        let task = Task { try await send(write, account) }
         inFlight[key] = task
         defer { if inFlight[key] == task { inFlight[key] = nil } }
         do {
@@ -274,10 +289,12 @@ final class ThreadChanges: ObservableObject {
         }
     }
 
-    /// Whether a reply that may have gone did: a comment of yours in the thread, which came since it was sent, says it.
+    /// Whether a reply that may have gone did: a comment of yours in the thread, which came since it was sent, says it, as
+    /// Azure DevOps keeps it, mentions as their IDs, or as the details show it, mentions as names.
     static func went(_ attempt: Attempt, in thread: ReviewThread, me: String) -> Bool {
         thread.comments.contains { comment in
-            !attempt.before.contains(comment.id) && comment.author.id == me.lowercased() && same(comment.markdown, attempt.markdown)
+            guard !attempt.before.contains(comment.id), comment.author.id == me.lowercased() else { return false }
+            return comment.content.map { same($0, attempt.markdown) } == true || same(comment.markdown, attempt.markdown)
         }
     }
 
@@ -285,8 +302,18 @@ final class ThreadChanges: ObservableObject {
     /// pull request is read again, to show it.
     private func fail(_ key: Key, _ problem: ADOWriteProblem, _ sending: Sending, pullRequest: PRKey) {
         states[key] = .failed(problem, sending)
-        if problem.mayHaveGone { store?.readAgain(pullRequest) }
+        if problem.mayHaveGone { store?.mayHaveChanged(pullRequest) }
         SpokenText.announce(problem.sentence(sending.kind))
+    }
+
+    /// What goes of what you wrote: without the lines that say nothing before it, or the spaces after it, but with its first
+    /// line's indent, which can make it code.
+    static func posted(_ text: String) -> String {
+        var lines = text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false)
+        while let first = lines.first, first.allSatisfy(\.isWhitespace) { lines.removeFirst() }
+        var posted = lines.joined(separator: "\n")
+        while let last = posted.last, last.isWhitespace { posted.removeLast() }
+        return posted
     }
 
     /// Whether two replies say the same, but for the spaces around them and how their lines end.
@@ -299,6 +326,7 @@ final class ThreadChanges: ObservableObject {
 
     /// Forgets what you wrote, and what was going on, as Azure DevOps stops or someone else signs in.
     func forgetAll() {
+        generation += 1
         for task in inFlight.values { task.cancel() }
         inFlight = [:]
         drafts = [:]
