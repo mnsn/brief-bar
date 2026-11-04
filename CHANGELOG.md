@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **Your reply on a pull request someone sent you shows.** Once you'd seen a pull request sent to you in a chat, which
+  leaves your lists, its details stopped following it: a reply, or a status you set there, went to Azure DevOps but
+  didn't show, and replying again posted it twice. Its details now follow it while BriefBar still reads it, and its
+  heading says whether what it shows is how it is now or how it was when BriefBar last read it open.
+- **"Slow down" says until when.** When Azure DevOps asks BriefBar to slow down, a reply, a status or a tag it held back
+  says until when, rather than "try again in a minute".
+- **Nothing goes twice when you turn Make Changes off.** Turning off **Make Changes in Azure DevOps** while a reply or a
+  status is on its way reads the pull request again, so it shows if it went.
+- **A build stops being read when you're done with it.** A build you opened in a pull request's details stops being read
+  as you close them or show another pull request, or as someone else signs in to the Azure CLI.
+- **Azure DevOps' description says when it reads again.** It now says that a pull request's updates and Files are read
+  again as its branch or its target moves, a build you opened as Azure DevOps merges it again, and tags whose read
+  failed half a minute later, and asks you once to look at what it reads.
+
 ## 0.14.0 - 2026-11-04
 
 - **See the order your pull requests merge in, By Mission.** Turn on **Pull Request Order** in Settings, and the

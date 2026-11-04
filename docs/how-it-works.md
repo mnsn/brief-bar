@@ -1162,13 +1162,13 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `_apis/git/pullrequests?searchCriteria.creatorId=…&status=completed&minTime=…` | every refresh | yours completed in the Done window |
 | `{project}/_apis/policy/evaluations?artifactId=vstfs:///CodeReview/CodeReviewId/{project}/{id}` | per pull request | builds, status checks, reviewer and other policies |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads` | per pull request | comment threads, and activity: pushes, votes, reviewer changes |
-| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/iterations?includeCommits=false` | only in a pull request's details, as the first thread on code or its Files come on screen; again after a push or a move to another target branch, and once for a thread on an update it hadn't read | its updates, and the commits each one's diff compares |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/iterations?includeCommits=false` | only in a pull request's details, as the first thread on code or its Files come on screen; again whenever its branch or its target moves, as after a push, a move to another target branch or a merge into its target, and once for a thread on an update it hadn't read | its updates, and the commits each one's diff compares |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/iterations/{n}/changes?$top=2000&$skip=…&$compareTo=…` | with them: once for each diff a thread on screen was made on, and once for the diff of that update with the latest; for the Files, once for the latest update's diff with the base, and, once you've looked at the pull request before, once for its diff with the update you'd seen; up to five pages of 2,000 files | the files it changed, with their object IDs before and after |
 | `{project}/_apis/git/repositories/{repo}/blobs/{objectId}?$format=octetstream` | with them: once for each version of a file that a thread on screen is on, and, in the Files, of each file whose row comes on screen, one file at a time, or whose page you open, up to 1 MB of it; four of these requests at a time | the file's text |
 | `{project}/_apis/git/repositories/{repo}/items?path=…&versionDescriptor.version={commit}&versionDescriptor.versionType=commit` | instead, for a file that the diff didn't change, or without its object ID | the file's text at that commit |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/conflicts?$top=100&$skip=…` | only in the details of a pull request whose merge status says it has conflicts, as they show in a window you can see, and again once its branch or its target moves; a page of a hundred, up to ten | the files that conflict with its target branch, how each does, and whether someone resolved it in Azure DevOps |
 | `{project}/_apis/build/builds/{id}/timeline` | once for each failed build of your pull requests, and again if it's retried and fails again: four a refresh; one that can't be read is tried again on the next refresh, then less and less often | where the build failed, and the first error there |
-| `{project}/_apis/build/builds/{id}` | only when you open a pull request's build in its details (below), and when you open it again within ten minutes, to tell whether it ran again since | the run: its pipeline, commit, branch and how it ended |
+| `{project}/_apis/build/builds/{id}` | only when you open a pull request's build in its details (below), and when you open it again within ten minutes, or someone pushes to its pull request, retargets it, or Azure DevOps merges it again as its target moves, while it's open, to tell whether it ran again since | the run: its pipeline, commit, branch and how it ended |
 | `{project}/_apis/build/builds/{id}/timeline`, `…/logs` | when you open a pull request's build in its details, unless BriefBar read it less than ten minutes ago, or half a minute while it's going, and it hasn't run again since | its stages, jobs and tasks, their errors, and how long each log is |
 | `{project}/_apis/build/builds/{id}/logs/{logId}?startLine=…&endLine=…` | the same, for the step that failed | the last 200 lines of its log |
 | `{project}/_apis/test/runs?buildUri=…&includeRunDetails=true` | the same, a hundred test runs a request, up to five hundred | the tests it published, by outcome |
@@ -1187,7 +1187,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
 | `PATCH {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}` | the same, when you set a thread's status, or after your reply with Reply & Resolve or Reply & Reactivate: once | the thread's status alone; Azure DevOps answers with the thread, its comments as it has them now |
-| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only in a pull request's details, for one whose lists don't carry its tags, such as one sent to you or that you watch: as they show on a window's page on screen, then ten minutes after they were read, while they show; and after a change to its tags, or one called off as Make Changes in Azure DevOps goes off, below | its tags |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only in a pull request's details, for one whose lists don't carry its tags, such as one sent to you or that you watch: as they show on a window's page on screen, then ten minutes after they were read, and half a minute after a read of them failed, while they show; and after a change to its tags, or one called off as Make Changes in Azure DevOps goes off, below | its tags |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only with Make Changes in Azure DevOps on, when you add a tag to an open pull request: once | the tag's name; Azure DevOps answers with the tag as the project has it, which it makes when the project has none of that name |
 | `DELETE {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels/{tag}` | the same, when you click a tag's ✕: once | nothing but the tag, by the project's tag's ID; the project keeps the tag |
 
@@ -1300,15 +1300,20 @@ Counts, the brief, notifications, widgets and lists by state stay by status.
 
 ### A pull request's details
 
-A click on a pull request on the window's page shows its details beside the list, or over it when the page
-is narrower than 700 points (`PullRequestDetailsStore`, `PullRequestDetailsPanel`), as a work item's details
-show beside the sprint: the two pages share how they lay them out (`DetailsSplit`, `DetailsLayout`), and this
-one keeps its own width (`ado.pullRequestDetailsWidth`). The row shows as selected, and the click sees the pull
-request, as opening it does. While they show it, though, what waits on you in its threads is as it was before
-they showed it (`PullRequestDetailsStore.pendingEvents`, with `PRStore.snapshot(of:seenAt:)`): a new comment in
-a resolved thread, which waits on you only while it's new, doesn't fold away as you read it, and what was new
-stays new. Answering it still counts, and removing the pull request from Needs You or sending its comments to
-Copilot ends that look, as showing another one or closing them does: then what you've seen is seen there too.
+A click on a pull request on the window's page shows its details beside the list, or over it when the page is narrower
+than 700 points (`PullRequestDetailsStore`, `PullRequestDetailsPanel`), as a work item's details show beside the sprint:
+the two pages share how they lay them out (`DetailsSplit`, `DetailsLayout`), and this one keeps its own width
+(`ado.pullRequestDetailsWidth`). The row shows as selected, and the click sees the pull request, as opening it does.
+While they show it, though, what waits on you in its threads is as it was before they showed it
+(`PullRequestDetailsStore.pendingEvents`, with `PRStore.snapshot(of:seenAt:)`): a new comment in a resolved thread,
+which waits on you only while it's new, doesn't fold away as you read it, and what was new stays new. Answering it still
+counts, and removing the pull request from Needs You or sending its comments to Copilot ends that look, as showing
+another one or closing them does: then what you've seen is seen there too. One that leaves your lists while they show it
+keeps its last row; what was read of it follows while the list still reads it open, as one sent to you in a chat that
+you're not on once you've seen it (`PullRequestDetailsStore.isStillRead`), so that your reply, or a status you set,
+shows, and its heading says "It's no longer in your lists, but BriefBar still reads it while it's open: this is how it
+is now"; read closed, as a review that merged, or not read anymore, it stays as it was last read open, and its heading
+says that instead.
 
 A pull request opens there from anywhere else in BriefBar too, as the one place it opens
 (`PullRequestDetailsStore`): from the window's other pages, the Overview's rows and its brief (`BriefLine.show`),
@@ -1441,7 +1446,7 @@ With **Make Changes in Azure DevOps** on (`ado.makeChanges`, off by default: `Ma
 open pull request ends with **Reply** and its status (`ThreadReplyButtons`), in the row with Explain and Fix
 (`ThreadCopilotActions`, which shows it without them too), in its details' comments and on its file's page, and its
 right-click menu has them. An open pull request is one your lists have open now (`ThreadChanges.canChange`,
-`CopilotSending.isOpen`), not only as its details last saw it, which keep one that left them as it was: on one that's
+`CopilotSending.isOpen`), not only as its details last saw it, which keep one that left them as it was last read open: on one that's
 completed or abandoned, or that left your lists, a lock takes their place, which says why in its tooltip and to
 VoiceOver (`ThreadReadOnlyMark`), and a change that finds it so says so on the thread (`ADOWriteProblem.notListed`,
 `closed`) rather than nothing. They're the only changes BriefBar makes in Azure DevOps (`ADOWrite`, in
@@ -1477,10 +1482,11 @@ new line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘R
 and **Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure
 CLI forgets it, and calls off the changes on their way (`ThreadChanges.forgetAll`): one that hasn't gone yet never does,
 nothing says it failed, and one called off does nothing more as what it waited for comes back, though the setting is on
-again and another change on its thread is under way. A reply goes as you wrote it, but for the lines that say nothing
-before it and the spaces after it (`ThreadChanges.posted`): its first line's indent stays, which can make it code. After
-a reply that may have gone, as one Azure DevOps didn't answer in time, the thread is read again before it's sent again,
-by a read that starts then, never one under way before, and nothing goes until it was (`ADOWriteProblem.unconfirmed`): a
+again and another change on its thread is under way; and since one called off may have gone all the same, its pull
+request is read again, to show it if it did. A reply goes as you wrote it, but for the lines that say nothing before it
+and the spaces after it (`ThreadChanges.posted`): its first line's indent stays, which can make it code. After a reply
+that may have gone, as one Azure DevOps didn't answer in time, the thread is read again before it's sent again, by a
+read that starts then, never one under way before, and nothing goes until it was (`ADOWriteProblem.unconfirmed`): a
 comment of yours that came since it was sent, and says the same as it would go, its first line's indent included, as
 Azure DevOps keeps it, its mentions as their IDs, or as the details show it, is it, whatever came after it, so it isn't
 sent twice (`ThreadChanges.Attempt`). **Resolve**, or **Reactivate** on a resolved thread, sets its status at once,
@@ -1490,26 +1496,28 @@ menu offers, Active, Pending, Resolved, Won't Fix and Closed, and By Design only
 
 What Azure DevOps answers shows at once (`ThreadChange`, which `PRDetails.apply` applies once, however often): the list
 applies it (`PRStore.changed`), so the details, Needs You, What's Left, the brief and the counts follow it, then the
-engine does, and reads the pull request's details again, two requests, now (`PulseEngine.changed`, `readAgain`). A read
-that started before the change, such as a refresh under way, doesn't undo it, even when it answers after the change's
-own: its threads are left as they are, and its policies too, which a thread's status changes, such as one that wants
-comments resolved, and the pull request is read again at the next refresh. So it is after a change that may have been
-made, as one Azure DevOps didn't answer in time, or whose answer can't be read (`PulseEngine.mayHaveChanged`). The list
-keeps the change over its refreshes until a snapshot has it (`PRStore.pending`), a status replacing one set before on
-the thread, so that **Reactivate** after **Resolve** isn't undone by it. A thread you replied to doesn't wait on you, as
-your last word is after the comment; one you resolved doesn't either, as the pull request is seen as you resolve it, and
-its details, which keep what was new as it was when they showed it, leave out what was in it until then
-(`ThreadChanges.waiting`). While the details show the pull request, a thread you change stays where it was as you first
-did, with the open ones or the resolved ones, with those that wait on you or not, and among them, by when something was
-last said in it then, though your reply is the latest now, however it stands now (`Threads.arranged(holding:)`), and on
-its file's page, unfolded, where it was among the threads on its line (`Threads.comments(on:in:holding:)`), as you go
-from one to the other and back, since the details keep them (`PullRequestDetailsContent`): so it doesn't move away as
-you reply or resolve it, and the menu that sets it back is where you left it. A change that didn't happen says why on
-the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help, or,
-for a reply, in its field, which stays open with what you wrote, and **Sign In…** when that's why; and a status set from
-the card's menu while your reply is open says how it goes above it, and why it didn't: no permission, a pull request
-that's completed or abandoned, a thread or pull request deleted meanwhile, offline, signed out, slowed down, or no
-answer in time, after which the pull request is read again, since it may have been made.
+engine does, and reads the pull request's details again, two requests, now (`PulseEngine.changed`, `readAgain`), in a
+task that Azure DevOps stopping calls off (`PRStore.changeReads`). A read that started before the change, such as a
+refresh under way, doesn't undo it, even when it answers after the change's own: its threads are left as they are, and
+its policies too, which a thread's status changes, such as one that wants comments resolved, and the pull request is
+read again at the next refresh. So it is after a change that may have been made, as one Azure DevOps didn't answer in
+time, or whose answer can't be read (`PulseEngine.mayHaveChanged`). The list keeps the change over its refreshes until a
+snapshot has it (`PRStore.pending`), a status replacing one set before on the thread, so that **Reactivate** after
+**Resolve** isn't undone by it. A thread you replied to doesn't wait on you, as your last word is after the comment; one
+you resolved doesn't either, as the pull request is seen as you resolve it, and its details, which keep what was new as
+it was when they showed it, leave out what was in it until then (`ThreadChanges.waiting`). While the details show the
+pull request, a thread you change stays where it was as you first did, with the open ones or the resolved ones, with
+those that wait on you or not, and among them, by when something was last said in it then, though your reply is the
+latest now, however it stands now (`Threads.arranged(holding:)`), and on its file's page, unfolded, where it was among
+the threads on its line (`Threads.comments(on:in:holding:)`), as you go from one to the other and back, since the
+details keep them (`PullRequestDetailsContent`): so it doesn't move away as you reply or resolve it, and the menu that
+sets it back is where you left it. A change that didn't happen says why on the thread, in a sentence
+(`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help, or, for a reply, in its field,
+which stays open with what you wrote, and **Sign In…** when that's why; and a status set from the card's menu while your
+reply is open says how it goes above it, and why it didn't: no permission, a pull request that's completed or abandoned,
+a thread or pull request deleted meanwhile, offline, signed out, slowed down, until when Azure DevOps said, to the
+minute (`ADOWriteProblem.slowedDown`), or no answer in time, after which the pull request is read again, since it may
+have been made.
 
 **Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language
 it's written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its code blocks,
@@ -1547,19 +1555,20 @@ The lists BriefBar reads anyway carry them, leaving them out of a pull request t
 `PullRequestTag.listed`); a single pull request's read doesn't, so one your lists don't carry, such as one sent to you
 or that you watch, has them read on their own, one request (`PulseEngine.readTags`), only while its details show on a
 window's page on screen, as the code its comments are on is: as they come on screen, then ten minutes after they were
-read, which details that stay on screen look at every half minute (`TagChanges.follow`, `isDue`); until then it shows
-none. Its details keep a pull request that left your lists as it was then, as one sent to you in a chat that you're not
-on once you've seen it, but for its tags, and when they were read, which follow the list's while it still reads it
-(`PullRequestDetailsStore.followTags`), so those read as they show do. Azure DevOps stopping calls off the reads of tags
-under way, as one that waits for the Azure CLI's sign-in, whose answer then does nothing, and nothing more is read or
-changed (`TagChanges.stop`). When they were read is the engine's, on the record of each pull request the latest
-refresh's lists didn't carry (`PRRecord.tagsReadAt`): a read of its own, or, for one that left its lists but stays, as
-one sent to you, its lists' last; so turning the setting off and on, which forgets what was going on, doesn't hold it
-up, and an organization whose lists couldn't be read keeps what they carried. The engine keeps each pull request's tags
-with when the read they're from started, and a read that started earlier never replaces them, so a refresh under way
-that answers after a change doesn't undo it, and a single pull request's read, which doesn't carry them, leaves them as
-they were. They're on the pull request's record (`PRRecord.tags`), not on the pull request, so a change to them doesn't
-make its pipelines or its details read again.
+read, which details that stay on screen look at every half minute (`TagChanges.follow`, `isDue`), and half a minute
+after a read of them failed (`TagChanges.retryAfter`); until then it shows none. Its details follow a pull request that
+left your lists while the list still reads it open, as one sent to you in a chat that you're not on once you've seen it,
+its tags too; one read closed, or not anymore, stays as it was last read open, but for its tags, and when they were
+read, which follow the list's while it still reads it (`PullRequestDetailsStore.followTags`), so those read as they show
+do. Azure DevOps stopping calls off the reads of tags under way, as one that waits for the Azure CLI's sign-in, whose
+answer then does nothing, and nothing more is read or changed (`TagChanges.stop`). When they were read is the engine's,
+on the record of each pull request the latest refresh's lists didn't carry (`PRRecord.tagsReadAt`): a read of its own,
+or, for one that left its lists but stays, as one sent to you, its lists' last; so turning the setting off and on, which
+forgets what was going on, doesn't hold it up, and an organization whose lists couldn't be read keeps what they carried.
+The engine keeps each pull request's tags with when the read they're from started, and a read that started earlier never
+replaces them, so a refresh under way that answers after a change doesn't undo it, and a single pull request's read,
+which doesn't carry them, leaves them as they were. They're on the pull request's record (`PRRecord.tags`), not on the
+pull request, so a change to them doesn't make its pipelines or its details read again.
 
 With **Make Changes in Azure DevOps** on, while the pull request is open in your lists as they are now
 (`CopilotSending.isOpen`), not only as its details last saw it, and its tags are known (`TagChanges.canChange`), its
@@ -1716,52 +1725,53 @@ opens the file on the pull request's Files page, with what that change changed i
 #### Its builds
 
 One of a pull request's builds that failed, or is still running or queued, opens under its row with a click, or Space
-(`PullRequestPanel.CheckLine.canInvestigate`); one that passed, expired or hasn't run, a status check, and the
-pipelines after a merge, which built the target branch rather than the pull request, don't. A place in the details
-opens its build too, by its run: **Build failed** in What's Left leads to the first required build that failed and can
-be opened (`PullRequestPanel.build(openedBy:)`); a run on the Pipelines page leads to that run; and a failing pull
-request opened from elsewhere leads to the first of its builds and checks that failed (`Place.about`), which opens
-when it's a build. What's Left's other items about builds and checks, such as **Build passed**, only scroll to them.
-Only then is its run read (`BuildInvestigationStore`, through `BuildInvestigator` and `BuildInvestigationReader`),
-with the requests in the table above: its run first, then, at once, its timeline, its logs, its test runs, the
-pipeline's runs on the pull request and its latest finished ones on the target
-branch, then the end of the failed step's log and the failed tests of its first test runs with failures: ten
-requests, and one more for each hundred test runs past the first hundred, up to five hundred. What was read is
-kept in memory, by run, for the last twenty runs opened, until someone else signs in to the Azure CLI or Azure
-DevOps is turned off, which stops the reads under way too, even those it let go of when someone else signed in
-(`BuildInvestigator.stop`). It's used for ten minutes, or half a minute while the run is still going, unless its check
-says the run got further since, as when it started or finished (`PipelineRun.Phase`): opening it again, which always
-asks the investigator, within that time reads only the run, to tell whether it ran again since, which reads it all
-again, or nothing while it's going; what was read before shows meanwhile, for the builds still open and the last five
-that folded. Something that couldn't be read isn't kept, and says so, and a run that's gone, or that you can't read
-any more, lets go of what was read of it, as does one that ran again since, as a look at it or its check says, when it
-can't be read again (`BuildInvestigator.RunReplaced`); **Read Again**, beside when it was read, reads it anew. So does
-a change of its check, as the list reads it, such as a run that finished or runs again under the same ID; and a push
-or a retarget of its pull request asks the investigator again, which says again whether the run built the latest
-commit, or reads it for the new target branch: at once while it's open, or as it opens again
-(`BuildInvestigationStore.Stamp`). The investigator shares a read under way with whoever asks for the run meanwhile,
-even to read it anew, so a read asked for then waits for it, and starts after, unless what's being read is what's
-asked for by then, as when a pull request is retargeted and back; one that comes back with the run not as far along as
-its check says by then, as when it finished meanwhile, is read again, once; and one that had read the run before they
-asked, and found it finished, is checked with a look at the run, which reads it again if it ran again since. Only one
-pull request's builds are open at a time, wherever its details show, beside the list or as a page over a work item's
-or another pull request's: opening one of another's folds them, and so do the details beside the list showing another
-pull request, or closing, for the one they showed; what shows of them goes, and so does what shows of a run its builds
-and checks don't list any more, such as one a newer run replaced. It shows, from what was read
-(`BuildInvestigationPanel.swift`): its stages, as the Pipelines page draws them (`StageFlow`); where it failed, from
-its stage to its task, without a name said twice in a row (`failurePlace`), or what it does while it's going
+(`PullRequestPanel.CheckLine.canInvestigate`); one that passed, expired or hasn't run, a status check, and the pipelines
+after a merge, which built the target branch rather than the pull request, don't. A place in the details opens its build
+too, by its run: **Build failed** in What's Left leads to the first required build that failed and can be opened
+(`PullRequestPanel.build(openedBy:)`); a run on the Pipelines page leads to that run; and a failing pull request opened
+from elsewhere leads to the first of its builds and checks that failed (`Place.about`), which opens when it's a build.
+What's Left's other items about builds and checks, such as **Build passed**, only scroll to them. Only then is its run
+read (`BuildInvestigationStore`, through `BuildInvestigator` and `BuildInvestigationReader`), with the requests in the
+table above: its run first, then, at once, its timeline, its logs, its test runs, the pipeline's runs on the pull
+request and its latest finished ones on the target branch, then the end of the failed step's log and the failed tests of
+its first test runs with failures: ten requests, and one more for each hundred test runs past the first hundred, up to
+five hundred. What was read is kept in memory, by run, for the last twenty runs opened, until someone else signs in to
+the Azure CLI or Azure DevOps is turned off, which stops the reads under way too, even those it let go of when someone
+else signed in (`BuildInvestigator.stop`). A read nobody waits for anymore, as the details close or show another pull
+request, is called off, unless someone else asks for the run meanwhile (`BuildInvestigator.giveUp`), and so are the
+reads and looks under way as someone else signs in (`forget`). It's used for ten minutes, or half a minute while the run
+is still going, unless its check says the run got further since, as when it started or finished (`PipelineRun.Phase`):
+opening it again, which always asks the investigator, within that time reads only the run, to tell whether it ran again
+since, which reads it all again, or nothing while it's going; what was read before shows meanwhile, for the builds still
+open and the last five that folded. Something that couldn't be read isn't kept, and says so, and a run that's gone, or
+that you can't read any more, lets go of what was read of it, as does one that ran again since, as a look at it or its
+check says, when it can't be read again (`BuildInvestigator.RunReplaced`); **Read Again**, beside when it was read,
+reads it anew. So does a change of its check, as the list reads it, such as a run that finished or runs again under the
+same ID; and a push or a retarget of its pull request, or Azure DevOps merging it again as its target moves, asks the
+investigator again, which says again whether the run built the latest commit, or reads it for the new target branch: at
+once while it's open, or as it opens again (`BuildInvestigationStore.Stamp`). The investigator shares a read under way
+with whoever asks for the run meanwhile, even to read it anew, so a read asked for then waits for it, and starts after,
+unless what's being read is what's asked for by then, as when a pull request is retargeted and back; one that comes back
+with the run not as far along as its check says by then, as when it finished meanwhile, is read again, once; and one
+that had read the run before they asked, and found it finished, is checked with a look at the run, which reads it again
+if it ran again since. Only one pull request's builds are open at a time, wherever its details show, beside the list or
+as a page over a work item's or another pull request's: opening one of another's folds them, and so do the details
+beside the list showing another pull request, or closing, for the one they showed; what shows of them goes, and so does
+what shows of a run its builds and checks don't list any more, such as one a newer run replaced. It shows, from what was
+read (`BuildInvestigationPanel.swift`): its stages, as the Pipelines page draws them (`StageFlow`); where it failed,
+from its stage to its task, without a name said twice in a row (`failurePlace`), or what it does while it's going
 (`progress`); whether it's the change's doing, the comparison's hints (`BuildHint`), each a sentence in its state's
-color, orange for an older commit or a pass on the same commit before, red when the target branch fails too, green
-when it passes, each but the first opening the run it names, and "may be flaky" only for a pass on the very same
-commit; while Send Work to Copilot is on, what Copilot does about it, and **✨ Explain the Failure** and **Fix** for one
-that failed ([About a failed build](#about-a-failed-build)); **Open Run**, and when it was read; its errors, each with where it is, unless its
-message starts with that very place, as a compiler writes it, its code, unless its message names it, and its step,
-unless it's the one that failed; how its tests went (`BuildTests.summary`), which, when they couldn't all be read,
-says how many failed at least, or that no failures are known rather than that none failed, and the first that failed,
-each with its class, how long it ran, its message, its first six lines with **Show More** for the rest, and, when you
-ask, its stack trace, with **Open Tests**; and the last 20 lines of the failed step's log, numbered, errors red,
-warnings orange and commands blue, in one text you can select across and scroll sideways, all 200 that were read with
-**Show All**, and **Open Log** for the rest.
+color, orange for an older commit or a pass on the same commit before, red when the target branch fails too, green when
+it passes, each but the first opening the run it names, and "may be flaky" only for a pass on the very same commit;
+while Send Work to Copilot is on, what Copilot does about it, and **✨ Explain the Failure** and **Fix** for one that
+failed ([About a failed build](#about-a-failed-build)); **Open Run**, and when it was read; its errors, each with where
+it is, unless its message starts with that very place, as a compiler writes it, its code, unless its message names it,
+and its step, unless it's the one that failed; how its tests went (`BuildTests.summary`), which, when they couldn't all
+be read, says how many failed at least, or that no failures are known rather than that none failed, and the first that
+failed, each with its class, how long it ran, its message, its first six lines with **Show More** for the rest, and,
+when you ask, its stack trace, with **Open Tests**; and the last 20 lines of the failed step's log, numbered, errors
+red, warnings orange and commands blue, in one text you can select across and scroll sideways, all 200 that were read
+with **Show All**, and **Open Log** for the rest.
 
 #### Its merge conflicts
 
