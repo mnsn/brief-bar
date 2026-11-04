@@ -1450,15 +1450,18 @@ Azure DevOps refuses one, the error says why, as it said it (`ADOError.refused`,
 completed or abandoned), which shows on the thread but never goes to the log. Any answer from 200 to 299 says the change
 was made, but 203, a sign-in page's: an empty 204 too, and one whose answer can't be read, which says so
 (`ADOWrite.Answer.unreadable`), and the pull request is read again instead. A change called off before it goes, as when
-the setting is turned off while it waits for a token, never goes. And it goes only as whom the list was read as when you
-clicked (`send(_:as:)`): when someone else signed in to the Azure CLI since, as the list doesn't know yet, nothing goes,
-and the thread says so, with **Sign In…** (`ADOError.otherAccount`). A token from your own directory says whom it's for.
-For an organization in another directory, whose tokens are a guest's there, with an ID of their own that nothing in them
-ties to yours, the guest's token is read again, fresh, since one kept from before someone else signed in may be theirs,
-and the Azure CLI gets every directory's for whom it's signed in to now; then your own directory's sign-in, fresh, says
-who that is. `WriteTests` goes through every kind of change (`ADOWrite.Kind`), and checks that nothing else in
-`AzureDevOpsCore` makes a request or sets a method but GET. Agents (`--mcp`) and the command line get none of it, and
-the demo sends nothing: its changes are made up (`DemoThreadChanges`), in its made-up data only, while it runs.
+the setting is turned off while it waits for a token, never goes. A 503, which Azure Front Door answers once Azure
+DevOps takes too long, which may make the change all the same, counts as no answer in time
+(`ADOWriteProblem.unanswered`): the thread is read again before it goes again; a 429 only asks it to slow down. And it
+goes only as whom the list was read as when you clicked (`send(_:as:)`): when someone else signed in to the Azure CLI
+since, as the list doesn't know yet, nothing goes, and the thread says so, with **Sign In…** (`ADOError.otherAccount`).
+A token from your own directory says whom it's for. For an organization in another directory, whose tokens are a guest's
+there, with an ID of their own that nothing in them ties to yours, the guest's token is read again, fresh, since one
+kept from before someone else signed in may be theirs, and the Azure CLI gets every directory's for whom it's signed in
+to now; then your own directory's sign-in, fresh, says who that is. `WriteTests` goes through every kind of change
+(`ADOWrite.Kind`), and checks that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET. Agents
+(`--mcp`) and the command line get none of it, and the demo sends nothing: its changes are made up
+(`DemoThreadChanges`), in its made-up data only, while it runs.
 
 **Reply** opens a field under the thread, in place (`ThreadReplyComposer`), as a composer of Copilot's does, and it's
 the details' one composer in place (`CopilotComposing.reply(to:)`): opening it closes Explain's or Fix's, and the other
@@ -1499,9 +1502,10 @@ its file's page, unfolded, where it was among the threads on its line (`Threads.
 from one to the other and back, since the details keep them (`PullRequestDetailsContent`): so it doesn't move away as
 you reply or resolve it, and the menu that sets it back is where you left it. A change that didn't happen says why on
 the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help, or,
-for a reply, in its field, which stays open with what you wrote, and **Sign In…** when that's why: no permission, a pull
-request that's completed or abandoned, a thread or pull request deleted meanwhile, offline, signed out, slowed down, or
-no answer in time, after which the pull request is read again, since it may have been made.
+for a reply, in its field, which stays open with what you wrote, and **Sign In…** when that's why; and a status set from
+the card's menu while your reply is open says how it goes above it, and why it didn't: no permission, a pull request
+that's completed or abandoned, a thread or pull request deleted meanwhile, offline, signed out, slowed down, or no
+answer in time, after which the pull request is read again, since it may have been made.
 
 **Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language
 it's written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its code blocks,

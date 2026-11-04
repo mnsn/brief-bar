@@ -201,6 +201,43 @@ import Testing
         #expect(server.requests.isEmpty)
     }
 
+    /// A 503, which Azure Front Door answers once Azure DevOps takes too long, may come after Azure DevOps made the change: it
+    /// says what no answer in time does, after one request, for the thread to be read again before it goes again. A 429 asks
+    /// to slow down, before anything was made; and a read's 503 does too.
+    @Test func aChangeAnswered503MayHaveBeenMade() async throws {
+        func problem(_ reply: StubServer.Reply) async -> (ADOWriteProblem?, requests: Int) {
+            let server = StubServer()
+            server.on("/threads/12/comments") { _ in reply }
+            do {
+                _ = try await server.client().send(sample(.reply), as: nil)
+                return (nil, server.requests.count)
+            } catch {
+                return (ADOWriteProblem(error), server.requests.count)
+            }
+        }
+        let unavailable = await problem(.status(503))
+        #expect(unavailable.0 == .unanswered)
+        #expect(unavailable.0?.mayHaveGone == true)
+        #expect(unavailable.requests == 1)
+        let throttled = await problem(.status(429))
+        #expect(throttled.0 == .slowedDown)
+        #expect(throttled.0?.mayHaveGone == false)
+
+        let reading = StubServer()
+        reading.on("/pullRequests/7/threads") { _ in .status(503) }
+        do {
+            _ = try await reading.client().get(
+                ADOEndpoint.threads(organization: Fixture.org, projectId: "p1", repositoryId: "r1", pullRequestId: 7), as: ADOList<ADOThread>.self
+            )
+            Issue.record("A read answered 503 read something")
+        } catch {
+            guard case ADOError.throttled? = error as? ADOError else {
+                Issue.record("Expected a read answered 503 to slow down, got \(error)")
+                return
+            }
+        }
+    }
+
     /// A change goes only as whom it was asked for as, the account the list was read as: when someone else signed in to the
     /// Azure CLI since, as the list doesn't know yet, it sends nothing. When that isn't known, it goes.
     @Test func aChangeGoesOnlyAsWhomItWasAskedFor() async throws {

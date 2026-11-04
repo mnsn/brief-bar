@@ -129,7 +129,8 @@ public struct ADOClient: Sendable {
     /// DevOps' answer. It goes once: a failure isn't tried again, but for a sign-in Azure DevOps didn't take, which it
     /// didn't act on; and an answer that says it was made, any 2xx but 203, is taken as made, whatever it holds. When Azure
     /// DevOps refuses it, the error says why, as it said it (`ADOError.refused`); and when it made the change but its answer
-    /// can't be read, the answer says so (`Answer.unreadable`), rather than that it failed. Called off before it goes, as
+    /// can't be read, the answer says so (`Answer.unreadable`), rather than that it failed; and a 503, which Azure Front Door
+    /// answers once Azure DevOps takes too long, as no answer in time, since it may have been made. Called off before it goes, as
     /// when its setting is turned off while a token comes, it never goes. And it goes only as whom it was asked for as,
     /// `account` (`AccessToken.account`, as the list was read), when that's known: when someone else signed in to the Azure
     /// CLI since, nothing goes (`ADOError.otherAccount`).
@@ -241,6 +242,12 @@ public struct ADOClient: Sendable {
                 throw ADOError.unauthorized
             case 403: throw ADOError.forbidden
             case 404: throw ADOError.notFound
+            case 503 where isChange:
+                // Azure Front Door, before Azure DevOps, answers 503 once Azure DevOps takes too long, which may make the
+                // change all the same: so it says what no answer in time does, for the thread to be read again before it
+                // goes again. Nothing else goes out for a while, as for any 503.
+                await gate.hold(for: Self.retryAfter(http) ?? Self.retryAfterUnsaid)
+                throw ADOError.network(Self.unansweredMessage)
             case 429, 503:
                 // Asked to slow down without saying for how long: nothing goes out for a minute, as if it had said so,
                 // whichever engine or summary asks next.
