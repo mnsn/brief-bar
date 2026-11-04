@@ -494,6 +494,51 @@ extension CopilotTasksStore {
         }
     }
 
+    /// Ends what Copilot took on of pull requests' builds that a run passed after: a fix of one, done or not, pushed or not,
+    /// or a question about it asked in a session, is over once a run of it passes, and stays so once a later run fails,
+    /// maybe for another reason, rather than coming back as ready to push. What each task and prompt took on of it before the
+    /// pass is let go (`CopilotRun.taken`, `SentPrompt.parts`): not while Copilot is at it, nor what it took on since.
+    /// - Parameter records: the pull requests as the list read them last.
+    func endWorkOnBuildsThatPassed(in records: [PRRecord]) {
+        var passes: [(key: PRKey, part: PullRequestPart, at: Date)] = []
+        for record in records {
+            for check in record.details?.checks ?? [] {
+                // A run that passed, or passed and expired since.
+                guard let part = check.part, check.needsNoFix, check.state != .notApplicable, let at = check.completedAt else { continue }
+                passes.append((record.pullRequest.key, part, at))
+            }
+        }
+        guard !passes.isEmpty else { return }
+        let active = Set(entries.filter { $0.status.phase.isActive }.map(\.id))
+        var runs = settings.copilotRuns
+        var runsChanged = false
+        for index in runs.indices where !active.contains(runs[index].id) {
+            guard let taken = runs[index].taken, let reference = runs[index].onPullRequest else { continue }
+            let kept = taken.filter { (part: TakenPart) -> Bool in
+                !passes.contains { pass in
+                    pass.part == part.part && part.since < pass.at && reference.matches(organization: pass.key.organization, id: pass.key.number)
+                }
+            }
+            guard kept.count != taken.count else { continue }
+            runs[index].taken = kept.isEmpty ? nil : kept
+            runsChanged = true
+        }
+        if runsChanged { settings.copilotRuns = runs }
+        var prompts = settings.copilotSentPrompts
+        var promptsChanged = false
+        for index in prompts.indices {
+            let prompt = prompts[index]
+            let ended = passes.filter { prompt.isFor($0.key) && prompt.parts.contains($0.part) && prompt.sentAt < $0.at }.map(\.part)
+            guard !ended.isEmpty else { continue }
+            // Not while Copilot is at it.
+            let isActive = ended.contains { CopilotWork.from(prompt, about: $0, turn: promptTurns[prompt.id]).isActive }
+            guard !isActive else { continue }
+            prompts[index].parts.removeAll { ended.contains($0) }
+            promptsChanged = true
+        }
+        if promptsChanged { settings.copilotSentPrompts = prompts }
+    }
+
     /// The builds and conflicts of a pull request whose fixes are done in a session and not pushed, as each says
     /// (`work(on:of:for:)`): a Push & Reply there pushes them along with the threads its prompt lists, though it replies on
     /// none of them.

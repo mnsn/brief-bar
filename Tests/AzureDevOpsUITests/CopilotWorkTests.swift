@@ -169,6 +169,64 @@ import Testing
         #expect(PullRequestDetailsStore.Place.of(.conflicts, in: panel) == .top)
     }
 
+    /// A run that passes after Copilot took a build on ends what it took on, a task's or a prompt's, for good: a later run
+    /// that fails, maybe for another reason, doesn't bring its fix back as ready to push. What it took on after the pass
+    /// stays, and so does what it's still at.
+    @Test func aPassEndsAFixForGood() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        var record = try #require(DemoData.records(now: now).first { $0.id == key })
+        let build = try #require(record.details?.checks.firstIndex { $0.kind == .build })
+        let pipeline = try #require(record.details?.checks[build].part)
+        let first = now.addingTimeInterval(-3_600)
+        settings.copilotRuns = [run(task, .fixBuild, startedAt: first, ended: .finished, taken: [TakenPart(pipeline, since: first)])]
+        let prompt = try #require(SentPrompt(
+            SentPrompt.About(pullRequest: key, purpose: .fix, parts: [pipeline, .thread(11)]), session: session, sentAt: first,
+            copied: false, ended: .finished
+        ))
+        settings.copilotSentPrompts = [prompt]
+        // Failing still: its fix is ready.
+        record.details?.checks[build].state = .failed
+        record.details?.checks[build].completedAt = first.addingTimeInterval(-60)
+        store.endWorkOnBuildsThatPassed(in: [record])
+        #expect(store.work(on: pipeline, of: key)?.isReadyFix == true)
+        // A run passed since: it's over.
+        record.details?.checks[build].state = .passed
+        record.details?.checks[build].completedAt = now.addingTimeInterval(-600)
+        store.endWorkOnBuildsThatPassed(in: [record])
+        #expect(store.work(on: pipeline, of: key) == nil)
+        #expect(settings.copilotRuns.first?.taken == nil)
+        #expect(settings.copilotSentPrompts.first?.parts == [.thread(11)])
+        // And stays so as a later run fails.
+        record.details?.checks[build].state = .failed
+        record.details?.checks[build].completedAt = now.addingTimeInterval(-60)
+        store.endWorkOnBuildsThatPassed(in: [record])
+        #expect(store.work(on: pipeline, of: key) == nil)
+        #expect(record.partsToFix.contains(pipeline))
+        #expect(store.readyFixes(of: key, among: record.partsToFix).map(\.parts) == [[.thread(11)]])
+        // What Copilot took on after the pass stays.
+        let later = now.addingTimeInterval(-300)
+        settings.copilotRuns = [run(task, .fixBuild, startedAt: later, ended: .finished, taken: [TakenPart(pipeline, since: later)])]
+        record.details?.checks[build].state = .passed
+        record.details?.checks[build].completedAt = now.addingTimeInterval(-600)
+        store.endWorkOnBuildsThatPassed(in: [record])
+        #expect(store.work(on: pipeline, of: key)?.isReadyFix == true)
+        // And so does what it's still at, though a run passed since it started.
+        settings.copilotRuns = [run(task, .fixBuild, startedAt: first, taken: [TakenPart(pipeline, since: first)])]
+        store.endWorkOnBuildsThatPassed(in: [record])
+        #expect(store.work(on: pipeline, of: key)?.isActive == true)
+        // One that passed, then expired, as its target branch moved, passed.
+        settings.copilotRuns = [run(task, .fixBuild, startedAt: first, ended: .finished, taken: [TakenPart(pipeline, since: first)])]
+        record.details?.checks[build].state = .expired
+        store.endWorkOnBuildsThatPassed(in: [record])
+        #expect(settings.copilotRuns.first?.taken == nil)
+        // One that failed, then expired, didn't.
+        settings.copilotRuns = [run(task, .fixBuild, startedAt: first, ended: .finished, taken: [TakenPart(pipeline, since: first)])]
+        record.details?.checks[build].expiredFrom = .failed
+        store.endWorkOnBuildsThatPassed(in: [record])
+        #expect(settings.copilotRuns.first?.taken?.map(\.part) == [pipeline])
+    }
+
     /// A build's line shows while Copilot is at it, or the build doesn't pass: a rerun, or a push, that passes ends it; so
     /// does a run that failed after what Copilot pushed.
     @Test func aBuildsLineEndsOnceItPasses() {

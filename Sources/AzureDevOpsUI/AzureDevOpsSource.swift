@@ -222,7 +222,22 @@ package final class AzureDevOpsSource: BriefBarSource {
         let sessions = PullRequestSessions(copilot: copilot, links: services.links)
         sessions.record = { [weak store] key in store?.record(for: key) }
         pullRequestSessions = sessions
-        copilotQuestions = CopilotQuestions(copilot: copilot)
+        let questions = CopilotQuestions(copilot: copilot)
+        copilotQuestions = questions
+        // As the pull requests are read again: what Copilot took on of a build that a run passed after is over, so its fix
+        // doesn't come back as a later run fails; and what a session answered about a build's run, or attempt, that isn't
+        // the one its details list any more goes.
+        store.$items
+            .receive(on: DispatchQueue.main)
+            .sink { [weak store, weak copilot, weak questions] (items: [PRSnapshot]) in
+                MainActor.assumeIsolated {
+                    guard let store else { return }
+                    let records = items.compactMap { store.record(for: $0.key) }
+                    copilot?.endWorkOnBuildsThatPassed(in: records)
+                    questions?.dismissStale(of: records)
+                }
+            }
+            .store(in: &cancellables)
         // A pull request that a task or a link names shows in its details, on the window's page, while the list has it.
         copilot.canShowPullRequest = { [weak store, weak pullRequestDetails] key in
             guard let store, let pullRequestDetails else { return false }
