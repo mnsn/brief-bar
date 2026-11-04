@@ -252,6 +252,50 @@ extension PullRequestPrompt {
         return String(repeating: "`", count: max(3, longest + 1))
     }
 
+    /// Text a prompt quotes on one of its lines, from where anyone who can push code may write, such as a test's or a step's
+    /// name: its line breaks, and other characters that control how text reads, written out as escapes, "\\n", "\\u{202E}",
+    /// so that all of it stays on that line, and nothing in it starts a line of the prompt's own.
+    static func oneLine(_ text: String) -> String {
+        var line = ""
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "\n": line += "\\n"
+            case "\r": line += "\\r"
+            case "\t": line += "\\t"
+            default:
+                if isControl(scalar) {
+                    line += "\\u{" + String(scalar.value, radix: 16, uppercase: true) + "}"
+                } else {
+                    line.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        return line
+    }
+
+    /// Text a prompt quotes as it was written, line by line, from where anyone who can push code may write, such as what a
+    /// failed test said: in a fence nothing in it closes (`fence(for:)`), each line indented by `indent`, with its other
+    /// characters that control how text reads, a carriage return among them, written out as escapes, so that all of it
+    /// stays what was said, whatever it says.
+    static func fenced(_ text: String, indent: String = "") -> [String] {
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false).map { line in
+            line.unicodeScalars.map { scalar in
+                scalar != "\t" && isControl(scalar) ? "\\u{" + String(scalar.value, radix: 16, uppercase: true) + "}" : String(scalar)
+            }.joined()
+        }
+        let fence = fence(for: lines.joined(separator: "\n"))
+        return [indent + fence] + lines.map { $0.isEmpty ? "" : indent + $0 } + [indent + fence]
+    }
+
+    /// A character that controls how text reads rather than being read: a control character, a line or paragraph
+    /// separator, or one that overrides or isolates the direction text reads in.
+    private static func isControl(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .control, .lineSeparator, .paragraphSeparator: return true
+        default: return (0x202A...0x202E).contains(scalar.value) || (0x2066...0x2069).contains(scalar.value)
+        }
+    }
+
     /// What you wrote, quoted line by line as yours; nil when there's nothing.
     static func yours(_ text: String?) -> String? {
         guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }

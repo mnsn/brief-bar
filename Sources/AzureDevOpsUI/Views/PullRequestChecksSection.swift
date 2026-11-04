@@ -67,9 +67,6 @@ struct PullRequestChecksSection: View {
         .onChange(of: panel.checks.compactMap(\.buildId), initial: true) {
             investigations.retain(Set(panel.checks.compactMap(\.buildId)), of: item.key)
         }
-        // What a composer sends is called off as the builds go, with the details, or for another pull request, file or page;
-        // as it closes, or another opens, the details call it off.
-        .onDisappear { drafts.callOffAll() }
     }
 
     /// Opens the build the details are asked to go to, as What's Left's failed build asks, or the Pipelines page, or a
@@ -158,8 +155,8 @@ private struct CheckRow: View {
                     .padding(.leading, 24)
                     .padding(.top, 2)
             }
-            // What Copilot does about it, open or not.
-            BuildWorkLine(line: line, item: item, now: now)
+            // What Copilot does about it, and what a session said of it, while it's closed: open, its run says them.
+            BuildWorkLine(line: line, item: item, now: now, isOpen: isExpanded && look?.investigation != nil, show: expand)
             if isExpanded, let investigable {
                 BuildInvestigationView(
                     line: line, item: item, pullRequest: investigable.pullRequest, buildId: investigable.buildId, look: look, now: now,
@@ -264,6 +261,14 @@ private struct CheckRow: View {
         guard let investigable else { return }
         withAnimation(.easeOut(duration: 0.15)) {
             investigations.toggle(investigable.buildId, of: investigable.pullRequest, check: line.check)
+        }
+    }
+
+    /// Opens it, as its line's Show asks, at what a session said of it.
+    private func expand() {
+        guard let investigable, !isExpanded else { return }
+        withAnimation(.easeOut(duration: 0.15)) {
+            investigations.expand(investigable.buildId, of: investigable.pullRequest, check: line.check)
         }
     }
 

@@ -72,7 +72,8 @@ import Testing
         #expect(said(.fix, .working(nil), fork: "Retry backoff") == "Fixing this in a fork of ‘Retry backoff’")
         #expect(said(.fix, .done("Capped it")) == "Fixed in ‘Retry backoff’, not pushed")
         #expect(said(.fix, .done(nil), fork: "Retry backoff") == "Fixed in a fork of ‘Retry backoff’, not pushed")
-        #expect(said(.fix, .failed("Error: the build failed\nmore")) == "Couldn't fix it: Error: the build failed")
+        // Why it couldn't goes under the line, whole (`said`).
+        #expect(said(.fix, .failed("Error: the build failed\nmore")) == "Couldn't fix it in ‘Retry backoff’")
         #expect(said(.fix, .failed(nil)) == "Couldn't fix it in ‘Retry backoff’")
         #expect(said(.fix, .stopped) == "Stopped in ‘Retry backoff’ before it fixed it")
         #expect(said(.fix, .waiting(copied: true)) == "Copied for ‘Retry backoff’: paste it there")
@@ -80,7 +81,19 @@ import Testing
         #expect(said(.fix, .needsYou, fork: "Retry backoff") == "A fork of ‘Retry backoff’ is waiting for your answer")
         #expect(said(.pushAndReply, .working(nil)) == "Pushing and replying from ‘Retry backoff’")
         #expect(said(.pushAndReply, .done(nil)) == "Pushed and replied from ‘Retry backoff’")
-        #expect(said(.explain, .failed("No session")) == "Couldn't explain it: No session")
+        #expect(said(.explain, .failed("No session")) == "Couldn't explain it in ‘Retry backoff’")
+        #expect(CopilotWork(part: .thread(11), purpose: .fix, state: .failed("Error: the build failed\nmore"), session: session, isTask: false, since: now)
+            .said == "Error: the build failed\nmore")
+        // A task of BriefBar's, named for what it does, as a task, so that it doesn't read as a command.
+        let tasks = CopilotWork(part: .thread(11), purpose: .fix, state: .working(nil), session: task, forkedFrom: nil, isTask: true, since: now)
+        #expect(tasks.sentence(name: "Fix Comments", forkOf: nil) == "Copilot is fixing this in the ‘Fix Comments’ task")
+        var forked = tasks
+        forked.session = fork
+        forked.forkedFrom = task
+        forked.state = .done(nil)
+        #expect(forked.sentence(name: "Fix Comments", forkOf: "Fix Comments") == "Fixed in a fork of the ‘Fix Comments’ task, not pushed")
+        #expect(CopilotWork.place("Retry backoff", isFork: false, forkOf: nil) == "‘Retry backoff’")
+        #expect(CopilotWork.place("Fix the Build", isFork: false, forkOf: nil, isTask: true) == "the ‘Fix the Build’ task")
         // Without names it knows.
         let unnamed = CopilotWork(part: .thread(11), purpose: .fix, state: .done(nil), session: session, forkedFrom: task, isTask: true, since: now)
         #expect(unnamed.sentence(name: nil, forkOf: nil) == "Fixed in a fork of its session, not pushed")
@@ -99,7 +112,7 @@ import Testing
         #expect(said(.build(31), .fix, .working(nil)) == "Copilot is fixing this build in ‘Retry backoff’")
         #expect(said(.build(31), .fix, .working(nil), fork: true) == "Fixing this build in a fork of ‘Retry backoff’")
         #expect(said(.build(31), .fix, .done(nil)) == "Fixed in ‘Retry backoff’, not pushed")
-        #expect(said(.build(31), .fix, .failed("Error: it still fails\nmore")) == "Couldn't fix it: Error: it still fails")
+        #expect(said(.build(31), .fix, .failed("Error: it still fails\nmore")) == "Couldn't fix it in ‘Retry backoff’")
         #expect(said(.build(31), .explain, .working(nil)) == "Copilot is explaining the failure in ‘Retry backoff’")
         #expect(said(.build(31), .explain, .done(nil)) == "Answered in ‘Retry backoff’")
         #expect(said(.build(31), .pushAndReply, .working(nil)) == "Pushing from ‘Retry backoff’")
@@ -148,20 +161,87 @@ import Testing
         #expect(PullRequestDetailsStore.Place.of(.conflicts, in: panel) == .section(.conflicts))
     }
 
-    /// A build's line shows while Copilot is at it, or the build doesn't pass: a rerun, or a push, that passes ends it.
+    /// A build's line shows while Copilot is at it, or the build doesn't pass: a rerun, or a push, that passes ends it; so
+    /// does a run that failed after what Copilot pushed.
     @Test func aBuildsLineEndsOnceItPasses() {
-        func work(_ state: CopilotWork.State) -> CopilotWork {
-            CopilotWork(part: .build(31), purpose: .fix, state: state, session: task, forkedFrom: nil, isTask: true, since: now)
+        func work(_ state: CopilotWork.State, _ purpose: CopilotWork.Purpose = .fix) -> CopilotWork {
+            CopilotWork(part: .build(31), purpose: purpose, state: state, session: task, forkedFrom: nil, isTask: true, since: now)
         }
-        #expect(work(.done(nil)).shows(onBuild: .failed))
-        #expect(work(.done(nil)).shows(onBuild: .running))
+        func check(_ state: Check.State, completedAt: Date? = nil) -> Check {
+            Check(name: "shop-web CI", kind: .build, state: state, completedAt: completedAt, buildId: 204_417, definitionId: 31)
+        }
+        #expect(work(.done(nil)).shows(onBuild: check(.failed)))
+        #expect(work(.done(nil)).shows(onBuild: check(.running)))
         #expect(work(.done(nil)).shows(onBuild: nil))
-        #expect(!work(.done(nil)).shows(onBuild: .passed))
-        #expect(!work(.failed(nil)).shows(onBuild: .expired))
-        #expect(!work(.stopped).shows(onBuild: .notApplicable))
+        #expect(!work(.done(nil)).shows(onBuild: check(.passed)))
+        #expect(!work(.failed(nil)).shows(onBuild: check(.expired)))
+        #expect(!work(.stopped).shows(onBuild: check(.notApplicable)))
         // Copilot is still at it: it shows, though the build passed meanwhile.
-        #expect(work(.working(nil)).shows(onBuild: .passed))
-        #expect(work(.waiting(copied: true)).shows(onBuild: .passed))
+        #expect(work(.working(nil)).shows(onBuild: check(.passed)))
+        #expect(work(.waiting(copied: true)).shows(onBuild: check(.passed)))
+        // Pushed: while what it pushed runs, and until it passes; a run that failed after it ends it, to fix again. A fix
+        // that isn't pushed stays, whatever the build does meanwhile.
+        #expect(work(.done(nil), .pushAndReply).shows(onBuild: check(.running)))
+        #expect(work(.done(nil), .pushAndReply).shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(-60))))
+        #expect(!work(.done(nil), .pushAndReply).shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(600))))
+        #expect(work(.done(nil)).shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(600))))
+        #expect(work(.failed(nil), .pushAndReply).shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(600))))
+    }
+
+    /// What's Left says Copilot's on what's left by what works on its threads, builds and conflicts now, BriefBar's tasks and
+    /// prompts sent to the Copilot app's sessions alike: asking you something first, then at work, then sent. What's over,
+    /// a prompt copied for you to paste, and a question asked about it aren't Copilot taking care of it.
+    @Test func whatsLeftSaysCopilotsOnItFromItsWork() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        var record = try #require(DemoData.records(now: now).first { $0.id == key })
+        let build = try #require(record.details?.checks.firstIndex { $0.kind == .build })
+        record.details?.checks[build].state = .failed
+        let pipeline = try #require(record.details?.checks[build].part)
+        #expect(store.onIt(record).isEmpty)
+        // A task of BriefBar's fixing the build.
+        let first = now.addingTimeInterval(-600)
+        settings.copilotRuns = [run(task, .fixBuild, startedAt: first, taken: [TakenPart(pipeline, since: first)])]
+        #expect(store.onIt(record).mapValues(\.state) == [.builds: .working(nil)])
+        #expect(store.onIt(record)[.builds]?.look.symbol == "arrow.triangle.2.circlepath")
+        // Done, it's over: what's left is yours again, to push.
+        settings.copilotRuns[0].ended = .finished
+        #expect(store.onIt(record).isEmpty)
+        // A prompt to one of the app's sessions fixing a comment, at work, then asking you something.
+        let fixing = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: now.addingTimeInterval(-60), copied: false))
+        settings.copilotSentPrompts = [fixing]
+        #expect(store.onIt(record).mapValues(\.state) == [.comments: .waiting(copied: false)])
+        store.promptTurns[fixing.id] = SessionTurn(phase: .working(step: "Run the tests"), since: now)
+        #expect(store.onIt(record)[.comments]?.state == .working("Run the tests"))
+        store.promptTurns[fixing.id] = SessionTurn(phase: .needsYou, since: now)
+        #expect(store.onIt(record)[.comments]?.state == .needsYou)
+        // Asking you comes first, among the threads.
+        let other = try #require(SentPrompt(about(threads: [12]), session: session, sentAt: now.addingTimeInterval(-30), copied: false))
+        settings.copilotSentPrompts = [fixing, other]
+        store.promptTurns[other.id] = SessionTurn(phase: .working(step: nil), since: now)
+        #expect(store.onIt(record)[.comments]?.state == .needsYou)
+        // Copied for you to paste, it waits on you; asked about, it's only explained.
+        let copied = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: now, copied: true))
+        let asked = try #require(SentPrompt(about(.explain, threads: [12]), session: session, sentAt: now, copied: false))
+        settings.copilotSentPrompts = [copied, asked]
+        #expect(store.onIt(record).isEmpty)
+        // Nothing while Send Work to Copilot is off.
+        settings.copilotSentPrompts = [fixing]
+        settings.copilotEnabled = false
+        #expect(store.onIt(record).isEmpty)
+    }
+
+    /// The bar at the details' foot says what's ready by what it fixed: comments' fixes, builds', and the conflicts'
+    /// resolution.
+    @Test func theBarSaysWhatsReadyByWhatItFixed() {
+        let place = "‘Retry backoff’"
+        #expect(ReadyFixesBar.sentence([.thread(11)], in: place) == "1 fix ready in ‘Retry backoff’")
+        #expect(ReadyFixesBar.sentence([.thread(11), .thread(12)], in: place) == "2 fixes ready in ‘Retry backoff’")
+        #expect(ReadyFixesBar.sentence([.build(31)], in: "the ‘Fix the Build’ task") == "A build's fix ready in the ‘Fix the Build’ task")
+        #expect(ReadyFixesBar.sentence([.conflicts], in: place) == "The conflicts' resolution ready in ‘Retry backoff’")
+        #expect(ReadyFixesBar.sentence([.thread(11), .conflicts], in: place) == "1 fix and the conflicts' resolution ready in ‘Retry backoff’")
+        #expect(ReadyFixesBar.sentence([.thread(11), .build(31), .build(32), .conflicts], in: place)
+            == "1 fix, 2 builds' fixes and the conflicts' resolution ready in ‘Retry backoff’")
     }
 
     /// Fix the Build quotes what the details read of a build, once one was opened there: its failed tests and the end of its
@@ -179,6 +259,34 @@ import Testing
         var another = investigation
         another.run.id = 204_500
         #expect(await PullRequestTasks.reports(for: record, client: nil, investigations: [204_417: another]).first?.tests.isEmpty == true)
+    }
+
+    /// Push & Reply from the pull request's menu lists the threads that wait on you; it takes along the builds and
+    /// conflicts whose fixes are done in the session it goes on with, which its push ships, so each says it's pushed.
+    @Test func pushAndReplyTakesAlongTheSessionsOtherFixes() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let first = now.addingTimeInterval(-600)
+        settings.copilotRuns = [run(task, .fixBuild, startedAt: first, ended: .finished, taken: [TakenPart(.build(31), since: first)])]
+        #expect(store.unpushedParts(of: key, in: task) == [.build(31)])
+        #expect(store.unpushedParts(of: key, in: session).isEmpty)
+        #expect(store.unpushedParts(of: PRKey("contoso", 4099), in: task).isEmpty)
+        // And those that prompts to one of the app's sessions fixed there.
+        let resolved = try #require(SentPrompt(
+            SentPrompt.About(pullRequest: key, purpose: .fix, parts: [.conflicts, .thread(11)]), session: session, sentAt: first, copied: false,
+            ended: .finished
+        ))
+        settings.copilotSentPrompts = [resolved]
+        #expect(store.unpushedParts(of: key, in: session) == [.conflicts])
+        // Shipped, it's pushed: there's nothing left to take along.
+        let shipping = CopilotRun.taken(
+            goingOnWith: settings.copilotRuns[0], on: pullRequest.reference, taking: store.unpushedParts(of: key, in: task), for: .pushAndReply,
+            at: now
+        )
+        settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, ended: .finished, taken: shipping)]
+        #expect(store.work(on: .build(31), of: key)?.sentence(name: "Fix the Build", forkOf: nil) == "Pushed from the ‘Fix the Build’ task")
+        #expect(store.unpushedParts(of: key, in: task).isEmpty)
+        #expect(store.readyFixes(of: key, among: [.build(31)]).isEmpty)
     }
 
     /// What each action takes on, as its prompt does: Fix the Build its builds that failed, Resolve Conflicts the
@@ -260,9 +368,9 @@ import Testing
         settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, ended: .finished, taken: [
             TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: now, ships: true),
         ])]
-        #expect(store.work(on: .thread(12), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Pushed and replied from ‘Retry backoff’")
+        #expect(store.work(on: .thread(12), of: key)?.sentence(name: "Fix Comments", forkOf: nil) == "Pushed and replied from the ‘Fix Comments’ task")
         let eleven = try #require(store.work(on: .thread(11), of: key))
-        #expect(eleven.sentence(name: "Retry backoff", forkOf: nil) == "Fixed in ‘Retry backoff’, not pushed")
+        #expect(eleven.sentence(name: "Fix Comments", forkOf: nil) == "Fixed in the ‘Fix Comments’ task, not pushed")
         #expect(eleven.since == first)
         #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).map(\.threads) == [[11]])
         // A fork fixed 11 again since: its fix is 11's latest, and it's ready there.
@@ -285,7 +393,7 @@ import Testing
             ]),
         ]
         let eleven = try #require(store.work(on: .thread(11), of: key))
-        #expect(eleven.sentence(name: "Retry backoff", forkOf: nil) == "Pushed and replied from ‘Retry backoff’")
+        #expect(eleven.sentence(name: "Fix Comments", forkOf: nil) == "Pushed and replied from the ‘Fix Comments’ task")
         #expect(eleven.since == shipped)
         #expect(store.readyFixes(of: key, among: [.thread(11)]).isEmpty)
     }

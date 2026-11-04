@@ -189,8 +189,7 @@ struct ThreadCopilotActions: View {
 
     @ViewBuilder
     private func questionView(_ question: CopilotQuestions.Question) -> some View {
-        let name = names.name(question.session)
-        let place = CopilotWork.place(name, isFork: false, forkOf: nil)
+        let place = names.place(question.session)
         switch question.state {
         case .asking:
             CopilotWorkLine(
@@ -280,8 +279,7 @@ struct ThreadCopilotActions: View {
         guard let question else { return }
         switch state {
         case .answered?:
-            let place = CopilotWork.place(names.name(question.session), isFork: false, forkOf: nil)
-            SpokenText.announce("\(spokenThread): \(SpokenText.unquoted(place)) answered")
+            SpokenText.announce("\(spokenThread): \(SpokenText.unquoted(names.place(question.session))) answered")
         case .failed(let failure)?:
             SpokenText.announce("\(spokenThread): couldn't explain it. \(failure.message(model: nil))")
         case .asking?, nil:
@@ -294,7 +292,7 @@ struct ThreadCopilotActions: View {
         guard let work, let state else { return }
         switch state {
         case .done, .failed, .stopped, .needsYou:
-            SpokenText.announce("\(spokenThread): \(SpokenText.unquoted(names.sentence(work)))")
+            SpokenText.announce("\(spokenThread): \(names.announcement(work))")
         case .waiting, .working, .unknown:
             break
         }

@@ -1119,9 +1119,19 @@ struct CopilotComposerView: View {
 
     // MARK: Sending
 
-    /// What it takes on, as the prompt you send still lists it: a thread whose entry you took out isn't; its builds and
-    /// conflicts are.
-    private var sentParts: [PullRequestPart] { Self.sentParts(parts, in: prompt) }
+    /// What it takes on, going to `session`, as the prompt you send still lists it: a thread whose entry you took out isn't;
+    /// its builds and conflicts are. A Push & Reply also takes on the builds and conflicts whose fixes are done and not
+    /// pushed in the session it goes on with, which its push takes along, though it replies on none of them
+    /// (`CopilotTasksStore.unpushedParts`), so that each says it's pushed, however it was sent.
+    private func sentParts(to session: String?) -> [PullRequestPart] {
+        var parts = Self.sentParts(self.parts, in: prompt)
+        if case .pullRequest(let pullRequest, .pushAndReply) = subject, let session {
+            for part in store.unpushedParts(of: PRKey(pullRequest.organization, pullRequest.id), in: session) where !parts.contains(part) {
+                parts.append(part)
+            }
+        }
+        return parts
+    }
 
     /// Of `parts`, those a prompt takes on as you send it: the threads whose entries it still lists, and the rest.
     static func sentParts(_ parts: [PullRequestPart], in prompt: String) -> [PullRequestPart] {
@@ -1129,10 +1139,10 @@ struct CopilotComposerView: View {
         return parts.filter { part in part.thread.map(listed.contains) ?? true }
     }
 
-    /// What a prompt sent to one of the Copilot app's sessions is about, for each to say what became of it: a fix of some of
-    /// its threads, builds or conflicts, or Push & Reply.
-    private var aboutParts: SentPrompt.About? {
-        let parts = sentParts
+    /// What a prompt sent to one of the Copilot app's sessions, or to a fork of it, is about, for each to say what became of
+    /// it: a fix of some of its threads, builds or conflicts, or Push & Reply.
+    private func aboutParts(to session: String?) -> SentPrompt.About? {
+        let parts = sentParts(to: session)
         guard !parts.isEmpty, case .pullRequest(let pullRequest, let action) = subject else { return nil }
         let purpose: SentPrompt.Purpose
         switch action {
@@ -1148,13 +1158,13 @@ struct CopilotComposerView: View {
         let options = CopilotRunOptions(model: model.trimmingCharacters(in: .whitespaces), effort: effort)
         guard let target else {
             guard let folder = repository?.root else { return }
-            store.send(subject, prompt: prompt, options: options, repository: folder, parts: sentParts, handOff: handOff)
+            store.send(subject, prompt: prompt, options: options, repository: folder, parts: sentParts(to: nil), handOff: handOff)
             close()
             return
         }
         // A fork of one of BriefBar's own sessions, which works in a worktree of its own, however the session stands.
         if delivery == .cliFork, case .task(let run) = target.kind {
-            store.send(subject, prompt: prompt, options: options, repository: run.repository, forking: run, parts: sentParts, handOff: handOff)
+            store.send(subject, prompt: prompt, options: options, repository: run.repository, forking: run, parts: sentParts(to: nil), handOff: handOff)
             close()
             return
         }
@@ -1171,14 +1181,20 @@ struct CopilotComposerView: View {
         case .cli:
             switch target.kind {
             case .task(let run):
-                store.send(subject, prompt: prompt, options: options, repository: run.repository, continuing: run, parts: sentParts, handOff: handOff)
+                store.send(
+                    subject, prompt: prompt, options: options, repository: run.repository, continuing: run, parts: sentParts(to: run.id),
+                    handOff: handOff
+                )
             case .app(let session):
                 guard let run = store.appRun(for: session, subject: subject, options: options) else {
                     cliProblem = "BriefBar can't tell which folder it works in."
                     fixDelivery()
                     return
                 }
-                store.send(subject, prompt: prompt, options: options, repository: run.repository, continuing: run, parts: sentParts, handOff: handOff)
+                store.send(
+                    subject, prompt: prompt, options: options, repository: run.repository, continuing: run, parts: sentParts(to: session.id),
+                    handOff: handOff
+                )
             }
         }
         close()
@@ -1196,7 +1212,8 @@ struct CopilotComposerView: View {
         let forking = delivery.forks
         // What the window said it would do as you sent it.
         let saidItWouldCopy = reach?.sends(forking: forking) == false
-        let about = aboutParts
+        // A fork is a session of its own, whose fixes aren't the session's.
+        let about = aboutParts(to: forking ? nil : target.id)
         sending(Task {
             let result = await store.deliver(text, to: target, forking: forking, handOff: handOff, about: about)
             // The window closed, or shows another task: it was stopped.
