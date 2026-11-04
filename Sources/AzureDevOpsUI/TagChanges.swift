@@ -83,6 +83,11 @@ final class TagChanges: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+        // Undo goes once the tags have the tag again, as when someone else added it back, for good: not back for a later
+        // removal of it, which isn't yours.
+        store.refreshed
+            .sink { [weak self] in MainActor.assumeIsolated { self?.forgetRestored() } }
+            .store(in: &cancellables)
     }
 
     // MARK: What you can do
@@ -124,6 +129,14 @@ final class TagChanges: ObservableObject {
     func undoable(on key: PRKey, tags: [PullRequestTag]?) -> PullRequestTag? {
         guard let tag = removed[key], tags?.contains(where: { $0.key == tag.key }) != true else { return nil }
         return tag
+    }
+
+    /// Forgets the tags you took off that pull requests have again, as the list has them now (`undoable`).
+    private func forgetRestored() {
+        guard let store, !removed.isEmpty else { return }
+        for (key, tag) in removed where store.record(for: key)?.tags?.contains(where: { $0.key == tag.key }) == true {
+            removed[key] = nil
+        }
     }
 
     /// Adds back the tag you took off last, as Undo does.
@@ -214,6 +227,8 @@ final class TagChanges: ObservableObject {
         else { return }
         let change = Change.remove(tag)
         let generation = generation, account = account
+        // Undo is for the details that show it as you click: not once they've closed, though they show it again.
+        let closing = closings[key, default: 0]
         removed[key] = nil
         states[key] = .sending(change)
         do {
@@ -238,7 +253,7 @@ final class TagChanges: ObservableObject {
             if problem == .gone, case .success(let read)? = await readCounting(key), !read.contains(where: { $0.key == tag.key }) {
                 guard generation == self.generation else { return }
                 states[key] = nil
-                removed[key] = tag
+                if closings[key, default: 0] == closing { removed[key] = tag }
                 SpokenText.announce("Removed the tag \(tag.name)")
                 return
             }
@@ -248,6 +263,10 @@ final class TagChanges: ObservableObject {
         }
         guard generation == self.generation else { return }
         states[key] = nil
+        guard closings[key, default: 0] == closing else {
+            SpokenText.announce("Removed the tag \(tag.name)")
+            return
+        }
         removed[key] = tag
         SpokenText.announce("Removed the tag \(tag.name). Undo adds it back.")
     }
@@ -378,6 +397,8 @@ final class TagChanges: ObservableObject {
     private var visiblePages: Set<String> = []
     /// The pull requests whose details show, by what shows them, with the window's page they're on.
     private var followers: [UUID: (key: PRKey, page: String?)] = [:]
+    /// How many times nothing showed each pull request anymore: a removal that answers after offers no Undo (`remove`).
+    private var closings: [PRKey: Int] = [:]
     /// How many reads of each pull request's tags are under way: the details' own (`readIfNeeded`), and those after a change
     /// (`readCounting`, `readAgain(afterChanging:to:)`). The details don't start another while one is.
     private var reading: [PRKey: Int] = [:]
@@ -401,8 +422,11 @@ final class TagChanges: ObservableObject {
         followers[follower] = (key, page)
         defer {
             followers[follower] = nil
-            // Nothing shows it anymore: Undo goes with its details.
-            if !followers.values.contains(where: { $0.key == key }) { removed[key] = nil }
+            // Nothing shows it anymore: Undo goes with its details, and one for a removal that answers after doesn't come.
+            if !followers.values.contains(where: { $0.key == key }) {
+                removed[key] = nil
+                closings[key, default: 0] += 1
+            }
         }
         readIfNeeded(key, on: page)
         let pause = checkEvery

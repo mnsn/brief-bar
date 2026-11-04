@@ -669,7 +669,7 @@ import Testing
     }
 
     /// Undo offers the tag you took off while the pull request doesn't have it again: once someone else added it back, as the
-    /// tags read since show, it goes.
+    /// tags read since show, it goes, for good, and doesn't come back as they take it off again.
     @Test func undoGoesOnceTheTagIsBack() async throws {
         let (store, changes, _) = live()
         let tag = PullRequestTag("needs-qa", tagId: "demo-tag-needs-qa")
@@ -685,6 +685,36 @@ import Testing
         snapshot.records[index].tags = [PullRequestTag("deploy-eu"), PullRequestTag("needs-qa")]
         store.receive(snapshot)
         #expect(tags(store) == ["deploy-eu", "needs-qa"])
+        #expect(changes.undoable(on: key, tags: store.record(for: key)?.tags) == nil)
+        // They take it off again: that's not yours to undo.
+        snapshot.records[index].tags = [PullRequestTag("deploy-eu")]
+        store.receive(snapshot)
+        #expect(changes.undoable(on: key, tags: store.record(for: key)?.tags) == nil)
+    }
+
+    /// A removal that Azure DevOps answers after the details showing the pull request closed offers no Undo: not as they show
+    /// it again either.
+    @Test func aRemovalAnsweredAfterTheDetailsCloseOffersNoUndo() async throws {
+        let (store, changes, azure) = live()
+        var letGo = false
+        changes.send = { write, _ in
+            while !letGo { try await Task.sleep(for: .milliseconds(5)) }
+            return try azure.send(write)
+        }
+        let shown = Task { await changes.follow(key, on: nil) }
+        try await Task.sleep(for: .milliseconds(20))
+        let tag = PullRequestTag("needs-qa", tagId: "demo-tag-needs-qa")
+        let removing = Task { await changes.remove(tag, from: key) }
+        try await waitUntil { changes.isSending(key) }
+        shown.cancel()
+        await shown.value
+        let again = Task { await changes.follow(key, on: nil) }
+        defer { again.cancel() }
+        try await Task.sleep(for: .milliseconds(20))
+        letGo = true
+        await removing.value
+        #expect(tags(store) == ["deploy-eu"])
+        #expect(changes.state(of: key) == nil)
         #expect(changes.undoable(on: key, tags: store.record(for: key)?.tags) == nil)
     }
 
