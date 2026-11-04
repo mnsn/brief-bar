@@ -29,6 +29,8 @@ struct PullRequestCommentsSection: View {
     /// The threads you changed in the details, with your reply or their statuses, where each was as you first did: they
     /// stay there, however they stand now, while the details show the pull request, which keep them as a file's page shows.
     @Binding var held: [Int: PullRequestPanel.Thread.Held]
+    /// Where the threads you marked as read there were then, which they stay at too, unless you changed them first.
+    var readHolds: [Int: PullRequestPanel.Thread.Held] = [:]
     /// Which threads show, as you choose in the heading: all of them, or only the active ones (`AppSettings.commentFilter`).
     var filter: Binding<PullRequestPanel.CommentFilter> = .constant(.all)
     /// Mark as Read and Mark as Unread on the threads, the details'; nil where they can't be.
@@ -39,7 +41,8 @@ struct PullRequestCommentsSection: View {
 
     var body: some View {
         let threads = panel.threads
-        let listing = threads.listed(filter.wrappedValue, holding: held, revealing: revealed)
+        let kept = PullRequestPanel.Thread.Held.kept(changed: held, read: readHolds)
+        let listing = threads.listed(filter.wrappedValue, holding: kept, revealing: revealed)
         let resolvedCount = listing.resolved.reduce(0) { $0 + $1.threads.count }
         VStack(alignment: .leading, spacing: 8) {
             // With Fix All, while comments wait on you on your pull request; and Active | All, once there are threads.
@@ -114,7 +117,7 @@ struct PullRequestCommentsSection: View {
                 ThreadCard(
                     thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now,
                     isHighlighted: highlighted == .thread(thread.id), composing: $composing, drafts: drafts,
-                    hold: { held[$0.id] = held[$0.id] ?? PullRequestPanel.Thread.Held($0) }, reading: reading
+                    hold: { held[$0.id] = .holding($0, changed: held, read: readHolds) }, reading: reading
                 )
             }
         }

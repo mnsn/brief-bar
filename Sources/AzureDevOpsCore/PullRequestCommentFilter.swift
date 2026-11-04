@@ -52,6 +52,21 @@ extension PullRequestPanel {
     }
 }
 
+extension PullRequestPanel.Thread.Held {
+    /// Where the details keep threads while they show a pull request: those you changed there, with your reply or their
+    /// status (`changed`), each where it was as you first did, and those you marked as read there (`read`), where each was
+    /// then, unless you changed it first.
+    public static func kept(changed: [Int: Self], read: [Int: Self]) -> [Int: Self] {
+        read.merging(changed) { _, changed in changed }
+    }
+
+    /// Where a thread you change in the details stays: where it was as you first changed it, or as you marked it as read
+    /// there, before; else where it is now.
+    public static func holding(_ thread: PullRequestPanel.Thread, changed: [Int: Self], read: [Int: Self]) -> Self {
+        changed[thread.id] ?? read[thread.id] ?? Self(thread)
+    }
+}
+
 extension PullRequestPanel.Threads {
     /// The threads as the details list them with `filter`, while you change some of them there (`held`). With All, as
     /// `arranged(holding:)` arranges them, the resolved ones apart. With Active, only those whose status is active or

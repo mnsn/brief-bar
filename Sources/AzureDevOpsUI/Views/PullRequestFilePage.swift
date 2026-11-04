@@ -24,6 +24,8 @@ struct PullRequestFilePage: View {
     /// The threads you changed in the details, where each was as you first did, which the details keep as you go from its
     /// comments to a file's page and back: each stays where it was, unfolded, however it stands now.
     @Binding var held: [Int: PullRequestPanel.Thread.Held]
+    /// Where the threads you marked as read in the details were then, which they stay at too, unless you changed them first.
+    var readHolds: [Int: PullRequestPanel.Thread.Held] = [:]
     /// Which threads show, as you chose in the details' comments: all of them, or only the active ones; and All, from the
     /// line that says how many it leaves out.
     var filter: PullRequestPanel.CommentFilter = .all
@@ -66,6 +68,11 @@ struct PullRequestFilePage: View {
     /// How wide a thread's card gets, on a page the details fill: as wide as reads well.
     static let widestThread: CGFloat = 720
 
+    /// The threads you changed in the details, and those you marked as read there, each where it was as you first did.
+    private var kept: [Int: PullRequestPanel.Thread.Held] {
+        PullRequestPanel.Thread.Held.kept(changed: held, read: readHolds)
+    }
+
     /// The window's page it's on: nil outside one, where nothing is read.
     private var page: String? {
         guard let section, let window else { return nil }
@@ -83,11 +90,11 @@ struct PullRequestFilePage: View {
         let state = pullRequest.flatMap { files.list(of: $0.key, open.scope) }
         let threadFile = threadFile(state)
         // The thread it goes to shows, and stays once it's there.
-        let listing = threads.listed(filter, holding: held, revealing: revealedThreads.union([open.thread].compactMap { $0 }))
+        let listing = threads.listed(filter, holding: kept, revealing: revealedThreads.union([open.thread].compactMap { $0 }))
         let shown: Shown? = if let pullRequest, case .read(let changes)? = state,
             let file = threadFile ?? changes.file(atPath: open.path) {
             Shown(
-                file: file, changes: changes, threads: listing.shown, hidden: listing.hidden, held: held,
+                file: file, changes: changes, threads: listing.shown, hidden: listing.hidden, held: kept,
                 diff: diff(of: file, in: changes, pullRequest)
             )
         } else {
@@ -814,12 +821,12 @@ struct PullRequestFilePage: View {
     /// An open thread's card; a resolved one folded to a line, until you unfold it.
     @ViewBuilder
     private func threadView(_ thread: PullRequestPanel.Thread, showsCode: Bool) -> some View {
-        if Shown.isOpen(thread) || unfoldedResolved.contains(thread.id) || held[thread.id] != nil {
+        if Shown.isOpen(thread) || unfoldedResolved.contains(thread.id) || kept[thread.id] != nil {
             ThreadCard(
                 thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now, isHighlighted: highlighted == thread.id,
                 composing: $composing, drafts: drafts, showsCode: showsCode,
                 // Resolved as you change it, it stays where it was, unfolded.
-                hold: { held[$0.id] = held[$0.id] ?? PullRequestPanel.Thread.Held($0) }, reading: reading
+                hold: { held[$0.id] = .holding($0, changed: held, read: readHolds) }, reading: reading
             )
         } else {
             ResolvedThreadLine(thread: thread) {

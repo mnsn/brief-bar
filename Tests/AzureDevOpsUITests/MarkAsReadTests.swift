@@ -190,17 +190,14 @@ import Testing
         #expect(try !threads().waitingOnYou.contains { $0.id == 23 })
         #expect(try threads().resolved.contains { $0.id == 23 && !$0.isNew })
         // Where it was, with those that wait on you, rather than folded away with the resolved ones.
-        let held = details.holding([:])
+        let held = details.readHolds
         #expect(held[23]?.placement == .waitingOnYou)
         let arranged = try threads().arranged(holding: held)
         #expect(arranged.open.flatMap(\.threads).map(\.id).contains(23))
         #expect(!arranged.resolved.flatMap(\.threads).map(\.id).contains(23))
-        // A hold of its own in the details wins.
-        let replied = PullRequestPanel.Thread.Held(placement: .open, date: nil)
-        #expect(details.holding([23: replied])[23] == replied)
 
         details.markUnread(23)
-        #expect(details.markedRead.isEmpty && details.holding([:]).isEmpty)
+        #expect(details.markedRead.isEmpty && details.readHolds.isEmpty)
         #expect(try threads().waitingOnYou.first { $0.id == 23 }?.isNew == true)
         #expect(demo.settings.readThreads(of: review.key).isEmpty)
 

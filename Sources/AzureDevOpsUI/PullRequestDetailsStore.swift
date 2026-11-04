@@ -352,10 +352,10 @@ final class PullRequestDetailsStore: ObservableObject {
         markThreadUnread(selected.key, thread, marked.mark)
     }
 
-    /// The threads you changed in the details (`held`), and those you marked as read while they show the pull request, each
-    /// where it was as you first did.
-    func holding(_ held: [Int: PullRequestPanel.Thread.Held]) -> [Int: PullRequestPanel.Thread.Held] {
-        held.merging(markedRead.mapValues(\.held)) { changed, _ in changed }
+    /// Where each thread you marked as read while they show the pull request was then, which it stays at
+    /// (`PullRequestPanel.Thread.Held.kept`).
+    var readHolds: [Int: PullRequestPanel.Thread.Held] {
+        markedRead.mapValues(\.held)
     }
 
     /// Takes the details to a place in them, from the pages over them, and from a file's page, too.

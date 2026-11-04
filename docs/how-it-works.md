@@ -1447,8 +1447,9 @@ the rows count every thread, as Azure DevOps and your attention need.
 **Mark as Read**, beside a thread's **Waits on you**, in its right-click menu and among VoiceOver's actions, takes the
 thread off waiting on you (`PullRequestDetailsStore.markRead`, `PRStore.markRead`; [below](#what-still-waits-on-you)),
 and works without **Make Changes in Azure DevOps**, since nothing goes there. The details show it at once, the thread
-staying where it was while they show the pull request (`markedRead`, with the threads you changed: `holding`), and
-**Mark as Unread** puts back what it was read up to before, until they show another pull request or close.
+staying where it was while they show the pull request (`markedRead`), kept apart from where the threads you replied to
+or set a status of stay, though a change after Mark as Read keeps where it was then (`PullRequestPanel.Thread.Held.kept`,
+`holding`). **Mark as Unread** puts back what it was read up to before, until they show another pull request or close.
 
 #### Replying and setting a thread's status
 

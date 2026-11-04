@@ -148,6 +148,11 @@ import Testing
 
         let odd = try decode(#"{"baseline":0,"seenAt":{"contoso/7":10},"readThreads":{"Contoso/7":{"5":20,"five":30},"contoso/8":{}}}"#)
         #expect(odd.readThreads == ["contoso/7": [5: Date(timeIntervalSinceReferenceDate: 20)]])
+        // One that doesn't say when is left out alone, not the others.
+        let mixed = try decode(#"{"baseline":0,"seenAt":{},"readThreads":{"contoso/7":{"5":20,"6":"soon"},"contoso/8":{"9":30},"contoso/9":[1]}}"#)
+        #expect(mixed.readThreads == [
+            "contoso/7": [5: Date(timeIntervalSinceReferenceDate: 20)], "contoso/8": [9: Date(timeIntervalSinceReferenceDate: 30)],
+        ])
         for broken in [#""nope""#, #"{"contoso/7":{"5":"soon"}}"#, #"{"contoso/7":[1,2]}"#] {
             let read = try decode(#"{"baseline":0,"seenAt":{"contoso/7":10},"readThreads":"# + broken + "}")
             #expect(read.readThreads.isEmpty, "\(broken)")
@@ -239,5 +244,28 @@ import Testing
         let revealed = threads.listed(.active, revealing: [6])
         #expect(revealed.shown.all.contains { $0.id == 6 })
         #expect(revealed.hiddenSentence == "3 closed or resolved comments hidden")
+    }
+
+    /// Marked as read, then resolved, then marked as unread there: it stays where it was all along, with those that waited
+    /// on you, since resolving it kept where it was as you marked it as read. What you changed first wins.
+    @Test func aThreadYouMarkAndChangeStaysWhereItWas() {
+        typealias Held = PullRequestPanel.Thread.Held
+        let waiting = thread(1, "active", waits: true)
+        var read: [Int: Held] = [1: Held(waiting)]
+        var changed: [Int: Held] = [:]
+        // Resolved once it's marked as read, when it doesn't wait on you anymore.
+        changed[1] = .holding(thread(1, "active"), changed: changed, read: read)
+        #expect(changed[1]?.placement == .waitingOnYou)
+        // Mark as Unread lets go of where it was marked as read; it's resolved now, and you've seen it.
+        read = [:]
+        let resolved = PullRequestPanel.Threads(resolved: [thread(1, "fixed")])
+        let kept = Held.kept(changed: changed, read: read)
+        #expect(resolved.arranged(holding: kept).open.flatMap(\.threads).map(\.id) == [1])
+        #expect(resolved.listed(.active, holding: kept).shown.all.map(\.id) == [1])
+
+        let first = Held(placement: .open, date: nil)
+        #expect(Held.kept(changed: [1: first], read: [1: Held(waiting), 2: Held(waiting)]) == [1: first, 2: Held(waiting)])
+        #expect(Held.holding(waiting, changed: [1: first], read: [1: Held(waiting)]) == first)
+        #expect(Held.holding(waiting, changed: [:], read: [:]) == Held(waiting))
     }
 }

@@ -38,19 +38,45 @@ public struct SeenState: Sendable, Codable, Equatable {
     }
 
     /// What builds from before you could remove a pull request from Needs You saved has no `dismissedAt`, nor, from before
-    /// you could mark a thread as read, `readThreads`; and earlier builds named pull requests spelled as given. Threads
-    /// that aren't named by a number, which another program could have written there, are left out, rather than what
-    /// you've seen.
+    /// you could mark a thread as read, `readThreads`; and earlier builds named pull requests spelled as given. A thread
+    /// that isn't named by a number or doesn't say when, which another program could have written there, is left out, and
+    /// only it: never the other threads, or what you've seen.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         baseline = try container.decode(Date.self, forKey: .baseline)
         seenAt = try Self.folded(container.decode([String: Date].self, forKey: .seenAt))
         dismissedAt = try Self.folded(container.decodeIfPresent([String: Date].self, forKey: .dismissedAt) ?? [:])
-        let read = (try? container.decodeIfPresent([String: [String: Date]].self, forKey: .readThreads)) ?? nil
-        readThreads = Self.folded((read ?? [:]).mapValues { threads in
-            Dictionary(threads.compactMap { id, date in Int(id).map { ($0, date) } }, uniquingKeysWith: { max($0, $1) })
-        })
+        readThreads = Self.folded(Self.readThreads(in: container))
         account = try container.decodeIfPresent(String.self, forKey: .account)
+    }
+
+    /// A name a JSON object has for what it holds: a pull request's, or a thread's number.
+    private struct NameKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+
+        init(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue: Int) {
+            nil
+        }
+    }
+
+    /// The threads marked as read, as they're saved, each that can be read: one that isn't named by a number or doesn't
+    /// say when, or a pull request's that aren't an object of them, is left out on its own.
+    private static func readThreads(in container: KeyedDecodingContainer<CodingKeys>) -> [String: [Int: Date]] {
+        guard let byName = try? container.nestedContainer(keyedBy: NameKey.self, forKey: .readThreads) else { return [:] }
+        var read: [String: [Int: Date]] = [:]
+        for name in byName.allKeys {
+            guard let threads = try? byName.nestedContainer(keyedBy: NameKey.self, forKey: name) else { continue }
+            for thread in threads.allKeys {
+                guard let id = Int(thread.stringValue), let date = try? threads.decode(Date.self, forKey: thread) else { continue }
+                read[name.stringValue, default: [:]][id] = date
+            }
+        }
+        return read
     }
 
     public static func firstRun(now: Date = Date(), account: String? = nil) -> SeenState {

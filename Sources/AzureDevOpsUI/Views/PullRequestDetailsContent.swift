@@ -61,13 +61,10 @@ struct PullRequestDetailsContent: View {
         isShown ? details.record : store.record(for: item.key)
     }
 
-    /// The threads you changed here, and those you marked as read while `details` shows it, each where it was as you first
-    /// did: they stay there, however they stand now. What's kept here are only the threads you changed, so that Mark as
-    /// Unread lets go of the rest.
-    private var holding: Binding<[Int: PullRequestPanel.Thread.Held]> {
-        Binding(get: { details.holding(held) }, set: { changed in
-            held = changed.filter { id, kept in held[id] != nil || details.markedRead[id]?.held != kept }
-        })
+    /// Where the threads you marked as read while `details` shows it were then, which they stay at, as those you changed
+    /// here do (`held`); kept apart from those, so that Mark as Unread lets go of them alone.
+    private var readHolds: [Int: PullRequestPanel.Thread.Held] {
+        isShown ? details.readHolds : [:]
     }
 
     /// Mark as Read and Mark as Unread on its threads, once `details` shows it.
@@ -91,8 +88,8 @@ struct PullRequestDetailsContent: View {
             if let file = isShown ? details.file : nil {
                 PullRequestFilePage(
                     details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, me: record?.me, open: file,
-                    scroll: scroll, held: holding, filter: settings.commentFilter, showAll: { settings.commentFilter = .all },
-                    reading: reading
+                    scroll: scroll, held: $held, readHolds: readHolds, filter: settings.commentFilter,
+                    showAll: { settings.commentFilter = .all }, reading: reading
                 )
             } else {
                 PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact) {
@@ -114,8 +111,8 @@ struct PullRequestDetailsContent: View {
                 }
                 PullRequestCommentsSection(
                     item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place,
-                    highlighted: highlighted, composing: $composing, drafts: drafts, held: holding, filter: $settings.commentFilter,
-                    reading: reading
+                    highlighted: highlighted, composing: $composing, drafts: drafts, held: $held, readHolds: readHolds,
+                    filter: $settings.commentFilter, reading: reading
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.comments))
                     // A thread's file opens here, at the thread, in all of the change, which has it whatever the Files show.
