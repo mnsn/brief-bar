@@ -443,12 +443,14 @@ public struct DeclaredOrders: Equatable, Sendable {
         plans.removeAll { $0.id == id }
     }
 
-    /// Forgets the pull requests of the sources you turned off, as each source forgets what it kept: their places in every
-    /// order, which goes up a revision, and the orders that are left with none.
+    /// Forgets the things of the sources you turned off, as each source forgets what it kept: their pull requests' places
+    /// in every order, which goes up a revision, and the orders that are left with none; and Copilot's, which session told
+    /// each order, which is only for information, so its revision stays.
     public mutating func forget(_ kinds: Set<ItemRef.Kind>) {
         plans = plans.compactMap { plan in
-            guard plan.refs.contains(where: { kinds.contains($0.kind) }) else { return plan }
             var plan = plan
+            if let session = plan.declaredBy, kinds.contains(session.kind) { plan.declaredBy = nil }
+            guard plan.refs.contains(where: { kinds.contains($0.kind) }) else { return plan }
             plan.entries = plan.entries.filter { !kinds.contains($0.ref.kind) }.map { entry in
                 var entry = entry
                 entry.after.removeAll { kinds.contains($0.kind) }

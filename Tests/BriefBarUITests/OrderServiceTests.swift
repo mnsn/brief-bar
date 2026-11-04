@@ -192,6 +192,27 @@ private final class Clock {
         #expect(!order.isOn && order.orders.plans.isEmpty)
     }
 
+    /// Turning Copilot off forgets which sessions told the orders, and the pull requests opened under a session, when
+    /// that's what you focus on.
+    @Test func turningCopilotOffForgetsItsSessions() throws {
+        let coordinator = try #require(ItemRef.session("3c1d7e52-9a40-4b6f-8e21-5f0b2c7d9a10"))
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(session: coordinator.id, entries: [.init(link: Self.link(4101))]), newID: Self.planID)
+        orders.save(to: defaults)
+        let order = Self.service(defaults)
+        order.setFocus(.family(coordinator))
+        order.publish(.copilot, sessions: [OrderSession(ref: coordinator, pullRequests: [Self.ref(4101)])])
+
+        order.forget(.copilot)
+
+        #expect(order.orders.plans.map(\.declaredBy) == [nil] && order.focus == nil)
+        #expect(DeclaredOrders.load(from: defaults).plans.map(\.declaredBy) == [nil])
+        #expect(OrderFocus.load(from: defaults) == nil)
+        #expect(order.describe(coordinator) == nil)
+    }
+
     @Test func forgetAllForgetsEveryOrderAndWhatWasKeptOfThem() throws {
         let defaults = try Self.defaults(on: true)
         let order = Self.service(defaults)

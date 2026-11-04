@@ -10,8 +10,8 @@ import SwiftUI
 @MainActor
 package final class CopilotSource: BriefBarSource {
     /// 2: Show Links. 3: what Copilot recorded of a session's work, for a work item's details. 4: a session's
-    /// conversation, for summaries.
-    nonisolated package static let descriptionVersion = 4
+    /// conversation, for summaries. 5: with Pull Request Order on, which pull request each session started from or opened.
+    nonisolated package static let descriptionVersion = 5
 
     package let id = SourceID.copilot
     package let name = "GitHub Copilot"
@@ -19,7 +19,7 @@ package final class CopilotSource: BriefBarSource {
     package let description = SourceDescription(
         version: CopilotSource.descriptionVersion,
         summary: "What each GitHub Copilot app session is doing, and which ones need you",
-        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log; BriefBar never changes them. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database; and, when you open the details of a work item a session is linked to, or ask for a summary of the session or of something it's linked to, what Copilot recorded of that session's work: its checkpoints, the notes Copilot writes as a session goes on, and the last thing it said, which BriefBar keeps in memory only. New: only when a summary is written of a session, or of something linked to it, or, for one ten minutes old or more, again as you open it, to tell whether it's still current: what was asked in that session, by you or by another session, and Copilot's answers, from its event log. With Apple Intelligence, what a summary is written from stays on this Mac; with a Copilot model, BriefBar sends it to GitHub Copilot through the Copilot CLI, which keeps a copy in its session history. BriefBar keeps none of it. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
+        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log; BriefBar never changes them. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database; and, when you open the details of a work item a session is linked to, or ask for a summary of the session or of something it's linked to, what Copilot recorded of that session's work: its checkpoints, the notes Copilot writes as a session goes on, and the last thing it said, which BriefBar keeps in memory only. New: only if you turn on Pull Request Order: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database, to tell which pull requests sessions opened under the session that coordinates them. New: only when a summary is written of a session, or of something linked to it, or, for one ten minutes old or more, again as you open it, to tell whether it's still current: what was asked in that session, by you or by another session, and Copilot's answers, from its event log. With Apple Intelligence, what a summary is written from stays on this Mac; with a Copilot model, BriefBar sends it to GitHub Copilot through the Copilot CLI, which keeps a copy in its session history. BriefBar keeps none of it. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
         network: "None from BriefBar: Copilot's list makes no network requests. When a summary is written with a Copilot model, the Copilot CLI sends what it covers to GitHub Copilot.",
         needs: "Nothing: macOS doesn't protect these files.",
         requirements: []
@@ -73,17 +73,28 @@ package final class CopilotSource: BriefBarSource {
         store.start()
         tellStories()
         // After the change: a @Published value emits before it's set.
-        services.links.$isOn.removeDuplicates()
+        services.links.$isOn.removeDuplicates().map { _ in () }
+            .merge(with: services.pullRequestOrder.$isOn.removeDuplicates().map { _ in () })
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] on in
+            .sink { [weak self] in
                 MainActor.assumeIsolated {
-                    self?.store.setReadsLinks(on)
-                    self?.publishLinks()
+                    guard let self else { return }
+                    self.store.setReadsLinks(self.readsLinks)
+                    self.publishLinks()
+                    self.publishOrder()
                 }
             }
             .store(in: &linkObservers)
         store.$sessions
-            .sink { [weak self] sessions in MainActor.assumeIsolated { self?.publishLinks(sessions) } }
+            .sink { [weak self] sessions in
+                MainActor.assumeIsolated {
+                    self?.publishLinks(sessions)
+                    self?.publishOrder(sessions)
+                }
+            }
+            .store(in: &linkObservers)
+        store.$orderSessions.removeDuplicates()
+            .sink { [weak self] sessions in MainActor.assumeIsolated { self?.publishOrder(orderSessions: sessions) } }
             .store(in: &linkObservers)
     }
 
@@ -92,6 +103,7 @@ package final class CopilotSource: BriefBarSource {
         store.stop()
         services.links.withdraw(.copilot)
         services.stories.withdraw(.copilot)
+        services.pullRequestOrder.withdraw(.copilot)
         // A session still being opened in Terminal opens nothing now.
         CLISession.stop()
     }
@@ -100,8 +112,15 @@ package final class CopilotSource: BriefBarSource {
         settings.forgetDismissed()
         // The links you added or hid to Copilot sessions.
         services.links.forget(.copilot)
+        // Which sessions told the orders, and the pull requests opened under a session, when that's what you focus on.
+        services.pullRequestOrder.forget(.copilot)
         // Scripts that would have opened sessions in Terminal, but never ran. The demo never writes any.
         if !services.isDemo { CLISession.forgetScripts() }
+    }
+
+    /// Whether the engine reads where each session's work goes: for Show Links, and for Pull Request Order.
+    private var readsLinks: Bool {
+        services.links.isOn || services.pullRequestOrder.isOn
     }
 
     // MARK: Show Links
@@ -115,10 +134,17 @@ package final class CopilotSource: BriefBarSource {
             return
         }
         var facts: [ItemLink] = []
-        var items: [LinkedItem] = []
         for session in sessions ?? store.sessions where store.task(for: session.id) == nil {
-            guard let ref = ItemRef.session(session.id) else { continue }
             facts += session.recordedLinks
+        }
+        links.publish(.copilot, links: facts, items: items(sessions ?? store.sessions))
+    }
+
+    /// What each of the app's sessions is, as its row shows it, and what opening it does.
+    private func items(_ sessions: [SessionSnapshot]) -> [LinkedItem] {
+        var items: [LinkedItem] = []
+        for session in sessions where store.task(for: session.id) == nil {
+            guard let ref = ItemRef.session(session.id) else { continue }
             let store = self.store
             items.append(LinkedItem(
                 ref: ref, label: session.displayName, title: session.displayName, symbol: session.rowSymbol,
@@ -131,7 +157,20 @@ package final class CopilotSource: BriefBarSource {
                 }
             ))
         }
-        links.publish(.copilot, links: facts, items: items)
+        return items
+    }
+
+    // MARK: Pull Request Order
+
+    /// Tells Pull Request Order about the sessions, while it's on: the pull requests each opened, as the app recorded them,
+    /// the sessions that started and coordinate it, and what each session is, for a mission to name them.
+    private func publishOrder(_ sessions: [SessionSnapshot]? = nil, orderSessions: [OrderSession]? = nil) {
+        let order = services.pullRequestOrder
+        guard order.isOn else {
+            order.withdraw(.copilot)
+            return
+        }
+        order.publish(.copilot, sessions: orderSessions ?? store.orderSessions, items: items(sessions ?? store.sessions))
     }
 
     /// Tells the details what's known of its sessions, when they ask, and summaries what was said in each,
@@ -272,10 +311,11 @@ package final class CopilotSource: BriefBarSource {
             store.start()
             return
         }
-        let state = SessionEngine.loadOnce(paths: paths, links: services.links.isOn)
+        let state = SessionEngine.loadOnce(paths: paths, links: readsLinks)
         rendered = state
         store.receive(state)
         publishLinks()
+        publishOrder()
     }
 
     /// The list again with each option that changes what it shows turned on, unless it's on already: Show Relayed

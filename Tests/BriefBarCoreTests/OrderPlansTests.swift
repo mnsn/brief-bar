@@ -199,6 +199,20 @@ import Testing
         #expect(left.entry(for: Self.pr(4102))?.review == nil)
     }
 
+    /// Turning Copilot off forgets which session told an order, which is only for information: an agent that read the
+    /// order can still replace it.
+    @Test func turningCopilotOffForgetsWhoToldAnOrder() throws {
+        var orders = DeclaredOrders()
+        let told = try orders.apply(OrderRequest(session: session.id, entries: Self.userExample.entries), now: t(0))
+        orders.forget([.gitHubPullRequest])
+        #expect(orders.plan(told.id) == told)
+
+        orders.forget([.session])
+
+        let left = try #require(orders.plan(told.id))
+        #expect(left.declaredBy == nil && left.revision == 1 && left.entries == told.entries)
+    }
+
     @Test func anOrderGoesTwoWeeksAfterBriefBarSawItsLastPullRequestMergeOrCloseAndNeverBefore() throws {
         var orders = DeclaredOrders()
         let plan = try orders.apply(OrderRequest(entries: [
