@@ -1151,6 +1151,71 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(requests(server, to: "/timeline").count == 1)
     }
 
+    /// A look at a kept run that hasn't run again, whose only caller is called off, as when the details close, is called off
+    /// too: the caller comes back at once, with nothing rather than what's kept, which stays, though the look's answer
+    /// hasn't come.
+    @Test(.timeLimit(.minutes(1)))
+    func aLookNobodyWaitsForIsCalledOff() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        clock.advance(10)
+        // The look at the run it kept, unchanged: answered only once it's let go, as a slow answer.
+        let letGo = Mutex(false)
+        server.on("/_apis/build/builds/77") { _ in
+            var reply = StubServer.Reply.json(FailedRun.build())
+            reply.waitsFor = { letGo.withLock { $0 } }
+            return reply
+        }
+        let cameBack = Mutex(false)
+        let looking = Task {
+            defer { cameBack.withLock { $0 = true } }
+            return try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        }
+        try await waitUntil("the look to start") { await investigator.waiting == 1 }
+        looking.cancel()
+        // Without waiting for the look's answer, which hasn't come.
+        try await waitUntil("the caller to come back", timeout: .seconds(10)) { cameBack.withLock { $0 } }
+        await #expect(throws: CancellationError.self) { try await looking.value }
+        #expect(await investigator.asking == 0)
+        letGo.withLock { $0 = true }
+        #expect(requests(server, to: "/timeline").count == 1)
+        #expect(await investigator.keptBuilds == [77])
+    }
+
+    /// A look two callers share goes on when one of them is called off: the other gets what's kept, as the look finds the
+    /// run hasn't run again, with one GET.
+    @Test(.timeLimit(.minutes(1)))
+    func aLookAnotherCallerWaitsForGoesOn() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        let runGETs = requests(server, to: "/_apis/build/builds/77").count
+        clock.advance(10)
+        let letGo = Mutex(false)
+        server.on("/_apis/build/builds/77") { _ in
+            var reply = StubServer.Reply.json(FailedRun.build())
+            reply.waitsFor = { letGo.withLock { $0 } }
+            return reply
+        }
+        let one = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntil("one to look") { await investigator.waiting == 1 }
+        let two = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntil("both to wait for the look") { await investigator.waiting == 2 }
+        one.cancel()
+        try await waitUntil("one to stop waiting") { await investigator.asking == 1 }
+        letGo.withLock { $0 = true }
+        await #expect(throws: CancellationError.self) { try await one.value }
+        #expect(try await two.value.run.id == 77)
+        #expect(requests(server, to: "/_apis/build/builds/77").count == runGETs + 1)
+        #expect(requests(server, to: "/timeline").count == 1)
+        #expect(await investigator.asking == 0)
+    }
+
     @Test func stoppingStopsAReadUnderWayAndReadsNothingMore() async throws {
         let server = StubServer()
         FailedRun.serve(server)

@@ -1758,41 +1758,42 @@ its first test runs with failures: ten requests, and one more for each hundred t
 five hundred. What was read is kept in memory, by run, for the last twenty runs opened, until someone else signs in to
 the Azure CLI or Azure DevOps is turned off, which stops the reads under way too, even those it let go of when someone
 else signed in (`BuildInvestigator.stop`). A read nobody waits for anymore, as the details close or show another pull
-request, is called off, unless someone else asks for the run meanwhile (`BuildInvestigator.giveUp`), and as someone else
-signs in, so are the reads and looks under way, and whoever waits for them, or for a look at whether a run kept from
-before ran again, gets nothing read as the last one (`forget`). It's used for ten minutes, or half a minute while the
-run is still going, unless its check says the run got further since, as when it started or finished
-(`PipelineRun.Phase`): opening it again, which always asks the investigator, within that time reads only the run, to
-tell whether it ran again since, which reads it all again, or nothing while it's going; what was read before shows
-meanwhile, for the builds still open and the last five that folded. Something that couldn't be read isn't kept, and says
-so, and a run that's gone, or that you can't read any more, lets go of what was read of it, as does one that ran again
-since, as a look at it or its check says, when it can't be read again (`BuildInvestigator.RunReplaced`); **Read Again**,
-beside when it was read, reads it anew. So does a change of its check, as the list reads it, such as a run that finished
-or runs again under the same ID; and a push or a retarget of its pull request, or Azure DevOps merging it again as its
-target moves, asks the investigator again, which says again whether the run built the latest commit, or reads it for the
-new target branch: at once while it's open, or as it opens again (`BuildInvestigationStore.Stamp`). The investigator
-shares a read under way with whoever asks for the run meanwhile, even to read it anew, so a read asked for then waits
-for it, and starts after, unless what's being read is what's asked for by then, as when a pull request is retargeted and
-back; one that comes back with the run not as far along as its check says by then, as when it finished meanwhile, is
-read again, once; and one that had read the run before they asked, and found it finished, is checked with a look at the
-run, which reads it again if it ran again since. Only one pull request's builds are open at a time, wherever its details
-show, beside the list or as a page over a work item's or another pull request's: opening one of another's folds them,
-and so do the details beside the list showing another pull request, or closing, for the one they showed; what shows of
-them goes, and so does what shows of a run its builds and checks don't list any more, such as one a newer run replaced.
-It shows, from what was read (`BuildInvestigationPanel.swift`): its stages, as the Pipelines page draws them
-(`StageFlow`); where it failed, from its stage to its task, without a name said twice in a row (`failurePlace`), or what
-it does while it's going (`progress`); whether it's the change's doing, the comparison's hints (`BuildHint`), each a
-sentence in its state's color, orange for an older commit or a pass on the same commit before, red when the target
-branch fails too, green when it passes, each but the first opening the run it names, and "may be flaky" only for a pass
-on the very same commit; while Send Work to Copilot is on, what Copilot does about it, and **✨ Explain the Failure** and
-**Fix** for one that failed ([About a failed build](#about-a-failed-build)); **Open Run**, and when it was read; its
-errors, each with where it is, unless its message starts with that very place, as a compiler writes it, its code, unless
-its message names it, and its step, unless it's the one that failed; how its tests went (`BuildTests.summary`), which,
-when they couldn't all be read, says how many failed at least, or that no failures are known rather than that none
-failed, and the first that failed, each with its class, how long it ran, its message, its first six lines with **Show
-More** for the rest, and, when you ask, its stack trace, with **Open Tests**; and the last 20 lines of the failed step's
-log, numbered, errors red, warnings orange and commands blue, in one text you can select across and scroll sideways, all
-200 that were read with **Show All**, and **Open Log** for the rest.
+request, is called off, unless someone else asks for the run meanwhile (`BuildInvestigator.giveUp`), and so is a look at
+a run kept from before, unless someone else shares it, and whoever waited for it gets nothing, not what's kept
+(`giveUpLook`); and as someone else signs in, so are the reads and looks under way, and whoever waits for them, or for a
+look at whether a run kept from before ran again, gets nothing read as the last one (`forget`). It's used for ten
+minutes, or half a minute while the run is still going, unless its check says the run got further since, as when it
+started or finished (`PipelineRun.Phase`): opening it again, which always asks the investigator, within that time reads
+only the run, to tell whether it ran again since, which reads it all again, or nothing while it's going; what was read
+before shows meanwhile, for the builds still open and the last five that folded. Something that couldn't be read isn't
+kept, and says so, and a run that's gone, or that you can't read any more, lets go of what was read of it, as does one
+that ran again since, as a look at it or its check says, when it can't be read again (`BuildInvestigator.RunReplaced`);
+**Read Again**, beside when it was read, reads it anew. So does a change of its check, as the list reads it, such as a
+run that finished or runs again under the same ID; and a push or a retarget of its pull request, or Azure DevOps merging
+it again as its target moves, asks the investigator again, which says again whether the run built the latest commit, or
+reads it for the new target branch: at once while it's open, or as it opens again (`BuildInvestigationStore.Stamp`). The
+investigator shares a read under way with whoever asks for the run meanwhile, even to read it anew, so a read asked for
+then waits for it, and starts after, unless what's being read is what's asked for by then, as when a pull request is
+retargeted and back; one that comes back with the run not as far along as its check says by then, as when it finished
+meanwhile, is read again, once; and one that had read the run before they asked, and found it finished, is checked with
+a look at the run, which reads it again if it ran again since. Only one pull request's builds are open at a time,
+wherever its details show, beside the list or as a page over a work item's or another pull request's: opening one of
+another's folds them, and so do the details beside the list showing another pull request, or closing, for the one they
+showed; what shows of them goes, and so does what shows of a run its builds and checks don't list any more, such as one
+a newer run replaced. It shows, from what was read (`BuildInvestigationPanel.swift`): its stages, as the Pipelines page
+draws them (`StageFlow`); where it failed, from its stage to its task, without a name said twice in a row
+(`failurePlace`), or what it does while it's going (`progress`); whether it's the change's doing, the comparison's hints
+(`BuildHint`), each a sentence in its state's color, orange for an older commit or a pass on the same commit before, red
+when the target branch fails too, green when it passes, each but the first opening the run it names, and "may be flaky"
+only for a pass on the very same commit; while Send Work to Copilot is on, what Copilot does about it, and **✨ Explain
+the Failure** and **Fix** for one that failed ([About a failed build](#about-a-failed-build)); **Open Run**, and when it
+was read; its errors, each with where it is, unless its message starts with that very place, as a compiler writes it,
+its code, unless its message names it, and its step, unless it's the one that failed; how its tests went
+(`BuildTests.summary`), which, when they couldn't all be read, says how many failed at least, or that no failures are
+known rather than that none failed, and the first that failed, each with its class, how long it ran, its message, its
+first six lines with **Show More** for the rest, and, when you ask, its stack trace, with **Open Tests**; and the last
+20 lines of the failed step's log, numbered, errors red, warnings orange and commands blue, in one text you can select
+across and scroll sideways, all 200 that were read with **Show All**, and **Open Log** for the rest.
 
 #### Its merge conflicts
 

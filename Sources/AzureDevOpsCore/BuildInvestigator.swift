@@ -636,7 +636,7 @@ public actor BuildInvestigator {
     private var isStopped = false
     /// The reads and looks under way, by their IDs, to call off when it stops or forgets.
     private var underway: [UUID: @Sendable () -> Void] = [:]
-    /// Who waits for each read under way, by the read's ID: a read none waits for any more is called off.
+    /// Who waits for each read or look under way, by its ID: one none waits for any more is called off.
     private var asks: [UUID: Set<Int>] = [:]
     private var lastAsk = 0
 
@@ -652,7 +652,8 @@ public actor BuildInvestigator {
     ///     as while it waited in the queue, or was still going, isn't it any more. A read under way that it waits for, which
     ///     comes back with the run not that far along, is read again, once.
     /// - Throws: `CancellationError` once it's stopped, when it's stopped or forgets meanwhile, or when its caller is called
-    ///   off, as when the details close or show another pull request: a read nobody waits for any more is called off;
+    ///   off, as when the details close or show another pull request: a read, or a look at a kept run, nobody waits for any
+    ///   more is called off;
     ///   `RunReplaced` when a look found the run ran again, or gone, since what was read of it before, and it couldn't be
     ///   read now; else `ADOError`.
     public func investigation(
@@ -679,6 +680,8 @@ public actor BuildInvestigator {
         if !refresh, reading[readKey] == nil {
             let kept = await stillKept(key, readKey: readKey, pullRequest: pullRequest, phase: phase)
             try checkForgot(since: asked.generation)
+            // Called off while it looked, as the details closed or showed another pull request: what's kept isn't for it.
+            try Task.checkCancellation()
             if let read = kept.read { return read.revised(for: pullRequest) }
             replaced = replaced || kept.replaced
         }
@@ -775,7 +778,8 @@ public actor BuildInvestigator {
     /// as it was, for a run still going; for one that had finished, once a look at the run that started after it was read
     /// says it hasn't been run again since, or the run can't be read. Nil when it has to be read again: when the look finds
     /// the run run again, or gone, what's kept goes, even if a read under way is waited for instead, and `replaced` says so.
-    /// Callers at the same time share a look, but what a read that started after it kept gets a look of its own.
+    /// Callers at the same time share a look, which is called off once none of them waits for it, but what a read that
+    /// started after it kept gets a look of its own.
     private func stillKept(
         _ key: Key, readKey: ReadKey, pullRequest: PullRequest, phase: PipelineRun.Phase?
     ) async -> (read: BuildInvestigationReader.Read?, replaced: Bool) {
@@ -784,9 +788,7 @@ public actor BuildInvestigator {
         guard held.read.investigation.run.status.isFinished else { return (held.read, false) }
         let generation = generation
         let check = checking[key].flatMap { $0.order > held.order ? $0 : nil } ?? startCheck(key, pullRequest: pullRequest)
-        waiting += 1
-        let look = await check.task.value
-        waiting -= 1
+        let look = await waitFor(check, of: key)
         underway[check.id] = nil
         if checking[key]?.id == check.id { checking[key] = nil }
         guard generation == self.generation else { return (nil, false) }
@@ -800,6 +802,11 @@ public actor BuildInvestigator {
             replaced = true
         case .unread:
             replaced = false
+        }
+        // Called off while it looked: nothing more is looked at, or read, for it.
+        guard !Task.isCancelled else {
+            tidy(key)
+            return (nil, replaced)
         }
         // A read started meanwhile is newer: it's waited for.
         guard reading[readKey] == nil, let current = kept[key] else {
@@ -819,9 +826,7 @@ public actor BuildInvestigator {
     private func stillTheRun(_ key: Key, as build: ADOBuild, after asked: Int, pullRequest: PullRequest) async -> Bool {
         let generation = generation
         let check = checking[key].flatMap { $0.order > asked ? $0 : nil } ?? startCheck(key, pullRequest: pullRequest)
-        waiting += 1
-        let look = await check.task.value
-        waiting -= 1
+        let look = await waitFor(check, of: key)
         underway[check.id] = nil
         if checking[key]?.id == check.id { checking[key] = nil }
         defer { tidy(key) }
@@ -916,6 +921,33 @@ public actor BuildInvestigator {
         }
     }
 
+    /// Waits for a look at a run, among those who wait for it (`asks`), as for a read: when its caller is called off, and
+    /// it was the last, the look is called off too, finding nothing (`Look.unread`), and whoever asks next looks anew.
+    private func waitFor(_ check: Checking, of key: Key) async -> Look {
+        lastAsk += 1
+        let ask = lastAsk, id = check.id, task = check.task
+        asks[id, default: []].insert(ask)
+        waiting += 1
+        let look = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { await self.giveUpLook(ask, on: id, key) }
+        }
+        waiting -= 1
+        stopAsking(ask, on: id)
+        return look
+    }
+
+    /// A caller stopped waiting for a look before it was done, as its task was called off: when it was the last, the look
+    /// is called off too, and whoever asks for the run next looks anew.
+    private func giveUpLook(_ ask: Int, on id: UUID, _ key: Key) {
+        guard stopAsking(ask, on: id), asks[id] == nil else { return }
+        underway.removeValue(forKey: id)?()
+        guard checking[key]?.id == id else { return }
+        checking[key] = nil
+        tidy(key)
+    }
+
     /// A caller stopped waiting for a read before it was done, as its task was called off: when it was the last, the read
     /// is called off too, and whoever asks for the run next reads it anew.
     private func giveUp(_ ask: Int, on id: UUID, _ readKey: ReadKey) {
@@ -926,8 +958,8 @@ public actor BuildInvestigator {
         tidy(readKey.run)
     }
 
-    /// Notes that a caller doesn't wait for a read any more: it's done, or it stopped waiting. False when that was noted
-    /// already.
+    /// Notes that a caller doesn't wait for a read or a look any more: it's done, or it stopped waiting. False when that was
+    /// noted already.
     @discardableResult
     private func stopAsking(_ ask: Int, on id: UUID) -> Bool {
         guard asks[id]?.remove(ask) != nil else { return false }
@@ -935,7 +967,7 @@ public actor BuildInvestigator {
         return true
     }
 
-    /// How many callers wait for each read under way, for tests.
+    /// How many callers wait for the reads and looks under way, for tests.
     var asking: Int { asks.values.reduce(0) { $0 + $1.count } }
 
     /// Lets go of what's known of a run once nothing of it is kept, read or looked at.
