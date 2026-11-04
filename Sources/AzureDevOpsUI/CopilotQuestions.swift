@@ -39,8 +39,19 @@ final class CopilotQuestions: ObservableObject {
         var earlier: CopilotAnswer?
         /// For a build, the run it's about: another run of it, as it runs again or after a push, isn't what it answered.
         var run: Int?
+        /// For a build, when the attempt of its run it's about finished, as its check said: rerunning its failed jobs makes
+        /// another attempt, under the same ID, which isn't what it answered either.
+        var attempt: Date?
 
         var isAsking: Bool { state == .asking }
+
+        /// Whether it's about a build's run as it is now: the run it asked about, by its ID, and the attempt of it, by when
+        /// its check said it finished. One asked without them, or of a run whose ID isn't known, is.
+        func isAbout(run: Int?, attempt: Date?) -> Bool {
+            if let asked = self.run, let run, asked != run { return false }
+            if let asked = self.attempt, asked != attempt { return false }
+            return true
+        }
     }
 
     @Published private(set) var questions: [Key: Question] = [:]
@@ -85,16 +96,18 @@ final class CopilotQuestions: ObservableObject {
     ///   - asked: what you asked, in your words, to show with the answer.
     ///   - earlier: what the session answered before, which it follows up on.
     ///   - run: for a build, the run it's about.
+    ///   - attempt: for a build, when the attempt of its run it's about finished, as its check said.
     func ask(
         _ prompt: String, asked: String?, earlier: CopilotAnswer? = nil, session: String, about part: PullRequestPart, run: Int? = nil,
-        of key: PRKey
+        attempt: Date? = nil, of key: PRKey
     ) {
         guard canAsk else { return }
         let id = Key(pullRequest: key, part: part)
         asking.removeValue(forKey: id)?.cancel()
         let words = asked?.trimmingCharacters(in: .whitespacesAndNewlines)
         let question = Question(
-            session: session, asked: words?.isEmpty == false ? words : nil, askedAt: Date(), state: .asking, earlier: earlier, run: run
+            session: session, asked: words?.isEmpty == false ? words : nil, askedAt: Date(), state: .asking, earlier: earlier, run: run,
+            attempt: attempt
         )
         questions[id] = question
         Log.app.info("Asked a Copilot session about a pull request")

@@ -184,6 +184,9 @@ struct CopilotWork: Equatable {
     var isTask: Bool
     /// When it was taken on, or, once it's over, when it ended.
     var since: Date
+    /// When it was taken on, whether it's over or not, and whichever task in its session keeps it now: a Push & Reply's,
+    /// when it started to push, which a run of the build that fails after it was a run of what it pushed, or since.
+    var takenAt: Date?
 
     /// Ongoing, rather than over.
     var isActive: Bool {
@@ -331,13 +334,13 @@ struct CopilotWork: Equatable {
             }
             return CopilotWork(
                 part: taken.part, purpose: purpose, state: state, session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask,
-                since: taken.since
+                since: taken.since, takenAt: taken.since
             )
         }
         let ended = entry.status.phase.isActive ? nil : entry.status.since
         return CopilotWork(
             part: taken.part, purpose: purpose, state: state(of: entry.status), session: entry.id, forkedFrom: entry.forkedFrom,
-            isTask: isTask, since: ended ?? taken.since
+            isTask: isTask, since: ended ?? taken.since, takenAt: taken.since
         )
     }
 
@@ -379,7 +382,8 @@ struct CopilotWork: Equatable {
         }
         if prompt.overlapped { state = .unknown(copied: prompt.copied) }
         return CopilotWork(
-            part: part, purpose: purpose, state: state, session: prompt.session, forkedFrom: prompt.forkedFrom, isTask: false, since: since
+            part: part, purpose: purpose, state: state, session: prompt.session, forkedFrom: prompt.forkedFrom, isTask: false, since: since,
+            takenAt: prompt.sentAt
         )
     }
 }

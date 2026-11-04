@@ -186,6 +186,12 @@ import Testing
         #expect(!work(.done(nil), .pushAndReply).shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(600))))
         #expect(work(.done(nil)).shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(600))))
         #expect(work(.failed(nil), .pushAndReply).shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(600))))
+        // By when it started to push, not when it ended: a run of what it pushed that failed while it replied on threads
+        // ends it too, and so it stays as a later task in the session keeps it.
+        var replied = work(.done(nil), .pushAndReply)
+        replied.takenAt = now.addingTimeInterval(-600)
+        #expect(!replied.shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(-60))))
+        #expect(replied.shows(onBuild: check(.failed, completedAt: now.addingTimeInterval(-900))))
     }
 
     /// What's Left says Copilot's on what's left by what works on its threads, builds and conflicts now, BriefBar's tasks and
@@ -229,6 +235,24 @@ import Testing
         settings.copilotSentPrompts = [fixing]
         settings.copilotEnabled = false
         #expect(store.onIt(record).isEmpty)
+    }
+
+    /// Two of a pull request's policies can run the same pipeline: each build's row has its own composer, words and send,
+    /// though what Copilot does is the pipeline's.
+    @Test func eachBuildsRowHasItsOwnComposer() {
+        let first = CopilotComposing(part: .build(31), ask: .fix, row: "build-1")
+        let second = CopilotComposing(part: .build(31), ask: .fix, row: "build-2")
+        #expect(first != second)
+        let drafts = CopilotDrafts()
+        drafts.texts[first] = "Skip weekends"
+        #expect(drafts.texts[second] == nil)
+        let asking = CopilotAsking(
+            ask: .fix, part: .build(31), action: .fixBuild, row: "build-2",
+            fix: { _, _ in CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }, question: { _, _ in "" }
+        )
+        #expect(asking.draftKey == second)
+        // A thread's has one row.
+        #expect(CopilotComposing(part: .thread(11), ask: .fix) == CopilotComposing(part: .thread(11), ask: .fix, row: nil))
     }
 
     /// The bar at the details' foot says what's ready by what it fixed: comments' fixes, builds', and the conflicts'

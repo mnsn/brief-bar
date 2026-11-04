@@ -47,6 +47,27 @@ import Testing
         #expect(questions.question(about: .thread(11), of: key) == nil)
     }
 
+    /// What a session said of a build is about the run it asked about, and the attempt of it: another run, as after a
+    /// push, or another attempt of the same one, as when its failed jobs ran again under the same ID, isn't what it answered.
+    @Test func aBuildsAnswerIsAboutItsRunAndAttempt() async throws {
+        let (questions, _) = questions()
+        questions.askForTests = { _, _ in .success("main broke it.") }
+        let finished = Date().addingTimeInterval(-600)
+        questions.ask("Why?", asked: nil, session: session, about: .build(31), run: 204_417, attempt: finished, of: key)
+        try await settle { questions.question(about: .build(31), of: key)?.isAsking == false }
+        let answer = try #require(questions.question(about: .build(31), of: key))
+        #expect(answer.run == 204_417)
+        #expect(answer.attempt == finished)
+        #expect(answer.isAbout(run: 204_417, attempt: finished))
+        // Another run, or another attempt: running again, then finished again.
+        #expect(!answer.isAbout(run: 204_418, attempt: finished))
+        #expect(!answer.isAbout(run: 204_417, attempt: nil))
+        #expect(!answer.isAbout(run: 204_417, attempt: finished.addingTimeInterval(300)))
+        // Asked without knowing them, it's about any.
+        let unknown = CopilotQuestions.Question(session: session, asked: nil, askedAt: finished, state: .answered("main broke it."))
+        #expect(unknown.isAbout(run: 204_418, attempt: nil))
+    }
+
     @Test func saysWhyItCouldntAnswer() async throws {
         let (questions, _) = questions()
         questions.askForTests = { _, _ in .failure(.unsupported(version: "1.0.80")) }

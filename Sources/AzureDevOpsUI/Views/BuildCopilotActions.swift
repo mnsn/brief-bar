@@ -22,12 +22,14 @@ extension Check.State {
 
 extension CopilotWork {
     /// Whether it shows on a build: while Copilot is at it, or the build doesn't pass. A rerun, or a push, that passes ends
-    /// it; so does a run that failed after what Copilot pushed, which the build is to fix again.
+    /// it; so does a run that failed after Copilot started to push, which built what it pushed, or ran since: the build is
+    /// to fix again.
     func shows(onBuild check: Check?) -> Bool {
         if isActive { return true }
         guard let check else { return true }
         if check.state.needsNoFix { return false }
-        if purpose == .pushAndReply, case .done = state, check.state == .failed, let failedAt = check.completedAt, failedAt > since {
+        if purpose == .pushAndReply, case .done = state, check.state == .failed, let failedAt = check.completedAt,
+           failedAt > takenAt ?? since {
             return false
         }
         return true
@@ -47,13 +49,14 @@ enum BuildCopilot {
         return work
     }
 
-    /// What a session said of a run of it with Explain: one about another run isn't this one's.
+    /// What a session said of a run of it with Explain: one about another run isn't this one's, nor one about another
+    /// attempt of it, as when its failed jobs ran again under the same ID.
     static func question(
         about line: PullRequestPanel.CheckLine, run: Int?, of key: PRKey, questions: CopilotQuestions, preview: CopilotActionsPreview?
     ) -> CopilotQuestions.Question? {
         guard let part = line.check?.part else { return nil }
         let question = preview?.question(about: part) ?? questions.question(about: part, of: key)
-        guard let question, question.run == nil || run == nil || question.run == run else { return nil }
+        guard let question, question.isAbout(run: run, attempt: line.check?.completedAt) else { return nil }
         return question
     }
 
@@ -235,9 +238,9 @@ struct BuildCopilotActions<Trailing: View>: View {
     private var record: PRRecord? { store.record(for: item.key) }
     private var part: PullRequestPart? { line.check?.part }
 
-    /// The composer in place that's open on it, if one is.
+    /// The composer in place that's open on it, if one is: on its row, where another policy's runs the same pipeline.
     private var asking: CopilotAsk? {
-        guard let part, composing?.part == part else { return nil }
+        guard let part, composing?.part == part, composing?.row == line.id else { return nil }
         return composing?.ask
     }
 
@@ -314,7 +317,7 @@ struct BuildCopilotActions<Trailing: View>: View {
             .font(size: 11)
         }
         .onAppear {
-            if let part, let composer = preview?.composer(about: part) { composing = CopilotComposing(part: part, ask: composer.ask) }
+            if let part, let composer = preview?.composer(about: part) { composing = CopilotComposing(part: part, ask: composer.ask, row: line.id) }
         }
     }
 
@@ -360,12 +363,12 @@ struct BuildCopilotActions<Trailing: View>: View {
     private func open(_ ask: CopilotAsk) {
         guard let part else { return }
         copied = nil
-        composing = CopilotComposing(part: part, ask: ask)
+        composing = CopilotComposing(part: part, ask: ask, row: line.id)
     }
 
     /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
     private func close(_ ask: CopilotAsk) {
-        guard let part, composing == CopilotComposing(part: part, ask: ask) else { return }
+        guard let part, composing == CopilotComposing(part: part, ask: ask, row: line.id) else { return }
         composing = nil
         Task { @MainActor in focused = ask }
     }
@@ -463,7 +466,7 @@ struct BuildComposer: View {
         let report = FailedBuildReport(investigation, name: line.run.name)
         let part = part
         return CopilotAsking(
-            ask: ask, part: part, action: .fixBuild, run: investigation.run.id,
+            ask: ask, part: part, action: .fixBuild, run: investigation.run.id, attempt: line.check?.completedAt, row: line.id,
             fix: { how, answer in
                 guard let record else { return CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }
                 return CopilotSending.Fix(
