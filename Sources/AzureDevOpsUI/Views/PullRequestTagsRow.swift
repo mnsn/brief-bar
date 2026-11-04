@@ -245,10 +245,11 @@ struct PullRequestTagsRow: View {
             Task { @MainActor in focus = .field }
         }
         .onChange(of: typed) {
-            // What you typed chooses the best match, which VoiceOver hears as it changes; nothing typed, nothing chosen.
-            let rows = choices.rows
-            highlighted = PullRequestTag.name(typed) == nil || rows.isEmpty ? nil : 0
-            announceChosen(rows)
+            // What you typed chooses the best match, which VoiceOver hears as it changes; nothing typed, or a tag the pull
+            // request has, nothing chosen, so Return doesn't add another.
+            let choices = choices
+            highlighted = PullRequestTag.name(typed) == nil || choices.rows.isEmpty || choices.alreadyOn != nil ? nil : 0
+            announceChosen(choices.rows)
         }
     }
 
@@ -370,11 +371,12 @@ struct PullRequestTagsRow: View {
     }
 
     /// ↑ or ↓: the next row. With something typed, one is always chosen, what you typed as a new tag among them; with
-    /// nothing typed, up from the first chooses none.
+    /// nothing typed, or a tag the pull request has, up from the first chooses none.
     private func move(by step: Int) {
+        let choices = choices
         let rows = choices.rows
         guard !rows.isEmpty else { return }
-        let lowest = PullRequestTag.name(typed) == nil ? -1 : 0
+        let lowest = PullRequestTag.name(typed) == nil || choices.alreadyOn != nil ? -1 : 0
         let next = min(max((highlighted ?? -1) + step, lowest), rows.count - 1)
         highlighted = next < 0 ? nil : next
         announceChosen(rows, always: true)

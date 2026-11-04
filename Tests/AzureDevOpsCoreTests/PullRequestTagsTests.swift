@@ -98,10 +98,28 @@ import Testing
         let choices = TagChoices(typed: "EU", used: ["europe"], seen: seen, current: [])
         #expect(choices.suggestions == ["Europe", "eu-west", "deploy-eu", "neutral"])
         #expect(choices.newTag == "EU")
-        #expect(TagChoices.match("deploy-eu", "eu") == 1)
-        #expect(TagChoices.match("deploy_eu", "eu") == 1)
-        #expect(TagChoices.match("deployeu", "eu") == 2)
+        #expect(TagChoices.match("eu", "eu") == 0)
+        #expect(TagChoices.match("eu-west", "eu") == 1)
+        #expect(TagChoices.match("deploy-eu", "eu") == 2)
+        #expect(TagChoices.match("deploy_eu", "eu") == 2)
+        #expect(TagChoices.match("deployeu", "eu") == 3)
         #expect(TagChoices.match("asia", "eu") == nil)
+    }
+
+    /// What you typed, when it's a tag, comes first, however recently a longer one was added, or however many pull requests
+    /// have it: Return adds what you typed, not another tag.
+    @Test func suggestsWhatYouTypedFirstWhenItsATag() {
+        let seen = [["release-notes", "hotfix-2"], ["release", "hotfix-2"], ["hotfix"]].map { $0.map { PullRequestTag($0) } }
+        #expect(TagChoices(typed: "release", used: ["release-notes"], seen: seen, current: []).suggestions
+            == ["release", "release-notes"])
+        let hotfix = TagChoices(typed: "HOTFIX", used: [], seen: seen, current: [])
+        #expect(hotfix.suggestions == ["hotfix", "hotfix-2"])
+        #expect(hotfix.newTag == nil)
+        // One the pull request has: it says so, and offers only the others.
+        let had = TagChoices(typed: "hotfix", used: [], seen: seen, current: [PullRequestTag("hotfix")])
+        #expect(had.alreadyOn == "hotfix")
+        #expect(had.suggestions == ["hotfix-2"])
+        #expect(had.newTag == nil)
     }
 
     /// What you typed is a new tag, unless it's a suggestion, or the pull request has it, ignoring letter case.

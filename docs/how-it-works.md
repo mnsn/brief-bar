@@ -1538,9 +1538,10 @@ a token, never does.
 
 As you type, the field suggests (`TagChoices`) the tags you added in the pull request's project, the latest first, then
 those on the pull requests BriefBar read there, the most used first, then by name, but the pull request's own, six at most:
-those whose names start with what you typed, then those with a word that does, then those that have it anywhere,
-ignoring letter case; what you typed, when it's none of them nor one the pull request has, is a new tag, last. The best
-match is chosen as you type, and with something typed one always is, so Return always adds a row that shows; VoiceOver
+the one that's what you typed, then those whose names start with it, then those with a word that does, then those that
+have it anywhere, ignoring letter case; what you typed, when it's none of them nor one the pull request has, is a new tag,
+last. The best match is chosen as you type, and with something typed one always is, so Return always adds a row that
+shows, but for a tag the pull request has already, when none is and the field says so; VoiceOver
 hears which, and how many there are, as it changes. ↑ and ↓ choose another; Tab completes the one chosen in the field,
 sending nothing, and moves on, as it does anywhere, when there's nothing to complete; Return adds it; and Esc closes the
 field (`InlineComposerOpen`). BriefBar remembers the tags you add, by their names, up to 20 for each project, by its

@@ -152,9 +152,9 @@ extension ADOClient {
 // MARK: - Suggestions
 
 /// What adding a tag to a pull request offers as you type: the tags you added in its project, the latest first, then those on
-/// the pull requests BriefBar read there, the most used first, but for the pull request's own; those whose names start with
-/// what you typed first, then those with a word that does, such as eu in deploy-eu, then those that have it anywhere,
-/// ignoring letter case. What you typed is a new tag when it's none of them, nor one the pull request has.
+/// the pull requests BriefBar read there, the most used first, but for the pull request's own; the one that's what you typed
+/// first, then those whose names start with it, then those with a word that does, such as eu in deploy-eu, then those that
+/// have it anywhere, ignoring letter case. What you typed is a new tag when it's none of them, nor one the pull request has.
 public struct TagChoices: Sendable, Equatable {
     /// The tags to add, the best first, as Azure DevOps spells them.
     public var suggestions: [String]
@@ -223,18 +223,20 @@ public struct TagChoices: Sendable, Equatable {
         }
     }
 
-    /// How well a name matches what you typed: 0 when it starts with it, 1 when one of its words does, 2 when it has it
-    /// anywhere; nil when it doesn't. Everything matches nothing typed, as well as anything.
+    /// How well a name matches what you typed, the best first: 0 when it's what you typed, 1 when it starts with it, 2 when
+    /// one of its words does, 3 when it has it anywhere; nil when it doesn't. Everything matches nothing typed, as well as
+    /// anything.
     static func match(_ name: String, _ typed: String) -> Int? {
         guard !typed.isEmpty else { return 0 }
         let name = name.lowercased()
-        if name.hasPrefix(typed) { return 0 }
+        if name == typed { return 0 }
+        if name.hasPrefix(typed) { return 1 }
         var wordStart = false
         for index in name.indices {
-            if wordStart, name[index...].hasPrefix(typed) { return 1 }
+            if wordStart, name[index...].hasPrefix(typed) { return 2 }
             wordStart = !(name[index].isLetter || name[index].isNumber)
         }
-        return name.contains(typed) ? 2 : nil
+        return name.contains(typed) ? 3 : nil
     }
 }
 

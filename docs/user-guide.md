@@ -456,9 +456,10 @@ ones you review come with the lists BriefBar reads anyway, and those of a pull r
 read on their own, one request, as its details show on screen. With **Make Changes in Azure DevOps** on, while it's open,
 **✕** on a tag removes it, and **Add Tag**, after them, opens a field. As you type, it suggests the tags you
 added in that project, the latest first, then those on the pull requests BriefBar read there, the most used first, but
-the pull request's own: those whose names start with what you typed first, then those with a word that does, such as `eu`
-in `deploy-eu`, then those that have it anywhere, ignoring letter case. What you typed, when it's none of them, is a new
-tag, last; the best match is chosen as you type, and VoiceOver says which. **↑** and **↓** choose another, **Tab**
+the pull request's own: the tag that's what you typed first, then those whose names start with it, then those with a word
+that does, such as `eu` in `deploy-eu`, then those that have it anywhere, ignoring letter case. What you typed, when it's
+none of them, is a new tag, last; the best match is chosen as you type, and VoiceOver says which, but nothing is when the
+pull request has that tag already, which the field says. **↑** and **↓** choose another, **Tab**
 completes the one chosen in the field, without sending anything, and **Return** adds it, or what you typed, and the field
 stays open for another; **Esc** or its **✕** closes it, and it's one at a time with Explain, Fix and Reply. BriefBar remembers the tags
 you add, up to 20 for each project, in its settings, to suggest them, until you turn the setting off. It doesn't suggest
