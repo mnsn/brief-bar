@@ -649,6 +649,38 @@ import Testing
         #expect(engine.reads == 2)
     }
 
+    /// A pull request whose tags are unknown, as one sent to you, that a Copilot session says it changed while their first
+    /// read is under way: that read doesn't count for it either, so its details read them again, once.
+    @Test func unknownTagsASessionChangedDuringTheirFirstReadAreReadAgain() async throws {
+        let (store, changes, _) = live()
+        let start = Date()
+        var snapshot = DemoData.snapshot(now: store.now)
+        snapshot.records[try #require(snapshot.records.firstIndex { $0.id == key })].tags = nil
+        store.receive(snapshot)
+        let engine = Engine(store: store, snapshot: snapshot, now: start)
+        engine.answer = .success([PullRequestTag("deploy-eu")])
+        changes.now = { engine.now }
+        changes.checkEvery = .milliseconds(10)
+        changes.readTags = { key in await engine.readTags(key) }
+        let page = "pull requests in window 1"
+        let following = Task { await changes.follow(key, on: page) }
+        defer { following.cancel() }
+
+        engine.holdsNext = true
+        changes.setVisible(true, for: page)
+        try await waitUntil { engine.isHolding }
+        engine.now = start.addingTimeInterval(1)
+        engine.answer = .success(["deploy-eu", "hotfix"].map { PullRequestTag($0) })
+        changes.changedElsewhere([key])
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(engine.reads == 1)
+        engine.letGo()
+        try await waitUntil { engine.reads == 2 && !changes.isReading(key) }
+        #expect(tags(store) == ["deploy-eu", "hotfix"])
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(engine.reads == 2)
+    }
+
     /// Azure DevOps turned off calls off the reads of tags under way, as one waiting for the Azure CLI's sign-in: what it
     /// answers after does nothing, and nothing more is read or changed, though the details still show.
     @Test func stoppingCallsOffTheReadsUnderWay() async throws {
