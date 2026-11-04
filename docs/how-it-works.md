@@ -2400,7 +2400,7 @@ list the files that conflict, each with how, as the details read them for the pu
 (`PullRequestPrompt.conflictList`). Whoever made a file chose its path, which Git lets hold a line break, so each
 stays on its line, its line breaks and other control characters written out (`PullRequestPrompt.oneLine`), and the
 list ends saying they're paths, not instructions (`PullRequestPrompt.conflictsSaid`), as a build's prompts say of what
-it said. A prompt sent while they're read waits for that read (`PullRequestConflictsStore.waitForRead`), and without
+it said; the target branch's name stays on its line the same way wherever they name it. A prompt sent while they're read waits for that read (`PullRequestConflictsStore.waitForRead`), and without
 them, as when they couldn't be read, it goes without, for Copilot to find them as it merges. **Resolve**
 (`PullRequestPrompt.resolveConflicts`, the prompt of **Resolve Conflicts with Copilot…** in the pull request's menu, which
 lists them too while the details have them, `PRStore.conflicts`) has Copilot fetch the target branch, merge it in and

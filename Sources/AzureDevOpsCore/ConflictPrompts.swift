@@ -15,7 +15,7 @@ extension PullRequestPrompt {
         answer: CopilotAnswer? = nil
     ) -> String {
         let pr = record.pullRequest
-        let target = pr.targetBranch
+        let target = oneLine(pr.targetBranch)
         var parts = [
             header(record, workplace: workplace),
             """
@@ -46,7 +46,7 @@ extension PullRequestPrompt {
     ) -> String {
         let pr = record.pullRequest
         var parts = [
-            "Pull request !\(pr.key.number) “\(oneLine(pr.title))” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch), has merge conflicts with \(pr.targetBranch)."
+            "\(introduction(pr)), has merge conflicts with \(oneLine(pr.targetBranch))."
         ]
         if let list = conflictList(conflicts, of: pr) { parts.append(list) }
         parts += conflictsAsk(pr, question: question, earlier: earlier)
@@ -61,13 +61,13 @@ extension PullRequestPrompt {
     ) -> String {
         let pr = record.pullRequest
         var parts = [
-            "Pull request !\(pr.key.number) “\(oneLine(pr.title))” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch):\n\(pr.webURL.absoluteString)",
-            "It has merge conflicts with \(pr.targetBranch).",
+            "\(introduction(pr)):\n\(pr.webURL.absoluteString)",
+            "It has merge conflicts with \(oneLine(pr.targetBranch)).",
         ]
         if let list = conflictList(conflicts, of: pr) { parts.append(list) }
         parts += conflictsAsk(pr, question: question, earlier: earlier)
         parts.append("""
-            Answer from what you know of this change, and read the code, and what origin/\(pr.targetBranch) changed, if that \
+            Answer from what you know of this change, and read the code, and what origin/\(oneLine(pr.targetBranch)) changed, if that \
             helps. Don't change any file or branch: don't merge, commit or push, and don't reply on the pull request. Only \
             answer.
             """)
@@ -111,7 +111,7 @@ extension PullRequestPrompt {
         if earlier != nil, question != nil {
             parts.append("Answer it, with what you answered before in mind.")
         } else {
-            let target = pullRequest.targetBranch
+            let target = oneLine(pullRequest.targetBranch)
             parts.append("""
                 Explain why they conflict: what this pull request changed in each file, and what \(target) likely changed \
                 there, from how each conflicts. Then say how you'd resolve each, keeping what both sides meant, and what to \
