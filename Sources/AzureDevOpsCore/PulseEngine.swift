@@ -462,14 +462,17 @@ public actor PulseEngine {
 
     /// Reads a pull request's details again now, as after a change BriefBar may or may not have made, such as one Azure
     /// DevOps didn't answer in time: two requests, unless it isn't listed, or its organization waits on a sign-in, or Azure
-    /// DevOps asked to slow down. One that isn't read now is read at the next refresh.
-    public func readAgain(_ key: PRKey) async {
+    /// DevOps asked to slow down. Returns whether its threads were read now, and taken: one that isn't read now is read at
+    /// the next refresh.
+    @discardableResult
+    public func readAgain(_ key: PRKey) async -> Bool {
         entries[key] = nil
         guard let pr = active[key]?.pullRequest, !waitingOnSignIn.contains(key.organization.lowercased()),
               await client.gate.remainingWait() == nil
-        else { return }
-        _ = await fetchDetails([pr], configuration: configuration)
+        else { return false }
+        let read = await fetchDetails([pr], configuration: configuration)
         publish()
+        return read.taken.contains(key)
     }
 
     /// One refresh: the lists, then the details the planner picks.
@@ -637,7 +640,7 @@ public actor PulseEngine {
             throttled = .throttled(retryAfter: wait)
         }
         if throttled == nil {
-            throttled = await fetchDetails(keys.compactMap { listed[$0]?.pullRequest }, configuration: configuration)
+            throttled = await fetchDetails(keys.compactMap { listed[$0]?.pullRequest }, configuration: configuration).throttled
         }
         if throttled == nil {
             throttled = await readBuildFailures(at: startedAt, interval: configuration.interval)
@@ -798,16 +801,19 @@ public actor PulseEngine {
         merges = [:]
     }
 
-    /// Fetches details a few pull requests at a time. Returns the error if Azure DevOps asked to slow down. Those of a pull
-    /// request whose thread BriefBar changed since this started may not have the change: its threads stay as they are, with
-    /// the change, and it's read again at the next refresh.
-    private func fetchDetails(_ pullRequests: [PullRequest], configuration: Configuration) async -> ADOError? {
-        guard !pullRequests.isEmpty else { return nil }
+    /// Fetches details a few pull requests at a time. Returns the error if Azure DevOps asked to slow down, and the pull
+    /// requests whose details were read and taken. Those of a pull request whose thread BriefBar changed since this started
+    /// may not have the change: its threads stay as they are, with the change, and it's read again at the next refresh.
+    private func fetchDetails(
+        _ pullRequests: [PullRequest], configuration: Configuration
+    ) async -> (throttled: ADOError?, taken: Set<PRKey>) {
+        guard !pullRequests.isEmpty else { return (nil, []) }
         let client = self.client
         let fetchedAt = now()
         let changesBefore = changes
         var queue = pullRequests[...]
         var throttled: ADOError?
+        var taken: Set<PRKey> = []
         await withTaskGroup(of: (PullRequest, DetailsRead).self) { group in
             for _ in 0..<max(1, configuration.concurrency) {
                 guard let pr = queue.popFirst() else { break }
@@ -819,6 +825,7 @@ public actor PulseEngine {
                 case (.success(let policies), .success(let threads)) where !isBeforeChange:
                     let fetched = PRDetails(fetchedAt: fetchedAt, pullRequest: pr, evaluations: policies, threads: threads)
                     details[pr.key] = fetched
+                    taken.insert(pr.key)
                     entries[pr.key] = RefreshPlanner.Entry(
                         fetchedAt: fetchedAt, fingerprint: pr.fingerprint, isBusy: fetched.hasChecksInProgress,
                         isQuiet: isQuiet(pr, fetched, configuration: configuration, at: fetchedAt)
@@ -846,7 +853,7 @@ public actor PulseEngine {
                 }
             }
         }
-        return throttled
+        return (throttled, taken)
     }
 
     private func isQuiet(_ pr: PullRequest, _ details: PRDetails, configuration: Configuration, at date: Date) -> Bool {

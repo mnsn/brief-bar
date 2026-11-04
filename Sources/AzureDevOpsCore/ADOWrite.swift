@@ -236,6 +236,9 @@ public enum ADOWriteProblem: Sendable, Equatable {
     case slowedDown
     /// No answer came in time: it may have been made.
     case unanswered
+    /// A reply that may have gone, as one Azure DevOps didn't answer in time, whose thread couldn't be read again to tell:
+    /// it isn't sent again until it can be.
+    case unconfirmed
     /// Azure DevOps refused it, with what it said, when it said something: never logged.
     case refused(String?)
     /// Anything else, as BriefBar says it.
@@ -260,7 +263,7 @@ public enum ADOWriteProblem: Sendable, Equatable {
 
     /// Whether it may have been made after all, so that reading the thread again tells.
     public var mayHaveGone: Bool {
-        self == .unanswered || self == .offline || { if case .failed = self { true } else { false } }()
+        self == .unanswered || self == .offline || self == .unconfirmed || { if case .failed = self { true } else { false } }()
     }
 
     /// What happened, in a sentence for the thread: "Azure DevOps says you may not reply here."
@@ -281,8 +284,12 @@ public enum ADOWriteProblem: Sendable, Equatable {
             return "Azure DevOps asked BriefBar to slow down: try again in a minute."
         case .unanswered:
             return kind == .reply
-                ? "Azure DevOps didn't answer in time, so your reply may have gone: BriefBar reads the thread again, so look before you send it again."
+                ? "Azure DevOps didn't answer in time, so your reply may have gone: BriefBar reads the thread again, and won't send it twice."
                 : "Azure DevOps didn't answer in time: BriefBar reads the thread again, to show how it stands."
+        case .unconfirmed:
+            return kind == .reply
+                ? "Your reply may have gone already, and BriefBar couldn't read the thread to check, so it didn't send it again: try again in a moment."
+                : "BriefBar couldn't read the thread again: try again in a moment."
         case .refused(let said?):
             return "Azure DevOps refused it: \(said)"
         case .refused(nil):

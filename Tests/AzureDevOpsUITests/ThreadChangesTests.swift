@@ -124,6 +124,64 @@ import Testing
         #expect(changes.draft(threadKey).isEmpty)
     }
 
+    /// A reply Azure DevOps didn't answer in time may have gone: it isn't sent again until its thread, read again for it,
+    /// tells. Not while the thread can't be read, which keeps what you wrote; and not when the thread has it.
+    @Test func aReplyThatMayHaveGoneIsntSentAgainUnchecked() async throws {
+        let (store, changes, azure) = live()
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        changes.keep("Capped it.", for: threadKey)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key) == false)
+        #expect(changes.state(of: threadKey) == .failed(.unanswered, .reply(then: nil)))
+        azure.fails = nil
+        let sent = azure.sent.count
+
+        var reads = 0
+        changes.readThreads = { _ in
+            reads += 1
+            return nil
+        }
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key) == false)
+        #expect(reads == 1)
+        #expect(azure.sent.count == sent)
+        #expect(changes.state(of: threadKey) == .failed(.unconfirmed, .reply(then: nil)))
+        #expect(changes.draft(threadKey) == "Capped it.")
+
+        // Read, it has the reply: it went, and goes no more.
+        var read = try thread(store)
+        read.comments.append(ReviewComment(id: 3, author: DemoData.me, text: "Capped it.", publishedAt: store.now))
+        let threads = [read]
+        changes.readThreads = { _ in
+            reads += 1
+            return threads
+        }
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
+        #expect(reads == 2)
+        #expect(azure.sent.count == sent)
+        #expect(changes.draft(threadKey).isEmpty)
+        #expect(changes.state(of: threadKey) == nil)
+    }
+
+    /// Read, a thread that hasn't the reply that may have gone gets it, once; and the next reply goes without reading it.
+    @Test func aReplyThatDidntGoIsSentOnceItsThreadSaysSo() async throws {
+        let (store, changes, azure) = live()
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key) == false)
+        azure.fails = nil
+        var reads = 0
+        let threads = [try thread(store)]
+        changes.readThreads = { _ in
+            reads += 1
+            return threads
+        }
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
+        #expect(reads == 1)
+        #expect(azure.sent.map(\.kind) == [.reply, .reply])
+        #expect(await changes.reply("And tested it.", to: try thread(store), of: key))
+        #expect(reads == 1)
+        #expect(azure.sent.count == 3)
+    }
+
     /// A status goes as you chose it, and shows at once; it can be set back the same way.
     @Test func aStatusGoesAndShowsAtOnce() async throws {
         let (store, changes, azure) = live()

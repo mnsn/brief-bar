@@ -282,8 +282,12 @@ import Testing
         #expect(ADOWriteProblem.offline.sentence(.reply) == "You're offline. Your reply is kept: send it once you're back.")
         #expect(ADOWriteProblem.refused("Too long").sentence(.reply) == "Azure DevOps refused it: Too long")
         #expect(ADOWriteProblem.refused(nil).sentence(.setStatus) == "Azure DevOps refused it.")
+        // A reply that may have gone isn't sent again until its thread was read again.
+        #expect(ADOWriteProblem.unanswered.sentence(.reply).hasSuffix("won't send it twice."))
+        #expect(ADOWriteProblem.unconfirmed.sentence(.reply).contains("didn't send it again"))
         // What may have been made all the same is read again.
         #expect(ADOWriteProblem.unanswered.mayHaveGone)
+        #expect(ADOWriteProblem.unconfirmed.mayHaveGone)
         #expect(!ADOWriteProblem.notAllowed.mayHaveGone)
         #expect(!ADOWriteProblem.closed.mayHaveGone)
     }

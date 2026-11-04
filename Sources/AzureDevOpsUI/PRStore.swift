@@ -740,6 +740,13 @@ final class PRStore: ObservableObject {
         Task { await engine.readAgain(key) }
     }
 
+    /// A pull request's threads as Azure DevOps has them now, read again for it, as before a reply that may have gone is sent
+    /// again; nil when they couldn't be read now, and in the demo.
+    func threadsReadAgain(_ key: PRKey) async -> [ReviewThread]? {
+        guard mode == .live, let engine, await engine.readAgain(key) else { return nil }
+        return await engine.currentSnapshot().records.first { $0.id == key }?.details?.threads
+    }
+
     /// A pull request's changes with another: a status it sets replaces any set before on that thread, whose comments stay,
     /// so that a status set back, as Reactivate after Resolve, isn't undone by the one before it until a snapshot has both.
     static func adding(_ change: ThreadChange, to made: [ThreadChange]) -> [ThreadChange] {
