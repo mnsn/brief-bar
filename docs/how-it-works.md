@@ -2328,9 +2328,10 @@ makes its answers up (`DemoData.explanation`), and runs nothing.
 that took it on, as for a build and conflicts. A task of BriefBar's keeps what it took on with its run, threads, builds
 and conflicts, by their kinds and IDs, each with when (`CopilotRun.taken`, `PullRequestPart`); going on with a session
 whose changes aren't pushed, on the same pull request, keeps what it took on before, with how that ended. Push & Reply
-takes on what it ships, and the threads its prompt lists, to reply on (`TakenPart.ships`): the others
-the session fixed stay as they were, fixed and not pushed, with when, since it doesn't reply on them, and a thread that
-another session fixed since stays that one's. Once it's done, those it listed say they're pushed and replied, and a later
+takes on what it ships (`TakenPart.ships`): the threads its prompt lists, to reply on, and the builds and conflicts the
+session fixed and hasn't pushed, which its push takes along, however it's sent (`CopilotTasksStore.unpushedParts`). The
+other threads the session fixed stay as they were, fixed and not pushed, with when, since it doesn't reply on them, and a
+thread that another session fixed since stays that one's. Once it's done, those it listed say they're pushed and replied, and a later
 task in the session keeps them so, for an older fix of one of them, elsewhere, not to say it's ready again
 (`CopilotRun.taken(goingOnWith:on:taking:for:at:)`). A
 prompt sent to one of the Copilot app's sessions, or copied for you to paste there, is kept by references only, never what
@@ -2399,7 +2400,8 @@ What Copilot does about the build is said on its row, open or not (`BuildWorkLin
 backoff’**. Once the build passes, as when it ran again or after a push, or doesn't apply, its line goes, unless Copilot
 is still at it (`CopilotWork.shows(onBuild:)`), and its fix isn't counted in the bar at the details' foot any more
 (`PRRecord.partsToFix`). Push & Reply ships it with the threads its session fixed, or alone, replying on no thread then
-(`PullRequestPrompt.pushAndReply(_:workplace:threads:)`).
+(`PullRequestPrompt.pushAndReply(_:workplace:threads:)`), and any Push & Reply in the session that fixed it, from the
+pull request's menu too, takes it along, so it says it's pushed once that's done.
 
 ### Notifications
 
