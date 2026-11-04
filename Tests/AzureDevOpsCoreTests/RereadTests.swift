@@ -109,6 +109,59 @@ private final class Hold: Sendable {
         #expect(Self.count(server, "/pullRequests/7/workitems") == 2)
     }
 
+    /// A session said it changed a linked work item while it was read for the first time: that read doesn't count either,
+    /// and it's read again in the same refresh.
+    @Test func aWorkItemsFirstReadUnderWayDoesntCountForARereadAskedMeanwhile() async throws {
+        let server = StubServer()
+        let hold = Hold()
+        let reads = Mutex(0)
+        server.on("/pullRequests/7/workitems", json: Fixture.list([["id": "5101"]]))
+        server.on("/_apis/wit/workitems") { _ in
+            var reply = StubServer.Reply.json(Fixture.list([WorkFixture.workItem(5101, "User Story", "Save items for later")]))
+            if reads.withLock({ $0 += 1; return $0 }) == 1 { reply.waitsFor = { hold.isOpen } }
+            return reply
+        }
+        let clock = Clock()
+        let engine = LinkEngine(client: server.client(), now: { clock.now }, onChange: { _ in })
+        let first = Task { await engine.update(.init(pullRequests: [PRKey("contoso", 7): Self.place])) }
+        try await Self.until(server, "/_apis/wit/workitems", 1)
+        clock.advance(1)
+        await engine.reread(pullRequests: [], workItems: [WorkItemKey("contoso", 5101)])
+        hold.release()
+        await first.value
+        #expect(Self.count(server, "/_apis/wit/workitems") == 2)
+        await engine.refresh()
+        #expect(Self.count(server, "/_apis/wit/workitems") == 2)
+    }
+
+    /// A session said it changed one of the sprint's pull requests that your lists don't show while it was read for the
+    /// first time: that read doesn't count either, and it's read again in the same refresh.
+    @Test func aSprintPullRequestsFirstReadUnderWayDoesntCountForARereadAskedMeanwhile() async throws {
+        let server = StubServer()
+        let hold = Hold()
+        let reads = Mutex(0)
+        server.on("/_apis/wit/workitems", query: ["$expand": "relations"], json: Fixture.list([
+            ["id": 5101, "relations": [["rel": "ArtifactLink", "url": "vstfs:///Git/PullRequestId/p1%2Fr1%2F4120"]]],
+        ]))
+        server.on("/_apis/git/pullrequests/4120") { _ in
+            var reply = StubServer.Reply.json(Fixture.pullRequest(4120, title: "Save items in the cart service"))
+            if reads.withLock({ $0 += 1; return $0 }) == 1 { reply.waitsFor = { hold.isOpen } }
+            return reply
+        }
+        let clock = Clock()
+        let engine = LinkEngine(client: server.client(), now: { clock.now }, onChange: { _ in })
+        let first = Task { await engine.update(.init(sprintItems: [WorkItemKey("contoso", 5101)], sprintShows: true)) }
+        try await Self.until(server, "/_apis/git/pullrequests/4120", 1)
+        clock.advance(1)
+        await engine.reread(pullRequests: [PRKey("Contoso", 4120)], workItems: [])
+        hold.release()
+        await first.value
+        #expect(Self.count(server, "/_apis/git/pullrequests/4120") == 2)
+        await engine.refresh()
+        #expect(Self.count(server, "/_apis/git/pullrequests/4120") == 2)
+        #expect(Self.count(server, "/_apis/wit/workitems") == 1)
+    }
+
     @Test func linksAreReadAgainAtOnceForWhatTheEngineReadsAnyway() async {
         let server = StubServer()
         server.on("/pullRequests/7/workitems", json: Fixture.list([["id": "5101"]]))

@@ -275,8 +275,8 @@ public actor LinkEngine {
     /// your pull requests, and what these linked pull requests no list shows are, the first `mostRereads` of each; the
     /// sprint's pull requests, when it names one of the sprint's work items; and what these linked work items are. Only
     /// what it reads anyway, ahead of the rest; one that failed still waits its hour. A read under way that started before
-    /// now doesn't count: it's read again after it. A request is forgotten after a quarter of an hour, when it's read
-    /// again anyway.
+    /// now doesn't count, though it's the first: it's read again after it. A request is forgotten after a quarter of an
+    /// hour, when it's read again anyway.
     public func reread(pullRequests: Set<PRKey>, workItems: Set<WorkItemKey>) async {
         let date = now()
         forgetOldRequests(at: date)
@@ -284,11 +284,11 @@ public actor LinkEngine {
         for key in inputs.pullRequests.keys.filter(named.contains).sorted().prefix(Self.mostRereads) {
             asked["pr \(key)"] = date
         }
-        for key in inputs.pullRequestLookups.union(lookupsRead.keys).filter(named.contains).sorted().prefix(Self.mostRereads) {
+        for key in wantedPullRequests().filter(named.contains).sorted().prefix(Self.mostRereads) {
             asked["lookup \(key)"] = date
         }
         if !inputs.sprintItems.isDisjoint(with: workItems) { asked["sprint"] = date }
-        for key in workItemsRead.keys.filter(workItems.contains).sorted().prefix(Self.mostRereads) {
+        for key in wantedWorkItems().filter(workItems.contains).sorted().prefix(Self.mostRereads) {
             asked["wi \(key)"] = date
         }
         await refresh()
@@ -397,13 +397,27 @@ public actor LinkEngine {
         settle("sprint", readAt: date)
     }
 
-    /// What the work items linked to your pull requests are, when the sprint doesn't show them, and those you linked.
-    private func readLinkedWorkItems(at date: Date) async throws {
+    /// The linked work items to read what they are: those linked to your pull requests, when the sprint doesn't show them,
+    /// and those you linked; whether they were read or not yet, as for the first time now.
+    private func wantedWorkItems() -> Set<WorkItemKey> {
         var wanted = inputs.workItemLookups
         for (pullRequest, ids) in links.workItemsOfPullRequests {
             for id in ids { wanted.insert(WorkItemKey(pullRequest.organization, id)) }
         }
-        wanted.subtract(inputs.sprintItems)
+        return wanted.subtracting(inputs.sprintItems)
+    }
+
+    /// The linked pull requests to read what they are: those linked to the sprint's work items, when your lists don't show
+    /// them, and those you linked; whether they were read or not yet, as for the first time now.
+    private func wantedPullRequests() -> Set<PRKey> {
+        var wanted = inputs.pullRequestLookups
+        for pullRequests in links.pullRequestsOfWorkItems.values { wanted.formUnion(pullRequests) }
+        return wanted.subtracting(inputs.pullRequests.keys)
+    }
+
+    /// What the work items linked to your pull requests are, when the sprint doesn't show them, and those you linked.
+    private func readLinkedWorkItems(at date: Date) async throws {
+        let wanted = wantedWorkItems()
         links.workItems = links.workItems.filter { wanted.contains($0.key) }
         workItemsRead = workItemsRead.filter { wanted.contains($0.key) }
         let due = wanted.filter {
@@ -440,9 +454,7 @@ public actor LinkEngine {
     /// linked: ten a refresh, the ones never read first. An open one is read again every quarter of an hour, a closed one
     /// every six hours.
     private func readLinkedPullRequests(at date: Date) async throws {
-        var wanted = inputs.pullRequestLookups
-        for pullRequests in links.pullRequestsOfWorkItems.values { wanted.formUnion(pullRequests) }
-        wanted.subtract(inputs.pullRequests.keys)
+        let wanted = wantedPullRequests()
         links.pullRequests = links.pullRequests.filter { wanted.contains($0.key) }
         lookupsRead = lookupsRead.filter { wanted.contains($0.key) }
         let isAsked = { (key: PRKey) in self.isAsked("lookup \(key)", read: self.lookupsRead[key]) }
