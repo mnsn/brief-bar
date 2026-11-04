@@ -282,12 +282,19 @@ struct ThreadCopilotActions: View {
             let excerpt = await code.excerpt(of: thread.thread, in: record.pullRequest, by: viewer, on: page)
             // Read for this question alone.
             code.hide(thread.id, of: record.pullRequest.key, by: viewer)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                isAskingInSession = false
+                return
+            }
             let prompt = PullRequestPrompt.askAboutThread(
                 record, thread: thread.thread, code: excerpt, question: question.asked, earlier: question.earlier
             )
             let outcome = await sending.explainAsPrompt(prompt, about: part, to: choice)
-            guard !Task.isCancelled else { return }
+            // Called off: it's no longer on its way.
+            guard !Task.isCancelled else {
+                isAskingInSession = false
+                return
+            }
             drafts.asks[part] = nil
             isAskingInSession = false
             switch outcome {

@@ -35,7 +35,8 @@ struct BuildInvestigationView: View {
                 }
                 // What Copilot can do about it, then Open Run and when it was read.
                 BuildCopilotActions(
-                    line: line, item: item, investigation: investigation, now: now, composing: $composing, drafts: drafts
+                    line: line, item: item, pullRequest: pullRequest, investigation: investigation, now: now, composing: $composing,
+                    drafts: drafts
                 ) {
                     BuildActions(investigation: investigation, look: look, now: now, readAgain: readAgain)
                 }

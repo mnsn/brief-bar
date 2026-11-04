@@ -267,6 +267,19 @@ import Testing
             fix: { _, _ in CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }, question: { _, _ in "" }
         )
         #expect(asking.draftKey == second)
+        // And so does Ask in the Session's prompt on its way: one row's doesn't call off the other's.
+        let one = Task<Void, Never> {}, other = Task<Void, Never> {}
+        drafts.asks[.build(31), row: "build-1"] = one
+        drafts.asks[.build(31), row: "build-2"] = other
+        #expect(drafts.asks[.build(31), row: "build-1"] != nil)
+        drafts.asks[.build(31), row: "build-2"] = nil
+        #expect(drafts.asks[.build(31), row: "build-1"] != nil)
+        #expect(drafts.asks[.build(31)] == nil)
+        drafts.asks[.thread(11)] = other
+        #expect(drafts.asks[.thread(11)] != nil)
+        drafts.callOffAll()
+        #expect(one.isCancelled && other.isCancelled)
+        #expect(drafts.asks[.build(31), row: "build-1"] == nil)
         // A thread's has one row.
         #expect(CopilotComposing(part: .thread(11), ask: .fix) == CopilotComposing(part: .thread(11), ask: .fix, row: nil))
     }

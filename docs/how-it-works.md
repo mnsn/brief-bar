@@ -2388,7 +2388,10 @@ In a pull request's details, while Send Work to Copilot is on, a build that fail
 (`BuildInvestigationView`) has, as a thread does, what a session said of it, what Copilot does about it, then **✨ Explain
 the Failure** and **Fix** (`BuildCopilotActions`), above **Open Run**, each opening a composer in their place
 (`BuildComposer`, over `CopilotPartComposer`), one at a time in the details with the comments' and the conflicts', and
-each build's row its own, where two of the pull request's policies run the same pipeline (`CopilotComposing.row`). Copilot takes the build on by the pipeline its policy runs (`PullRequestPart.build`,
+each build's row its own, where two of the pull request's policies run the same pipeline (`CopilotComposing.row`). While
+what shows of the run is of an attempt before it ran again under the same ID, or before its pull request changed, until
+it's read again, they wait, saying why, and a composer that's open closes, keeping your words, what it was sending called
+off, so that nothing quotes another attempt as this one (`BuildInvestigationStore.current`). Copilot takes the build on by the pipeline its policy runs (`PullRequestPart.build`,
 from `Check.definitionId`, which the policy's settings say, else its run's): each of its runs, as it runs again or after a
 push, is the same build. Where it goes is as for a comment: the session that last worked on the build, else the pull
 request's, and, for Fix, a fork of it and a new session; then the rest (`CopilotDestinations`).

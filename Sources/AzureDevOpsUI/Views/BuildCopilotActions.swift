@@ -42,6 +42,9 @@ extension CopilotWork {
 /// What Copilot does, and what a session said, about one of a pull request's builds: for its row and its open run alike.
 @MainActor
 enum BuildCopilot {
+    /// Why Explain and Fix wait, while what shows of the run is of the attempt before it ran again, or changed.
+    static let notCurrentHelp = "It ran again, or changed: once BriefBar has read it again, Copilot can look into it"
+
     /// What Copilot does about it, while it shows on the build (`CopilotWork.shows(onBuild:)`).
     static func work(
         on line: PullRequestPanel.CheckLine, of key: PRKey, copilot: CopilotTasksStore, preview: CopilotActionsPreview?
@@ -218,6 +221,8 @@ struct BuildWorkLine: View {
 struct BuildCopilotActions<Trailing: View>: View {
     let line: PullRequestPanel.CheckLine
     let item: PRSnapshot
+    /// The pull request as the details read its builds for.
+    let pullRequest: PullRequest
     let investigation: BuildInvestigation
     let now: Date
     /// The composer in place that's open in the details.
@@ -229,6 +234,7 @@ struct BuildCopilotActions<Trailing: View>: View {
     @EnvironmentObject private var copilot: CopilotTasksStore
     @EnvironmentObject private var sessions: PullRequestSessions
     @EnvironmentObject private var questions: CopilotQuestions
+    @EnvironmentObject private var investigations: BuildInvestigationStore
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.copilotActionsPreview) private var preview
 
@@ -240,6 +246,18 @@ struct BuildCopilotActions<Trailing: View>: View {
 
     private var record: PRRecord? { store.record(for: item.key) }
     private var part: PullRequestPart? { line.check?.part }
+
+    /// What shows of its run is of the run as its check and pull request are now (`BuildInvestigationStore.current`): not,
+    /// while it's read again, of the attempt before, as when its failed jobs ran again under the same ID, which Explain and
+    /// Fix would quote as this one. In pictures, as drawn.
+    private var isCurrent: Bool {
+        preview != nil || investigations.current(investigation.run.id, check: line.check, of: pullRequest) != nil
+    }
+
+    /// When the attempt of its run that shows finished, as its check said as it was read: what Explain's answer is about.
+    private var attempt: Date? {
+        investigations.look(investigation.run.id, of: item.key)?.shownFor?.completedAt ?? line.check?.completedAt
+    }
 
     /// The composer in place that's open on it, if one is: on its row, where another policy's runs the same pipeline.
     private var asking: CopilotAsk? {
@@ -297,8 +315,8 @@ struct BuildCopilotActions<Trailing: View>: View {
                 if canAct {
                     if let asking, let part {
                         BuildComposer(
-                            ask: asking, line: line, part: part, investigation: investigation, item: item, worked: work?.session,
-                            drafts: drafts, answer: question?.answer, preview: preview?.composer(about: part),
+                            ask: asking, line: line, part: part, investigation: investigation, attempt: attempt, item: item,
+                            worked: work?.session, drafts: drafts, answer: question?.answer, preview: preview?.composer(about: part),
                             fixInstead: canFix ? { open(.fix) } : nil
                         ) { result in
                             if case .copied(let note)? = result { copied = note }
@@ -322,6 +340,17 @@ struct BuildCopilotActions<Trailing: View>: View {
         .onAppear {
             if let part, let composer = preview?.composer(about: part) { composing = CopilotComposing(part: part, ask: composer.ask, row: line.id) }
         }
+        // It ran again, or changed, and what shows is of the attempt before until it's read again: what a composer or Ask in
+        // the Session would send about it is called off, and the composer closes, keeping your words.
+        .onChange(of: isCurrent) { _, current in
+            guard !current else { return }
+            if asking != nil { composing = nil }
+            if let part, isAskingInSession {
+                drafts.asks[part, row: line.id]?.cancel()
+                drafts.asks[part, row: line.id] = nil
+                isAskingInSession = false
+            }
+        }
     }
 
     private func buttons(hasAnswer: Bool) -> some View {
@@ -335,8 +364,8 @@ struct BuildCopilotActions<Trailing: View>: View {
             }
             .glassButtonStyle()
             .focused($focused, equals: .explain)
-            .disabled(nobody)
-            .help(explainHelp(nobody: nobody, hasAnswer: hasAnswer))
+            .disabled(nobody || !isCurrent)
+            .help(isCurrent ? explainHelp(nobody: nobody, hasAnswer: hasAnswer) : BuildCopilot.notCurrentHelp)
             if canFix {
                 Button {
                     open(.fix)
@@ -345,13 +374,20 @@ struct BuildCopilotActions<Trailing: View>: View {
                 }
                 .glassButtonStyle()
                 .focused($focused, equals: .fix)
-                .help(hasAnswer
-                    ? "Have Copilot reproduce the failure and fix it, as you say, with what the session answered: it doesn't commit, push or touch pipelines"
-                    : "Have Copilot reproduce the failure and fix it, as you say: it doesn't commit, push or touch pipelines")
+                .disabled(!isCurrent)
+                .help(fixHelp(hasAnswer: hasAnswer))
             }
         }
         .controlSize(.small)
         .font(size: 11)
+    }
+
+    private func fixHelp(hasAnswer: Bool) -> String {
+        guard isCurrent else { return BuildCopilot.notCurrentHelp }
+        if hasAnswer {
+            return "Have Copilot reproduce the failure and fix it, as you say, with what the session answered: it doesn't commit, push or touch pipelines"
+        }
+        return "Have Copilot reproduce the failure and fix it, as you say: it doesn't commit, push or touch pipelines"
     }
 
     private func explainHelp(nobody: Bool, hasAnswer: Bool) -> String {
@@ -403,8 +439,10 @@ struct BuildCopilotActions<Trailing: View>: View {
                     .buttonStyle(.borderless)
                     .font(size: 11.5, weight: .medium)
                     .fixedSize()
-                    .disabled(isAskingInSession)
-                    .help("Send the question to the session as a prompt, as Fix sends its prompts: it goes in the session's history, and changes nothing")
+                    .disabled(isAskingInSession || !isCurrent)
+                    .help(isCurrent
+                        ? "Send the question to the session as a prompt, as Fix sends its prompts: it goes in the session's history, and changes nothing"
+                        : BuildCopilot.notCurrentHelp)
                 }
                 CopilotDismissButton { if let part { questions.dismiss(about: part, run: investigation.run.id, of: item.key) } }
             }
@@ -412,17 +450,23 @@ struct BuildCopilotActions<Trailing: View>: View {
     }
 
     private func askInSession(_ choice: SessionChoice, question: CopilotQuestions.Question) {
-        guard let record, let part else { return }
+        guard let record, let part, isCurrent else { return }
         let sending = CopilotSending(item: item, record: record, store: store, copilot: copilot, session: sessions.session(for: item.key))
         let prompt = PullRequestPrompt.askAboutBuild(
             record, build: FailedBuildReport(investigation, name: line.run.name), question: question.asked, earlier: question.earlier
         )
         isAskingInSession = true
-        drafts.asks[part]?.cancel()
-        drafts.asks[part] = Task {
+        // Its row's own, where another policy's runs the same pipeline.
+        let row = line.id
+        drafts.asks[part, row: row]?.cancel()
+        drafts.asks[part, row: row] = Task {
             let outcome = await sending.explainAsPrompt(prompt, about: part, to: choice)
-            guard !Task.isCancelled else { return }
-            drafts.asks[part] = nil
+            // Called off, as when the run was read again meanwhile: it's no longer on its way.
+            guard !Task.isCancelled else {
+                isAskingInSession = false
+                return
+            }
+            drafts.asks[part, row: row] = nil
             isAskingInSession = false
             switch outcome {
             case .sent:
@@ -448,6 +492,8 @@ struct BuildComposer: View {
     let line: PullRequestPanel.CheckLine
     let part: PullRequestPart
     let investigation: BuildInvestigation
+    /// When the attempt of its run that `investigation` is of finished, as its check said: what Explain's answer is about.
+    let attempt: Date?
     let item: PRSnapshot
     /// The session that worked on the build, by its ID, which it goes to first.
     let worked: String?
@@ -469,7 +515,7 @@ struct BuildComposer: View {
         let report = FailedBuildReport(investigation, name: line.run.name)
         let part = part
         return CopilotAsking(
-            ask: ask, part: part, action: .fixBuild, run: investigation.run.id, attempt: line.check?.completedAt, row: line.id,
+            ask: ask, part: part, action: .fixBuild, run: investigation.run.id, attempt: attempt, row: line.id,
             fix: { how, answer in
                 guard let record else { return CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }
                 return CopilotSending.Fix(

@@ -221,17 +221,35 @@ final class CopilotDrafts {
     /// (`callOffAll`), when a prompt no session took yet is taken back; not as its card scrolls out of sight, as a lazy
     /// stack's do.
     var sends: [CopilotComposing: Task<Void, Never>] = [:]
-    /// What asks a session about something as a prompt, by what it's about, until it's done: called off as its page goes.
-    var asks: [PullRequestPart: Task<Void, Never>] = [:]
+    /// What asks a session about something as a prompt, Ask in the Session's, until it's done: called off as its page goes.
+    var asks = Asks()
+
+    /// What asks a session about something as a prompt, by what it's about, and, where more than one row is about it, as two
+    /// policies' runs of a pipeline are, the row it's on (`CopilotComposing.row`): `asks[part]`, `asks[part, row: id]`.
+    struct Asks {
+        private struct Key: Hashable {
+            var part: PullRequestPart
+            var row: String?
+        }
+
+        private var tasks: [Key: Task<Void, Never>] = [:]
+
+        subscript(part: PullRequestPart, row row: String? = nil) -> Task<Void, Never>? {
+            get { tasks[Key(part: part, row: row)] }
+            set { tasks[Key(part: part, row: row)] = newValue }
+        }
+
+        var all: [Task<Void, Never>] { Array(tasks.values) }
+    }
 
     func callOff(_ composer: CopilotComposing) {
         sends.removeValue(forKey: composer)?.cancel()
     }
 
     func callOffAll() {
-        for task in Array(sends.values) + Array(asks.values) { task.cancel() }
+        for task in Array(sends.values) + asks.all { task.cancel() }
         sends = [:]
-        asks = [:]
+        asks = Asks()
     }
 }
 
