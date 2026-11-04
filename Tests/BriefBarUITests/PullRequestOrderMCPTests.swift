@@ -19,6 +19,8 @@ private final class Announcements: Sendable {
     private static let session = "6f9619ff-8b86-d011-b42d-00c04fc964ff"
     /// Midday in UTC, the same day in every time zone but the farthest.
     private static let now = Date(timeIntervalSince1970: 1_791_979_200)
+    /// The day `now` is where the test runs, as the tools say it: 2026-10-14 in most places, the 15th from UTC+12.
+    private static let today = now.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
 
     private static func link(_ number: Int) -> String {
         "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)"
@@ -110,7 +112,7 @@ private final class Announcements: Sendable {
         #expect(read.hasPrefix("""
             ## Order \(id) at revision 1
 
-            Told by your session, \(Self.session), last on 2026-10-14.
+            Told by your session, \(Self.session), last on \(Self.today).
 
             - !4101 in contoso: merges before !4102.
             """))
