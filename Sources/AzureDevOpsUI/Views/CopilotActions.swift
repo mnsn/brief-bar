@@ -384,6 +384,8 @@ struct CopilotAnswerCard: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { answerHeight = $0 }
                 .frame(maxHeight: isCut ? shownHeight : nil, alignment: .top)
                 .clipped()
+                // What it hides takes no clicks or scrolls either, such as a code block's below what shows.
+                .contentShape(Rectangle())
                 .mask(alignment: .top) {
                     VStack(spacing: 0) {
                         Rectangle()
