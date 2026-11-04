@@ -89,6 +89,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var pullRequestFiles: PullRequestFilesStore?
     /// The Copilot session of the pull request whose details show.
     private var pullRequestSessions: PullRequestSessions?
+    /// Tells Pull Request Order what Azure DevOps shows, while it's on.
+    private var orderFacts: PullRequestOrderFacts?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     /// For `--render`: a pull request's details with a build open, one that failed and one still going.
@@ -288,6 +290,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         pipelines?.start()
         copilot?.start()
         workLinks?.start()
+        orderFacts = PullRequestOrderFacts(
+            order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails
+        ).started()
         // Your name, as your pull requests have it, for a summary to call you "you".
         services.summaries.setYourName(.azureDevOps) { [weak store] in store?.reader }
         // The tasks sent to Copilot, for its list to show with your sessions: as they go, and with the titles the lists
@@ -344,6 +349,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         pipelines?.stop()
         copilot?.stop()
         workLinks?.stop()
+        orderFacts?.stop()
         details?.stop()
         pullRequestDetails?.stop()
         buildInvestigations?.stop()
@@ -356,6 +362,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         pipelines = nil
         copilot = nil
         workLinks = nil
+        orderFacts = nil
         details = nil
         pullRequestDetails = nil
         buildInvestigations = nil
@@ -383,6 +390,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         settings.forgetCopilotRuns()
         // The links you added or hid between pull requests, work items and sessions.
         services.links.forget(.azureDevOps)
+        // Its pull requests' places in orders, and what BriefBar saw become of them.
+        services.pullRequestOrder.forget(.azureDevOps)
         // What Copilot printed for each task: the demo never wrote any, and mustn't delete yours.
         if !services.isDemo {
             CopilotTasksStore.deleteOutput()
