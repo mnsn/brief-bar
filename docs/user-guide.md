@@ -439,7 +439,7 @@ answers, as it answered, and stays where it is in the details while they show th
 then BriefBar reads the pull request again, so Needs You, What's Left, the brief and the counts follow: a thread you replied
 to, or resolved, doesn't wait on you anymore. When it can't, the thread says why in a sentence, such as **Azure DevOps says
 you may not reply here**, **You're offline**, for a pull request that's completed or abandoned, or when the thread was
-deleted meanwhile, with what may help, such as **Try Again** or **Sign In…**; a reply that didn't go keeps what you wrote,
+deleted meanwhile, with what may help, such as **Try Again** or **Sign In…**; a reply that didn't go keeps what you wrote, in its field,
 and one that Azure DevOps didn't answer in time is read again before you send it twice. **Fix Grammar**, in the field,
 corrects your reply's spelling, grammar and punctuation, and only those, in the language you wrote it in, keeping your
 words, your Markdown, and your code, links and @mentions, which the model never sees; when a model does more, such as
@@ -1019,7 +1019,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
 | | Sprint | on its page: **Everyone** or **Just Mine**, which team's sprint, and how wide you drag a work item's details |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
-| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; and **Fix Grammar** in a reply, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies you haven't sent |
+| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; and **Fix Grammar** in a reply, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies you haven't sent, and stops a change that hasn't gone yet |
 | | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Move Viewed Sessions to Idle | off by default: when on, opening or viewing a finished or stopped session moves it to Idle |

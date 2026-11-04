@@ -1436,8 +1436,10 @@ only that (`status`, by the number the API takes for it). `ADOClient.send(_:)` a
 headers and redirect guard, from the same request path, once: it sends one again only when Azure DevOps rejected the
 sign-in, which it never acts on, so a change that fails otherwise, or times out, isn't made twice. When Azure DevOps refuses
 one, the error says why, as it said it (`ADOError.refused`, TF401181 for a pull request that's completed or abandoned), which
-shows on the thread but never goes to the log; a change that was made but whose answer can't be read says so
-(`ADOWrite.Answer.unreadable`), and the pull request is read again instead. `WriteTests` goes through every kind of change
+shows on the thread but never goes to the log. Any answer from 200 to 299 says the change was made, but 203, a sign-in
+page's: an empty 204 too, and one whose answer can't be read, which says so (`ADOWrite.Answer.unreadable`), and the pull
+request is read again instead. A change called off before it goes, as when the setting is turned off while it waits for a
+token, never goes. `WriteTests` goes through every kind of change
 (`ADOWrite.Kind`), and checks that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET. Agents
 (`--mcp`) and the command line get none of it, and the demo sends nothing: its changes are made up (`DemoThreadChanges`),
 in its made-up data only, while it runs.
@@ -1450,9 +1452,10 @@ line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘Retur
 & Reactivate** reactivates a resolved one, as Azure DevOps' own does. What you write is kept as you type
 (`ThreadChanges.keep`), in memory only, for each thread, until it's sent: closing the field, or the details, keeps it, and
 **Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure CLI forgets
-it. A reply whose text is already your last word in the thread isn't sent again; and after one that may have gone, as one
-Azure DevOps didn't answer in time, the thread is read again before it's sent again, and nothing goes until it was
-(`ADOWriteProblem.unconfirmed`). **Resolve**, or **Reactivate** on a resolved thread, sets its status at once, without asking, since the
+it, and calls off the changes on their way (`ThreadChanges.forgetAll`): one that hasn't gone yet never does, and nothing
+says it failed. After a reply that may have gone, as one Azure DevOps didn't answer in time, the thread is read again
+before it's sent again, and nothing goes until it was (`ADOWriteProblem.unconfirmed`): a comment of yours that came since
+it was sent, and says the same, is it, whatever came after it, so it isn't sent twice (`ThreadChanges.Attempt`). **Resolve**, or **Reactivate** on a resolved thread, sets its status at once, without asking, since the
 same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps' own menu offers, Active, Pending,
 Resolved, Won't Fix and Closed, and By Design only for a thread that has it (`ThreadStatus.choices`).
 
@@ -1468,13 +1471,15 @@ showed it, leave out what was in it until then (`ThreadChanges.waiting`). While 
 you change stays where it was as you first did, with the open ones or the resolved ones, and with those that wait on you or
 not, however it stands now (`Threads.arranged(holding:)`), and on its file's page, it stays unfolded: so it doesn't move
 away as you reply or resolve it, and the menu that sets it back is where you left it. A change that didn't happen says why
-on the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help: no
+on the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help, or,
+for a reply, in its field, which stays open with what you wrote, and **Sign In…** when that's why: no
 permission, a pull request that's completed or abandoned, a thread or pull request deleted meanwhile, offline, signed out,
 slowed down, or no answer in time, after which the pull request is read again, since it may have been made.
 
 **Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language it's
-written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its fenced code, found as
-Markdown closes it, in quotes too, and inline code, links and pictures, web addresses, with the parentheses they have, and
+written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its code blocks, fenced,
+found as Markdown closes them, in quotes too, or indented, as Markdown reads them, four columns past a list item's indent
+in a list, and inline code, links and pictures, web addresses, with the parentheses they have, and
 mentions, and characters that control how text reads, go to the model as markers,
 `{{1}}`, which it keeps, and are put back as they were; an answer that lost, repeated or moved one is turned down. The
 model is told to proofread, with an example, which Apple Intelligence corrects far more with, and gets the reply in a
@@ -1482,7 +1487,8 @@ fence nothing in it closes, as what someone wrote rather than what to do. Each l
 before what it says, such as a quote's `>`, and the spaces after it, whatever the model did with them, and an answer that
 joined or split lines, changed more than half of what it says, or kept fewer than half of its words, as a translation or
 an answer to what it asks does, is turned down too (`GrammarFix.Failure.changedMore`). It shows the correction under the field, what it
-changes marked word by word (`GrammarFix.changes`), with **Use It**, then **Undo**, while the reply is as it left it: it
+changes marked word by word (`GrammarFix.changes`), a change to spaces on the word beside it, so that a correction never
+shows as nothing to correct, with **Use It**, then **Undo**, while the reply is as it left it: it
 never changes your reply without you, nor sends it, and the field waits while it runs, with **Stop**. It uses Apple
 Intelligence, on this Mac (`OnDeviceModel`), unless you choose a Copilot model in its **▾**, from those summaries offer,
 which BriefBar keeps (`ado.grammar.model`): then the Copilot CLI gets the reply, as a summary does, with no tools, in a
