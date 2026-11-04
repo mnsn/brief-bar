@@ -750,6 +750,19 @@ public enum OrderFocus {
         if case .chain(let ref) = key { return ref }
         return nil
     }
+
+    /// The mission you focus on, while it can still be one: nil once it's a session's order that BriefBar no longer keeps,
+    /// or, with `kinds`, one of the things whose source you turned off: a GitHub stack, a chain of their pull requests, or
+    /// the pull requests opened under a Copilot session.
+    public static func kept(_ key: MissionKey?, in orders: DeclaredOrders, forgetting kinds: Set<ItemRef.Kind> = []) -> MissionKey? {
+        switch key {
+        case nil: return nil
+        case .plan(let id)?: return orders.plan(id) == nil ? nil : key
+        case .stack?: return kinds.contains(.gitHubPullRequest) ? nil : key
+        case .chain(let ref)?: return kinds.contains(ref.kind) ? nil : key
+        case .family(let session)?: return kinds.contains(session.kind) ? nil : key
+        }
+    }
 }
 
 // MARK: - The setting

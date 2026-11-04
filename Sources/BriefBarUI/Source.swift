@@ -393,6 +393,9 @@ package final class AppServices: ObservableObject {
     package let summaries: StorySummaries
     /// The tasks Azure DevOps sent to the Copilot CLI, for Copilot's list to show with the app's sessions.
     package let sentTasks = SentTasks()
+    /// Pull Request Order: which pull requests go together and the order they merge in, which each source tells it while
+    /// it's on.
+    package let pullRequestOrder: PullRequestOrder
 
     package var openSettings: (SettingsDestination) -> Void = { _ in }
     /// Opens the list that shows a section: false when it's hidden from the menu bar.
@@ -416,6 +419,7 @@ package final class AppServices: ObservableObject {
         links = Links(defaults: defaults, isDemo: isDemo)
         stories = ItemStories(links: links)
         summaries = StorySummaries(defaults: defaults, links: links, stories: stories, isDemo: isDemo)
+        pullRequestOrder = PullRequestOrder(defaults: defaults, isDemo: isDemo)
     }
 
     package func setInterfaceOption(_ option: InterfaceOption, enabled: Bool) {

@@ -382,6 +382,29 @@ import Testing
         #expect(PullRequestOrderSetting.isOn(in: defaults))
     }
 
+    /// Focus stays on a mission while it can be one: not a session's order BriefBar forgot, and not what a source you turned
+    /// off had.
+    @Test func focusGoesWithWhatItsOn() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(Self.userExample, newID: planID)
+        let gone = UUID()
+        let chain = MissionKey.chain(Self.pr(4101))
+        let stack = MissionKey.stack(repository: "octo/storefront", number: 41)
+        let family = MissionKey.family(session)
+        #expect(OrderFocus.kept(nil, in: orders) == nil)
+        #expect(OrderFocus.kept(.plan(planID), in: orders) == .plan(planID))
+        #expect(OrderFocus.kept(.plan(gone), in: orders) == nil)
+        for key in [chain, stack, family] {
+            #expect(OrderFocus.kept(key, in: orders) == key)
+        }
+        #expect(OrderFocus.kept(chain, in: orders, forgetting: [.workItem, .pullRequest]) == nil)
+        #expect(OrderFocus.kept(stack, in: orders, forgetting: [.workItem, .pullRequest]) == stack)
+        #expect(OrderFocus.kept(stack, in: orders, forgetting: [.gitHubPullRequest]) == nil)
+        #expect(OrderFocus.kept(family, in: orders, forgetting: [.gitHubPullRequest]) == family)
+        #expect(OrderFocus.kept(family, in: orders, forgetting: [.session]) == nil)
+        #expect(OrderFocus.kept(.plan(planID), in: orders, forgetting: [.workItem, .pullRequest, .session]) == .plan(planID))
+    }
+
     /// An agent that tells the same order again, having lost its ID, gets the one BriefBar keeps, not a second.
     @Test func theSameOrderToldAgainIsTheOneBriefBarKeeps() throws {
         var orders = DeclaredOrders()
