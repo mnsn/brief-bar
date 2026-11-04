@@ -1148,6 +1148,7 @@ extension AzureDevOpsSource {
         )
         let how = "Fix it here: skip weekends in AddBusinessDays, and compare the cutoff in the warehouse's time zone"
         let wide = CGSize(width: 1_000, height: 1_100), narrow = CGSize(width: 560, height: 1_100)
+        let fixed = work(.done("AddBusinessDays skips weekends, and the cutoff is compared in the warehouse's time zone. The tests pass."), ago: 1)
         let shown: [(name: String, preview: CopilotActionsPreview, sizes: [(suffix: String, size: CGSize)])] = [
             ("pull-requests-build-actions", CopilotActionsPreview(quiet: [part], ready: []), [("", wide), ("-narrow", narrow)]),
             ("pull-requests-build-explain", CopilotActionsPreview(
@@ -1165,12 +1166,17 @@ extension AzureDevOpsSource {
             ), [("", CGSize(width: 1_000, height: 1_500))]),
             ("pull-requests-build-fixing", CopilotActionsPreview(work: [part: work(.working("Run DeliveryEstimateTests"), ago: 9)], ready: []), [("", wide)]),
             ("pull-requests-build-fixed", CopilotActionsPreview(
-                work: [part: work(.done("AddBusinessDays skips weekends, and the cutoff is compared in the warehouse's time zone. The tests pass."), ago: 1)],
-                ready: [ReadyFixes(session: task, forkedFrom: nil, isTask: true, parts: [part], latest: now.addingTimeInterval(-60))]
+                work: [part: fixed], ready: [ReadyFixes(session: task, forkedFrom: nil, isTask: true, parts: [part], latest: now.addingTimeInterval(-60))]
             ), [("", wide)]),
             ("pull-requests-build-fix-failed", CopilotActionsPreview(
                 work: [part: work(.failed("The tests still fail: EstimateUsesTheWarehouseTimeZone expects 2 days and gets 3."), ago: 2)], ready: []
             ), [("", wide)]),
+            // Closed, its row says them: what it answered since it fixed it, then the fix.
+            ("pull-requests-build-closed", CopilotActionsPreview(
+                work: [part: work(.done("AddBusinessDays skips weekends, and the cutoff is compared in the warehouse's time zone. The tests pass."), ago: 12)],
+                questions: [part: answered],
+                ready: [ReadyFixes(session: task, forkedFrom: nil, isTask: true, parts: [part], latest: now.addingTimeInterval(-720))]
+            ), [("", wide), ("-narrow", narrow)]),
         ]
         var renderings: [(name: String, view: AnyView)] = []
         for (name, preview, sizes) in shown {
@@ -1180,9 +1186,11 @@ extension AzureDevOpsSource {
                 details.readRecord = { [weak store] key in store?.record(for: key) }
                 details.itemsChanged(store.items)
                 details.show(item, at: .section(.checks))
+                // Closed, in a store that hasn't opened it.
+                let opened = name.hasSuffix("-closed") ? BuildInvestigationStore(mode: store.mode, client: store.client) : investigations
                 let view = PullRequestsPage()
                     .environmentObject(details)
-                    .environmentObject(investigations)
+                    .environmentObject(opened)
                     .environment(\.copilotActionsPreview, preview)
                     .environment(\.panelStyle, .page)
                     .textSize(from: services)

@@ -5,9 +5,9 @@ import BriefBarUI
 import CopilotTasks
 import SwiftUI
 
-// Copilot in a pull request's builds, while Send Work to Copilot is on: on a failed build that's open in its details,
-// ✨ Explain the Failure and Fix, each with a composer in place, as a comment has; and on each build's row, what Copilot does
-// about it, in a sentence. What they share with comments and conflicts is in CopilotActions.swift.
+// Copilot in a pull request's builds, while Send Work to Copilot is on: on a failed build that's open in its details, what
+// Copilot does about it, then ✨ Explain the Failure and Fix, each with a composer in place, as a comment has; on a build's
+// row while it's closed, the same in a line. What they share with comments and conflicts is in CopilotActions.swift.
 
 extension Check.State {
     /// It passes, or needn't: passed, passed and has to run again, or doesn't apply. Copilot's fix of a build that passes
@@ -21,79 +21,200 @@ extension Check.State {
 }
 
 extension CopilotWork {
-    /// Whether it shows on a build's row: while Copilot is at it, or the build doesn't pass. A rerun, or a push, that passes
-    /// ends it.
-    func shows(onBuild state: Check.State?) -> Bool {
-        isActive || state?.needsNoFix != true
+    /// Whether it shows on a build: while Copilot is at it, or the build doesn't pass. A rerun, or a push, that passes ends
+    /// it; so does a run that failed after what Copilot pushed, which the build is to fix again.
+    func shows(onBuild check: Check?) -> Bool {
+        if isActive { return true }
+        guard let check else { return true }
+        if check.state.needsNoFix { return false }
+        if purpose == .pushAndReply, case .done = state, check.state == .failed, let failedAt = check.completedAt, failedAt > since {
+            return false
+        }
+        return true
     }
 }
 
-/// What Copilot does about one of a pull request's builds, on its row, in a sentence in its state's color, with since when
-/// and the step it's at: "Copilot is fixing this build in ‘Fix the Build’ · 9m", "Fixed in ‘Fix the Build’, not pushed". A
-/// click opens where it works, when something can. Once the build passes, as when it ran again or after a push, it's over,
-/// unless Copilot is still at it.
+/// What Copilot does, and what a session said, about one of a pull request's builds: for its row and its open run alike.
+@MainActor
+enum BuildCopilot {
+    /// What Copilot does about it, while it shows on the build (`CopilotWork.shows(onBuild:)`).
+    static func work(
+        on line: PullRequestPanel.CheckLine, of key: PRKey, copilot: CopilotTasksStore, preview: CopilotActionsPreview?
+    ) -> CopilotWork? {
+        guard let part = line.check?.part else { return nil }
+        let work = preview.map { preview in preview.work(on: part) { copilot.work(on: part, of: key) } } ?? copilot.work(on: part, of: key)
+        guard let work, work.shows(onBuild: line.check) else { return nil }
+        return work
+    }
+
+    /// What a session said of a run of it with Explain: one about another run isn't this one's.
+    static func question(
+        about line: PullRequestPanel.CheckLine, run: Int?, of key: PRKey, questions: CopilotQuestions, preview: CopilotActionsPreview?
+    ) -> CopilotQuestions.Question? {
+        guard let part = line.check?.part else { return nil }
+        let question = preview?.question(about: part) ?? questions.question(about: part, of: key)
+        guard let question, question.run == nil || run == nil || question.run == run else { return nil }
+        return question
+    }
+
+    /// Its line: "Copilot is fixing this build in the ‘Fix the Build’ task · 9m", with the step it's at, or what Copilot
+    /// said as it ended under it; a click opens where it works, when something can.
+    static func workLine(_ work: CopilotWork, names: CopilotSessionNames, now: Date, navigation: ItemNavigation?) -> some View {
+        let look = work.look
+        return CopilotWorkLine(
+            symbol: look.symbol, text: names.sentence(work), state: look.state, since: work.since, now: now, subtitle: work.step,
+            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation)
+        )
+    }
+
+    /// While a session explains why it failed: "Copilot is explaining the failure in ‘Retry backoff’ · 12s", what you
+    /// asked, and Stop.
+    static func askingLine(
+        _ question: CopilotQuestions.Question, names: CopilotSessionNames, now: Date, stop: @escaping () -> Void
+    ) -> some View {
+        let asked = question.asked.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "You asked: \($0)" }
+        return CopilotWorkLine(
+            symbol: "sparkles", text: "Copilot is explaining the failure in \(names.place(question.session))", state: .running,
+            since: question.askedAt, now: now, subtitle: asked
+        ) {
+            Button("Stop", action: stop)
+                .buttonStyle(.borderless)
+                .font(size: 11.5, weight: .medium)
+                .fixedSize()
+                .help("Stop asking: nothing changes in the session")
+        }
+    }
+}
+
+/// What Copilot does about one of a pull request's builds, on its row, in a line, while the build is closed, or open
+/// before its run is read: that a session is explaining why it failed, with Stop; that it answered, or couldn't, with
+/// Show, which opens the build to it; and what Copilot does about the build, in a sentence in its state's color, with since
+/// when, and the step it's at or what it said: "Copilot is fixing this build in the ‘Fix the Build’ task · 9m". Open, the
+/// build says them with its run (`BuildCopilotActions`). VoiceOver hears what became of them as it happens, either way.
 struct BuildWorkLine: View {
     let line: PullRequestPanel.CheckLine
     let item: PRSnapshot
     let now: Date
+    /// The build is open, its run read, and says them there.
+    let isOpen: Bool
+    /// Opens the build, at what a session said.
+    let show: () -> Void
 
     @EnvironmentObject private var copilot: CopilotTasksStore
     @EnvironmentObject private var sessions: PullRequestSessions
+    @EnvironmentObject private var questions: CopilotQuestions
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.copilotActionsPreview) private var preview
-
-    private var part: PullRequestPart? { line.check?.part }
 
     private var names: CopilotSessionNames {
         CopilotSessionNames(session: sessions.session(for: item.key), copilot: copilot, links: sessions.links)
     }
 
-    private var work: CopilotWork? {
-        guard let part else { return nil }
-        let work = preview.map { preview in preview.work(on: part) { copilot.work(on: part, of: item.key) } } ?? copilot.work(on: part, of: item.key)
-        guard let work, work.shows(onBuild: line.check?.state) else { return nil }
-        return work
-    }
-
     var body: some View {
-        let work = work
-        Group {
-            if let work {
-                let look = work.look
-                CopilotWorkLine(
-                    symbol: look.symbol, text: names.sentence(work), state: look.state, since: work.since, now: now, subtitle: work.step,
-                    detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation)
-                )
-                // Under its name and status.
-                .padding(.leading, 24)
-                .padding(.top, 6)
+        let work = BuildCopilot.work(on: line, of: item.key, copilot: copilot, preview: preview)
+        let question = copilot.isOn ? BuildCopilot.question(about: line, run: line.buildId, of: item.key, questions: questions, preview: preview) : nil
+        let shown = isOpen ? nil : Shown(work: work, question: question)
+        VStack(alignment: .leading, spacing: 6) {
+            if let shown {
+                if let question = shown.question {
+                    questionLine(question)
+                }
+                if let work = shown.work {
+                    BuildCopilot.workLine(work, names: names, now: now, navigation: navigation)
+                }
             }
         }
-        // VoiceOver hears what became of it as it happens, wherever it is: not what shows as it's read.
+        // Under its name and status.
+        .padding(.leading, 24)
+        .padding(.top, shown?.isEmpty == false ? 6 : 0)
+        // VoiceOver hears what became of them as it happens, wherever they are: not what shows as they're read.
         .onChange(of: work?.state) { old, state in
             guard let old, CopilotWork.isOngoing(old), let work, let state else { return }
             switch state {
             case .done, .failed, .stopped, .needsYou:
-                SpokenText.announce("\(line.run.name): \(SpokenText.unquoted(names.sentence(work)))")
+                SpokenText.announce("\(line.run.name): \(names.announcement(work))")
             case .waiting, .working, .unknown:
                 break
             }
         }
+        .onChange(of: question?.state) { old, state in
+            guard old == .asking, let question else { return }
+            switch state {
+            case .answered?:
+                SpokenText.announce("\(line.run.name): \(SpokenText.unquoted(names.place(question.session))) answered")
+            case .failed(let failure)?:
+                SpokenText.announce("\(line.run.name): couldn't explain it. \(failure.message(model: nil))")
+            case .asking?, nil:
+                break
+            }
+        }
+    }
+
+    /// What its line shows, as the build's run would: a session explaining it, then nothing else; what it answered, or why it
+    /// couldn't, when that's newer than what Copilot does about it; and what Copilot does about it.
+    private struct Shown {
+        var question: CopilotQuestions.Question?
+        var work: CopilotWork?
+
+        init(work: CopilotWork?, question: CopilotQuestions.Question?) {
+            if let question, question.isAsking {
+                self.question = question
+                return
+            }
+            if let question, work.map({ (question.endedAt ?? question.askedAt) > $0.since }) ?? true {
+                self.question = question
+            }
+            self.work = work
+        }
+
+        var isEmpty: Bool { question == nil && work == nil }
+    }
+
+    @ViewBuilder
+    private func questionLine(_ question: CopilotQuestions.Question) -> some View {
+        switch question.state {
+        case .asking:
+            BuildCopilot.askingLine(question, names: names, now: now) {
+                if let part = line.check?.part { questions.stop(about: part, of: item.key) }
+            }
+        case .answered:
+            CopilotWorkLine(
+                symbol: "sparkles", text: "Answer from \(names.place(question.session))", state: nil, since: question.endedAt ?? question.askedAt,
+                now: now
+            ) {
+                showButton(help: "Show the answer, with the build's run")
+            }
+        case .failed(let failure):
+            CopilotWorkLine(
+                symbol: "exclamationmark.triangle.fill", text: "Couldn't explain it: " + failure.message(model: nil), state: .failing,
+                since: question.endedAt, now: now, detail: failure.detail
+            ) {
+                showButton(help: "Show the build's run, to ask again")
+            }
+        }
+    }
+
+    private func showButton(help: String) -> some View {
+        Button("Show", action: show)
+            .buttonStyle(.borderless)
+            .font(size: 11.5, weight: .medium)
+            .fixedSize()
+            .help(help)
     }
 }
 
-/// Copilot's part in a failed build that's open in a pull request's details, while Send Work to Copilot is on: what a
-/// session said of it with Explain, then ✨ Explain the Failure, or Ask More once it answered, and Fix, before what else it
-/// can do (`trailing`), such as Open Run; each opens a small composer in place under them, one at a time in the builds and
-/// checks. Explain asks the session that worked on the build, or the pull request's, why it failed, and whether it's the
-/// change's doing, a flaky test or the build's infrastructure; Fix has Copilot reproduce it and fix it, as you say, without
-/// committing, pushing or touching pipelines.
+/// Copilot's part in a failed build that's open in a pull request's details, while Send Work to Copilot is on, as a comment
+/// thread has it: what a session said of it with Explain; what Copilot does about it, in a sentence; then ✨ Explain the
+/// Failure, or Ask More once it answered, and Fix, each opening a small composer in their place, one at a time in the
+/// details; then what else it can do, under them (`trailing`), such as Open Run. Explain asks the session that worked on
+/// the build, or the pull request's, why it failed, and whether it's the change's doing, a flaky test or the build's
+/// infrastructure; Fix has Copilot reproduce it and fix it, as you say, without committing, pushing or touching pipelines.
 struct BuildCopilotActions<Trailing: View>: View {
     let line: PullRequestPanel.CheckLine
     let item: PRSnapshot
     let investigation: BuildInvestigation
     let now: Date
-    /// The composer in place that's open in the builds and checks.
+    /// The composer in place that's open in the details.
     @Binding var composing: CopilotComposing?
     let drafts: CopilotDrafts
     @ViewBuilder var trailing: () -> Trailing
@@ -136,88 +257,95 @@ struct BuildCopilotActions<Trailing: View>: View {
         CopilotSessionNames(session: sessions.session(for: item.key), copilot: copilot, links: sessions.links)
     }
 
-    /// The session that worked on it last, which Explain and Fix go to first.
-    private var worked: String? {
-        guard let part else { return nil }
-        if let preview { return preview.work(on: part) { copilot.work(on: part, of: item.key) }?.session }
-        return copilot.work(on: part, of: item.key)?.session
+    /// What Copilot does about it, while it shows on the build.
+    private var work: CopilotWork? {
+        BuildCopilot.work(on: line, of: item.key, copilot: copilot, preview: preview)
     }
 
-    /// What a session said of this run of it with Explain: one about another run of it isn't this one's.
+    /// What a session said of this run of it with Explain.
     private var question: CopilotQuestions.Question? {
-        guard let part else { return nil }
-        let question = preview?.question(about: part) ?? questions.question(about: part, of: item.key)
-        guard let question, question.run == nil || question.run == investigation.run.id else { return nil }
-        return question
+        BuildCopilot.question(about: line, run: investigation.run.id, of: item.key, questions: questions, preview: preview)
     }
 
     /// No Copilot session goes with the pull request, as its line found them: Explain has nobody to ask.
     private var hasNobodyToAsk: Bool {
         guard preview == nil, let session = sessions.session(for: item.key) else { return false }
-        return CopilotDestinations.make(session, worked: worked, ask: .explain).all.isEmpty
+        return CopilotDestinations.make(session, worked: work?.session, ask: .explain).all.isEmpty
     }
 
     var body: some View {
         let question = question
+        let work = work
         VStack(alignment: .leading, spacing: 8) {
-            if copilot.isOn, let question {
-                questionView(question)
-            }
-            if copilot.isOn, let copied {
-                CopilotCopiedNote(note: copied) { self.copied = nil }
-            }
-            FlowLayout(spacing: 8, lineSpacing: 8) {
-                if canAct, asking == nil {
-                    buttons(hasAnswer: question?.answer != nil)
+            if copilot.isOn {
+                if let question {
+                    questionView(question)
                 }
+                // Not while a session explains it, as on a comment.
+                if let work, question?.isAsking != true {
+                    BuildCopilot.workLine(work, names: names, now: now, navigation: navigation)
+                }
+                if let copied {
+                    CopilotCopiedNote(note: copied) { self.copied = nil }
+                }
+                if canAct {
+                    if let asking, let part {
+                        BuildComposer(
+                            ask: asking, line: line, part: part, investigation: investigation, item: item, worked: work?.session,
+                            drafts: drafts, answer: question?.answer, preview: preview?.composer(about: part),
+                            fixInstead: canFix ? { open(.fix) } : nil
+                        ) { result in
+                            if case .copied(let note)? = result { copied = note }
+                            close(asking)
+                        }
+                        // A new composer for each, with its own words and where it goes.
+                        .id(asking)
+                    } else {
+                        buttons(hasAnswer: question?.answer != nil)
+                    }
+                }
+            }
+            // Its run, under what Copilot can do about it, where it stays as a composer opens.
+            FlowLayout(spacing: 8, lineSpacing: 8) {
                 trailing()
             }
             .controlSize(.small)
             // A small button's own size, which follows the window's text size, as what's beside them does.
             .font(size: 11)
-            if canAct, let asking, let part {
-                BuildComposer(
-                    ask: asking, line: line, part: part, investigation: investigation, item: item, worked: worked, drafts: drafts,
-                    answer: question?.answer, preview: preview?.composer(about: part), fixInstead: canFix ? { open(.fix) } : nil
-                ) { result in
-                    if case .copied(let note)? = result { copied = note }
-                    close(asking)
-                }
-                // A new composer for each, with its own words and where it goes.
-                .id(asking)
-            }
         }
         .onAppear {
             if let part, let composer = preview?.composer(about: part) { composing = CopilotComposing(part: part, ask: composer.ask) }
         }
-        // VoiceOver hears what became of it as it happens, wherever it is: not what shows as it's read.
-        .onChange(of: question?.state) { old, state in if old == .asking { announce(state) } }
     }
 
-    @ViewBuilder
     private func buttons(hasAnswer: Bool) -> some View {
         let nobody = hasNobodyToAsk
-        Button {
-            open(.explain)
-        } label: {
-            Label(hasAnswer ? "Ask More" : CopilotAsk.explain.title(about: part), systemImage: CopilotAsk.explain.symbol)
-        }
-        .glassButtonStyle()
-        .focused($focused, equals: .explain)
-        .disabled(nobody)
-        .help(explainHelp(nobody: nobody, hasAnswer: hasAnswer))
-        if canFix {
+        let explainTitle: String = hasAnswer ? "Ask More" : CopilotAsk.explain.title(about: part)
+        return HStack(spacing: 8) {
             Button {
-                open(.fix)
+                open(.explain)
             } label: {
-                Label("Fix", systemImage: CopilotAsk.fix.symbol)
+                Label(explainTitle, systemImage: CopilotAsk.explain.symbol)
             }
             .glassButtonStyle()
-            .focused($focused, equals: .fix)
-            .help(hasAnswer
-                ? "Have Copilot reproduce the failure and fix it, as you say, with what the session answered: it doesn't commit, push or touch pipelines"
-                : "Have Copilot reproduce the failure and fix it, as you say: it doesn't commit, push or touch pipelines")
+            .focused($focused, equals: .explain)
+            .disabled(nobody)
+            .help(explainHelp(nobody: nobody, hasAnswer: hasAnswer))
+            if canFix {
+                Button {
+                    open(.fix)
+                } label: {
+                    Label("Fix", systemImage: CopilotAsk.fix.symbol)
+                }
+                .glassButtonStyle()
+                .focused($focused, equals: .fix)
+                .help(hasAnswer
+                    ? "Have Copilot reproduce the failure and fix it, as you say, with what the session answered: it doesn't commit, push or touch pipelines"
+                    : "Have Copilot reproduce the failure and fix it, as you say: it doesn't commit, push or touch pipelines")
+            }
         }
+        .controlSize(.small)
+        .font(size: 11)
     }
 
     private func explainHelp(nobody: Bool, hasAnswer: Bool) -> String {
@@ -228,7 +356,7 @@ struct BuildCopilotActions<Trailing: View>: View {
         return "Ask the Copilot session that worked on it why this build failed, and whether it's this change, a flaky test or the build's infrastructure"
     }
 
-    /// Opens its composer, closing any other in the builds and checks, whose words stay for when it opens again.
+    /// Opens its composer, closing any other in the details, whose words stay for when it opens again.
     private func open(_ ask: CopilotAsk) {
         guard let part else { return }
         copied = nil
@@ -244,20 +372,11 @@ struct BuildCopilotActions<Trailing: View>: View {
 
     @ViewBuilder
     private func questionView(_ question: CopilotQuestions.Question) -> some View {
-        let place = CopilotWork.place(names.name(question.session), isFork: false, forkOf: nil)
+        let place = names.place(question.session)
         switch question.state {
         case .asking:
-            CopilotWorkLine(
-                symbol: "sparkles", text: "Copilot is explaining the failure in \(place)", state: .running, since: question.askedAt, now: now,
-                subtitle: question.asked.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "You asked: \($0)" }
-            ) {
-                Button("Stop") {
-                    if let part { questions.stop(about: part, of: item.key) }
-                }
-                .buttonStyle(.borderless)
-                .font(size: 11.5, weight: .medium)
-                .fixedSize()
-                .help("Stop asking: nothing changes in the session")
+            BuildCopilot.askingLine(question, names: names, now: now) {
+                if let part { questions.stop(about: part, of: item.key) }
             }
         case .answered(let answer):
             CopilotAnswerCard(
@@ -310,20 +429,6 @@ struct BuildCopilotActions<Trailing: View>: View {
             case .needsWindow:
                 break
             }
-        }
-    }
-
-    /// What VoiceOver hears as Explain ends: who answered, or why it couldn't.
-    private func announce(_ state: CopilotQuestions.Question.State?) {
-        guard let question else { return }
-        switch state {
-        case .answered?:
-            let place = CopilotWork.place(names.name(question.session), isFork: false, forkOf: nil)
-            SpokenText.announce("\(line.run.name): \(SpokenText.unquoted(place)) answered")
-        case .failed(let failure)?:
-            SpokenText.announce("\(line.run.name): couldn't explain it. \(failure.message(model: nil))")
-        case .asking?, nil:
-            break
         }
     }
 }

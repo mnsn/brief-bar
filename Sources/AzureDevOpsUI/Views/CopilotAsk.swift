@@ -8,8 +8,8 @@ import SwiftUI
 // build and conflicts the same way.
 
 /// What Copilot does about something, in a sentence, in its state's color, with since when: "Copilot is fixing this in
-/// ‘Retry backoff’ · 2m", and under it what it's at, such as the step it runs. A click opens where it works, when something
-/// can; what's after it, such as Stop, is the caller's.
+/// ‘Retry backoff’ · 2m", and under it what it's at, such as the step it runs, or what Copilot said as it ended, such as why
+/// it couldn't. A click opens where it works, when something can; what's after it, such as Stop, is the caller's.
 struct CopilotWorkLine<Trailing: View>: View {
     /// Its symbol, in its state's color.
     let symbol: String
@@ -21,7 +21,8 @@ struct CopilotWorkLine<Trailing: View>: View {
     let now: Date
     /// What it's at, under it, on one line, such as the step it runs.
     var subtitle: String?
-    /// More, for its tooltip, such as what Copilot said when it ended.
+    /// More, under it, on up to three lines, and whole in its tooltip: what Copilot said when it ended, such as why it
+    /// couldn't, with its bold and code as written.
     var detail: String?
     /// What a click does, and its tooltip.
     var open: (perform: () -> Void, help: String)?
@@ -31,6 +32,12 @@ struct CopilotWorkLine<Trailing: View>: View {
     @Environment(\.textScale) private var textScale
 
     private var color: Color { state?.textColor ?? .secondary }
+
+    /// What it says under it: nothing blank.
+    private var shownDetail: String? {
+        guard let detail = detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty else { return nil }
+        return detail
+    }
 
     /// Its sentence in full, which two lines may cut short, then the rest.
     private var help: String {
@@ -88,6 +95,13 @@ struct CopilotWorkLine<Trailing: View>: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
+                if let detail = shownDetail {
+                    Text(SummaryMarkdown.joined(detail))
+                        .font(size: 11)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let since {
@@ -106,8 +120,8 @@ struct CopilotWorkLine<Trailing: View>: View {
         .contentShape(Rectangle())
     }
 
-    /// "Copilot is fixing this in Retry backoff, for 2 minutes, Run PaymentsClientTests": the time in words, and the
-    /// names without their quotes, as VoiceOver says them.
+    /// "Copilot is fixing this in Retry backoff, for 2 minutes, Run PaymentsClientTests": the time in words, the names
+    /// without their quotes, as VoiceOver says them, and the first line of what Copilot said.
     private var spoken: String {
         var parts = [SpokenText.unquoted(text)]
         if let since {
@@ -115,6 +129,7 @@ struct CopilotWorkLine<Trailing: View>: View {
             parts.append(state == .running ? "for " + elapsed : elapsed + " ago")
         }
         if let subtitle { parts.append(subtitle) }
+        if let said = CopilotTasksStore.firstLine(shownDetail) { parts.append(said) }
         return parts.joined(separator: ", ")
     }
 }
