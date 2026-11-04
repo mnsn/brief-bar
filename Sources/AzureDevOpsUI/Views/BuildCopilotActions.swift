@@ -346,8 +346,8 @@ struct BuildCopilotActions<Trailing: View>: View {
             guard !current else { return }
             if asking != nil { composing = nil }
             if let part, isAskingInSession {
-                drafts.asks[part]?.cancel()
-                drafts.asks[part] = nil
+                drafts.asks[part, row: line.id]?.cancel()
+                drafts.asks[part, row: line.id] = nil
                 isAskingInSession = false
             }
         }
@@ -456,11 +456,17 @@ struct BuildCopilotActions<Trailing: View>: View {
             record, build: FailedBuildReport(investigation, name: line.run.name), question: question.asked, earlier: question.earlier
         )
         isAskingInSession = true
-        drafts.asks[part]?.cancel()
-        drafts.asks[part] = Task {
+        // Its row's own, where another policy's runs the same pipeline.
+        let row = line.id
+        drafts.asks[part, row: row]?.cancel()
+        drafts.asks[part, row: row] = Task {
             let outcome = await sending.explainAsPrompt(prompt, about: part, to: choice)
-            guard !Task.isCancelled else { return }
-            drafts.asks[part] = nil
+            // Called off, as when the run was read again meanwhile: it's no longer on its way.
+            guard !Task.isCancelled else {
+                isAskingInSession = false
+                return
+            }
+            drafts.asks[part, row: row] = nil
             isAskingInSession = false
             switch outcome {
             case .sent:
