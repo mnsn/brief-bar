@@ -404,7 +404,8 @@ private struct ConflictsCopilotActions: View {
                     if let asking {
                         ConflictsComposer(
                             ask: asking, item: item, worked: work?.session, drafts: drafts, answer: question?.answer,
-                            preview: preview?.composer(about: part), fixInstead: canResolve ? { open(.fix) } : nil
+                            answeredAbout: question?.head, preview: preview?.composer(about: part),
+                            fixInstead: canResolve ? { open(.fix) } : nil
                         ) { result in
                             if case .copied(let note)? = result { copied = note }
                             close(asking)
@@ -606,6 +607,8 @@ private struct ConflictsComposer: View {
     let drafts: CopilotDrafts
     /// What a session answered about them with Explain, while it shows: Ask More follows up on it, and Resolve builds on it.
     var answer: CopilotAnswer?
+    /// The branches it was about: once they move while a send waits for the files, it's left out.
+    var answeredAbout: PullRequestFilesStore.Head?
     /// For `--render`: what it shows.
     var preview: CopilotActionsPreview.Composer?
     /// Explain had no session to ask: Resolve opens instead.
@@ -635,7 +638,7 @@ private struct ConflictsComposer: View {
         }
         return CopilotAsking(
             ask: ask, part: .conflicts, action: .resolveConflicts, prepare: prepare,
-            head: { current().map { PullRequestFilesStore.Head($0.record.pullRequest) } },
+            head: { current().map { PullRequestFilesStore.Head($0.record.pullRequest) } }, answeredAbout: answeredAbout,
             fix: { how, answer in
                 guard let now = current() else {
                     return CopilotSending.Fix(prompts: ("", ""), action: .resolveConflicts, parts: [], handOff: nil)
