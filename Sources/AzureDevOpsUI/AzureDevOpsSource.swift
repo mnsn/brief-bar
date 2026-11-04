@@ -973,6 +973,22 @@ package final class AzureDevOpsSource: BriefBarSource {
                 renderings.append((name: name + suffix, view: environment(view)))
             }
         }
+        // One sent to you in a chat that you've seen, which left your lists but which the list still reads: over the list,
+        // which would show its row otherwise.
+        if let sent = store.items.first(where: { $0.role == .linked }) {
+            let details = PullRequestDetailsStore()
+            details.readRecord = { [weak store] key in store?.record(for: key) }
+            details.itemsChanged(store.items.filter { $0.key != sent.key })
+            details.show(sent)
+            let view = PullRequestsPage()
+                .environmentObject(details)
+                .environment(\.panelStyle, .page)
+                .textSize(from: services)
+                .frame(width: 560, height: 720)
+                .background(WindowBackdrop())
+                .environment(\.isRendering, true)
+            renderings.append((name: "pull-requests-details-left-the-lists-narrow", view: environment(view)))
+        }
         return renderings
     }
 
