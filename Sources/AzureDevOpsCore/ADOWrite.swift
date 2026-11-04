@@ -394,6 +394,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
             "Azure DevOps refused it."
         case .otherAccount:
             "Someone else is signed in to the Azure CLI now, so BriefBar sent nothing as them: sign in as yourself, then try again."
+        case .notListed:
+            "This pull request is no longer in your lists, so its tags didn't change."
         case .failed(let why):
             (kind == .addTag ? "Couldn't add the tag: " : "Couldn't remove the tag: ") + why
         }

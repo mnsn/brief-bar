@@ -48,8 +48,13 @@ struct PullRequestTagsRow: View {
         if case .sending(let change)? = state { change } else { nil }
     }
 
+    /// The change that didn't happen, or may not have, and why, until it's dismissed or another goes.
+    private var failure: (problem: ADOWriteProblem, change: TagChanges.Change)? {
+        if case .failed(let problem, let change)? = state { (problem, change) } else { nil }
+    }
+
     var body: some View {
-        if let tags = record?.tags, !tags.isEmpty || canChange {
+        if let tags = record?.tags, !tags.isEmpty || canChange || failure != nil {
             VStack(alignment: .leading, spacing: 6) {
                 FlowLayout(spacing: 5, lineSpacing: 5) {
                     Image(systemName: "tag")
@@ -72,9 +77,12 @@ struct PullRequestTagsRow: View {
                 if isOpen {
                     suggestions
                 }
-                if case .failed(let problem, let change)? = state, canChange {
+                if let failure {
+                    // Also once they can't be changed, as when the pull request left your lists as you clicked: but with
+                    // nothing to try again.
                     ThreadChangeProblemLine(
-                        problem: problem, kind: change.kind, retry: retry(problem, change), signIn: signIn(problem)
+                        problem: failure.problem, kind: failure.change.kind,
+                        retry: canChange ? retry(failure.problem, failure.change) : nil, signIn: signIn(failure.problem)
                     ) {
                         changes.dismiss(key)
                     }
@@ -458,7 +466,7 @@ struct PullRequestTagsRow: View {
     /// for a pull request or a tag that isn't there.
     private func retry(_ problem: ADOWriteProblem, _ change: TagChanges.Change) -> (title: String, action: () -> Void)? {
         switch problem {
-        case .notAllowed, .closed, .gone, .refused: return nil
+        case .notAllowed, .closed, .gone, .refused, .notListed: return nil
         default: break
         }
         guard preview == nil else { return ("Try Again", {}) }

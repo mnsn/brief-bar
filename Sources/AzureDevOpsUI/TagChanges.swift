@@ -6,9 +6,10 @@ import Foundation
 /// A pull request's tags as you change them in its details, with **Make Changes in Azure DevOps** on: a tag you add, and one
 /// you take off (`ADOWrite.addTag`, `removeTag`), each when you click it, while the pull request is open. What Azure DevOps
 /// answers shows at once, and the tags are read again (`PRStore.changedTags`); a change that didn't happen says why, by the
-/// tags. It reads, with one request, the tags of a pull request whose list doesn't carry them, such as one sent to you, once
-/// its details show on a window's page on screen (`follow`); and remembers the tags you add, for each project, to suggest
-/// them (`AppSettings.usedTags`), until you turn the setting off. The demo changes only its made-up data, and reads nothing.
+/// tags. It reads, with one request, the tags of a pull request whose lists don't carry them, such as one sent to you, once
+/// its details show on a window's page on screen, and again ten minutes later (`follow`); and remembers the tags you add, for
+/// each project, to suggest them (`AppSettings.usedTags`), until you turn the setting off. The demo changes only its made-up
+/// data, and reads nothing.
 @MainActor
 final class TagChanges: ObservableObject {
     /// A change to a pull request's tags.
@@ -60,15 +61,20 @@ final class TagChanges: ObservableObject {
         send = { try await client.send($0, as: $1) }
         readTags = { [weak store] key in await store?.readTags(key) }
         // Turned off, the tags show neither Add Tag nor ✕, a change on its way is called off, what went wrong goes, and so do the
-        // tags you added, which nothing suggests anymore.
+        // tags you added, which nothing suggests anymore. A change called off may have gone all the same: its tags are read
+        // again, as for one that failed so.
         settings.$makesChanges.removeDuplicates().dropFirst()
             .sink { [weak self] on in
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.objectWillChange.send()
                     if !on {
+                        let calledOff = Array(self.inFlight.keys)
                         self.forgetAll()
                         self.settings.usedTags = UsedTags()
+                        for key in calledOff {
+                            Task { [weak self] in await self?.readAgain(key) }
+                        }
                     }
                 }
             }
@@ -83,6 +89,13 @@ final class TagChanges: ObservableObject {
     func canChange(_ record: PRRecord?) -> Bool {
         guard settings.makesChanges, let record, record.tags != nil, let store else { return false }
         return CopilotSending.isOpen(record.id, in: store)
+    }
+
+    /// Why a change can't go to a pull request's tags now, as the list has it: nil when it can. One it doesn't have anymore,
+    /// or that's completed or abandoned, says so by the tags, rather than nothing, as a thread does (`ThreadChanges`).
+    private func refusal(_ key: PRKey, in store: PRStore) -> ADOWriteProblem? {
+        guard let record = store.record(for: key) else { return .notListed }
+        return record.pullRequest.status == .active ? nil : .closed
     }
 
     func state(of key: PRKey) -> State? { states[key] }
@@ -122,9 +135,12 @@ final class TagChanges: ObservableObject {
     /// whether it has it now: then what you typed is done with; otherwise the tags say why.
     @discardableResult
     func add(_ typed: String, to key: PRKey) async -> Bool {
-        guard let name = PullRequestTag.name(typed), !isSending(key), let store, let record = store.record(for: key),
-              canChange(record), let current = record.tags
-        else { return false }
+        guard let name = PullRequestTag.name(typed), !isSending(key), let store, settings.makesChanges else { return false }
+        if let problem = refusal(key, in: store) {
+            fail(key, problem, .add(name))
+            return false
+        }
+        guard let record = store.record(for: key), canChange(record), let current = record.tags else { return false }
         removed[key] = nil
         if let had = current.first(where: { $0.key == name.lowercased() }) {
             states[key] = nil
@@ -173,7 +189,12 @@ final class TagChanges: ObservableObject {
     /// Takes a tag off a pull request, by the project's tag's ID, as its ✕ does: it can be added back the same way, so
     /// nothing asks first.
     func remove(_ tag: PullRequestTag, from key: PRKey) async {
-        guard !isSending(key), let store, let record = store.record(for: key), canChange(record), let current = record.tags,
+        guard !isSending(key), let store, settings.makesChanges else { return }
+        if let problem = refusal(key, in: store) {
+            fail(key, problem, .remove(tag))
+            return
+        }
+        guard let record = store.record(for: key), canChange(record), let current = record.tags,
               current.contains(where: { $0.key == tag.key })
         else { return }
         let change = Change.remove(tag)
@@ -258,24 +279,26 @@ final class TagChanges: ObservableObject {
 
     // MARK: Tags lists don't carry
 
-    /// How long the tags read here for a pull request whose list doesn't carry them stay as they are: they're read again as
-    /// its details show after that.
+    /// How long the tags of a pull request whose lists don't carry them stay as they were read (`PRRecord.tagsReadAt`): its
+    /// details read them again after that, as they show, or while they stay on screen.
     static let readAgainAfter: TimeInterval = 600
     /// How long after a read here failed it's tried again.
     static let retryAfter: TimeInterval = 30
+    /// How often details that stay on screen look whether their tags are due to be read again: shorter in tests.
+    var checkEvery: Duration = .seconds(30)
 
     /// The pages windows show on screen (`PullRequestCodeStore.page`).
     private var visiblePages: Set<String> = []
     /// The pull requests whose details show, by what shows them, with the window's page they're on.
     private var followers: [UUID: (key: PRKey, page: String?)] = [:]
     private var reading: Set<PRKey> = []
-    /// When the tags of a pull request were read here, or couldn't be, last.
-    private var readAt: [PRKey: Date] = [:]
+    /// When a read here of a pull request's tags failed last: it's tried again half a minute later.
     private var failedAt: [PRKey: Date] = [:]
 
     /// Follows a pull request's tags while its details show it on a window's page, until the task that follows it is
     /// cancelled, as when they close or show another: tags its lists don't carry are read, one request, while a window shows
-    /// that page on screen, as it does, or once it does. Nothing for one whose lists carry them, which keep them current.
+    /// that page on screen, as it does, or once it does, and again ten minutes later while it stays there (`isDue`). Nothing
+    /// for one whose lists carry them, which every refresh reads.
     /// - Parameter page: the window's page they're on (`PullRequestCodeStore.page`); nil outside one, where nothing's read.
     func follow(_ key: PRKey, on page: String?) async {
         let follower = UUID()
@@ -286,8 +309,11 @@ final class TagChanges: ObservableObject {
             if !followers.values.contains(where: { $0.key == key }) { removed[key] = nil }
         }
         readIfNeeded(key, on: page)
+        let pause = checkEvery
         while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(3_600))
+            try? await Task.sleep(for: pause)
+            guard !Task.isCancelled else { break }
+            readIfNeeded(key, on: page)
         }
     }
 
@@ -304,17 +330,24 @@ final class TagChanges: ObservableObject {
         }
     }
 
-    /// Reads a pull request's tags, unless they're known: from its lists, or read here less than ten minutes ago. Not on a
-    /// page that isn't on screen, while they're being read, within half a minute of a read that failed, or in the demo.
+    /// Whether a pull request's tags are due to be read on their own (`PulseEngine.readTags`), as the list has it: they're
+    /// unknown, or the latest refresh's lists didn't carry them and they were read ten minutes ago or more
+    /// (`PRRecord.tagsReadAt`), however long ago its details showed, or Make Changes in Azure DevOps went off and on.
+    static func isDue(_ record: PRRecord, at now: Date) -> Bool {
+        guard record.tags != nil else { return true }
+        guard let readAt = record.tagsReadAt else { return false }
+        return now.timeIntervalSince(readAt) >= readAgainAfter
+    }
+
+    /// Reads a pull request's tags when they're due (`isDue`). Not on a page that isn't on screen, while they're being read,
+    /// within half a minute of a read here that failed, or in the demo.
     private func readIfNeeded(_ key: PRKey, on page: String?) {
         guard let page, visiblePages.contains(page), !reading.contains(key), let store, store.mode == .live,
               let record = store.record(for: key)
         else { return }
         let now = now()
         if let failed = failedAt[key], now.timeIntervalSince(failed) < Self.retryAfter { return }
-        if record.tags != nil {
-            guard let read = readAt[key], now.timeIntervalSince(read) >= Self.readAgainAfter else { return }
-        }
+        guard Self.isDue(record, at: now) else { return }
         reading.insert(key)
         Task { [weak self] in
             guard let self else { return }
@@ -322,7 +355,6 @@ final class TagChanges: ObservableObject {
             reading.remove(key)
             switch result {
             case .success?:
-                readAt[key] = self.now()
                 failedAt[key] = nil
             case .failure?:
                 failedAt[key] = self.now()
@@ -335,15 +367,14 @@ final class TagChanges: ObservableObject {
     // MARK: Forgetting
 
     /// Forgets what was going on, and calls off a change on its way, as the setting goes off, Azure DevOps stops or someone
-    /// else signs in.
+    /// else signs in. Not what's read: the tags of a pull request whose lists don't carry them are read again as they're
+    /// due (`isDue`), as the list has them.
     func forgetAll() {
         generation += 1
         for task in inFlight.values { task.cancel() }
         inFlight = [:]
         states = [:]
         removed = [:]
-        readAt = [:]
-        failedAt = [:]
     }
 
     /// Stops for good, when Azure DevOps stops.
@@ -351,6 +382,7 @@ final class TagChanges: ObservableObject {
         forgetAll()
         visiblePages = []
         followers = [:]
+        failedAt = [:]
     }
 
     /// Who's signed in to the Azure CLI, as the list last told.

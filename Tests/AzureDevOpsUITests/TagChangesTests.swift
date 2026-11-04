@@ -61,22 +61,25 @@ import Testing
         #expect(await changes.add("hotfix", to: key) == false)
         await changes.remove(PullRequestTag("deploy-eu"), from: key)
         #expect(azure.sent.isEmpty)
+        #expect(changes.state(of: key) == nil)
         #expect(tags(store) == ["deploy-eu", "needs-qa"])
     }
 
-    /// Nor on one that's closed, or whose tags aren't known.
+    /// Nor on one that's closed, which says so by the tags, as a change that finds it so, or whose tags aren't known.
     @Test func nothingGoesForAClosedPullRequestOrUnknownTags() async throws {
         let (store, changes, azure) = live()
         let done = try #require(store.records.first { $0.pullRequest.status != .active })
         #expect(!changes.canChange(done))
         #expect(await changes.add("hotfix", to: done.id) == false)
+        #expect(changes.state(of: done.id) == .failed(.closed, .add("hotfix")))
         var unknown = try #require(store.record(for: key))
         unknown.tags = nil
         #expect(!changes.canChange(unknown))
         #expect(azure.sent.isEmpty)
     }
 
-    /// Nor on one your lists don't have anymore, though its details still show it as it was when it left them, open.
+    /// Nor on one your lists don't have anymore, though its details still show it as it was when it left them, open: a change
+    /// that finds it so, as it left them as you clicked, says so by the tags.
     @Test func nothingGoesForAPullRequestThatLeftYourLists() async throws {
         let (store, changes, azure) = live()
         let shown = try #require(store.record(for: key))
@@ -87,8 +90,11 @@ import Testing
         #expect(shown.pullRequest.status == .active && shown.tags != nil)
         #expect(!changes.canChange(shown))
         #expect(await changes.add("hotfix", to: key) == false)
+        #expect(changes.state(of: key) == .failed(.notListed, .add("hotfix")))
         await changes.remove(PullRequestTag("deploy-eu"), from: key)
+        #expect(changes.state(of: key) == .failed(.notListed, .remove(PullRequestTag("deploy-eu"))))
         #expect(azure.sent.isEmpty)
+        changes.dismiss(key)
         // Back in your lists, it can be changed again.
         store.receive(DemoData.snapshot(now: store.now))
         #expect(changes.canChange(store.record(for: key)))
@@ -281,13 +287,19 @@ import Testing
     }
 
     /// A change on its way, as one waiting for a token, is called off as the setting goes off, or someone else signs in: it
-    /// never goes, and says nothing.
+    /// never goes, and says nothing. One called off as the setting goes off may have gone all the same, once its request
+    /// had: its tags are read again, to show how they stand.
     @Test func aChangeOnItsWayIsCalledOffAsItGoesOff() async throws {
         let (store, changes, azure) = live()
         changes.send = { write, _ in
             // Waits, as for a token, until it's called off.
             try await Task.sleep(for: .seconds(30))
             return try azure.send(write)
+        }
+        var reads: [PRKey] = []
+        changes.readTags = { key in
+            reads.append(key)
+            return .success([PullRequestTag("deploy-eu"), PullRequestTag("needs-qa")])
         }
         let adding = Task { await changes.add("hotfix", to: key) }
         try await waitUntil { changes.isSending(key) }
@@ -296,6 +308,7 @@ import Testing
         #expect(azure.sent.isEmpty)
         #expect(changes.state(of: key) == nil)
         #expect(tags(store) == ["deploy-eu", "needs-qa"])
+        try await waitUntil { reads == [key] }
 
         changes.settings.makesChanges = true
         changes.accountChanged("robin@contoso.example")
@@ -306,6 +319,9 @@ import Testing
         #expect(azure.sent.isEmpty)
         #expect(changes.state(of: key) == nil)
         #expect(tags(store) == ["deploy-eu", "needs-qa"])
+        // Someone else signed in: their details close, and nothing's read for the change called off.
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(reads == [key])
     }
 
     /// What adding a tag offers: the tags you added in the project, then those on its pull requests, but the pull request's
@@ -340,8 +356,9 @@ import Testing
         #expect(reads == 0)
         changes.setVisible(true, for: page)
         try await waitUntil { reads == 1 }
-        // Known now, as the list keeps them.
+        // Known now, as the list keeps them, with when they were read.
         snapshot.records[index].tags = [PullRequestTag("deploy-eu")]
+        snapshot.records[index].tagsReadAt = changes.now()
         store.receive(snapshot)
         changes.setVisible(false, for: page)
         changes.setVisible(true, for: page)
@@ -354,10 +371,138 @@ import Testing
         #expect(reads == 1)
     }
 
-    private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(30))
-        while !condition(), clock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        #expect(condition())
+    /// Tags its lists don't carry are read again ten minutes after they were, as the list has it, while their details stay on
+    /// screen, though Make Changes in Azure DevOps went off and on meanwhile; a read that fails is tried again half a minute
+    /// later, and not before, whatever went off. Then the lists carry them again, and they're read only with the lists.
+    @Test func readsTagsListsDontCarryAgainTenMinutesLater() async throws {
+        let (store, changes, _) = live()
+        var snapshot = DemoData.snapshot(now: store.now)
+        snapshot.records[try #require(snapshot.records.firstIndex { $0.id == key })].tags = nil
+        store.receive(snapshot)
+        let start = Date()
+        let engine = Engine(store: store, snapshot: snapshot, now: start)
+        changes.now = { engine.now }
+        changes.checkEvery = .milliseconds(10)
+        changes.readTags = { key in engine.readTags(key) }
+        let page = "pull requests in window 1"
+        changes.setVisible(true, for: page)
+        let following = Task { await changes.follow(key, on: page) }
+        defer { following.cancel() }
+        try await waitUntil { engine.reads == 1 }
+        #expect(store.record(for: key)?.tagsReadAt == start)
+
+        changes.settings.makesChanges = false
+        changes.settings.makesChanges = true
+        engine.now = start.addingTimeInterval(TagChanges.readAgainAfter - 1)
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(engine.reads == 1)
+        // Ten minutes later, while they still show: read again, though this one fails.
+        engine.answer = .failure(.offline)
+        engine.now = start.addingTimeInterval(TagChanges.readAgainAfter)
+        try await waitUntil { engine.reads == 2 }
+        changes.settings.makesChanges = false
+        changes.settings.makesChanges = true
+        engine.now = start.addingTimeInterval(TagChanges.readAgainAfter + TagChanges.retryAfter - 1)
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(engine.reads == 2)
+        engine.answer = .success([PullRequestTag("deploy-eu")])
+        engine.now = start.addingTimeInterval(TagChanges.readAgainAfter + TagChanges.retryAfter)
+        try await waitUntil { engine.reads == 3 }
+
+        // In its lists again, which carry them: not on its own anymore.
+        engine.listsCarry(key)
+        engine.now = start.addingTimeInterval(TagChanges.readAgainAfter * 10)
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(engine.reads == 3)
+    }
+
+    /// A stand-in for the engine's reads of tags, on a clock the test moves: it keeps what it reads in the list's snapshot,
+    /// with when the read started, and publishes it before it answers, as the engine does.
+    @MainActor final class Engine {
+        var now: Date
+        var answer: Result<[PullRequestTag], ADOError> = .success([PullRequestTag("deploy-eu")])
+        private(set) var reads = 0
+        private let store: PRStore
+        private var snapshot: PulseSnapshot
+
+        init(store: PRStore, snapshot: PulseSnapshot, now: Date) {
+            self.store = store
+            self.snapshot = snapshot
+            self.now = now
+        }
+
+        func readTags(_ key: PRKey) -> Result<[PullRequestTag], ADOError> {
+            reads += 1
+            if case .success(let read) = answer, let index = snapshot.records.firstIndex(where: { $0.id == key }) {
+                snapshot.records[index].tags = read
+                snapshot.records[index].tagsReadAt = now
+                store.receive(snapshot)
+            }
+            return answer
+        }
+
+        /// The lists carry its tags again: nothing says when they were read.
+        func listsCarry(_ key: PRKey) {
+            guard let index = snapshot.records.firstIndex(where: { $0.id == key }) else { return }
+            snapshot.records[index].tagsReadAt = nil
+            store.receive(snapshot)
+        }
+    }
+
+    /// A pull request that left its lists but stays, as one sent to you, keeps the tags they read last, with when (as the
+    /// engine has it): its details, on screen, read them once that's ten minutes ago, and not while it's less.
+    @Test func readsTheTagsOfAPullRequestThatLeftItsListsOnceTenMinutesOld() async throws {
+        let (store, changes, _) = live()
+        let now = Date()
+        changes.now = { now }
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        snapshot.records[index].tagsReadAt = now.addingTimeInterval(-TagChanges.readAgainAfter + 60)
+        store.receive(snapshot)
+        var reads = 0
+        changes.readTags = { _ in
+            reads += 1
+            return .success([PullRequestTag("deploy-eu")])
+        }
+        let page = "pull requests in window 1"
+        changes.setVisible(true, for: page)
+        let recent = Task { await changes.follow(key, on: page) }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(reads == 0)
+        recent.cancel()
+        snapshot.records[index].tagsReadAt = now.addingTimeInterval(-TagChanges.readAgainAfter - 60)
+        store.receive(snapshot)
+        let old = Task { await changes.follow(key, on: page) }
+        defer { old.cancel() }
+        try await waitUntil { reads == 1 }
+    }
+
+    /// Tags are due to be read on their own when they're unknown, or when the lists don't carry them and they were read ten
+    /// minutes ago or more; never while the lists carry them.
+    @Test func tagsAreDueWhenUnknownOrReadTenMinutesAgo() throws {
+        let (store, _, _) = live()
+        let now = Date()
+        var record = try #require(store.record(for: key))
+        #expect(!TagChanges.isDue(record, at: now))
+        record.tagsReadAt = now.addingTimeInterval(-TagChanges.readAgainAfter + 1)
+        #expect(!TagChanges.isDue(record, at: now))
+        record.tagsReadAt = now.addingTimeInterval(-TagChanges.readAgainAfter)
+        #expect(TagChanges.isDue(record, at: now))
+        record.tags = nil
+        record.tagsReadAt = nil
+        #expect(TagChanges.isDue(record, at: now))
+    }
+
+    /// Waits for what the changes do, which runs on the main actor between this test's awaits, for as long as a busy machine
+    /// could need (`waitLimit`), failing the test if it doesn't happen.
+    private func waitUntil(_ condition: @MainActor () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                Issue.record("Timed out waiting", sourceLocation: sourceLocation)
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
     }
 }

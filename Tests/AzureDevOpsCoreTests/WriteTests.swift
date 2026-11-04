@@ -388,6 +388,8 @@ import Testing
         #expect(ADOWriteProblem.failed("HTTP 500.").sentence(.addTag) == "Couldn't add the tag: HTTP 500.")
         #expect(ADOWriteProblem.failed("HTTP 500.").sentence(.removeTag) == "Couldn't remove the tag: HTTP 500.")
         #expect(ADOWriteProblem.refused("Too long").sentence(.addTag) == "Azure DevOps refused it: Too long")
+        #expect(ADOWriteProblem.notListed.sentence(.addTag) == "This pull request is no longer in your lists, so its tags didn't change.")
+        #expect(ADOWriteProblem.notListed.sentence(.removeTag) == ADOWriteProblem.notListed.sentence(.addTag))
         // Threads' sentences as they were.
         #expect(ADOWriteProblem.notAllowed.sentence(.reply) == "Azure DevOps says you may not reply here.")
         #expect(ADOWriteProblem.offline.sentence(.setStatus) == "You're offline: try again once you're back.")

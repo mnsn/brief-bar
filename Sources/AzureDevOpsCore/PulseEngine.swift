@@ -369,6 +369,10 @@ public actor PulseEngine {
     /// replace them, as a refresh under way may answer after a change; nor does one that doesn't carry them, such as a single
     /// pull request's (`TagsRead`).
     private var tags: [PRKey: TagsRead] = [:]
+    /// The pull requests whose tags the latest refresh's lists carried, which keep them current: in an organization whose
+    /// lists couldn't be read, those they carried last. Any other's are as a read of its own had them, or its lists before it
+    /// left them, which says when they were read (`PRRecord.tagsReadAt`).
+    private var tagsListed: Set<PRKey> = []
     private var problem: PulseProblem?
     private var refreshedAt: Date?
     private var hasLoaded = false
@@ -539,6 +543,12 @@ public actor PulseEngine {
         tags[key] = TagsRead(tags: read, at: readAt)
     }
 
+    /// When a pull request's tags were read, for one the latest refresh's lists didn't carry: nil while they did, and while
+    /// its tags are unknown.
+    private func tagsReadAt(_ key: PRKey) -> Date? {
+        tagsListed.contains(key) ? nil : tags[key]?.at
+    }
+
     /// One refresh: the lists, then the details the planner picks.
     public func refreshNow() async {
         let configuration = self.configuration
@@ -591,6 +601,7 @@ public actor PulseEngine {
 
         var listed: [PRKey: Listed] = [:]
         var completed: [PRKey: PullRequest] = [:]
+        var tagsCarried: Set<PRKey> = []
         var errors: [(organization: String, error: ADOError)] = []
         for organization in organizations {
             switch results[organization] {
@@ -615,12 +626,14 @@ public actor PulseEngine {
                 for (key, read) in lists.tags {
                     keep(read, of: key, readAt: startedAt)
                 }
+                tagsCarried.formUnion(lists.tags.keys)
             case .failure(let error):
                 errors.append((organization: organization, error: error))
                 // Keep what we had until it can be read again, however its name was spelled then.
                 let name = organization.lowercased()
                 for (key, item) in active where key.organization.lowercased() == name { listed[key] = item }
                 for (key, pr) in done where key.organization.lowercased() == name { completed[key] = pr }
+                tagsCarried.formUnion(tagsListed.filter { $0.organization.lowercased() == name })
             case nil:
                 break
             }
@@ -690,6 +703,7 @@ public actor PulseEngine {
         done = completed.filter { listed[$0.key] == nil && ($0.value.closedAt ?? .distantPast) > closedSince }
         details = details.filter { listed[$0.key] != nil }
         tags = tags.filter { listed[$0.key] != nil || done[$0.key] != nil }
+        tagsListed = tagsCarried.filter { tags[$0] != nil }
         entries = entries.filter { listed[$0.key] != nil }
         waitingOnSignIn = Self.folded((errors + linkedElsewhere).filter { PulseProblem.isOtherDirectory($0.error) }.map { $0.organization })
 
@@ -836,6 +850,7 @@ public actor PulseEngine {
         done = [:]
         details = [:]
         tags = [:]
+        tagsListed = []
         entries = [:]
         vanished = [:]
         linked = [:]
@@ -854,6 +869,7 @@ public actor PulseEngine {
         done = [:]
         details = [:]
         tags = [:]
+        tagsListed = []
         entries = [:]
         vanished = [:]
         linkedFailures = [:]
@@ -1231,13 +1247,13 @@ public actor PulseEngine {
         var records = active.map { key, item in
             PRRecord(
                 pullRequest: item.pullRequest, role: item.role, details: withFailures(details[key], of: item.pullRequest),
-                me: identities[key.organization] ?? "", tags: tags[key]?.tags
+                me: identities[key.organization] ?? "", tags: tags[key]?.tags, tagsReadAt: tagsReadAt(key)
             )
         }
         records += done.map { key, pr in
             PRRecord(
                 pullRequest: pr, role: .author, me: identities[key.organization] ?? "", merge: mergePipelines(for: pr),
-                tags: tags[key]?.tags
+                tags: tags[key]?.tags, tagsReadAt: tagsReadAt(key)
             )
         }
         records.sort { $0.id < $1.id }

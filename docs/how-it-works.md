@@ -1187,7 +1187,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
 | `PATCH {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}` | the same, when you set a thread's status, or after your reply with Reply & Resolve or Reply & Reactivate: once | the thread's status alone; Azure DevOps answers with the thread, its comments as it has them now |
-| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only in a pull request's details, for one read on its own, such as one sent to you or that you watch, whose list doesn't carry its tags: once as they show on a window's page on screen, then again when they show after ten minutes; and after a change to its tags, below | its tags |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only in a pull request's details, for one whose lists don't carry its tags, such as one sent to you or that you watch: as they show on a window's page on screen, then ten minutes after they were read, while they show; and after a change to its tags, or one called off as Make Changes in Azure DevOps goes off, below | its tags |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only with Make Changes in Azure DevOps on, when you add a tag to an open pull request: once | the tag's name; Azure DevOps answers with the tag as the project has it, which it makes when the project has none of that name |
 | `DELETE {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels/{tag}` | the same, when you click a tag's ✕: once | nothing but the tag, by the project's tag's ID; the project keeps the tag |
 
@@ -1540,33 +1540,41 @@ resolved, and one set to Won't Fix; and the setting, as Settings shows it (`Thre
 A pull request's tags, which Azure DevOps calls its labels, show under its heading in its details
 (`PullRequestTagsRow`), in the order of their names, ignoring letter case and numbers by their value (`PullRequestTag`).
 The lists BriefBar reads anyway carry them, leaving them out of a pull request that has none (`ADOTagList`,
-`PullRequestTag.listed`); a single pull request's read doesn't, so one sent to you or that you watch has them read on
-their own, one request (`PulseEngine.readTags`), only while its details show on a window's page on screen, as the code its
-comments are on is, and again as they show after ten minutes (`TagChanges.follow`); until then it shows none. The engine
-keeps each pull request's tags with when the read they're from started, and a read that started earlier never replaces
-them, so a refresh under way that answers after a change doesn't undo it, and a single pull request's read, which
-doesn't carry them, leaves them as they were. They're on the pull request's record (`PRRecord.tags`), not on the pull
-request, so a change to them doesn't make its pipelines or its details read again.
+`PullRequestTag.listed`); a single pull request's read doesn't, so one your lists don't carry, such as one sent to you
+or that you watch, has them read on their own, one request (`PulseEngine.readTags`), only while its details show on a
+window's page on screen, as the code its comments are on is: as they come on screen, then ten minutes after they were
+read, which details that stay on screen look at every half minute (`TagChanges.follow`, `isDue`); until then it shows
+none. When they were read is the engine's, on the record of each pull request the latest refresh's lists didn't carry
+(`PRRecord.tagsReadAt`): a read of its own, or, for one that left its lists but stays, as one sent to you, its lists'
+last; so turning the setting off and on, which forgets what was going on, doesn't hold it up, and an organization whose
+lists couldn't be read keeps what they carried. The engine keeps each pull request's tags with when the read they're
+from started, and a read that started earlier never replaces them, so a refresh under way that answers after a change
+doesn't undo it, and a single pull request's read, which doesn't carry them, leaves them as they were. They're on the
+pull request's record (`PRRecord.tags`), not on the pull request, so a change to them doesn't make its pipelines or its
+details read again.
 
 With **Make Changes in Azure DevOps** on, while the pull request is open in your lists as they are now
 (`CopilotSending.isOpen`), not only as its details last saw it, and its tags are known (`TagChanges.canChange`), its
-tags have ✕, and Add Tag opens a field that adds one, which is the details' one composer in place (`CopilotComposing.tags`);
-otherwise the tag glyph's tooltip, and VoiceOver, say why they can't be changed.
-Adding one is a `POST` of its name (`ADOWrite.addTag`); taking one off, a `DELETE` of it, by the project's tag's ID, so a
-name with a slash in it is no trouble, with no body (`ADOWrite.removeTag`), whose answer, whether nothing (204), an empty
-200 or JSON, says it's done. What Azure DevOps answers shows at once, the tag as the project spells it, and the engine
-reads the tags again, one request, for anyone else's change meanwhile (`PRStore.changedTags`, `PulseEngine.changedTags`);
-the list keeps the change over a snapshot read before it, which has the tags as they were, until one has it, or has
-tags changed since (`PRStore.pending`). A tag the pull request has already, ignoring letter case, isn't sent. Nothing asks
-first: after a tag is taken off, **Undo** adds it back, by its name (`TagChanges.removed`, `undoRemoval`), until the tags
-change again, you dismiss it, or nothing shows the pull request. A change that didn't happen says why under the tags
-(`ADOWriteProblem`), with **Try Again**, but not when Azure DevOps refused it, the pull request is closed or the tag isn't
-there, which trying again can't help, and **Sign In…** when that's why; when it may have happened all the same, the tags
-are read again; one taken off that Azure DevOps says isn't there is, when the tags read
-again don't have it, as you wanted. Each change goes in a task kept by pull request, which turning the setting off, Azure
-DevOps stopping or someone else signing in calls off (`TagChanges.forgetAll`): one that hasn't gone, as while it waits for
-a token, never does, and one called off does nothing more, though the setting is on again. It goes only as whom the list
-was read as when you clicked (`ADOClient.send(_:as:)`): when someone else signed in to the Azure CLI since, nothing goes,
+tags have ✕, and Add Tag opens a field that adds one, which is the details' one composer in place
+(`CopilotComposing.tags`); otherwise the tag glyph's tooltip, and VoiceOver, say why they can't be changed. Adding one
+is a `POST` of its name (`ADOWrite.addTag`); taking one off, a `DELETE` of it, by the project's tag's ID, so a name with
+a slash in it is no trouble, with no body (`ADOWrite.removeTag`), whose answer, whether nothing (204), an empty 200 or
+JSON, says it's done. What Azure DevOps answers shows at once, the tag as the project spells it, and the engine reads
+the tags again, one request, for anyone else's change meanwhile (`PRStore.changedTags`, `PulseEngine.changedTags`); the
+list keeps the change over a snapshot read before it, which has the tags as they were, until one has it, or has tags
+changed since (`PRStore.pending`). A tag the pull request has already, ignoring letter case, isn't sent. Nothing asks
+first: after a tag is taken off, **Undo** adds it back, by its name (`TagChanges.removed`, `undoRemoval`), until the
+tags change again, you dismiss it, or nothing shows the pull request. A change that didn't happen says why under the
+tags (`ADOWriteProblem`), with **Try Again**, but not when Azure DevOps refused it, the pull request is closed or the
+tag isn't there, which trying again can't help, and **Sign In…** when that's why. One clicked as the pull request was
+completed or abandoned, or left your lists, goes nowhere and says so, as a thread's does (`closed`, `notListed`), and
+what the tags say stays once they can't be changed, with nothing to try again; when it may have happened all the same,
+the tags are read again; one taken off that Azure DevOps says isn't there is, when the tags read again don't have it, as
+you wanted. Each change goes in a task kept by pull request, which turning the setting off, Azure DevOps stopping or
+someone else signing in calls off (`TagChanges.forgetAll`): one that hasn't gone, as while it waits for a token, never
+does, and one called off does nothing more, though the setting is on again; as the setting goes off, the tags of a pull
+request whose change it called off are read again, as it may have gone all the same. It goes only as whom the list was
+read as when you clicked (`ADOClient.send(_:as:)`): when someone else signed in to the Azure CLI since, nothing goes,
 and the tags say so, with **Sign In…**.
 
 As you type, the field suggests (`TagChoices`) the tags you added in the pull request's project, the latest first, then

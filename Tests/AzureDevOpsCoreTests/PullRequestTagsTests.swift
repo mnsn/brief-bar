@@ -251,6 +251,63 @@ import Testing
         }
     }
 
+    /// The lists carry the tags of the pull requests they have, which every refresh reads again, so nothing says when they
+    /// were read. Those of one they don't carry say when (`PRRecord.tagsReadAt`), for its details to read them again ten
+    /// minutes later: as read on its own, or as its lists read them last, for one that left them but stays, as you're no
+    /// longer asked to review it but it was sent to you; and while its organization's lists can't be read, it's as it was.
+    @Test func saysWhenTagsTheListsDontCarryWereRead() async throws {
+        let server = StubServer()
+        let reviewing = Self.pullRequest(2, author: People.sam, tags: ["deploy-eu"])
+        let reviewerList = ["searchCriteria.reviewerId": Fixture.me, "searchCriteria.status": "active"]
+        server.serveOrganization(reviewing: [reviewing])
+        server.serveOrganization("fabrikam")
+        server.on("/contoso/_apis/git/pullrequests/2", json: Fixture.pullRequest(2, author: People.sam))
+        server.on("/pullRequests/2/labels", json: Fixture.list(Self.labels(["deploy-us"])))
+        let start = Date()
+        let clock = Locked(start)
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: [Fixture.org, "fabrikam"]),
+            now: { clock.value }
+        ) { _ in }
+        let key = PRKey(Fixture.org, 2)
+        func record() async throws -> PRRecord {
+            try #require(await engine.currentSnapshot().records.first { $0.id == key })
+        }
+        await engine.setLinkedPullRequests([key])
+        await engine.refreshNow()
+        #expect(try await record().tags?.map(\.name) == ["deploy-eu"])
+        #expect(try await record().tagsReadAt == nil)
+
+        // You're no longer asked to review it, but it was sent to you: it stays, with the tags its lists read last, and when.
+        server.on("/contoso/_apis/git/pullrequests", query: reviewerList, json: Fixture.list([]))
+        clock.set(start.addingTimeInterval(120))
+        await engine.refreshNow()
+        #expect(try await record().tags?.map(\.name) == ["deploy-eu"])
+        #expect(try await record().tagsReadAt == start)
+
+        // Read on its own, when that read started.
+        clock.set(start.addingTimeInterval(700))
+        guard case .success = await engine.readTags(key) else {
+            Issue.record("Expected its tags")
+            return
+        }
+        #expect(try await record().tags?.map(\.name) == ["deploy-us"])
+        #expect(try await record().tagsReadAt == start.addingTimeInterval(700))
+
+        // Back in its lists, which carry them again: nothing says when, though they can't be read for a while, while
+        // another organization's are.
+        server.on("/contoso/_apis/git/pullrequests", query: reviewerList, json: Fixture.list([reviewing]))
+        clock.set(start.addingTimeInterval(800))
+        await engine.refreshNow()
+        #expect(try await record().tags?.map(\.name) == ["deploy-eu"])
+        #expect(try await record().tagsReadAt == nil)
+        server.on("/contoso/_apis/git/pullrequests", query: reviewerList) { _ in .status(500) }
+        clock.set(start.addingTimeInterval(900))
+        await engine.refreshNow()
+        #expect(try await record().tags?.map(\.name) == ["deploy-eu"])
+        #expect(try await record().tagsReadAt == nil)
+    }
+
     /// Tags changed show at once, as Azure DevOps answered, then as it has them, read again: with a change someone made
     /// meanwhile.
     @Test func changedTagsShowAtOnceAndAreReadAgain() async throws {
