@@ -139,8 +139,8 @@ public enum PullRequestPrompt {
         return """
             \(header(record, workplace: workplace))
 
-            Review it for me. Fetch origin/\(pr.targetBranch), then read what it changes, \
-            git diff origin/\(pr.targetBranch)...HEAD, and the code around the changes.
+            Review it for me. Fetch origin/\(oneLine(pr.targetBranch)), then read what it changes, \
+            git diff origin/\(oneLine(pr.targetBranch))...HEAD, and the code around the changes.
             \(again)
             Its unresolved comment threads, so you don't repeat them:
 
@@ -164,7 +164,7 @@ public enum PullRequestPrompt {
     ///   replies on those alone, and on none when they took on none, as a build's fix alone. Nil for the pull request's.
     public static func pushAndReply(_ record: PRRecord, workplace: Workplace = .worktree, threads only: [Int]? = nil) -> String {
         let pr = record.pullRequest
-        let source = pr.sourceBranch
+        let source = oneLine(pr.sourceBranch)
         let scoped = only != nil
         let threads = shippedThreads(record, only: only)
         // Fixes of none of its threads, such as of a build: nothing to reply on.
@@ -178,7 +178,7 @@ public enum PullRequestPrompt {
         case .agent:
             // Wherever the agent is, which may be another branch, or hold other work: it checks first, and never rebases.
             steps.append("""
-                First make sure it's safe: this must be a clone of \(pr.repositoryName), HEAD must contain origin/\(source) once \
+                First make sure it's safe: this must be a clone of \(oneLine(pr.repositoryName)), HEAD must contain origin/\(source) once \
                 you've fetched it (git merge-base --is-ancestor origin/\(source) HEAD), and everything you'd commit and push, \
                 in git status and git log origin/\(source)..HEAD, must have been made for this pull request. If any of that \
                 isn't so, stop and ask me before you commit or push anything.
@@ -205,7 +205,7 @@ public enum PullRequestPrompt {
         }
         let numbered = steps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
         let shipped = """
-            Ship what you changed for pull request !\(pr.key.number) “\(pr.title)”, in \(workplace.here):
+            Ship what you changed for pull request !\(pr.key.number) “\(oneLine(pr.title))”, in \(workplace.here):
             \(pr.webURL.absoluteString)
 
             \(numbered)
@@ -228,26 +228,33 @@ public enum PullRequestPrompt {
     /// What the pull request is, and where Copilot works on it.
     static func header(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
         let pr = record.pullRequest
+        let (repository, source) = (oneLine(pr.repositoryName), oneLine(pr.sourceBranch))
         let place: String
         switch workplace {
         case .worktree:
             place = """
-                You're in a git worktree of this repository, detached at origin/\(pr.sourceBranch), the pull request's latest \
+                You're in a git worktree of this repository, detached at origin/\(source), the pull request's latest \
                 commit.
                 """
         case .agent:
             place = """
-                Work on its branch in a clone of \(pr.repositoryName): fetch origin/\(pr.sourceBranch), the pull request's \
-                latest commit, and check it out. If you're not in a clone of \(pr.repositoryName), or it has changes of its \
+                Work on its branch in a clone of \(repository): fetch origin/\(source), the pull request's \
+                latest commit, and check it out. If you're not in a clone of \(repository), or it has changes of its \
                 own, ask me where to work before you change anything.
                 """
         }
         return """
-            Pull request !\(pr.key.number) “\(oneLine(pr.title))” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch):
+            \(introduction(pr)):
             \(pr.webURL.absoluteString)
 
             \(place)
             """
+    }
+
+    /// "Pull request !4102 “Add retry with backoff” in payments-api, from payments-retry into main": its title, repository
+    /// and branches, which whoever opened it named, each on this line (`oneLine`).
+    static func introduction(_ pr: PullRequest) -> String {
+        "Pull request !\(pr.key.number) “\(oneLine(pr.title))” in \(oneLine(pr.repositoryName)), from \(oneLine(pr.sourceBranch)) into \(oneLine(pr.targetBranch))"
     }
 
     /// The threads, numbered: where each is, and its comments, each person's on a line of its own.

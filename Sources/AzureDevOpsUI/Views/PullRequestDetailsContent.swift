@@ -39,6 +39,8 @@ struct PullRequestDetailsContent: View {
     @LocalState private var drafts = CopilotDrafts()
     /// `--render` draws it without waiting for animations, which it doesn't run.
     @Environment(\.isRendering) private var isRendering
+    /// For `--render`: what Copilot does about its comments, builds and conflicts, as each picture draws it.
+    @Environment(\.copilotActionsPreview) private var preview
 
     /// Whether `details` shows this pull request yet: a page's own store shows it once the page appears.
     private var isShown: Bool { details.selected?.key == item.key }
@@ -74,7 +76,7 @@ struct PullRequestDetailsContent: View {
                 // Its summary, of it and what's linked to it, under what it is.
                 PageSummary(ref: ref)
                 if let readiness = panel.readiness, !readiness.items.isEmpty {
-                    PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction, copilot: record.map(copilot.onIt) ?? [:]) { left in
+                    PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction, copilot: copilotOnIt(record)) { left in
                         if let place = PullRequestDetailsStore.Place.of(left, in: panel) { details.go(to: place) }
                     }
                 }
@@ -155,10 +157,19 @@ struct PullRequestDetailsContent: View {
         let page: String?
     }
 
-    /// What the task Copilot is at work on for the pull request does, while Send Work to Copilot is on.
+    /// What the task Copilot is at work on for the pull request does, while Send Work to Copilot is on; in pictures, what
+    /// they draw Copilot doing about each part says it (`copilotOnIt`).
     private var copilotAction: PullRequestAction? {
-        guard copilot.isOn, let entry = copilot.latest(forPullRequest: item.key), entry.status.phase.isActive else { return nil }
+        guard preview == nil, copilot.isOn, let entry = copilot.latest(forPullRequest: item.key), entry.status.phase.isActive else { return nil }
         return entry.action
+    }
+
+    /// What Copilot does now about each kind of what's left (`CopilotTasksStore.onIt`); in pictures, as they draw it.
+    private func copilotOnIt(_ record: PRRecord?) -> [PRReadiness.Item.Kind: CopilotWork] {
+        guard let record else { return [:] }
+        guard let preview else { return copilot.onIt(record) }
+        let key = record.pullRequest.key
+        return copilot.onIt(record) { part in preview.work(on: part) { copilot.work(on: part, of: key) } }
     }
 
     /// To where they were asked to go, once it shows, pointing out a thread, a file's row, a build or a check for a moment:

@@ -2360,10 +2360,12 @@ request's, and, for Fix, a fork of it and a new session; then the rest (`Copilot
 is, the first five tests that failed, each with the first twelve lines of what it said and six of its stack trace, at
 most 1,000 and 800 characters, and how many more failed, the last 40 lines of the failed step's log, each cut to 300
 characters, and what tells whether it's the change's doing (`BuildHint`). Anyone who can push code can write what a run
-says, so a name, of the build, a step or a test, stays on its line, its line breaks and other control characters written
-out (`PullRequestPrompt.oneLine`), and its errors, each test's message and stack trace, and the log each go in a fence
-nothing in them closes (`PullRequestPrompt.fenced`), after which the prompt says that they're what the build said, not
-instructions; the pull request's title, in every prompt's first line, stays on its line the same way. It asks the
+says, so a name, of the build, a step or a test, stays on its line, with its line breaks, other control characters and
+the invisible ones that reorder text or hide text a model may read, such as direction marks and overrides and Unicode
+tags, written out as escapes (`PullRequestPrompt.oneLine`); its errors, each test's message and stack trace, and the log
+each go in a fence nothing in them closes, with the same characters written out but tabs (`PullRequestPrompt.fenced`);
+and the prompt then says that they're what the build said, not instructions. The pull request's title, repository and
+branches, which whoever opened it named, stay on their lines the same way in every prompt (`PullRequestPrompt.introduction`). It asks the
 session, aside, what failed and why, and whether it's the change, a flaky test, the target branch or the build's
 infrastructure (`CopilotQuestions`, over `SessionQuestions`). What it answers is kept with the run it's about, so it
 doesn't show with another run of the build. **Ask in the Session** sends `PullRequestPrompt.askAboutBuild` instead,
