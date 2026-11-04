@@ -276,17 +276,24 @@ final class TagChanges: ObservableObject {
     /// DevOps didn't say how. When they can't be read now, as when it asked BriefBar to wait, after a 503, or you're offline,
     /// they're read as soon as they can be, while its details show (`unsure`).
     private func readAgain(_ key: PRKey) async {
-        unsure.insert(key)
+        let started = now()
+        unsure[key] = started
         switch await readTags(key) {
         case .success?:
-            unsure.remove(key)
-            failedAt[key] = nil
+            read(key, startedAt: started)
         case .failure?:
             failedAt[key] = now()
         case nil:
             // The demo, which reads nothing.
-            unsure.remove(key)
+            unsure[key] = nil
         }
+    }
+
+    /// A pull request's tags were read, by a read that started at `startedAt`: they're sure, unless a change may have
+    /// changed them since it started.
+    private func read(_ key: PRKey, startedAt: Date) {
+        failedAt[key] = nil
+        if let since = unsure[key], since <= startedAt { unsure[key] = nil }
     }
 
     // MARK: Tags lists don't carry
@@ -306,9 +313,9 @@ final class TagChanges: ObservableObject {
     private var reading: Set<PRKey> = []
     /// When a read here of a pull request's tags failed last: it's tried again half a minute later.
     private var failedAt: [PRKey: Date] = [:]
-    /// The pull requests whose tags a change may have changed though Azure DevOps didn't say how, until they're read again:
-    /// due whatever their lists carry (`readAgain`).
-    private var unsure: Set<PRKey> = []
+    /// The pull requests whose tags a change may have changed though Azure DevOps didn't say how, with when, until a read
+    /// that started since goes: due whatever their lists carry (`readAgain`).
+    private var unsure: [PRKey: Date] = [:]
 
     /// Follows a pull request's tags while its details show it on a window's page, until the task that follows it is
     /// cancelled, as when they close or show another: tags its lists don't carry are read, one request, while a window shows
@@ -362,7 +369,7 @@ final class TagChanges: ObservableObject {
         else { return }
         let now = now()
         if let failed = failedAt[key], now.timeIntervalSince(failed) < Self.retryAfter { return }
-        guard unsure.contains(key) || Self.isDue(record, at: now) else { return }
+        guard unsure[key] != nil || Self.isDue(record, at: now) else { return }
         reading.insert(key)
         Task { [weak self] in
             guard let self else { return }
@@ -370,8 +377,7 @@ final class TagChanges: ObservableObject {
             reading.remove(key)
             switch result {
             case .success?:
-                unsure.remove(key)
-                failedAt[key] = nil
+                read(key, startedAt: now)
             case .failure?:
                 failedAt[key] = self.now()
             case nil:
@@ -399,7 +405,7 @@ final class TagChanges: ObservableObject {
         visiblePages = []
         followers = [:]
         failedAt = [:]
-        unsure = []
+        unsure = [:]
     }
 
     /// Who's signed in to the Azure CLI, as the list last told.
