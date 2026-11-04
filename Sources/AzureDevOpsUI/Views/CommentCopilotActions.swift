@@ -311,25 +311,32 @@ struct ThreadCopilotActions: View {
         }
     }
 
-    /// What VoiceOver hears as Explain ends: who answered, or why it couldn't.
+    /// What VoiceOver hears as Explain ends: who answered, or why it couldn't. Once, though the thread shows in more than one
+    /// place.
     private func announce(_ state: CopilotQuestions.Question.State?) {
         guard let question else { return }
+        let said: String
         switch state {
         case .answered?:
-            SpokenText.announce("\(spokenThread): \(SpokenText.unquoted(names.place(question.session))) answered")
+            said = "\(SpokenText.unquoted(names.place(question.session))) answered"
         case .failed(let failure)?:
-            SpokenText.announce("\(spokenThread): couldn't explain it. \(failure.message(model: nil))")
+            said = "couldn't explain it. \(failure.message(model: nil))"
         case .asking?, nil:
-            break
+            return
         }
+        SpokenText.announce(
+            "\(spokenThread): \(said)", once: .init(pullRequest: item.key, part: part, said: said, since: question.endedAt ?? question.askedAt)
+        )
     }
 
-    /// What VoiceOver hears as Copilot's work on it ends, or waits for you.
+    /// What VoiceOver hears as Copilot's work on it ends, or waits for you. Once, though the thread shows in more than one
+    /// place.
     private func announce(_ state: CopilotWork.State?) {
         guard let work, let state else { return }
         switch state {
         case .done, .failed, .stopped, .needsYou:
-            SpokenText.announce("\(spokenThread): \(names.announcement(work))")
+            let said = names.announcement(work)
+            SpokenText.announce("\(spokenThread): \(said)", once: .init(pullRequest: item.key, part: part, said: said, since: work.since))
         case .waiting, .working, .unknown:
             break
         }
