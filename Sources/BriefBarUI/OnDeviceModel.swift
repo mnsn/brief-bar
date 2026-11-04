@@ -1,10 +1,16 @@
 import Foundation
 import FoundationModels
+import Synchronization
 
 /// Apple Intelligence's on-device model, for the summaries some sources write. Always
 /// `SystemLanguageModel.default`, which runs on this Mac: never Private Cloud Compute or any other model,
 /// so what's summarized doesn't leave the Mac.
 package enum OnDeviceModel {
+    /// The model, made once and kept, as Apple's examples keep theirs: its availability follows the Mac's.
+    /// `SystemLanguageModel.default` makes a new one each time it's read, and what watching each one's availability took
+    /// stayed once it went: views that read it as they update, such as the Pull Requests page, kept a little more each time.
+    private static let model = SystemLanguageModel.default
+
     package enum Failure: Error, Equatable, Sendable {
         /// Not on this Mac, or not now: why, in a sentence.
         case unavailable(String)
@@ -32,7 +38,7 @@ package enum OnDeviceModel {
 
     /// Why it can't run on this Mac now, or nil when it can.
     package static var unavailability: Unavailability? {
-        switch SystemLanguageModel.default.availability {
+        switch model.availability {
         case .available: nil
         case .unavailable(.deviceNotEligible): .notEligible
         case .unavailable(.appleIntelligenceNotEnabled): .notEnabled
@@ -53,6 +59,15 @@ package enum OnDeviceModel {
     }
 
     package static var isAvailable: Bool { unavailableReason == nil }
+
+    /// Whether it always picks the likeliest words, rather than varying them a little: then, as Apple documents, the
+    /// same question always gets the same answer.
+    private static let picksLikeliestWords = Mutex(false)
+
+    /// From now on, answers the same question the same way: for `--render`, whose parts different processes draw.
+    package static func useLikeliestWords() {
+        picksLikeliestWords.withLock { $0 = true }
+    }
 
     /// Asks the on-device model, giving up after `timeout`.
     package static func respond(
@@ -75,11 +90,12 @@ package enum OnDeviceModel {
     ) async -> Result<String, Failure> {
         if let reason = unavailableReason { return .failure(.unavailable(reason)) }
         // Explicitly the on-device model.
-        let session = LanguageModelSession(model: SystemLanguageModel.default, instructions: instructions)
+        let session = LanguageModelSession(model: model, instructions: instructions)
+        let options = picksLikeliestWords.withLock { $0 }
+            ? GenerationOptions(sampling: .greedy, maximumResponseTokens: maximumTokens)
+            : GenerationOptions(temperature: temperature, maximumResponseTokens: maximumTokens)
         do {
-            let response = try await session.respond(
-                to: prompt, options: GenerationOptions(temperature: temperature, maximumResponseTokens: maximumTokens)
-            )
+            let response = try await session.respond(to: prompt, options: options)
             return response.content.isEmpty ? .failure(.empty) : .success(response.content)
         } catch let error as LanguageModelSession.GenerationError {
             switch error {
