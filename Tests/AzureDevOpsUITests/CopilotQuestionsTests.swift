@@ -79,6 +79,33 @@ import Testing
     /// As the pull requests are read again, what was asked about a build's run that its details don't list any more, or about
     /// another attempt of it, goes, as Ask More and Fix would build on it: not what's about a run as it is now, a thread, or
     /// a pull request whose builds weren't read.
+    /// What was asked about a pull request's conflicts goes once someone pushes to it or retargets it, as the pull requests
+    /// are read again: they conflict otherwise then, and Ask More and Resolve would build on it. Not while its branches stay.
+    @Test func anAnswerAboutConflictsGoesOnceEitherBranchMoves() async throws {
+        let (questions, _) = questions()
+        questions.askForTests = { _, _ in .success("Both renamed the enum.") }
+        var record = try #require(DemoData.records(now: Date()).first { $0.id == key })
+        let asked = PullRequestFilesStore.Head(record.pullRequest)
+        questions.ask("Why?", asked: nil, session: session, about: .conflicts, head: asked, of: key)
+        try await settle { questions.question(about: .conflicts, of: key)?.isAsking == false }
+        #expect(questions.question(about: .conflicts, of: key)?.head == asked)
+        questions.dismissStale(of: [record])
+        #expect(questions.question(about: .conflicts, of: key) != nil)
+        // Pushed to.
+        record.pullRequest.sourceCommit = "pushed"
+        questions.dismissStale(of: [record])
+        #expect(questions.question(about: .conflicts, of: key) == nil)
+        // Retargeted, while it's still being asked: it stops.
+        questions.askForTests = { _, _ in
+            try? await Task.sleep(for: .seconds(30))
+            return .success("Too late.")
+        }
+        questions.ask("Why?", asked: nil, session: session, about: .conflicts, head: PullRequestFilesStore.Head(record.pullRequest), of: key)
+        record.pullRequest.targetBranch = "release"
+        questions.dismissStale(of: [record])
+        #expect(questions.question(about: .conflicts, of: key) == nil)
+    }
+
     @Test func anAnswerAboutAnotherRunOrAttemptGoes() async throws {
         let (questions, _) = questions()
         questions.askForTests = { _, _ in .success("main broke it.") }

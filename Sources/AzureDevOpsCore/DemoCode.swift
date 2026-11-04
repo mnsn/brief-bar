@@ -56,6 +56,8 @@ struct DemoCode: CodeSource {
         ]),
         // Jordan's upgrade of the build agents to .NET 9, waiting for your review (DemoChangedFiles.swift).
         4110: Changes(pushedAgo: [nil], files: buildAgentsUpgradeFiles),
+        // The order status enum's new name, which conflicts with main (DemoConflicts.swift).
+        4079: Changes(pushedAgo: [nil, 30 * 3_600], files: orderStatusRenameFiles),
     ]
 
     /// Each version of each file, by its object ID, found once rather than for each read.

@@ -165,23 +165,24 @@ extension PRRecord {
 
 extension PullRequestDetailsStore.Place {
     /// Where something of a pull request is in its details: a thread; the row of the build that runs a pipeline, which
-    /// opens; or, for its conflicts, their top, where what's left says so.
+    /// opens; or its merge conflicts, which their top stands for once it has none (`anchor(in:files:)`).
     static func of(_ part: PullRequestPart, in panel: PullRequestPanel) -> Self {
         switch part {
         case .thread(let id): .thread(id)
         case .build(let pipeline): panel.checks.first { $0.check?.part == .build(pipeline) }.map(Self.of) ?? .section(.checks)
-        case .conflicts: .top
+        case .conflicts: .section(.conflicts)
         }
     }
 }
 
 extension PullRequestAction {
-    /// What a fix sent for it doesn't do, for its composer's note: "no commit, push or reply".
+    /// What a fix sent for it doesn't do, for its composer's note: "no commit, push or reply"; for conflicts, what it may
+    /// do, and what's left for Push & Reply.
     var leavesOut: String {
         switch self {
         case .fixComments: "no commit, push or reply"
         case .fixBuild: "no commit, push or pipeline change"
-        case .resolveConflicts: "no push"
+        case .resolveConflicts: "it may commit the merge, but only Push & Reply pushes it"
         case .review: "no change"
         case .pushAndReply: "nothing else"
         }
@@ -413,6 +414,9 @@ struct CopilotAsking {
     var attempt: Date?
     /// Which row it's on, where more than one is about the same part, as a build's (`CopilotComposing.row`).
     var row: String?
+    /// For conflicts, the pull request's branches as what it asks is written for them, once it's prepared: a push or a
+    /// retarget puts what a session answered out of date (`CopilotQuestions.dismissStale`).
+    var head: (@MainActor () -> PullRequestFilesStore.Head?)?
 
     /// The words a composer says what it does in.
     struct Words {
@@ -444,6 +448,7 @@ struct CopilotAsking {
     init(
         ask: CopilotAsk, part: PullRequestPart?, action: PullRequestAction, title: String? = nil, sendTitle: String? = nil,
         prepare: (@MainActor () async -> Void)? = nil, run: Int? = nil, attempt: Date? = nil, row: String? = nil,
+        head: (@MainActor () -> PullRequestFilesStore.Head?)? = nil,
         fix: @escaping @MainActor (_ how: String, _ answer: CopilotAnswer?) -> CopilotSending.Fix,
         question: @escaping @MainActor (_ asked: String, _ earlier: CopilotAnswer?) -> String
     ) {
@@ -457,6 +462,7 @@ struct CopilotAsking {
         self.run = run
         self.attempt = attempt
         self.row = row
+        self.head = head
         self.fix = fix
         self.question = question
     }
@@ -744,14 +750,22 @@ struct CopilotPartComposer<Options: View>: View {
             guard let part = asking.part, let id = target.sessionID else { return }
             let earlier = answer
             isSending = asking.prepare != nil
+            problem = nil
             drafts.sends[key] = Task {
                 // What it quotes, once the read under way ends.
                 await asking.prepare?()
                 guard !Task.isCancelled else { return }
                 drafts.sends[key] = nil
                 isSending = false
+                // Gone from your lists, completed or abandoned meanwhile: nothing is asked.
+                guard CopilotSending.isOpen(item.key, in: store) else {
+                    problem = CopilotSending.pullRequestGone
+                    SpokenText.announce(CopilotSending.pullRequestGone)
+                    return
+                }
                 questions.ask(
-                    asking.question(words, earlier), asked: words, earlier: earlier, session: id, about: part, run: asking.run, attempt: asking.attempt, of: item.key
+                    asking.question(words, earlier), asked: words, earlier: earlier, session: id, about: part, run: asking.run,
+                    attempt: asking.attempt, head: asking.head?(), of: item.key
                 )
                 drafts.texts[key] = nil
                 SpokenText.announce("Asking \(choice.map(PullRequestSession.name) ?? "the session")")
@@ -790,12 +804,31 @@ struct CopilotPartComposer<Options: View>: View {
         }
     }
 
-    /// Edit the Whole Prompt…: the Send to Copilot window, with its prompts as they're written now, going where you chose.
+    /// Edit the Whole Prompt…: the Send to Copilot window, with its prompts as they're written once what they quote is read,
+    /// as a send waits for it, going where you chose.
     private func openWindow(_ target: CopilotDestination?, choice: SessionChoice?) {
-        guard let record else { return }
-        let sending = CopilotSending(item: item, record: record, store: store, copilot: copilot, session: session)
-        sending.openWindow(asking.fix(text, includesAnswer ? answer : nil), destination: target, choice: choice)
-        done(nil)
+        guard record != nil else { return }
+        let key = asking.draftKey
+        drafts.callOff(key)
+        let asking = asking
+        let words = text
+        let answer = includesAnswer ? answer : nil
+        isSending = asking.prepare != nil
+        problem = nil
+        drafts.sends[key] = Task {
+            await asking.prepare?()
+            guard !Task.isCancelled else { return }
+            drafts.sends[key] = nil
+            isSending = false
+            guard let record = store.record(for: item.key), record.pullRequest.status == .active else {
+                problem = CopilotSending.pullRequestGone
+                SpokenText.announce(CopilotSending.pullRequestGone)
+                return
+            }
+            let sending = CopilotSending(item: item, record: record, store: store, copilot: copilot, session: session)
+            sending.openWindow(asking.fix(words, answer), destination: target, choice: choice)
+            done(nil)
+        }
     }
 }
 

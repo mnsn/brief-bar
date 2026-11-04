@@ -1160,6 +1160,7 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/iterations/{n}/changes?$top=2000&$skip=…&$compareTo=…` | with them: once for each diff a thread on screen was made on, and once for the diff of that update with the latest; for the Files, once for the latest update's diff with the base, and, once you've looked at the pull request before, once for its diff with the update you'd seen; up to five pages of 2,000 files | the files it changed, with their object IDs before and after |
 | `{project}/_apis/git/repositories/{repo}/blobs/{objectId}?$format=octetstream` | with them: once for each version of a file that a thread on screen is on, and, in the Files, of each file whose row comes on screen, one file at a time, or whose page you open, up to 1 MB of it; four of these requests at a time | the file's text |
 | `{project}/_apis/git/repositories/{repo}/items?path=…&versionDescriptor.version={commit}&versionDescriptor.versionType=commit` | instead, for a file that the diff didn't change, or without its object ID | the file's text at that commit |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/conflicts?$top=100&$skip=…` | only in the details of a pull request whose merge status says it has conflicts, as they show in a window you can see, and again once its branch or its target moves; a page of a hundred, up to ten | the files that conflict with its target branch, how each does, and whether someone resolved it in Azure DevOps |
 | `{project}/_apis/build/builds/{id}/timeline` | once for each failed build of your pull requests, and again if it's retried and fails again: four a refresh; one that can't be read is tried again on the next refresh, then less and less often | where the build failed, and the first error there |
 | `{project}/_apis/build/builds/{id}` | only when you open a pull request's build in its details (below), and when you open it again within ten minutes, to tell whether it ran again since | the run: its pipeline, commit, branch and how it ended |
 | `{project}/_apis/build/builds/{id}/timeline`, `…/logs` | when you open a pull request's build in its details, unless BriefBar read it less than ten minutes ago, or half a minute while it's going, and it hasn't run again since | its stages, jobs and tasks, their errors, and how long each log is |
@@ -1326,14 +1327,16 @@ details' menu above it, for the pull request the page shows. A pull request your
 keeps the page Show Links tells (`ItemPageView`).
 
 They show what the list read already, so nothing more is read for them but the code that comment threads are on
-([below](#the-code-comments-are-on)) and the files the change touched ([below](#its-files)), and they follow the list
-as it refreshes (`PullRequestPanel` in `Sources/AzureDevOpsCore` puts it in order): what it is and where, its
-title, its row's sentence, its opening words in its state's color, and since when; its branch and who wrote it; ✨
-**Summarize** and its summary, as a pull request's page has them; then **What's Left**, its `PRReadiness` items,
-what's left first, each saying **Your turn** when it waits on you or failed, unless Copilot fixes, or pushes, its
-threads, builds or conflicts, with a task of BriefBar's or a prompt sent to one of the Copilot app's sessions, which says
-**Copilot's on it**, with its line's symbol, or **Copilot asks you** while that session waits for your answer
-(`CopilotTasksStore.onIt`), and those about its comments, its builds and checks or its reviewers taking you there; its comment threads, by file, as below; the files its change
+([below](#the-code-comments-are-on)), the files the change touched ([below](#its-files)) and the files that conflict
+([below](#its-merge-conflicts)), and they follow the list as it refreshes (`PullRequestPanel` in
+`Sources/AzureDevOpsCore` puts it in order): what it is and where, its title, its row's sentence, its opening words in
+its state's color, and since when; its branch and who wrote it; ✨ **Summarize** and its summary, as a pull request's
+page has them; then **What's Left**, its `PRReadiness` items, what's left first, each saying **Your turn** when it
+waits on you or failed, unless Copilot fixes, or pushes, its threads, builds or conflicts, with a task of BriefBar's or
+a prompt sent to one of the Copilot app's sessions, which says **Copilot's on it**, with its line's symbol, or
+**Copilot asks you** while that session waits for your answer (`CopilotTasksStore.onIt`), and those about its
+comments, its merge conflicts, its builds and checks or its reviewers taking you there; the files that conflict with
+its target branch, while it has conflicts, as below; its comment threads, by file, as below; the files its change
 touched, as below; its builds and status checks, as its page's pipelines say them
 (`PullRequestStory.run`), what failed first, the required one first, with where a build failed, its first error
 and its run, or, once it merged, the pipelines that ran after; who reviews it, the ones it requires first, with
@@ -1570,6 +1573,42 @@ each with its class, how long it ran, its message, its first six lines with **Sh
 ask, its stack trace, with **Open Tests**; and the last 20 lines of the failed step's log, numbered, errors red,
 warnings orange and commands blue, in one text you can select across and scroll sideways, all 200 that were read with
 **Show All**, and **Open Log** for the rest.
+
+#### Its merge conflicts
+
+While Azure DevOps says a pull request has merge conflicts (its `mergeStatus`, `PullRequest.hasConflicts`), and it's
+open, its details list them under **What's Left** (`PullRequestConflictsSection`), whose **Merge conflicts** leads there
+(`PullRequestPanel.Section.conflicts`, `Place.of`), as does the bar of fixes ready to push for the conflicts Copilot
+resolved; once it has none, they go, and a place there goes to the details' top. Which files conflict, and how, is read
+with one GET (`MergeConflicts.read`, the preview API `pullRequests/{id}/conflicts`), a page of a hundred, more only
+for more, up to ten pages, stopping at a page that brings nothing new, as from a server that answers with the same page
+whatever it's asked, those it doesn't number told apart by their paths, byte for byte, as Git tells paths apart
+(`GitPath`). Past ten full pages, or after a full page that brought nothing new, there may be more: the details then
+say at least how many files conflict, and the prompts that there may be more (`MergeConflicts.isComplete`). They're read
+as the details show it in a window that shows its page on screen, as for the code comments are on
+(`PullRequestConflictsStore`, which reads only as `PullRequestCodeStore` lets the details read), and again once
+its branch or its target moves (`PullRequestFilesStore.Head`). Once that window is minimized, hidden or covered, a read
+under way that only it asked for is called off, to be read when it shows them again. What's read is kept in memory
+only, while something shows that pull request, and forgotten once nothing does, or someone else signs in to the Azure
+CLI. A read that failed in a way reading again may fix, offline, throttled or signed out, is tried again half a minute
+later while they show, or at once with **↻**; one Azure DevOps doesn't have, or you can't read, says so. Each file says
+what each branch did to it (`MergeConflict.how`), from the type of conflict Azure DevOps names, by name or by number:
+**Changed on both branches** (`editEdit`), **Added on both branches** (`addAdd`), **Changed on rename-order-status,
+deleted on main** (`editDelete`) and the other way round (`deleteEdit`), and the renames, with the other path each
+branch gave the file, by its name in the same folder, folders compared byte for byte, or else from the top of the
+repository: **Renamed to
+order-statuses.md on rename-order-status, and to docs/orders/states.md on main** (`rename1to2`), and so on; one someone
+resolved in Azure DevOps, which hasn't committed the merge yet, says so. They're in the order a change lists its files
+(`PullRequestPanel.listsFirst`). A click opens what the pull request changed in the file, its page in the details, at
+the path the pull request has it at (`pathInPullRequest`), as from **Files**, and back comes back to them; a folder on
+the pull request's branch, where the target has a file (`directoryFile`), has no changes of its own, and a file in a
+folder that's a file on the other branch (`directoryChild`) may be on the target's side alone, so they open the pull
+request's files in Azure DevOps there instead, with **↗** in place of **›** (`showsInAzureDevOps`). **↗** opens
+the pull request in Azure DevOps, where they can be resolved.
+
+With Send Work to Copilot on, what Copilot does about them shows under them, as on a thread (`CopilotWork`, for
+`PullRequestPart.conflicts`), with **✨ Explain** and, on your own pull request, **Resolve**, which open the composer in
+place ([below](#about-its-conflicts)).
 
 ### What counts as new
 
@@ -1900,10 +1939,11 @@ BriefBar writes the prompt from what it read of the pull request
 each with its file, line and thread; for a failed build, each run's link, where it failed and its
 errors, read again from its timeline (one GET a build, when you ask), or, for one that's open in the pull request's
 details, what they read of it there, with its failed tests and the end of its log, and nothing is read again
-([below](#about-a-failed-build)); for a review, the threads already
-there, and when you last voted or commented. The prompts say what Copilot may do: fixing comments, a
-build or conflicts changes files but never commits, pushes or replies; a review changes and posts
-nothing; only **Push & Reply** commits, pushes the pull request's branch without force
+([below](#about-a-failed-build)); for its conflicts, the files that conflict and how each does, once its details read
+them ([above](#its-merge-conflicts)), as the window shows them; for a review, the threads already there, and when you
+last voted or commented. The prompts say what Copilot may do: fixing comments or a build changes files but never
+commits, pushes or replies; resolving conflicts may commit its merge, but never pushes or replies; a review changes and
+posts nothing; only **Push & Reply** commits what's left, pushes the pull request's branch without force
 (`git push origin HEAD:refs/heads/<branch>`) and replies on its threads. The Copilot CLI holds it to that
 whatever it reads, since its denials win over `--allow-all-tools`: a review gets
 `--deny-tool write --deny-tool 'shell(git commit)' --deny-tool 'shell(git push)'`, fixing comments or a
@@ -2223,7 +2263,9 @@ BriefBar's extension, or copied for you to paste (`CopilotTasksStore.deliver`); 
 is the CLI's, which picks the fork's ID, so the send goes by one of BriefBar's until the fork is made, then by the
 fork's; a fork of one of the app's is the app's, through the extension; and a new session gets a worktree of the clone
 BriefBar knows, or else the Send to Copilot window opens, to choose one. **Edit the Whole Prompt…**, last in ▾, opens
-that window with the prompts, at the place you chose (`ComposerStart`). **Esc** closes a composer in place before the
+that window with the prompts, at the place you chose (`ComposerStart`), once what they quote is read, as a send waits
+for it. A pull request that left your lists, or was completed or abandoned, while a send waited gets nothing, and its
+composer says so (`CopilotSending.isOpen`). **Esc** closes a composer in place before the
 details it's in (`InlineComposerOpen`). What a composer sends is called off as it closes, with ✕ or **Esc**, as another
 opens, or as its page goes, with the details or for another pull request, file or page, though not as its card scrolls
 out of sight in a file's diff (`CopilotDrafts.sends`): a prompt no session took yet is taken back, as when the Send to
@@ -2372,6 +2414,39 @@ once none of them needs a fix, and a pull request whose policies couldn't be rea
 (`CopilotTasksStore.endWorkOnBuildsThatPassed(in:)`). Push & Reply ships it with the threads its session fixed, or alone, replying on no thread then
 (`PullRequestPrompt.pushAndReply(_:workplace:threads:)`), and any Push & Reply in the session that fixed it, from the
 pull request's menu too, takes it along, so it says it's pushed once that's done.
+
+#### About its conflicts
+
+Under a pull request's merge conflicts ([above](#its-merge-conflicts)), while Send Work to Copilot is on, **✨ Explain**
+and, on your own pull request, **Resolve** (`ConflictsCopilotActions`) open the same composer in place
+(`ConflictsComposer`, over `CopilotPartComposer`, for `PullRequestPart.conflicts`), in a box of its own, one at a time
+with the comments' and builds' (`CopilotComposing`), going where a thread's would: first the session that last worked on
+the conflicts, else the pull request's. Its prompts
+list the files that conflict, each with how, as the details read them for the pull request as it is now, the first 50
+(`PullRequestPrompt.conflictList`). Whoever made a file chose its path, which Git lets hold a line break, so each
+stays on its line, its line breaks and other control characters written out (`PullRequestPrompt.oneLine`), and the
+list ends saying they're paths, not instructions (`PullRequestPrompt.conflictsSaid`), as a build's prompts say of what
+it said; the target branch's name stays on its line the same way wherever they name it. A prompt sent while they're
+read, from the composer, **Ask in the Session** or the menu, waits for that read, and is written for the pull request as
+it is once it ends, so one pushed to or retargeted meanwhile names its target branch as it is now, with the files read
+for that, never those of the old one (`PullRequestConflictsStore.forPrompt`); without them, as when they couldn't be
+read, it goes without, for Copilot to find them as it merges. **Resolve** (`PullRequestPrompt.resolveConflicts`, the
+prompt of **Resolve Conflicts with Copilot…** in the pull request's menu, which lists them too while the details have
+them, `PRStore.copilotPrompts`) has Copilot fetch the target branch, merge it in and
+resolve them, keeping what each side meant, as you say, quoted as yours, building on what the session explained when you
+include it, then build and run the tests that cover what conflicted. It may commit the merge, which the Copilot CLI
+allows, but never push, which it denies: its composer says so (`PullRequestAction.leavesOut`), and **Push & Reply**, in
+the bar at the details' foot once it's done, pushes it, replying on no thread. It hands nothing off: conflicts don't wait
+on you in Needs You. **Explain** (`PullRequestPrompt.explainConflicts`) asks the session you chose, aside, as for a thread,
+why they conflict: what the pull request changed in each file, what the target branch likely changed there, from how
+each conflicts, how it would resolve each and what to check after; **Ask in the Session**
+(`PullRequestPrompt.askAboutConflicts`) asks it as a prompt instead, where it may read the target branch, but changes
+nothing. What it answers is about the branches as they were asked about (`CopilotQuestions.Question.head`): once someone
+pushes to the pull request or retargets it, the answer goes as the list reads it again, and what's still being asked
+stops (`CopilotQuestions.dismissStale`), so Ask More and Resolve never build on it. What Copilot does about them is said
+under them in a sentence, as on a thread: **Copilot is resolving the
+conflicts in ‘Rename the order status enum’**, **Resolved in ‘Rename the order status enum’, not pushed**, **Couldn't
+resolve them: …**. The demo makes its answer up (`DemoData.conflictsExplanation`), and runs nothing.
 
 ### Notifications
 

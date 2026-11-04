@@ -129,17 +129,6 @@ public enum PullRequestPrompt {
         return parts.joined(separator: "\n\n")
     }
 
-    public static func resolveConflicts(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
-        let target = record.pullRequest.targetBranch
-        return """
-            \(header(record, workplace: workplace))
-
-            It has merge conflicts with \(target). Fetch origin/\(target), merge it into \(workplace.here), and resolve the \
-            conflicts, keeping what each side meant. Build, and run the tests that cover what conflicted. Don't push: \
-            end with what conflicted and how you resolved it.
-            """
-    }
-
     public static func review(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
         let pr = record.pullRequest
         let threads = (record.details?.threads ?? []).filter { !$0.isResolved }

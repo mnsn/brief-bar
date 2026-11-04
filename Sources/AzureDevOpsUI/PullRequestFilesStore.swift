@@ -107,7 +107,7 @@ final class PullRequestFilesStore: ObservableObject {
     init(code: PullRequestCodeStore, now: @escaping () -> Date = Date.init) {
         self.code = code
         self.now = now
-        code.forgot = { [weak self] in self?.forgetWhatNothingShows() }
+        code.whenForgetting { [weak self] in self?.forgetWhatNothingShows() }
         // What only views on a page that no window shows on screen anymore asked for is called off: each view asks again
         // once its window shows it.
         subscription = code.$visibilityChanges.dropFirst().sink { [weak self] _ in
