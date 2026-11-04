@@ -251,6 +251,14 @@ public actor PulseEngine {
         var mine: [PullRequest]
         var reviewing: [PullRequest]
         var completed: [PullRequest]
+        /// The tags of the pull requests the lists have, which they carry; but those they carry in a way that can't be read.
+        var tags: [PRKey: [PullRequestTag]] = [:]
+    }
+
+    /// A pull request's tags, and when the read they're from started.
+    private struct TagsRead: Sendable {
+        var tags: [PullRequestTag]
+        var at: Date
     }
 
     /// A failed build of one of your pull requests, whose timeline says where it failed. A build that's retried keeps
@@ -355,6 +363,11 @@ public actor PulseEngine {
     /// that started since was, as a slow answer may come after a quick one.
     private var changes = 0
     private var changedAt: [PRKey: Int] = [:]
+    /// Each pull request's tags, as the read that started last has them: its lists', which carry them, or one of its own,
+    /// as after BriefBar changed them (`readTags`, `changedTags`). A read that started before the one they're from doesn't
+    /// replace them, as a refresh under way may answer after a change; nor does one that doesn't carry them, such as a single
+    /// pull request's (`TagsRead`).
+    private var tags: [PRKey: TagsRead] = [:]
     private var problem: PulseProblem?
     private var refreshedAt: Date?
     private var hasLoaded = false
@@ -435,6 +448,7 @@ public actor PulseEngine {
             active[key] = nil
             details[key] = nil
             entries[key] = nil
+            tags[key] = nil
         }
         if configuration.organizations.isEmpty && keys.isEmpty { listNothing() }
         publish()
@@ -473,6 +487,45 @@ public actor PulseEngine {
         let read = await fetchDetails([pr], configuration: configuration)
         publish()
         return read.taken.contains(key)
+    }
+
+    /// Reads a pull request's tags on their own, one request, as Azure DevOps has them now: after BriefBar changed them, or
+    /// for one whose list doesn't carry them, such as one sent to you, whose details show. They show from then on, unless a
+    /// read that started since has them already. Returns them as they show then.
+    @discardableResult
+    public func readTags(_ key: PRKey) async -> Result<[PullRequestTag], ADOError> {
+        guard let pr = active[key]?.pullRequest ?? done[key] else { return .failure(.notFound) }
+        let reader = account
+        let startedAt = now()
+        do {
+            let read = try await client.tags(of: PullRequestAddress(pr))
+            // Read as someone who isn't signed in anymore, or for a pull request that's gone meanwhile: it's not kept.
+            guard account == reader, active[key] != nil || done[key] != nil else { return .failure(.notFound) }
+            keep(read, of: key, readAt: startedAt)
+            publish()
+            return .success(tags[key]?.tags ?? read)
+        } catch let error as ADOError {
+            return .failure(error)
+        } catch {
+            return .failure(.network(error.localizedDescription))
+        }
+    }
+
+    /// BriefBar changed a pull request's tags, and Azure DevOps answered: they show as it answered at once, rather than as a
+    /// read that started before, such as a refresh under way, has them; then they're read again, one request, for any other
+    /// change made to them meanwhile.
+    public func changedTags(_ key: PRKey, to changed: [PullRequestTag]) async {
+        guard active[key] != nil || done[key] != nil else { return }
+        keep(PullRequestTag.sorted(changed), of: key, readAt: now())
+        publish()
+        await readTags(key)
+    }
+
+    /// A pull request's tags, as a read that started at `readAt` has them: unless the tags kept are from one that started
+    /// later.
+    private func keep(_ read: [PullRequestTag], of key: PRKey, readAt: Date) {
+        if let kept = tags[key], kept.at > readAt { return }
+        tags[key] = TagsRead(tags: read, at: readAt)
     }
 
     /// One refresh: the lists, then the details the planner picks.
@@ -548,6 +601,9 @@ public actor PulseEngine {
                 for pr in lists.completed {
                     completed[pr.key] = pr
                 }
+                for (key, read) in lists.tags {
+                    keep(read, of: key, readAt: startedAt)
+                }
             case .failure(let error):
                 errors.append((organization: organization, error: error))
                 // Keep what we had until it can be read again, however its name was spelled then.
@@ -622,6 +678,7 @@ public actor PulseEngine {
         active = listed
         done = completed.filter { listed[$0.key] == nil && ($0.value.closedAt ?? .distantPast) > closedSince }
         details = details.filter { listed[$0.key] != nil }
+        tags = tags.filter { listed[$0.key] != nil || done[$0.key] != nil }
         entries = entries.filter { listed[$0.key] != nil }
         waitingOnSignIn = Self.folded((errors + linkedElsewhere).filter { PulseProblem.isOtherDirectory($0.error) }.map { $0.organization })
 
@@ -767,6 +824,7 @@ public actor PulseEngine {
         active = [:]
         done = [:]
         details = [:]
+        tags = [:]
         entries = [:]
         vanished = [:]
         linked = [:]
@@ -784,6 +842,7 @@ public actor PulseEngine {
         active = [:]
         done = [:]
         details = [:]
+        tags = [:]
         entries = [:]
         vanished = [:]
         linkedFailures = [:]
@@ -1085,7 +1144,13 @@ public actor PulseEngine {
             ), as: List.self)
             let (m, r, c) = try await (mine, reviewing, completed)
             func convert(_ list: List) -> [PullRequest] { list.value.map { PullRequest(organization: organization, $0) } }
-            return .success(OrganizationLists(me: me, name: name, mine: convert(m), reviewing: convert(r), completed: convert(c)))
+            var tags: [PRKey: [PullRequestTag]] = [:]
+            for pr in m.value + r.value + c.value {
+                tags[PRKey(organization, pr.pullRequestId)] = PullRequestTag.listed(pr.labels)
+            }
+            return .success(OrganizationLists(
+                me: me, name: name, mine: convert(m), reviewing: convert(r), completed: convert(c), tags: tags
+            ))
         } catch let error as ADOError {
             return .failure(error)
         } catch {
@@ -1154,11 +1219,14 @@ public actor PulseEngine {
         var records = active.map { key, item in
             PRRecord(
                 pullRequest: item.pullRequest, role: item.role, details: withFailures(details[key], of: item.pullRequest),
-                me: identities[key.organization] ?? ""
+                me: identities[key.organization] ?? "", tags: tags[key]?.tags
             )
         }
         records += done.map { key, pr in
-            PRRecord(pullRequest: pr, role: .author, me: identities[key.organization] ?? "", merge: mergePipelines(for: pr))
+            PRRecord(
+                pullRequest: pr, role: .author, me: identities[key.organization] ?? "", merge: mergePipelines(for: pr),
+                tags: tags[key]?.tags
+            )
         }
         records.sort { $0.id < $1.id }
         return PulseSnapshot(

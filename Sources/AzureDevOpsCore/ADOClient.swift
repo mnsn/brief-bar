@@ -54,7 +54,7 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
 }
 
 /// Reads from Azure DevOps, with GET requests only, but for the changes `ADOWrite` lists, which `send(_:)` alone makes, when
-/// you click them with Make Changes in Azure DevOps on. Each request goes only where it's sent: it follows no redirect
+/// you click them with Make Changes in Azure DevOps on: replies, threads' statuses and pull requests' tags. Each request goes only where it's sent: it follows no redirect
 /// (`RedirectGuard`).
 public struct ADOClient: Sendable {
     public let tokens: any AccessTokenProvider
@@ -125,10 +125,14 @@ public struct ADOClient: Sendable {
     /// Makes one of the changes `ADOWrite` lists, the only requests BriefBar sends that aren't GETs, and returns Azure
     /// DevOps' answer. It goes once: a failure isn't tried again, but for a sign-in Azure DevOps didn't take, which it
     /// didn't act on. When Azure DevOps refuses it, the error says why, as it said it (`ADOError.refused`); and when it made
-    /// the change but its answer can't be read, the answer says so (`Answer.unreadable`), rather than that it failed.
+    /// the change but its answer can't be read, the answer says so (`Answer.unreadable`), rather than that it failed. A tag's
+    /// change answered with nothing (204) was made all the same: taking one off says nothing more, whatever it answers.
     public func send(_ write: ADOWrite) async throws -> ADOWrite.Answer {
-        let data = try await answer(write.url, request: { Self.request(write, token: $0) }, isAnswer: Self.isJSON, refusal: Self.refusal) {
-            request, redirects in
+        let isRemoval = write.kind == .removeTag
+        let data = try await answer(
+            write.url, request: { Self.request(write, token: $0) }, isAnswer: isRemoval ? { _ in true } : Self.isJSON,
+            isAnswerWithNothing: write.kind.isTags, refusal: Self.refusal
+        ) { request, redirects in
             let (data, response) = try await session.data(for: request, delegate: redirects)
             return (data, response, true)
         }.data
@@ -136,6 +140,8 @@ public struct ADOClient: Sendable {
             switch write.kind {
             case .reply: return .comment(try ADOJSON.decoder().decode(ADOComment.self, from: data))
             case .setStatus: return .thread(try ADOJSON.decoder().decode(ADOThread.self, from: data))
+            case .addTag: return .tag(try ADOJSON.decoder().decode(ADOTag.self, from: data))
+            case .removeTag: return .done
             }
         } catch {
             return .unreadable(Self.describe(error))
@@ -147,12 +153,13 @@ public struct ADOClient: Sendable {
     /// retried with a fresh token once for each directory whose token is rejected, and once with a token for the
     /// organization's own directory if Azure DevOps names another one than the token's, following no redirect. Azure DevOps
     /// acts on no request it rejects the token of, so a change is retried only then. `isAnswer` tells what was asked for
-    /// from a sign-in page; `refusal` tells, for a change, why Azure DevOps refused it, from its status and its answer; and
+    /// from a sign-in page; `isAnswerWithNothing`, that an answer with nothing in it (204) is one, as for a change, rather
+    /// than nothing there; `refusal` tells, for a change, why Azure DevOps refused it, from its status and its answer; and
     /// `send` sends the request with the guard against redirects it's given, and gets the answer's body, and whether that's
     /// all of it.
     private func answer(
         _ url: URL, request makeRequest: (String) -> URLRequest, isAnswer: (HTTPURLResponse) -> Bool,
-        refusal: ((Int, Data) -> ADOError?)? = nil,
+        isAnswerWithNothing: Bool = false, refusal: ((Int, Data) -> ADOError?)? = nil,
         _ send: (URLRequest, RedirectGuard) async throws -> (Data, URLResponse, Bool)
     ) async throws -> (data: Data, isComplete: Bool) {
         if let wait = await gate.remainingWait(), wait > 0 {
@@ -195,6 +202,8 @@ public struct ADOClient: Sendable {
                 await gate.hold(for: retryAfter)
             }
             switch http.statusCode {
+            case 204 where isAnswerWithNothing:
+                return (data, isComplete)
             case 204:
                 // Nothing there, such as the timeline of a run that has none yet: not a sign-in problem.
                 throw ADOError.notFound
@@ -285,12 +294,16 @@ public struct ADOClient: Sendable {
         (response.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("json")
     }
 
-    /// A change's request: its method, its URL and its JSON body, with a GET's sign-in and headers.
+    /// A change's request: its method, its URL and its JSON body, with a GET's sign-in and headers. One with nothing to say
+    /// but its address, as taking a tag off, has no body.
     static func request(_ write: ADOWrite, token: String) -> URLRequest {
         var request = request(write.url, token: token)
         request.httpMethod = write.method
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = write.body
+        let body = write.body
+        if !body.isEmpty {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
         return request
     }
 

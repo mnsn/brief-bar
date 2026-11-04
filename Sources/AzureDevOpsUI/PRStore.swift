@@ -95,6 +95,10 @@ final class PRStore: ObservableObject {
     /// The changes you made to pull requests' threads (`changed(_:by:)`), as Azure DevOps answered them, or as the demo made
     /// them up, by pull request: each shows from then on, until the engine's snapshots have it; the demo's, while it runs.
     private var madeChanges: [PRKey: [ThreadChange]] = [:]
+    /// The tags you changed on pull requests (`changedTags`), as Azure DevOps answered, or as the demo made them, by pull
+    /// request: they show from then on, over a snapshot read before, until one has them, or has other tags, from a change
+    /// made since; the demo's, while it runs.
+    private var madeTags: [PRKey: MadeTags] = [:]
     private var cancellables: Set<AnyCancellable> = []
 
     init(
@@ -602,6 +606,9 @@ final class PRStore: ObservableObject {
         var snapshot = snapshot
         if mode == .live { madeChanges = Self.pending(madeChanges, in: snapshot.records) }
         snapshot.records = Self.applying(madeChanges, to: snapshot.records)
+        // And with the tags you changed, as Azure DevOps answered: until it has them, or, in the demo, always.
+        if mode == .live { madeTags = Self.pending(madeTags, in: snapshot.records) }
+        snapshot.records = Self.applying(madeTags, to: snapshot.records)
         state = snapshot
         let authored = snapshot.records.filter { $0.role == .author && $0.pullRequest.status == .active }
             .map(\.pullRequest).sorted { ($0.createdAt, $0.key) > ($1.createdAt, $1.key) }
@@ -769,6 +776,70 @@ final class PRStore: ObservableObject {
             var record = record
             record.details = details
             return record
+        }
+    }
+
+    // MARK: Tags
+
+    /// Tags you changed on a pull request: as they are now, and as they were before each change, which a snapshot read
+    /// before has.
+    struct MadeTags: Equatable {
+        var tags: [PullRequestTag]
+        var replaced: [[PullRequestTag]] = []
+    }
+
+    /// You changed a pull request's tags, with Make Changes in Azure DevOps on (`TagChanges`), and Azure DevOps answered: they
+    /// show at once, as it answered, and are read again (`PulseEngine.changedTags`). In the demo, which reads nothing, they stay
+    /// in its made-up data while it runs.
+    func changedTags(_ key: PRKey, to tags: [PullRequestTag]) {
+        var made = madeTags[key] ?? MadeTags(tags: tags)
+        if let before = record(for: key)?.tags, !PullRequestTag.same(before, tags) { made.replaced.append(before) }
+        made.tags = PullRequestTag.sorted(tags)
+        madeTags[key] = made
+        state.records = Self.applying(madeTags, to: state.records)
+        recompute()
+        refreshed.send()
+        guard mode == .live, let engine else { return }
+        Task { await engine.changedTags(key, to: tags) }
+    }
+
+    /// Reads a pull request's tags on their own now, one request, as Azure DevOps has them: for one whose list doesn't carry
+    /// them, or after a change that may have been made. Nil in the demo, which reads nothing.
+    func readTags(_ key: PRKey) async -> Result<[PullRequestTag], ADOError>? {
+        guard mode == .live, let engine else { return nil }
+        return await engine.readTags(key)
+    }
+
+    /// The tags of each pull request BriefBar read in a project, which adding a tag there suggests.
+    func tags(inProjectOf pullRequest: PullRequest) -> [[PullRequestTag]] {
+        state.records.compactMap { record in
+            guard record.pullRequest.projectId.caseInsensitiveCompare(pullRequest.projectId) == .orderedSame,
+                  record.pullRequest.key.organization.caseInsensitiveCompare(pullRequest.key.organization) == .orderedSame
+            else { return nil }
+            return record.tags
+        }
+    }
+
+    /// The pull requests with the tags you changed on them.
+    static func applying(_ made: [PRKey: MadeTags], to records: [PRRecord]) -> [PRRecord] {
+        guard !made.isEmpty else { return records }
+        return records.map { record in
+            guard let tags = made[record.id]?.tags else { return record }
+            var record = record
+            record.tags = tags
+            return record
+        }
+    }
+
+    /// The tags you changed that pull requests as read don't have yet: those of a snapshot read before a change, which has
+    /// them as they were, or that doesn't know them. Once one has them, or has others, as after a change someone made since,
+    /// they're done with, and so are those of a pull request that isn't there.
+    static func pending(_ made: [PRKey: MadeTags], in records: [PRRecord]) -> [PRKey: MadeTags] {
+        made.filter { key, made in
+            guard let record = records.first(where: { $0.id == key }) else { return false }
+            guard let read = record.tags else { return true }
+            if PullRequestTag.same(read, made.tags) { return false }
+            return made.replaced.contains { PullRequestTag.same($0, read) }
         }
     }
 

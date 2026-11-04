@@ -101,6 +101,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var copilotQuestions: CopilotQuestions?
     /// Your replies in pull requests' threads and their statuses, with Make Changes in Azure DevOps on, and what you write.
     private var threadChanges: ThreadChanges?
+    /// Pull requests' tags as you change them, with Make Changes in Azure DevOps on, and the tags their lists don't carry.
+    private var tagChanges: TagChanges?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     /// For `--render`: a pull request's details with a build open, one that failed and one still going.
@@ -135,7 +137,8 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     private func environment<V: View>(_ view: V) -> AnyView {
         guard let store, let sprint, let pipelines, let copilot, let details, let pullRequestDetails, let buildInvestigations,
-              let pullRequestCode, let pullRequestFiles, let pullRequestSessions, let copilotQuestions, let threadChanges
+              let pullRequestCode, let pullRequestFiles, let pullRequestSessions, let copilotQuestions, let threadChanges,
+              let tagChanges
         else {
             return AnyView(EmptyView())
         }
@@ -151,6 +154,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             .environmentObject(pullRequestSessions)
             .environmentObject(copilotQuestions)
             .environmentObject(threadChanges)
+            .environmentObject(tagChanges)
             .environmentObject(pipelines)
             .environmentObject(copilot)
             .environmentObject(settings)
@@ -222,6 +226,7 @@ package final class AzureDevOpsSource: BriefBarSource {
                     pullRequestDetails?.accountChanged(account)
                     buildInvestigations?.accountChanged(account)
                     self?.threadChanges?.accountChanged(account)
+                    self?.tagChanges?.accountChanged(account)
                 }
             }
             .store(in: &cancellables)
@@ -234,6 +239,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         pullRequestSessions = sessions
         copilotQuestions = CopilotQuestions(copilot: copilot)
         threadChanges = ThreadChanges(store: store, settings: settings)
+        tagChanges = TagChanges(store: store, settings: settings)
         // A pull request that a task or a link names shows in its details, on the window's page, while the list has it.
         copilot.canShowPullRequest = { [weak store, weak pullRequestDetails] key in
             guard let store, let pullRequestDetails else { return false }
@@ -375,6 +381,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         pullRequestSessions?.stopAll()
         copilotQuestions?.stopAll()
         threadChanges?.forgetAll()
+        tagChanges?.stop()
         services.sentTasks.withdraw(.azureDevOps)
         services.summaries.setYourName(.azureDevOps, nil)
         store = nil
@@ -390,6 +397,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         pullRequestSessions = nil
         copilotQuestions = nil
         threadChanges = nil
+        tagChanges = nil
         services.fullDiskAccess.unregister(.azureDevOps)
     }
 
@@ -411,6 +419,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         settings.forgetCopilotRuns()
         // The links you added or hid between pull requests, work items and sessions.
         services.links.forget(.azureDevOps)
+        // The tags you added, which adding one suggested.
+        settings.usedTags = UsedTags()
         // What Copilot printed for each task: the demo never wrote any, and mustn't delete yours.
         if !services.isDemo {
             CopilotTasksStore.deleteOutput()
@@ -588,12 +598,13 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     package func sectionVisibilityChanged(_ section: SectionID, isShowing: Bool, by viewer: SectionViewer) {
         // A pull request's details show on a window's Pull Requests page, and over a work item's details on its Sprint
-        // page: the code their comments are on, and the Copilot sessions their work could go to, are read only while the
-        // window they're in shows that page on screen.
+        // page: the code their comments are on, the Copilot sessions their work could go to, and tags their lists don't
+        // carry, are read only while the window they're in shows that page on screen.
         if viewer.kind == .window, section == .azureDevOpsPullRequests || section == .azureDevOpsSprint {
             let page = PullRequestCodeStore.page(section, window: viewer.id)
             pullRequestCode?.setVisible(isShowing, for: page)
             pullRequestSessions?.setVisible(isShowing, for: page)
+            tagChanges?.setVisible(isShowing, for: page)
         }
         // The sprint and pipelines are read only while something shows them.
         switch section {

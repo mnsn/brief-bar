@@ -4,14 +4,27 @@ import BriefBarUI
 import SwiftUI
 
 /// The top of a pull request's details: what it is and where, its title, where it stands in a sentence and since when,
-/// its branch and who wrote it, and ✨ Summarize, as a pull request's page has them.
-struct PullRequestPanelHeading: View {
+/// its branch and who wrote it, its tags, and ✨ Summarize, as a pull request's page has them.
+struct PullRequestPanelHeading<Tags: View>: View {
     let item: PRSnapshot
     let panel: PullRequestPanel
     /// The list still has it; once it doesn't, such as a review that merged, this is how it was last.
     var isListed = true
     /// How it's linked to what it opened from, as a page over a work item's details or another pull request's.
     var linked: ItemStory.Fact? = nil
+    /// Its tags, under its branch and who wrote it (`PullRequestTagsRow`).
+    @ViewBuilder var tags: () -> Tags
+
+    init(
+        item: PRSnapshot, panel: PullRequestPanel, isListed: Bool = true, linked: ItemStory.Fact? = nil,
+        @ViewBuilder tags: @escaping () -> Tags
+    ) {
+        self.item = item
+        self.panel = panel
+        self.isListed = isListed
+        self.linked = linked
+        self.tags = tags
+    }
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: PRStore
@@ -53,6 +66,7 @@ struct PullRequestPanelHeading: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             facts
+            tags()
             PageSummarizeButton(ref: item.key.linkRef)
                 .controlSize(.small)
         }
@@ -100,5 +114,12 @@ struct PullRequestPanelHeading: View {
         }
         .font(size: 11.5)
         .foregroundStyle(.secondary)
+    }
+}
+
+extension PullRequestPanelHeading where Tags == EmptyView {
+    /// Without its tags.
+    init(item: PRSnapshot, panel: PullRequestPanel, isListed: Bool = true, linked: ItemStory.Fact? = nil) {
+        self.init(item: item, panel: panel, isListed: isListed, linked: linked) { EmptyView() }
     }
 }

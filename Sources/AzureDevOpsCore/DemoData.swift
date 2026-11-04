@@ -108,7 +108,11 @@ public enum DemoData {
                 fetchedAt: now, fingerprint: pr.fingerprint, checks: checks, threads: threads, activity: activity,
                 lastActivity: dates.max()
             )
-            return PRRecord(pullRequest: pr, role: role, details: pr.status == .active ? details : nil, me: me.id, chatLinks: chatLinks)
+            // With their made-up tags (DemoTags, in PullRequestTags.swift).
+            return PRRecord(
+                pullRequest: pr, role: role, details: pr.status == .active ? details : nil, me: me.id, chatLinks: chatLinks,
+                tags: DemoTags.tags(of: pr.key.number)
+            )
         }
         func reviewer(_ person: Person, _ vote: Vote = .none, required: Bool = false) -> Reviewer {
             Reviewer(person: person, vote: vote, isRequired: required)

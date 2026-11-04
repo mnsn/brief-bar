@@ -141,6 +141,9 @@ public struct ADOPullRequest: Decodable, Sendable {
     /// The commit that merged it into its target branch, once it's completed.
     public var lastMergeCommit: ADOCommitRef?
     public var autoCompleteSetBy: ADOIdentity?
+    /// Its tags, which Azure DevOps calls labels: lists of pull requests carry them, leaving them out of one that has none;
+    /// a single pull request's read doesn't (`PullRequestTag.listed`).
+    public var labels: ADOTagList?
 }
 
 /// The state of one branch policy (a build, a status check, a reviewer rule...) on a pull request.
