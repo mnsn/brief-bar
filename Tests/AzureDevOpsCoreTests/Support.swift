@@ -195,6 +195,9 @@ actor FakeTokens: AccessTokenProvider {
     private var home: String?
     /// The other directories it's signed in to.
     private var others: Set<String> = []
+    /// Whom tokens for other directories are for, by directory, when it's a guest of its own there, as a real token's is:
+    /// otherwise `account`.
+    private var guests: [String: String] = [:]
     private(set) var fetches = 0
     private(set) var invalidations = 0
     /// The directories asked for, in order: nil for your sign-in's.
@@ -215,7 +218,8 @@ actor FakeTokens: AccessTokenProvider {
         }
         let directory = tenant ?? home
         return AccessToken(
-            value: directory.map { "\(value)@\($0)" } ?? value, expiresOn: .distantFuture, account: account, tenant: directory
+            value: directory.map { "\(value)@\($0)" } ?? value, expiresOn: .distantFuture,
+            account: tenant.flatMap { guests[$0] } ?? account, tenant: directory
         )
     }
 
@@ -223,9 +227,10 @@ actor FakeTokens: AccessTokenProvider {
         self.account = account
     }
 
-    /// Signs in to another directory too, as `az login --tenant` does.
-    func signIn(to tenant: String) {
+    /// Signs in to another directory too, as `az login --tenant` does: with `guest`, as whom its tokens are for there.
+    func signIn(to tenant: String, as guest: String? = nil) {
         others.insert(tenant)
+        guests[tenant] = guest
     }
 
     /// Signs out of another directory.

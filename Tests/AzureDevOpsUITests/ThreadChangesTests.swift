@@ -48,7 +48,7 @@ import Testing
         store.receive(DemoData.snapshot(now: store.now))
         let changes = ThreadChanges(store: store, settings: settings)
         let azure = AzureDevOps()
-        changes.send = { try azure.send($0) }
+        changes.send = { write, _ in try azure.send(write) }
         return (store, changes, azure)
     }
 
@@ -75,7 +75,7 @@ import Testing
         changes.keep("Capped it at 30 seconds.", for: threadKey)
         let record = try #require(store.record(for: key))
 
-        #expect(await changes.reply("  Capped it at 30 seconds.\n", to: try thread(store), of: key))
+        #expect(await changes.reply("\n \nCapped it at 30 seconds.\n\n", to: try thread(store), of: key))
         #expect(azure.sent == [.reply(ThreadAddress(record.pullRequest, thread: 11), markdown: "Capped it at 30 seconds.", parentCommentId: 1)])
         let replied = try thread(store)
         #expect(replied.comments.map(\.id) == [1, 2, 3])
@@ -84,6 +84,84 @@ import Testing
         #expect(changes.state(of: threadKey) == nil)
         // Answered: it doesn't wait on you.
         #expect(store.items.first { $0.key == key }?.group != .needsYou)
+    }
+
+    /// A reply goes as you wrote it, but for the lines that say nothing before it and the spaces after it: its first line's
+    /// indent stays, which makes it code.
+    @Test func aReplyKeepsItsFirstLinesIndent() async throws {
+        let (store, changes, azure) = live()
+        #expect(await changes.reply("\n    let retrys = 1\n\nThat caps it.  \n", to: try thread(store), of: key))
+        #expect(azure.sent == [.reply(ThreadAddress(try #require(store.record(for: key)).pullRequest, thread: 11),
+                                      markdown: "    let retrys = 1\n\nThat caps it.", parentCommentId: 1)])
+        #expect(ThreadChanges.posted(" \r\n  \n- one\r\n- two\r\n") == "- one\n- two")
+        #expect(ThreadChanges.posted(" \n\t\n").isEmpty)
+    }
+
+    /// A change goes as whom the list was read as when you clicked: someone else signed in since, the client sends nothing.
+    @Test func aChangeGoesAsWhomTheListWasReadAs() async throws {
+        let (store, changes, azure) = live()
+        var accounts: [String?] = []
+        changes.send = { write, account in
+            accounts.append(account)
+            return try azure.send(write)
+        }
+        changes.accountChanged("home/robin")
+        #expect(await changes.reply("Capped it.", then: .fixed, to: try thread(store), of: key))
+        #expect(accounts == ["home/robin", "home/robin"])
+
+        // Someone else signed in, as the list tells: the client said so first.
+        azure.fails = .otherAccount
+        await changes.setStatus(.active, of: try thread(store), in: key)
+        #expect(changes.state(of: ThreadChanges.Key(pullRequest: key, thread: 11)) == .failed(.otherAccount, .status(.active)))
+    }
+
+    /// Called off while a reply that may have gone is checked, as the setting is turned off and on again, it does nothing
+    /// more as the thread comes back read: not to another reply under way on its thread, nor by sending what it said.
+    @Test(.timeLimit(.minutes(1)))
+    func aReplyCalledOffWhileItsThreadIsReadDoesNothingMore() async throws {
+        let (store, changes, azure) = live()
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        var reading: CheckedContinuation<Void, Never>?
+        let threads = [try thread(store)]
+        changes.readThreads = { _ in
+            await withCheckedContinuation { reading = $0 }
+            return threads
+        }
+        let original = try thread(store)
+        let checking = Task { await changes.reply("Capped it.", to: original, of: key) }
+        for _ in 0..<1_000 where reading == nil { await Task.yield() }
+        changes.settings.makesChanges = false
+        changes.settings.makesChanges = true
+
+        // Another reply on the thread, which resolves it too, on its way.
+        var sending: CheckedContinuation<Void, Never>?
+        var holds = true
+        changes.send = { write, _ in
+            if holds {
+                holds = false
+                await withCheckedContinuation { sending = $0 }
+            }
+            return try azure.send(write)
+        }
+        let replying = Task { await changes.reply("Tested it too.", then: .fixed, to: original, of: key) }
+        for _ in 0..<1_000 where sending == nil { await Task.yield() }
+        #expect(changes.state(of: threadKey) == .sending(.reply(then: .fixed)))
+
+        try #require(reading).resume()
+        #expect(await checking.value == false)
+        #expect(changes.state(of: threadKey) == .sending(.reply(then: .fixed)))
+        try #require(sending).resume()
+        #expect(await replying.value)
+        let replies = azure.sent.compactMap { write -> String? in
+            if case .reply(_, let markdown, _) = write { return markdown }
+            return nil
+        }
+        #expect(replies == ["Capped it.", "Tested it too."])
+        #expect(azure.sent.map(\.kind) == [.reply, .reply, .setStatus])
     }
 
     /// Reply & Resolve replies, then resolves the thread.
@@ -228,7 +306,7 @@ import Testing
         let (store, changes, azure) = live()
         let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
         var waiting: CheckedContinuation<Void, Never>?
-        changes.send = { write in
+        changes.send = { write, _ in
             await withCheckedContinuation { waiting = $0 }
             try Task.checkCancellation()
             return try azure.send(write)
@@ -304,7 +382,7 @@ import Testing
         await store.loadOnce()
         let changes = ThreadChanges(store: store, settings: settings)
         var sent = 0
-        changes.send = { _ in
+        changes.send = { _, _ in
             sent += 1
             throw ADOError.offline
         }

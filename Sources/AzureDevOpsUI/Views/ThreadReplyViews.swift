@@ -195,7 +195,7 @@ struct ThreadReplyArea: View {
     }
 
     private func signIn(_ problem: ADOWriteProblem) -> (() -> Void)? {
-        guard problem == .signedOut, store.mode == .live else { return nil }
+        guard problem == .signedOut || problem == .otherAccount, store.mode == .live else { return nil }
         return { store.signIn() }
     }
 }
@@ -479,7 +479,7 @@ struct ThreadReplyComposer: View {
             if let problem {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     note(problem.sentence(.reply), symbol: "exclamationmark.triangle.fill", isWarning: true)
-                    if problem == .signedOut, !isDemo {
+                    if problem == .signedOut || problem == .otherAccount, !isDemo {
                         Button("Sign In…") { store.signIn() }
                             .buttonStyle(.borderless)
                             .font(size: 11, weight: .medium)
