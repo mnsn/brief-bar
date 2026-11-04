@@ -73,6 +73,8 @@ package final class CopilotSource: BriefBarSource {
     package func start() {
         store.start()
         tellStories()
+        // The demo's sessions tell BriefBar what they work on, as if they had, in memory.
+        if services.isDemo { services.sessionUpdates.tellDemo(DemoSessionUpdates.reports(now: Date())) }
         // After the change: a @Published value emits before it's set.
         services.links.$isOn.removeDuplicates().map { _ in () }
             .merge(with: services.pullRequestOrder.$isOn.removeDuplicates().map { _ in () })
