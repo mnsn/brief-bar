@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 - 2026-11-04
 
 - **Copilot sessions keep BriefBar up to date.** Turn on **Updates from Copilot Sessions** in Settings › Agents, and
   sessions tell BriefBar the work items and pull requests they're working on, the pull requests they opened, and what
@@ -15,6 +15,10 @@
   checking that Apple Intelligence was available took, until it quit.
 - **`--render` draws every picture.** With every source on, it stopped before the last ones, out of room for SwiftUI's
   views, as it kept each picture's window and views until it quit.
+- **After this update, Azure DevOps, Copilot and agents ask you once to look at what they read and get, and wait until
+  you have.** With Updates from Copilot Sessions on, Copilot reads what sessions tell BriefBar they're working on and
+  the pull requests they opened, Azure DevOps reads again right away what a session says it changed there, and agents
+  get the tools to tell BriefBar.
 
 ## 0.14.0 - 2026-11-04
 
