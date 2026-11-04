@@ -162,20 +162,33 @@ struct ThreadReplyArea: View {
 
     var body: some View {
         let canChange = preview?.readOnly == nil && changes.canChange(pullRequest)
-        VStack(alignment: .leading, spacing: 0) {
-            if canChange, composing == .reply(to: thread.id) {
-                ThreadReplyComposer(thread: thread, item: item, hold: hold) {
-                    if composing == .reply(to: thread.id) { composing = nil }
-                }
-                // A new one for each thread, with its own words.
-                .id(thread.id)
-            } else if case .failed(let problem, let sending)? = state {
-                // Also once it can't be changed, as the pull request left your lists as you sent: but nothing to try again.
+        let isReplying = canChange && composing == .reply(to: thread.id)
+        VStack(alignment: .leading, spacing: 8) {
+            if case .failed(let problem, let sending)? = state, !(isReplying && sending.kind == .reply) {
+                // A status that didn't change says so above your reply too, while it's open, as one set from the card's
+                // menu: a reply's own says so in its field. Also once it can't be changed, as the pull request left your
+                // lists as you sent: but nothing to try again.
                 ThreadChangeProblemLine(
                     problem: problem, kind: sending.kind, retry: canChange ? retry(sending) : nil, signIn: signIn(problem)
                 ) {
                     changes.dismiss(key)
                 }
+            } else if isReplying, case .sending(.status(let status))? = state {
+                // A status on its way, from the card's menu, while your reply hides the buttons that would say so.
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text(ThreadReplyButtons.sendingTitle(.status(status)))
+                }
+                .font(size: 11.5, weight: .medium)
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+            }
+            if isReplying {
+                ThreadReplyComposer(thread: thread, item: item, hold: hold) {
+                    if composing == .reply(to: thread.id) { composing = nil }
+                }
+                // A new one for each thread, with its own words.
+                .id(thread.id)
             }
         }
         .padding(.horizontal, 10)
@@ -190,7 +203,7 @@ struct ThreadReplyArea: View {
     }
 
     private var showsSomething: Bool {
-        if changes.canChange(pullRequest), composing == .reply(to: thread.id) { return true }
+        if preview?.readOnly == nil, changes.canChange(pullRequest), composing == .reply(to: thread.id) { return true }
         if case .failed? = state { return true }
         return false
     }

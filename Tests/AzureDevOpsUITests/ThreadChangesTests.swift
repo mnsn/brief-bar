@@ -393,6 +393,38 @@ import Testing
         #expect(try thread(store).status == original.status)
     }
 
+    /// A reply answered 503, which the client says as no answer in time (`WriteTests.aChangeAnswered503MayHaveBeenMade`),
+    /// isn't sent again while its thread can't be read, nor once the read shows it went; and is checked before it goes again.
+    @Test func aReplyAnswered503IsCheckedBeforeItGoesAgain() async throws {
+        let (store, changes, azure) = live()
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key) == false)
+        #expect(changes.state(of: threadKey) == .failed(.unanswered, .reply(then: nil)))
+        #expect(ADOWriteProblem.unanswered.sentence(.reply).contains("may have gone"))
+        azure.fails = nil
+
+        var reads = 0
+        changes.readThreads = { _ in
+            reads += 1
+            return nil
+        }
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key) == false)
+        #expect(reads == 1)
+        #expect(azure.sent.count == 1)
+
+        var read = try thread(store)
+        read.comments.append(ReviewComment(id: 3, author: DemoData.me, text: "Capped it.", publishedAt: store.now, content: "Capped it."))
+        let threads = [read]
+        changes.readThreads = { _ in
+            reads += 1
+            return threads
+        }
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
+        #expect(reads == 2)
+        #expect(azure.sent.count == 1)
+    }
+
     /// Read, a thread that hasn't the reply that may have gone gets it, once; and the next reply goes without reading it.
     @Test func aReplyThatDidntGoIsSentOnceItsThreadSaysSo() async throws {
         let (store, changes, azure) = live()

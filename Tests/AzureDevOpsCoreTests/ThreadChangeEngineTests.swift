@@ -67,21 +67,27 @@ import Testing
         let before = threads([question], at: now.addingTimeInterval(-hour))
         server.on("/pullRequests/1/threads", json: before)
         let collector = SnapshotCollector()
+        // Whether the change shows yet.
+        let applied = Locked(false)
+        let key = self.key
         // Its details are due at every refresh.
         let engine = PulseEngine(client: server.client(), configuration: PulseEngine.Configuration(
             organizations: [Fixture.org], planner: RefreshPlanner.Options(busyInterval: 0, activeInterval: 0, quietInterval: 0)
-        )) { collector.add($0) }
+        )) { snapshot in
+            collector.add(snapshot)
+            let thread = snapshot.records.first { $0.id == key }?.details?.threads.first { $0.id == 7 }
+            if thread?.comments.count == 2 { applied.set(true) }
+        }
         await engine.refreshNow()
 
-        // The next read is slow, and answers as the threads were before the change; those after it, as they are after it.
+        // The next read answers as the threads were before the change, once the change shows; those after it, as they are
+        // after it.
         let after = StubServer.Reply.json(threads([question, Fixture.comment(2, People.me, "Capped", at: now)], at: now.addingTimeInterval(-hour)))
-        let stale = StubServer.Reply.json(before)
+        var held = StubServer.Reply.json(before)
+        held.waitsFor = { applied.value }
+        let stale = held
         let reads = Locked(0)
-        server.on("/pullRequests/1/threads") { _ in
-            guard reads.increment() == 1 else { return after }
-            Thread.sleep(forTimeInterval: 0.3)
-            return stale
-        }
+        server.on("/pullRequests/1/threads") { _ in reads.increment() == 1 ? stale : after }
         let refresh = Task { await engine.refreshNow() }
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: waitLimit)

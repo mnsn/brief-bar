@@ -1331,6 +1331,10 @@ extension AzureDevOpsSource {
             ), [("", wide), ("-narrow", narrow)]),
             ("pull-requests-status-failed", ThreadChangesPreview(states: [waiting.id: .failed(.notAllowed, .status(.fixed))]),
              [("", wide), ("-narrow", narrow)]),
+            // A status that didn't change, set from the card's menu while your reply is open: above it.
+            ("pull-requests-reply-status-failed", ThreadChangesPreview(
+                replies: [waiting.id: reply], states: [waiting.id: .failed(.notAllowed, .status(.wontFix))]
+            ), [("", wide), ("-narrow", narrow)]),
             // As for a pull request that left your lists as you resolved a thread: read-only, which says why.
             ("pull-requests-read-only", ThreadChangesPreview(
                 states: [waiting.id: .failed(.notListed, .status(.fixed))], readOnly: ThreadChanges.notListed

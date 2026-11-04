@@ -399,8 +399,9 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         // On the thread that's loading it, as URLProtocol has it, once it may answer.
         let thread = LoadingThread(runLoop: CFRunLoopGetCurrent())
         DispatchQueue.global().async { [self] in
-            let deadline = Date().addingTimeInterval(10)
-            while !isReady(), Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: waitLimit)
+            while !isReady(), clock.now < deadline { Thread.sleep(forTimeInterval: 0.01) }
             CFRunLoopPerformBlock(thread.runLoop, CFRunLoopMode.commonModes.rawValue) { self.answer(reply, to: url) }
             CFRunLoopWakeUp(thread.runLoop)
         }
