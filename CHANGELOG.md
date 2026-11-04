@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.13.0 - 2026-11-04
 
 - **See the order your pull requests merge in, By Mission.** Turn on **Pull Request Order** in Settings, and the
   window's Pull Requests pages, Azure DevOps' and GitHub's, can list them **By Mission**: the pull requests that go
@@ -43,8 +43,8 @@
   and **Resolve** has Copilot merge the target branch in and resolve them, as you say, in a composer in place
   that says where it goes and what Copilot does: it may commit the merge, but doesn't push, which **Push &
   Reply** does once it's done. **Resolve Conflicts with Copilot…** lists the files too, once the details read
-  them. BriefBar reads them with one request as the details show a pull request with conflicts, keeps them in
-  memory only, and, since Azure DevOps now reads this, asks you once to look at what it reads.
+  them. BriefBar reads them with one request as the details show a pull request with conflicts, and keeps them
+  in memory only.
 - **BriefBar no longer quits as a minute passes while a summary shows.** With summaries on, a minute passing while a
   summary showed, under a row or on a page, could make BriefBar quit, as it checked again, everywhere at once, where
   what the summary sums up stands.
@@ -57,8 +57,8 @@
   you send it, and a thread says in a sentence why something didn't go, such as no permission or being offline.
   **Fix Grammar** corrects a reply's spelling, grammar and punctuation, in its own language, keeping your words, code,
   links and mentions: with Apple Intelligence on your Mac, unless you choose a Copilot model in its **▾**, one premium
-  request each, and it shows the correction for you to use, with Undo. These are the only changes BriefBar makes in
-  Azure DevOps, only when you click them, and never from agents. Azure DevOps' description says so.
+  request each, and it shows the correction for you to use, with Undo. With tags, below, these are the only changes
+  BriefBar makes in Azure DevOps: only when you click them, and never from agents.
 - **See a pull request's tags, and add or remove them.** A pull request's details show its tags under its heading.
   With **Make Changes in Azure DevOps** on, **✕** on a tag removes it, with **Undo**, and **Add Tag** opens a field
   that suggests tags as you type: those you added in that project, which BriefBar remembers, then those on the pull
@@ -67,6 +67,9 @@
   such as no permission or being offline. Azure DevOps' description says so: it reads tags with the lists it reads
   already, or with one request for a pull request sent to you or that you watch, and keeps the tags you add, up to
   20 for each project, until you turn the setting off.
+- **After this update, Azure DevOps asks you once to look at what it reads and changes.** A pull request's details
+  now read the files that conflict and, when your lists don't carry them, its tags. With Make Changes in Azure
+  DevOps on, they send your replies, statuses and tags.
 
 ## 0.12.0 - 2026-11-03
 
