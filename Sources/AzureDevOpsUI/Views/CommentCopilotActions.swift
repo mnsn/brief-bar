@@ -406,8 +406,7 @@ struct CommentComposer: View {
     /// Fix All's title, which says what it takes on (`CopilotAsk.fixAllTitle`).
     private var fixAllTitle: String {
         guard let record else { return CopilotAsk.fixAll.title(about: nil) }
-        let open = (record.details?.threads ?? []).filter { !$0.isResolved }.count
-        return CopilotAsk.fixAllTitle(waiting: PullRequestPrompt.waitingThreads(record).count, open: open)
+        return CopilotAsk.fixAllTitle(record)
     }
 
     /// The code its thread is on, once it's read.
@@ -525,10 +524,11 @@ struct CommentsHeader: View {
         return PullRequestTasks.actions(for: record, canShip: false).contains(.fixComments)
     }
 
-    /// "Fix All", or "Fix 1 Comment" while others wait on someone else.
+    /// "Fix All", or "Fix 1 Comment" while others wait on someone else: of all the unresolved threads, as the composer says
+    /// it, not only those the heading counts with Active.
     private var title: String {
         guard let record else { return CopilotAsk.fixAll.title(about: nil) }
-        return CopilotAsk.fixAllTitle(waiting: PullRequestPrompt.waitingThreads(record).count, open: count ?? 0)
+        return CopilotAsk.fixAllTitle(record)
     }
 
     var body: some View {
