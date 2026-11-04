@@ -95,15 +95,13 @@ struct CopilotSessionNames {
 
     /// Where Try Again sends a fix that failed or stopped: the session it was in, as the line lists it, or as BriefBar keeps
     /// its task; for a task that couldn't start, a new fork of the session it was to fork, or else a new session, as it
-    /// was; a new fork of the session a fork it was in forked; else nil, when that isn't known, which its composer says,
-    /// for you to choose.
+    /// was. Nil for a session that's there but the line doesn't list now, such as a fork of one, rather than a new fork of
+    /// the session it forked, which wouldn't have what it did: its composer says so, for you to choose.
     func retryDestination(of work: CopilotWork) -> CopilotDestination? {
         if choice(work.session) != nil { return .session(work.session) }
-        if let entry = copilot.entries.first(where: { $0.id == work.session }) {
-            guard entry.run == nil else { return .session(work.session) }
-            return entry.forkedFrom.map(CopilotDestination.fork) ?? .newSession
-        }
-        return work.forkedFrom.map(CopilotDestination.fork)
+        guard let entry = copilot.entries.first(where: { $0.id == work.session }) else { return nil }
+        guard entry.run == nil else { return .session(work.session) }
+        return entry.forkedFrom.map(CopilotDestination.fork) ?? .newSession
     }
 
     /// What a line's menu does about Copilot's work on something (`CopilotLineActions`), as what it says allows: Stop, which
@@ -298,10 +296,11 @@ final class CopilotDrafts {
     var sends: [CopilotComposing: Task<Void, Never>] = [:]
     /// What asks a session about something as a prompt, Ask in the Session's, until it's done: called off as its page goes.
     var asks = Asks()
-    /// What Try Again asked of each composer: when, and where the fix it tries again went, for the composer to send its
-    /// words again as it opens, if it can go (`CopilotPartComposer`). Each is taken once, and only for a little while; and
-    /// let go of as you open the composer yourself, or close it, so it then waits for you to send.
-    var retries: [CopilotComposing: (at: Date, destination: CopilotDestination?)] = [:]
+    /// What Try Again asked of each composer: when, where the fix it tries again went, for the composer to go there as it
+    /// opens, if it can, and whether to send its words again then, as it does once they're known (`CopilotPartComposer`).
+    /// Each is taken once, and only for a little while; and let go of as you open the composer yourself, or close it, so it
+    /// then waits for you to send.
+    var retries: [CopilotComposing: (at: Date, destination: CopilotDestination?, sends: Bool)] = [:]
 
     /// How long a composer that Try Again opens has to open, for it to send at once: one that opens later, as when what it's
     /// about wasn't read yet, opens with the words, for you to send.
@@ -312,15 +311,11 @@ final class CopilotDrafts {
 
     /// Readies a composer for Try Again: the words the fix it tries again went with, and where that went, for the composer
     /// to send them there as it opens (`CopilotPartComposer`). Without those words, as once BriefBar restarted, it opens
-    /// with what you wrote in it, for you to send. Whoever opens it should open it anew, as one already open would only
-    /// send them once it opens again (`CopilotComposerID`).
+    /// going there, with what you wrote in it, for you to send. Whoever opens it should open it anew, as one already open
+    /// would only take it once it opens again (`CopilotComposerID`).
     func retry(_ composer: CopilotComposing, words: String?, to destination: CopilotDestination?) {
-        guard let words else {
-            retries[composer] = nil
-            return
-        }
-        texts[composer] = words
-        retries[composer] = (Date(), destination)
+        if let words { texts[composer] = words }
+        retries[composer] = (Date(), destination, words != nil)
     }
 
     /// What asks a session about something as a prompt, by what it's about, and, where more than one row is about it, as two
@@ -701,7 +696,7 @@ struct CopilotPartComposer<Options: View>: View {
 
     /// Try Again opened it, a moment ago: it goes where the fix it tries again went, with the same words, now, if it can go;
     /// else it stays open with them, saying why it can't, and goes nowhere else on its own, such as where it would go first.
-    /// ▾ leads with that session from then on (`retryLead`).
+    /// ▾ leads with that session from then on (`retryLead`). Without the words, it only goes there, for you to send.
     private func retryIfAsked() {
         guard let retry = drafts.retries.removeValue(forKey: asking.draftKey), Date().timeIntervalSince(retry.at) < CopilotDrafts.retryWait
         else { return }
@@ -714,6 +709,7 @@ struct CopilotPartComposer<Options: View>: View {
         }
         retryLead = lead
         chosen = destination
+        guard retry.sends else { return }
         send(to: destination, choice: destinations.choice(for: destination))
     }
 

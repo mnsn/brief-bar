@@ -1428,7 +1428,8 @@ import Testing
     }
 
     /// Try Again readies its composer with the words the fix went with, and where it went, to send them as it opens; without
-    /// them, as once BriefBar restarted, it opens with what you wrote, for you to send. Each Try Again opens it anew.
+    /// them, as once BriefBar restarted, it opens going there, with what you wrote, for you to send. Each Try Again opens it
+    /// anew.
     @Test func tryAgainSendsOnlyTheWordsItKnows() {
         let drafts = CopilotDrafts()
         let composer = CopilotComposing(part: .thread(11), ask: .fix)
@@ -1436,9 +1437,12 @@ import Testing
         drafts.retry(composer, words: "Use the shared helper", to: .session(session))
         #expect(drafts.texts[composer] == "Use the shared helper")
         #expect(drafts.retries[composer]?.destination == .session(session))
+        #expect(drafts.retries[composer]?.sends == true)
+        drafts.texts[composer] = "Your words"
         drafts.retry(composer, words: nil, to: .session(session))
-        #expect(drafts.retries[composer] == nil)
-        #expect(drafts.texts[composer] == "Use the shared helper")
+        #expect(drafts.retries[composer]?.destination == .session(session))
+        #expect(drafts.retries[composer]?.sends == false)
+        #expect(drafts.texts[composer] == "Your words")
         #expect(CopilotComposerID(ask: .fix, tries: 0) != CopilotComposerID(ask: .fix, tries: 1))
     }
 
@@ -1481,6 +1485,10 @@ import Testing
         store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 12", options: CopilotModel.standard,
                    repository: original.repository, parts: [.thread(12)])
         #expect(names.retryDestination(of: try await failed(.thread(12))) == .newSession)
+        // A fork that's there, but that the line doesn't list now: not a new fork of the session it forked, which wouldn't
+        // have what it did.
+        let inFork = CopilotWork(part: .thread(13), purpose: .fix, state: .failed(nil), session: fork, forkedFrom: session, isTask: false, since: now)
+        #expect(names.retryDestination(of: inFork) == nil)
     }
 
     /// A Push & Reply that lists no thread, sent to one of the Copilot app's sessions, is kept, so the fixes there say
