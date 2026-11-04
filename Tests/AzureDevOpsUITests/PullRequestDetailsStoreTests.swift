@@ -3,6 +3,7 @@ import BriefBarCore
 import BriefBarUI
 import CopilotTasks
 import Foundation
+import SwiftUI
 import Testing
 @testable import AzureDevOpsUI
 
@@ -205,21 +206,35 @@ import Testing
         read.details?.checks = [Check(name: "lint", kind: .build, state: .passed, isBlocking: false)]
         store.recordsChanged()
         #expect(store.record?.details?.checks.map(\.name) == ["lint"])
-        // No longer listed, as a review that merged, it stays as it was last, threads, policies and reviewers too, until
-        // you close it, even once the list has forgotten what it read.
+        // No longer listed, it keeps its last row; and while the list still reads it open, as one sent in a chat that you've
+        // seen, what was read of it follows, threads, policies and reviewers too, so that your reply, or a status you set,
+        // shows.
         store.itemsChanged(items.filter { $0.key != retry.key })
         #expect(!store.isListed)
+        #expect(store.isStillRead)
         #expect(store.selected?.headline == "Sam Rivera replied again")
         #expect(store.record?.id == retry.key)
-        // While the list still reads it, as one sent in a chat that you've seen, what's kept doesn't follow either.
         read.details?.checks = []
         store.recordsChanged()
+        #expect(store.record?.details?.checks.isEmpty == true)
+        // Read closed, as a review that merged, without its threads and policies, or not read anymore, it stays as it was
+        // last read open, until you close it, even once the list has forgotten what it read.
+        read.details?.checks = [Check(name: "lint", kind: .build, state: .passed, isBlocking: false)]
+        store.recordsChanged()
+        read.pullRequest.status = .completed
+        read.details = nil
+        store.recordsChanged()
+        #expect(!store.isStillRead)
+        #expect(store.record?.pullRequest.status == .active)
         #expect(store.record?.details?.checks.map(\.name) == ["lint"])
         store.readRecord = { _ in nil }
         store.recordsChanged()
         #expect(store.record?.details?.checks.map(\.name) == ["lint"])
         store.close()
-        #expect(store.record == nil && !store.isListed)
+        #expect(store.record == nil && !store.isListed && !store.isStillRead)
+        // Its heading says which: how it is now, or how it was.
+        #expect(PullRequestPanelHeading<EmptyView>.notListed(isStillRead: true).contains("still reads it"))
+        #expect(PullRequestPanelHeading<EmptyView>.notListed(isStillRead: false).contains("last read it open"))
     }
 
     @Test func someoneElseSigningInClosesIt() throws {
@@ -339,8 +354,8 @@ import Testing
     }
 
     /// A pull request sent to you in a chat, which you're not on, leaves your lists as its details show it, which sees it.
-    /// They keep it as it was then, but for its tags, which the list still reads with it, as its details read them for one
-    /// whose lists don't carry them (`TagChanges`): those read since show, with when they were, and a change to them too.
+    /// While the list still reads it open, they follow it, its tags too, which its details read for one whose lists don't
+    /// carry them (`TagChanges`): those read since show, with when they were, and a change to them too.
     @Test func oneThatLeftTheListsShowsTheTagsReadSince() async throws {
         let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         // What `loadOnce` makes the demo up as of.
@@ -360,26 +375,32 @@ import Testing
         store.receive(snapshot)
         #expect(!store.items.contains { $0.key == sent.key })
         #expect(!details.isListed)
+        #expect(details.isStillRead)
         let kept = try #require(details.record)
         #expect(kept.tags == nil)
 
-        // Its tags, read as its details show it.
+        // Its tags, read as its details show it, and what else was read of it since.
         snapshot.records[index].tags = [PullRequestTag("deploy-eu")]
         snapshot.records[index].tagsReadAt = now
         snapshot.records[index].pullRequest.title = "Read since"
         store.receive(snapshot)
-        var expected = kept
-        expected.tags = [PullRequestTag("deploy-eu")]
-        expected.tagsReadAt = now
-        #expect(details.record == expected)
+        #expect(details.record?.tags == [PullRequestTag("deploy-eu")])
+        #expect(details.record?.tagsReadAt == now)
+        #expect(details.record?.pullRequest.title == "Read since")
         // A change to them.
         store.changedTags(sent.key, to: [PullRequestTag("hotfix"), PullRequestTag("deploy-eu")])
         #expect(details.record?.tags?.map(\.name) == ["deploy-eu", "hotfix"])
-        #expect(details.record?.pullRequest.title == kept.pullRequest.title)
+        // Read closed, it stays as it was last read open.
+        snapshot.records[index].pullRequest.status = .completed
+        store.receive(snapshot)
+        #expect(!details.isStillRead)
+        #expect(details.record?.pullRequest.status == .active)
+        #expect(details.record?.tags?.map(\.name) == ["deploy-eu", "hotfix"])
         // Once the list doesn't read it anymore, they stay as they were.
         snapshot.records.remove(at: index)
         store.receive(snapshot)
         #expect(details.record?.tags?.map(\.name) == ["deploy-eu", "hotfix"])
+        #expect(details.record?.pullRequest.title == "Read since")
     }
 
     /// Your own pull request that completes while its details show stays listed, under Done, but the list doesn't read a

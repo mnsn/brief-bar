@@ -78,7 +78,10 @@ struct PullRequestDetailsContent: View {
                     scroll: scroll, held: $held
                 )
             } else {
-                PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact) {
+                PullRequestPanelHeading(
+                    item: item, panel: panel, isListed: !isShown || details.isListed, isStillRead: isShown && details.isStillRead,
+                    linked: linkFact
+                ) {
                     PullRequestTagsRow(item: item, record: record, composing: $composing)
                 }
                     .id(PullRequestDetailsStore.Anchor.top)

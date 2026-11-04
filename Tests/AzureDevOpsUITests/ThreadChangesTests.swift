@@ -69,6 +69,38 @@ import Testing
         #expect(try thread(store).comments.count == 2)
     }
 
+    /// A pull request sent to you in a chat, which you're not on, leaves your lists as its details show it, which sees it;
+    /// but the list still reads it open, and so do its details: your reply, and a status you set, go once, and show there.
+    @Test func aChangeToALinkedPullRequestYouveSeenShowsInItsDetails() async throws {
+        let (store, changes, azure) = live()
+        let linked = PRKey(DemoData.organization, 4113)
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == linked })
+        #expect(snapshot.records[index].role == .linked)
+        let sam = try #require(thread(store).comments.first { $0.author != DemoData.me }?.author)
+        snapshot.records[index].details?.threads = [ReviewThread(id: 70, comments: [
+            ReviewComment(id: 1, author: sam, text: "Is the cache cleared on deploy?", publishedAt: store.now.addingTimeInterval(-600)),
+        ])]
+        store.receive(snapshot)
+        let details = PullRequestDetailsStore()
+        details.use(store)
+        details.show(try #require(store.items.first { $0.key == linked }))
+        // The next refresh, once it's seen.
+        store.receive(snapshot)
+        #expect(!store.items.contains { $0.key == linked })
+        #expect(!details.isListed && details.isStillRead)
+        #expect(changes.canChange(details.record?.pullRequest))
+
+        let shown = try #require(details.record?.details?.threads.first { $0.id == 70 })
+        #expect(await changes.reply("Yes, by the deploy script.", to: shown, of: linked))
+        #expect(details.record?.details?.threads.first { $0.id == 70 }?.comments.last?.markdown == "Yes, by the deploy script.")
+        await changes.setStatus(.fixed, of: shown, in: linked)
+        #expect(details.record?.details?.threads.first { $0.id == 70 }?.status == "fixed")
+        #expect(details.record?.details?.threads.first { $0.id == 70 }?.comments.count == 2)
+        #expect(azure.sent.map(\.kind) == [.reply, .setStatus])
+        #expect(details.isStillRead)
+    }
+
     /// Nothing goes for a pull request your lists don't have anymore, though its details still show it as it was when it
     /// left them, open: its threads are read-only, which says why, and a change that finds it so says so on the thread.
     @Test func nothingGoesForAPullRequestThatLeftYourLists() async throws {
