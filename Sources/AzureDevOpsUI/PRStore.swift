@@ -81,6 +81,9 @@ final class PRStore: ObservableObject {
     private var discoveryProblem: PulseProblem?
     /// Checking the organizations you're adding, while it runs: by name, in lowercase.
     private var accessChecks: [String: Task<Void, Never>] = [:]
+    /// The reads of pull requests after changes to their threads (`changed`, `mayHaveChanged`, `threadsReadAgain`), under
+    /// way, by their IDs: stopping calls them off.
+    private var changeReads: [UUID: Task<[ReviewThread]?, Never>] = [:]
     private var ticker: Timer?
     private var monitor: NetworkMonitor?
     private var chatMonitor: ChatLinkMonitor?
@@ -411,6 +414,8 @@ final class PRStore: ObservableObject {
         monitor = nil
         accessChecks.values.forEach { $0.cancel() }
         accessChecks = [:]
+        changeReads.values.forEach { $0.cancel() }
+        changeReads = [:]
         // Stops reading Notification Center; what it found stays until Azure DevOps is turned off.
         chatMonitor?.stop()
         chatMonitor = nil
@@ -736,24 +741,56 @@ final class PRStore: ObservableObject {
         state.records = Self.applying(madeChanges, to: state.records)
         recompute()
         refreshed.send()
-        guard mode == .live, let engine else { return }
-        Task { await engine.changed(key, by: change) }
+        readAgain(key, after: change)
     }
 
     /// A change to a pull request's thread may have been made, though Azure DevOps didn't say how, as one it didn't answer in
     /// time: a read under way that started before now isn't taken, and the pull request is read again now; nothing in the
     /// demo.
     func mayHaveChanged(_ key: PRKey) {
-        guard mode == .live, let engine else { return }
-        Task { await engine.mayHaveChanged(key) }
+        readAgain(key, after: nil)
     }
 
     /// A pull request's threads as Azure DevOps has them now, read again for it, as before a reply that may have gone is sent
-    /// again: as a read that started now has them, never one under way before; nil when they couldn't be read now, and in
-    /// the demo.
+    /// again: as a read that started now has them, never one under way before; nil when they couldn't be read now, once
+    /// stopped, and in the demo. Called off with its caller, or as Azure DevOps stops.
     func threadsReadAgain(_ key: PRKey) async -> [ReviewThread]? {
-        guard mode == .live, let engine else { return nil }
-        return await engine.mayHaveChanged(key)
+        guard let read = readAgain(key, after: nil) else { return nil }
+        return await withTaskCancellationHandler { await read.value } onCancel: { read.cancel() }
+    }
+
+    /// Reads a pull request again after a change to its threads, the engine's way (`PulseEngine.changed`, with what Azure
+    /// DevOps answered, or `mayHaveChanged`): a test's stand-in, or nil for the engine.
+    var readAfterChange: (@Sendable (PRKey, ThreadChange?) async -> [ReviewThread]?)?
+
+    /// How many reads after changes are under way, for tests.
+    var changeReadsUnderWay: Int { changeReads.count }
+
+    /// Reads a pull request again after a change to its threads, in a task that stopping calls off (`changeReads`): nil
+    /// once stopped, and in the demo, which reads nothing.
+    @discardableResult
+    private func readAgain(_ key: PRKey, after change: ThreadChange?) -> Task<[ReviewThread]?, Never>? {
+        guard mode == .live, !isStopped else { return nil }
+        let read: @Sendable (PRKey, ThreadChange?) async -> [ReviewThread]?
+        if let readAfterChange {
+            read = readAfterChange
+        } else if let engine {
+            read = { key, change in
+                guard let change else { return await engine.mayHaveChanged(key) }
+                await engine.changed(key, by: change)
+                return nil
+            }
+        } else {
+            return nil
+        }
+        let id = UUID()
+        let task = Task { [weak self] in
+            let threads = await read(key, change)
+            self?.changeReads[id] = nil
+            return threads
+        }
+        changeReads[id] = task
+        return task
     }
 
     /// A pull request's changes with another: a status it sets replaces any set before on that thread, whose comments stay,

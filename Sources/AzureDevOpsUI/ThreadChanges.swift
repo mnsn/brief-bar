@@ -70,6 +70,9 @@ final class ThreadChanges: ObservableObject {
     /// A pull request's threads as Azure DevOps has them now, read again for it, or nil when they couldn't be: the list's; a
     /// test's stand-in.
     var readThreads: @MainActor (PRKey) async -> [ReviewThread]?
+    /// Reads a pull request again, after a change that may have been made though Azure DevOps didn't say how: the list's
+    /// (`PRStore.mayHaveChanged`); a test's stand-in.
+    var readAgain: @MainActor (PRKey) -> Void
     /// For the demo's made-up comments, and when you resolved a thread.
     var now: () -> Date = Date.init
 
@@ -80,14 +83,20 @@ final class ThreadChanges: ObservableObject {
         let client = store.client
         send = { try await client.send($0, as: $1) }
         readThreads = { [weak store] key in await store?.threadsReadAgain(key) }
+        readAgain = { [weak store] key in store?.mayHaveChanged(key) }
         // The demo shows them: they change only its made-up data.
         if store.mode == .demo { settings.makesChanges = true }
-        // Turned off, threads show none of it, and what you wrote goes.
+        // Turned off, threads show none of it, what you wrote goes, and a change on its way is called off. One called off may
+        // have gone all the same: its pull request is read again, to show it if it did, so that it isn't made twice.
         settings.$makesChanges.removeDuplicates().dropFirst()
             .sink { [weak self] on in
                 MainActor.assumeIsolated {
-                    self?.objectWillChange.send()
-                    if !on { self?.forgetAll() }
+                    guard let self else { return }
+                    self.objectWillChange.send()
+                    guard !on else { return }
+                    let calledOff = Set(self.inFlight.keys.map(\.pullRequest))
+                    self.forgetAll()
+                    for pullRequest in calledOff { self.readAgain(pullRequest) }
                 }
             }
             .store(in: &cancellables)
@@ -224,7 +233,7 @@ final class ThreadChanges: ObservableObject {
                 if let change = ThreadChange(answer, to: write, pullRequest: record.pullRequest, known: thread) {
                     store.changed(pullRequest, by: change)
                 } else {
-                    store.mayHaveChanged(pullRequest)
+                    readAgain(pullRequest)
                 }
             }
         } catch is CancellationError {
@@ -272,7 +281,7 @@ final class ThreadChanges: ObservableObject {
                 if let change = ThreadChange(answer, to: write, pullRequest: record.pullRequest, known: thread) {
                     store.changed(pullRequest, by: change)
                 } else {
-                    store.mayHaveChanged(pullRequest)
+                    readAgain(pullRequest)
                 }
             }
         } catch is CancellationError {
@@ -330,7 +339,7 @@ final class ThreadChanges: ObservableObject {
     /// pull request is read again, to show it.
     private func fail(_ key: Key, _ problem: ADOWriteProblem, _ sending: Sending, pullRequest: PRKey) {
         states[key] = .failed(problem, sending)
-        if problem.mayHaveGone { store?.mayHaveChanged(pullRequest) }
+        if problem.mayHaveGone { readAgain(pullRequest) }
         SpokenText.announce(problem.sentence(sending.kind))
     }
 

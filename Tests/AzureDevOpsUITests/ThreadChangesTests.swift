@@ -3,6 +3,7 @@ import BriefBarCore
 import BriefBarUI
 import CopilotTasks
 import Foundation
+import Synchronization
 import Testing
 @testable import AzureDevOpsUI
 
@@ -455,6 +456,66 @@ import Testing
         #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
         #expect(reads == 2)
         #expect(azure.sent.count == 1)
+    }
+
+    /// Turned off while a reply goes, after it may have gone, its pull request is read again, to show it if it did, so that
+    /// it isn't sent twice once it's on again; nothing says it failed.
+    @Test func turnedOffWhileAReplyGoesItsPullRequestIsReadAgain() async throws {
+        let (store, changes, azure) = live()
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        var readAgain: [PRKey] = []
+        changes.readAgain = { readAgain.append($0) }
+        var waiting: CheckedContinuation<Void, Never>?
+        changes.send = { write, _ in
+            await withCheckedContinuation { waiting = $0 }
+            try Task.checkCancellation()
+            return try azure.send(write)
+        }
+        let original = try thread(store)
+        let replying = Task { await changes.reply("Capped it.", to: original, of: key) }
+        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        #expect(changes.isSending(threadKey))
+        changes.settings.makesChanges = false
+        #expect(readAgain == [key])
+        try #require(waiting).resume()
+        #expect(await replying.value == false)
+        #expect(changes.state(of: threadKey) == nil)
+        // Turned off with nothing on its way, nothing is read.
+        changes.settings.makesChanges = true
+        changes.settings.makesChanges = false
+        #expect(readAgain == [key])
+    }
+
+    /// The reads of a pull request after a change to its threads stop as Azure DevOps does: as it's turned off, or BriefBar
+    /// quits.
+    @Test(.timeLimit(.minutes(1)))
+    func stoppingCallsOffTheReadsAfterAChange() async throws {
+        let (store, _, _) = live()
+        let (started, startedOne) = AsyncStream<Void>.makeStream()
+        let calledOff = Mutex(0)
+        store.readAfterChange = { _, _ in
+            startedOne.yield()
+            while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+            calledOff.withLock { $0 += 1 }
+            return nil
+        }
+        store.changed(key, by: ThreadChange(thread: 11, status: "fixed"))
+        store.mayHaveChanged(key)
+        let read = Task { await store.threadsReadAgain(key) }
+        var count = 0
+        for await _ in started {
+            count += 1
+            if count == 3 { break }
+        }
+        #expect(store.changeReadsUnderWay == 3)
+        store.stop()
+        #expect(store.changeReadsUnderWay == 0)
+        #expect(await read.value == nil)
+        for _ in 0..<1_000 where calledOff.withLock({ $0 }) < 3 { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(calledOff.withLock { $0 } == 3)
+        // Stopped, nothing more is read.
+        store.mayHaveChanged(key)
+        #expect(store.changeReadsUnderWay == 0)
     }
 
     /// Read, a thread that hasn't the reply that may have gone gets it, once; and the next reply goes without reading it.
