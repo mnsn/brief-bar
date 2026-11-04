@@ -218,8 +218,8 @@ struct PullRequestFilePage: View {
         var diff: PullRequestFilesStore.State<FileDiff>?
         /// The pull request's threads that show, as you chose: all of them, or only the active ones.
         var threads: PullRequestPanel.Threads
-        /// How many of its own the choice leaves out.
-        var hidden: Int
+        /// Those of its own the choice leaves out.
+        var hidden: [PullRequestPanel.Thread]
         /// By the line they show under.
         var placed: [Int: [PullRequestPanel.Thread]] = [:]
         /// Those on the whole file first, then those on lines, as they show.
@@ -240,7 +240,7 @@ struct PullRequestFilePage: View {
             index = changes.index(of: file.id) ?? 0
             self.diff = diff
             self.threads = threads
-            self.hidden = hidden.isEmpty ? 0 : hidden.comments(on: file, in: changes).threads.count
+            self.hidden = hidden.isEmpty ? [] : hidden.comments(on: file, in: changes).threads
             let onFile = threads.comments(on: file, in: changes, holding: held).threads
             guard case .read(let read)? = diff else {
                 apart = Self.asApart(onFile)

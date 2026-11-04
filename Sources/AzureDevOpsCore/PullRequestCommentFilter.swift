@@ -22,7 +22,8 @@ extension PullRequestPanel {
         public var resolved: [FileThreads]
         /// Every thread that shows, wherever.
         public var shown: Threads
-        /// Those it leaves out: with Active, the closed, fixed, won't fix and by design ones, even those that wait on you.
+        /// Those it leaves out: with Active, the closed, fixed, won't fix and by design ones, even those that wait on you,
+        /// and those without a status.
         public var hidden: Threads
         /// How many the Comments' heading counts: with All, those that are open or wait on you; with Active, those that show
         /// and are active or pending.
@@ -36,17 +37,23 @@ extension PullRequestPanel {
             self.count = count
         }
 
-        /// "4 closed or resolved comments hidden", "1 closed or resolved comment hidden"; nil when none is.
+        /// "4 closed or resolved comments hidden", "1 comment without a status hidden", "4 closed or resolved comments and 1
+        /// without a status hidden"; nil when none is.
         public var hiddenSentence: String? {
-            Self.hiddenSentence(hidden.all.count)
+            Self.hiddenSentence(hidden.all)
         }
 
-        /// The same, for `count` of them, such as those on one file.
-        public static func hiddenSentence(_ count: Int) -> String? {
-            switch count {
-            case ..<1: nil
-            case 1: "1 closed or resolved comment hidden"
-            default: "\(count) closed or resolved comments hidden"
+        /// The same, for some of those it leaves out, such as those on one file.
+        public static func hiddenSentence(_ threads: [Thread]) -> String? {
+            let resolved = threads.filter(\.isResolved).count
+            let withoutStatus = threads.count - resolved
+            let comments = resolved == 1 ? "comment" : "comments"
+            switch (resolved, withoutStatus) {
+            case (0, 0): return nil
+            case (_, 0): return "\(resolved) closed or resolved \(comments) hidden"
+            case (0, 1): return "1 comment without a status hidden"
+            case (0, _): return "\(withoutStatus) comments without a status hidden"
+            default: return "\(resolved) closed or resolved \(comments) and \(withoutStatus) without a status hidden"
             }
         }
     }
@@ -70,9 +77,10 @@ extension PullRequestPanel.Thread.Held {
 extension PullRequestPanel.Threads {
     /// The threads as the details list them with `filter`, while you change some of them there (`held`). With All, as
     /// `arranged(holding:)` arranges them, the resolved ones apart. With Active, only those whose status is active or
-    /// pending, by file in the same way, leaving out the resolved ones, even those that wait on you, and their fold. A thread
-    /// you changed in the details stays where it was, however it stands now, unless it was among the resolved ones then and
-    /// still is; and one you were taken to (`revealing`), such as from a notification, shows whatever its status.
+    /// pending (`ReviewThread.isActive`), as What's Left counts them, by file in the same way, leaving out the resolved ones,
+    /// even those that wait on you, their fold, and those without a status. A thread you changed in the details stays where
+    /// it was, however it stands now, unless it was among the resolved ones then and isn't active now; and one you were
+    /// taken to (`revealing`), such as from a notification, shows whatever its status.
     public func listed(
         _ filter: PullRequestPanel.CommentFilter, holding held: [Int: PullRequestPanel.Thread.Held] = [:], revealing: Set<Int> = []
     ) -> PullRequestPanel.CommentListing {
@@ -82,8 +90,8 @@ extension PullRequestPanel.Threads {
         }
         func shows(_ thread: PullRequestPanel.Thread) -> Bool {
             if revealing.contains(thread.id) { return true }
-            guard let kept = held[thread.id] else { return !thread.isResolved }
-            return kept.placement != .resolved || !thread.isResolved
+            guard let kept = held[thread.id] else { return thread.thread.isActive }
+            return kept.placement != .resolved || thread.thread.isActive
         }
         func placement(_ thread: PullRequestPanel.Thread) -> PullRequestPanel.Thread.Placement {
             held[thread.id]?.placement ?? thread.placement
@@ -98,7 +106,15 @@ extension PullRequestPanel.Threads {
         )
         return .init(
             open: Self.byFile(shown.all, waitsFirst: { placement($0) == .waitingOnYou }, date: date), resolved: [], shown: shown,
-            hidden: hidden, count: shown.all.filter { !$0.isResolved }.count
+            hidden: hidden, count: shown.all.filter(\.thread.isActive).count
         )
+    }
+}
+
+extension ReviewThread {
+    /// Its status is active or pending: as Azure DevOps' policy that requires resolving comments counts them, and What's
+    /// Left too (`PRReadiness`). Not one without a status, which isn't resolved either (`isResolved`).
+    public var isActive: Bool {
+        status == "active" || status == "pending"
     }
 }

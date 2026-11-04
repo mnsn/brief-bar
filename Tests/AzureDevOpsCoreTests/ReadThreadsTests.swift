@@ -200,6 +200,17 @@ import Testing
         )
     }
 
+    /// One without a status, which isn't resolved, and waits on you, and one whose status Azure DevOps calls unknown.
+    private var withoutStatus: [PullRequestPanel.Thread] {
+        [
+            PullRequestPanel.Thread(
+                thread: ReviewThread(id: 8, status: nil, comments: [comment(1, People.sam, "Comment 8", at: t(-8 * hour))]), waitsOnYou: true,
+                isNew: true
+            ),
+            thread(9, "unknown"),
+        ]
+    }
+
     /// All, as the details always listed them; Active, only those whose status is active or pending, without the resolved
     /// ones, even one that waits on you, and their fold, saying how many it hides.
     @Test func activeShowsOnlyTheActiveThreadsAndSaysHowManyItHides() {
@@ -217,9 +228,26 @@ import Testing
         #expect(Set(active.hidden.all.map(\.id)) == [4, 5, 6, 7])
         #expect(active.count == 3)
         #expect(active.hiddenSentence == "4 closed or resolved comments hidden")
-        #expect(PullRequestPanel.CommentListing.hiddenSentence(1) == "1 closed or resolved comment hidden")
-        #expect(PullRequestPanel.CommentListing.hiddenSentence(0) == nil)
+        #expect(PullRequestPanel.CommentListing.hiddenSentence([thread(5, "fixed")]) == "1 closed or resolved comment hidden")
+        #expect(PullRequestPanel.CommentListing.hiddenSentence([]) == nil)
         #expect(PullRequestPanel.Threads(open: [thread(2, "active")]).listed(.active).hiddenSentence == nil)
+
+        // Those without a status aren't active either, as What's Left counts them, though they're open with All.
+        var more = threads
+        more.waitingOnYou.append(withoutStatus[0])
+        more.open.append(withoutStatus[1])
+        #expect(more.listed(.all).count == 6)
+        let strict = more.listed(.active)
+        #expect(Set(strict.shown.all.map(\.id)) == [1, 2, 3])
+        #expect(strict.count == 3)
+        #expect(strict.hiddenSentence == "4 closed or resolved comments and 2 without a status hidden")
+        #expect(PullRequestPanel.CommentListing.hiddenSentence([withoutStatus[1]]) == "1 comment without a status hidden")
+        #expect(PullRequestPanel.CommentListing.hiddenSentence(withoutStatus) == "2 comments without a status hidden")
+        #expect(PullRequestPanel.CommentListing.hiddenSentence([thread(5, "fixed")] + withoutStatus)
+            == "1 closed or resolved comment and 2 without a status hidden")
+        // One you were taken to, or changed while it showed, shows all the same.
+        #expect(more.listed(.active, revealing: [8]).shown.all.contains { $0.id == 8 })
+        #expect(more.listed(.active, holding: [9: .init(withoutStatus[1])]).shown.all.contains { $0.id == 9 })
     }
 
     /// With Active too, a thread you changed in the details stays where it was while they show it, unless it was resolved

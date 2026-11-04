@@ -7,8 +7,8 @@
   leaves Needs You once nothing else there does, until someone comments in the thread again. It's BriefBar's own:
   nothing goes to Azure DevOps, and **Mark as Unread** puts it back while the details are open. That ends a bot's note in
   a closed thread, say, as soon as you've read it. **Active | All**, beside **Comments**, shows only the threads that are
-  active or pending, in every pull request's details and their files' pages, and says how many closed or resolved ones
-  it hides; BriefBar remembers which you chose.
+  active or pending, in every pull request's details and their files' pages, and says how many it hides; BriefBar
+  remembers which you chose.
 
 ## 0.14.0 - 2026-11-04
 

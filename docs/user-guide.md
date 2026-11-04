@@ -394,8 +394,9 @@ waits on you only until you've seen it (**New since you last looked**, its chip'
 keep it as it was while you read, Mark as Read is how to end that before you close them. **Active | All**, beside
 **Comments**, chooses which threads show, in every pull request's details and on their files' pages, and BriefBar
 remembers it: **All** shows every thread, the resolved ones folded, and **Active** only those whose status is active or
-pending, without the closed, fixed, won't fix and by design ones, even one that waits on you, saying how many it leaves
-out, such as **4 closed or resolved comments hidden**, with **Show All**. A thread you're taken to, as from a
+pending, as What's Left counts them, without the closed, fixed, won't fix and by design ones, even one that waits on you,
+or those without a status, saying how many it leaves out, such as **4 closed or resolved comments hidden**, with **Show
+All**. A thread you're taken to, as from a
 notification, shows either way. What's Left, Needs You and the lists count every thread all the same.
 
 **Ask Copilot about a comment.** With Send Work to Copilot on, each open thread ends with

@@ -61,7 +61,7 @@ struct PullRequestCommentsSection: View {
                     .foregroundStyle(.tertiary)
             } else {
                 if listing.count == 0 {
-                    Text("Every thread is resolved.")
+                    Text(filter.wrappedValue == .active ? "No active comments." : "Every thread is resolved.")
                         .font(size: 12.5)
                         .foregroundStyle(.secondary)
                 }

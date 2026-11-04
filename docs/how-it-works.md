@@ -1438,8 +1438,9 @@ ask for the rest.
 
 **Active | All**, beside the heading (`PullRequestPanel.CommentFilter`, kept in `ado.commentFilter`, All until you
 choose), chooses which threads the details and a file's page show (`PullRequestPanel.Threads.listed`): All, as above;
-Active, only those whose status is active or pending, by file the same way, without the resolved ones, even one that
-waits on you, and without their fold, with a line that says how many it leaves out and **Show All**. A thread you
+Active, only those whose status is active or pending (`ReviewThread.isActive`), as What's Left counts open comments, by
+file the same way, without the resolved ones, even one that waits on you, their fold, or those without a status, with a
+line that says how many it leaves out and **Show All**. A thread you
 changed or marked as read in the details stays, as it was then, unless it was resolved then and still is, and so does
 one they were taken to, as from a notification. The heading counts what shows that's open; What's Left, Needs You and
 the rows count every thread, as Azure DevOps and your attention need.
