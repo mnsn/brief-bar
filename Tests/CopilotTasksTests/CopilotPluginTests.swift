@@ -28,6 +28,10 @@ import Testing
         "navigate_to",
     ]
 
+    /// Pull Request Order's tools, which `--demo --mcp` lists, as Pull Request Order is on there. They're for the sessions
+    /// that open pull requests together, not for `/briefbar`, which leaves them out.
+    static let orderTools: Set<String> = ["order_pull_requests", "pull_request_order", "forget_pull_request_order"]
+
     static func object(_ url: URL) throws -> [String: Any] {
         try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any], "\(url.path) isn't a JSON object")
     }
@@ -267,6 +271,7 @@ import Testing
         let tools = try await Self.listedTools()
         let names = Set(tools.compactMap { $0["name"] as? String })
         #expect(names.isSuperset(of: ["needs_me", "pull_request_prompt", "copilot_sessions"]))
+        #expect(names.isSuperset(of: Self.orderTools))
         // Their arguments, and the values those take.
         var arguments: Set<String> = []
         for tool in tools {
@@ -280,8 +285,8 @@ import Testing
         let named = Set(text.matches(of: /`([a-z][a-z0-9_]*)`/).map { String($0.output.1) })
         let unknown = named.subtracting(names).subtracting(arguments).subtracting(Self.appVocabulary)
         #expect(unknown.isEmpty, "The skill names what neither BriefBar nor the app has: \(unknown.sorted())")
-        // And it tells agents about every tool.
-        let missing = names.filter { !text.contains("`\($0)`") }
+        // And it tells agents about every tool but Pull Request Order's.
+        let missing = names.subtracting(Self.orderTools).filter { !text.contains("`\($0)`") }
         #expect(missing.isEmpty, "The skill doesn't mention \(missing.sorted())")
     }
 }

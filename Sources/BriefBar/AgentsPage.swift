@@ -604,15 +604,16 @@ struct AgentsDescriptionBox: View {
                 word for word and, with Send Work to Copilot on, the Copilot session BriefBar sends its work to, your \
                 pipelines and sprint, a work item with its description, latest comments, the pull requests linked to it and \
                 the Copilot sessions on those, with what Copilot recorded of their work, the work BriefBar sent to Copilot, \
-                and your Copilot sessions. Never your Teams chats or your pull requests on GitHub.
+                and your Copilot sessions. With Pull Request Order on, the orders sessions told BriefBar their pull \
+                requests merge in. Never your Teams chats or your pull requests on GitHub.
                 """),
             .init(title: "Where it goes", symbol: "network", text: """
                 To the agent that asks, and its model, which may run in the cloud. Titles, comments and Copilot's notes \
                 come word for word from whoever wrote them, and an agent may act on what they say.
                 """),
             .init(title: "What agents can change", symbol: "slider.horizontal.3", text: """
-                Only which pull requests BriefBar watches and which pipelines it pins. Nothing in Azure DevOps, where \
-                BriefBar only reads.
+                Only which pull requests BriefBar watches and which pipelines it pins and, with Pull Request Order on, the \
+                orders it keeps. Nothing in Azure DevOps or on GitHub, where BriefBar only reads.
                 """),
         ])
     }

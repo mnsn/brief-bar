@@ -372,4 +372,66 @@ import Testing
         #expect(long.count < 200)
         #expect(!long.contains("\n"))
     }
+
+    // MARK: For agents
+
+    @Test func pullRequestOrderIsOffUntilTurnedOn() {
+        let defaults = MemorySettings()
+        #expect(!PullRequestOrderSetting.isOn(in: defaults))
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        #expect(PullRequestOrderSetting.isOn(in: defaults))
+    }
+
+    /// An agent that tells the same order again, having lost its ID, gets the one BriefBar keeps, not a second.
+    @Test func theSameOrderToldAgainIsTheOneBriefBarKeeps() throws {
+        var orders = DeclaredOrders()
+        let first = try orders.apply(Self.userExample, now: t(0), newID: planID)
+        let kept = orders
+
+        var again = Self.userExample
+        again.session = session.id
+        let repeated = try orders.apply(again, now: t(60))
+        #expect(repeated == first)
+        #expect(orders == kept)
+
+        let reordered = OrderRequest(entries: Self.userExample.entries.reversed())
+        let other = try orders.apply(reordered, now: t(61))
+        #expect(other.id != first.id)
+        #expect(orders.plans.count == 2)
+    }
+
+    @Test func noOrderIsKeptWithAPullRequestWhoseSourceIsOff() {
+        var orders = DeclaredOrders()
+        let gitHub = ItemRef.gitHubPullRequest(repository: "octo/storefront", number: 7)
+        let request = OrderRequest(entries: [
+            .init(link: Self.link(4101)), .init(link: "https://github.com/octo/storefront/pull/7", after: ["4101"]),
+        ])
+        #expect(throws: OrderPlanError.sourceOff(gitHub)) { try orders.apply(request, sourcesOn: [.pullRequest]) }
+        #expect(throws: OrderPlanError.sourceOff(Self.pr(4101))) { try orders.apply(request, sourcesOn: [.gitHubPullRequest]) }
+        #expect(orders.plans.isEmpty)
+        #expect(OrderPlanError.sourceOff(gitHub).description == """
+            GitHub is off in BriefBar, so it keeps no order with octo/storefront#7: the user can turn GitHub on in BriefBar's \
+            Settings.
+            """)
+    }
+
+    /// What an agent reads back: the order it told, in the order its pull requests merge, and nothing from the sources.
+    @Test func anOrderReadsBackAsALineForEachPullRequestInTheOrderTheyMerge() throws {
+        var orders = DeclaredOrders()
+        var request = Self.userExample
+        request.entries[2].review = .after(["4102"], reason: "builds_on_changes")
+        request.entries[3].review = .now
+        request.entries.append(.init(link: "https://github.com/octo/storefront/pull/7", after: ["4106"]))
+        let plan = try orders.apply(request, now: t(0), newID: planID)
+
+        #expect(OrderText.lines(of: plan) == [
+            "!4101 in contoso: merges before !4102.",
+            "!4102 in contoso: merges after !4101.",
+            "!4103 in contoso: merges after !4102. Review after !4102: builds on its changes.",
+            "!4105 in contoso: merges after !4102.",
+            "!4106 in contoso: merges after !4105.",
+            "octo/storefront#7: merges after !4106 in contoso.",
+            "!4104 in contoso: any time. Can be reviewed now.",
+        ])
+    }
 }

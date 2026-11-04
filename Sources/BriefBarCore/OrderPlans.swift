@@ -188,6 +188,8 @@ public enum OrderPlanError: Error, Equatable, CustomStringConvertible {
     case changed(since: Int, now: Int)
     /// BriefBar keeps as many orders as it can: it removes none to make room.
     case full
+    /// A pull request whose source is off in BriefBar.
+    case sourceOff(ItemRef)
 
     public var description: String {
         switch self {
@@ -236,6 +238,12 @@ public enum OrderPlanError: Error, Equatable, CustomStringConvertible {
             return "The order changed since revision \(since), and is at revision \(now) now: read it again, then send it again."
         case .full:
             return "BriefBar keeps at most \(DeclaredOrders.mostPlans) orders, and removes none to make room: forget some first."
+        case .sourceOff(let ref):
+            let source = OrderText.source(of: ref)
+            return """
+                \(source) is off in BriefBar, so it keeps no order with \(ref.fullOrderLabel): the user can turn \(source) on \
+                in BriefBar's Settings.
+                """
         }
     }
 
@@ -292,10 +300,17 @@ public struct DeclaredOrders: Equatable, Sendable {
 
     /// Keeps a new order, or replaces one by its ID when the agent read its latest revision. Every pull request is named
     /// by its link; what one merges or is reviewed after, by a link or a number, from the same list. It refuses an order
-    /// that goes round in a circle, a 51st, and anything it can't tell for sure, changing nothing.
-    /// - Parameter newID: the ID of a new order, in tests.
+    /// that goes round in a circle, a 51st, one with a pull request whose source is off, and anything it can't tell for
+    /// sure, changing nothing. A new order that's the same as one it keeps, the same pull requests in the same order, each
+    /// after the same ones and to be reviewed the same way, is that one: telling it again changes nothing.
+    /// - Parameters:
+    ///   - sourcesOn: the kinds of pull request whose source is on.
+    ///   - newID: the ID of a new order, in tests.
     @discardableResult
-    public mutating func apply(_ request: OrderRequest, now: Date = Date(), newID: UUID = UUID()) throws -> OrderPlan {
+    public mutating func apply(
+        _ request: OrderRequest, sourcesOn: Set<ItemRef.Kind> = [.pullRequest, .gitHubPullRequest], now: Date = Date(),
+        newID: UUID = UUID()
+    ) throws -> OrderPlan {
         var replacing: Int?
         if let text = request.plan {
             let id = try Self.planID(text)
@@ -307,11 +322,10 @@ public struct DeclaredOrders: Equatable, Sendable {
             replacing = index
         } else if request.revision != nil {
             throw OrderPlanError.planMissing
-        } else if plans.count >= Self.mostPlans {
-            throw OrderPlanError.full
         }
         let declaredBy = try request.session.map(Self.session)
         let entries = try Self.entries(request.entries)
+        if let off = entries.first(where: { !sourcesOn.contains($0.ref.kind) }) { throw OrderPlanError.sourceOff(off.ref) }
         if let index = replacing {
             plans[index].revision += 1
             plans[index].updatedAt = now
@@ -319,6 +333,8 @@ public struct DeclaredOrders: Equatable, Sendable {
             if let declaredBy { plans[index].declaredBy = declaredBy }
             return plans[index]
         }
+        if let same = plans.first(where: { $0.entries == entries }) { return same }
+        guard plans.count < Self.mostPlans else { throw OrderPlanError.full }
         let plan = OrderPlan(
             id: plans.contains { $0.id == newID } ? UUID() : newID, createdAt: now, updatedAt: now, declaredBy: declaredBy,
             entries: entries
@@ -733,5 +749,54 @@ public enum OrderFocus {
     public static func ref(of key: MissionKey) -> ItemRef? {
         if case .chain(let ref) = key { return ref }
         return nil
+    }
+}
+
+// MARK: - The setting
+
+/// Pull Request Order, in Settings, which is off until you turn it on. Off, BriefBar reads and shows no order, and agents
+/// don't get its tools; the orders sessions told it stay, until you forget them.
+public enum PullRequestOrderSetting {
+    public static let defaultsKey = "order.enabled"
+
+    public static func isOn(in defaults: some SettingsStorage) -> Bool {
+        defaults.bool(forKey: defaultsKey)
+    }
+}
+
+// MARK: - For agents
+
+extension OrderText {
+    /// An order as an agent told it, a line for each pull request, in the order they merge: what it merges after, or
+    /// before, or that it can merge any time, and when to review it, as the agent said. Only what the agent said, with
+    /// nothing from the sources, which an agent reads through their own tools.
+    public static func lines(of plan: OrderPlan) -> [String] {
+        let before = Dictionary(plan.entries.map { ($0.ref, $0.after) }, uniquingKeysWith: { first, _ in first })
+        var dependents: [ItemRef: [ItemRef]] = [:]
+        for entry in plan.entries {
+            for earlier in entry.after { dependents[earlier, default: []].append(entry.ref) }
+        }
+        let place = Dictionary(plan.refs.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let alone = Set(plan.refs.filter { before[$0, default: []].isEmpty && dependents[$0, default: []].isEmpty })
+        let order = OrderGraph.ordered(plan.refs, before: before) { lhs, rhs in
+            (alone.contains(lhs) ? 1 : 0, place[lhs] ?? 0) < (alone.contains(rhs) ? 1 : 0, place[rhs] ?? 0)
+        }.order
+        return order.compactMap { ref -> String? in
+            guard let entry = plan.entry(for: ref) else { return nil }
+            var line = "\(ref.fullOrderLabel): "
+            if !entry.after.isEmpty {
+                line += "merges after \(list(entry.after, near: ref))."
+            } else if let later = dependents[ref], !later.isEmpty {
+                line += "merges before \(list(later, near: ref))."
+            } else {
+                line += "any time."
+            }
+            switch entry.review {
+            case nil: break
+            case .now?: line += " Can be reviewed now."
+            case let timing?: line += " \(review(timing, of: ref))."
+            }
+            return line
+        }
     }
 }
