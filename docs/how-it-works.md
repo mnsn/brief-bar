@@ -2245,7 +2245,8 @@ suggestion as written** has the prompt quote the latest that someone else sugges
 (`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on, which Copilot finds in the
 file as it is now by their code, since their numbers are from when the thread was written. The box is checked when the suggestion is the thread's last comment. Once a session answered Explain on the thread,
 **Include the answer above** quotes what it answered (`CopilotAnswer`, cut to 6,000 characters) before your words, which
-can point to it. Its hand-off is that thread's comments that wait on you
+can point to it, in a fence nothing in it closes, saying that it may quote what it read, not instructions, since it often
+quotes a comment or a run word for word (`PullRequestPrompt.earlier`); Ask More quotes it the same way. Its hand-off is that thread's comments that wait on you
 (`CommentHandOff.init(_:thread:dismissedCutoff:account:)`), and since a pull request has one cutoff, a comment that waits
 on you from before, in another thread, keeps both on Needs You: as BriefBar last read the pull request when the task
 starts, or, when it hasn't read it then, as after you switch accounts, as the prompt was written, for which the other
@@ -2335,7 +2336,8 @@ branches, which whoever opened it named, stay on their lines the same way in eve
 session, aside, what failed and why, and whether it's the change, a flaky test, the target branch or the build's
 infrastructure (`CopilotQuestions`, over `SessionQuestions`). What it answers is kept with the run it's about, and the
 attempt of it, by when its check said it finished, so it doesn't show with another run of the build, nor once its failed
-jobs ran again under the same ID (`CopilotQuestions.Question.isAbout(run:attempt:)`). **Ask in the Session** sends `PullRequestPrompt.askAboutBuild` instead,
+jobs ran again under the same ID (`CopilotQuestions.Question.isAbout(run:attempt:)`); and each run is asked about on its
+own row, where two policies run the same pipeline (`CopilotQuestions.Key.run`). **Ask in the Session** sends `PullRequestPrompt.askAboutBuild` instead,
 which can read the run's whole log with the session's Azure DevOps tools. The demo makes its answer up
 (`DemoData.buildExplanation`).
 
@@ -2351,8 +2353,10 @@ backoff’**, **Fixed in ‘Retry backoff’, not pushed**, **Pushed from ‘Ret
 under its name while it's closed, or before its run is read (`BuildWorkLine`), which says too that a session is
 explaining it, with **Stop**, or answered, or couldn't, with **Show**, which opens it, once that's newer than what Copilot
 does about it. VoiceOver hears what becomes of them either way. Once the build passes, as when it ran again or after a
-push, or doesn't apply, its line goes, unless Copilot is still at it, and so does a pushed fix's once a run of the build
-failed after Copilot started to push, for you to fix it again (`CopilotWork.shows(onBuild:)`, `CopilotWork.takenAt`); its fix isn't counted in the bar at the details'
+push, or doesn't apply, or expired after it passed, which is to queue again, its line goes, unless Copilot is still at
+it, and so does a pushed fix's once a run of the build failed, or failed and expired, after Copilot started to push, for
+you to fix it again (`CopilotWork.shows(onBuild:)`, `CopilotWork.takenAt`); one that failed, then expired, as when its
+target branch moved, is still to fix, and an unpushed fix of it stays (`Check.expiredFrom`, `Check.needsNoFix`); its fix isn't counted in the bar at the details'
 foot once the build passes (`PRRecord.partsToFix`). Push & Reply ships it with the threads its session fixed, or alone, replying on no thread then
 (`PullRequestPrompt.pushAndReply(_:workplace:threads:)`), and any Push & Reply in the session that fixed it, from the
 pull request's menu too, takes it along, so it says it's pushed once that's done.

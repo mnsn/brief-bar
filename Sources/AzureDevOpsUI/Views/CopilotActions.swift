@@ -153,12 +153,9 @@ extension PRRecord {
     var partsToFix: [PullRequestPart] {
         var parts = (details?.threads ?? []).filter { !$0.isResolved }.map { PullRequestPart.thread($0.id) }
         for check in details?.checks ?? [] {
-            guard let part = check.part, !parts.contains(part) else { continue }
-            switch check.state {
-            case .passed, .expired, .notApplicable: continue
-            case .failed, .running, .queued, .notRun, .pending: break
-            }
-            // Another policy that runs the same pipeline may pass while this one doesn't: one that doesn't is enough.
+            // One that failed, then expired, is still to fix (`Check.needsNoFix`). Another policy that runs the same
+            // pipeline may pass while this one doesn't: one that doesn't is enough.
+            guard let part = check.part, !parts.contains(part), !check.needsNoFix else { continue }
             parts.append(part)
         }
         if pullRequest.hasConflicts { parts.append(.conflicts) }

@@ -54,8 +54,8 @@ import Testing
         questions.askForTests = { _, _ in .success("main broke it.") }
         let finished = Date().addingTimeInterval(-600)
         questions.ask("Why?", asked: nil, session: session, about: .build(31), run: 204_417, attempt: finished, of: key)
-        try await settle { questions.question(about: .build(31), of: key)?.isAsking == false }
-        let answer = try #require(questions.question(about: .build(31), of: key))
+        try await settle { questions.question(about: .build(31), run: 204_417, of: key)?.isAsking == false }
+        let answer = try #require(questions.question(about: .build(31), run: 204_417, of: key))
         #expect(answer.run == 204_417)
         #expect(answer.attempt == finished)
         #expect(answer.isAbout(run: 204_417, attempt: finished))
@@ -63,6 +63,14 @@ import Testing
         #expect(!answer.isAbout(run: 204_418, attempt: finished))
         #expect(!answer.isAbout(run: 204_417, attempt: nil))
         #expect(!answer.isAbout(run: 204_417, attempt: finished.addingTimeInterval(300)))
+        // Another policy's run of the same pipeline, on its own row, is asked about on its own.
+        #expect(questions.question(about: .build(31), run: 204_418, of: key) == nil)
+        questions.ask("Why?", asked: "And this one?", session: session, about: .build(31), run: 204_418, of: key)
+        try await settle { questions.question(about: .build(31), run: 204_418, of: key)?.isAsking == false }
+        #expect(questions.question(about: .build(31), run: 204_417, of: key) == answer)
+        questions.dismiss(about: .build(31), run: 204_418, of: key)
+        #expect(questions.question(about: .build(31), run: 204_418, of: key) == nil)
+        #expect(questions.question(about: .build(31), run: 204_417, of: key) == answer)
         // Asked without knowing them, it's about any.
         let unknown = CopilotQuestions.Question(session: session, asked: nil, askedAt: finished, state: .answered("main broke it."))
         #expect(unknown.isAbout(run: 204_418, attempt: nil))

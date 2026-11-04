@@ -142,6 +142,14 @@ import Testing
         #expect(store.work(on: pipeline, of: key)?.isReadyFix == true)
         #expect(store.readyFixes(of: key, among: record.partsToFix).map(\.parts) == [[pipeline]])
         #expect(store.readyFixes(of: key, among: record.partsToFix).first?.threads == [])
+        // Failed, then expired, as its target branch moved: still to fix, and its fix still ready.
+        record.details?.checks[build].state = .expired
+        record.details?.checks[build].expiredFrom = .failed
+        #expect(record.partsToFix.contains(pipeline))
+        #expect(store.readyFixes(of: key, among: record.partsToFix).map(\.parts) == [[pipeline]])
+        // Passed, then expired: to queue again, not to fix.
+        record.details?.checks[build].expiredFrom = nil
+        #expect(!record.partsToFix.contains(pipeline))
         // A rerun, or a push, that passes ends it.
         record.details?.checks[build].state = .passed
         #expect(!record.partsToFix.contains(pipeline))
@@ -167,14 +175,22 @@ import Testing
         func work(_ state: CopilotWork.State, _ purpose: CopilotWork.Purpose = .fix) -> CopilotWork {
             CopilotWork(part: .build(31), purpose: purpose, state: state, session: task, forkedFrom: nil, isTask: true, since: now)
         }
-        func check(_ state: Check.State, completedAt: Date? = nil) -> Check {
-            Check(name: "shop-web CI", kind: .build, state: state, completedAt: completedAt, buildId: 204_417, definitionId: 31)
+        func check(_ state: Check.State, completedAt: Date? = nil, expiredFrom: Check.State? = nil) -> Check {
+            Check(
+                name: "shop-web CI", kind: .build, state: state, completedAt: completedAt, buildId: 204_417, definitionId: 31,
+                expiredFrom: expiredFrom
+            )
         }
         #expect(work(.done(nil)).shows(onBuild: check(.failed)))
         #expect(work(.done(nil)).shows(onBuild: check(.running)))
         #expect(work(.done(nil)).shows(onBuild: nil))
         #expect(!work(.done(nil)).shows(onBuild: check(.passed)))
+        // Expired after it passed, as its target branch moved: it's to queue again, not to fix. After it failed, it's still
+        // to fix, and its fix stays; a run of what was pushed that failed, then expired, ends it as one that failed does.
         #expect(!work(.failed(nil)).shows(onBuild: check(.expired)))
+        #expect(work(.done(nil)).shows(onBuild: check(.expired, completedAt: now.addingTimeInterval(-900), expiredFrom: .failed)))
+        #expect(work(.done(nil)).shows(onBuild: check(.expired, completedAt: now.addingTimeInterval(600), expiredFrom: .failed)))
+        #expect(!work(.done(nil), .pushAndReply).shows(onBuild: check(.expired, completedAt: now.addingTimeInterval(600), expiredFrom: .failed)))
         #expect(!work(.stopped).shows(onBuild: check(.notApplicable)))
         // Copilot is still at it: it shows, though the build passed meanwhile.
         #expect(work(.working(nil)).shows(onBuild: check(.passed)))

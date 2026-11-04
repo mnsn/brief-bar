@@ -13,10 +13,12 @@ import Foundation
 /// answers up, and never runs the Copilot CLI.
 @MainActor
 final class CopilotQuestions: ObservableObject {
-    /// Something of a pull request.
+    /// Something of a pull request: for a build, a run of it, since two of a pull request's policies can run the same
+    /// pipeline, and each run is asked about on its own row.
     struct Key: Hashable {
         var pullRequest: PRKey
         var part: PullRequestPart
+        var run: Int?
     }
 
     /// A question, and how it stands.
@@ -85,8 +87,9 @@ final class CopilotQuestions: ObservableObject {
         !hasStopped && copilot.isOn && (copilot.canSend || copilot.mode == .demo)
     }
 
-    func question(about part: PullRequestPart, of key: PRKey) -> Question? {
-        questions[Key(pullRequest: key, part: part)]
+    /// What was asked about something of a pull request: for a build, about that run of it.
+    func question(about part: PullRequestPart, run: Int? = nil, of key: PRKey) -> Question? {
+        questions[Key(pullRequest: key, part: part, run: run)]
     }
 
     /// Asks a session about something of a pull request, in place of what was asked about it before, which stops if it's
@@ -102,7 +105,7 @@ final class CopilotQuestions: ObservableObject {
         attempt: Date? = nil, of key: PRKey
     ) {
         guard canAsk else { return }
-        let id = Key(pullRequest: key, part: part)
+        let id = Key(pullRequest: key, part: part, run: run)
         asking.removeValue(forKey: id)?.cancel()
         let words = asked?.trimmingCharacters(in: .whitespacesAndNewlines)
         let question = Question(
@@ -154,16 +157,16 @@ final class CopilotQuestions: ObservableObject {
         }
     }
 
-    /// Stops what's being asked about something; its fork is deleted.
-    func stop(about part: PullRequestPart, of key: PRKey) {
-        let id = Key(pullRequest: key, part: part)
+    /// Stops what's being asked about something, for a build about that run of it; its fork is deleted.
+    func stop(about part: PullRequestPart, run: Int? = nil, of key: PRKey) {
+        let id = Key(pullRequest: key, part: part, run: run)
         asking.removeValue(forKey: id)?.cancel()
         questions[id] = nil
     }
 
-    /// Forgets what was asked and answered about something.
-    func dismiss(about part: PullRequestPart, of key: PRKey) {
-        stop(about: part, of: key)
+    /// Forgets what was asked and answered about something, for a build about that run of it.
+    func dismiss(about part: PullRequestPart, run: Int? = nil, of key: PRKey) {
+        stop(about: part, run: run, of: key)
     }
 
     private func forgetAll() {

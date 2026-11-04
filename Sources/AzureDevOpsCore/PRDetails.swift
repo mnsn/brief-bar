@@ -106,12 +106,16 @@ public struct Check: Sendable, Codable, Equatable {
     public var definitionId: Int?
     /// Where that build failed, and the first error there, once its timeline has been read.
     public var failure: PipelineFailure?
+    /// For a build that expired, how it stood before: failed, for a rejected or broken one, which is still to fix, not only
+    /// to queue again; nil for one that passed, or when Azure DevOps doesn't say.
+    public var expiredFrom: State?
     /// Lowercased identity IDs of the people and teams a required-reviewers policy requires; empty when it doesn't say.
     public var reviewerIds: [String]
 
     public init(
         name: String, kind: Kind, state: State, isBlocking: Bool = true, minimumApprovers: Int? = nil, completedAt: Date? = nil,
-        buildId: Int? = nil, definitionId: Int? = nil, failure: PipelineFailure? = nil, reviewerIds: [String] = []
+        buildId: Int? = nil, definitionId: Int? = nil, failure: PipelineFailure? = nil, reviewerIds: [String] = [],
+        expiredFrom: State? = nil
     ) {
         self.name = name
         self.kind = kind
@@ -123,6 +127,7 @@ public struct Check: Sendable, Codable, Equatable {
         self.definitionId = definitionId
         self.failure = failure
         self.reviewerIds = reviewerIds.map { $0.lowercased() }
+        self.expiredFrom = expiredFrom
     }
 
     /// Nil for a disabled policy.
@@ -140,7 +145,9 @@ public struct Check: Sendable, Codable, Equatable {
             name = Self.nonEmpty(settings?.displayName) ?? Self.nonEmpty(context?.buildDefinitionName) ?? "Build"
             switch status {
             case "approved": state = .passed
-            case "rejected", "broken": state = context?.isExpired == true ? .expired : .failed
+            case "rejected", "broken":
+                state = context?.isExpired == true ? .expired : .failed
+                if state == .expired { expiredFrom = .failed }
             case "running": state = .running
             case "notApplicable": state = .notApplicable
             default:

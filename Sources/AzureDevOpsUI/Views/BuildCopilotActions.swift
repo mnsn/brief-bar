@@ -9,12 +9,14 @@ import SwiftUI
 // Copilot does about it, then ✨ Explain the Failure and Fix, each with a composer in place, as a comment has; on a build's
 // row while it's closed, the same in a line. What they share with comments and conflicts is in CopilotActions.swift.
 
-extension Check.State {
-    /// It passes, or needn't: passed, passed and has to run again, or doesn't apply. Copilot's fix of a build that passes
-    /// since, as when it ran again or after a push, is over.
+extension Check {
+    /// It passes, or needn't: it passed, or passed and has to run again, or doesn't apply. Copilot's fix of a build that
+    /// passes since, as when it ran again or after a push, is over. One that failed, then expired, as when its target branch
+    /// moved, is still to fix (`expiredFrom`).
     var needsNoFix: Bool {
-        switch self {
-        case .passed, .expired, .notApplicable: true
+        switch state {
+        case .passed, .notApplicable: true
+        case .expired: expiredFrom != .failed
         case .failed, .running, .queued, .notRun, .pending: false
         }
     }
@@ -27,8 +29,9 @@ extension CopilotWork {
     func shows(onBuild check: Check?) -> Bool {
         if isActive { return true }
         guard let check else { return true }
-        if check.state.needsNoFix { return false }
-        if purpose == .pushAndReply, case .done = state, check.state == .failed, let failedAt = check.completedAt,
+        if check.needsNoFix { return false }
+        // Failed, or failed and expired since.
+        if purpose == .pushAndReply, case .done = state, check.state == .failed || check.state == .expired, let failedAt = check.completedAt,
            failedAt > takenAt ?? since {
             return false
         }
@@ -55,7 +58,7 @@ enum BuildCopilot {
         about line: PullRequestPanel.CheckLine, run: Int?, of key: PRKey, questions: CopilotQuestions, preview: CopilotActionsPreview?
     ) -> CopilotQuestions.Question? {
         guard let part = line.check?.part else { return nil }
-        let question = preview?.question(about: part) ?? questions.question(about: part, of: key)
+        let question = preview?.question(about: part) ?? questions.question(about: part, run: run, of: key)
         guard let question, question.isAbout(run: run, attempt: line.check?.completedAt) else { return nil }
         return question
     }
@@ -178,7 +181,7 @@ struct BuildWorkLine: View {
         switch question.state {
         case .asking:
             BuildCopilot.askingLine(question, names: names, now: now) {
-                if let part = line.check?.part { questions.stop(about: part, of: item.key) }
+                if let part = line.check?.part { questions.stop(about: part, run: line.buildId, of: item.key) }
             }
         case .answered:
             CopilotWorkLine(
@@ -379,14 +382,14 @@ struct BuildCopilotActions<Trailing: View>: View {
         switch question.state {
         case .asking:
             BuildCopilot.askingLine(question, names: names, now: now) {
-                if let part { questions.stop(about: part, of: item.key) }
+                if let part { questions.stop(about: part, run: investigation.run.id, of: item.key) }
             }
         case .answered(let answer):
             CopilotAnswerCard(
                 answer: answer, asked: question.asked, place: place, answeredAt: question.endedAt ?? question.askedAt, now: now,
                 open: names.opener(question.session, isTask: names.isTask(question.session), navigation: navigation)
             ) {
-                if let part { questions.dismiss(about: part, of: item.key) }
+                if let part { questions.dismiss(about: part, run: investigation.run.id, of: item.key) }
             }
         case .failed(let failure):
             CopilotWorkLine(
@@ -403,7 +406,7 @@ struct BuildCopilotActions<Trailing: View>: View {
                     .disabled(isAskingInSession)
                     .help("Send the question to the session as a prompt, as Fix sends its prompts: it goes in the session's history, and changes nothing")
                 }
-                CopilotDismissButton { if let part { questions.dismiss(about: part, of: item.key) } }
+                CopilotDismissButton { if let part { questions.dismiss(about: part, run: investigation.run.id, of: item.key) } }
             }
         }
     }
@@ -423,9 +426,9 @@ struct BuildCopilotActions<Trailing: View>: View {
             isAskingInSession = false
             switch outcome {
             case .sent:
-                questions.dismiss(about: part, of: item.key)
+                questions.dismiss(about: part, run: investigation.run.id, of: item.key)
             case .copied(let note):
-                questions.dismiss(about: part, of: item.key)
+                questions.dismiss(about: part, run: investigation.run.id, of: item.key)
                 copied = note
             case .notSent(let why):
                 copied = why
