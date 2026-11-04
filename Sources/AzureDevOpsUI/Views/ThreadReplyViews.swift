@@ -93,26 +93,26 @@ struct ThreadReadOnlyMark: View {
 }
 
 /// A thread's status: Resolve on an open thread, Reactivate on a resolved one; ▾ has every status Azure DevOps' own menu
-/// offers, the one it has checked.
+/// offers, the one it has checked. Its title as big as the text on windows' pages (`SplitMenuButton`).
 struct ThreadStatusButton: View {
     let thread: PullRequestPanel.Thread
     let set: (ThreadStatus) -> Void
 
     var body: some View {
         let current = thread.thread.threadStatus
-        Menu {
-            ThreadStatusMenuItems(current: current, set: set)
-        } label: {
-            Label(Self.title(thread), systemImage: thread.isResolved ? "arrow.uturn.backward" : "checkmark")
-        } primaryAction: {
+        SplitMenuButton(
+            Self.title(thread), systemImage: thread.isResolved ? "arrow.uturn.backward" : "checkmark",
+            help: thread.isResolved
+                ? "Reactivate this thread in Azure DevOps, as you; its menu sets another status"
+                : "Resolve this thread in Azure DevOps, as you; its menu sets another status, such as Won't Fix or Closed",
+            hint: "Sets the thread's status in Azure DevOps. Its menu has the other statuses.",
+            entries: ThreadStatus.choices(for: current).map { status in
+                .item(status.title, isChecked: status == current) { if status != current { set(status) } }
+            }
+        ) {
             set(Self.primary(thread))
         }
         .fixedSize()
-        .help(thread.isResolved
-            ? "Reactivate this thread in Azure DevOps, as you; its menu sets another status"
-            : "Resolve this thread in Azure DevOps, as you; its menu sets another status, such as Won't Fix or Closed")
-        .accessibilityLabel(Self.title(thread))
-        .accessibilityHint("Sets the thread's status in Azure DevOps. Its menu has the other statuses.")
     }
 
     /// Resolve, or Reactivate on a resolved thread.
@@ -125,8 +125,8 @@ struct ThreadStatusButton: View {
     }
 }
 
-/// The statuses a thread can be set to, as Azure DevOps' own menu offers them, the one it has checked: in its status
-/// button's menu, and in its card's.
+/// The statuses a thread can be set to, as Azure DevOps' own menu offers them, the one it has checked: in its card's menu,
+/// as its status button's has them.
 struct ThreadStatusMenuItems: View {
     let current: ThreadStatus?
     let set: (ThreadStatus) -> Void
@@ -482,17 +482,14 @@ struct ThreadReplyComposer: View {
                 .foregroundStyle(.secondary)
             } else {
                 Button("Reply & \(ThreadStatusButton.title(thread))") { send(then: then) }
-                    .font(size: 12, weight: .medium)
-                    .buttonStyle(.bordered)
+                    .textSizedButtonStyle(.bordered)
                     .keyboardShortcut(.return, modifiers: [.command, .shift])
                     .help(thread.isResolved
                         ? "Reply, then reactivate the thread, in Azure DevOps, as you (⇧⌘Return)"
                         : "Reply, then resolve the thread, in Azure DevOps, as you (⇧⌘Return)")
                     .disabled(!canSend)
                 Button("Reply") { send(then: nil) }
-                    // As big as the text on windows' pages, which a control's own font isn't.
-                    .font(size: 12, weight: .semibold)
-                    .buttonStyle(.borderedProminent)
+                    .textSizedButtonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: .command)
                     .help("Reply in Azure DevOps, as you (⌘Return)")
                     .disabled(!canSend)
@@ -593,22 +590,19 @@ struct ThreadReplyComposer: View {
                 .help("Stop Fix Grammar: your reply stays as it is")
             }
         } else {
-            Menu {
-                GrammarModelMenuItems(model: settings.grammarModel, models: models, canRunOnDevice: canRunOnDevice) { model in
+            SplitMenuButton(
+                "Fix Grammar", systemImage: "text.badge.checkmark", help: grammarHelp,
+                hint: "Its menu chooses the model: Apple Intelligence on this Mac, or one through Copilot.",
+                entries: GrammarModelMenuItems.entries(model: settings.grammarModel, models: models, canRunOnDevice: canRunOnDevice) { model in
                     settings.grammarModel = model
                     grammarProblem = nil
                 }
-            } label: {
-                Label("Fix Grammar", systemImage: "text.badge.checkmark")
-            } primaryAction: {
+            ) {
                 fixGrammar()
             }
-            .font(size: 11.5, weight: .medium)
             .controlSize(.small)
             .fixedSize()
             .disabled(isBlank || isSending)
-            .help(grammarHelp)
-            .accessibilityHint("Its menu chooses the model: Apple Intelligence on this Mac, or one through Copilot.")
         }
     }
 
@@ -700,15 +694,20 @@ struct ThreadReplyComposer: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .help(problem.detail ?? problem.message)
                 if problem.choosesModel {
-                    Menu("Choose a Model") {
+                    Menu {
                         GrammarModelMenuItems(model: settings.grammarModel, models: models, canRunOnDevice: canRunOnDevice) { model in
                             settings.grammarModel = model
                             grammarProblem = nil
                         }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text("Choose a Model")
+                            MenuChevron()
+                        }
+                        .font(size: 13, weight: .medium)
+                        .contentShape(Rectangle())
                     }
-                    .font(size: 11.5, weight: .medium)
-                    .menuStyle(.button)
-                    .buttonStyle(.borderless)
+                    .labelMenuStyle()
                     .fixedSize()
                     .help("Choose the model Fix Grammar uses: a Copilot model costs one premium request each time, and gets your reply")
                 }
@@ -731,7 +730,8 @@ struct GrammarSuggestion: Equatable {
 }
 
 /// The models Fix Grammar can correct a reply with, the one it uses checked: Apple Intelligence on this Mac, free, nothing
-/// leaving it; or one through Copilot, one premium request each time, which gets your reply's text.
+/// leaving it; or one through Copilot, one premium request each time, which gets your reply's text. In Choose a Model's
+/// menu, and, as `entries`, Fix Grammar's.
 struct GrammarModelMenuItems: View {
     let model: String
     let models: [StorySummaries.Model]
@@ -757,6 +757,24 @@ struct GrammarModelMenuItems: View {
                 }
             }
         }
+    }
+
+    /// The same, for Fix Grammar's own menu (`SplitMenuButton`).
+    static func entries(
+        model: String, models: [StorySummaries.Model], canRunOnDevice: Bool, choose: @escaping (String) -> Void
+    ) -> [SplitMenuButton.Entry] {
+        let onDevice = models.filter { $0.id == StorySummaries.appleIntelligenceModel }
+        let throughCopilot = models.filter { $0.id != StorySummaries.appleIntelligenceModel }
+        return [.header("On this Mac: free, and nothing leaves it")]
+            + onDevice.map { choice in
+                .item(StorySummariesSetting.choiceTitle(choice, canRunOnDevice: canRunOnDevice), isChecked: choice.id == model) {
+                    choose(choice.id)
+                }
+            }
+            + [.header("Through Copilot: one premium request each, which gets your reply")]
+            + throughCopilot.map { choice in
+                .item(StorySummariesSetting.choiceTitle(choice), isChecked: choice.id == model) { choose(choice.id) }
+            }
     }
 }
 
@@ -800,8 +818,7 @@ struct GrammarSuggestionView: View {
                     .accessibilityLabel("Suggested: \(suggestion.corrected)")
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Button("Use It", action: use)
-                        .font(size: 12, weight: .semibold)
-                        .buttonStyle(.borderedProminent)
+                        .textSizedButtonStyle(.borderedProminent)
                         .controlSize(.small)
                         .help("Put the correction in your reply: Undo puts back what you wrote")
                     Text("Nothing goes until you reply.")

@@ -123,7 +123,7 @@ private struct PageContent: View {
             }
             HStack(spacing: 8) {
                 StoryActions(item: item)
-                    .glassButtonStyle()
+                    .glassMenuStyle()
                 PageSummarizeButton(ref: ref)
             }
             .controlSize(.small)

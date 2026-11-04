@@ -321,6 +321,7 @@ enum Renderer {
                 let navigation = SettingsNavigation()
                 navigation.destination = destination
                 let view = SettingsView(model: model, navigation: navigation)
+                    .environment(\.isRendering, true)
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
                     .background(Color(nsColor: .windowBackgroundColor))

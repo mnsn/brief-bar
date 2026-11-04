@@ -34,7 +34,7 @@ struct PullRequestsPage: View {
                 PageRefreshStatus(page: .pullRequests)
                 PullRequestOrderMenu(order: shownOrder, showsTitle: true, offersByMission: ordering.isOn)
                     .menuStyle(.button)
-                    .glassButtonStyle()
+                    .glassMenuStyle()
                     .fixedSize()
                 if shownOrder == .byMission {
                     OrderViewPicker(order: ordering, shown: view)
@@ -45,6 +45,7 @@ struct PullRequestsPage: View {
                     Label("Open in Azure DevOps", systemImage: "arrow.up.forward.app")
                 }
                 .glassButtonStyle()
+                .help("Open in Azure DevOps")
             }
             DetailsSplit(showsDetails: details.selected != nil, preferredWidth: $settings.pullRequestDetailsWidth) {
                 list

@@ -918,15 +918,17 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     /// The Pull Requests page with a pull request's details: the first of yours that needs you, beside the list as in a big
     /// window and in BriefBar's window as it opens, over it in a narrow one, all of it in a tall one, and with the page of
-    /// the first work item linked to it over them; the first that's failing; and, for the line of its Copilot session, the
-    /// first of yours with merge conflicts, whose two sessions ask which is its, and the one whose session waits for your
-    /// answer. Each in a store of its own, so the window's own picture of the page shows none.
+    /// the first work item linked to it over them; the first that's failing; the first of yours set to complete by itself;
+    /// and, for the line of its Copilot session, the first of yours with merge conflicts, whose two sessions ask which is
+    /// its, and the one whose session waits for your answer. Each in a store of its own, so the window's own picture of the
+    /// page shows none.
     private func pullRequestDetailsRenderings() -> [(name: String, view: AnyView)] {
         guard let store else { return [] }
         // The sessions as Show Links has them now that every source told it.
         pullRequestSessions?.updateAll()
         let yours = store.items.first { $0.group == .needsYou && $0.role == .author } ?? store.items.first
         let failing = store.items.first { $0.group == .failing }
+        let completing = store.items.first { $0.role == .author && store.record(for: $0.key)?.pullRequest.autoComplete == true }
         let asking = store.items.first { item in
             if case .ask? = pullRequestSessions?.session(for: item.key)?.pick { return true }
             return false
@@ -943,6 +945,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             ], nil),
             ("pull-requests-details-page", yours, [("", wide)], .workItem),
             ("pull-requests-failing-details", failing, [("", wide), ("-tall", CGSize(width: 1_000, height: 1_100))], nil),
+            ("pull-requests-completing-details", completing, [("", wide)], nil),
             ("pull-requests-session-question", asking, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil),
             ("pull-requests-session-waiting", waiting, [("", wide)], nil),
         ]

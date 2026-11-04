@@ -325,9 +325,7 @@ struct CopilotAskComposer<Destinations: View, Options: View>: View {
                 Text(sendTitle)
             }
         }
-        // As big as the text on windows' pages, which a control's own font isn't.
-        .font(size: 12, weight: .semibold)
-        .buttonStyle(.borderedProminent)
+        .textSizedButtonStyle(.borderedProminent)
         .controlSize(.small)
         .fixedSize()
         .disabled(!canSend || isSending)

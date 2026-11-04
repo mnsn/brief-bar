@@ -21,6 +21,8 @@ struct PullRequestTagsRow: View {
     @EnvironmentObject private var store: PRStore
     @Environment(\.tagsPreview) private var preview
     @Environment(\.textScale) private var textScale
+    @Environment(\.detailsScroll) private var scroll
+    @Environment(\.isRendering) private var isRendering
 
     /// What you typed in the field.
     @LocalState private var typed = ""
@@ -95,12 +97,19 @@ struct PullRequestTagsRow: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel(tags.isEmpty ? "Tags: none" : "Tags")
             .accessibilityHint(readOnlyReason ?? "")
+            // Some room under the suggestions, which scrolling to them keeps above what's at the details' foot.
+            .padding(.bottom, isOpen ? 8 : 0)
+            .id(Self.scrollID)
             .onAppear {
                 guard let preview, let typed = preview.typed else { return }
                 composing = .tags
                 self.typed = typed
                 highlighted = preview.highlighted
             }
+            // The field and its suggestions in view as they show, however far down the details are scrolled, and above
+            // what's at their foot, such as the fixes ready to push: in `--render`'s pictures too.
+            .onChange(of: isOpen, initial: true) { _, open in if open { scrollIntoView() } }
+            .onChange(of: isOpen ? choices.rows.count : nil) { _, count in if count != nil { scrollIntoView() } }
             // Turned off, or the pull request closed, while the field was open: it closes.
             .onChange(of: canChange) { _, can in
                 if !can, composing == .tags { composing = nil }
@@ -110,6 +119,19 @@ struct PullRequestTagsRow: View {
 
     /// As tall as a capsule, at the text size on windows' pages.
     private var chipHeight: CGFloat { 18 * textScale }
+
+    /// The tags, for the details to scroll to as the field opens: one pull request's show at a time.
+    static let scrollID = "pull-request-tags"
+
+    /// All of them in view, the field and its suggestions with them, once they're laid out.
+    private func scrollIntoView() {
+        guard let scroll else { return }
+        let isRendering = isRendering
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(isRendering ? 200 : 80))
+            withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { scroll.scrollTo(Self.scrollID) }
+        }
+    }
 
     /// Why the tags can't be changed here, when they can't: for their glyph's tooltip, and VoiceOver.
     private var readOnlyReason: String? {

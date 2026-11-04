@@ -175,6 +175,7 @@ struct WorkItemDetailsPanel: View {
                     details.reload()
                 } label: {
                     Image(systemName: "arrow.clockwise")
+                        .font(size: 13)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
@@ -192,9 +193,11 @@ struct WorkItemDetailsPanel: View {
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
+                    .font(size: 13)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .labelMenuStyle()
             .fixedSize()
             .help("More")
             Button {
@@ -713,10 +716,11 @@ private struct FailureView: View {
             HStack(spacing: 8) {
                 if problem.offersSignIn {
                     Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: problem) }
-                        .buttonStyle(.borderedProminent)
+                        .textSizedButtonStyle(.borderedProminent)
                 }
                 Button("Try Again") { details.reload() }
             }
+            .textSizedButtonStyle(.bordered)
             .controlSize(.small)
         }
         .padding(12)
@@ -868,7 +872,11 @@ struct FlowLayout: Layout {
         var widest: CGFloat = 0
         for subview in subviews {
             var size = subview.sizeThatFits(.unspecified)
-            size.width = min(size.width, width)
+            // Narrowed to the line, it's as tall as it wraps there, which bigger text makes more lines.
+            if size.width > width {
+                size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+                size.width = min(size.width, width)
+            }
             if x > 0, x + size.width > width {
                 x = 0
                 y += lineHeight + (lineSpacing ?? spacing)

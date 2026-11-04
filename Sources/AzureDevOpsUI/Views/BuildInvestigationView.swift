@@ -558,10 +558,11 @@ private struct BuildReadFailure: View {
             HStack(spacing: 8) {
                 if problem.offersSignIn {
                     Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: problem) }
-                        .buttonStyle(.borderedProminent)
+                        .textSizedButtonStyle(.borderedProminent)
                 }
                 Button("Try Again", action: readAgain)
             }
+            .textSizedButtonStyle(.bordered)
             .controlSize(.small)
             .font(size: 11)
         }

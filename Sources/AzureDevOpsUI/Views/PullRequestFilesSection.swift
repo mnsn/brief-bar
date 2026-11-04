@@ -139,10 +139,15 @@ struct PullRequestFilesSection: View {
             .pickerStyle(.inline)
             .labelsHidden()
         } label: {
-            Text(details.scope == .whole ? "All Changes" : "Since You Last Looked")
-                .font(size: 11.5, weight: .medium)
+            HStack(spacing: 3) {
+                Text(details.scope == .whole ? "All Changes" : "Since You Last Looked")
+                MenuChevron()
+            }
+            // As AppKit drew it, as a borderless menu, before it followed the text size.
+            .font(size: 13, weight: .medium)
+            .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .labelMenuStyle()
         .fixedSize()
         .help("Show all of the change, or only what changed since you last looked")
         .accessibilityLabel("Changes Shown")

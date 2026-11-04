@@ -11,6 +11,7 @@ struct SprintPage: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var details: WorkItemDetailsStore
+    @Environment(\.textScale) private var textScale
 
     @LocalState private var showDone = false
 
@@ -45,12 +46,10 @@ struct SprintPage: View {
     private var controls: some View {
         PageRefreshStatus(page: .sprint)
 
-        Picker("Show", selection: $settings.sprintJustMine) {
-            Text("Everyone").tag(false)
-            Text("Just Mine").tag(true)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        SegmentedPicker("Show", selection: $settings.sprintJustMine, segments: [
+            .init(false, title: "Everyone"),
+            .init(true, title: "Just Mine"),
+        ])
         .fixedSize()
         .help("Just Mine: your stories and bugs with all their tasks, and your tasks in anyone else's")
 
@@ -68,15 +67,15 @@ struct SprintPage: View {
                     }
                 }
             } label: {
-                Label(sprint.board?.team.name ?? "Choose a Team", systemImage: "person.3.fill")
+                ControlLabel(sprint.board?.team.name ?? "Choose a Team", systemImage: "person.3.fill")
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .frame(maxWidth: 190)
+                    .frame(maxWidth: 190 * textScale)
             }
             .menuStyle(.button)
-            .glassButtonStyle()
+            .glassMenuStyle()
             .fixedSize()
-            .help("Choose the team whose sprint to show")
+            .help(sprint.board.map { "\($0.team.name): choose the team whose sprint to show" } ?? "Choose the team whose sprint to show")
         }
 
         CopilotRunsMenu()

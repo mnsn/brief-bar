@@ -86,7 +86,10 @@ struct PullRequestDetailsContent: View {
                 // Its summary, of it and what's linked to it, under what it is.
                 PageSummary(ref: ref)
                 if let readiness = panel.readiness, !readiness.items.isEmpty {
-                    PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction, copilot: copilotOnIt(record)) { left in
+                    PullRequestLeftSection(
+                        readiness: readiness, completesByItself: record?.pullRequest.autoComplete == true, copilotAction: copilotAction,
+                        copilot: copilotOnIt(record)
+                    ) { left in
                         if let place = PullRequestDetailsStore.Place.of(left, in: panel) { details.go(to: place) }
                     }
                 }
@@ -281,6 +284,7 @@ struct PullRequestOpenButton: View {
             store.open(item)
         } label: {
             Image(systemName: "arrow.up.forward.app")
+                .font(size: 13)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }

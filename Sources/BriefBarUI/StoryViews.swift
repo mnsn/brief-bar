@@ -483,12 +483,19 @@ private struct StandingContent: View {
             .buttonStyle(.borderless)
             .help(LinkPickerView.buttonTitle(for: subject.kind))
             if !hidden.isEmpty {
-                Menu("\(hidden.count) Hidden") {
+                Menu {
                     ForEach(hidden) { connection in
                         Button("Show \(connection.item.menuTitle)") { links.showAgain(subject, connection.item.ref) }
                     }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("\(hidden.count) Hidden")
+                        MenuChevron()
+                    }
+                    .font(size: 13)
+                    .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
+                .labelMenuStyle()
                 .fixedSize()
                 .help("Links you hid here")
             }
@@ -1141,16 +1148,16 @@ struct StoryActions: View {
                 menu()
             } label: {
                 if item.sent != nil {
-                    Label("Copilot", systemImage: "paperplane")
+                    ControlLabel("Copilot", systemImage: "paperplane")
                 } else {
-                    Label("Actions", systemImage: "ellipsis.circle")
+                    ControlLabel("Actions", systemImage: "ellipsis.circle")
                 }
             }
             .menuStyle(.button)
             .fixedSize()
         } else if let open = item.open {
             Button(action: open) {
-                Label(StoryDetails.openTitle(for: item.ref.kind), systemImage: "arrow.up.forward.app")
+                ControlLabel(StoryDetails.openTitle(for: item.ref.kind), systemImage: "arrow.up.forward.app")
             }
             .fixedSize()
         }

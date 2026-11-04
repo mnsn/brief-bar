@@ -450,7 +450,7 @@ private struct ConflictsCopilotActions: View {
                     + (hasAnswer ? ", with what the session answered" : "") + ": it may commit the merge, but doesn't push")
             }
         }
-        .buttonStyle(.bordered)
+        .textSizedButtonStyle(.bordered)
         .controlSize(.small)
         .font(size: 11.5, weight: .medium)
     }

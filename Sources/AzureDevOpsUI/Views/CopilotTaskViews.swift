@@ -233,15 +233,12 @@ struct CopilotRunsMenu: View {
                 Button("Clear Ended") { copilot.clearEnded() }
                     .disabled(!entries.contains { !$0.status.phase.isActive })
             } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "paperplane")
-                    if copilot.activeCount > 0 {
-                        Text("\(copilot.activeCount)").monospacedDigit()
-                    }
-                }
+                // Its count, while Copilot is at work, even where the page's header shows its controls' symbols alone.
+                ControlLabel(copilot.activeCount > 0 ? "\(copilot.activeCount)" : nil, systemImage: "paperplane")
+                    .labelStyle(.titleAndIcon)
             }
             .menuStyle(.button)
-            .glassButtonStyle()
+            .glassMenuStyle()
             .fixedSize()
             .help(copilot.activeCount > 0
                 ? "Copilot is working on \(copilot.activeCount) of the work items you sent it"

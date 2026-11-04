@@ -8,11 +8,23 @@ private struct RenderingKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct SymbolsAloneKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     /// Drawing offscreen for `--render`, which can't draw materials: views use plain colors instead.
     package var isRendering: Bool {
         get { self[RenderingKey.self] }
         set { self[RenderingKey.self] = newValue }
+    }
+
+    /// Controls show their symbols alone, without their titles, which their tooltips and VoiceOver say: in a page's header
+    /// too narrow for them. Labels do with `labelStyle(.iconOnly)` too; this tells those that draw their own titles, such
+    /// as a segmented control (`SegmentedPicker`).
+    package var showsSymbolsAlone: Bool {
+        get { self[SymbolsAloneKey.self] }
+        set { self[SymbolsAloneKey.self] = newValue }
     }
 }
 
@@ -158,13 +170,32 @@ extension View {
         modifier(FloatingPanel(cornerRadius: cornerRadius))
     }
 
-    /// A glass button, and a bordered one offscreen, where glass doesn't draw.
+    /// A glass button, and a bordered one offscreen, where glass doesn't draw: its title as big as the text on windows'
+    /// pages (`textSizedButtonStyle(_:)`).
     package func glassButtonStyle() -> some View {
         modifier(GlassButtonStyle())
+    }
+
+    /// A glass menu, and a bordered one offscreen: AppKit's own, which a menu needs, its label as big as the text on
+    /// windows' pages once it sets its own font (`ControlLabel`).
+    package func glassMenuStyle() -> some View {
+        modifier(GlassMenuStyle())
     }
 }
 
 private struct GlassButtonStyle: ViewModifier {
+    @Environment(\.isRendering) private var isRendering
+
+    func body(content: Content) -> some View {
+        if isRendering {
+            content.textSizedButtonStyle(.bordered)
+        } else {
+            content.textSizedButtonStyle(.glass)
+        }
+    }
+}
+
+private struct GlassMenuStyle: ViewModifier {
     @Environment(\.isRendering) private var isRendering
 
     func body(content: Content) -> some View {
@@ -178,7 +209,9 @@ private struct GlassButtonStyle: ViewModifier {
 
 // MARK: - Pages
 
-/// A page's title, what it's about, and its controls on the right. Dragging it moves the window.
+/// A page's title, what it's about, and its controls on the right. Dragging it moves the window. Where they don't all fit,
+/// the controls show their symbols alone, so the title and what it's about have room: each control names itself in its
+/// tooltip, and to VoiceOver.
 package struct PageHeader<Trailing: View>: View {
     let title: String
     var subtitle: String?
@@ -191,6 +224,19 @@ package struct PageHeader<Trailing: View>: View {
     }
 
     package var body: some View {
+        ViewThatFits(in: .horizontal) {
+            row(showsTitles: true)
+            row(showsTitles: false)
+        }
+        .padding(.leading, 18)
+        .padding(.trailing, 24)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
+        .contentShape(Rectangle())
+        .gesture(WindowDragGesture())
+    }
+
+    private func row(showsTitles: Bool) -> some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -199,21 +245,23 @@ package struct PageHeader<Trailing: View>: View {
                     .minimumScaleFactor(0.65)
                     .help(title)
                 if let subtitle {
+                    // On two lines, where the controls' symbols alone still leave too little room for it on one.
                     Text(subtitle)
                         .font(size: 12.5)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(showsTitles ? 1 : 2)
+                        .fixedSize(horizontal: false, vertical: !showsTitles)
                 }
             }
             Spacer(minLength: 12)
-            trailing()
+            if showsTitles {
+                trailing()
+            } else {
+                trailing()
+                    .labelStyle(.iconOnly)
+                    .environment(\.showsSymbolsAlone, true)
+            }
         }
-        .padding(.leading, 18)
-        .padding(.trailing, 24)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
-        .contentShape(Rectangle())
-        .gesture(WindowDragGesture())
     }
 }
 

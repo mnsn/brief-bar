@@ -175,7 +175,7 @@ struct ThreadCopilotActions: View {
                 }
             }
         }
-        .buttonStyle(.bordered)
+        .textSizedButtonStyle(.bordered)
         .controlSize(.small)
         .font(size: 11.5, weight: .medium)
     }
@@ -539,7 +539,7 @@ struct CommentsHeader: View {
                     } label: {
                         Label(title, systemImage: CopilotAsk.fixAll.symbol)
                     }
-                    .buttonStyle(.bordered)
+                    .textSizedButtonStyle(.bordered)
                     .controlSize(.small)
                     .font(size: 11.5, weight: .medium)
                     .focused($isFocused)

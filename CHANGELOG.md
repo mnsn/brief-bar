@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Buttons and menus grow with Text Size in Windows.** At a bigger text size, in Settings › Appearance, the controls on
+  windows' pages grow with their text: the Pull Requests pages' By Status, List | Map and Open in Azure DevOps, rows'
+  Actions, a pull request's Explain, Fix, Reply, Resolve, Fix Grammar and Push & Reply…, and the composers' buttons.
+- **In a narrow window, a page's header shows its buttons as symbols alone**, each named in its tooltip and to
+  VoiceOver, so what the page says it's about isn't cut short.
+- **The fixes ready to push take two lines at most**, at the foot of a pull request's details: at a bigger text size,
+  Push & Reply… goes under the sentence rather than beside it.
+- **Adding a tag shows the field and its suggestions**, scrolling the details as they appear, rather than leaving them
+  under the fixes ready to push.
+- **A file's diff folds only runs of four or more unchanged lines**: fewer show, where a fold saved no room.
+- **What's Left says a pull request set to complete automatically completes by itself**, as its heading does, rather
+  than that you can complete it.
+- **Text that wraps among a pull request's details no longer overlaps what follows it** at a bigger text size.
+- **`--render` draws Settings with its chosen page highlighted in the sidebar**, where it drew a black capsule.
 - **BriefBar no longer takes a little more memory each time a list updates with summaries on.** Each time a list or
   page that shows Apple Intelligence's summaries updated, such as Azure DevOps' Pull Requests page, BriefBar kept what
   checking that Apple Intelligence was available took, until it quit.
