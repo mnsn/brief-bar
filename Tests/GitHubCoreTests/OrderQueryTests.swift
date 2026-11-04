@@ -158,14 +158,25 @@ import Testing
         #expect(try JSONDecoder().decode(GitHubPullRequest.self, from: data) == pullRequest)
     }
 
-    @Test func withoutTheOrdersQueryAPullRequestTellsAnOrderNothing() throws {
+    /// Without the order's query, such as when GitHub can't answer it, an order still sees the pull request listed, but
+    /// not the branch it merges into, so BriefBar puts it after nothing.
+    @Test func withoutTheOrdersQueryAPullRequestIsSeenButStacksOnNothing() throws {
         let pullRequest = try Fixture.decoded(Fixture.pullRequest(12))
         #expect(pullRequest.order == nil)
-        #expect(pullRequest.orderPullRequest(attention: nil) == nil)
+        let seen = pullRequest.orderPullRequest(attention: .needsYou)
+        #expect(seen.ref == .gitHubPullRequest(repository: pullRequest.repository, number: 12))
+        #expect(seen.state == .open && seen.attention == .needsYou)
+        #expect(seen.targetBranch.isEmpty && seen.isFork == nil && seen.defaultBranch == nil && seen.stack == nil)
+        // Without the branches they merge into, two of the same author's pull requests stack on nothing.
+        var rounding = pullRequest
+        rounding.branch = "robin/rounding"
+        var cart = try Fixture.decoded(Fixture.pullRequest(14))
+        cart.branch = "robin/cart"
+        #expect(OrderInference.edges(OrderFacts(pullRequests: [rounding, cart].map { $0.orderPullRequest(attention: nil) })).isEmpty)
         var draft = Self.orderPullRequest(13, branch: "robin/fork-fix", base: "main", isCrossRepository: true)
         draft["isDraft"] = true
-        let seen = try #require(try Fixture.decoded(draft).orderPullRequest(attention: nil))
-        #expect(seen.state == .draft && seen.isFork == true)
+        let fork = try Fixture.decoded(draft).orderPullRequest(attention: nil)
+        #expect(fork.state == .draft && fork.isFork == true && fork.targetBranch == "main")
         // A stack member in a state BriefBar doesn't know has none.
         #expect(PullRequestState(gitHub: "QUEUED") == nil)
     }

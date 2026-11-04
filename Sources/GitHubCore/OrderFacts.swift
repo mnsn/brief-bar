@@ -32,22 +32,22 @@ extension GitHubPullRequest {
         }
     }
 
-    /// The pull request as an order sees it, once the order's query read it; nil when it didn't. Every pull request the
-    /// list reads is open: a draft or not.
+    /// The pull request as an order sees it. Every pull request the list reads is open: a draft or not. Without what the
+    /// order's query reads, such as when GitHub can't answer it and BriefBar reads the usual one, the branch it merges
+    /// into isn't known (empty), so it goes after nothing BriefBar sees; an order that names it still sees it listed.
     /// - Parameter attention: what it means for you now, as its group counts it.
-    public func orderPullRequest(attention: ItemState?) -> OrderPullRequest? {
-        guard let order else { return nil }
-        return OrderPullRequest(
+    public func orderPullRequest(attention: ItemState?) -> OrderPullRequest {
+        OrderPullRequest(
             ref: .gitHubPullRequest(repository: repository, number: number), repository: repository, sourceBranch: branch ?? "",
-            targetBranch: order.baseBranch, isFork: order.isFork, defaultBranch: order.defaultBranch, author: author,
-            state: isDraft ? .draft : .open, attention: attention, createdAt: createdAt, stack: order.stack
+            targetBranch: order?.baseBranch ?? "", isFork: order?.isFork, defaultBranch: order?.defaultBranch, author: author,
+            state: isDraft ? .draft : .open, attention: attention, createdAt: createdAt, stack: order?.stack
         )
     }
 }
 
 extension GitHubPRSnapshot {
     /// The pull request as an order sees it, with what it means for you, as its group counts it.
-    public var orderPullRequest: OrderPullRequest? {
+    public var orderPullRequest: OrderPullRequest {
         pullRequest.orderPullRequest(attention: group.state)
     }
 }

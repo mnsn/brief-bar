@@ -142,13 +142,20 @@ final class GitHubStore: ObservableObject {
         }
     }
 
-    /// Pull Request Order was turned on or off: read again now, with its query or without it.
+    /// Pull Request Order was turned on or off: read again now, with its query or without it. A read under way used the
+    /// setting as it was, so it's called off, and what it would have read goes nowhere.
     func orderChanged() {
         guard isStarted else { return }
         switch mode {
         case .demo:
             receive(GitHubDemoData.load(now: Date(), order: ordersOn()))
         case .live:
+            if let task {
+                generation += 1
+                task.cancel()
+                self.task = nil
+                isRefreshing = false
+            }
             refresh()
         }
     }

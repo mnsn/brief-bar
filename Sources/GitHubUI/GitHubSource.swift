@@ -150,7 +150,7 @@ package final class GitHubSource: BriefBarSource {
     }
 
     /// Tells Pull Request Order what GitHub shows, while it's on: each pull request, with what the order's query read of it,
-    /// and what it is.
+    /// and what it is. When GitHub couldn't answer that query, the pull requests still show where orders name them.
     private func publishOrder(_ items: [GitHubPRSnapshot]? = nil) {
         let order = services.pullRequestOrder
         guard order.isOn else {
@@ -158,7 +158,7 @@ package final class GitHubSource: BriefBarSource {
             return
         }
         let items = items ?? store.items
-        order.publish(.github, pullRequests: items.compactMap(\.orderPullRequest), items: linkedItems(items))
+        order.publish(.github, pullRequests: items.map(\.orderPullRequest), items: linkedItems(items))
     }
 
     /// Tells the details what's known of its pull requests, when they ask.

@@ -65,6 +65,52 @@ import Testing
         #expect(source.store.items.allSatisfy { $0.pullRequest.order != nil })
     }
 
+    /// When GitHub can't answer the order's query, BriefBar reads the usual one: an order still sees the pull requests it
+    /// lists, though not the branches they merge into.
+    @Test func withoutTheOrdersQueryAnOrderStillSeesTheListedPullRequests() throws {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = GitHubSource(services: services)
+        source.store.ordersOn = { false }
+        let planID = UUID(uuidString: "11111111-2222-4333-8444-555555555555")!
+        let link = { (number: Int) in "https://github.com/contoso/shop-web/pull/\(number)" }
+        var told = DeclaredOrders()
+        try told.apply(OrderRequest(entries: [.init(link: link(405)), .init(link: link(409), after: [link(405)])]), newID: planID)
+        services.pullRequestOrder.tellDemo(told)
+        source.start()
+        defer { source.stop() }
+        let order = services.pullRequestOrder
+
+        let mission = try #require(order.missions.first { $0.key == .plan(planID) })
+        #expect(mission.steps.map(\.status) == [.open, .open])
+        #expect(mission.steps.last?.standing == .waiting(open: [Self.shopWeb(405)], unknown: []))
+        #expect(!order.missions.contains { $0.key == .stack(repository: "contoso/shop-api", number: 7) })
+    }
+
+    /// Pull Request Order turned on or off while a read is under way: that read used the setting as it was, so a new one
+    /// starts with it as it is.
+    @Test(.timeLimit(.minutes(1)))
+    func turningTheOrderOnOrOffDuringAReadReadsAgain() async throws {
+        let runner = FakeRunner(ProcessResult(status: 1, stderr: Data(FakeCLI.signedOut.utf8)), delay: .seconds(3_600))
+        var on = false
+        let store = GitHubStore(
+            settings: AppSettings(defaults: MemoryDefaults()), mode: .live, makeTokens: { FakeCLI.signedOut(runner) }
+        )
+        store.ordersOn = { on }
+        store.start()
+        defer { store.stop() }
+        while runner.calls.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let first = try #require(store.lastAttempt)
+        try await Task.sleep(for: .milliseconds(20))
+
+        on = true
+        store.orderChanged()
+
+        #expect(store.isRefreshing)
+        #expect(try #require(store.lastAttempt) > first)
+    }
+
     @Test func itsPicturesListByMissionOnlyWhileTheOrderIsOn() async {
         let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
         let source = GitHubSource(services: services)
