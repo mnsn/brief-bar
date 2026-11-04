@@ -31,6 +31,9 @@ import Testing
         for kept in ["``x``", "`az` login", "a ``` b", "~/src", "~~x", "` ``"] {
             #expect(QuotedText.oneLine(kept) == kept)
         }
+        // Inside a line, after what the prompt says first, it stays as it's written but for what's unseen.
+        #expect(QuotedText.inLine("```topic") == "```topic")
+        #expect(QuotedText.inLine("```a\nb\u{202E}") == "```a\\nb\\u{202E}")
     }
 
     /// A shell reads the word back as the text it was, and runs nothing in it: `$(…)`, backticks, a quote, `;`, `|`, `&`, a

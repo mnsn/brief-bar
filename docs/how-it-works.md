@@ -2104,8 +2104,9 @@ requests to Azure DevOps stay GETs: the programs it starts for you do the rest.
 
 **Sending.** The composer fills the prompt in from Settings (`PromptTemplate`: `{id}`, `{type}`,
 `{title}`, `{url}`, `{organization}`, `{project}` and `{baseBranch}`), each value on its placeholder's line, with
-what breaks a line, turns text around or hides it written out (`QuotedText.oneLine`), and the base branch in single
-quotes when a shell would read something in it, as a pull request's branches are (`QuotedText.commandWord`), and remembers the repository
+what breaks a line, turns text around or hides it written out (`QuotedText.oneLine`), and the base branch, which the
+repository names, as it's named but for what's unseen (`QuotedText.inLine`), so a template of yours can quote it as its
+commands need, and remembers the repository
 each project's work went in, by organization and project. Only a work item's prompt has `{baseBranch}` filled in as
 it starts: a pull request's has no placeholders, and goes as it is, so code it quotes that holds one, such as a
 suggested change, stays as it was written. Then BriefBar:

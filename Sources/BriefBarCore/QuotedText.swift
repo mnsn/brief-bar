@@ -6,11 +6,18 @@ import Foundation
 /// escapes. A pull request's prompts and a work item's use it alike.
 public enum QuotedText {
     /// Text quoted on one of a prompt's lines: its line breaks, and characters that control how text reads or hide text,
-    /// written out as escapes, "\n", "\u{202E}" (`isControl`), so that all of it stays on that line, nothing in it starts a
-    /// line of the prompt's own, and nothing in it is unseen. Nor does it start with a fence, three backticks or tildes or
-    /// more, which would open one where it starts a line, as a name does before what its author said: the first is written
-    /// out, "\u{60}".
+    /// written out as escapes (`inLine`), so that all of it stays on that line, nothing in it starts a line of the prompt's
+    /// own, and nothing in it is unseen. Nor does it start with a fence, three backticks or tildes or more, which would open
+    /// one where it starts a line, as a name does before what its author said: the first is written out, "\u{60}".
     public static func oneLine(_ text: String) -> String {
+        withoutFenceAtStart(inLine(text))
+    }
+
+    /// Text quoted inside one of a prompt's lines, after what the prompt says first, such as a branch's name in a sentence:
+    /// its line breaks, and characters that control how text reads or hide text, written out as escapes, "\n", "\u{202E}"
+    /// (`isControl`), so that all of it stays on that line and nothing in it is unseen; but nothing else, so a name stays as
+    /// it's written, backticks it starts with included.
+    public static func inLine(_ text: String) -> String {
         var line = ""
         for scalar in text.unicodeScalars {
             switch scalar {
@@ -25,7 +32,7 @@ public enum QuotedText {
                 }
             }
         }
-        return withoutFenceAtStart(line)
+        return line
     }
 
     /// Text quoted as it was written, line by line: in a fence nothing in it closes (`fence(for:)`), each line indented by
@@ -82,11 +89,11 @@ public enum QuotedText {
     }
 
     /// A word a prompt writes in a sentence or in a command, such as a branch's name, which whoever made the branch chose:
-    /// in single quotes when a shell would read something in it (`shellWord`), then on its line (`oneLine`). Quoted, it
+    /// in single quotes when a shell would read something in it (`shellWord`), then on its line (`inLine`). Quoted, it
     /// starts with its quote, which no fence starts with, so a name that starts with backticks, as Git allows, keeps them,
     /// and a command names that branch. Empty stays empty.
     public static func commandWord(_ text: String) -> String {
-        text.isEmpty ? text : oneLine(shellWord(text))
+        text.isEmpty ? text : inLine(shellWord(text))
     }
 
     /// A line that starts, after its spaces, with three backticks or tildes or more, as a fence does, those with no width
