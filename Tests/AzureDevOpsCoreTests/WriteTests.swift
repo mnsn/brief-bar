@@ -10,9 +10,9 @@ import Testing
 
     // MARK: What it can send
 
-    /// Two changes, and only those: a new one comes with its kind, which fails this until it's tested here.
+    /// Four changes, and only those: a new one comes with its kind, which fails this until it's tested here.
     @Test func makesOnlyTheChangesItLists() {
-        #expect(ADOWrite.Kind.allCases == [.reply, .setStatus])
+        #expect(ADOWrite.Kind.allCases == [.reply, .setStatus, .addTag, .removeTag])
         for kind in ADOWrite.Kind.allCases {
             let write = sample(kind)
             #expect(write.kind == kind)
@@ -31,8 +31,24 @@ import Testing
                 #expect(write.url.absoluteString
                     == "https://dev.azure.com/contoso/p1/_apis/git/repositories/r1/pullRequests/7/threads/12?api-version=7.1")
                 #expect(String(decoding: write.body, as: UTF8.self) == #"{"status":2}"#)
+            case .addTag:
+                #expect(write.thread == nil)
+                #expect(write.kind.isTags)
+                #expect(write.method == "POST")
+                #expect(write.url.absoluteString
+                    == "https://dev.azure.com/contoso/p1/_apis/git/repositories/r1/pullRequests/7/labels?api-version=7.1")
+                #expect(String(decoding: write.body, as: UTF8.self) == #"{"name":"deploy-eu"}"#)
+            case .removeTag:
+                #expect(write.thread == nil)
+                #expect(write.kind.isTags)
+                #expect(write.method == "DELETE")
+                #expect(write.url.absoluteString
+                    == "https://dev.azure.com/contoso/p1/_apis/git/repositories/r1/pullRequests/7/labels/0f5d2c1e-tag?api-version=7.1")
+                #expect(write.body.isEmpty)
             }
         }
+        #expect(!ADOWrite.Kind.reply.isTags)
+        #expect(!ADOWrite.Kind.setStatus.isTags)
     }
 
     /// A reply says what you wrote as you wrote it: Markdown, quotes, slashes and all, which JSON encodes.
@@ -185,6 +201,116 @@ import Testing
         #expect(server.requests.count == 1)
     }
 
+    // MARK: Tags
+
+    /// A tag's name goes as you typed it, in JSON, whatever it has in it; taking one off goes by the tag's ID, or else its
+    /// name, which the address encodes.
+    @Test func aTagGoesAsYouNamedIt() throws {
+        let tagged = ADOWrite.addTag(PullRequestAddress(pullRequest), name: "deploy \"eu\"/west ✓")
+        let body = try #require(JSONSerialization.jsonObject(with: tagged.body) as? [String: Any])
+        #expect(body as? [String: String] == ["name": "deploy \"eu\"/west ✓"])
+        let untagged = ADOWrite.removeTag(PullRequestAddress(pullRequest), tag: "team/payments v2")
+        #expect(untagged.url.absoluteString.hasSuffix("/pullRequests/7/labels/team%2Fpayments%20v2?api-version=7.1"))
+    }
+
+    /// Adding a tag answers with it, as the project has it, and its spelling there.
+    @Test func addsATagWithAPostOfItsName() async throws {
+        let server = StubServer()
+        server.on("/pullRequests/7/labels") { _ in
+            .json(["id": "0f5d2c1e-tag", "name": "Deploy-EU", "active": true, "url": NSNull()])
+        }
+        let answer = try await server.client().send(sample(.addTag))
+        guard case .tag(let tag) = answer else {
+            Issue.record("Expected a tag, got \(answer)")
+            return
+        }
+        #expect(tag.name == "Deploy-EU")
+        #expect(tag.id == "0f5d2c1e-tag")
+        let request = try #require(server.requests.first)
+        #expect(server.requests.count == 1)
+        #expect(request.httpMethod == "POST")
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+        #expect(body(of: request) == Data(#"{"name":"deploy-eu"}"#.utf8))
+    }
+
+    /// Taking a tag off sends nothing but its address, and whatever Azure DevOps answers it with, nothing (204), nothing in a
+    /// 200 or JSON, it was taken off. A sign-in it didn't take still isn't: the change is sent again only then.
+    @Test func removesATagWithADeleteOfNothingMore() async throws {
+        let replies: [StubServer.Reply] = [
+            StubServer.Reply(status: 204, headers: [:], body: Data()),
+            StubServer.Reply(status: 200, headers: [:], body: Data()),
+            .json([String: Any]()),
+            StubServer.Reply(status: 200, headers: ["Content-Type": "text/plain"], body: Data("OK".utf8)),
+        ]
+        for reply in replies {
+            let server = StubServer()
+            server.on("/pullRequests/7/labels/0f5d2c1e-tag") { _ in reply }
+            let answer = try await server.client().send(sample(.removeTag))
+            guard case .done = answer else {
+                Issue.record("Expected it done, got \(answer) for \(reply.status)")
+                continue
+            }
+            let request = try #require(server.requests.first)
+            #expect(server.requests.count == 1)
+            #expect(request.httpMethod == "DELETE")
+            #expect(request.value(forHTTPHeaderField: "Content-Type") == nil)
+            #expect(body(of: request) == nil)
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(server.id)")
+        }
+
+        let signedOut = StubServer()
+        let attempts = Locked(0)
+        signedOut.on("/pullRequests/7/labels/0f5d2c1e-tag") { _ in
+            attempts.increment() == 1 ? .status(401) : StubServer.Reply(status: 204, headers: [:], body: Data())
+        }
+        guard case .done = try await signedOut.client().send(sample(.removeTag)) else {
+            Issue.record("Expected it done after a fresh sign-in")
+            return
+        }
+        #expect(signedOut.requests.count == 2)
+    }
+
+    /// Why a tag's change didn't happen, as for a thread's: a completed pull request, no permission, a tag that isn't on it.
+    @Test func saysWhyATagsChangeDidntHappen() async throws {
+        let cases: [(StubServer.Reply, ADOError)] = [
+            (.json(["message": "TF401181: The pull request cannot be edited due to its state.", "typeKey": "GitPullRequestNotEditableException"],
+                   status: 400), .refused(.notEditable, message: "TF401181: The pull request cannot be edited due to its state.")),
+            (.status(403), .forbidden),
+            (.status(404), .notFound),
+            (.failure(.notConnectedToInternet), .offline),
+        ]
+        for kind in [ADOWrite.Kind.addTag, .removeTag] {
+            for (reply, expected) in cases {
+                let server = StubServer()
+                server.on("/pullRequests/7/labels") { _ in reply }
+                await #expect(throws: expected) { try await server.client().send(sample(kind)) }
+                #expect(server.requests.count == 1)
+            }
+        }
+        // A tag's 204 is done; a thread's is still nothing there.
+        let server = StubServer()
+        server.on("/threads/12") { _ in StubServer.Reply(status: 204, headers: [:], body: Data()) }
+        await #expect(throws: ADOError.notFound) { try await server.client().send(sample(.setStatus)) }
+    }
+
+    @Test func saysWhatHappenedToATagsChangeInASentence() {
+        #expect(ADOWriteProblem.notAllowed.sentence(.addTag) == "Azure DevOps says you may not change this pull request's tags.")
+        #expect(ADOWriteProblem.notAllowed.sentence(.removeTag) == "Azure DevOps says you may not change this pull request's tags.")
+        #expect(ADOWriteProblem.closed.sentence(.addTag)
+            == "Azure DevOps takes no change to this pull request anymore: it's completed or abandoned.")
+        #expect(ADOWriteProblem.offline.sentence(.addTag) == "You're offline: try again once you're back.")
+        #expect(ADOWriteProblem.signedOut.sentence(.removeTag).hasPrefix("The Azure CLI isn't signed in"))
+        #expect(ADOWriteProblem.gone.sentence(.removeTag).contains("doesn't have that tag on this pull request"))
+        #expect(ADOWriteProblem.gone.sentence(.addTag).contains("doesn't have this pull request anymore"))
+        #expect(ADOWriteProblem.unanswered.sentence(.addTag).contains("reads the tags again"))
+        #expect(ADOWriteProblem.failed("HTTP 500.").sentence(.addTag) == "Couldn't add the tag: HTTP 500.")
+        #expect(ADOWriteProblem.failed("HTTP 500.").sentence(.removeTag) == "Couldn't remove the tag: HTTP 500.")
+        #expect(ADOWriteProblem.refused("Too long").sentence(.addTag) == "Azure DevOps refused it: Too long")
+        // Threads' sentences as they were.
+        #expect(ADOWriteProblem.notAllowed.sentence(.reply) == "Azure DevOps says you may not reply here.")
+        #expect(ADOWriteProblem.offline.sentence(.setStatus) == "You're offline: try again once you're back.")
+    }
+
     // MARK: Nothing else
 
     /// Every read is a GET, whatever it reads.
@@ -302,6 +428,8 @@ import Testing
         switch kind {
         case .reply: .reply(address, markdown: "Thanks, done", parentCommentId: 1)
         case .setStatus: .setStatus(address, .fixed)
+        case .addTag: .addTag(PullRequestAddress(pullRequest), name: "deploy-eu")
+        case .removeTag: .removeTag(PullRequestAddress(pullRequest), tag: "0f5d2c1e-tag")
         }
     }
 
