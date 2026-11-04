@@ -1,0 +1,117 @@
+import AzureDevOpsCore
+import BriefBarCore
+import Combine
+import Foundation
+
+/// What you leave in pull requests' details as you go, by pull request, kept above the views that show them, which come and
+/// go as a page opens over the details, as a file's page shows in place of their parts, and as they show another pull
+/// request: what you wrote in each composer that asks Copilot something (Explain, Fix, Resolve, Fix All), until you send it,
+/// as `ThreadChanges` keeps your replies; and where each thread you changed, with your reply or its status, was as you first
+/// did, for it to stay there while the details show its pull request (`held`). The details' comments and their files' pages
+/// share both, beside the list and on a pull request's page over a work item's or another pull request's details. In memory
+/// only: what you wrote goes once you send it, or as Send Work to Copilot or Azure DevOps is turned off, or someone else signs
+/// in to the Azure CLI; where the threads were, once the details show their pull request no more (`showing`).
+@MainActor
+final class DetailsDrafts: ObservableObject {
+    /// What you wrote in each composer, by pull request. Not published: what you type redraws its own composer only.
+    private var words: [PRKey: [CopilotComposing: String]] = [:]
+    /// Where each thread you changed was as you first did, by pull request, then by thread.
+    private var held: [PRKey: [Int: PullRequestPanel.Thread.Held]] = [:]
+    /// Who's signed in to the Azure CLI, as the list last told.
+    private var account: String?
+    private var cancellables: Set<AnyCancellable> = []
+    /// Which pull requests the details show (`follow`).
+    private var following: AnyCancellable?
+
+    /// - Parameter settings: what you wrote goes as Send Work to Copilot is turned off, which takes its composers away.
+    init(settings: AppSettings? = nil) {
+        settings?.$copilotEnabled.removeDuplicates().dropFirst()
+            .sink { [weak self] isOn in
+                guard !isOn else { return }
+                MainActor.assumeIsolated { self?.words = [:] }
+            }
+            .store(in: &cancellables)
+    }
+
+    // MARK: What you wrote
+
+    /// What you wrote in a composer of a pull request's details, and haven't sent.
+    func words(in composer: CopilotComposing, of pullRequest: PRKey) -> String {
+        words[pullRequest]?[composer] ?? ""
+    }
+
+    /// Keeps what you wrote in a composer, until you send it: nothing once you've emptied it.
+    func keep(_ text: String, in composer: CopilotComposing, of pullRequest: PRKey) {
+        var kept = words[pullRequest] ?? [:]
+        kept[composer] = text.isEmpty ? nil : text
+        words[pullRequest] = kept.isEmpty ? nil : kept
+    }
+
+    /// What you wrote in a composer went: it's forgotten.
+    func sent(_ composer: CopilotComposing, of pullRequest: PRKey) {
+        keep("", in: composer, of: pullRequest)
+    }
+
+    // MARK: Where threads were
+
+    /// Where each thread you changed in a pull request's details was as you first did, by its ID.
+    func held(in pullRequest: PRKey) -> [Int: PullRequestPanel.Thread.Held] {
+        held[pullRequest] ?? [:]
+    }
+
+    /// Keeps where a thread is, as you change it with your reply or its status, for it to stay there while the details show
+    /// its pull request, however it stands: where it was as you first did, though you change it again.
+    func hold(_ thread: PullRequestPanel.Thread, in pullRequest: PRKey) {
+        guard held[pullRequest]?[thread.id] == nil else { return }
+        objectWillChange.send()
+        held[pullRequest, default: [:]][thread.id] = PullRequestPanel.Thread.Held(thread)
+    }
+
+    /// The pull requests the details show now, the pages over them included, by their references: the one beside the list,
+    /// and those whose pages show over it or over a work item's details. Where threads were in the others goes, so a thread
+    /// you resolved in one is with the resolved ones once you come back to it, as it is, rather than where it was.
+    func showing(_ shown: Set<ItemRef>) {
+        let gone = held.keys.filter { !shown.contains($0.linkRef) }
+        guard !gone.isEmpty else { return }
+        objectWillChange.send()
+        for key in gone { held[key] = nil }
+    }
+
+    /// Follows which pull requests the details show (`showing`): beside the list, with the pages over them (`panel`), and as
+    /// pages over a work item's details (`workItem`). Not what you went on from, to another work item, to come back to.
+    func follow(_ panel: PullRequestDetailsStore, pagesOver workItem: WorkItemDetailsStore) {
+        following = Publishers.CombineLatest3(
+            panel.$selected.map { $0?.key.linkRef }.removeDuplicates(),
+            panel.$pages.removeDuplicates(),
+            workItem.$pages.removeDuplicates()
+        )
+        .sink { [weak self] selected, pages, workItemPages in
+            MainActor.assumeIsolated { self?.showing(Set(pages + workItemPages + [selected].compactMap { $0 })) }
+        }
+    }
+
+    // MARK: Forgetting
+
+    /// Forgets all of it, as Azure DevOps stops or someone else signs in.
+    func forgetAll() {
+        objectWillChange.send()
+        words = [:]
+        held = [:]
+    }
+
+    /// Stops for good, when Azure DevOps stops: all of it goes, and nothing's followed anymore.
+    func stop() {
+        following = nil
+        cancellables = []
+        forgetAll()
+    }
+
+    /// Someone signed in to the Azure CLI, as the list tells: when it's someone else than before, what you wrote was as the
+    /// last one, and goes, as your replies do.
+    func accountChanged(_ account: String?) {
+        guard let account else { return }
+        defer { self.account = account }
+        guard let known = self.account, known != account else { return }
+        forgetAll()
+    }
+}

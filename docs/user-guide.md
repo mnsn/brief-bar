@@ -386,10 +386,15 @@ help, as when you were offline, **↻** to try again.
 **Ask Copilot about a comment.** With Send Work to Copilot on, each open thread ends with
 **✨ Explain** and **Fix**, side by side, in the comments and on its file's page. Each opens a small composer under the comment, rather than a window: a field for
 what you want in your own words, where it goes, and its button, which Return presses, so a plain explanation or fix takes
-two clicks. One composer is open at a time, and each keeps what you wrote until you send it. **Explain** asks the session
+two clicks. One composer is open at a time, and each keeps what you wrote until you send it, while BriefBar runs, in memory
+only, as a reply does: as you open another, go to a page over the details or a file's page and back, where the same
+thread's composer has it too, or look at another pull request; a file's page closes the one that was open, so **‹**
+comes back to where you were rather than to it. Turning Send Work to Copilot off, or someone else signing in to the
+Azure CLI, forgets it. **Explain** asks the session
 that worked on the thread, or else the pull request's own (its Copilot session, above), what you want to know, or else
 why you got the comment: why the reviewer wrote it, what they want, how the code relates, and a few ways to address it,
-with what each would change. The answer shows under the comment, with **↗** to the session. It's asked aside, in a copy
+with what each would change. The answer shows under the comment, a long one's first dozen or so lines until **Show More**,
+with **↗** to the session. It's asked aside, in a copy
 of the session's conversation that the Copilot CLI makes with no tools and deletes after, so it changes no file and the
 session's history stays as it was; it sends the conversation, with the comment and its code, to GitHub Copilot, as one
 premium request, and needs the Copilot CLI 1.0.95 or later. Once it answered, **Ask More** follows up on what it said,
@@ -424,7 +429,8 @@ fixed, from that session; they stay in the bar when Push & Reply fails or is sto
 **Copilot's on it** while Copilot fixes, or pushes, its comments, a build or its conflicts, whether with one of
 BriefBar's tasks or a prompt to one of the Copilot app's sessions, and **Copilot asks you** while that session waits for
 your answer in the app. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
-off, unless the session has it already. VoiceOver hears what becomes of each.
+off, unless the session has it already. VoiceOver hears what becomes of each, once, though it shows in two windows, or on
+two rows of a build that two policies run.
 
 **Reply and set a thread's status.** With **Make Changes in Azure DevOps** on, in Azure DevOps' settings (off by
 default), each thread on an open pull request ends with **Reply** and its status, in the row with Explain and Fix, in the
@@ -433,11 +439,14 @@ lock takes their place: point at it, or ask VoiceOver, to hear why. **Reply** op
 with them: write in Markdown, Return starting a new line, then **Reply**, or ⌘Return, sends it to the thread in Azure
 DevOps, as you, and **Reply & Resolve**, or ⇧⌘Return, sends it and resolves the thread; on a resolved thread, **Reply &
 Reactivate** reactivates it. ✕ or Esc closes the field, and what you wrote stays, until you send it, while BriefBar runs,
-in memory only. **Resolve**, beside Reply, resolves the thread, and **Reactivate** reactivates a resolved one; its **▾**
+in memory only; the keyboard's focus goes back to **Reply**, as it does once your reply is sent, unless you've moved on to
+another composer meanwhile. **Resolve**, beside Reply, resolves the thread, and **Reactivate** reactivates a resolved one; its **▾**
 has the statuses Azure DevOps' own menu offers, **Active**, **Pending**, **Resolved**, **Won't Fix** and **Closed**, and
 **By Design** for a thread that has it already. A status changes at once, without asking, since the same menu sets it
 back; a thread's right-click menu has Reply and its statuses too. The thread shows what you did as soon as Azure DevOps
-answers, as it answered, and stays where it is in the details while they show that pull request, however it stands now;
+answers, as it answered, and stays where it is in the details while they show that pull request, however it stands now,
+as pages open over them and you come back, and on its file's page; once they show another, or close, or you go back
+from its page, it shows where it stands, with the resolved ones once you resolved it;
 then BriefBar reads the pull request again, so Needs You, What's Left, the brief and the counts follow: a thread you replied
 to, or resolved, doesn't wait on you anymore. When it can't, the thread says why in a sentence, such as **Azure DevOps says
 you may not reply here**, **You're offline**, for a pull request that's completed or abandoned, when the thread was
