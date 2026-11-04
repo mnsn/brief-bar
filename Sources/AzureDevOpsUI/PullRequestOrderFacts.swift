@@ -38,7 +38,9 @@ final class PullRequestOrderFacts {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] on in MainActor.assumeIsolated { self?.turned(on: on) } }
             .store(in: &cancellables)
+        // Every refresh too: a pull request's branches can change without its row, such as when it's retargeted.
         store.$items.map { _ in () }
+            .merge(with: store.refreshed)
             .merge(with: settings.$showToReview.removeDuplicates().map { _ in () })
             .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.publish() } }

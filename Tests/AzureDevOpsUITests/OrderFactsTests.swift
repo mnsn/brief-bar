@@ -134,6 +134,31 @@ import Testing
         #expect(missions.first?.steps.map(\.ref.id) == ["4103", "4104"])
     }
 
+    /// Waits for what the main queue delivers, as the facts hear the list change.
+    private static func eventually(_ condition: () -> Bool) async -> Bool {
+        for _ in 0..<300 where !condition() {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return condition()
+    }
+
+    /// A refresh can change what the list read of a pull request without its row, such as when it's retargeted: the order
+    /// hears every refresh.
+    @Test func everyRefreshTellsTheOrderAgain() async throws {
+        let store = await Self.demoStore()
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true)
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+        facts.start()
+        defer { facts.stop() }
+        #expect(await Self.eventually { order.describe(DemoPullRequestOrder.retry) != nil })
+        order.withdraw(.azureDevOps)
+        #expect(order.describe(DemoPullRequestOrder.retry) == nil)
+
+        store.refreshed.send()
+
+        #expect(await Self.eventually { order.describe(DemoPullRequestOrder.retry) != nil })
+    }
+
     /// The demo's orders are ones an agent could tell: BriefBar would keep them as they are.
     @Test func theDemosOrdersAreOnesAnAgentCouldTell() throws {
         let demos = DemoPullRequestOrder.orders(now: Date()).plans
