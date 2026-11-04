@@ -207,19 +207,39 @@ import Testing
         var asked: [(String, String)] = []
         fixer.askCopilot = { prompt, model in
             asked.append((prompt, model))
-            return .success("<text>\nI use {{1}}, as @sam asked.\n</text>")
+            return .success("```\nI use {{1}}, as @sam asked.\n```")
         }
-        fixer.askOnDevice = { _, _ in .success("I use {{1}}.") }
-        let fixed = await fixer.fix("i use `retryCount` as @sam asked", with: "claude-haiku-5.5")
-        #expect(fixed == .failure(GrammarFixer.Problem(
-            message: "The model changed your code, a link or a mention, so your reply stays as it is. Try again, or choose another model.",
-            choosesModel: true
-        )))
-        fixer.askCopilot = { _, _ in .success("<text>\nI use {{1}}, as {{2}} asked.\n</text>") }
-        #expect(await fixer.fix("i use `retryCount` as @sam asked", with: "claude-haiku-5.5") == .success("I use `retryCount`, as @sam asked."))
+        var toldOnDevice: [(String, String)] = []
+        fixer.askOnDevice = { text, instructions, _ in
+            toldOnDevice.append((text, instructions))
+            return .success("I use {{1}}.")
+        }
+        let text = "i use `retryCount` as @sam asked"
+        let fixed = await fixer.fix(text, with: "claude-haiku-5.5")
+        #expect(fixed == .failure(GrammarFixer.turnedDown(.changedHeld, by: "claude-haiku-5.5")))
+        fixer.askCopilot = { _, _ in .success("```\nI use {{1}}, as {{2}} asked.\n```") }
+        #expect(await fixer.fix(text, with: "claude-haiku-5.5") == .success("I use `retryCount`, as @sam asked."))
         #expect(asked.first?.1 == "claude-haiku-5.5")
-        #expect(asked.first?.0.hasPrefix(GrammarFix.instructions) == true)
+        // The Copilot CLI gets the instructions, then the reply in its fence; Apple Intelligence, the two apart.
+        #expect(asked.first?.0 == GrammarFix.request(for: text).prompt)
         #expect(await fixer.fix("i use `retryCount`", with: StorySummaries.appleIntelligenceModel) == .success("I use `retryCount`."))
+        let request = GrammarFix.request(for: "i use `retryCount`")
+        #expect(toldOnDevice.first?.0 == request.text)
+        #expect(toldOnDevice.first?.1 == request.instructions)
+    }
+
+    /// An answer that's more than a correction, or that changed code, says which model, and what may help: Apple
+    /// Intelligence answers the same again, so it offers a Copilot model, and a Copilot model, to try again too.
+    @Test func fixGrammarSaysWhatItTurnedDown() async {
+        let fixer = GrammarFixer(isDemo: false)
+        fixer.askOnDevice = { _, _, _ in .success("Also, I think we should keep it.\n\nRetries come and go, like waves upon the shore, each a chance to try once more.") }
+        let poem = await fixer.fix("also i think we shoud keep it", with: StorySummaries.appleIntelligenceModel)
+        #expect(poem == .failure(GrammarFixer.turnedDown(.changedMore, by: StorySummaries.appleIntelligenceModel)))
+        let onDevice = GrammarFixer.turnedDown(.changedMore, by: StorySummaries.appleIntelligenceModel)
+        #expect(onDevice.message == "Apple Intelligence did more than correct your reply, such as translate, rewrite or answer it, so it stays as it is. Choose a Copilot model instead.")
+        #expect(onDevice.choosesModel)
+        let copilot = GrammarFixer.turnedDown(.changedHeld, by: "claude-haiku-5.5")
+        #expect(copilot.message == "\(CopilotModel.name(of: "claude-haiku-5.5")) changed your code, a link or a mention, so your reply stays as it is. Try again, or choose another model.")
     }
 
     /// Where Apple Intelligence can't run, it says so, and offers a Copilot model: what it can't do never goes to Copilot.

@@ -1472,8 +1472,13 @@ slowed down, or no answer in time, after which the pull request is read again, s
 
 **Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language it's
 written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its fenced and inline code,
-links and pictures, web addresses and mentions go to the model as markers, `{{1}}`, which it keeps, and are put back as
-they were; an answer that lost, repeated or moved one is turned down. It shows the correction under the field, what it
+links and pictures, web addresses and mentions, and characters that control how text reads, go to the model as markers,
+`{{1}}`, which it keeps, and are put back as they were; an answer that lost, repeated or moved one is turned down. The
+model is told to proofread, with an example, which Apple Intelligence corrects far more with, and gets the reply in a
+fence nothing in it closes, as what someone wrote rather than what to do. Each line keeps the Markdown the reply had
+before what it says, such as a quote's `>`, and the spaces after it, whatever the model did with them, and an answer that
+joined or split lines, or changed more than half of what it says, as a translation or an answer to what it asks does, is
+turned down too (`GrammarFix.Failure.changedMore`). It shows the correction under the field, what it
 changes marked word by word (`GrammarFix.changes`), with **Use It**, then **Undo**, while the reply is as it left it: it
 never changes your reply without you, nor sends it, and the field waits while it runs, with **Stop**. It uses Apple
 Intelligence, on this Mac (`OnDeviceModel`), unless you choose a Copilot model in its **▾**, from those summaries offer,

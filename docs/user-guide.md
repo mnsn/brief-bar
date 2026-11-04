@@ -442,7 +442,8 @@ you may not reply here**, **You're offline**, for a pull request that's complete
 deleted meanwhile, with what may help, such as **Try Again** or **Sign In…**; a reply that didn't go keeps what you wrote,
 and one that Azure DevOps didn't answer in time is read again before you send it twice. **Fix Grammar**, in the field,
 corrects your reply's spelling, grammar and punctuation, and only those, in the language you wrote it in, keeping your
-words, your Markdown, and your code, links and @mentions, which the model never sees. It uses Apple Intelligence, on this
+words, your Markdown, and your code, links and @mentions, which the model never sees; when a model does more, such as
+translate your reply or answer what it asks, it suggests nothing, and says so. It uses Apple Intelligence, on this
 Mac, free, unless you choose a Copilot model in its **▾**, from those summaries offer, which BriefBar remembers: each fix
 is then one premium request, and sends your reply's text to GitHub Copilot, through the Copilot CLI. It shows the
 correction under the field, what it changes marked, with **Use It**; once you use it, **Undo** puts back what you wrote.

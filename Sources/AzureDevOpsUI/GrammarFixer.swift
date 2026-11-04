@@ -24,8 +24,9 @@ final class GrammarFixer {
     /// Why Apple Intelligence can't run on this Mac now, or nil; the demo and tests say.
     var onDeviceUnavailable: () -> OnDeviceModel.Unavailability? = { OnDeviceModel.unavailability }
     /// Asks Apple Intelligence; tests stand in for it.
-    var askOnDevice: (_ text: String, _ maximumTokens: Int) async -> Result<String, OnDeviceModel.Failure> = { text, maximumTokens in
-        await OnDeviceModel.respond(to: text, instructions: GrammarFix.instructions, maximumTokens: maximumTokens, temperature: 0, timeout: 45)
+    var askOnDevice: (_ text: String, _ instructions: String, _ maximumTokens: Int) async -> Result<String, OnDeviceModel.Failure> = {
+        text, instructions, maximumTokens in
+        await OnDeviceModel.respond(to: text, instructions: instructions, maximumTokens: maximumTokens, temperature: 0, timeout: 45)
     }
     /// Asks a model through the Copilot CLI; tests stand in for it.
     var askCopilot: ((_ prompt: String, _ model: String) async -> Result<String, CopilotSummarizer.Failure>)?
@@ -42,12 +43,13 @@ final class GrammarFixer {
             return .success(GrammarFix.madeUp(text))
         }
         let request = GrammarFix.request(for: text)
+        let onDevice = model == StorySummaries.appleIntelligenceModel
         let answer: Result<String, Problem>
-        if model == StorySummaries.appleIntelligenceModel {
+        if onDevice {
             if let unavailability = onDeviceUnavailable() { return .failure(Self.unavailable(unavailability)) }
             // About as long as the text, and room to spare.
             let tokens = min(4_000, max(256, request.text.utf8.count / 2))
-            answer = await askOnDevice(request.text, tokens).mapError(Self.onDevice)
+            answer = await askOnDevice(request.text, request.instructions, tokens).mapError(Self.onDevice)
         } else {
             let name = CopilotModel.name(of: model)
             let asked = await (askCopilot ?? askThroughCLI)(request.prompt, model)
@@ -55,16 +57,25 @@ final class GrammarFixer {
         }
         guard !Task.isCancelled else { return .failure(Problem(message: "Fix Grammar was stopped.")) }
         return answer.flatMap { said in
-            GrammarFix.corrected(said, for: request).mapError { failure in
-                switch failure {
-                case .empty: Problem(message: "The model answered nothing.", choosesModel: true)
-                case .changedHeld:
-                    Problem(
-                        message: "The model changed your code, a link or a mention, so your reply stays as it is. Try again, or choose another model.",
-                        choosesModel: true
-                    )
-                }
-            }
+            GrammarFix.corrected(said, for: request).mapError { Self.turnedDown($0, by: model) }
+        }
+    }
+
+    /// Why a model's answer isn't a correction to suggest, in a sentence: Apple Intelligence answers the same again, so
+    /// it offers a Copilot model; a Copilot model may answer otherwise, so it offers to try again too.
+    static func turnedDown(_ failure: GrammarFix.Failure, by model: String) -> Problem {
+        let onDevice = model == StorySummaries.appleIntelligenceModel
+        let name = onDevice ? "Apple Intelligence" : CopilotModel.name(of: model)
+        let then = onDevice ? "Choose a Copilot model instead." : "Try again, or choose another model."
+        return switch failure {
+        case .empty: Problem(message: "\(name) answered nothing. \(then)", choosesModel: true)
+        case .changedHeld:
+            Problem(message: "\(name) changed your code, a link or a mention, so your reply stays as it is. \(then)", choosesModel: true)
+        case .changedMore:
+            Problem(
+                message: "\(name) did more than correct your reply, such as translate, rewrite or answer it, so it stays as it is. \(then)",
+                choosesModel: true
+            )
         }
     }
 
