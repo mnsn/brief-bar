@@ -964,17 +964,15 @@ package final class AzureDevOpsSource: BriefBarSource {
         var renderings: [(name: String, view: AnyView)] = []
         for (name, item, sizes, page, about) in shown {
             guard let item else { continue }
-            let details = PullRequestDetailsStore()
-            details.readRecord = { [weak store] key in store?.record(for: key) }
-            details.itemsChanged(store.items)
-            details.show(item, at: about ? details.about(item) : nil)
-            if let page {
-                guard let linked = services.links.connections(of: item.key.linkRef).first(where: { $0.item.ref.kind == page }) else {
-                    continue
-                }
-                details.open(page: linked.item.ref)
-            }
+            let linked = page.flatMap { page in services.links.connections(of: item.key.linkRef).first { $0.item.ref.kind == page } }
+            if page != nil, linked == nil { continue }
             for (suffix, size) in sizes {
+                // A store for each picture: each goes where it's asked to once.
+                let details = PullRequestDetailsStore()
+                details.readRecord = { [weak store] key in store?.record(for: key) }
+                details.itemsChanged(store.items)
+                details.show(item, at: about ? details.about(item) : nil)
+                if let linked { details.open(page: linked.item.ref) }
                 let view = PullRequestsPage()
                     .environmentObject(details)
                     .environment(\.panelStyle, .page)
