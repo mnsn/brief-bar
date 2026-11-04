@@ -26,10 +26,10 @@ struct PullRequestCommentsSection: View {
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var code: PullRequestCodeStore
+    /// The threads you changed in the details, with your reply or their statuses, where each was as you first did: they
+    /// stay there, however they stand now, while the details show the pull request, which keep them as a file's page shows.
+    @Binding var held: [Int: PullRequestPanel.Thread.Held]
     @LocalState private var showsResolved = false
-    /// The threads you changed here, with your reply or their statuses, where each was as you first did: they stay there,
-    /// however they stand now, while the details show the pull request.
-    @LocalState private var held: [Int: PullRequestPanel.Thread.Held] = [:]
 
     var body: some View {
         let threads = panel.threads
