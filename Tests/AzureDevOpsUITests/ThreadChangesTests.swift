@@ -204,6 +204,8 @@ import Testing
 
     @Test func fixGrammarCorrectsWithTheModelYouChose() async {
         let fixer = GrammarFixer(isDemo: false)
+        // Apple Intelligence as on a Mac that runs it, whether this one does or not.
+        fixer.onDeviceUnavailable = { nil }
         var asked: [(String, String)] = []
         fixer.askCopilot = { prompt, model in
             asked.append((prompt, model))
@@ -232,6 +234,7 @@ import Testing
     /// Intelligence answers the same again, so it offers a Copilot model, and a Copilot model, to try again too.
     @Test func fixGrammarSaysWhatItTurnedDown() async {
         let fixer = GrammarFixer(isDemo: false)
+        fixer.onDeviceUnavailable = { nil }
         fixer.askOnDevice = { _, _, _ in .success("Also, I think we should keep it.\n\nRetries come and go, like waves upon the shore, each a chance to try once more.") }
         let poem = await fixer.fix("also i think we shoud keep it", with: StorySummaries.appleIntelligenceModel)
         #expect(poem == .failure(GrammarFixer.turnedDown(.changedMore, by: StorySummaries.appleIntelligenceModel)))
