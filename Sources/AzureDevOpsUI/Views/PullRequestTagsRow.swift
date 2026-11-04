@@ -393,13 +393,14 @@ struct PullRequestTagsRow: View {
     private func remove(_ tag: PullRequestTag) {
         guard preview == nil else { return }
         let hadFocus = focus == .remove(tag.key)
-        let following = record?.tags.flatMap { tags in
-            tags.firstIndex { $0.key == tag.key }.map { index in tags.dropFirst(index + 1).first ?? tags.prefix(index).last }
-        } ?? nil
+        var following: PullRequestTag?
+        if let tags = record?.tags, let index = tags.firstIndex(where: { $0.key == tag.key }) {
+            following = tags.dropFirst(index + 1).first ?? tags.prefix(index).last
+        }
         changes.dismiss(key)
         Task {
             await changes.remove(tag, from: key)
-            guard hadFocus, record?.tags?.contains(where: { $0.key == tag.key }) != true else { return }
+            guard hadFocus, store.record(for: key)?.tags?.contains(where: { $0.key == tag.key }) != true else { return }
             focus = following.map { .remove($0.key) } ?? .add
         }
     }
