@@ -371,9 +371,11 @@ import Testing
         let first = CopilotComposing(part: .build(31), ask: .fix, row: "build-1")
         let second = CopilotComposing(part: .build(31), ask: .fix, row: "build-2")
         #expect(first != second)
+        let kept = DetailsDrafts()
+        let key = PRKey(DemoData.organization, 4088)
+        kept.keep("Skip weekends", in: first, of: key)
+        #expect(kept.words(in: second, of: key).isEmpty)
         let drafts = CopilotDrafts()
-        drafts.texts[first] = "Skip weekends"
-        #expect(drafts.texts[second] == nil)
         let asking = CopilotAsking(
             ask: .fix, part: .build(31), action: .fixBuild, row: "build-2",
             fix: { _, _ in CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }, question: { _, _ in "" }
@@ -1433,16 +1435,12 @@ import Testing
     @Test func tryAgainSendsOnlyTheWordsItKnows() {
         let drafts = CopilotDrafts()
         let composer = CopilotComposing(part: .thread(11), ask: .fix)
-        drafts.texts[composer] = "Your words"
         drafts.retry(composer, words: "Use the shared helper", to: .session(session))
-        #expect(drafts.texts[composer] == "Use the shared helper")
+        #expect(drafts.retries[composer]?.words == "Use the shared helper")
         #expect(drafts.retries[composer]?.destination == .session(session))
-        #expect(drafts.retries[composer]?.sends == true)
-        drafts.texts[composer] = "Your words"
         drafts.retry(composer, words: nil, to: .session(session))
         #expect(drafts.retries[composer]?.destination == .session(session))
-        #expect(drafts.retries[composer]?.sends == false)
-        #expect(drafts.texts[composer] == "Your words")
+        #expect(drafts.retries[composer]?.words == nil)
         #expect(CopilotComposerID(ask: .fix, tries: 0) != CopilotComposerID(ask: .fix, tries: 1))
     }
 

@@ -114,6 +114,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var threadChanges: ThreadChanges?
     /// Pull requests' tags as you change them, with Make Changes in Azure DevOps on, and the tags their lists don't carry.
     private var tagChanges: TagChanges?
+    /// What you wrote in pull requests' details' Copilot composers, and where the threads you changed there were.
+    private(set) var detailsDrafts: DetailsDrafts?
     /// Tells Pull Request Order what Azure DevOps shows, while it's on.
     private var orderFacts: PullRequestOrderFacts?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
@@ -151,7 +153,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     private func environment<V: View>(_ view: V) -> AnyView {
         guard let store, let sprint, let pipelines, let copilot, let details, let pullRequestDetails, let buildInvestigations,
               let pullRequestCode, let pullRequestFiles, let pullRequestConflicts, let pullRequestSessions, let copilotQuestions,
-              let threadChanges, let tagChanges
+              let threadChanges, let tagChanges, let detailsDrafts
         else {
             return AnyView(EmptyView())
         }
@@ -169,6 +171,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             .environmentObject(copilotQuestions)
             .environmentObject(threadChanges)
             .environmentObject(tagChanges)
+            .environmentObject(detailsDrafts)
             .environmentObject(pipelines)
             .environmentObject(copilot)
             .environmentObject(settings)
@@ -249,6 +252,7 @@ package final class AzureDevOpsSource: BriefBarSource {
                     pullRequestConflicts?.accountChanged(account)
                     self?.threadChanges?.accountChanged(account)
                     self?.tagChanges?.accountChanged(account)
+                    self?.detailsDrafts?.accountChanged(account)
                 }
             }
             .store(in: &cancellables)
@@ -263,6 +267,11 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilotQuestions = questions
         threadChanges = ThreadChanges(store: store, settings: settings)
         tagChanges = TagChanges(store: store, settings: settings)
+        let drafts = DetailsDrafts(settings: settings)
+        // Where the threads you changed were stays while the details show their pull request, the pages over them included:
+        // beside the list, and as a page over a work item's details.
+        drafts.follow(pullRequestDetails, pagesOver: details)
+        detailsDrafts = drafts
         // Each time the pull requests are read again, whether their rows changed or not, as when an optional build passed:
         // what Copilot took on of a build that a run passed after is over, so its fix doesn't come back as a later run fails,
         // and so is what it took on of conflicts that are gone, or with another target branch; and what a session answered
@@ -425,6 +434,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilotQuestions?.stopAll()
         threadChanges?.forgetAll()
         tagChanges?.stop()
+        detailsDrafts?.stop()
         services.sentTasks.withdraw(.azureDevOps)
         services.summaries.setYourName(.azureDevOps, nil)
         store = nil
@@ -443,6 +453,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilotQuestions = nil
         threadChanges = nil
         tagChanges = nil
+        detailsDrafts = nil
         services.fullDiskAccess.unregister(.azureDevOps)
     }
 
@@ -1131,7 +1142,7 @@ extension AzureDevOpsSource {
                     session: session, asked: question, askedAt: now.addingTimeInterval(-150),
                     state: .answered(DemoData.explanation(ofThread: waiting.id, pullRequest: item.key.number)), endedAt: now.addingTimeInterval(-90)
                 ),
-            ]), [("", CGSize(width: 1_000, height: 1_100))]),
+            ]), [("", CGSize(width: 1_000, height: 1_100)), ("-narrow", CGSize(width: 560, height: 1_100))]),
             // Fix, building on what the session answered.
             ("pull-requests-comment-fix-answer", waiting.id, CopilotActionsPreview(
                 composers: [.init(part: .thread(waiting.id), ask: .fix, text: "The second way, with 45 seconds by default", destination: .session(session))],
