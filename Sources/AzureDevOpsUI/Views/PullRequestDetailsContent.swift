@@ -36,17 +36,13 @@ struct PullRequestDetailsContent: View {
     /// Where it went last, for VoiceOver to follow (`DetailsArrival`).
     @LocalState private var arrival = DetailsArrival()
     /// The composer in place that's open in its comments, builds or conflicts: one at a time in all of them, so Esc, Return,
-    /// the keyboard's focus and the scroll that shows it as it opens are its own; and what you wrote in each, until you send
-    /// it. What one sends is called off as it closes or another opens, and all of it as its parts go, here, whichever of
-    /// them come and go on their own. A file's page has its own, since it shows in their place.
+    /// the keyboard's focus and the scroll that shows it as it opens are its own; and what each sends, until it's done. It
+    /// closes as a file's page shows in their place, so that back from it, the details go to where they're asked to, not to
+    /// it. What one sends is called off as it closes or another opens, and all of it as its parts go, here, whichever of them
+    /// come and go on their own. A file's page has its own, since it shows in their place. What you wrote in each, and where
+    /// the threads you changed were, are kept above them, by pull request, for its pages and its files' too (`DetailsDrafts`).
     @LocalState private var composing: CopilotComposing?
     @LocalState private var drafts = CopilotDrafts()
-    /// The threads you changed here, with your reply or their statuses, where each was as you first did: they stay there,
-    /// however they stand now, while the details show the pull request, in its comments and on its files' pages, as you go
-    /// from one to the other.
-    @LocalState private var held: [Int: PullRequestPanel.Thread.Held] = [:]
-    /// Whether its comments show the resolved threads, kept with `held`, as you go to a file's page and back.
-    @LocalState private var showsResolved = false
     /// `--render` draws it without waiting for animations, which it doesn't run.
     @Environment(\.isRendering) private var isRendering
     /// For `--render`: what Copilot does about its comments, builds and conflicts, as each picture draws it.
@@ -86,7 +82,7 @@ struct PullRequestDetailsContent: View {
             if let file = isShown ? details.file : nil {
                 PullRequestFilePage(
                     details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, me: record?.me, open: file,
-                    scroll: scroll, held: $held
+                    scroll: scroll
                 )
             } else {
                 PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact) {
@@ -108,7 +104,7 @@ struct PullRequestDetailsContent: View {
                 }
                 PullRequestCommentsSection(
                     item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place,
-                    highlighted: highlighted, composing: $composing, drafts: drafts, held: $held, showsResolved: $showsResolved
+                    highlighted: highlighted, composing: $composing, drafts: drafts
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.comments))
                     // A thread's file opens here, at the thread, in all of the change, which has it whatever the Files show.
@@ -142,7 +138,13 @@ struct PullRequestDetailsContent: View {
         // it as they go: for a file's page, which shows in their place, or with the details, or for another pull request or
         // page. Not as a part goes on its own, such as its conflicts once they're resolved.
         .onChange(of: composing) { old, _ in if let old { drafts.callOff(old) } }
-        .onChange(of: showsFile) { _, shows in if shows { drafts.callOffAll() } }
+        // A file's page closes the composer that was open, keeping what you wrote: back from it, it doesn't open again, take
+        // the keyboard's focus and scroll to itself, but the details go to the file's row, or to where it opened from.
+        .onChange(of: showsFile) { _, shows in
+            guard shows else { return }
+            composing = nil
+            drafts.callOffAll()
+        }
         .onDisappear { drafts.callOffAll() }
         // Its Copilot session, kept up to date while it shows on screen; in pictures, as it was read for them (`prepare`).
         .task(id: SessionFollowing(key: item.key, page: page)) {

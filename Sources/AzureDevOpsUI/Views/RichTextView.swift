@@ -7,14 +7,31 @@ import SwiftUI
 struct RichTextView: View {
     let text: RichText
     var size: CGFloat = 12.5
+    /// How many of its blocks show, from the first; all of them when nil. Those left out aren't there at all, for the
+    /// keyboard's focus or VoiceOver to reach, as below the beginning of a long answer (`CopilotAnswerCard`).
+    var shownBlocks: Int?
+    /// It says where each of its blocks starts (`RichTextBlockTops`), for what shows only some of them to tell which fit.
+    var reportsBlockTops = false
     @Environment(\.textScale) private var scale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            ForEach(Array(text.blocks.enumerated()), id: \.offset) { _, block in
-                view(of: block)
+            ForEach(Array(text.blocks.prefix(shownBlocks ?? text.blocks.count).enumerated()), id: \.offset) { index, block in
+                if reportsBlockTops {
+                    view(of: block)
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: RichTextBlockTops.self, value: [index: proxy.frame(in: .named(RichTextBlockTops.space)).minY]
+                                )
+                            }
+                        }
+                } else {
+                    view(of: block)
+                }
             }
         }
+        .coordinateSpace(.named(RichTextBlockTops.space))
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
     }
@@ -131,6 +148,17 @@ struct RichTextView: View {
             result += piece
         }
         return result
+    }
+}
+
+/// Where each block of a `RichTextView` that reports them starts, from its top, by its index.
+struct RichTextBlockTops: PreferenceKey {
+    static let defaultValue: [Int: CGFloat] = [:]
+    /// The space they're measured in: the text's own.
+    static let space = "rich-text-blocks"
+
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
+        value.merge(nextValue()) { $1 }
     }
 }
 

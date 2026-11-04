@@ -2,11 +2,6 @@
 
 ## Unreleased
 
-- **BriefBar no longer takes a little more memory each time a list updates with summaries on.** Each time a list or
-  page that shows Apple Intelligence's summaries updated, such as Azure DevOps' Pull Requests page, BriefBar kept what
-  checking that Apple Intelligence was available took, until it quit.
-- **`--render` draws every picture.** With every source on, it stopped before the last ones, out of room for SwiftUI's
-  views, as it kept each picture's window and views until it quit.
 - **A task you sent to Copilot shows its pull request in BriefBar.** In Copilot's list, clicking a task about one of
   your pull requests shows its details in BriefBar's window, as the pull request's own row does: always from the window,
   and from the menu bar and widgets with **Open Pull Requests in BriefBar** on. Its menu has **Open Pull Request in Azure
@@ -25,6 +20,30 @@
   file's diff was scrolled to.
 - **The tag field speaks less as you type a new tag.** VoiceOver says which tag is chosen as that changes, not again at
   each key as a new tag's name grows.
+
+## 0.14.1 - 2026-11-04
+
+- **What you write to Copilot in a pull request's details stays until you send it.** What you type in **Explain**,
+  **Fix**, **Resolve** or **Fix All** is there again when you open it after a page opened over the details, such as its
+  Copilot session's, after its file's page, where the same thread's composer has it too, and after you looked at another
+  pull request: while BriefBar runs, in memory only, as your replies are. The same composer open in two windows shows what
+  you write in either. A thread you just replied to or resolved stays where it was too, while the details show its pull
+  request, pages over them included, rather than folding away with the resolved ones as you come back.
+- **Back from a file's page, the details are where you left them.** A composer that was open closes as a file's page
+  opens, keeping what you wrote, so **‹** goes back to the file's row, or to the comment it opened from, rather than
+  opening the composer again and moving the keyboard's focus there.
+- **A reply that lands once you've moved on leaves the keyboard where you are.** Reply takes the keyboard's focus back
+  only when you were still in that reply as it went, and only on that thread, not as you type in another composer, such
+  as Reply on another thread, Add Tag or Explain.
+- **VoiceOver hears what became of Copilot's work once.** A pull request open in two windows, or a build that two
+  policies run, says "answered" or "fixed" once, rather than once for each place that shows it.
+- **A long answer shows its beginning, with Show More.** What a session answered with Explain shows its first dozen or
+  so lines, fading out, and **Show More** shows the rest, as a row's summary does.
+- **BriefBar no longer takes a little more memory each time a list updates with summaries on.** Each time a list or
+  page that shows Apple Intelligence's summaries updated, such as Azure DevOps' Pull Requests page, BriefBar kept what
+  checking that Apple Intelligence was available took, until it quit.
+- **`--render` draws every picture.** With every source on, it stopped before the last ones, out of room for SwiftUI's
+  views, as it kept each picture's window and views until it quit.
 
 ## 0.14.0 - 2026-11-04
 
