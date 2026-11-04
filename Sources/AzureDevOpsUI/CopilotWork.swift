@@ -517,19 +517,31 @@ extension CopilotTasksStore {
             }
         }
         guard !passes.isEmpty else { return }
+        func passed(_ part: TakenPart, on reference: PullRequestReference?) -> Bool {
+            guard let reference else { return false }
+            return passes.contains { pass in
+                pass.part == part.part && part.since < pass.at && reference.matches(organization: pass.key.organization, id: pass.key.number)
+            }
+        }
+        // A send that goes on with a session, while it gets ready, launches without what it carried that's over.
+        letGoPending { part, entry in part.ended != nil && passed(part, on: entry.onPullRequest) }
         let active = Set(entries.filter { $0.status.phase.isActive }.map(\.id))
+        let continuing = Dictionary(pending.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var runs = settings.copilotRuns
         var runsChanged = false
         for index in runs.indices {
             guard let taken = runs[index].taken, let reference = runs[index].onPullRequest else { continue }
-            let isActive = active.contains(runs[index].id)
-            let kept = taken.filter { (part: TakenPart) -> Bool in
-                // What a task is at now stays; what it went on with, over since, as an earlier task's, doesn't.
-                if isActive, part.ended == nil { return true }
-                return !passes.contains { pass in
-                    pass.part == part.part && part.since < pass.at && reference.matches(organization: pass.key.organization, id: pass.key.number)
-                }
+            // What a task is at now stays: the parts a send that goes on with it is getting ready for, else, while it runs,
+            // its own unfinished ones. What it went on with, over since, as an earlier task's, doesn't.
+            let atNow: Set<PullRequestPart>
+            if let next = continuing[runs[index].id], next.status.phase.isActive {
+                atNow = Set((next.taken ?? []).filter { $0.ended == nil }.map(\.part))
+            } else if active.contains(runs[index].id) {
+                atNow = Set(taken.filter { $0.ended == nil }.map(\.part))
+            } else {
+                atNow = []
             }
+            let kept = taken.filter { (part: TakenPart) -> Bool in atNow.contains(part.part) || !passed(part, on: reference) }
             guard kept.count != taken.count else { continue }
             runs[index].taken = kept.isEmpty ? nil : kept
             runsChanged = true

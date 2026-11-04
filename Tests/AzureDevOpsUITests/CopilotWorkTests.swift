@@ -249,6 +249,38 @@ import Testing
         #expect(settings.copilotRuns.first?.taken?.map(\.part) == [pipeline])
     }
 
+    /// A pass seen while a task that goes on with the session gets ready ends the fix it carries too: it launches without it,
+    /// and a later run that fails doesn't bring it back.
+    @Test func aPassWhileATaskGetsReadyEndsTheFixItCarries() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        var record = try #require(DemoData.records(now: now).first { $0.id == key })
+        let build = try #require(record.details?.checks.firstIndex { $0.kind == .build })
+        let pipeline = try #require(record.details?.checks[build].part)
+        let first = now.addingTimeInterval(-3_600)
+        settings.copilotRuns = [run(task, .fixBuild, startedAt: first, ended: .finished, taken: [TakenPart(pipeline, since: first)])]
+        let (go, letItGo) = AsyncStream<Void>.makeStream()
+        store.launchForTests = { request, id, launchedAt in
+            for await _ in go { break }
+            guard case .pullRequest(_, let action) = request.subject else { throw CancellationError() }
+            return Self.makeRun(id, action, startedAt: launchedAt)
+        }
+        store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 11", options: CopilotModel.standard,
+                   repository: URL(fileURLWithPath: "/tmp/payments-api"), continuing: settings.copilotRuns[0], parts: [.thread(11)])
+        #expect(store.pending.first?.taken?.map(\.part) == [pipeline, .thread(11)])
+        // A run of the build passed while it got ready.
+        record.details?.checks[build].state = .passed
+        record.details?.checks[build].completedAt = now.addingTimeInterval(-60)
+        store.endWorkOnBuildsThatPassed(in: [record])
+        #expect(store.pending.first?.taken?.map(\.part) == [.thread(11)])
+        letItGo.yield()
+        try await settle { store.pending.isEmpty && settings.copilotRuns.first?.taken != nil }
+        #expect(settings.copilotRuns.first?.taken?.map(\.part) == [.thread(11)])
+        record.details?.checks[build].state = .failed
+        record.details?.checks[build].completedAt = now
+        #expect(store.work(on: pipeline, of: key) == nil)
+    }
+
     /// A build's line shows while Copilot is at it, or the build doesn't pass: a rerun, or a push, that passes ends it; so
     /// does a run that failed after what Copilot pushed.
     @Test func aBuildsLineEndsOnceItPasses() {

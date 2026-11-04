@@ -2365,8 +2365,9 @@ you to fix it again (`CopilotWork.shows(onBuild:)`, `CopilotWork.takenAt`); one 
 target branch moved, is still to fix, and an unpushed fix of it stays (`Check.expiredFrom`, `Check.needsNoFix`); its fix isn't counted in the bar at the details'
 foot once the build passes (`PRRecord.partsToFix`). A pass ends it for good: each time the pull requests are read again,
 whether their rows changed or not, what each task and prompt took on of a build that a run passed after, or passed and
-expired, is let go, so that a later run that fails, maybe for another reason, doesn't bring its fix back. What Copilot is
-still at stays, and so does what it took on since; a pipeline another of the pull request's policies runs is passed only
+expired, is let go, so that a later run that fails, maybe for another reason, doesn't bring its fix back; a task that goes
+on with the session, while it gets ready, launches without it. What Copilot is still at stays, and so does what it took
+on since; a pipeline another of the pull request's policies runs is passed only
 once none of them needs a fix, and a pull request whose policies couldn't be read keeps it all
 (`CopilotTasksStore.endWorkOnBuildsThatPassed(in:)`). Push & Reply ships it with the threads its session fixed, or alone, replying on no thread then
 (`PullRequestPrompt.pushAndReply(_:workplace:threads:)`), and any Push & Reply in the session that fixed it, from the
