@@ -2511,7 +2511,11 @@ session fixed and hasn't pushed, which its push takes along, however it's sent (
 commits and pushes all the session changed, whatever its prompt lists, so the other threads the session fixed before it
 say they're pushed too, without a reply, while it pushes and once it has: **Pushed from ‘Retry backoff’, without a
 reply** (`CopilotWork.replies`); not once it failed or stopped, which pushed nothing, nor while it's copied for you to
-paste. BriefBar doesn't ask the prompt to commit only what the threads it lists changed: fixes can share files and
+paste. A thread whose own Push & Reply failed or stopped is pushed along so too. Once one such push finished, the fix
+stays pushed, whatever comes after it, such as a push that fails or one copied for you to paste, and even once what that
+push listed is taken on again: a task keeps the Push & Reply tasks that ran in its session, on the same pull request,
+with when each started and how it ended (`CopilotRun.pushes`); only fixing the thread again makes it ready to push.
+BriefBar doesn't ask the prompt to commit only what the threads it lists changed: fixes can share files and
 lines, and build on each other, so a commit of some would be a guess, and could push what doesn't build. A thread that
 another session fixed since stays that one's. Once it's done, those it listed say they're pushed and replied, and a later
 task in the session keeps them so, for an older fix of one of them, elsewhere, not to say it's ready again
@@ -2531,8 +2535,12 @@ didn't paste goes after half an hour. One whose turn isn't seen to end within tw
 overnight for your answer, isn't followed any more, and says it doesn't know how it went, as below, rather than going,
 and is kept as long as one that ended (`SentPrompt.lostTrack`); one that BriefBar didn't follow then, as while it didn't
 run, is followed once more as it starts, for its session's log to say which. A prompt that BriefBar copied for you to
-paste takes the comments it quotes off Needs You only once its turn is seen to start, which says you pasted it
-(`CopilotTasksStore.copiedHandOffs`), in memory only: one you don't paste, and one BriefBar stops following first, leaves
+paste is taken up only once a message sent the session since holds it, as you sent it or as Copilot was told it, with
+words of yours around it or not, however its lines are broken, but not a subagent's (`AppSessions.pasted`), which says
+you pasted it: its turn starts there, and the comments it quotes leave Needs You then. Another message, sent before it or
+instead, is the session's own, and until then the prompt says it's copied for you to paste. What BriefBar copied is kept
+in memory only (`CopilotTasksStore.copiedPrompts`): one it copied before it restarted is taken up by the session's next
+message, as any prompt is, and hands nothing off; and one you don't paste, and one BriefBar stops following first, leave
 them there. Once BriefBar sends the
 session another prompt, about threads or not, or goes on with it with the CLI, before a prompt's turn was seen to end,
 the session's log can't tell their turns apart: BriefBar stops following the earlier one, whose thread says **Sent to
@@ -2551,7 +2559,9 @@ resolution", "1 fix and the conflicts' resolution ready in ‘Retry backoff’" 
 details to the first thing they fixed, and whose **Push & Reply…** opens the Send to Copilot window in the session the fixes are
 in, by its ID as they have it, even before the details have read the pull request's sessions, or for one of the app's
 sessions they don't list, never another, such as the pull request's last task (`CopilotSessionNames.start(of:)`), for
-their threads alone, and is called **Push…** for fixes of no thread, as of a build alone (`ReadyFixesBar.pushTitle`).
+their threads alone, and is called **Push…** for fixes of no thread, as of a build alone (`ReadyFixesBar.pushTitle`); so
+is its task, wherever it's named, even one that takes on nothing, which keeps that, empty, rather than nothing, as tasks
+from before BriefBar recorded what they took on do (`CopilotRun.keeping(_:for:)`).
 **Push & Reply with Copilot…**, in the pull request's ⋯ and context menus, offers the same, a menu of them with fixes in
 more than one session; with none ready, what its last task changed, pushed without a reply
 (`CopilotTasksStore.pushes(of:)`). Either way: its prompt lists them and replies on them alone, or on none for a build's fix alone, and
@@ -2563,15 +2573,20 @@ takes on what its action is for (`PullRequestTasks.parts`): the threads whose en
 demo's are made up (`SentPrompt.demo`).
 
 A line that says what Copilot does about a thread, a build or the conflicts has ⋯, with what its state allows, in its
-context menu and VoiceOver's actions too (`CopilotLineActions`): **Stop** while a task of BriefBar's works on it, which
-stops the task, as its row's Stop does, or while a prompt's turn runs in one of the app's sessions, or waits there for
-your answer, which BriefBar's extension in the session stops as the app's own Stop does; where it can't, BriefBar shows
-the session, to stop it there, and says so (`CopilotTasksStore.stop(_:of:)`, `stopTurn(in:)`). **Try Again**, for a fix
-that failed or stopped, opens its composer with the words that fix went with, kept in memory only, going where it went,
-and sends them again, unless it can't go, which the composer then says (`CopilotDrafts.retries`). **Clear**, once it's
-over, or copied for you to paste, lets go of what each task and prompt took on of it, so the line goes and nothing older
-takes its place, as Dismiss does for an answer (`CopilotTasksStore.clear`); the demo's go in memory. While Copilot fixes
-it, or pushes its fix, its Fix, or Resolve, waits (`CopilotWork.isFixing`).
+context menu and VoiceOver's actions too (`CopilotLineActions`): **Stop** while the line says Copilot works on it, or asks
+you something, never once it's over, though a later task works in its session: a task of BriefBar's, which it stops, as
+its row's Stop does, or a prompt's turn in one of the app's sessions, which BriefBar's extension in the session stops as
+the app's own Stop does; where it can't, BriefBar shows the session, to stop it there, and says so
+(`CopilotTasksStore.canStop(_:of:)`, `stop(_:of:)`, `stopTurn(in:)`). **Try Again**, for a fix that failed or stopped,
+opens its composer anew, even one that's open already (`CopilotComposerID`), with the words that fix went with, kept in
+memory only, and sends them where that fix went, never elsewhere: when BriefBar can't find that session now, or it can't
+go there, the composer says so and waits for you to choose (`CopilotDrafts.retry`, `CopilotDrafts.retryGone`). Without
+those words, as once BriefBar restarted, it opens with what you wrote in it, for you to send; and what Try Again asked
+of a composer that didn't open for it, as a build that wasn't read, goes as you open the composer yourself, or close it.
+**Clear**, once it's over, or copied for you to paste, lets go of what each task and prompt took on of it, and of what a
+send that couldn't start keeps of it, or one getting ready carries from before, so the line goes and nothing older takes
+its place, as Dismiss does for an answer (`CopilotTasksStore.clear`); the demo's go in memory. While Copilot fixes it, or
+pushes its fix, its Fix, or Resolve, waits (`CopilotWork.isFixing`).
 
 #### About a failed build
 
@@ -2649,7 +2664,9 @@ list ends saying they're paths, not instructions (`PullRequestPrompt.conflictsSa
 it said; the target branch's name stays on its line the same way wherever they name it. A prompt sent while they're
 read, from the composer, **Ask in the Session** or the menu, waits for that read, and is written for the pull request as
 it is once it ends, so one pushed to or retargeted meanwhile names its target branch as it is now, with the files read
-for that, never those of the old one (`PullRequestConflictsStore.forPrompt`); without them, as when they couldn't be
+for that, never those of the old one (`PullRequestConflictsStore.forPrompt`), and what BriefBar keeps with it, the branch
+its conflicts are with, and the task it starts go by the pull request as it quotes it (`CopilotSending.Fix.record`);
+without them, as when they couldn't be
 read, it goes without, for Copilot to find them as it merges. **Resolve** (`PullRequestPrompt.resolveConflicts`, the
 prompt of **Resolve Conflicts with Copilot…** in the pull request's menu, which lists them too while the details have
 them, `PRStore.copilotPrompts`) has Copilot fetch the target branch, merge it in and

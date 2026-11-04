@@ -95,7 +95,7 @@ struct CopilotSessionNames {
 
     /// Where Try Again sends a fix that failed or stopped: the session it was in, as the line lists it, or as BriefBar keeps
     /// its task; a new session, for a task that couldn't start; a new fork of the session a fork it was in forked; else
-    /// nil, for where the composer goes.
+    /// nil, when that isn't known, which its composer says, for you to choose.
     func retryDestination(of work: CopilotWork) -> CopilotDestination? {
         if choice(work.session) != nil { return .session(work.session) }
         if let entry = copilot.entries.first(where: { $0.id == work.session }) {
@@ -278,6 +278,13 @@ struct CopilotComposing: Hashable {
     var isReply: Bool { ask == nil && part != nil }
 }
 
+/// Who a composer in place is, for SwiftUI: what it asks, and how many times Try Again opened it, so that Try Again on one
+/// that's open already opens it anew, which sends the fix again (`CopilotDrafts.retry`).
+struct CopilotComposerID: Hashable {
+    var ask: CopilotAsk
+    var tries: Int
+}
+
 /// What you wrote in each composer in place in a part of a pull request's details, kept as you open another, until you send
 /// it; and what each sends, until it's done. Not observed: what you type redraws its own composer only.
 @MainActor
@@ -290,12 +297,29 @@ final class CopilotDrafts {
     /// What asks a session about something as a prompt, Ask in the Session's, until it's done: called off as its page goes.
     var asks = Asks()
     /// What Try Again asked of each composer: when, and where the fix it tries again went, for the composer to send its
-    /// words again as it opens, if it can go (`CopilotPartComposer`). Each is taken once, and only for a little while.
+    /// words again as it opens, if it can go (`CopilotPartComposer`). Each is taken once, and only for a little while; and
+    /// let go of as you open the composer yourself, or close it, so it then waits for you to send.
     var retries: [CopilotComposing: (at: Date, destination: CopilotDestination?)] = [:]
 
     /// How long a composer that Try Again opens has to open, for it to send at once: one that opens later, as when what it's
     /// about wasn't read yet, opens with the words, for you to send.
     static let retryWait: TimeInterval = 30
+
+    /// What a composer that Try Again opened says when the session the fix went to isn't there to go to again.
+    static let retryGone = "BriefBar can't find the session that fix went to now, so nothing went. Choose where it goes."
+
+    /// Readies a composer for Try Again: the words the fix it tries again went with, and where that went, for the composer
+    /// to send them there as it opens (`CopilotPartComposer`). Without those words, as once BriefBar restarted, it opens
+    /// with what you wrote in it, for you to send. Whoever opens it should open it anew, as one already open would only
+    /// send them once it opens again (`CopilotComposerID`).
+    func retry(_ composer: CopilotComposing, words: String?, to destination: CopilotDestination?) {
+        guard let words else {
+            retries[composer] = nil
+            return
+        }
+        texts[composer] = words
+        retries[composer] = (Date(), destination)
+    }
 
     /// What asks a session about something as a prompt, by what it's about, and, where more than one row is about it, as two
     /// policies' runs of a pipeline are, the row it's on (`CopilotComposing.row`): `asks[part]`, `asks[part, row: id]`.
@@ -671,16 +695,18 @@ struct CopilotPartComposer<Options: View>: View {
     }
 
     /// Try Again opened it, a moment ago: it goes where the fix it tries again went, with the same words, now, if it can go;
-    /// else it stays open with them, saying why it can't.
+    /// else it stays open with them, saying why it can't, and goes nowhere else on its own, such as where it would go first.
     private func retryIfAsked() {
         guard let retry = drafts.retries.removeValue(forKey: asking.draftKey), Date().timeIntervalSince(retry.at) < CopilotDrafts.retryWait
         else { return }
         let destinations = destinations
-        if let destination = retry.destination, destination == .newSession || destinations.choice(for: destination) != nil {
-            chosen = destination
+        guard let destination = retry.destination, destination == .newSession || destinations.choice(for: destination) != nil else {
+            problem = CopilotDrafts.retryGone
+            SpokenText.announce(CopilotDrafts.retryGone)
+            return
         }
-        let target = retry.destination.flatMap { $0 == .newSession || destinations.choice(for: $0) != nil ? $0 : nil } ?? target
-        send(to: target, choice: destinations.choice(for: target))
+        chosen = destination
+        send(to: destination, choice: destinations.choice(for: destination))
     }
 
     @ViewBuilder

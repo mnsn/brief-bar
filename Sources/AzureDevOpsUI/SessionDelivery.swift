@@ -222,9 +222,9 @@ extension CopilotTasksStore {
     /// shows (`show`). When the extension can't, BriefBar does what Open in Copilot did: it copies the prompt, or for a
     /// fork `/fork <prompt>`, which the app's own `/fork` takes, and shows the session to paste it in; or the fork, with
     /// the prompt, once the session forked but the prompt didn't reach it. Once the prompt's sent, what `handOff` says it
-    /// takes care of leaves Needs You; once it's copied, as its turn is seen to start, which says you pasted it
-    /// (`copiedHandOffs`), so a prompt you don't paste leaves the comments on Needs You. Only while Send Work to Copilot is
-    /// on, never in the demo, and one prompt at a time for each session.
+    /// takes care of leaves Needs You; once it's copied, as BriefBar sees it in a message sent the session, which says you
+    /// pasted it (`copiedPrompts`), so a prompt you don't paste leaves the comments on Needs You. Only while Send Work to
+    /// Copilot is on, never in the demo, and one prompt at a time for each session.
     /// - Parameter about: what of the pull request it's about, its threads, a build or its conflicts, and what for: once it's
     ///   sent, or copied for you to paste, BriefBar keeps that, to follow its turn in the session (`SentPrompt`). Whatever
     ///   it's about, the turns of the prompts sent the session before that weren't seen to end aren't followed after
@@ -242,7 +242,7 @@ extension CopilotTasksStore {
         defer { if !forking { resumeFollowing(choice.id) } }
         let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff)
         let kept = keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt)
-        if case .fellBack = outcome, let handOff, let kept { copiedHandOffs[kept.id] = (handOff, prompt) }
+        if case .fellBack = outcome, let kept { copiedPrompts[kept.id] = (prompt, handOff) }
         return outcome
     }
 

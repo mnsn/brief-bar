@@ -301,8 +301,8 @@ private struct DatabaseError: Error {
 
     /// While Send Prompts to Copilot Sessions is off, BriefBar does what Open in Copilot did, as the window says it will:
     /// it copies the prompt, or `/fork` and the prompt, and opens the session, for you to paste and send. Nothing starts
-    /// here, and the comments the prompt quotes leave Needs You only once its turn is seen to start, as you paste it
-    /// (`SessionDeliveryTests.copiedHandOffsWaitForTheirTurn`).
+    /// here, and the comments the prompt quotes leave Needs You only once it's seen in a message sent the session, as you
+    /// paste it (`SessionDeliveryTests.copiedPromptsWaitToBePasted`).
     @Test func copiesThePromptForYouToPasteWhileSendingToSessionsIsOff() async throws {
         let store = store(home: URL(fileURLWithPath: "/nonexistent"))
         var opened: [(String, String)] = []

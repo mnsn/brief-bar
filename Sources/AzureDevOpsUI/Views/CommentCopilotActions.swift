@@ -45,6 +45,8 @@ struct ThreadCopilotActions: View {
     @LocalState private var isAskingInSession = false
     /// What it tells the code store it is, for its thread's code to be read for Ask in the Session.
     @LocalState private var viewer = UUID()
+    /// How many times Try Again opened its composer: one open already opens anew, to send again.
+    @LocalState private var tries = 0
     /// Explain or Fix, for the keyboard's focus to go back to once its composer closes.
     @FocusState private var focused: CopilotAsk?
 
@@ -120,8 +122,8 @@ struct ThreadCopilotActions: View {
                         if case .copied(let note)? = result { copied = note }
                         close(asking)
                     }
-                    // A new composer for each, with its own words and where it goes.
-                    .id(asking)
+                    // A new composer for each, with its own words and where it goes, and for each Try Again.
+                    .id(CopilotComposerID(ask: asking, tries: tries))
                 } else if showsRow {
                     buttons(hasAnswer: question?.answer != nil, showsCopilot: canAct, isFixing: work?.isFixing == true)
                 }
@@ -202,25 +204,29 @@ struct ThreadCopilotActions: View {
         return "Have Copilot address this comment, as you say: it doesn't commit, push or reply"
     }
 
-    /// Opens its composer, closing any other in the comments, whose words stay for when it opens again.
+    /// Opens its composer, closing any other in the comments, whose words stay for when it opens again: for you to send, not
+    /// what Try Again asked of it before.
     private func open(_ ask: CopilotAsk) {
         copied = nil
         stopNote = nil
-        composing = CopilotComposing(part: part, ask: ask)
+        let composer = CopilotComposing(part: part, ask: ask)
+        drafts.retries[composer] = nil
+        composing = composer
     }
 
-    /// Try Again, from its line's menu: Fix's composer, with the words the fix that failed or stopped went with, which sends
-    /// them again, where that fix went, as it opens, if it can go.
+    /// Try Again, from its line's menu: Fix's composer, anew, with the words the fix that failed or stopped went with, which
+    /// sends them again, where that fix went, as it opens, if it can go.
     private func tryAgain(_ work: CopilotWork) {
-        let key = CopilotComposing(part: part, ask: .fix)
-        drafts.texts[key] = copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)] ?? drafts.texts[key]
-        drafts.retries[key] = (Date(), names.retryDestination(of: work))
         open(.fix)
+        let words = copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)]
+        drafts.retry(CopilotComposing(part: part, ask: .fix), words: words, to: names.retryDestination(of: work))
+        tries += 1
     }
 
     /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
     private func close(_ ask: CopilotAsk) {
         guard composing == CopilotComposing(part: part, ask: ask) else { return }
+        drafts.retries[CopilotComposing(part: part, ask: ask)] = nil
         composing = nil
         Task { @MainActor in focused = ask == .fixAll ? nil : ask }
     }

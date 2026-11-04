@@ -528,7 +528,7 @@ private final class TakenAt: Sendable {
         #expect(unanswered == .fellBack(SessionFallback(reason: SendFailure.unanswered.description, session: session)))
         #expect(copied == ["Fix the comments"])
         #expect(requests(home).isEmpty)
-        // Copied, it's handed off only once its turn is seen to start (`copiedHandOffsWaitForTheirTurn`).
+        // Copied, it's handed off only once it's seen pasted in the session (`copiedPromptsWaitToBePasted`).
         #expect(handed == 0)
         if case .fellBack(let fallback) = unanswered {
             #expect(CopilotComposerView.fallbackNote(fallback) == "BriefBar's extension in the session didn't answer. BriefBar copied the prompt and opened the session in the Copilot app: paste it there, and send it.")
@@ -1272,9 +1272,10 @@ private final class TakenAt: Sendable {
         #expect(CopilotComposerView.fallbackNote(fallback) == "The session didn't take the prompt: Timed out. BriefBar copied the prompt and opened the session in the Copilot app: paste it there, and send it. If the session has it already, don't.")
     }
 
-    /// A prompt BriefBar copied for you to paste takes the comments it quotes off Needs You only once its turn is seen to
-    /// start in the session, which says you pasted it: one you don't paste, which BriefBar forgets, leaves them there.
-    @Test func copiedHandOffsWaitForTheirTurn() async throws {
+    /// A prompt BriefBar copied for you to paste takes the comments it quotes off Needs You only once BriefBar sees it in a
+    /// message sent the session, which says you pasted it: another message, sent before it or instead, is the session's
+    /// own; and one you don't paste, which BriefBar forgets, leaves them there.
+    @Test func copiedPromptsWaitToBePasted() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
         store.openForTests = { _, _ in true }
@@ -1283,32 +1284,49 @@ private final class TakenAt: Sendable {
         // No extension listens in it: BriefBar copies the prompt.
         try hold(session, home: home)
         let about = SentPrompt.About(pullRequest: PRKey("contoso", 4071), purpose: .fix, parts: [.thread(11)])
-        guard case .fellBack = await store.deliver("Fix the comments", to: choice(session), handOff: handOff, about: about) else {
+        let text = "Fix the comments\n\nThen   run the tests."
+        guard case .fellBack = await store.deliver(text, to: choice(session), handOff: handOff, about: about) else {
             Issue.record("BriefBar didn't copy the prompt")
             return
         }
         #expect(handed.isEmpty)
         let prompt = try #require(store.settings.copilotSentPrompts.first)
-        #expect(store.copiedHandOffs[prompt.id] != nil)
+        #expect(store.copiedPrompts[prompt.id]?.text == text)
         func follow(at date: Date) async throws {
             store.followSentPrompts(now: date)
             for _ in 0..<400 where store.isFollowingPrompts {
                 try await Task.sleep(for: ExtensionStandIn.lookEvery)
             }
         }
+        let log = home.appendingPathComponent("session-state/\(session)/events.jsonl")
+        func send(_ content: String, at date: Date) throws {
+            let stamp = date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+            let data = String(decoding: try JSONSerialization.data(withJSONObject: ["content": content]), as: UTF8.self)
+            let line = #"{"type":"user.message","data":\#(data),"id":"a","timestamp":"\#(stamp)","parentId":null}"# + "\n"
+            if !FileManager.default.fileExists(atPath: log.path) { try Data().write(to: log) }
+            let handle = try FileHandle(forWritingTo: log)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(line.utf8))
+        }
         // Not pasted yet.
         try await follow(at: Date())
         #expect(handed.isEmpty)
-        // Pasted: the session took a message since.
-        let stamp = Date().addingTimeInterval(1).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
-        let line = #"{"type":"user.message","data":{"content":"Fix the comments"},"id":"a","timestamp":"\#(stamp)","parentId":null}"#
-        try (line + "\n").write(to: home.appendingPathComponent("session-state/\(session)/events.jsonl"), atomically: true, encoding: .utf8)
+        // Another message: the session's own turn, not the prompt's.
+        try send("What does this change do?", at: Date().addingTimeInterval(1))
         try await follow(at: Date().addingTimeInterval(2))
-        #expect(handed == ["Fix the comments"])
-        #expect(store.copiedHandOffs.isEmpty)
+        #expect(handed.isEmpty)
+        #expect(store.promptTurns[prompt.id]?.phase == .waiting)
+        #expect(store.copiedPrompts[prompt.id] != nil)
+        // Pasted, with words of yours around it, its lines and spaces broken otherwise.
+        try send("Please:\n\nFix the comments\nThen run the tests.\n\nThanks", at: Date().addingTimeInterval(3))
+        try await follow(at: Date().addingTimeInterval(4))
+        #expect(handed == [text])
+        #expect(store.copiedPrompts.isEmpty)
+        #expect(store.promptTurns[prompt.id]?.phase != .waiting)
 
         // One not pasted within half an hour goes, and hands nothing off.
-        try FileManager.default.removeItem(at: home.appendingPathComponent("session-state/\(session)/events.jsonl"))
+        try FileManager.default.removeItem(at: log)
         store.settings.copilotSentPrompts = []
         guard case .fellBack = await store.deliver("Fix them again", to: choice(session), handOff: handOff, about: about) else {
             Issue.record("BriefBar didn't copy the prompt")
@@ -1316,8 +1334,8 @@ private final class TakenAt: Sendable {
         }
         try await follow(at: Date().addingTimeInterval(SentPrompt.pasteWait + 60))
         #expect(store.settings.copilotSentPrompts.isEmpty)
-        #expect(store.copiedHandOffs.isEmpty)
-        #expect(handed == ["Fix the comments"])
+        #expect(store.copiedPrompts.isEmpty)
+        #expect(handed == [text])
     }
 
     /// Stop, on a prompt's line, stops its session's turn through BriefBar's extension there, as the app's own Stop does.

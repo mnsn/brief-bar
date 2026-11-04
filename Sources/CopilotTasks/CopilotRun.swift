@@ -55,14 +55,20 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// that waited on you with Fix Comments, a build with Fix, its failed builds with Fix the Build, its conflicts with
     /// Resolve Conflicts, and what its fixes ship with Push & Reply. Going on with a session whose changes aren't pushed keeps
     /// what it took on before, with how that went (`taken(goingOnWith:on:taking:for:at:)`), so each can say what became of
-    /// it. Nil for a task that took on nothing, and for runs that BriefBar kept before it had this.
+    /// it. Nil for a task that took on nothing, and for runs that BriefBar kept before it had this; a Push & Reply's is
+    /// empty instead, once it replies on no thread (`keeping(_:for:)`).
     public var taken: [TakenPart]?
+    /// The Push & Reply tasks that ran in its session before it, on the same pull request, each with when it started and
+    /// how it ended (`pushes(goingOnWith:on:)`): each committed and pushed all the session had changed by then, whatever
+    /// its prompt listed, so a fix it didn't list was pushed, though not replied on, even once what it listed is taken on
+    /// again. Nil when none did, and for runs that BriefBar kept before it had this.
+    public var pushes: [SessionPush]?
 
     public init(
         id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
         ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil,
-        forkedFrom: String? = nil, taken: [TakenPart]? = nil
+        forkedFrom: String? = nil, taken: [TakenPart]? = nil, pushes: [SessionPush]? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -79,6 +85,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.isAppSession = isAppSession
         self.forkedFrom = forkedFrom
         self.taken = taken
+        self.pushes = pushes
     }
 
     /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a
@@ -126,7 +133,8 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// pushed for; after a Push & Reply, that too, and what it took on, which once it finished says it's pushed, for an
     /// older fix of it, elsewhere, not to be taken as its latest again. Push & Reply takes on what it ships
     /// (`TakenPart.ships`), the threads its prompt lists, to reply on, whether its runs or prompts sent to the session fixed
-    /// them; the others stay as they were, since it doesn't reply on them. Nil when it keeps nothing.
+    /// them; the others stay as they were, since it doesn't reply on them. Nil when it keeps nothing, unless it's a Push &
+    /// Reply (`keeping(_:for:)`).
     /// - Parameters:
     ///   - pullRequest: the pull request it's on, if it's on one.
     ///   - target: the pull request's target branch, which the conflicts it takes on are with (`TakenPart.target`).
@@ -152,7 +160,26 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         kept = kept.filter { !taking.contains($0.part) } + taking.map { part in
             TakenPart(part, since: now, ships: ships, target: part == .conflicts ? target : nil)
         }
-        return kept.isEmpty ? nil : kept
+        return keeping(kept, for: action)
+    }
+
+    /// What a task keeps of what it took on (`taken`), as it starts or as some is let go: nil once that's nothing, as for a
+    /// task that took on nothing; but a Push & Reply's stays, empty, so that it's known to reply on no thread
+    /// (`PullRequestAction.title(taken:)`), rather than taken for one of the runs kept before BriefBar recorded that.
+    public static func keeping(_ parts: [TakenPart], for action: PullRequestAction?) -> [TakenPart]? {
+        parts.isEmpty && action != .pushAndReply ? nil : parts
+    }
+
+    /// The Push & Reply tasks that ran in a session before the task that goes on with it, `previous` as BriefBar keeps it,
+    /// on `pullRequest` (`pushes`): those `previous` kept, and `previous` itself when it's one, with how it ended, or, not
+    /// seen to end, that it stopped. Only on the same pull request; nil when none did.
+    public static func pushes(goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?) -> [SessionPush]? {
+        guard let previous, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true else { return nil }
+        var pushes = previous.pushes ?? []
+        if previous.action == .pushAndReply {
+            pushes.append(SessionPush(since: previous.startedAt, ended: previous.ended ?? .stopped))
+        }
+        return pushes.isEmpty ? nil : pushes
     }
 }
 

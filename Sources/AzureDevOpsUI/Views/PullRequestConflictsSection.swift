@@ -346,6 +346,8 @@ private struct ConflictsCopilotActions: View {
     /// Why BriefBar didn't stop what Copilot is at on them itself, until you close it.
     @LocalState private var stopNote: String?
     @LocalState private var isAskingInSession = false
+    /// How many times Try Again opened its composer: one open already opens anew, to send again.
+    @LocalState private var tries = 0
     /// Explain or Resolve, for the keyboard's focus to go back to once its composer closes.
     @FocusState private var focused: CopilotAsk?
 
@@ -416,8 +418,8 @@ private struct ConflictsCopilotActions: View {
                             if case .copied(let note)? = result { copied = note }
                             close(asking)
                         }
-                        // A new composer for each, with its own words and where it goes.
-                        .id(asking)
+                        // A new composer for each, with its own words and where it goes, and for each Try Again.
+                        .id(CopilotComposerID(ask: asking, tries: tries))
                     } else {
                         buttons(hasAnswer: question?.answer != nil, isFixing: work?.isFixing == true)
                     }
@@ -470,25 +472,29 @@ private struct ConflictsCopilotActions: View {
         return "Ask the Copilot session that worked on this pull request why its files conflict with \(target), and how to resolve them"
     }
 
-    /// Opens its composer, closing the other, whose words stay for when it opens again.
+    /// Opens its composer, closing the other, whose words stay for when it opens again: for you to send, not what Try Again
+    /// asked of it before.
     private func open(_ ask: CopilotAsk) {
         copied = nil
         stopNote = nil
-        composing = CopilotComposing(part: part, ask: ask)
+        let composer = CopilotComposing(part: part, ask: ask)
+        drafts.retries[composer] = nil
+        composing = composer
     }
 
-    /// Try Again, from its line's menu: Resolve's composer, with the words the resolution that failed or stopped went with,
-    /// which sends them again, where it went, as it opens, if it can go.
+    /// Try Again, from its line's menu: Resolve's composer, anew, with the words the resolution that failed or stopped went
+    /// with, which sends them again, where it went, as it opens, if it can go.
     private func tryAgain(_ work: CopilotWork) {
-        let key = CopilotComposing(part: part, ask: .fix)
-        drafts.texts[key] = copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)] ?? drafts.texts[key]
-        drafts.retries[key] = (Date(), names.retryDestination(of: work))
         open(.fix)
+        let words = copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)]
+        drafts.retry(CopilotComposing(part: part, ask: .fix), words: words, to: names.retryDestination(of: work))
+        tries += 1
     }
 
     /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
     private func close(_ ask: CopilotAsk) {
         guard composing == CopilotComposing(part: part, ask: ask) else { return }
+        drafts.retries[CopilotComposing(part: part, ask: ask)] = nil
         composing = nil
         Task { @MainActor in focused = ask }
     }
@@ -670,7 +676,7 @@ private struct ConflictsComposer: View {
                         PullRequestPrompt.resolveConflicts(now.record, workplace: .worktree, conflicts: now.conflicts, note: how, answer: answer),
                         PullRequestPrompt.resolveConflicts(now.record, workplace: .agent, conflicts: now.conflicts, note: how, answer: answer)
                     ),
-                    action: .resolveConflicts, parts: [.conflicts], handOff: nil
+                    action: .resolveConflicts, parts: [.conflicts], handOff: nil, record: now.record
                 )
             },
             question: { asked, earlier in

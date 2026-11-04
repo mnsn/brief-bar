@@ -248,4 +248,40 @@ import Testing
         try Data().write(to: state.appendingPathComponent("inuse.\(getpid()).lock"))
         #expect(AppSessions.isOpen(opener, home: home))
     }
+
+    /// What you pasted in a session, a prompt BriefBar copied for you: the first message since it was copied that holds it,
+    /// as you sent it or as Copilot was told it, with your own words around it and its lines broken otherwise; not one sent
+    /// before, nor a subagent's, nor another message; and not through a symbolic link.
+    @Test func findsWhereYouPastedAPrompt() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let state = home.appendingPathComponent("session-state/\(opener)", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        let copied = Date(timeIntervalSince1970: 1_800_000_000)
+        func message(_ field: String, _ text: String, at seconds: Int, agent: Bool = false) throws -> String {
+            let stamp = copied.addingTimeInterval(TimeInterval(seconds)).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+            let data = String(decoding: try JSONSerialization.data(withJSONObject: [field: text]), as: UTF8.self)
+            return #"{"type":"user.message","data":\#(data),"timestamp":"\#(stamp)"\#(agent ? #","agentId":"a1""# : "")}"#
+        }
+        let prompt = "Fix the comment on thread 11.\n\nThen run the tests."
+        let lines = [
+            try message("content", prompt, at: -60),
+            try message("content", "What does this change do?", at: 10),
+            try message("content", prompt, at: 15, agent: true),
+            #"{"type":"assistant.message","data":{"content":"Fix the comment on thread 11. Then run the tests."},"timestamp":"2027-01-15T08:00:20.000Z"}"#,
+            try message("transformedContent", "<context/>\nPlease: Fix the comment   on thread 11.\nThen run the tests.\nThanks", at: 30),
+            try message("content", prompt, at: 40),
+        ]
+        try Data(lines.joined(separator: "\n").utf8).write(to: state.appendingPathComponent("events.jsonl"))
+        #expect(AppSessions.pasted(prompt, in: opener, home: home, since: copied) == copied.addingTimeInterval(30))
+        #expect(AppSessions.pasted(prompt, in: opener, home: home, since: copied.addingTimeInterval(31)) == copied.addingTimeInterval(40))
+        #expect(AppSessions.pasted("Fix the build.", in: opener, home: home, since: copied) == nil)
+        #expect(AppSessions.pasted(" \n", in: opener, home: home, since: copied) == nil)
+        #expect(AppSessions.pasted(prompt, in: "../\(opener)", home: home, since: copied) == nil)
+        // A log that's a symbolic link says nothing.
+        let other = home.appendingPathComponent("session-state/\(chat)", isDirectory: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: other.appendingPathComponent("events.jsonl"), withDestinationURL: state.appendingPathComponent("events.jsonl"))
+        #expect(AppSessions.pasted(prompt, in: chat, home: home, since: copied) == nil)
+    }
 }

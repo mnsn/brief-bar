@@ -27,6 +27,8 @@ struct CopilotTaskEntry: Identifiable, Equatable {
     var taken: [TakenPart]? = nil
     /// The session it forked, when it works in a fork of one.
     var forkedFrom: String? = nil
+    /// The Push & Reply tasks that ran in its session before it, as its run keeps them (`CopilotRun.pushes`).
+    var pushes: [SessionPush]? = nil
 
     var workItemURL: URL? {
         workItem.map { ADOEndpoint.workItemPage(organization: $0.organization, project: $0.project, id: $0.id) }
@@ -152,10 +154,10 @@ final class CopilotTasksStore: ObservableObject {
     @Published var promptTurns: [String: SessionTurn] = [:]
     /// When each of those turns was first seen over, to tell an ended turn from one that only paused.
     var promptsOver: [String: Date] = [:]
-    /// What each prompt copied for you to paste takes off Needs You, with the prompt, by the prompt (`SentPrompt.id`), until
-    /// its turn is seen to start, which says you pasted it (`followSentPrompts`): in memory only. One that BriefBar stops
-    /// following first, or forgets, hands nothing off.
-    var copiedHandOffs: [String: (handOff: CommentHandOff, prompt: String)] = [:]
+    /// Each prompt copied for you to paste, as BriefBar copied it, with what it takes off Needs You, by the prompt
+    /// (`SentPrompt.id`), until it's seen in a message sent the session, which says you pasted it (`followSentPrompts`): in
+    /// memory only. One that BriefBar stops following first, or forgets, hands nothing off.
+    var copiedPrompts: [String: (text: String, handOff: CommentHandOff?)] = [:]
     /// What something of a pull request is, for what's kept about it in memory.
     struct PartKey: Hashable {
         var pullRequest: PRKey
@@ -238,7 +240,7 @@ final class CopilotTasksStore: ObservableObject {
         CopilotTaskEntry(
             id: run.id, workItem: run.workItem, onPullRequest: run.onPullRequest, action: run.action, options: run.options,
             startedAt: run.startedAt, status: status, pullRequest: run.pullRequest, run: run, taken: run.taken,
-            forkedFrom: run.forkedFrom
+            forkedFrom: run.forkedFrom, pushes: run.pushes
         )
     }
 
@@ -353,7 +355,7 @@ final class CopilotTasksStore: ObservableObject {
                     // Off, nothing will say how the tasks still working end: the notifications that say they're working go.
                     if !self.isOn {
                         self.notifier?.remove(self.entries.filter(\.status.phase.isActive).map { Self.notificationID($0.id) })
-                        self.copiedHandOffs = [:]
+                        self.copiedPrompts = [:]
                         self.fixWords = [:]
                     }
                     // Copilot's logs are read only while the feature is on; turned back on, its runs are followed again.
@@ -367,7 +369,7 @@ final class CopilotTasksStore: ObservableObject {
         timer?.invalidate()
         timer = nil
         hasStopped = true
-        copiedHandOffs = [:]
+        copiedPrompts = [:]
         fixWords = [:]
     }
 
@@ -460,9 +462,13 @@ final class CopilotTasksStore: ObservableObject {
             target = pullRequest.targetBranch.isEmpty ? nil : pullRequest.targetBranch
         }
         // What it keeps, with what the session it goes on with took on before, as that session is kept now.
-        let previous = continuing.map { continuing in settings.copilotRuns.first { $0.id == continuing.id } ?? continuing }
+        let keptRun = continuing.flatMap { continuing in settings.copilotRuns.first { $0.id == continuing.id } }
+        let previous = keptRun ?? continuing
         let kept = CopilotRun.taken(goingOnWith: previous, on: entry.onPullRequest, taking: parts, for: action, at: now, target: target)
         entry.taken = kept
+        // The pushes that ran there, as BriefBar kept its runs: not one of the app's sessions' only about to start.
+        let pushes = CopilotRun.pushes(goingOnWith: keptRun, on: entry.onPullRequest)
+        entry.pushes = pushes
         entry.forkedFrom = forking?.id ?? continuing?.forkedFrom
         pending.removeAll { $0.id == id }
         pending.append(entry)
@@ -519,6 +525,7 @@ final class CopilotTasksStore: ObservableObject {
                 } else {
                     run.taken = kept
                 }
+                run.pushes = pushes
                 // Going on with one of the Copilot app's sessions: its turn is the next, after any prompt sent it before.
                 if let continuing { overlap(promptsIn: continuing.id, before: now) }
                 startedHere.insert(run.id)
@@ -556,19 +563,19 @@ final class CopilotTasksStore: ObservableObject {
         }
     }
 
-    /// A fork's send, by the ID BriefBar gave it until the CLI made the fork, goes by the fork's from then on. Only then
-    /// does it say it's working, by the fork's ID, which the notification that says how it ended, or stopping it, replaces.
-    /// Lets go of what the sends getting ready took on that's over (`endWorkThatsOver`): each launches with what's
-    /// left.
-    func letGoPending(_ isOver: (TakenPart, CopilotTaskEntry) -> Bool) {
+    /// Lets go of what the sends getting ready, or that couldn't start, took on, as `letsGo` says: what's over
+    /// (`endWorkThatsOver`), or what Clear lets go of (`clear(_:of:)`). Each launches with what's left.
+    func letGoPending(_ letsGo: (TakenPart, CopilotTaskEntry) -> Bool) {
         for index in pending.indices {
             guard let taken = pending[index].taken else { continue }
             let entry = pending[index]
-            let kept = taken.filter { !isOver($0, entry) }
-            if kept.count != taken.count { pending[index].taken = kept.isEmpty ? nil : kept }
+            let kept = taken.filter { !letsGo($0, entry) }
+            if kept.count != taken.count { pending[index].taken = CopilotRun.keeping(kept, for: entry.action) }
         }
     }
 
+    /// A fork's send, by the ID BriefBar gave it until the CLI made the fork, goes by the fork's from then on. Only then
+    /// does it say it's working, by the fork's ID, which the notification that says how it ended, or stopping it, replaces.
     private func rekey(_ id: String, to fork: String) {
         guard fork != id else { return }
         var moved: CopilotTaskEntry?

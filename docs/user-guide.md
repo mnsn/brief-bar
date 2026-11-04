@@ -419,7 +419,8 @@ thread says **Sent to ‘Retry backoff’ · see the session** instead, as it do
 hours, such as one that waited overnight for your answer. A line's **⋯**, or its right-click menu, has what it allows:
 **Stop**, while Copilot is at it, which stops one of BriefBar's tasks, or the session's turn in the Copilot app, or shows
 the session to stop it there when BriefBar's extension in it can't; **Try Again**, for a fix that failed or stopped,
-which sends it again with the same words; and **Clear**, which lets the line go. **Fix** waits while Copilot fixes the
+which sends it again with the same words, to where it went, or says it can't find that session; and **Clear**, which
+lets the line go. **Fix** waits while Copilot fixes the
 thread. Once fixes are done, of comments or of a build
 (below), a bar at the foot of the details, or of a pull request's
 page over a work item's or another pull request's, says what's ready, by what it fixed, **2 fixes ready in ‘Retry
@@ -427,7 +428,7 @@ backoff’** or **1 fix and the conflicts' resolution ready in ‘Retry backoff�
 with **Push & Reply…**, which opens the Send to Copilot window to commit them, push, and reply on the threads they
 fixed, from that session, or **Push…** when they fixed no comment; they stay in the bar when Push & Reply fails or is
 stopped, to try again. Push & Reply commits all that session changed, so a comment it fixed before that Push & Reply
-doesn't list says **Pushed from ‘Retry backoff’, without a reply**. What's Left says
+doesn't list says **Pushed from ‘Retry backoff’, without a reply**, and stays so after a later push fails. What's Left says
 **Copilot's on it** while Copilot fixes, or pushes, its comments, a build or its conflicts, whether with one of
 BriefBar's tasks or a prompt to one of the Copilot app's sessions, and **Copilot asks you** while that session waits for
 your answer in the app. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
@@ -733,7 +734,7 @@ session, in its worktree, unless you start a new one. As with a work item, a not
 on it, and the task is listed with your Copilot sessions. The pull request's row shows how its task is
 going, and its menu has the task's own menu. Once **Fix Comments** or **Push & Reply** starts, or you send
 it to a session in Copilot ([below](#sending-to-a-session-thats-already-there)), or paste it there once BriefBar copied
-it for you, the comments its prompt quotes are off **Needs You**; one that comes while you check the prompt, in a thread you take out of it, or in one
+it for you, and BriefBar sees what you pasted, the comments its prompt quotes are off **Needs You**; one that comes while you check the prompt, in a thread you take out of it, or in one
 reopened meanwhile, still needs you. Comments are written by whoever wrote them, and go to an agent that
 may run any command: send only what you'd hand to Copilot yourself.
 

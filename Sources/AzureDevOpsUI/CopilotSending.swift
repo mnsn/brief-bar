@@ -175,6 +175,10 @@ struct CopilotSending {
         var action: PullRequestAction
         var parts: [PullRequestPart]
         var handOff: CommentHandOff?
+        /// The pull request as its prompts quote it, when they're written after a wait, as for the files its conflicts are
+        /// in, pushed to or retargeted meanwhile or not: what's kept with what it takes on, such as the branch its conflicts
+        /// are with, and the task it starts, go by it too. Nil for the pull request as the fix was asked for.
+        var record: PRRecord?
     }
 
     var task: TaskPullRequest { PullRequestTasks.task(for: record) }
@@ -187,6 +191,8 @@ struct CopilotSending {
         guard !Task.isCancelled else { return .notSent(Self.calledOff) }
         // Gone from your lists, completed or abandoned while it waited for what its prompts quote: nothing goes.
         guard isOpen else { return .notSent(Self.pullRequestGone) }
+        let record = fix.record ?? self.record
+        let task = PullRequestTasks.task(for: record)
         let about = SentPrompt.About(pullRequest: item.key, purpose: .fix, parts: fix.parts, target: record.pullRequest.targetBranch)
         let subject = TaskSubject.pullRequest(task, fix.action)
         let options = copilot.settings.copilotOptions
@@ -251,9 +257,10 @@ struct CopilotSending {
     func openWindow(_ fix: Fix, destination: CopilotDestination?, choice: SessionChoice?) {
         var forking = false
         if case .fork? = destination { forking = true }
+        let record = fix.record ?? self.record
         CopilotComposer.shared.show(
-            subject: .pullRequest(task, fix.action), prompt: fix.prompts.worktree, sessionPrompt: fix.prompts.session,
-            createdAt: record.pullRequest.createdAt, options: copilot.settings.copilotOptions,
+            subject: .pullRequest(PullRequestTasks.task(for: record), fix.action), prompt: fix.prompts.worktree,
+            sessionPrompt: fix.prompts.session, createdAt: record.pullRequest.createdAt, options: copilot.settings.copilotOptions,
             continuing: copilot.continuable(forPullRequest: item.key), handOff: fix.handOff,
             session: destination == .newSession ? .newSession : choice.map { .session($0, forking: forking) },
             parts: fix.parts, store: copilot

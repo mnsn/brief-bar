@@ -80,14 +80,15 @@ enum BuildCopilot {
 
     /// Try Again, from its line's menu: Fix's composer on its row, with the words the fix that failed or stopped went with,
     /// which sends them again, where that fix went, as it opens, if it can go: once the build is open, and its run read.
+    /// One that's open already has to open anew (`CopilotComposerID`).
     static func tryAgain(
         _ work: CopilotWork, on line: PullRequestPanel.CheckLine, of key: PRKey, names: CopilotSessionNames, drafts: CopilotDrafts,
         composing: Binding<CopilotComposing?>
     ) {
         guard let part = line.check?.part else { return }
         let composer = CopilotComposing(part: part, ask: .fix, row: line.id)
-        drafts.texts[composer] = names.copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: key, part: part)] ?? drafts.texts[composer]
-        drafts.retries[composer] = (Date(), names.retryDestination(of: work))
+        let words = names.copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: key, part: part)]
+        drafts.retry(composer, words: words, to: names.retryDestination(of: work))
         composing.wrappedValue = composer
     }
 
@@ -290,6 +291,8 @@ struct BuildCopilotActions<Trailing: View>: View {
     /// Why BriefBar didn't stop what Copilot is at on it itself, until you close it.
     @LocalState private var stopNote: String?
     @LocalState private var isAskingInSession = false
+    /// How many times Try Again opened its composer: one open already opens anew, to send again.
+    @LocalState private var tries = 0
     /// Explain or Fix, for the keyboard's focus to go back to once its composer closes.
     @FocusState private var focused: CopilotAsk?
 
@@ -374,8 +377,8 @@ struct BuildCopilotActions<Trailing: View>: View {
                             if case .copied(let note)? = result { copied = note }
                             close(asking)
                         }
-                        // A new composer for each, with its own words and where it goes.
-                        .id(asking)
+                        // A new composer for each, with its own words and where it goes, and for each Try Again.
+                        .id(CopilotComposerID(ask: asking, tries: tries))
                     } else {
                         buttons(hasAnswer: question?.answer != nil, isFixing: work?.isFixing == true)
                     }
@@ -451,15 +454,18 @@ struct BuildCopilotActions<Trailing: View>: View {
         return "Ask the Copilot session that worked on it why this build failed, and whether it's this change, a flaky test or the build's infrastructure"
     }
 
-    /// Opens its composer, closing any other in the details, whose words stay for when it opens again.
+    /// Opens its composer, closing any other in the details, whose words stay for when it opens again: for you to send, not
+    /// what Try Again asked of it before.
     private func open(_ ask: CopilotAsk) {
         guard let part else { return }
         copied = nil
         stopNote = nil
-        composing = CopilotComposing(part: part, ask: ask, row: line.id)
+        let composer = CopilotComposing(part: part, ask: ask, row: line.id)
+        drafts.retries[composer] = nil
+        composing = composer
     }
 
-    /// What its line's menu does: Try Again opens Fix's composer, which sends the fix again, while you can fix it.
+    /// What its line's menu does: Try Again opens Fix's composer, anew, which sends the fix again, while you can fix it.
     private func actions(_ work: CopilotWork) -> CopilotLineActions {
         guard let part else { return CopilotLineActions() }
         let names = names
@@ -467,6 +473,7 @@ struct BuildCopilotActions<Trailing: View>: View {
             copied = nil
             stopNote = nil
             BuildCopilot.tryAgain(work, on: line, of: item.key, names: names, drafts: drafts, composing: $composing)
+            tries += 1
         } : nil
         return names.lineActions(
             for: work, about: part, of: item.key, isRendering: isRendering, tryAgain: tryAgain, stopped: { stopNote = $0 }
@@ -476,6 +483,7 @@ struct BuildCopilotActions<Trailing: View>: View {
     /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
     private func close(_ ask: CopilotAsk) {
         guard let part, composing == CopilotComposing(part: part, ask: ask, row: line.id) else { return }
+        drafts.retries[CopilotComposing(part: part, ask: ask, row: line.id)] = nil
         composing = nil
         Task { @MainActor in focused = ask }
     }
