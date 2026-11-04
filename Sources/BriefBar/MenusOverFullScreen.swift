@@ -64,6 +64,8 @@ final class MenusOverFullScreen {
         guard NSApp.activationPolicy() == .regular else { return }
         for window in NSApp.windows
         where window.level >= .popUpMenu && window.isVisible && !window.collectionBehavior.contains(.canJoinAllSpaces) {
+            // These Space policies are mutually exclusive; leave windows that deliberately move alone.
+            guard !window.collectionBehavior.contains(.moveToActiveSpace) else { continue }
             window.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
             // A window already on a Space only moves once it's ordered in again.
             window.orderFront(nil)
