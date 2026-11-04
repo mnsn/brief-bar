@@ -16,13 +16,17 @@ import Testing
         for kind in ADOWrite.Kind.allCases {
             let write = sample(kind)
             #expect(write.kind == kind)
+            // Each on the pull request it changes, or one of whose threads it does.
+            #expect(write.pullRequest == PullRequestAddress(pullRequest))
             switch kind {
             case .reply:
+                #expect(write.thread == address)
                 #expect(write.method == "POST")
                 #expect(write.url.absoluteString
                     == "https://dev.azure.com/contoso/p1/_apis/git/repositories/r1/pullRequests/7/threads/12/comments?api-version=7.1")
                 #expect(String(decoding: write.body, as: UTF8.self) == #"{"commentType":1,"content":"Thanks, done","parentCommentId":1}"#)
             case .setStatus:
+                #expect(write.thread == address)
                 #expect(write.method == "PATCH")
                 #expect(write.url.absoluteString
                     == "https://dev.azure.com/contoso/p1/_apis/git/repositories/r1/pullRequests/7/threads/12?api-version=7.1")

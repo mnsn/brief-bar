@@ -3,8 +3,8 @@ import Foundation
 /// The only changes BriefBar makes in Azure DevOps, each when you click it, with **Make Changes in Azure DevOps** on: your
 /// reply in a pull request's comment thread, and a thread's status. Every other request BriefBar sends Azure DevOps is a GET
 /// (`ADOClient.get`); these go only through `ADOClient.send(_:)`, which sends nothing else, with the same sign-in, to the same
-/// host, following no redirect. A change BriefBar comes to make later is another case here, and a kind of its own
-/// (`Kind`), which the tests go through.
+/// host, following no redirect. Each is on a pull request (`pullRequest`), and a thread's on one of its threads (`thread`).
+/// A change BriefBar comes to make later is another case here, and a kind of its own (`Kind`), which the tests go through.
 public enum ADOWrite: Sendable, Equatable {
     /// Your comment in a thread, in reply to its first, in Markdown: `POST …/pullRequests/{id}/threads/{thread}/comments`.
     case reply(ThreadAddress, markdown: String, parentCommentId: Int)
@@ -24,8 +24,15 @@ public enum ADOWrite: Sendable, Equatable {
         }
     }
 
-    /// The thread it changes.
-    public var thread: ThreadAddress {
+    /// The pull request it changes, or one of whose threads it changes: every change is on one.
+    public var pullRequest: PullRequestAddress {
+        switch self {
+        case .reply(let thread, _, _), .setStatus(let thread, _): thread.pullRequest
+        }
+    }
+
+    /// The thread it changes; nil for a change to the pull request itself.
+    public var thread: ThreadAddress? {
         switch self {
         case .reply(let thread, _, _), .setStatus(let thread, _): thread
         }
@@ -40,12 +47,10 @@ public enum ADOWrite: Sendable, Equatable {
     }
 
     public var url: URL {
-        let thread = thread
-        var path = [
-            thread.pullRequest.organization, thread.projectId, "_apis", "git", "repositories", thread.repositoryId, "pullRequests",
-            String(thread.pullRequest.number), "threads", String(thread.id),
-        ]
-        if kind == .reply { path.append("comments") }
+        let path = switch self {
+        case .reply(let thread, _, _): pullRequest.path + ["threads", String(thread.id), "comments"]
+        case .setStatus(let thread, _): pullRequest.path + ["threads", String(thread.id)]
+        }
         return ADOEndpoint.url("https://dev.azure.com", path, [("api-version", ADOEndpoint.apiVersion)])
     }
 
@@ -85,23 +90,42 @@ public enum ADOWrite: Sendable, Equatable {
     }
 }
 
-/// One of a pull request's comment threads, where Azure DevOps keeps it.
-public struct ThreadAddress: Sendable, Hashable {
-    public var pullRequest: PRKey
+/// A pull request, where Azure DevOps keeps it: in its organization's project and repository, by its number.
+public struct PullRequestAddress: Sendable, Hashable {
+    public var key: PRKey
     public var projectId: String
     public var repositoryId: String
+
+    public init(key: PRKey, projectId: String, repositoryId: String) {
+        self.key = key
+        self.projectId = projectId
+        self.repositoryId = repositoryId
+    }
+
+    public init(_ pullRequest: PullRequest) {
+        self.init(key: pullRequest.key, projectId: pullRequest.projectId, repositoryId: pullRequest.repositoryId)
+    }
+
+    /// Its path on Azure DevOps' host, which a change to it, or to one of its threads, goes on from:
+    /// `{organization}/{project}/_apis/git/repositories/{repository}/pullRequests/{number}`.
+    var path: [String] {
+        [key.organization, projectId, "_apis", "git", "repositories", repositoryId, "pullRequests", String(key.number)]
+    }
+}
+
+/// One of a pull request's comment threads, where Azure DevOps keeps it.
+public struct ThreadAddress: Sendable, Hashable {
+    public var pullRequest: PullRequestAddress
     /// The thread's ID, which Azure DevOps numbers for each pull request.
     public var id: Int
 
-    public init(pullRequest: PRKey, projectId: String, repositoryId: String, id: Int) {
+    public init(_ pullRequest: PullRequestAddress, id: Int) {
         self.pullRequest = pullRequest
-        self.projectId = projectId
-        self.repositoryId = repositoryId
         self.id = id
     }
 
     public init(_ pullRequest: PullRequest, thread: Int) {
-        self.init(pullRequest: pullRequest.key, projectId: pullRequest.projectId, repositoryId: pullRequest.repositoryId, id: thread)
+        self.init(PullRequestAddress(pullRequest), id: thread)
     }
 }
 
@@ -183,12 +207,13 @@ public struct ThreadChange: Sendable, Equatable {
     public init?(_ answer: ADOWrite.Answer, to write: ADOWrite, pullRequest: PullRequest, known: ReviewThread?) {
         var names = PRDetails.names(of: pullRequest)
         for comment in known?.comments ?? [] { names[comment.author.id] = comment.author.name }
+        guard let address = write.thread else { return nil }
         switch answer {
         case .comment(let comment):
             guard let added = ReviewComment(comment, names: names, published: nil) else { return nil }
-            self.init(thread: write.thread.id, comments: [added])
+            self.init(thread: address.id, comments: [added])
         case .thread(let thread):
-            guard thread.id == write.thread.id else { return nil }
+            guard thread.id == address.id else { return nil }
             let read = ReviewThread(thread, names: names)
             self.init(thread: thread.id, comments: read?.comments ?? [], status: thread.status)
         case .unreadable:
