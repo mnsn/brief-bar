@@ -477,6 +477,42 @@ import Testing
         try await waitUntil { reads == 1 }
     }
 
+    /// A change Azure DevOps may have made though it didn't say how, as one Azure Front Door answered 503 once Azure DevOps
+    /// took too long, has its pull request's tags read again: though their lists carry them, and when that read can't go yet,
+    /// as nothing goes out for a while after a 503, they're read as soon as they can be while its details show, and show
+    /// as Azure DevOps has them; then not again on their own.
+    @Test func tagsAChangeMayHaveChangedAreReadAgainOnceTheyCanBe() async throws {
+        let (store, changes, azure) = live()
+        let start = Date()
+        let engine = Engine(store: store, snapshot: DemoData.snapshot(now: store.now), now: start)
+        changes.now = { engine.now }
+        changes.checkEvery = .milliseconds(10)
+        changes.readTags = { key in engine.readTags(key) }
+        let page = "pull requests in window 1"
+        changes.setVisible(true, for: page)
+        let following = Task { await changes.follow(key, on: page) }
+        defer { following.cancel() }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(engine.reads == 0)
+
+        azure.fails = .network(ADOClient.unansweredMessage)
+        engine.answer = .failure(.throttled(retryAfter: 60))
+        #expect(await changes.add("hotfix", to: key) == false)
+        #expect(changes.state(of: key) == .failed(.unanswered, .add("hotfix")))
+        try await waitUntil { engine.reads == 1 }
+        #expect(tags(store) == ["deploy-eu", "needs-qa"])
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(engine.reads == 1)
+        // Half a minute later, it can: it was made.
+        engine.answer = .success(["deploy-eu", "hotfix", "needs-qa"].map { PullRequestTag($0) })
+        engine.now = start.addingTimeInterval(TagChanges.retryAfter)
+        try await waitUntil { engine.reads == 2 }
+        #expect(tags(store) == ["deploy-eu", "hotfix", "needs-qa"])
+        engine.now = start.addingTimeInterval(TagChanges.retryAfter * 5)
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(engine.reads == 2)
+    }
+
     /// Tags are due to be read on their own when they're unknown, or when the lists don't carry them and they were read ten
     /// minutes ago or more; never while the lists carry them.
     @Test func tagsAreDueWhenUnknownOrReadTenMinutesAgo() throws {

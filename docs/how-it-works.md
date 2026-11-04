@@ -1573,13 +1573,15 @@ tags (`ADOWriteProblem`), with **Try Again**, but not when Azure DevOps refused 
 tag isn't there, which trying again can't help, and **Sign In…** when that's why. One clicked as the pull request was
 completed or abandoned, or left your lists, goes nowhere and says so, as a thread's does (`closed`, `notListed`), and
 what the tags say stays once they can't be changed, with nothing to try again; when it may have happened all the same,
-the tags are read again; one taken off that Azure DevOps says isn't there is, when the tags read again don't have it, as
-you wanted. Each change goes in a task kept by pull request, which turning the setting off, Azure DevOps stopping or
-someone else signing in calls off (`TagChanges.forgetAll`): one that hasn't gone, as while it waits for a token, never
-does, and one called off does nothing more, though the setting is on again; as the setting goes off, the tags of a pull
-request whose change it called off are read again, as it may have gone all the same. It goes only as whom the list was
-read as when you clicked (`ADOClient.send(_:as:)`): when someone else signed in to the Azure CLI since, nothing goes,
-and the tags say so, with **Sign In…**.
+as when Azure DevOps didn't answer in time, or Azure Front Door answered 503 once it took too long, the tags are read
+again, and, when they can't be yet, as nothing goes out for a while after a 503, as soon as they can be while its
+details show (`TagChanges.readAgain`, `unsure`); one taken off that Azure DevOps says isn't there is, when the tags read
+again don't have it, as you wanted. Each change goes in a task kept by pull request, which turning the setting off,
+Azure DevOps stopping or someone else signing in calls off (`TagChanges.forgetAll`): one that hasn't gone, as while it
+waits for a token, never does, and one called off does nothing more, though the setting is on again; as the setting goes
+off, the tags of a pull request whose change it called off are read again, as it may have gone all the same. It goes
+only as whom the list was read as when you clicked (`ADOClient.send(_:as:)`): when someone else signed in to the Azure
+CLI since, nothing goes, and the tags say so, with **Sign In…**.
 
 As you type, the field suggests (`TagChoices`) the tags you added in the pull request's project, the latest first, then
 those on the pull requests BriefBar read there, the most used first, then by name, but the pull request's own, six at most:

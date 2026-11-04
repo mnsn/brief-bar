@@ -238,6 +238,13 @@ import Testing
         let throttled = await problem(.status(429))
         #expect(throttled.0 == .slowedDown)
         #expect(throttled.0?.mayHaveGone == false)
+        // A tag's change too, after which its pull request's tags are read again.
+        for kind in [ADOWrite.Kind.addTag, .removeTag] {
+            let server = StubServer()
+            server.on("/pullRequests/7/labels") { _ in .status(503) }
+            await #expect(throws: ADOError.network(ADOClient.unansweredMessage)) { try await server.client().send(sample(kind), as: nil) }
+            #expect(server.requests.count == 1)
+        }
 
         let reading = StubServer()
         reading.on("/pullRequests/7/threads") { _ in .status(503) }
