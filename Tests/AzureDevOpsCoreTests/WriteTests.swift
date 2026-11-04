@@ -322,6 +322,30 @@ import Testing
         #expect(server.requests.map(\.tenant) == [Tenants.home, Tenants.other, Tenants.other])
     }
 
+    /// A change that has gone isn't called off with its caller, which wouldn't take it back: Azure DevOps' answer comes all
+    /// the same, to say it was made.
+    @Test(.timeLimit(.minutes(1)))
+    func aChangeThatWentWhenCalledOffAnswersAllTheSame() async throws {
+        let server = StubServer()
+        let answers = Locked(false)
+        var held = StubServer.Reply.json(Fixture.comment(4, People.me, "Thanks, done", at: t(0)))
+        held.waitsFor = { answers.value }
+        let reply = held
+        server.on("/threads/12/comments") { _ in reply }
+        let client = server.client()
+        let write = sample(.reply)
+        let sending = Task { try await client.send(write, as: nil) }
+        try await waitUntil("the change to go") { server.requests.count == 1 }
+        sending.cancel()
+        answers.set(true)
+        guard case .comment(let comment) = try await sending.value else {
+            Issue.record("Expected Azure DevOps' answer")
+            return
+        }
+        #expect(comment.id == 4)
+        #expect(server.requests.count == 1)
+    }
+
     /// A change goes only where it's sent, as a read does.
     @Test(.timeLimit(.minutes(1)))
     func followsNoRedirectWithAChange() async {
