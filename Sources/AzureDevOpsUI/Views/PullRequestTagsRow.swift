@@ -257,6 +257,8 @@ struct PullRequestTagsRow: View {
         // Esc closes it, not the details it's in.
         .preference(key: InlineComposerOpen.self, value: true)
         .onAppear {
+            // Each time it opens, VoiceOver hears what's chosen anew, a new tag too, whatever it heard as it was open last.
+            announced = nil
             guard preview == nil else { return }
             Task { @MainActor in focus = .field }
         }
