@@ -114,12 +114,19 @@ public struct PRRecord: Sendable, Equatable, Identifiable {
     public var merge: MergePipelines?
     /// You watch it: you chose to follow it, by its link.
     public var isWatched: Bool
+    /// Its tags, in the order of their names (`PullRequestTag`); nil while they're unknown, as for a pull request read on its
+    /// own, such as one sent to you, until they're read (`PulseEngine.readTags`).
+    public var tags: [PullRequestTag]?
+    /// When its tags were read, when its lists don't carry them, as for one read on its own, or that left your lists but is
+    /// sent to you or watched, which its details read again ten minutes later (`TagChanges`): nil while its lists carry them,
+    /// which every refresh reads, and while they're unknown.
+    public var tagsReadAt: Date?
 
     public var id: PRKey { pullRequest.key }
 
     public init(
         pullRequest: PullRequest, role: PRRole, details: PRDetails? = nil, me: String, chatLinks: [ChatLink] = [],
-        merge: MergePipelines? = nil, isWatched: Bool = false
+        merge: MergePipelines? = nil, isWatched: Bool = false, tags: [PullRequestTag]? = nil, tagsReadAt: Date? = nil
     ) {
         self.pullRequest = pullRequest
         self.role = role
@@ -128,6 +135,8 @@ public struct PRRecord: Sendable, Equatable, Identifiable {
         self.chatLinks = chatLinks
         self.merge = merge
         self.isWatched = isWatched
+        self.tags = tags
+        self.tagsReadAt = tagsReadAt
     }
 
     /// As a pull request you watch: one you're not on is listed as if you reviewed it, rather than only while a

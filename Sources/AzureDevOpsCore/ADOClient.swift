@@ -57,8 +57,8 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
 }
 
 /// Reads from Azure DevOps, with GET requests only, but for the changes `ADOWrite` lists, which `send(_:as:)` alone makes, when
-/// you click them with Make Changes in Azure DevOps on. Each request goes only where it's sent: it follows no redirect
-/// (`RedirectGuard`).
+/// you click them with Make Changes in Azure DevOps on: replies, threads' statuses and pull requests' tags. Each request goes
+/// only where it's sent: it follows no redirect (`RedirectGuard`).
 public struct ADOClient: Sendable {
     public let tokens: any AccessTokenProvider
     let session: URLSession
@@ -130,10 +130,11 @@ public struct ADOClient: Sendable {
     /// didn't act on; and an answer that says it was made, any 2xx but 203, is taken as made, whatever it holds. When Azure
     /// DevOps refuses it, the error says why, as it said it (`ADOError.refused`); and when it made the change but its answer
     /// can't be read, the answer says so (`Answer.unreadable`), rather than that it failed; and a 503, which Azure Front Door
-    /// answers once Azure DevOps takes too long, as no answer in time, since it may have been made. Called off before it goes, as
-    /// when its setting is turned off while a token comes, it never goes. And it goes only as whom it was asked for as,
-    /// `account` (`AccessToken.account`, as the list was read), when that's known: when someone else signed in to the Azure
-    /// CLI since, nothing goes (`ADOError.otherAccount`).
+    /// answers once Azure DevOps takes too long, as no answer in time, since it may have been made. Taking a tag off says
+    /// nothing more than that it's done, whatever it answers. Called off before it goes, as when its setting is turned off
+    /// while a token comes, it never goes. And it goes only as whom it was asked for as, `account` (`AccessToken.account`, as
+    /// the list was read), when that's known: when someone else signed in to the Azure CLI since, nothing goes
+    /// (`ADOError.otherAccount`).
     public func send(_ write: ADOWrite, as account: String?) async throws -> ADOWrite.Answer {
         let data = try await answer(write.url, request: { Self.request(write, token: $0) }, isAnswer: { _ in true }, isChange: true,
                                     account: account, refusal: Self.refusal) { request, redirects in
@@ -144,6 +145,8 @@ public struct ADOClient: Sendable {
             switch write.kind {
             case .reply: return .comment(try ADOJSON.decoder().decode(ADOComment.self, from: data))
             case .setStatus: return .thread(try ADOJSON.decoder().decode(ADOThread.self, from: data))
+            case .addTag: return .tag(try ADOJSON.decoder().decode(ADOTag.self, from: data))
+            case .removeTag: return .done
             }
         } catch {
             return .unreadable(Self.describe(error))
@@ -335,12 +338,16 @@ public struct ADOClient: Sendable {
         (response.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("json")
     }
 
-    /// A change's request: its method, its URL and its JSON body, with a GET's sign-in and headers.
+    /// A change's request: its method, its URL and its JSON body, with a GET's sign-in and headers. One with nothing to say
+    /// but its address, as taking a tag off, has no body.
     static func request(_ write: ADOWrite, token: String) -> URLRequest {
         var request = request(write.url, token: token)
         request.httpMethod = write.method
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = write.body
+        let body = write.body
+        if !body.isEmpty {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
         return request
     }
 

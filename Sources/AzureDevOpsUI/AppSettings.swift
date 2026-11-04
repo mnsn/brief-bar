@@ -124,6 +124,11 @@ final class AppSettings: ObservableObject {
     @Published var makesChanges: Bool {
         didSet { defaults.set(makesChanges, forKey: Key.makesChanges) }
     }
+    /// The tags you added to pull requests, with Make Changes in Azure DevOps on, which adding one suggests: for each project,
+    /// by its ID, the latest first. Turning the setting off forgets them.
+    @Published var usedTags: UsedTags {
+        didSet { Self.store(usedTags.isEmpty ? nil : usedTags, in: defaults, forKey: Key.usedTags) }
+    }
     /// The model Fix Grammar corrects a reply with: Apple Intelligence, on this Mac, unless you chose one through Copilot.
     @Published var grammarModel: String {
         didSet { defaults.set(grammarModel, forKey: Key.grammarModel) }
@@ -217,6 +222,7 @@ final class AppSettings: ObservableObject {
         pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
         copilotEnabled = defaults.bool(forKey: Key.copilotEnabled)
         makesChanges = defaults.bool(forKey: Key.makesChanges)
+        usedTags = Self.load(UsedTags.self, from: defaults, forKey: Key.usedTags) ?? UsedTags()
         grammarModel = defaults.string(forKey: Key.grammarModel).flatMap { $0.isEmpty ? nil : $0 } ?? StorySummaries.appleIntelligenceModel
         copilotOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotOptions) ?? CopilotModel.standard
         copilotQuickOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotQuickOptions) ?? CopilotModel.quick
@@ -568,6 +574,7 @@ enum SettingsKey {
     static let pinnedPipelines = "ado.pinnedPipelines"
     static let copilotEnabled = "ado.copilot.enabled"
     static let makesChanges = "ado.makeChanges"
+    static let usedTags = "ado.usedTags"
     static let grammarModel = "ado.grammar.model"
     static let copilotOptions = "ado.copilot.options"
     static let copilotQuickOptions = "ado.copilot.quickOptions"

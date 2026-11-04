@@ -1150,13 +1150,14 @@ authentication library (MSAL) can be added once there's an app registration to s
 
 ### Where the data comes from
 
-All requests are GETs to the Azure DevOps REST API (version 7.1), but for the two changes **Make Changes in Azure
-DevOps** makes, last in the table, each when you click it ([below](#replying-and-setting-a-threads-status)):
+All requests are GETs to the Azure DevOps REST API (version 7.1), but for the four changes **Make Changes in Azure
+DevOps** makes, last in the table, each when you click it ([below](#replying-and-setting-a-threads-status), and
+[a pull request's tags](#a-pull-requests-tags)):
 
 | Request | When | Provides |
 |---|---|---|
 | `_apis/connectionData` | once per organization, and again when you sign in as someone else; and when you add an organization, to check that your sign-in can read it | your identity ID and name |
-| `_apis/git/pullrequests?searchCriteria.creatorId=…&status=active` | every refresh | your active pull requests, across all projects |
+| `_apis/git/pullrequests?searchCriteria.creatorId=…&status=active` | every refresh | your active pull requests, across all projects, with their tags (`labels`), as each list here has them |
 | `_apis/git/pullrequests?searchCriteria.reviewerId=…&status=active` | every refresh | the ones you review |
 | `_apis/git/pullrequests?searchCriteria.creatorId=…&status=completed&minTime=…` | every refresh | yours completed in the Done window |
 | `{project}/_apis/policy/evaluations?artifactId=vstfs:///CodeReview/CodeReviewId/{project}/{id}` | per pull request | builds, status checks, reviewer and other policies |
@@ -1186,6 +1187,9 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
 | `PATCH {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}` | the same, when you set a thread's status, or after your reply with Reply & Resolve or Reply & Reactivate: once | the thread's status alone; Azure DevOps answers with the thread, its comments as it has them now |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only in a pull request's details, for one whose lists don't carry its tags, such as one sent to you or that you watch: as they show on a window's page on screen, then ten minutes after they were read, while they show; and after a change to its tags, or one called off as Make Changes in Azure DevOps goes off, below | its tags |
+| `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only with Make Changes in Azure DevOps on, when you add a tag to an open pull request: once | the tag's name; Azure DevOps answers with the tag as the project has it, which it makes when the project has none of that name |
+| `DELETE {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels/{tag}` | the same, when you click a tag's ✕: once | nothing but the tag, by the project's tag's ID; the project keeps the tag |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
 so a pull request's details (policies and threads, two requests) are fetched on a schedule
@@ -1534,6 +1538,80 @@ and with a Copilot model chosen; a reply and a status that couldn't be made; a p
 one that left your lists; then, from lists of their own with them made as the demo makes them, a thread replied to and
 resolved, and one set to Won't Fix; and the setting, as Settings shows it (`ThreadChangesPreview`,
 `threadChangeRenderings`).
+
+#### A pull request's tags
+
+A pull request's tags, which Azure DevOps calls its labels, show under its heading in its details
+(`PullRequestTagsRow`), in the order of their names, ignoring letter case and numbers by their value (`PullRequestTag`).
+The lists BriefBar reads anyway carry them, leaving them out of a pull request that has none (`ADOTagList`,
+`PullRequestTag.listed`); a single pull request's read doesn't, so one your lists don't carry, such as one sent to you
+or that you watch, has them read on their own, one request (`PulseEngine.readTags`), only while its details show on a
+window's page on screen, as the code its comments are on is: as they come on screen, then ten minutes after they were
+read, which details that stay on screen look at every half minute (`TagChanges.follow`, `isDue`); until then it shows
+none. Its details keep a pull request that left your lists as it was then, as one sent to you in a chat that you're not
+on once you've seen it, but for its tags, and when they were read, which follow the list's while it still reads it
+(`PullRequestDetailsStore.followTags`), so those read as they show do. Azure DevOps stopping calls off the reads of tags
+under way, as one that waits for the Azure CLI's sign-in, whose answer then does nothing, and nothing more is read or
+changed (`TagChanges.stop`). When they were read is the engine's, on the record of each pull request the latest
+refresh's lists didn't carry (`PRRecord.tagsReadAt`): a read of its own, or, for one that left its lists but stays, as
+one sent to you, its lists' last; so turning the setting off and on, which forgets what was going on, doesn't hold it
+up, and an organization whose lists couldn't be read keeps what they carried. The engine keeps each pull request's tags
+with when the read they're from started, and a read that started earlier never replaces them, so a refresh under way
+that answers after a change doesn't undo it, and a single pull request's read, which doesn't carry them, leaves them as
+they were. They're on the pull request's record (`PRRecord.tags`), not on the pull request, so a change to them doesn't
+make its pipelines or its details read again.
+
+With **Make Changes in Azure DevOps** on, while the pull request is open in your lists as they are now
+(`CopilotSending.isOpen`), not only as its details last saw it, and its tags are known (`TagChanges.canChange`), its
+tags have ✕, and Add Tag opens a field that adds one, which is the details' one composer in place
+(`CopilotComposing.tags`); otherwise the tag glyph's tooltip, and VoiceOver, say why they can't be changed. Adding one
+is a `POST` of its name (`ADOWrite.addTag`); taking one off, a `DELETE` of it, by the project's tag's ID, so a name with
+a slash in it is no trouble, with no body (`ADOWrite.removeTag`), whose answer, whether nothing (204), an empty 200 or
+JSON, says it's done. What Azure DevOps answers shows at once, the tag as the project spells it, and the engine keeps
+it, over any read that started before, then reads the tags again, one request, for anyone else's change meanwhile, in a
+task that turning Azure DevOps off calls off, counted as a read of them (`PRStore.changedTags`,
+`readTags(afterChanging:to:)`, `PulseEngine.changedTags`); the list keeps the change over a snapshot read before it,
+which has the tags as they were, until one has it, or has tags changed since (`PRStore.pending`). A tag the pull request
+has already, ignoring letter case, isn't sent. Nothing asks first: after a tag is taken off, **Undo** adds it back, by
+its name (`TagChanges.removed`, `undoRemoval`), until the tags change again, you dismiss it, or nothing shows the pull
+request, and, for good, once they have it again, as when someone else added it back (`TagChanges.undoable`,
+`forgetRestored`); a removal that Azure DevOps answers after nothing shows the pull request anymore offers none. A
+change that didn't happen says why under the tags (`ADOWriteProblem`), with **Try Again**, but not when Azure DevOps
+refused it, the pull request is closed or the tag isn't there, which trying again can't help, and **Sign In…** when
+that's why. One clicked as the pull request was completed or abandoned, or left your lists, goes nowhere and says so, as
+a thread's does (`closed`, `notListed`), and what the tags say stays once they can't be changed, with nothing to try
+again; when it may have happened all the same, as when Azure DevOps didn't answer in time, or Azure Front Door answered
+503 once it took too long, the tags are read again, and, when they can't be yet, as nothing goes out for a while after a
+503, as soon as they can be while its details show, half a minute after the read that couldn't, which one that started
+before it doesn't cut short, and only by one that started since the change (`TagChanges.readAgain`, `unsure`); one taken
+off that Azure DevOps says isn't there is, when the tags read again don't have it, as you wanted. Each change goes in a
+task kept by pull request, which turning the setting off, Azure DevOps stopping or someone else signing in calls off
+(`TagChanges.forgetAll`): one that hasn't gone, as while it waits for a token, never does, and one called off does
+nothing more, though the setting is on again; as the setting goes off, the tags of a pull request whose change it called
+off are read again, as it may have gone all the same. It goes only as whom the list was read as when you clicked
+(`ADOClient.send(_:as:)`): when someone else signed in to the Azure CLI since, nothing goes, and the tags say so, with
+**Sign In…**.
+
+As you type, the field suggests (`TagChoices`) the tags you added in the pull request's project, the latest first, then
+those on the pull requests BriefBar read there, the most used first, then by name, but the pull request's own, six at
+most: the one that's what you typed, then those whose names start with it, then those with a word that does, then those
+that have it anywhere, ignoring letter case; what you typed, when it's none of them nor one the pull request has, is a
+new tag, last. The best match is chosen as you type, and with something typed one always is, so Return always adds a row
+that shows, but for a tag the pull request has already, when none is and the field says so; as the tags are read again
+while the field is open, the same row stays chosen, where it's still offered, or else the best match, and none once the
+pull request has the tag typed, as when someone else added it (`TagChoices.chosen`). VoiceOver hears which, and how many
+there are, as it changes, and when the pull request has the tag typed. ↑ and ↓ choose another; Tab completes the one
+chosen in the field, sending nothing, and moves on, as it does anywhere, when there's nothing to complete; Return adds
+it; and Esc closes the field (`InlineComposerOpen`). BriefBar remembers the tags you add, by their names, up to 20 for
+each project, by its organization and ID, for the 20 projects you added tags in last (`UsedTags`, `ado.usedTags`), until
+you turn the setting off or delete Azure DevOps' saved data. It doesn't read Azure DevOps' own list of a project's tags
+(`_apis/wit/tags`), which work items share and which can hold many thousands, far more than one request reads in time.
+The demo's pull requests have made-up tags (`DemoTags`), and its changes are made up too, in its data only, while it
+runs.
+
+`--render` draws, in the demo, the first of your pull requests that needs you with its tags; the field open with what you
+typed and its suggestions; a change that couldn't be made; and the tags without the setting (`TagsPreview`,
+`tagRenderings`).
 
 #### The code comments are on
 
@@ -3372,7 +3450,8 @@ when BriefBar does.
   modules, the updater's included, not Sparkle, whose requests are only for updates.
 - `WriteTests` checks that the only changes BriefBar can make in Azure DevOps are those `ADOWrite` lists, each as it's
   sent, and that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET
-  ([Replying and setting a thread's status](#replying-and-setting-a-threads-status)).
+  ([Replying and setting a thread's status](#replying-and-setting-a-threads-status),
+  [A pull request's tags](#a-pull-requests-tags)).
 - `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar has
   no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the updater
   has its own identity, the one entitlement, the same signature as BriefBar, and Sparkle in its own

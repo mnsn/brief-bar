@@ -450,10 +450,27 @@ final class PullRequestDetailsStore: ObservableObject {
 
     /// The list read its pull requests again, which may change what it read of the one that shows without changing its
     /// row, such as an optional build: what's kept of it follows, while the list has it, for once it doesn't anymore.
-    /// Then it stays as it was, even while the list still reads it, as one sent in a chat that you've seen.
+    /// Then it stays as it was, even while the list still reads it, as one sent in a chat that you've seen: but for its
+    /// tags, which its details read while they show it (`TagChanges`), and when they were (`followTags`).
     func recordsChanged() {
-        guard isListed, let selected, let read = keeping(readRecord(selected.key)), read != record else { return }
+        guard isListed else {
+            followTags()
+            return
+        }
+        guard let selected, let read = keeping(readRecord(selected.key)), read != record else { return }
         record = read
+    }
+
+    /// The tags of the pull request that shows, and when they were read, as the list has them, which it may still read
+    /// once the pull request isn't in your lists, as one sent to you in a chat that you've seen, or one in Done you cleared:
+    /// its details read them while they show it (`TagChanges`), and show them. The rest stays as it was when it left them.
+    private func followTags() {
+        guard let selected, var kept = record, kept.id == selected.key, let read = readRecord(selected.key),
+              read.tags != kept.tags || read.tagsReadAt != kept.tagsReadAt
+        else { return }
+        kept.tags = read.tags
+        kept.tagsReadAt = read.tagsReadAt
+        record = kept
     }
 
     /// What the list read of a pull request, with the threads and policies it read of it last, when it shows already and
