@@ -14,7 +14,7 @@ For a quick tour and download, see the [README](../README.md).
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads and their statuses, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply you're writing |
 | **GitHub Copilot** | Which Copilot sessions are running, need you, or have finished or stopped; local CLI sessions when the app isn't installed; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's and CLI's own files under `~/.copilot` | Local Copilot session files | None for tracking; optional Copilot summaries send the selected work's details through the CLI, as described in [Privacy](#privacy) |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
 
@@ -419,6 +419,30 @@ they fixed, with **Push & Reply…**, which opens the Send to Copilot window to 
 they fixed, from that session; they stay in the bar when Push & Reply fails or is stopped, to try again. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
 off, unless the session has it already. VoiceOver hears what becomes of each.
 
+**Reply and set a thread's status.** With **Make Changes in Azure DevOps** on, in Azure DevOps' settings (off by
+default), each thread on an open pull request ends with **Reply** and its status, in the row with Explain and Fix, in the
+comments and on its file's page. **Reply** opens a field under the thread, in place, as Explain and Fix do, one at a time
+with them: write in Markdown, Return starting a new line, then **Reply**, or ⌘Return, sends it to the thread in Azure
+DevOps, as you, and **Reply & Resolve**, or ⇧⌘Return, sends it and resolves the thread; on a resolved thread, **Reply &
+Reactivate** reactivates it. ✕ or Esc closes the field, and what you wrote stays, until you send it, while BriefBar runs,
+in memory only. **Resolve**, beside Reply, resolves the thread, and **Reactivate** reactivates a resolved one; its **▾**
+has the statuses Azure DevOps' own menu offers, **Active**, **Pending**, **Resolved**, **Won't Fix** and **Closed**, and
+**By Design** for a thread that has it already. A status changes at once, without asking, since the same menu sets it
+back; a thread's right-click menu has Reply and its statuses too. The thread shows what you did as soon as Azure DevOps
+answers, as it answered, and stays where it is in the details while they show that pull request, however it stands now;
+then BriefBar reads the pull request again, so Needs You, What's Left, the brief and the counts follow: a thread you replied
+to, or resolved, doesn't wait on you anymore. When it can't, the thread says why in a sentence, such as **Azure DevOps says
+you may not reply here**, **You're offline**, for a pull request that's completed or abandoned, or when the thread was
+deleted meanwhile, with what may help, such as **Try Again** or **Sign In…**; a reply that didn't go keeps what you wrote,
+and one that Azure DevOps didn't answer in time is read again before you send it twice. **Fix Grammar**, in the field,
+corrects your reply's spelling, grammar and punctuation, and only those, in the language you wrote it in, keeping your
+words, your Markdown, and your code, links and @mentions, which the model never sees. It uses Apple Intelligence, on this
+Mac, free, unless you choose a Copilot model in its **▾**, from those summaries offer, which BriefBar remembers: each fix
+is then one premium request, and sends your reply's text to GitHub Copilot, through the Copilot CLI. It shows the
+correction under the field, what it changes marked, with **Use It**; once you use it, **Undo** puts back what you wrote.
+It never changes your reply without you, and never sends it. Where Apple Intelligence is turned off or can't run, it says
+so, with **Choose a Model**. The demo changes only its own made-up pull requests, and sends nothing.
+
 **See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
 changes, folder by folder as Azure DevOps' Files page lists them, a click on a folder folding it: each with
 what happened to it, added, edited, renamed or deleted, how many lines it adds and removes, and how many
@@ -798,8 +822,9 @@ to the Copilot CLI, as turning agents on does, and is checked once it's there. F
 | `pin_pipeline`, `unpin_pipeline` | Pins a pipeline by its link, or a run's, or unpins one |
 
 It serves only the sources that are on in BriefBar, reads as the app does, with your Azure CLI sign-in
-and only GET requests, and changes nothing in Azure DevOps: only BriefBar's own lists of the pull
-requests you watch and the pipelines you pin, which a running BriefBar picks up at once. It leaves
+and only GET requests, and changes nothing in Azure DevOps, even with **Make Changes in Azure DevOps** on,
+which is only for what you click in BriefBar's window: only BriefBar's own lists of the pull requests you
+watch and the pipelines you pin, which a running BriefBar picks up at once. It leaves
 Teams and GitHub out. A source's tool asks the others what they know of what it names, and each
 answers only while it's on: `work_item` gets the Copilot sessions on a work item's pull requests from
 Copilot, on their branches or as the Copilot app records them, or a line saying Copilot is off. What it
@@ -985,6 +1010,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
 | | Sprint | on its page: **Everyone** or **Just Mine**, which team's sprint, and how wide you drag a work item's details |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
+| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; and **Fix Grammar** in a reply, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies you haven't sent |
 | | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Move Viewed Sessions to Idle | off by default: when on, opening or viewing a finished or stopped session moves it to Idle |
@@ -1010,7 +1036,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 ## Privacy
 
 - **Teams and Copilot never use the network.** Only the Azure DevOps source connects, to Azure DevOps,
-  with your Azure CLI sign-in, and every request it makes is a GET; and the GitHub source, to
+  with your Azure CLI sign-in, and every request it makes is a GET, but for what you change there
+  yourself, below; and the GitHub source, to
   `api.github.com`, with your GitHub CLI sign-in, sending one fixed, read-only GraphQL query each
   refresh. Neither follows a redirect, so their sign-ins go nowhere else. The GitHub
   CLI's token stays in memory, and BriefBar never asks for a personal access token. No sign-in of
@@ -1023,7 +1050,14 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   with none of BriefBar's permissions. They carry nothing about your chats, pull requests or sessions.
 - **It only reads**: Notification Center's database through a read-only connection, Teams' own data
   in place (never copied, and without taking its lock), the Copilot app's files, Azure DevOps
-  through GET requests, and GitHub through a query that only reads. It never changes any of them.
+  through GET requests, and GitHub through a query that only reads. It never changes any of them,
+  but for two things in Azure DevOps, only if you turn on **Make Changes in Azure DevOps**, and only
+  when you click them in a pull request's details: your reply in a comment thread, and a thread's
+  status. They go as you, with your Azure CLI sign-in, and nothing else does, never by itself, and not
+  from agents or the command line. What you write in a reply stays in memory only, until you send it.
+  **Fix Grammar** corrects it with Apple Intelligence, on your Mac, unless you choose a Copilot model
+  for it: then each fix sends the reply's text to GitHub Copilot, through the Copilot CLI, as one
+  premium request, in a session of its own, "BriefBar grammar fix", which the CLI keeps.
 - **Of Teams' own data**, it keeps only how far you've read each chat (Teams' ID of the newest message
   you've seen in it), in memory, while **Mark Chats Read When You Read Them in Teams** is on. That data
   holds your chats' messages too: BriefBar reads only the part about your conversations, and keeps

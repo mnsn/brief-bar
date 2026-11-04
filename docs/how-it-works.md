@@ -713,7 +713,7 @@ of the lists don't show.
 
 **Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
 BriefBar until you choose **Show Hidden Links**; hiding a pull request's link hides what's linked through it too.
-Nothing goes back to Azure DevOps, GitHub or Copilot: BriefBar never writes there. The edits are kept in the
+Nothing goes back to Azure DevOps, GitHub or Copilot: the links are BriefBar's own. The edits are kept in the
 preferences (`links`) as references only, never titles; those older than 180 days are forgotten, and turning a source
 off forgets the ones about its things. A reference another program writes there is checked as BriefBar's own are, or
 left out.
@@ -1146,7 +1146,8 @@ authentication library (MSAL) can be added once there's an app registration to s
 
 ### Where the data comes from
 
-All requests are GETs to the Azure DevOps REST API (version 7.1):
+All requests are GETs to the Azure DevOps REST API (version 7.1), but for the two changes **Make Changes in Azure
+DevOps** makes, last in the table, each when you click it ([below](#replying-and-setting-a-threads-status)):
 
 | Request | When | Provides |
 |---|---|---|
@@ -1178,6 +1179,8 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed |
 | `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
+| `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
+| `PATCH {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}` | the same, when you set a thread's status, or after your reply with Reply & Resolve or Reply & Reactivate: once | the thread's status alone; Azure DevOps answers with the thread, its comments as it has them now |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
 so a pull request's details (policies and threads, two requests) are fetched on a schedule
@@ -1418,6 +1421,69 @@ then it's your turn, not someone else's. Each comment shows in full, its Markdow
 (`ReviewComment.markdown`, `RichText`, `RichTextView`), mentions as names, parsed again only when it changes, not
 as the time beside it moves on (`CommentBody`); a thread of more than three shows its first and latest until you
 ask for the rest.
+
+#### Replying and setting a thread's status
+
+With **Make Changes in Azure DevOps** on (`ado.makeChanges`, off by default: `MakeChangesSetting`), each thread on an open
+pull request ends with **Reply** and its status (`ThreadReplyButtons`), in the row with Explain and Fix
+(`ThreadCopilotActions`, which shows it without them too), in its details' comments and on its file's page, and its
+right-click menu has them. They're the only changes BriefBar makes in Azure DevOps (`ADOWrite`, in
+`Sources/AzureDevOpsCore`): your reply in a thread, a `POST` of a comment, in reply to the thread's first, with the body
+Azure DevOps' samples send (`content`, `parentCommentId` and `commentType` 1, text), and a thread's status, a `PATCH` of
+only that (`status`, by the number the API takes for it). `ADOClient.send(_:)` alone sends them, with a GET's sign-in,
+headers and redirect guard, from the same request path, once: it sends one again only when Azure DevOps rejected the
+sign-in, which it never acts on, so a change that fails otherwise, or times out, isn't made twice. When Azure DevOps refuses
+one, the error says why, as it said it (`ADOError.refused`, TF401181 for a pull request that's completed or abandoned), which
+shows on the thread but never goes to the log; a change that was made but whose answer can't be read says so
+(`ADOWrite.Answer.unreadable`), and the pull request is read again instead. `WriteTests` goes through every kind of change
+(`ADOWrite.Kind`), and checks that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET. Agents
+(`--mcp`) and the command line get none of it, and the demo sends nothing: its changes are made up (`DemoThreadChanges`),
+in its made-up data only, while it runs.
+
+**Reply** opens a field under the thread, in place (`ThreadReplyComposer`), as a composer of Copilot's does, and it's the
+details' one composer in place (`CopilotComposing.reply(to:)`): opening it closes Explain's or Fix's, and the other way
+round, Esc closes it rather than the details (`InlineComposerOpen`), and it scrolls itself into view as it opens
+(`detailsScroll`). It's Markdown, in a text view as tall as what's in it, from three lines to ten, where Return starts a new
+line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘Return, sends it then resolves the thread, or **Reply
+& Reactivate** reactivates a resolved one, as Azure DevOps' own does. What you write is kept as you type
+(`ThreadChanges.keep`), in memory only, for each thread, until it's sent: closing the field, or the details, keeps it, and
+**Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure CLI forgets
+it. A reply whose text is already your last word in the thread, as one that went though Azure DevOps didn't answer in time,
+isn't sent again. **Resolve**, or **Reactivate** on a resolved thread, sets its status at once, without asking, since the
+same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps' own menu offers, Active, Pending,
+Resolved, Won't Fix and Closed, and By Design only for a thread that has it (`ThreadStatus.choices`).
+
+What Azure DevOps answers shows at once (`ThreadChange`, which `PRDetails.apply` applies once, however often): the list
+applies it (`PRStore.changed`), so the details, Needs You, What's Left, the brief and the counts follow it, then the engine
+does, and reads the pull request's details again, two requests, now (`PulseEngine.changed`, `readAgain`). A read that
+started before the change, such as a refresh under way, doesn't undo it: its threads are left as they are, and the pull
+request is read again at the next refresh. The list keeps the change over its refreshes until a snapshot has it
+(`PRStore.pending`). A thread you replied to doesn't wait on you, as your last word is after the comment; one you resolved
+doesn't either, as the pull request is seen as you resolve it, and its details, which keep what was new as it was when they
+showed it, leave out what was in it until then (`ThreadChanges.waiting`). While the details show the pull request, a thread
+you change stays where it was as you first did, with the open ones or the resolved ones, and with those that wait on you or
+not, however it stands now (`Threads.arranged(holding:)`), and on its file's page, it stays unfolded: so it doesn't move
+away as you reply or resolve it, and the menu that sets it back is where you left it. A change that didn't happen says why
+on the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help: no
+permission, a pull request that's completed or abandoned, a thread or pull request deleted meanwhile, offline, signed out,
+slowed down, or no answer in time, after which the pull request is read again, since it may have been made.
+
+**Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language it's
+written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its fenced and inline code,
+links and pictures, web addresses and mentions go to the model as markers, `{{1}}`, which it keeps, and are put back as
+they were; an answer that lost, repeated or moved one is turned down. It shows the correction under the field, what it
+changes marked word by word (`GrammarFix.changes`), with **Use It**, then **Undo**, while the reply is as it left it: it
+never changes your reply without you, nor sends it, and the field waits while it runs, with **Stop**. It uses Apple
+Intelligence, on this Mac (`OnDeviceModel`), unless you choose a Copilot model in its **▾**, from those summaries offer,
+which BriefBar keeps (`ado.grammar.model`): then the Copilot CLI gets the reply, as a summary does, with no tools, in a
+session of its own, "BriefBar grammar fix" (`CopilotSummarizer`), one premium request each time, which the field says.
+Where Apple Intelligence can't run, or is turned off, it says so, and offers the Copilot models (`GrammarFixer`): what it
+can't do never goes to Copilot by itself. The demo makes its corrections up (`GrammarFix.madeUp`), and runs no model.
+
+`--render` draws, in the demo, Reply open, with Fix Grammar's suggestion, once used, with Apple Intelligence turned off and
+with a Copilot model chosen; a reply and a status that couldn't be made; then, from lists of their own with them made as
+the demo makes them, a thread replied to and resolved, and one set to Won't Fix; and the setting, as Settings shows it
+(`ThreadChangesPreview`, `threadChangeRenderings`).
 
 #### The code comments are on
 
@@ -3144,6 +3210,9 @@ when BriefBar does.
   `AzureDevOpsCore` and `GitHubCore` use networking APIs, and only `BriefBarCore` starts programs. It
   also fails if those stop using them, since the check could no longer tell. It reads BriefBar's own
   modules, the updater's included, not Sparkle, whose requests are only for updates.
+- `WriteTests` checks that the only changes BriefBar can make in Azure DevOps are those `ADOWrite` lists, each as it's
+  sent, and that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET
+  ([Replying and setting a thread's status](#replying-and-setting-a-threads-status)).
 - `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar has
   no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the updater
   has its own identity, the one entitlement, the same signature as BriefBar, and Sparkle in its own
