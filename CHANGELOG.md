@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.14.0 - 2026-11-04
 
 - **See the order your pull requests merge in, By Mission.** Turn on **Pull Request Order** in Settings, and the
   window's Pull Requests pages, Azure DevOps' and GitHub's, can list them **By Mission**: the pull requests that go
@@ -13,6 +13,10 @@
   get tools to tell BriefBar an order, and Copilot a skill that says when to. It never changes a pull request's status,
   What's Left or the menu bar. It's off until you turn it on; then GitHub also reads each pull request's base branch
   and its place in a stack, and Copilot which pull request each session opened, as their descriptions say.
+- **After this update, GitHub, Copilot and agents ask you once to look at what they read and get, and wait until you
+  have.** With Pull Request Order on, GitHub also reads each pull request's base branch, whether it comes from a fork,
+  its repository's default branch and its place in a stack, Copilot reads which pull request each session opened, and
+  agents get the tools to tell BriefBar an order.
 
 ## 0.13.0 - 2026-11-04
 
