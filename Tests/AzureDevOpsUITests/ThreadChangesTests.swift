@@ -96,7 +96,7 @@ import Testing
         #expect(try thread(store).comments.count == 3)
     }
 
-    /// A reply that fails keeps what you wrote, and the thread says why; one that may have gone isn't sent again as it is.
+    /// A reply that fails keeps what you wrote, and the thread says why; one that surely didn't go goes as you try again.
     @Test func aReplyThatFailsKeepsWhatYouWrote() async throws {
         let (store, changes, azure) = live()
         let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
@@ -109,19 +109,18 @@ import Testing
         changes.dismiss(threadKey)
         #expect(changes.state(of: threadKey) == nil)
 
-        // Gone after all, though Azure DevOps didn't answer in time: as the list reads it again, your last word there is the
-        // same reply, which isn't sent twice.
+        // Refused, it didn't go: it goes, with nothing read first.
         azure.fails = nil
-        var snapshot = DemoData.snapshot(now: store.now)
-        let index = try #require(snapshot.records.firstIndex { $0.id == key })
-        snapshot.records[index].details?.threads[0].comments.append(
-            ReviewComment(id: 3, author: DemoData.me, text: "Capped it.", publishedAt: store.now)
-        )
-        store.receive(snapshot)
-        let sent = azure.sent.count
+        var reads = 0
+        changes.readThreads = { _ in
+            reads += 1
+            return nil
+        }
         #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
-        #expect(azure.sent.count == sent)
+        #expect(reads == 0)
+        #expect(azure.sent.map(\.kind) == [.reply, .reply])
         #expect(changes.draft(threadKey).isEmpty)
+        #expect(try thread(store).comments.last?.markdown == "Capped it.")
     }
 
     /// A reply Azure DevOps didn't answer in time may have gone: it isn't sent again until its thread, read again for it,
@@ -160,6 +159,72 @@ import Testing
         #expect(azure.sent.count == sent)
         #expect(changes.draft(threadKey).isEmpty)
         #expect(changes.state(of: threadKey) == nil)
+    }
+
+    /// A reply that may have gone is found in its thread, read again, though someone else spoke after it: it isn't sent
+    /// twice.
+    @Test func aReplyThatWentIsFoundWhateverCameAfterIt() async throws {
+        let (store, changes, azure) = live()
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        changes.keep("Capped it.\r\nTested too.", for: threadKey)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply("Capped it.\r\nTested too.", to: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        var read = try thread(store)
+        let sam = try #require(read.comments.first { $0.author != DemoData.me }?.author)
+        read.comments.append(ReviewComment(id: 3, author: DemoData.me, text: "Capped it.\nTested too.", publishedAt: store.now))
+        read.comments.append(ReviewComment(id: 4, author: sam, text: "Thanks!", publishedAt: store.now))
+        let threads = [read]
+        changes.readThreads = { _ in threads }
+        #expect(await changes.reply("Capped it.\r\nTested too.", to: try thread(store), of: key))
+        #expect(azure.sent.count == 1)
+        #expect(changes.draft(threadKey).isEmpty)
+        #expect(changes.state(of: threadKey) == nil)
+    }
+
+    /// The same reply of yours from before the one that may have gone isn't it: read, the thread hasn't it, and it goes.
+    @Test func aReplyLikeOneYouSentBeforeIsntTakenForIt() async throws {
+        let (store, changes, azure) = live()
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        snapshot.records[index].details?.threads[0].comments.append(
+            ReviewComment(id: 3, author: DemoData.me, text: "Done.", publishedAt: store.now)
+        )
+        store.receive(snapshot)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply("Done.", to: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        let threads = [try thread(store)]
+        changes.readThreads = { _ in threads }
+        #expect(await changes.reply("Done.", to: try thread(store), of: key))
+        #expect(azure.sent.map(\.kind) == [.reply, .reply])
+    }
+
+    /// Turned off while a reply waits to go, as for a token, it never goes, and nor does the status after it; nothing says
+    /// it failed.
+    @Test func turnedOffWhileAReplyWaitsNothingGoes() async throws {
+        let (store, changes, azure) = live()
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        var waiting: CheckedContinuation<Void, Never>?
+        changes.send = { write in
+            await withCheckedContinuation { waiting = $0 }
+            try Task.checkCancellation()
+            return try azure.send(write)
+        }
+        let original = try thread(store)
+        let replying = Task { await changes.reply("Capped it.", then: .fixed, to: original, of: key) }
+        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        #expect(changes.isSending(threadKey))
+
+        changes.settings.makesChanges = false
+        try #require(waiting).resume()
+        #expect(await replying.value == false)
+        #expect(azure.sent.isEmpty)
+        #expect(changes.state(of: threadKey) == nil)
+        #expect(try thread(store).comments.count == 2)
+        #expect(try thread(store).status == original.status)
     }
 
     /// Read, a thread that hasn't the reply that may have gone gets it, once; and the next reply goes without reading it.
