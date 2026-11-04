@@ -14,7 +14,7 @@ For a quick tour and download, see the [README](../README.md).
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads and their statuses, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply you're writing |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads, their statuses, and pull requests' tags, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply you're writing |
 | **GitHub Copilot** | Which Copilot sessions are running, need you, or have finished or stopped; local CLI sessions when the app isn't installed; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's and CLI's own files under `~/.copilot` | Local Copilot session files | None for tracking; optional Copilot summaries send the selected work's details through the CLI, as described in [Privacy](#privacy) |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
 
@@ -449,6 +449,26 @@ is then one premium request, and sends your reply's text to GitHub Copilot, thro
 correction under the field, what it changes marked, with **Use It**; once you use it, **Undo** puts back what you wrote.
 It never changes your reply without you, and never sends it. Where Apple Intelligence is turned off or can't run, it says
 so, with **Choose a Model**. The demo changes only its own made-up pull requests, and sends nothing.
+
+**See and change a pull request's tags.** A pull request's tags show under its heading in its details, after its branch
+and who wrote it, as a work item's details show its own, in the order of their names: those of your pull requests and the
+ones you review come with the lists BriefBar reads anyway, and those of a pull request sent to you or that you watch are
+read on their own, one request, as its details show on screen. With **Make Changes in Azure DevOps** on, while it's open,
+**✕** on a tag removes it, and **+**, **Add Tag** while it has none, opens a field. As you type, it suggests the tags you
+added in that project, the latest first, then those on the pull requests BriefBar read there, the most used first, but
+the pull request's own: those whose names start with what you typed first, then those with a word that does, such as `eu`
+in `deploy-eu`, then those that have it anywhere, ignoring letter case. What you typed, when it's none of them, is a new
+tag, last. **↑** and **↓** choose one, **Return** or **Tab** adds it, or what you typed, and the field stays open for
+another; **Esc** or its **✕** closes it, and it's one at a time with Explain, Fix and Reply. BriefBar remembers the tags
+you add, up to 20 for each project, in its settings, to suggest them, until you turn the setting off. It doesn't suggest
+from Azure DevOps' own list of a project's tags, which it shares with work items and can hold many thousands, more than
+one request can read in time. The tags show what Azure DevOps answered, as it spells the tag in that project, as soon as
+it answers, and BriefBar reads them again, for anyone else's change meanwhile; nothing asks first, since a tag removed is
+added back the same way. When it can't, a sentence under them says why, such as **Azure DevOps says you may not change
+this pull request's tags**, **You're offline**, or that the pull request is completed or abandoned, with **Try Again**, or
+**Sign In…** when the Azure CLI isn't signed in. Without the setting, or on a pull request that's completed or abandoned,
+they show without ✕ or +. The demo has made-up tags, such as `deploy-eu`, `deploy-us` and `hotfix`, changes only those,
+and sends nothing.
 
 **See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
 changes, folder by folder as Azure DevOps' Files page lists them, a click on a folder folding it: each with
@@ -1019,7 +1039,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
 | | Sprint | on its page: **Everyone** or **Just Mine**, which team's sprint, and how wide you drag a work item's details |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
-| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; and **Fix Grammar** in a reply, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies you haven't sent |
+| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **+** and **✕** on its tags, which add a tag or remove one; and **Fix Grammar** in a reply, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies you haven't sent, and the tags you added, which adding one suggests |
 | | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Move Viewed Sessions to Idle | off by default: when on, opening or viewing a finished or stopped session moves it to Idle |
@@ -1060,10 +1080,12 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 - **It only reads**: Notification Center's database through a read-only connection, Teams' own data
   in place (never copied, and without taking its lock), the Copilot app's files, Azure DevOps
   through GET requests, and GitHub through a query that only reads. It never changes any of them,
-  but for two things in Azure DevOps, only if you turn on **Make Changes in Azure DevOps**, and only
-  when you click them in a pull request's details: your reply in a comment thread, and a thread's
-  status. They go as you, with your Azure CLI sign-in, and nothing else does, never by itself, and not
-  from agents or the command line. What you write in a reply stays in memory only, until you send it.
+  but for these in Azure DevOps, only if you turn on **Make Changes in Azure DevOps**, and only when
+  you click them in a pull request's details: your reply in a comment thread, a thread's status, and a
+  tag you add to the pull request or remove. They go as you, with your Azure CLI sign-in, and nothing
+  else does, never by itself, and not from agents or the command line. What you write in a reply stays
+  in memory only, until you send it. The tags you add are kept in its settings, up to 20 for each
+  project, by the project's ID, to suggest them, until you turn the setting off.
   **Fix Grammar** corrects it with Apple Intelligence, on your Mac, unless you choose a Copilot model
   for it: then each fix sends the reply's text to GitHub Copilot, through the Copilot CLI, as one
   premium request, in a session of its own, "BriefBar grammar fix", which the CLI keeps.
@@ -1148,7 +1170,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
   read; which of your Azure DevOps pull requests you've seen or taken off Needs You, with each account,
   your organizations, and the pull requests you watch; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
-  sessions you've cleared; the links you added or hid, with Show Links; and its settings. Turning a source off deletes
+  sessions you've cleared; the links you added or hid, with Show Links; with Make Changes in Azure DevOps, the tags you
+  added to pull requests, up to 20 for each project, to suggest them; and its settings. Turning a source off deletes
   what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
   are on: your Azure DevOps pull requests and their comments, pipelines, sprint, a work item's
