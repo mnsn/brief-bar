@@ -2447,7 +2447,9 @@ each conflicts, how it would resolve each and what to check after; **Ask in the 
 (`PullRequestPrompt.askAboutConflicts`) asks it as a prompt instead, where it may read the target branch, but changes
 nothing. What it answers is about the branches as they were asked about (`CopilotQuestions.Question.head`): once someone
 pushes to the pull request or retargets it, the answer goes as the list reads it again, and what's still being asked
-stops (`CopilotQuestions.dismissStale`), so Ask More and Resolve never build on it. What Copilot does about them is said
+stops (`CopilotQuestions.dismissStale`), so Ask More and Resolve never build on it. Sent while the branches move, as
+the files are read again, one that would build on an answer about them as they were stops instead, and its composer
+says so: sent again, it goes without it (`CopilotAsking.quoting`). What Copilot does about them is said
 under them in a sentence, as on a thread: **Copilot is resolving the
 conflicts in ‘Rename the order status enum’**, **Resolved in ‘Rename the order status enum’, not pushed**, **Couldn't
 resolve them: …**. The demo makes its answer up (`DemoData.conflictsExplanation`), and runs nothing.
