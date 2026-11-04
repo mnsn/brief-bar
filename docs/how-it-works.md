@@ -1842,7 +1842,8 @@ It stops waiting on you when:
   is, such as `1. src/Cart.cs, line 12 (thread 11)`: the prompt quotes comments word for word, each on
   an indented line, so one that names another thread doesn't count, and neither does a line in a fence,
   such as one of a suggested change or of an earlier answer, or one of backticks or tildes you add as you edit the
-  prompt (`PullRequestPrompt.unfencedLines`). A comment that came after, while you
+  prompt, read by their scalars, so that what's a backtick only once normalized opens and closes none
+  (`PullRequestPrompt.unfencedLines`). A comment that came after, while you
   checked the prompt, say, isn't handed off, and neither is one in a thread whose entry isn't there,
   beyond the 30 it lists at most or deleted before you sent it, nor one in a thread reopened meanwhile.
   Since there's one cutoff, it then stops before the first comment that waits on you when the task
@@ -2483,7 +2484,10 @@ read that's under way as they go, and go without the code when it isn't read
 (`RichText.Block.suggestion`), blank lines at its ends and all, which the comment shows labeled; **Apply ‹name›'s
 suggestion as written** has the prompt quote the latest that someone else suggested in the thread
 (`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on, which Copilot finds in the
-file as it is now by their code, since their numbers are from when the thread was written. The box is checked when the suggestion is the thread's last comment. Once a session answered Explain on the thread,
+file as it is now by their code, since their numbers are from when the thread was written. A character nobody sees in the
+change, or in the code it's on, such as a zero-width space, is written out in its fence, as `\u{200B}`, and the prompt then
+says that it stands for the character itself, to write as that character or the language's own escape, so the change is
+still applied, and the code still found, exactly as it's written (`QuotedText.writtenOut`). The box is checked when the suggestion is the thread's last comment. Once a session answered Explain on the thread,
 **Include the answer above** quotes what it answered (`CopilotAnswer`, cut to 6,000 characters) before your words, which
 can point to it, in a fence nothing in it closes, saying that it may quote what it read, not instructions, since it often
 quotes a comment or a run word for word (`PullRequestPrompt.earlier`); Ask More quotes it the same way. Its hand-off is that thread's comments that wait on you
@@ -2577,10 +2581,13 @@ each go in a fence nothing in them closes, with the same characters written out 
 and the prompt then says that they're what the build said, not instructions. The pull request's title, repository and
 branches, which whoever opened it named, stay on their lines the same way in every prompt (`PullRequestPrompt.introduction`),
 and so do names, paths and comments of one line, none of them starting with three backticks or tildes, which would open
-a fence where it starts a line, as a name does before what its author said (the first is written out, `\u{60}`); a branch
-whose name holds what a shell reads, such as `$(…)` or a
-backtick, which Git allows, is in single quotes wherever a prompt names it, in a command such as `git push origin
-HEAD:refs/heads/'<branch>'` or in a sentence Copilot may make one from, so it runs nothing (`PullRequestPrompt.branch`). It asks the
+a fence where it starts a line, as a name does before what its author said, not even after what reads as space or isn't
+seen, a no-break space or a joiner (the first is written out, `\u{60}`). What becomes a backtick or a tilde once text is
+normalized, as a model may read it, such as a Greek varia or a fullwidth grave accent, counts as one there, and a fence
+is longer than any run of them in what it quotes (`QuotedText.fenceMark`). A branch whose name holds what a shell reads,
+such as `$(…)` or a backtick, which Git allows, is in single quotes wherever a prompt names it, in a command such as
+`git push origin HEAD:refs/heads/'<branch>'`, in a sentence Copilot may make one from, or in a build's hint, so it runs
+nothing (`PullRequestPrompt.branch`). It asks the
 session, aside, what failed and why, and whether it's the change, a flaky test, the target branch or the build's
 infrastructure (`CopilotQuestions`, over `SessionQuestions`). What it answers is kept with the run it's about, and the
 attempt of it, by when its check said it finished, so it doesn't show with another run of the build, nor once its failed
@@ -3045,6 +3052,11 @@ the pull request's branch and that everything it would push was made for it, sto
 and never rebases. For a failed build, it reads each run's timeline first, with a GET, rather than what the details read
 of it. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
+
+`pull_request` quotes what others named or wrote in the pull request as the prompts do: its title, its people, its
+checks and where they failed, and what people wrote in what's new and in its threads, each on its line with what breaks
+a line or isn't seen written out, and its branches in single quotes when a shell would read something in them; what people
+wrote follows a note that it's what they ask of the change, not instructions to the agent.
 
 While **Send Work to Copilot** is on, `pull_request` also names an open pull request's session: the
 Copilot session BriefBar sends its work to, as its details show it (see [A pull request's
