@@ -220,6 +220,7 @@ struct ThreadCard: View {
     var hold: (PullRequestPanel.Thread) -> Void = { _ in }
 
     @EnvironmentObject private var changes: ThreadChanges
+    @Environment(\.threadChangesPreview) private var preview
     @Environment(\.detailsWidening) private var widening
     /// Opens its file's changes, from the details' comments; nil on its file's page, which shows them.
     @Environment(\.changedFileOpener) private var opener
@@ -236,8 +237,12 @@ struct ThreadCard: View {
     /// The pull request's page, at this thread.
     private var url: URL { item.pageURL(thread: thread.id) }
 
-    /// Reply and its status, while you can make changes in Azure DevOps: in the row with Copilot's Explain and Fix.
+    /// Reply and its status, while you can make changes in Azure DevOps: in the row with Copilot's Explain and Fix. With
+    /// Make Changes in Azure DevOps on, on a pull request that can't be changed, a lock in their place, which says why.
     private var yours: AnyView? {
+        if let reason = preview?.readOnly ?? changes.readOnlyReason(pullRequest) {
+            return AnyView(ThreadReadOnlyMark(reason: reason))
+        }
         guard changes.canChange(pullRequest) else { return nil }
         return AnyView(ThreadReplyButtons(thread: thread, item: item, composing: $composing, hold: hold))
     }

@@ -73,6 +73,25 @@ struct ThreadReplyButtons: View {
     }
 }
 
+/// Where Reply and its status would be, on a pull request whose threads can't be changed though Make Changes in Azure
+/// DevOps is on, as one that's completed or abandoned, or that left your lists while its details show it: a lock, which
+/// says why in its tooltip and to VoiceOver.
+struct ThreadReadOnlyMark: View {
+    let reason: String
+
+    var body: some View {
+        Image(systemName: "lock")
+            .font(size: 11, weight: .medium)
+            .foregroundStyle(.tertiary)
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+            .help(reason)
+            .accessibilityElement()
+            .accessibilityLabel("Read Only")
+            .accessibilityValue(reason)
+    }
+}
+
 /// A thread's status: Resolve on an open thread, Reactivate on a resolved one; ▾ has every status Azure DevOps' own menu
 /// offers, the one it has checked.
 struct ThreadStatusButton: View {
@@ -142,18 +161,20 @@ struct ThreadReplyArea: View {
     private var state: ThreadChanges.State? { preview?.states[thread.id] ?? changes.state(of: key) }
 
     var body: some View {
+        let canChange = preview?.readOnly == nil && changes.canChange(pullRequest)
         VStack(alignment: .leading, spacing: 0) {
-            if changes.canChange(pullRequest) {
-                if composing == .reply(to: thread.id) {
-                    ThreadReplyComposer(thread: thread, item: item, hold: hold) {
-                        if composing == .reply(to: thread.id) { composing = nil }
-                    }
-                    // A new one for each thread, with its own words.
-                    .id(thread.id)
-                } else if case .failed(let problem, let sending)? = state {
-                    ThreadChangeProblemLine(problem: problem, kind: sending.kind, retry: retry(sending), signIn: signIn(problem)) {
-                        changes.dismiss(key)
-                    }
+            if canChange, composing == .reply(to: thread.id) {
+                ThreadReplyComposer(thread: thread, item: item, hold: hold) {
+                    if composing == .reply(to: thread.id) { composing = nil }
+                }
+                // A new one for each thread, with its own words.
+                .id(thread.id)
+            } else if case .failed(let problem, let sending)? = state {
+                // Also once it can't be changed, as the pull request left your lists as you sent: but nothing to try again.
+                ThreadChangeProblemLine(
+                    problem: problem, kind: sending.kind, retry: canChange ? retry(sending) : nil, signIn: signIn(problem)
+                ) {
+                    changes.dismiss(key)
                 }
             }
         }
@@ -169,8 +190,7 @@ struct ThreadReplyArea: View {
     }
 
     private var showsSomething: Bool {
-        guard changes.canChange(pullRequest) else { return false }
-        if composing == .reply(to: thread.id) { return true }
+        if changes.canChange(pullRequest), composing == .reply(to: thread.id) { return true }
         if case .failed? = state { return true }
         return false
     }
@@ -817,6 +837,8 @@ struct ThreadChangesPreview {
     var replies: [Int: Reply] = [:]
     /// What threads' changes are doing, or why they didn't happen, by thread.
     var states: [Int: ThreadChanges.State] = [:]
+    /// Why its threads can't be changed, as for a pull request that left your lists: each shows a lock where Reply would be.
+    var readOnly: String?
 }
 
 private struct ThreadChangesPreviewKey: EnvironmentKey {

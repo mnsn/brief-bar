@@ -428,7 +428,8 @@ off, unless the session has it already. VoiceOver hears what becomes of each.
 
 **Reply and set a thread's status.** With **Make Changes in Azure DevOps** on, in Azure DevOps' settings (off by
 default), each thread on an open pull request ends with **Reply** and its status, in the row with Explain and Fix, in the
-comments and on its file's page. **Reply** opens a field under the thread, in place, as Explain and Fix do, one at a time
+comments and on its file's page. On a pull request that's completed or abandoned, or that's no longer in your lists, a
+lock takes their place: point at it, or ask VoiceOver, to hear why. **Reply** opens a field under the thread, in place, as Explain and Fix do, one at a time
 with them: write in Markdown, Return starting a new line, then **Reply**, or ⌘Return, sends it to the thread in Azure
 DevOps, as you, and **Reply & Resolve**, or ⇧⌘Return, sends it and resolves the thread; on a resolved thread, **Reply &
 Reactivate** reactivates it. ✕ or Esc closes the field, and what you wrote stays, until you send it, while BriefBar runs,

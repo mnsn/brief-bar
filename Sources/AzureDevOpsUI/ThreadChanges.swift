@@ -97,11 +97,30 @@ final class ThreadChanges: ObservableObject {
 
     // MARK: What you can do
 
-    /// Whether you can change a pull request's threads: Make Changes in Azure DevOps is on, and it's open. In the demo too,
-    /// which changes only its made-up data.
+    /// Whether you can change a pull request's threads: Make Changes in Azure DevOps is on, and it's open in your lists as they
+    /// are now (`CopilotSending.isOpen`), not only as its details last saw it, which keep one that left them as it was. In the
+    /// demo too, which changes only its made-up data.
     func canChange(_ pullRequest: PullRequest?) -> Bool {
-        guard settings.makesChanges, let pullRequest else { return false }
-        return pullRequest.status == .active
+        guard settings.makesChanges, let pullRequest, let store else { return false }
+        return CopilotSending.isOpen(pullRequest.key, in: store)
+    }
+
+    /// Why a pull request's threads can't be changed, though Make Changes in Azure DevOps is on, for the tooltip and VoiceOver
+    /// of where Reply would be: nil when they can, and while it's off, when none of it shows.
+    func readOnlyReason(_ pullRequest: PullRequest?) -> String? {
+        guard settings.makesChanges, let pullRequest, !canChange(pullRequest) else { return nil }
+        let listed = store?.record(for: pullRequest.key)?.pullRequest
+        return (listed ?? pullRequest).status == .active ? Self.notListed : Self.closed
+    }
+
+    static let closed = "Azure DevOps takes no change to a completed or abandoned pull request."
+    static let notListed = "This pull request is no longer in your lists, so its threads can't be changed here."
+
+    /// Why a change can't go to a pull request now, as the list has it: nil when it can. One it doesn't have anymore says
+    /// so, rather than nothing.
+    private func refusal(_ pullRequest: PRKey, in store: PRStore) -> ADOWriteProblem? {
+        guard let record = store.record(for: pullRequest) else { return .notListed }
+        return record.pullRequest.status == .active ? nil : .closed
     }
 
     func state(of key: Key) -> State? { states[key] }
@@ -160,8 +179,12 @@ final class ThreadChanges: ObservableObject {
     func reply(_ text: String, then status: ThreadStatus? = nil, to thread: ReviewThread, of pullRequest: PRKey) async -> Bool {
         let key = Key(pullRequest: pullRequest, thread: thread.id)
         let markdown = Self.posted(text)
-        guard !markdown.isEmpty, !isSending(key), let store else { return false }
-        guard let record = store.record(for: pullRequest), canChange(record.pullRequest) else { return false }
+        guard !markdown.isEmpty, !isSending(key), let store, settings.makesChanges else { return false }
+        if let problem = refusal(pullRequest, in: store) {
+            fail(key, problem, .reply(then: status), pullRequest: pullRequest)
+            return false
+        }
+        guard let record = store.record(for: pullRequest) else { return false }
         let generation = generation, account = account
         // As the list read it last, which may have more than the view had; or, after a reply that may have gone, as Azure
         // DevOps has it now.
@@ -231,7 +254,12 @@ final class ThreadChanges: ObservableObject {
     /// Sets a thread's status, as its menu does: it can be set back the same way, so nothing asks first.
     func setStatus(_ status: ThreadStatus, of thread: ReviewThread, in pullRequest: PRKey, afterReply: Bool = false) async {
         let key = Key(pullRequest: pullRequest, thread: thread.id)
-        guard !isSending(key), let store, let record = store.record(for: pullRequest), canChange(record.pullRequest) else { return }
+        guard !isSending(key), let store, settings.makesChanges else { return }
+        if let problem = refusal(pullRequest, in: store) {
+            fail(key, problem, .status(status), pullRequest: pullRequest)
+            return
+        }
+        guard let record = store.record(for: pullRequest) else { return }
         let generation = generation, account = account
         states[key] = .sending(.status(status))
         let write = ADOWrite.setStatus(ThreadAddress(record.pullRequest, thread: thread.id), status)

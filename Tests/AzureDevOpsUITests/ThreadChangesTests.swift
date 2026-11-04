@@ -66,6 +66,51 @@ import Testing
         #expect(try thread(store).comments.count == 2)
     }
 
+    /// Nothing goes for a pull request your lists don't have anymore, though its details still show it as it was when it
+    /// left them, open: its threads are read-only, which says why, and a change that finds it so says so on the thread.
+    @Test func nothingGoesForAPullRequestThatLeftYourLists() async throws {
+        let (store, changes, azure) = live()
+        let shown = try #require(store.record(for: key))
+        let original = try thread(store)
+        var snapshot = DemoData.snapshot(now: store.now)
+        snapshot.records.removeAll { $0.id == key }
+        store.receive(snapshot)
+        #expect(store.record(for: key) == nil)
+        #expect(shown.pullRequest.status == .active)
+        #expect(!changes.canChange(shown.pullRequest))
+        #expect(changes.readOnlyReason(shown.pullRequest) == ThreadChanges.notListed)
+
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        changes.keep("Capped it.", for: threadKey)
+        #expect(await changes.reply("Capped it.", then: .fixed, to: original, of: key) == false)
+        #expect(changes.state(of: threadKey) == .failed(.notListed, .reply(then: .fixed)))
+        #expect(changes.draft(threadKey) == "Capped it.")
+        await changes.setStatus(.wontFix, of: original, in: key)
+        #expect(changes.state(of: threadKey) == .failed(.notListed, .status(.wontFix)))
+        #expect(azure.sent.isEmpty)
+
+        // Back in your lists, it can be changed again.
+        store.receive(DemoData.snapshot(now: store.now))
+        #expect(changes.canChange(store.record(for: key)?.pullRequest))
+        #expect(changes.readOnlyReason(store.record(for: key)?.pullRequest) == nil)
+    }
+
+    /// Nor for one that's completed or abandoned, which Azure DevOps takes no change to; and while the setting is off, none
+    /// of it shows, nor says why.
+    @Test func nothingGoesForACompletedPullRequest() async throws {
+        let (store, changes, azure) = live()
+        let done = try #require(store.records.first { $0.pullRequest.status != .active })
+        // A thread as its details would have it: what's refused is the pull request.
+        let doneThread = try thread(store)
+        #expect(!changes.canChange(done.pullRequest))
+        #expect(changes.readOnlyReason(done.pullRequest) == ThreadChanges.closed)
+        #expect(await changes.reply("Late.", to: doneThread, of: done.id) == false)
+        #expect(changes.state(of: ThreadChanges.Key(pullRequest: done.id, thread: doneThread.id)) == .failed(.closed, .reply(then: nil)))
+        #expect(azure.sent.isEmpty)
+        changes.settings.makesChanges = false
+        #expect(changes.readOnlyReason(done.pullRequest) == nil)
+    }
+
     /// A reply goes once, as you wrote it, in reply to the thread's first comment; it shows at once, as Azure DevOps answered,
     /// what you wrote goes, and the thread doesn't wait on you anymore.
     @Test func aReplyGoesOnceAndShowsAtOnce() async throws {
