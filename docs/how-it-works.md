@@ -329,7 +329,8 @@ background: once a list hides, or a refresh takes a line away, what's still wait
 It keeps what it writes in memory for ten minutes after the line was last on screen, never on disk or
 in the log. Without the model, or when it fails, a line keeps BriefBar's words, and
 the brief shows no ✨. `--render` keeps BriefBar's words, unless `BRIEFBAR_RENDER_SUMMARIES=1` makes it
-wait for the model.
+wait for the model, which then picks its likeliest words: the same line is worded the same way by each process
+that draws a part of the pictures (`make screenshots`), and each time.
 
 ### The Overview
 
