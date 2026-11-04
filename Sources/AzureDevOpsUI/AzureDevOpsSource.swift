@@ -224,15 +224,15 @@ package final class AzureDevOpsSource: BriefBarSource {
         pullRequestSessions = sessions
         let questions = CopilotQuestions(copilot: copilot)
         copilotQuestions = questions
-        // As the pull requests are read again: what Copilot took on of a build that a run passed after is over, so its fix
-        // doesn't come back as a later run fails; and what a session answered about a build's run, or attempt, that isn't
-        // the one its details list any more goes.
-        store.$items
+        // Each time the pull requests are read again, whether their rows changed or not, as when an optional build passed:
+        // what Copilot took on of a build that a run passed after is over, so its fix doesn't come back as a later run fails;
+        // and what a session answered about a build's run, or attempt, that isn't the one its details list any more goes.
+        store.refreshed
             .receive(on: DispatchQueue.main)
-            .sink { [weak store, weak copilot, weak questions] (items: [PRSnapshot]) in
+            .sink { [weak store, weak copilot, weak questions] in
                 MainActor.assumeIsolated {
                     guard let store else { return }
-                    let records = items.compactMap { store.record(for: $0.key) }
+                    let records = store.items.compactMap { store.record(for: $0.key) }
                     copilot?.endWorkOnBuildsThatPassed(in: records)
                     questions?.dismissStale(of: records)
                 }

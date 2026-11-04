@@ -497,14 +497,22 @@ extension CopilotTasksStore {
     /// Ends what Copilot took on of pull requests' builds that a run passed after: a fix of one, done or not, pushed or not,
     /// or a question about it asked in a session, is over once a run of it passes, and stays so once a later run fails,
     /// maybe for another reason, rather than coming back as ready to push. What each task and prompt took on of it before the
-    /// pass is let go (`CopilotRun.taken`, `SentPrompt.parts`): not while Copilot is at it, nor what it took on since.
+    /// pass is let go (`CopilotRun.taken`, `SentPrompt.parts`): not what Copilot is still at, nor what it took on since. A
+    /// pipeline that another of the pull request's policies runs is passed only once none of them still needs a fix, as
+    /// `PRRecord.partsToFix` has it.
     /// - Parameter records: the pull requests as the list read them last.
     func endWorkOnBuildsThatPassed(in records: [PRRecord]) {
         var passes: [(key: PRKey, part: PullRequestPart, at: Date)] = []
         for record in records {
-            for check in record.details?.checks ?? [] {
-                // A run that passed, or passed and expired since.
-                guard let part = check.part, check.needsNoFix, check.state != .notApplicable, let at = check.completedAt else { continue }
+            // Its policies couldn't be read: whether its builds passed isn't known.
+            guard let details = record.details, details.checksKnown else { continue }
+            var checksByPart: [PullRequestPart: [Check]] = [:]
+            for check in details.checks {
+                if let part = check.part { checksByPart[part, default: []].append(check) }
+            }
+            for (part, checks) in checksByPart where checks.allSatisfy(\.needsNoFix) {
+                // When it last passed, or passed and expired since: one that doesn't apply didn't run.
+                guard let at = checks.filter({ $0.state != .notApplicable }).compactMap(\.completedAt).max() else { continue }
                 passes.append((record.pullRequest.key, part, at))
             }
         }
@@ -512,10 +520,13 @@ extension CopilotTasksStore {
         let active = Set(entries.filter { $0.status.phase.isActive }.map(\.id))
         var runs = settings.copilotRuns
         var runsChanged = false
-        for index in runs.indices where !active.contains(runs[index].id) {
+        for index in runs.indices {
             guard let taken = runs[index].taken, let reference = runs[index].onPullRequest else { continue }
+            let isActive = active.contains(runs[index].id)
             let kept = taken.filter { (part: TakenPart) -> Bool in
-                !passes.contains { pass in
+                // What a task is at now stays; what it went on with, over since, as an earlier task's, doesn't.
+                if isActive, part.ended == nil { return true }
+                return !passes.contains { pass in
                     pass.part == part.part && part.since < pass.at && reference.matches(organization: pass.key.organization, id: pass.key.number)
                 }
             }

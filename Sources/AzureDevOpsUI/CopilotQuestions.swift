@@ -160,12 +160,13 @@ final class CopilotQuestions: ObservableObject {
     /// Dismisses what was asked about pull requests' builds that's no longer about one of their runs as the list read them
     /// last: a run a newer one replaced, as after a push, or another attempt of one, as when its failed jobs ran again under
     /// the same ID. What it answered isn't about the build as it is, and Ask More and Fix would build on it; what's still
-    /// being asked stops. A pull request whose builds weren't read keeps them.
+    /// being asked stops. A pull request whose builds weren't read, or whose policies couldn't be, keeps them.
     /// - Parameter records: the pull requests as the list read them last.
     func dismissStale(of records: [PRRecord]) {
         let listed = Dictionary(records.map { ($0.pullRequest.key, $0) }, uniquingKeysWith: { first, _ in first })
         for (id, question) in questions {
-            guard case .build = id.part, let checks = listed[id.pullRequest]?.details?.checks else { continue }
+            guard case .build = id.part, let details = listed[id.pullRequest]?.details, details.checksKnown else { continue }
+            let checks = details.checks
             let current = checks.contains { check in
                 check.part == id.part && check.buildId == id.run && question.isAbout(run: check.buildId, attempt: check.completedAt)
             }

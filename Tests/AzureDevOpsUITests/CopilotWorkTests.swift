@@ -215,6 +215,28 @@ import Testing
         settings.copilotRuns = [run(task, .fixBuild, startedAt: first, taken: [TakenPart(pipeline, since: first)])]
         store.endWorkOnBuildsThatPassed(in: [record])
         #expect(store.work(on: pipeline, of: key)?.isActive == true)
+        // But not what a task that's at a comment now went on with: its fix of the build, done before, is over.
+        settings.copilotRuns = [run(task, .fixComments, startedAt: later, taken: [
+            TakenPart(pipeline, since: first, ended: .finished), TakenPart(.thread(11), since: later),
+        ])]
+        store.endWorkOnBuildsThatPassed(in: [record])
+        #expect(settings.copilotRuns.first?.taken?.map(\.part) == [.thread(11)])
+        #expect(store.work(on: pipeline, of: key) == nil)
+        // Another policy that runs the same pipeline still fails: it's still to fix, as the bar has it.
+        settings.copilotRuns = [run(task, .fixBuild, startedAt: first, ended: .finished, taken: [TakenPart(pipeline, since: first)])]
+        var both = record
+        var failing = try #require(both.details?.checks[build])
+        failing.state = .failed
+        failing.buildId = 999
+        both.details?.checks.append(failing)
+        store.endWorkOnBuildsThatPassed(in: [both])
+        #expect(settings.copilotRuns.first?.taken?.map(\.part) == [pipeline])
+        #expect(both.partsToFix.contains(pipeline))
+        // Its policies couldn't be read: whether it passed isn't known.
+        var unknown = record
+        unknown.details?.checksKnown = false
+        store.endWorkOnBuildsThatPassed(in: [unknown])
+        #expect(settings.copilotRuns.first?.taken?.map(\.part) == [pipeline])
         // One that passed, then expired, as its target branch moved, passed.
         settings.copilotRuns = [run(task, .fixBuild, startedAt: first, ended: .finished, taken: [TakenPart(pipeline, since: first)])]
         record.details?.checks[build].state = .expired

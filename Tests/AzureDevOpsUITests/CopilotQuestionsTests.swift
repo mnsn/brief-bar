@@ -94,10 +94,15 @@ import Testing
         try await settle { questions.question(about: .thread(11), of: key)?.isAsking == false }
         questions.dismissStale(of: [record])
         #expect(questions.question(about: .build(31), run: 7, of: key) != nil)
-        // Its builds not read: kept.
+        // Its builds not read, or its policies, as when they're forbidden: kept.
         var unread = record
         unread.details = nil
         questions.dismissStale(of: [unread])
+        #expect(questions.question(about: .build(31), run: 7, of: key) != nil)
+        var forbidden = record
+        forbidden.details?.checks = []
+        forbidden.details?.checksKnown = false
+        questions.dismissStale(of: [forbidden])
         #expect(questions.question(about: .build(31), run: 7, of: key) != nil)
         // Its failed jobs ran again under the same ID.
         record.details?.checks[0].completedAt = finished.addingTimeInterval(300)

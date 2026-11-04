@@ -2340,9 +2340,10 @@ session, aside, what failed and why, and whether it's the change, a flaky test, 
 infrastructure (`CopilotQuestions`, over `SessionQuestions`). What it answers is kept with the run it's about, and the
 attempt of it, by when its check said it finished, so it doesn't show with another run of the build, nor once its failed
 jobs ran again under the same ID (`CopilotQuestions.Question.isAbout(run:attempt:)`); and each run is asked about on its
-own row, where two policies run the same pipeline (`CopilotQuestions.Key.run`). As the pull requests are read again, an
-answer about a run its details don't list any more, or about another attempt of one, goes, and stops while it's being
-asked, so that Ask More and Fix don't build on it (`CopilotQuestions.dismissStale(of:)`). **Ask in the Session** sends `PullRequestPrompt.askAboutBuild` instead,
+own row, where two policies run the same pipeline (`CopilotQuestions.Key.run`). Each time the pull requests are read
+again, an answer about a run its details don't list any more, or about another attempt of one, goes, and stops while it's
+being asked, so that Ask More and Fix don't build on it; not while its policies can't be read
+(`CopilotQuestions.dismissStale(of:)`). **Ask in the Session** sends `PullRequestPrompt.askAboutBuild` instead,
 which can read the run's whole log with the session's Azure DevOps tools. The demo makes its answer up
 (`DemoData.buildExplanation`).
 
@@ -2362,10 +2363,12 @@ push, or doesn't apply, or expired after it passed, which is to queue again, its
 it, and so does a pushed fix's once a run of the build failed, or failed and expired, after Copilot started to push, for
 you to fix it again (`CopilotWork.shows(onBuild:)`, `CopilotWork.takenAt`); one that failed, then expired, as when its
 target branch moved, is still to fix, and an unpushed fix of it stays (`Check.expiredFrom`, `Check.needsNoFix`); its fix isn't counted in the bar at the details'
-foot once the build passes (`PRRecord.partsToFix`). A pass ends it for good: as the pull requests are read again, what each
-task and prompt took on of a build that a run passed after, or passed and expired, is let go, unless Copilot is still at
-it, so that a later run that fails, maybe for another reason, doesn't bring its fix back; what Copilot took on of it since
-stays (`CopilotTasksStore.endWorkOnBuildsThatPassed(in:)`). Push & Reply ships it with the threads its session fixed, or alone, replying on no thread then
+foot once the build passes (`PRRecord.partsToFix`). A pass ends it for good: each time the pull requests are read again,
+whether their rows changed or not, what each task and prompt took on of a build that a run passed after, or passed and
+expired, is let go, so that a later run that fails, maybe for another reason, doesn't bring its fix back. What Copilot is
+still at stays, and so does what it took on since; a pipeline another of the pull request's policies runs is passed only
+once none of them needs a fix, and a pull request whose policies couldn't be read keeps it all
+(`CopilotTasksStore.endWorkOnBuildsThatPassed(in:)`). Push & Reply ships it with the threads its session fixed, or alone, replying on no thread then
 (`PullRequestPrompt.pushAndReply(_:workplace:threads:)`), and any Push & Reply in the session that fixed it, from the
 pull request's menu too, takes it along, so it says it's pushed once that's done.
 
