@@ -167,13 +167,38 @@ import Testing
     /// Made, but its answer can't be read: the answer says so, rather than that it failed, for the pull request to be read
     /// again instead.
     @Test func aChangeMadeWhoseAnswerCantBeReadIsMadeAllTheSame() async throws {
-        let server = StubServer()
-        server.on("/threads/12/comments") { _ in .json(["unexpected": true]) }
-        let answer = try await server.client().send(sample(.reply))
-        guard case .unreadable = answer else {
-            Issue.record("Expected an unreadable answer, got \(answer)")
-            return
+        // Any answer that says it was made, whatever it holds: not JSON, or nothing at all, never sends it again.
+        let answers: [StubServer.Reply] = [
+            .json(["unexpected": true]),
+            StubServer.Reply(status: 201, headers: [:], body: Data("<html>Created</html>".utf8)),
+            StubServer.Reply(status: 200, headers: ["Content-Type": "text/plain"], body: Data()),
+            StubServer.Reply(status: 204, headers: [:], body: Data()),
+        ]
+        for reply in answers {
+            let server = StubServer()
+            server.on("/threads/12/comments") { _ in reply }
+            let answer = try await server.client().send(sample(.reply))
+            guard case .unreadable = answer else {
+                Issue.record("Expected an unreadable answer for \(reply.status), got \(answer)")
+                continue
+            }
+            #expect(server.requests.count == 1, "\(reply.status)")
         }
+    }
+
+    /// A change called off before it goes, as when Make Changes in Azure DevOps is turned off while a token comes, never
+    /// goes.
+    @Test func aChangeCalledOffBeforeItGoesNeverGoes() async throws {
+        let server = StubServer()
+        server.on("/threads/12") { _ in .json(Fixture.thread(12, comments: [], status: "fixed", published: t(0))) }
+        let client = server.client()
+        let write = sample(.setStatus)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await client.send(write)
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(server.requests.isEmpty)
     }
 
     /// A change goes only where it's sent, as a read does.
