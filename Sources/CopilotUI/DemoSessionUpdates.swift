@@ -3,8 +3,8 @@ import Foundation
 
 /// What the Copilot demo's sessions tell BriefBar, as if they had, with Updates from Copilot Sessions, which the demo has
 /// on (scripts/make-copilot-demo-data.swift), kept in memory:
-/// - "Fix flaky checkout test", at work, is on the sprint's 5124, "Update the checkout analytics events": its capsule shows
-///   on the task's line in the Sprint, and the task's details list it.
+/// - "Fix flaky checkout test", at work, is on the sprint's 5105, "Test saving with an empty cart": its capsule shows on the
+///   task's line in the Sprint, and the task's details list it.
 /// - "Add dark mode to settings", which asks you something, is on !4093, the account page's, which it opened; and "Add dark
 ///   mode to emails", at work, on !4118, which it opened: By Mission's Map says so at their lanes in "Roll out dark mode",
 ///   and their nodes have the mark of a session at work on them.
@@ -22,7 +22,7 @@ enum DemoSessionUpdates {
             return report
         }
         return [
-            report(checkout, [.workItem(organization: organization, id: 5124)], minutesAgo: 6),
+            report(checkout, [.workItem(organization: organization, id: 5105)], minutesAgo: 6),
             report(settings, [.pullRequest(organization: organization, number: 4093)], minutesAgo: 8),
             report(emails, [.pullRequest(organization: organization, number: 4118)], minutesAgo: 4),
         ]

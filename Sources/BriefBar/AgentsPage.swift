@@ -1163,15 +1163,10 @@ private struct SessionUpdatesRow: View {
 enum SessionUpdatesText {
     static let title = "Updates from Copilot Sessions"
     static let explanation = """
-        Copilot sessions can tell BriefBar the work items and pull requests they're working on, the pull requests they \
-        opened, and what they just changed in Azure DevOps. With Show Links on, BriefBar shows each session on what it's \
-        working on, in the Sprint, on your pull requests and in their details; with Pull Request Order on, a pull request \
-        a session opened joins its lane in By Mission. When a session says it changed something in Azure DevOps, BriefBar \
-        reads it again then, rather than at its next refresh: what it reads anyway, at most every 30 seconds. It keeps \
-        references only, and only what Azure DevOps can't tell it: what each session works on, until it says it stopped, \
-        it's archived or it's been idle for a day; and the pull requests it opened, for 30 days. Sessions get the tools as \
-        they start, and Copilot gets a skill that says when to use them. They change Azure DevOps with their own tools: \
-        BriefBar gives them no way to. Turning it off forgets what they told.
+        Sessions tell BriefBar what they're working on, which Show Links and By Mission then show, and what they changed \
+        in Azure DevOps, which BriefBar reads again then, at most every 30 seconds. It keeps references only, until a \
+        session stops, is archived or idles for a day, or you turn this off. Sessions change Azure DevOps with their own \
+        tools, never through BriefBar.
         """
 }
 

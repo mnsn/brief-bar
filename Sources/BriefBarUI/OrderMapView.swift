@@ -151,8 +151,9 @@ struct OrderMapGrid: View {
                         Text(working.text)
                             .font(size: 10, weight: .medium)
                             .foregroundStyle(working.color)
-                            .lineLimit(1)
+                            .lineLimit(2)
                             .truncationMode(.tail)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .frame(width: metrics.label - 12 * textScale, height: laneHeight, alignment: .leading)

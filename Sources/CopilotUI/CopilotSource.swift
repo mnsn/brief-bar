@@ -73,8 +73,7 @@ package final class CopilotSource: BriefBarSource {
     package func start() {
         store.start()
         tellStories()
-        // The demo's sessions tell BriefBar what they work on, as if they had, in memory.
-        if services.isDemo { services.sessionUpdates.tellDemo(DemoSessionUpdates.reports(now: Date())) }
+        tellDemoUpdates()
         // After the change: a @Published value emits before it's set.
         services.links.$isOn.removeDuplicates().map { _ in () }
             .merge(with: services.pullRequestOrder.$isOn.removeDuplicates().map { _ in () })
@@ -352,11 +351,18 @@ package final class CopilotSource: BriefBarSource {
             store.start()
             return
         }
+        tellDemoUpdates()
         let state = SessionEngine.loadOnce(paths: paths, links: readsLinks)
         rendered = state
         store.receive(state)
-        publishLinks()
-        publishOrder()
+        // With what the demo's sessions told, which publishes the links and the order too.
+        sessionUpdatesChanged()
+    }
+
+    /// The demo's sessions tell BriefBar what they work on, as if they had, in memory.
+    private func tellDemoUpdates() {
+        guard services.isDemo else { return }
+        services.sessionUpdates.tellDemo(DemoSessionUpdates.reports(now: Date()))
     }
 
     /// The list again with each option that changes what it shows turned on, unless it's on already: Show Relayed
