@@ -725,7 +725,7 @@ final class PRStore: ObservableObject {
     /// Azure DevOps answered it: it shows at once, and the pull request is read again, so Needs You, what's left, the brief
     /// and the counts follow it. In the demo, which reads nothing, the made-up change stays in its made-up data while it runs.
     func changed(_ key: PRKey, by change: ThreadChange) {
-        madeChanges[key, default: []].append(change)
+        madeChanges[key] = Self.adding(change, to: madeChanges[key] ?? [])
         state.records = Self.applying(madeChanges, to: state.records)
         recompute()
         refreshed.send()
@@ -738,6 +738,19 @@ final class PRStore: ObservableObject {
     func readAgain(_ key: PRKey) {
         guard mode == .live, let engine else { return }
         Task { await engine.readAgain(key) }
+    }
+
+    /// A pull request's changes with another: a status it sets replaces any set before on that thread, whose comments stay,
+    /// so that a status set back, as Reactivate after Resolve, isn't undone by the one before it until a snapshot has both.
+    static func adding(_ change: ThreadChange, to made: [ThreadChange]) -> [ThreadChange] {
+        guard change.status != nil else { return made + [change] }
+        let kept = made.compactMap { earlier -> ThreadChange? in
+            guard earlier.thread == change.thread, earlier.status != nil else { return earlier }
+            var earlier = earlier
+            earlier.status = nil
+            return earlier.comments.isEmpty ? nil : earlier
+        }
+        return kept + [change]
     }
 
     /// The pull requests with the changes made to their threads.

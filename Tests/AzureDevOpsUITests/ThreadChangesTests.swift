@@ -200,6 +200,26 @@ import Testing
         #expect(PRStore.pending([key: [change]], in: records.filter { $0.id != key }).isEmpty)
     }
 
+    /// A status set back, as Reactivate after Reply & Resolve, replaces the one before it, whose reply stays: a list that
+    /// has the thread active is done with both statuses, and keeps the reply until it has it too.
+    @Test func aStatusSetBackReplacesTheOneBefore() throws {
+        let reply = ReviewComment(id: 3, author: DemoData.me, text: "Done", publishedAt: Date())
+        let resolved = ThreadChange(thread: 11, comments: [reply], status: "fixed")
+        let reactivated = ThreadChange(thread: 11, status: "active")
+        let elsewhere = ThreadChange(thread: 12, status: "fixed")
+        let made = PRStore.adding(reactivated, to: PRStore.adding(resolved, to: [elsewhere]))
+        #expect(made == [elsewhere, ThreadChange(thread: 11, comments: [reply]), reactivated])
+        // A status alone, set back, is gone.
+        #expect(PRStore.adding(reactivated, to: [ThreadChange(thread: 11, status: "fixed")]) == [reactivated])
+
+        // Read with the thread active, as it was: only the reply is left. (The pull request has no thread 12, whose change is
+        // done with as one that changes nothing.)
+        let records = DemoData.records(now: Date())
+        #expect(PRStore.pending([key: made], in: records) == [key: [ThreadChange(thread: 11, comments: [reply])]])
+        let shown = PRStore.applying([key: made], to: records)
+        #expect(shown.first { $0.id == key }?.details?.threads.first { $0.id == 11 }?.status == "active")
+    }
+
     // MARK: Fix Grammar
 
     @Test func fixGrammarCorrectsWithTheModelYouChose() async {
