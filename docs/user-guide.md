@@ -491,7 +491,8 @@ deleted on main**, or **Renamed to order-statuses.md on rename-order-status, and
 One someone resolved in Azure DevOps, which hasn't committed it yet, says so. Click a file to see what the pull
 request changed in it, as from **Files**, and **‹** comes back; a folder, which one branch has where the other has a
 file, opens in Azure DevOps. **↗** opens the pull request in Azure DevOps, to resolve them there. With Send Work to Copilot on, under them, **✨ Explain** asks the session that worked on the pull
-request why its files conflict and how it would resolve each, aside, as for a comment, and, on your own pull request,
+request why its files conflict and how it would resolve each, aside, as for a comment, until someone pushes to it or
+retargets it, and, on your own pull request,
 **Resolve** has Copilot merge the target branch in and resolve them, as you say in **Tell Copilot how (optional)**,
 through the same composer in place, where it goes one **▾** away. Its prompt, and that of **Resolve Conflicts with
 Copilot…** in the pull request's menu while its details show it, lists the files and how each conflicts. It may commit

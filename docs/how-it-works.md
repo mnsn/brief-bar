@@ -2262,7 +2262,9 @@ BriefBar's extension, or copied for you to paste (`CopilotTasksStore.deliver`); 
 is the CLI's, which picks the fork's ID, so the send goes by one of BriefBar's until the fork is made, then by the
 fork's; a fork of one of the app's is the app's, through the extension; and a new session gets a worktree of the clone
 BriefBar knows, or else the Send to Copilot window opens, to choose one. **Edit the Whole Prompt…**, last in ▾, opens
-that window with the prompts, at the place you chose (`ComposerStart`). **Esc** closes a composer in place before the
+that window with the prompts, at the place you chose (`ComposerStart`), once what they quote is read, as a send waits
+for it. A pull request that left your lists while a send waited, as merged or abandoned, gets nothing, and its composer
+says so (`CopilotSending.isListed`). **Esc** closes a composer in place before the
 details it's in (`InlineComposerOpen`). What a composer sends is called off as it closes, with ✕ or **Esc**, as another
 opens, or as its page goes, with the details or for another pull request, file or page, though not as its card scrolls
 out of sight in a file's diff (`CopilotDrafts.sends`): a prompt no session took yet is taken back, as when the Send to
@@ -2438,7 +2440,10 @@ on you in Needs You. **Explain** (`PullRequestPrompt.explainConflicts`) asks the
 why they conflict: what the pull request changed in each file, what the target branch likely changed there, from how
 each conflicts, how it would resolve each and what to check after; **Ask in the Session**
 (`PullRequestPrompt.askAboutConflicts`) asks it as a prompt instead, where it may read the target branch, but changes
-nothing. What Copilot does about them is said under them in a sentence, as on a thread: **Copilot is resolving the
+nothing. What it answers is about the branches as they were asked about (`CopilotQuestions.Question.head`): once someone
+pushes to the pull request or retargets it, the answer goes as the list reads it again, and what's still being asked
+stops (`CopilotQuestions.dismissStale`), so Ask More and Resolve never build on it. What Copilot does about them is said
+under them in a sentence, as on a thread: **Copilot is resolving the
 conflicts in ‘Rename the order status enum’**, **Resolved in ‘Rename the order status enum’, not pushed**, **Couldn't
 resolve them: …**. The demo makes its answer up (`DemoData.conflictsExplanation`), and runs nothing.
 

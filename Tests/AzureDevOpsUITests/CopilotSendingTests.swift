@@ -64,6 +64,31 @@ import Testing
         #expect(settings.copilotRuns.isEmpty)
     }
 
+    /// A pull request that left your lists while a send waited, as merged or abandoned, gets nothing: no task, no prompt.
+    @Test func nothingGoesForAPullRequestNoLongerListed() async throws {
+        let prs = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        await prs.loadOnce()
+        let listed = try #require(prs.items.first { prs.record(for: $0.key)?.role == .author })
+        var record = try #require(prs.record(for: listed.key))
+        record.pullRequest.key = PRKey(listed.key.organization, 9_999)
+        var item = listed
+        item.key = record.pullRequest.key
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        copilot.useEnvironment(["COPILOT_HOME": "/nonexistent"])
+        copilot.appHomeForTests = URL(fileURLWithPath: "/nonexistent/copilot-app", isDirectory: true)
+        let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
+        #expect(!sending.isListed)
+        let fix = CopilotSending.Fix(prompts: ("Resolve them.", "Resolve them."), action: .resolveConflicts, parts: [.conflicts], handOff: nil)
+        #expect(await sending.fix(fix, to: .newSession, choice: nil) == .notSent(CopilotSending.pullRequestGone))
+        #expect(await sending.explainAsPrompt("Why?", about: .conflicts, to: appChoice(app)) == .notSent(CopilotSending.pullRequestGone))
+        #expect(copilot.pending.isEmpty)
+        #expect(settings.copilotRuns.isEmpty)
+        // Listed, it goes on.
+        #expect(CopilotSending(item: listed, record: try #require(prs.record(for: listed.key)), store: prs, copilot: copilot, session: nil).isListed)
+    }
+
     @Test func theSessionThatWorkedOnItLeadsThenItsForkAndANewSession() {
         let picked = appChoice(app)
         let pullRequest = session(picked, candidates: [picked, taskChoice()], others: [appChoice(elsewhere, reasons: [])])

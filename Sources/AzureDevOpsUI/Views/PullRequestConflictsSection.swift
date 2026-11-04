@@ -364,7 +364,11 @@ private struct ConflictsCopilotActions: View {
     }
 
     private var question: CopilotQuestions.Question? {
-        preview?.question(about: part) ?? questions.question(about: part, of: item.key)
+        if let preview = preview?.question(about: part) { return preview }
+        // Not one asked before a push or a retarget, which the list's next read dismisses: they conflict otherwise now.
+        guard let question = questions.question(about: part, of: item.key) else { return nil }
+        if let asked = question.head, let record, PullRequestFilesStore.Head(record.pullRequest) != asked { return nil }
+        return question
     }
 
     /// No Copilot session goes with the pull request, as its line found them: Explain has nobody to ask.
@@ -622,6 +626,7 @@ private struct ConflictsComposer: View {
         }
         return CopilotAsking(
             ask: ask, part: .conflicts, action: .resolveConflicts, prepare: prepare,
+            head: { current().map { PullRequestFilesStore.Head($0.record.pullRequest) } },
             fix: { how, answer in
                 guard let now = current() else {
                     return CopilotSending.Fix(prompts: ("", ""), action: .resolveConflicts, parts: [], handOff: nil)

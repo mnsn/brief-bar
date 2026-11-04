@@ -278,12 +278,18 @@ import Testing
         let written = Task { await store.copilotPrompts(.resolveConflicts, for: record) }
         try await Task.sleep(for: .milliseconds(30))
         await reader.release()
-        let prompts = await written.value.prompts
+        let prompts = try #require(await written.value).prompts
         #expect(prompts.worktree.contains("1. src/c1.cs: changed on both branches"))
         #expect(prompts.session.contains("1. src/c1.cs: changed on both branches"))
         // Without a store that reads them, it goes without.
         let alone = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
-        #expect(!(await alone.copilotPrompts(.resolveConflicts, for: record)).prompts.worktree.contains("Azure DevOps lists"))
+        let without = try #require(await alone.copilotPrompts(.resolveConflicts, for: record))
+        #expect(!without.prompts.worktree.contains("Azure DevOps lists"))
+        // Gone from the list while it waited, as merged or abandoned: nothing opens.
+        store.conflicts = { _ in nil }
+        #expect(await store.copilotPrompts(.resolveConflicts, for: record) == nil)
+        // Nor does the list matter to what doesn't list the conflicts.
+        #expect(await store.copilotPrompts(.review, for: record) != nil)
     }
 
     /// A prompt sent while the files are read, as from Resolve, Explain or Ask in the Session, is written for the pull

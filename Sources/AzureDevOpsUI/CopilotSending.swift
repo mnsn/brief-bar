@@ -185,6 +185,8 @@ struct CopilotSending {
     func fix(_ fix: Fix, to destination: CopilotDestination, choice: SessionChoice?) async -> Outcome {
         guard copilot.canSend, copilot.isOn else { return .notSent(CopilotTasksStore.cantSendNow) }
         guard !Task.isCancelled else { return .notSent(Self.calledOff) }
+        // Gone from your lists while it waited for what its prompts quote, as merged or abandoned: nothing goes.
+        guard isListed else { return .notSent(Self.pullRequestGone) }
         let about = SentPrompt.About(pullRequest: item.key, purpose: .fix, parts: fix.parts)
         let subject = TaskSubject.pullRequest(task, fix.action)
         let options = copilot.settings.copilotOptions
@@ -239,6 +241,7 @@ struct CopilotSending {
     /// own history, where it reads the code too, but changes nothing.
     func explainAsPrompt(_ prompt: String, about part: PullRequestPart, to choice: SessionChoice) async -> Outcome {
         guard copilot.canSend, copilot.isOn else { return .notSent(CopilotTasksStore.cantSendNow) }
+        guard isListed else { return .notSent(Self.pullRequestGone) }
         let about = SentPrompt.About(pullRequest: item.key, purpose: .explain, parts: [part])
         return Self.outcome(await copilot.deliver(prompt, to: choice, about: about))
     }
@@ -257,6 +260,10 @@ struct CopilotSending {
         )
     }
 
+    /// Whether your lists have the pull request still: one that left them, as merged or abandoned, gets nothing more.
+    var isListed: Bool { store.record(for: item.key) != nil }
+
+    static let pullRequestGone = "This pull request is no longer in your lists, so nothing went."
     static let gone = "BriefBar can't find that session now. Choose another."
     /// Its composer closed before it went.
     static let calledOff = "It was called off before it went."
