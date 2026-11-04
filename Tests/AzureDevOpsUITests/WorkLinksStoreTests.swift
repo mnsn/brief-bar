@@ -344,7 +344,7 @@ import Testing
         #expect(parts.map(\.label) == ["Description", "Comment threads"])
         #expect(parts[0].value.hasPrefix("Payments that fail for a moment, with a timeout or a 503, are tried again"))
         #expect(parts[0].value.contains("\nTesting\n• Unit tests for the backoff schedule"))
-        #expect(parts[1].value.hasPrefix("Unresolved (1):\nYou on src/PaymentsClient.cs:88: I went with exponential backoff"))
+        #expect(parts[1].value.hasPrefix("Unresolved (2):\nYou on src/PaymentsClient.cs:88: I went with exponential backoff"))
         #expect(parts[1].value.contains(" — Sam Rivera: Could we cap the backoff at 30 seconds?"))
         // One without a description or a comment; a teammate's, which the lists don't show, as made up.
         let renamed = ItemRef.pullRequest(organization: organization, number: 4079)

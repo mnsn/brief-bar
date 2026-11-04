@@ -1,6 +1,6 @@
 #!/bin/bash
 # Imports the release certificate into a new keychain, for the release workflow's approved job, puts the
-# keychain on the keychain search list, where codesign on macOS 15 and 26 looks, and prints its path. The
+# keychain on the keychain search list, where codesign looks, and prints its path. The
 # certificate comes from the environment: RELEASE_CERTIFICATE_P12 (base64 of a PKCS #12 file) and
 # RELEASE_CERTIFICATE_PASSWORD, the release environment's secrets (see scripts/make-release-keys.sh).
 #   scripts/import-release-identity.sh [folder]   (default: a new temporary folder that only you can read)

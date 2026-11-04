@@ -69,20 +69,27 @@ enum PullRequestTasks {
     /// The prompts for an action, for both places Copilot may work: a worktree of BriefBar's, for a new session or an
     /// earlier task's; and wherever a session that's there already works, such as one of the Copilot app's. A failed
     /// build's errors are read once, for both.
-    static func prompts(_ action: PullRequestAction, for record: PRRecord, client: ADOClient?) async -> (worktree: String, session: String) {
+    /// - Parameter threads: for Push & Reply, the threads the fixes it ships took on, which it replies on alone.
+    static func prompts(
+        _ action: PullRequestAction, for record: PRRecord, client: ADOClient?, threads: [Int]? = nil
+    ) async -> (worktree: String, session: String) {
         let failures = action == .fixBuild ? await reports(for: record, client: client) : []
-        return (prompt(action, for: record, failures: failures, workplace: .worktree), prompt(action, for: record, failures: failures, workplace: .agent))
+        return (
+            prompt(action, for: record, failures: failures, workplace: .worktree, threads: threads),
+            prompt(action, for: record, failures: failures, workplace: .agent, threads: threads)
+        )
     }
 
     private static func prompt(
-        _ action: PullRequestAction, for record: PRRecord, failures: [FailedBuildReport], workplace: PullRequestPrompt.Workplace
+        _ action: PullRequestAction, for record: PRRecord, failures: [FailedBuildReport], workplace: PullRequestPrompt.Workplace,
+        threads: [Int]? = nil
     ) -> String {
         switch action {
         case .fixComments: return PullRequestPrompt.fixComments(record, workplace: workplace)
         case .fixBuild: return PullRequestPrompt.fixBuild(record, failures: failures, workplace: workplace)
         case .resolveConflicts: return PullRequestPrompt.resolveConflicts(record, workplace: workplace)
         case .review: return PullRequestPrompt.review(record, workplace: workplace)
-        case .pushAndReply: return PullRequestPrompt.pushAndReply(record, workplace: workplace)
+        case .pushAndReply: return PullRequestPrompt.pushAndReply(record, workplace: workplace, threads: threads)
         }
     }
 

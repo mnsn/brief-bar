@@ -1,10 +1,9 @@
 name: CI
 
 # On pushes to main that change more than docs and BriefBar for Windows, on pull requests, and when started by hand.
-# Builds and tests on the current macOS, packages the Apple silicon app and signs its update the way a release does.
-# Only on main does it also build and test on the oldest supported macOS, whose Xcode 16 SDK has no FoundationModels,
-# and run the package there, so a pull request waits for one runner instead of three. A pull request that changes only
-# BriefBar for Windows (windows/ and its workflow) builds nothing here, but its check still passes.
+# Builds and tests on macOS 26, the oldest macOS BriefBar supports, packages the Apple silicon app, signs its update
+# the way a release does and installs an update through its updater. A pull request that changes only BriefBar for
+# Windows (windows/ and its workflow) builds nothing here, but its check still passes.
 on:
   # Not for a push that changes only BriefBar for Windows: each run on main builds the Mac app, so a newer run that
   # cancels an older one builds everything that one would have.
@@ -59,9 +58,8 @@ jobs:
     runs-on: ${{ needs.changes.outputs.mac == 'false' && 'ubuntu-latest' || matrix.os }}
     timeout-minutes: 40
     strategy:
-      fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.ref == 'refs/heads/main' && '["macos-15", "macos-26"]' || '["macos-26"]') }}
+        os: [macos-26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.changes.outputs.mac != 'false'
@@ -99,7 +97,7 @@ jobs:
         if: needs.changes.outputs.mac != 'false'
         run: make demo-check
 
-      # On both versions of macOS on main, since it's macOS that enforces what keeps the keys safe.
+      # It's macOS that enforces what keeps the keys safe, so this checks it here, in throwaway keychains.
       - name: Check the signing keys' protection
         if: needs.changes.outputs.mac != 'false'
         run: make signing-key-check
@@ -142,40 +140,9 @@ jobs:
       # The release workflow builds on macos-26 too, so this is what a release would contain, apart from the
       # certificate.
       - name: Upload the package
-        if: needs.changes.outputs.mac != 'false' && matrix.os == 'macos-26'
+        if: needs.changes.outputs.mac != 'false'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: BriefBar
           path: build/release/
           if-no-files-found: error
-
-  run-package:
-    name: Run the package (macos-15)
-    needs: [changes, build]
-    # On main only, like the macOS 15 build, after it built the package; pull requests skip it.
-    if: ${{ !cancelled() && needs.build.result == 'success' && github.ref == 'refs/heads/main' && needs.changes.outputs.mac != 'false' }}
-    # The oldest supported macOS, on Apple silicon.
-    runs-on: macos-15
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: BriefBar
-          path: build/release
-
-      - name: Unzip the app
-        run: |
-          (cd build/release && shasum -a 256 -c BriefBar.zip.sha256)
-          ditto -x -k build/release/BriefBar.zip build
-
-      # Launches it without FoundationModels, starts its updater, which loads Sparkle under the hardened
-      # runtime, and runs the demo check.
-      - name: Check the app
-        run: ./scripts/check-app.sh build/BriefBar.app
-
-      - name: Check the updater's isolation
-        run: ./scripts/test-updater-isolation.sh build/BriefBar.app

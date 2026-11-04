@@ -51,12 +51,18 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// its own (`CopilotLauncher.Request.forking`): its ID, to say so, and not to read anything by, unless it's checked to be
     /// a session's. Nil otherwise, as runs that BriefBar kept before it had this were.
     public var forkedFrom: String?
+    /// The comment threads of its pull request it took on, by their IDs, each with when: one at a time with Fix, those that
+    /// waited on you with Fix Comments, and those its prompt listed with Push & Reply. Going on with a session whose changes
+    /// aren't pushed keeps those it took on before, with how that went (`threads(goingOnWith:on:taking:for:at:)`), so each
+    /// thread can say what became of it. Nil for a task that took on none, and for runs that BriefBar kept before it had
+    /// this.
+    public var threads: [TakenThread]?
 
     public init(
         id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
         ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil,
-        forkedFrom: String? = nil
+        forkedFrom: String? = nil, threads: [TakenThread]? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -72,6 +78,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.stoppedByYou = stoppedByYou
         self.isAppSession = isAppSession
         self.forkedFrom = forkedFrom
+        self.threads = threads
     }
 
     /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a
@@ -111,6 +118,53 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// What Copilot printed, in BriefBar's folder for that.
     public func output(in folder: URL) -> URL {
         folder.appendingPathComponent("\(id).log")
+    }
+
+    /// The threads a task keeps once it goes on with `previous`'s session, or starts in a session of its own when that's
+    /// nil, for `action`, at `now`: those `previous` had, with how it ended, and only on the same pull request, since a
+    /// thread's ID is its pull request's own; then `taken`, which it takes on now, in their place. After a fix, those whose
+    /// changes aren't pushed; after a Push & Reply, those too, and those it took on, which once it finished say they're
+    /// pushed, for an older fix of one of them, elsewhere, not to be taken as its latest again. Push & Reply takes on those
+    /// its prompt lists, to reply on (`TakenThread.ships`), whether its runs or prompts sent to the session fixed them; the
+    /// others stay as they were, since it doesn't reply on them. Nil when it keeps none.
+    /// - Parameter pullRequest: the pull request it's on, if it's on one.
+    public static func threads(
+        goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?, taking taken: [Int], for action: PullRequestAction?,
+        at now: Date
+    ) -> [TakenThread]? {
+        var kept: [TakenThread] = []
+        if let previous, let before = previous.threads, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true,
+           previous.action?.changesCode == true || previous.action == .pushAndReply {
+            kept = before.map { thread in
+                var thread = thread
+                // Gone on with, it ended: one BriefBar didn't see end, it stopped.
+                if thread.ended == nil { thread.ended = previous.ended ?? .stopped }
+                return thread
+            }
+        }
+        let ids = Set(taken)
+        let ships: Bool? = action == .pushAndReply ? true : nil
+        kept = kept.filter { !ids.contains($0.id) } + taken.map { TakenThread(id: $0, since: now, ships: ships) }
+        return kept.isEmpty ? nil : kept
+    }
+}
+
+/// A comment thread of the pull request a task took on (`CopilotRun.threads`): by its ID, never what it says, with when,
+/// what for, and how the task that took it on ended, once a later task went on with the same session.
+public struct TakenThread: Sendable, Codable, Equatable, Hashable {
+    public var id: Int
+    /// When the task that took it on started.
+    public var since: Date
+    /// How that task ended, once a later one went on with its session; nil while it's the session's latest.
+    public var ended: RunPhase?
+    /// A Push & Reply took it on, as its prompt listed it, to push its fix and reply on it; nil for a fix.
+    public var ships: Bool?
+
+    public init(id: Int, since: Date, ended: RunPhase? = nil, ships: Bool? = nil) {
+        self.id = id
+        self.since = since
+        self.ended = ended
+        self.ships = ships
     }
 }
 

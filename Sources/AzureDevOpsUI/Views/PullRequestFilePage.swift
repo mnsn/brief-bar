@@ -41,6 +41,9 @@ struct PullRequestFilePage: View {
     @LocalState private var highlighted: Int?
     /// The resolved threads you unfolded.
     @LocalState private var unfoldedResolved: Set<Int> = []
+    /// The composer in place that's open on its threads, one at a time, and what you wrote in each.
+    @LocalState private var composing: CommentComposing?
+    @LocalState private var drafts = CommentDrafts()
     /// VoiceOver goes to the file's name as its page opens, and as it goes to another file.
     @AccessibilityFocusState private var isNameFocused: Bool
     /// Its toolbar is at the details' top, where it stays as the code scrolls under it.
@@ -133,12 +136,19 @@ struct PullRequestFilePage: View {
         .onChange(of: open.id) {
             current = nil
             unfoldedResolved = []
+            // Its threads' composers go with it, and what they, or Ask in the Session, send.
+            composing = nil
+            drafts.callOffAll()
             // For VoiceOver to go to the next file's name, though it was on this one's.
             isNameFocused = false
             scrollToTop()
         }
+        // What a composer sends is called off as it closes, with ✕ or Esc, or another opens; and all of it as the page goes.
+        // Not as its card scrolls out of sight, as its diff's do.
+        .onChange(of: composing) { old, _ in if let old { drafts.callOff(old) } }
         .onDisappear {
             if let shownVersion, let key = pullRequest?.key { files.hideDiff(shownVersion, of: key, by: viewer) }
+            drafts.callOffAll()
         }
         .accessibilityElement(children: .contain)
     }
@@ -277,21 +287,23 @@ struct PullRequestFilePage: View {
         let file = shown.file
         var text = Text([file.folder ?? pullRequest?.repositoryName, file.what].compactMap { $0 }.joined(separator: " · "))
             .foregroundStyle(.secondary)
+        func add(_ more: Text) { text = Text("\(text)\(more)") }
         if case .read(let diff)? = shown.diff, diff.counts.added > 0 || diff.counts.removed > 0 {
-            text = text + Text(" · ").foregroundStyle(.tertiary)
+            add(Text(" · ").foregroundStyle(.tertiary))
             if diff.counts.isApproximate {
-                text = text + Text("about ").foregroundStyle(.secondary)
+                add(Text("about ").foregroundStyle(.secondary))
             }
             if diff.counts.added > 0 {
-                text = text + Text(verbatim: "+\(diff.counts.added)").foregroundStyle(ItemState.done.textColor).fontWeight(.medium)
+                add(Text(verbatim: "+\(diff.counts.added)").foregroundStyle(ItemState.done.textColor).fontWeight(.medium))
             }
-            if diff.counts.added > 0 && diff.counts.removed > 0 { text = text + Text(" ") }
+            if diff.counts.added > 0 && diff.counts.removed > 0 { add(Text(" ")) }
             if diff.counts.removed > 0 {
-                text = text + Text(verbatim: "−\(diff.counts.removed)").foregroundStyle(ItemState.failing.textColor).fontWeight(.medium)
+                add(Text(verbatim: "−\(diff.counts.removed)").foregroundStyle(ItemState.failing.textColor).fontWeight(.medium))
             }
         }
         if open.scope != .whole {
-            text = text + Text(" · ").foregroundStyle(.tertiary) + Text("since you last looked").foregroundStyle(ItemState.running.textColor)
+            add(Text(" · ").foregroundStyle(.tertiary))
+            add(Text("since you last looked").foregroundStyle(ItemState.running.textColor))
         }
         return text
     }
@@ -772,7 +784,7 @@ struct PullRequestFilePage: View {
         if Shown.isOpen(thread) || unfoldedResolved.contains(thread.id) {
             ThreadCard(
                 thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now, isHighlighted: highlighted == thread.id,
-                showsCode: showsCode
+                composing: $composing, drafts: drafts, showsCode: showsCode
             )
         } else {
             ResolvedThreadLine(thread: thread) {

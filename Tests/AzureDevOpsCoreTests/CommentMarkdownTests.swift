@@ -247,10 +247,17 @@ import Testing
         ])
     }
 
-    @Test func showsAReviewersSuggestionAsCode() {
+    @Test func showsAReviewersSuggestionAsOne() {
         #expect(RichText(markdown: "Cap it:\n```suggestion\ndelay = Min(delay * 2, MaxDelay);\n```").blocks == [
-            .paragraph([RichText.Run("Cap it:")]), .code("delay = Min(delay * 2, MaxDelay);"),
+            .paragraph([RichText.Run("Cap it:")]), .suggestion("delay = Min(delay * 2, MaxDelay);"),
         ])
+        // Its indentation as written, with whatever follows its info string, or none; and an empty one, which removes the lines.
+        #expect(RichText(markdown: "~~~ Suggestion  ignored\n    return x;\n~~~").blocks == [.suggestion("    return x;")])
+        #expect(RichText(markdown: "```suggestion\n```").blocks == [.suggestion("")])
+        #expect(RichText(markdown: "```suggestion\n```").plainText.isEmpty)
+        // Another info string is code.
+        #expect(RichText(markdown: "```suggestions\nx\n```").blocks == [.code("x")])
+        #expect(RichText(markdown: "Cap it:\n```suggestion\nx\n```").plainText == "Cap it:\nx")
     }
 
     /// Each in a fraction of a second, where reading them in quadratic time would take far longer than the limit: kept

@@ -94,7 +94,7 @@ struct FailureNote: View {
                 .font(size: 11)
                 .foregroundStyle(.red)
                 .accessibilityHidden(true)
-            (Text(failure.step).fontWeight(.semibold) + Text(failure.message.map { ": \($0)" } ?? " failed"))
+            Text("\(Text(failure.step).fontWeight(.semibold))\(failure.message.map { ": " + $0 } ?? " failed")")
                 .font(size: 11.5)
                 .foregroundStyle(.primary.opacity(0.85))
                 .lineLimit(2)

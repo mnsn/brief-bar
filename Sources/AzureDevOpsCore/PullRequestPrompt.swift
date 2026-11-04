@@ -27,7 +27,7 @@ public struct FailedBuildReport: Sendable, Equatable {
 /// agent is: each prompt says what it may change, and only Push & Reply pushes or writes on the pull request.
 public enum PullRequestPrompt {
     /// The most comment threads, and errors per build, a prompt quotes.
-    static let threadLimit = 30
+    public static let threadLimit = 30
     static let errorLimit = 10
 
     /// Where Copilot works on the pull request.
@@ -56,14 +56,16 @@ public enum PullRequestPrompt {
         return waiting.isEmpty ? open : waiting
     }
 
-    public static func fixComments(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
+    /// - Parameter note: what you want, in your words, quoted as yours; nothing for nil or blank.
+    public static func fixComments(_ record: PRRecord, workplace: Workplace = .worktree, note: String? = nil) -> String {
         let threads = waitingThreads(record)
+        let how = yours(note).map { "\n\nHow I want them fixed, in my own words:\n\n\($0)" } ?? ""
         return """
             \(header(record, workplace: workplace))
 
             Address these review comments:
 
-            \(threads.isEmpty ? "(There are no unresolved comment threads right now.)" : list(threads, record: record))
+            \(threads.isEmpty ? "(There are no unresolved comment threads right now.)" : list(threads, record: record))\(how)
 
             For each thread, make the change, or say briefly why not. Keep the changes focused. Build, and run the \
             tests that cover what you changed. Don't commit, push or reply on the pull request: end with a short \
@@ -129,10 +131,21 @@ public enum PullRequestPrompt {
             """
     }
 
-    public static func pushAndReply(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
+    /// The threads Push & Reply ships: `only`, those the fixes it ships took on, that are still open, in that order; else
+    /// those Fix Comments lists.
+    public static func shippedThreads(_ record: PRRecord, only: [Int]?) -> [ReviewThread] {
+        guard let only, !only.isEmpty else { return waitingThreads(record) }
+        let open = (record.details?.threads ?? []).filter { !$0.isResolved }
+        return only.compactMap { id in open.first { $0.id == id } }
+    }
+
+    /// - Parameter only: the threads the fixes it ships took on, such as one session's when fixes are in more than one: it
+    ///   replies on those alone. Nil for the pull request's.
+    public static func pushAndReply(_ record: PRRecord, workplace: Workplace = .worktree, threads only: [Int]? = nil) -> String {
         let pr = record.pullRequest
         let source = pr.sourceBranch
-        let threads = waitingThreads(record)
+        let scoped = only?.isEmpty == false
+        let threads = shippedThreads(record, only: only)
         var steps: [String] = []
         let ifRejected: String
         switch workplace {
@@ -152,10 +165,16 @@ public enum PullRequestPrompt {
         steps += [
             "Make sure it builds and the tests you ran pass, then commit your changes with a clear message.",
             "Push them to \(source), without force: git push origin HEAD:refs/heads/\(source). \(ifRejected)",
-            """
-            On the pull request, with your Azure DevOps tools, reply to each comment thread you addressed, saying what \
-            you changed, and resolve it. For a thread you didn't change, reply why, and leave it active.
-            """,
+            scoped
+                ? """
+                On the pull request, with your Azure DevOps tools, reply to each of the comment threads below that you \
+                addressed, saying what you changed, and resolve it. For one of them you didn't change, reply why, and leave \
+                it active. Don't reply on its other threads: other changes take care of them.
+                """
+                : """
+                On the pull request, with your Azure DevOps tools, reply to each comment thread you addressed, saying what \
+                you changed, and resolve it. For a thread you didn't change, reply why, and leave it active.
+                """,
         ]
         let numbered = steps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
         return """
@@ -167,7 +186,7 @@ public enum PullRequestPrompt {
             Don't complete, approve or abandon the pull request, and don't change pipelines. End with the commit you \
             pushed and the threads you replied to.
 
-            Its unresolved comment threads:
+            \(scoped ? "The comment threads these changes take care of:" : "Its unresolved comment threads:")
 
             \(threads.isEmpty ? "(none)" : list(threads, record: record, full: false))
             """
@@ -225,6 +244,16 @@ public enum PullRequestPrompt {
         return "\(index + 1). \(place) (thread \(thread.id))"
     }
 
+    /// Those of `ids` whose entries the prompt still has, as `entry` writes them, on lines of their own: one whose entry you
+    /// took out of the prompt isn't taken on.
+    public static func threadsListed(in prompt: String, among ids: [Int]) -> [Int] {
+        let listed = Set(prompt.split(whereSeparator: \.isNewline).compactMap { line -> Int? in
+            guard line.first?.isNumber == true, let match = line.wholeMatch(of: /\d+\. .* \(thread (\d+)\)\s*/) else { return nil }
+            return Int(match.1)
+        })
+        return ids.filter(listed.contains)
+    }
+
     /// When you last voted or commented on it.
     static func lastReview(_ record: PRRecord) -> Date? {
         guard let details = record.details else { return nil }
@@ -280,10 +309,13 @@ public struct CommentHandOff: Sendable, Equatable {
     }
 
     /// As the prompt sees `record`, with `account` signed in.
-    /// - Parameter dismissedCutoff: what came up to then doesn't wait on you anymore (`SeenState.dismissedCutoff`).
-    public init(_ record: PRRecord, dismissedCutoff: Date, account: String?) {
+    /// - Parameters:
+    ///   - dismissedCutoff: what came up to then doesn't wait on you anymore (`SeenState.dismissedCutoff`).
+    ///   - only: the threads a Push & Reply ships, which its prompt lists alone (`PullRequestPrompt.shippedThreads`): the
+    ///     others aren't handed off. Nil for those Fix Comments lists.
+    public init(_ record: PRRecord, dismissedCutoff: Date, account: String?, threads only: [Int]? = nil) {
         // The prompts list these, in this order, each under its entry's line.
-        let listed = PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit)
+        let listed = PullRequestPrompt.shippedThreads(record, only: only).prefix(PullRequestPrompt.threadLimit)
         let entries = Dictionary(listed.enumerated().map { ($1.id, PullRequestPrompt.entry($0, $1)) }, uniquingKeysWith: { first, _ in first })
         let threads = (record.details?.threads ?? []).filter { !$0.isResolved }
         self.init(key: record.id, waiting: threads.compactMap { thread in

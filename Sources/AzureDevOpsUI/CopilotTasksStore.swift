@@ -4,6 +4,7 @@ import BriefBarCore
 import BriefBarUI
 import Combine
 import CopilotTasks
+import Synchronization
 
 /// A task sent to Copilot, as its work item's or pull request's row shows it: getting ready, working, or how it ended.
 struct CopilotTaskEntry: Identifiable, Equatable {
@@ -21,6 +22,11 @@ struct CopilotTaskEntry: Identifiable, Equatable {
     var pullRequest: URL?
     /// Nil while its worktree is getting ready, and when it couldn't start.
     var run: CopilotRun?
+    /// The comment threads it took on, as its run keeps them (`CopilotRun.threads`): those it took on before too, while
+    /// it goes on with a session whose changes aren't pushed.
+    var threads: [TakenThread]? = nil
+    /// The session it forked, when it works in a fork of one.
+    var forkedFrom: String? = nil
 
     var workItemURL: URL? {
         workItem.map { ADOEndpoint.workItemPage(organization: $0.organization, project: $0.project, id: $0.id) }
@@ -140,6 +146,17 @@ final class CopilotTasksStore: ObservableObject {
     var deliveringFolders: [String: URL] = [:]
     /// Azure DevOps was turned off, or BriefBar is quitting: a prompt on its way to a session goes no further.
     private(set) var hasStopped = false
+    /// How the turn of each prompt sent to one of the Copilot app's sessions about pull requests' threads stands, by the
+    /// prompt (`SentPrompt.id`), as its session's log said last: in memory only, with what Copilot said.
+    @Published var promptTurns: [String: SessionTurn] = [:]
+    /// When each of those turns was first seen over, to tell an ended turn from one that only paused.
+    var promptsOver: [String: Date] = [:]
+    var isFollowingPrompts = false
+    /// The sessions another prompt is being sent to, by how many sends: the turns of the prompts sent them before aren't
+    /// followed meanwhile (`pauseFollowing`).
+    var followingPaused: [String: Int] = [:]
+    /// Reads the sessions' logs those prompts went to, only what's new each time.
+    let promptMonitor = RunMonitor()
 
     /// Where the Copilot app keeps its sessions.
     var appHome: URL { appHomeForTests ?? AppSessions.home() }
@@ -194,6 +211,7 @@ final class CopilotTasksStore: ObservableObject {
             shown.run = run
             if shown.onPullRequest != nil, shown.workItem == nil { shown.workItem = run.workItem }
             if shown.pullRequest == nil { shown.pullRequest = run.pullRequest }
+            if shown.forkedFrom == nil { shown.forkedFrom = run.forkedFrom }
             shown.status = statuses[run.id] ?? next.status
             return shown
         }
@@ -204,7 +222,8 @@ final class CopilotTasksStore: ObservableObject {
     private func entry(for run: CopilotRun, status: RunStatus) -> CopilotTaskEntry {
         CopilotTaskEntry(
             id: run.id, workItem: run.workItem, onPullRequest: run.onPullRequest, action: run.action, options: run.options,
-            startedAt: run.startedAt, status: status, pullRequest: run.pullRequest, run: run
+            startedAt: run.startedAt, status: status, pullRequest: run.pullRequest, run: run, threads: run.threads,
+            forkedFrom: run.forkedFrom
         )
     }
 
@@ -361,27 +380,35 @@ final class CopilotTasksStore: ObservableObject {
     ///   - sessionPrompt: for a session that works wherever it is, such as one of the Copilot app's.
     ///   - createdAt: when the pull request was created, to tell which sessions were there before.
     ///   - handOff: what the prompt takes off Needs You once it's sent, as it was written.
+    ///   - start: where it goes to begin with, rather than BriefBar's suggestion.
+    ///   - threads: the pull request's comment threads it takes on, for each to say what became of it.
     func compose(
         _ pullRequest: TaskPullRequest, action: PullRequestAction, prompt: String, sessionPrompt: String? = nil, createdAt: Date? = nil,
-        handOff: CommentHandOff? = nil
+        handOff: CommentHandOff? = nil, start: ComposerStart? = nil, threads: [Int] = []
     ) {
         let key = PRKey(pullRequest.organization, pullRequest.id)
         CopilotComposer.shared.show(
             subject: .pullRequest(pullRequest, action), prompt: prompt, sessionPrompt: sessionPrompt, createdAt: createdAt,
-            options: settings.copilotOptions, continuing: continuable(forPullRequest: key), handOff: handOff, store: self
+            options: settings.copilotOptions, continuing: continuable(forPullRequest: key), handOff: handOff, session: start,
+            threads: threads, store: self
         )
     }
 
     /// Starts Copilot on a work item or a pull request; or goes on with a session that's there already: an earlier run's,
-    /// in its worktree, or one of the Copilot app's (`appRun(for:subject:options:)`), in the folder it works in. Once it
-    /// has started, what `handOff` says its prompt took care of leaves Needs You.
+    /// in its worktree, or one of the Copilot app's (`appRun(for:subject:options:)`), in the folder it works in; or forks
+    /// one of BriefBar's own sessions, with its history, into a worktree of its own, where Copilot works on it while the
+    /// session stays as it is (`CopilotLauncher.Request.forking`). Once it has started, what `handOff` says its prompt took
+    /// care of leaves Needs You, and its run keeps the comment threads it takes on (`CopilotRun.threads`).
+    /// - Parameter threads: the pull request's comment threads it takes on, by their IDs.
     func send(
         _ subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, continuing: CopilotRun? = nil,
-        handOff: CommentHandOff? = nil
+        forking: CopilotRun? = nil, threads: [Int] = [], handOff: CommentHandOff? = nil
     ) {
-        guard canSend, isOn else { return }
+        // Not once Azure DevOps stopped, as it may have while an inline Fix looked for where to send it.
+        guard canSend, isOn, !hasStopped, continuing == nil || forking == nil else { return }
         // A second run in a session Copilot still works in would fork its history; one in a checkout it works in, for another
-        // session, would mix their work up, as when two of the Copilot app's sessions share one.
+        // session, would mix their work up, as when two of the Copilot app's sessions share one. A fork works in a worktree
+        // of its own, so the session it forks may be busy.
         if let continuing, isWorking(inSession: continuing.id) || isWorking(inFolder: continuing.worktree) {
             Log.app.error("Didn't send a task to Copilot: it still works in that session or its folder")
             return
@@ -393,17 +420,26 @@ final class CopilotTasksStore: ObservableObject {
             case .pullRequest(let pullRequest, _): settings.copilotRepositories[pullRequest.reference.repositoryKey] = repository.path
             }
         }
+        // A fork's ID is the CLI's to choose: until it's made, its send goes by one of BriefBar's, then by the fork's.
         let id = continuing?.id ?? UUID().uuidString.lowercased()
+        let launched = LaunchedSession(id)
         let now = Date()
+        var action: PullRequestAction?
         var entry = CopilotTaskEntry(id: id, workItem: nil, options: options, startedAt: now, status: RunStatus(phase: .preparing, since: now))
         switch subject {
         case .workItem(let item):
             entry.workItem = item.reference
-        case .pullRequest(let pullRequest, let action):
+        case .pullRequest(let pullRequest, let what):
             entry.onPullRequest = pullRequest.reference
-            entry.action = action
+            entry.action = what
             entry.pullRequest = pullRequest.url
+            action = what
         }
+        // The threads it keeps, with those the session it goes on with took on before, as that session is kept now.
+        let previous = continuing.map { continuing in settings.copilotRuns.first { $0.id == continuing.id } ?? continuing }
+        let kept = CopilotRun.threads(goingOnWith: previous, on: entry.onPullRequest, taking: threads, for: action, at: now)
+        entry.threads = kept
+        entry.forkedFrom = forking?.id ?? continuing?.forkedFrom
         pending.removeAll { $0.id == id }
         pending.append(entry)
         if let continuing {
@@ -416,20 +452,26 @@ final class CopilotTasksStore: ObservableObject {
             exitStatuses[id] = nil
             goneSince[id] = nil
         }
-        // Copilot works on its own, and nothing opens: say it's on it, now, rather than once its worktree is ready.
-        notifyStarted(entry)
+        // Copilot works on its own, and nothing opens: say it's on it, now, rather than once its worktree is ready. A fork,
+        // once the CLI made it (`rekey`): the notification goes by its ID, for the one that says how it ended to replace.
+        if forking == nil { notifyStarted(entry) }
         let request = CopilotLauncher.Request(
             subject: subject, prompt: prompt, options: options, repository: repository,
-            worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }, continuing: continuing
+            worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }, continuing: continuing,
+            forking: forking
         )
+        // Going on with a session, its next turn may end before the run is known to have started: the turns of the prompts
+        // sent it before aren't followed until then (`pauseFollowing`).
+        if let continuing { pauseFollowing(continuing.id) }
         Task { [self] in
+            defer { if let continuing { resumeFollowing(continuing.id) } }
             do {
                 // Again, as it starts: another of the app's sessions may have started a turn in the same checkout since the
                 // window looked. The launcher looks once more right before Copilot starts, after its git commands.
                 if let continuing, await anotherSessionRuns(inCheckoutOf: continuing.worktree, besides: id) {
                     throw LaunchError.sharedCheckout
                 }
-                let run: CopilotRun
+                var run: CopilotRun
                 if let launchForTests {
                     run = try await launchForTests(request, id, now)
                 } else {
@@ -438,15 +480,23 @@ final class CopilotTasksStore: ObservableObject {
                     let launcher = CopilotLauncher(
                         outputFolder: Self.outputFolder, environment: { environment }, appHome: appHome, leftovers: settings
                     )
-                    run = try await launcher.launch(request, id: id, now: now) { [weak self] status in
+                    run = try await launcher.launch(request, id: id, now: now, forked: { [weak self] fork in
+                        launched.id = fork
+                        Task { @MainActor in self?.rekey(id, to: fork) }
+                    }) { [weak self] status in
+                        let id = launched.id
                         MainActor.assumeIsolated { self?.exited(id, status: status) }
                     }
                 }
-                startedHere.insert(id)
-                pending.removeAll { $0.id == id }
+                rekey(id, to: run.id)
+                run.threads = kept
+                // Going on with one of the Copilot app's sessions: its turn is the next, after any prompt sent it before.
+                if let continuing { overlap(promptsIn: continuing.id, before: now) }
+                startedHere.insert(run.id)
+                pending.removeAll { $0.id == run.id }
                 continuingFolders[id] = nil
-                statuses[id] = nil
-                if let index = settings.copilotRuns.firstIndex(where: { $0.id == id }) {
+                statuses[run.id] = nil
+                if let index = settings.copilotRuns.firstIndex(where: { $0.id == run.id }) {
                     settings.copilotRuns[index] = run
                 } else {
                     settings.copilotRuns.append(run)
@@ -455,14 +505,17 @@ final class CopilotTasksStore: ObservableObject {
                 if case .pullRequest(let pullRequest, _) = subject {
                     settings.forgetChosenSession(for: PRKey(pullRequest.organization, pullRequest.id), supersededBy: run)
                 }
-                Log.app.info("Sent a task to Copilot\(continuing == nil ? "" : ", going on with its session", privacy: .public)")
+                let how: String = continuing != nil ? ", going on with its session" : forking != nil ? ", in a fork of a session" : ""
+                Log.app.info("Sent a task to Copilot\(how, privacy: .public)")
                 if let handOff { handedOff(handOff, prompt) }
                 refresh()
             } catch {
                 Log.app.error("Couldn't send a task to Copilot: \(Self.kind(of: error), privacy: .public)")
                 continuingFolders[id] = nil
                 let status = RunStatus(phase: .failed, since: Date(), detail: String(describing: error))
-                if let index = pending.firstIndex(where: { $0.id == id }) {
+                // By the fork's ID, once it was made, though it's deleted now: the send that made it.
+                let current = launched.id
+                if let index = pending.firstIndex(where: { $0.id == current || $0.id == id }) {
                     pending[index].status = status
                     notify(pending[index], status: status)
                 }
@@ -472,6 +525,19 @@ final class CopilotTasksStore: ObservableObject {
                 }
             }
         }
+    }
+
+    /// A fork's send, by the ID BriefBar gave it until the CLI made the fork, goes by the fork's from then on. Only then
+    /// does it say it's working, by the fork's ID, which the notification that says how it ended, or stopping it, replaces.
+    private func rekey(_ id: String, to fork: String) {
+        guard fork != id else { return }
+        var moved: CopilotTaskEntry?
+        for index in pending.indices where pending[index].id == id {
+            pending[index].id = fork
+            moved = pending[index]
+        }
+        if let status = statuses.removeValue(forKey: id) { statuses[fork] = status }
+        if let moved, moved.status.phase.isActive { notifyStarted(moved) }
     }
 
     /// The checkouts that tasks of BriefBar's work in now (`checkoutKey`): those of sends that go on with a session, while
@@ -537,6 +603,8 @@ final class CopilotTasksStore: ObservableObject {
             scheduleIfNeeded()
             return
         }
+        // And the prompts sent to the Copilot app's sessions about pull requests' threads, whose turns run there.
+        followSentPrompts()
         guard !isRefreshing else { return }
         let runs = settings.copilotRuns.filter { $0.isValid && ($0.ended == nil || statuses[$0.id] == nil) }
         guard !runs.isEmpty else {
@@ -608,7 +676,8 @@ final class CopilotTasksStore: ObservableObject {
     /// Every few seconds while something runs and the feature is on; not at all otherwise.
     private func scheduleIfNeeded() {
         let busy = mode == .live && isOn
-            && (settings.copilotRuns.contains { $0.isValid && $0.ended == nil } || pending.contains { $0.status.phase.isActive })
+            && (settings.copilotRuns.contains { $0.isValid && $0.ended == nil } || pending.contains { $0.status.phase.isActive }
+                || settings.copilotSentPrompts.contains(where: \.isFollowed))
         if busy, timer == nil {
             let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refresh() }
@@ -691,7 +760,8 @@ final class CopilotTasksStore: ObservableObject {
         let body: String
         switch entry.action {
         case .fixComments?:
-            heading = "Copilot is fixing the comments"
+            // Fix, on one thread, or Fix Comments, on those that wait on you.
+            heading = entry.threads?.filter({ $0.ended == nil }).count == 1 ? "Copilot is fixing a comment" : "Copilot is fixing the comments"
             body = "It works on its own in a worktree, and doesn't push or reply."
         case .fixBuild?:
             heading = "Copilot is fixing the build"
@@ -952,4 +1022,18 @@ final class CopilotTasksStore: ObservableObject {
 /// A worktree that Copilot works in now, which BriefBar doesn't remove.
 struct WorktreeInUse: Error, Equatable {
     var reason: String
+}
+
+/// The ID of a send's session, which the CLI chooses for a fork once it's made: what the launcher's callbacks go by.
+private final class LaunchedSession: Sendable {
+    private let current: Mutex<String>
+
+    init(_ id: String) {
+        current = Mutex(id)
+    }
+
+    var id: String {
+        get { current.withLock { $0 } }
+        set { current.withLock { $0 = newValue } }
+    }
 }

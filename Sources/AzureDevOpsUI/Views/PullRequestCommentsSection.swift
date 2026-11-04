@@ -23,11 +23,18 @@ struct PullRequestCommentsSection: View {
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var code: PullRequestCodeStore
     @LocalState private var showsResolved = false
+    /// The composer in place that's open in them, one at a time, so Esc, Return and the keyboard's focus are its own; and
+    /// what you wrote in each.
+    @LocalState private var composing: CommentComposing?
+    @LocalState private var drafts = CommentDrafts()
 
     var body: some View {
         let threads = panel.threads
         VStack(alignment: .leading, spacing: 8) {
-            PageSectionHeader(title: "Comments", count: threads.unresolvedCount > 0 ? threads.unresolvedCount : nil)
+            // With Fix All, while comments wait on you on your pull request.
+            CommentsHeader(
+                item: item, count: threads.unresolvedCount > 0 ? threads.unresolvedCount : nil, composing: $composing, drafts: drafts
+            )
             if !panel.hasDetails {
                 Text(panel.isClosed ? "BriefBar reads a pull request's comments only while it's open."
                     : "BriefBar hasn't read its comments.")
@@ -81,6 +88,10 @@ struct PullRequestCommentsSection: View {
             }
             code.release(hold)
         }
+        // What a composer sends is called off as it closes, with ✕ or Esc, or another opens; and all of it as the comments
+        // go, with the details, or for another pull request or page.
+        .onChange(of: composing) { old, _ in if let old { drafts.callOff(old) } }
+        .onDisappear { drafts.callOffAll() }
     }
 
     private func files(_ files: [PullRequestPanel.FileThreads]) -> some View {
@@ -88,7 +99,7 @@ struct PullRequestCommentsSection: View {
             FileThreadsView(file: file, key: item.key) { thread in
                 ThreadCard(
                     thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now,
-                    isHighlighted: highlighted == .thread(thread.id)
+                    isHighlighted: highlighted == .thread(thread.id), composing: $composing, drafts: drafts
                 )
             }
         }
@@ -197,6 +208,9 @@ struct ThreadCard: View {
     let me: String?
     let now: Date
     let isHighlighted: Bool
+    /// The composer in place that's open in the comments, and what you wrote in each.
+    @Binding var composing: CommentComposing?
+    let drafts: CommentDrafts
     /// Whether it shows the code it's on: not on its file's page, around it already.
     var showsCode = true
 
@@ -232,6 +246,8 @@ struct ThreadCard: View {
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
                 .padding(.bottom, 10)
+            // What Copilot does about it, and, on an open one, Explain and Fix.
+            ThreadCopilotActions(thread: thread, item: item, now: now, composing: $composing, drafts: drafts)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.04)))
@@ -328,7 +344,7 @@ struct ThreadCard: View {
         let status = thread.status.map { Text($0).foregroundStyle(Self.color(of: thread)) }
         let waiting = waitingOn.map { Text("Waiting on \($0)").foregroundStyle(.secondary) }
         let separator = status != nil && waiting != nil ? Text(" · ").foregroundStyle(.tertiary) : nil
-        return ([status, separator, waiting].compactMap { $0 }.reduce(Text(""), +))
+        return ([status, separator, waiting].compactMap { $0 }.reduce(Text("")) { Text("\($0)\($1)") })
             .font(size: 11.5)
             .lineLimit(1)
     }

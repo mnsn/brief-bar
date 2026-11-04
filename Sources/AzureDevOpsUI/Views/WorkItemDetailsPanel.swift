@@ -20,6 +20,8 @@ struct WorkItemDetailsPanel: View {
     /// The pull request a page over the details shows, which the page, ↗ and ⋯ share, and which keeps it while the page
     /// shows, once the list doesn't have it.
     @LocalState private var pageDetails = PullRequestDetailsStore()
+    /// A composer in place is open on a pull request's page over them, which takes Esc: they close once it's closed.
+    @LocalState private var isComposing = false
 
     var body: some View {
         if let item = details.selected {
@@ -43,14 +45,21 @@ struct WorkItemDetailsPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         // A pull request or a session linked to it opens its page here, a work item its details.
                         .environment(\.itemNavigation, ItemNavigation(trail: [item.linkRef] + details.pages) { ref in navigate(to: ref) })
+                        // A composer in place, on a pull request's page, scrolls itself into view as it opens.
+                        .environment(\.detailsScroll, proxy)
                     }
                     .scrollBounceBehavior(.basedOnSize)
                     // Each work item, and each page, from the top, but where you came back to.
                     .id(scrollKey(item))
                     .onChange(of: scrollKey(item)) { scrollBack(proxy) }
                 }
+                // Under a pull request's page over them, once fixes of its comments are done, and not pushed: Push & Reply.
+                if let page = details.pages.last {
+                    Observing(pageDetails) { ReadyFixesBar.under(page, details: pageDetails, items: store.items) }
+                }
             }
             .onAppear { details.refreshIfStale() }
+            .onPreferenceChange(InlineComposerOpen.self) { isComposing = $0 }
             // Pages come from Show Links: without it, they go.
             .onReceive(services.links.$isOn) { isOn in
                 if !isOn { details.closePages() }
@@ -197,8 +206,8 @@ struct WorkItemDetailsPanel: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            // On a page, Esc goes back to what's under it.
-            .keyboardShortcut(details.pages.isEmpty ? .cancelAction : nil)
+            // On a page, Esc goes back to what's under it; in a composer in place, it closes that.
+            .keyboardShortcut(details.pages.isEmpty && !isComposing ? .cancelAction : nil)
             .help(details.pages.isEmpty ? "Close (Esc)" : "Close")
             .accessibilityLabel("Close Details")
         }
@@ -206,7 +215,7 @@ struct WorkItemDetailsPanel: View {
         .padding(.trailing, 10)
         .frame(height: 44)
         .background {
-            if !details.pages.isEmpty {
+            if !details.pages.isEmpty, !isComposing {
                 Button("Back", action: goBack)
                     .keyboardShortcut(.cancelAction)
                     .opacity(0)

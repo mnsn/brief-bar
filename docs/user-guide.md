@@ -14,7 +14,7 @@ For a quick tour and download, see the [README](../README.md).
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too |
 | **GitHub Copilot** | Which Copilot sessions are running, need you, or have finished or stopped; local CLI sessions when the app isn't installed; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's and CLI's own files under `~/.copilot` | Local Copilot session files | None for tracking; optional Copilot summaries send the selected work's details through the CLI, as described in [Privacy](#privacy) |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
 
@@ -174,7 +174,7 @@ and Teams' summaries:
 - Copilot's lines stay in BriefBar's own words.
 
 The model only words the lines BriefBar picked, and only while a list or the window shows them, never
-for the widget. Without Apple Intelligence (macOS 15, Apple Intelligence turned off or
+for the widget. Without Apple Intelligence (on a Mac that can't run it, or with it turned off or
 still getting ready), the brief stays in BriefBar's own words, without ✨, and Settings › Menu Bar says
 why.
 
@@ -243,7 +243,7 @@ restarts or updates.
 
 Each chat shows its newest unread message (with the sender in group chats), how long ago it arrived
 and how many are unread; hover for the last few. Click a chat to open it in Teams at its oldest unread
-message. Click ✨ for a one-sentence summary from Apple's on-device model (macOS 26 or later).
+message. Click ✨ for a one-sentence summary from Apple's on-device model.
 
 Notification Center doesn't record what you've read, so BriefBar decides:
 
@@ -382,6 +382,43 @@ added or removed, and whether the comment is on it. When it can't show a thread'
 isn't text, it says why in a few words, with **↗** to see it in Azure DevOps, and, when reading it again may
 help, as when you were offline, **↻** to try again.
 
+**Ask Copilot about a comment.** With Send Work to Copilot on, each open thread ends with
+**✨ Explain** and **Fix**, side by side, in the comments and on its file's page. Each opens a small composer under the comment, rather than a window: a field for
+what you want in your own words, where it goes, and its button, which Return presses, so a plain explanation or fix takes
+two clicks. One composer is open at a time, and each keeps what you wrote until you send it. **Explain** asks the session
+that worked on the thread, or else the pull request's own (its Copilot session, above), what you want to know, or else
+why you got the comment: why the reviewer wrote it, what they want, how the code relates, and a few ways to address it,
+with what each would change. The answer shows under the comment, with **↗** to the session. It's asked aside, in a copy
+of the session's conversation that the Copilot CLI makes with no tools and deletes after, so it changes no file and the
+session's history stays as it was; it sends the conversation, with the comment and its code, to GitHub Copilot, as one
+premium request, and needs the Copilot CLI 1.0.95 or later. Once it answered, **Ask More** follows up on what it said,
+and **Fix** takes the answer along (**Include the answer above**), so you can say which way, such as "the second way,
+with 45 seconds". Without a session that goes with the pull request, Explain has nobody to ask, and says so. When the CLI
+can't ask aside, or doesn't have the session, the thread says why, and **Ask in the Session** sends the question to the
+session as a prompt instead, the way Fix sends its own, where it stays in the session's history. **Fix**, on your own
+pull request, has Copilot address that thread alone, as you say in **Tell Copilot how (optional)**, which it quotes as
+yours, then build and test; it doesn't commit, push or reply, and the thread leaves Needs You as with Fix Comments,
+below. A comment can suggest a change, which shows as **Suggested change**: **Apply ‹name›'s suggestion as written** has
+Copilot make it as it's written, and is checked when the suggestion is the thread's last word. Where it goes is one
+**▾** away: the session that worked on the thread, if one did, else the pull request's, first and chosen; for a fix, a
+fork of it, with its history, in a worktree of its own, while it stays as it is, which goes first while one of
+BriefBar's tasks is busy, and a new session; then the other sessions that go with the pull request, and the rest of the
+Copilot app's. Each says how a prompt would get there, with the CLI or in Copilot, to paste when BriefBar can't send it
+itself, or that it's busy, and the composer says what happens once you send it, as the Send to Copilot window would send
+it ([below](#sending-to-a-session-thats-already-there)). **Edit the Whole Prompt…**, last in **▾**, opens that window
+with it, for the whole prompt, the model and more. **Fix All**, at the top of the comments, is Fix Comments, through the
+same composer; it says **Fix 1 Comment** when others wait on someone else, which it leaves. Once Copilot works on a
+thread, a line above its buttons says so, in its state's color, with since when and the step it's at: **Copilot is
+explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Retry backoff’ · 2m**, **Fixed in ‘Retry
+backoff’, not pushed** or **Couldn't fix it: …**; click it to see the session. When you send a session something else
+before it's done with what you sent it, BriefBar can't tell from the session which of them ended how, so the earlier
+thread says **Sent to ‘Retry backoff’ · see the session** instead. Once fixes are done, a bar at the foot of the details,
+or of a pull request's page over a work item's or another pull request's, says **2 fixes ready in ‘Retry backoff’**,
+which takes you to the threads, with **Push & Reply…**, which opens the Send
+to Copilot window to commit them, push and reply from that session; they stay in the bar when Push & Reply fails or is
+stopped, to try again. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
+off, unless the session has it already. VoiceOver hears what becomes of each.
+
 **See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
 changes, folder by folder as Azure DevOps' Files page lists them, a click on a folder folding it: each with
 what happened to it, added, edited, renamed or deleted, how many lines it adds and removes, and how many
@@ -510,10 +547,10 @@ Unless you choose a model, Claude Haiku 5.5 writes it through Copilot when the C
 and Apple Intelligence on your Mac when it isn't. In the picker, you can choose any model through Copilot,
 from Claude Haiku 5.5, the cheapest, to Claude Opus 5.5, the most capable, which costs the most: it gets
 those details through the Copilot CLI, one request on your Copilot plan, at the model's rate, each time
-one's written, and the card says so as it opens. Or choose Apple Intelligence, free: it needs macOS 26 or
-later and Apple Intelligence on and ready, uses no Copilot requests or subscription, and never Private
-Cloud Compute, but it can take less, so it reads a shorter cut of each thing, and, being a small model,
-it often gets details wrong, even in short histories. Neither gets tools, so it can only write. The card says
+one's written, and the card says so as it opens. Or choose Apple Intelligence, free: it needs Apple
+Intelligence on and ready, uses no Copilot requests or subscription, and never Private Cloud Compute,
+but it can take less, so it reads a shorter cut of each thing, and, being a small model, it often gets
+details wrong, even in short histories. Neither gets tools, so it can only write. The card says
 when it was written, and its tooltip by which model and from what. When one can't be written, it says
 why and what would help: Apple Intelligence isn't available or the item is too long, the Copilot CLI
 isn't signed in, the model isn't on your plan (**Choose Model…**), or your premium requests ran out; one
@@ -617,6 +654,7 @@ Choose **New Session** for a new worktree instead.
 | **Send to Session** | BriefBar sends the prompt to the session in the Copilot app, as your own message, and opens it there. Copilot works on it in that session, with the session's own model, mode and permissions, where you can follow it; a session that's working takes it once it's done. The default for the app's sessions. |
 | **Send to a Fork** | The Copilot app forks the session, with its history and the changes it hasn't committed, into a worktree and branch of its own, and BriefBar sends the fork the prompt. The session itself stays as it is, with a note that it forked. For the app's sessions, but not chats, nor **Push & Reply**, which pushes what its last task changed from that task's own session. |
 | **Run with the CLI** | The Copilot CLI goes on with the session now, on its own, in the folder it works in, and BriefBar follows it as it does a new task, with the same limits on what the action may do. The default for BriefBar's own tasks. |
+| **Fork with the CLI** | For BriefBar's own tasks: the Copilot CLI forks the session, with its history, into a worktree of its own, at the commit its checkout has, without the changes it hasn't committed, and goes on with the fork on its own, while the session stays as it is. Not for **Push & Reply**. |
 
 To send prompts to the app's sessions itself, BriefBar needs **Send Prompts to Copilot Sessions**, off until
 you turn it on in Settings › Agents, which adds BriefBar's extension to the sessions that start afterwards.
@@ -798,7 +836,8 @@ keep the extension until they start again.
 
 ## Install
 
-BriefBar needs macOS 15 or later, on Apple silicon (M1 or later). Intel Macs aren't supported.
+BriefBar needs macOS 26 or later, on Apple silicon (M1 or later). Intel Macs aren't supported. A Mac
+on an older macOS keeps the version of BriefBar it has: the updater doesn't offer it newer ones.
 
 To install it with [Homebrew](https://brew.sh), run:
 
@@ -988,8 +1027,14 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   extension in the session, through a file only you can read, which goes once the extension is done with it,
   and read what the extension says became of it, and, for a fork, which session the app records it came from;
   or, when they can't, put it on the clipboard too. To say how a prompt would reach a session, the window and a
-  pull request's details read which sessions the extension listens in, while the option is on. In its preferences, it keeps which work items you sent, where, with which model, and the link to
-  the pull request, not their titles; the session you choose for a pull request's work, by its ID only;
+  pull request's details read which sessions the extension listens in, while the option is on. **Explain**
+  sends a session's conversation, which the Copilot CLI copies into a fork it deletes after, with the comment
+  and its code, to GitHub Copilot, and keeps the answer in memory only. For a prompt about a pull request's
+  comments sent to one of the Copilot app's sessions, BriefBar reads that session's log, from then until Copilot
+  is done with it. In its preferences, it keeps which work items you sent, where, with which model, and the link to
+  the pull request, not their titles; the session you choose for a pull request's work, by its ID only; the comment
+  threads each task or prompt took on, and which session a prompt about comments went to and when, by their IDs only;
+  the IDs of the forks it made to ask a session about a comment, until they're deleted;
   and, in a file only you can read, what Copilot printed when it ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same
@@ -1148,12 +1193,12 @@ flags.
 Apple Intelligence summaries use the languages Apple's on-device model supports, which depend on your
 macOS version. For others it may still
 manage; if not, Teams says it can't summarize that language yet, Azure DevOps shows no brief, and the
-brief across sources keeps BriefBar's own words. These on-device summaries need macOS 26 or later,
-and Apple Intelligence turned on in System Settings. The plain-language brief works without it.
+brief across sources keeps BriefBar's own words. These on-device summaries need Apple Intelligence
+turned on in System Settings. The plain-language brief works without it.
 
 **Summaries** of work items, pull requests and sessions use Apple Intelligence too when the Copilot CLI
 isn't installed, unless you choose a model through Copilot. Through Copilot, they go through the Copilot
-CLI, don't need Apple Intelligence or macOS 26, and their language support depends on that model.
+CLI, don't need Apple Intelligence, and their language support depends on that model.
 
 ### Why isn't it notarized?
 

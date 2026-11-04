@@ -775,17 +775,35 @@ final class PRStore: ObservableObject {
     }
 
     /// Writes the prompts for what Copilot should do with a pull request, then opens the composer with them: for a failed
-    /// build, once each failed build's errors have been read.
-    func composeCopilot(_ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore) {
+    /// build, once each failed build's errors have been read. Fix Comments and Push & Reply take on the threads their
+    /// prompts list, for each to say what became of it.
+    /// - Parameters:
+    ///   - start: where it goes to begin with, rather than BriefBar's suggestion, such as the session whose fixes Push &
+    ///     Reply ships.
+    ///   - threads: for Push & Reply, the threads whose fixes it ships, which its prompt lists alone; without them, it lists
+    ///     those Fix Comments does.
+    func composeCopilot(
+        _ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore, start: ComposerStart? = nil, threads: [Int] = []
+    ) {
         guard let record = record(for: item.key) else { return }
         let pr = record.pullRequest
         let task = PullRequestTasks.task(for: record)
         let client = mode == .live ? client : nil
-        let handOff = commentHandOff(action, for: record)
+        // Push & Reply for some threads, such as one session's fixes when they're in more than one, ships, replies on and
+        // hands off those alone.
+        let scope = action == .pushAndReply && !threads.isEmpty ? threads : nil
+        let handOff = commentHandOff(action, for: record, threads: scope)
+        // The threads it takes on, as its prompt lists them, for each to say what became of it.
+        let threads: [Int] = switch action {
+        case .fixComments: PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map(\.id)
+        case .pushAndReply: PullRequestPrompt.shippedThreads(record, only: scope).prefix(PullRequestPrompt.threadLimit).map(\.id)
+        default: threads
+        }
         Task {
-            let prompts = await PullRequestTasks.prompts(action, for: record, client: client)
+            let prompts = await PullRequestTasks.prompts(action, for: record, client: client, threads: scope)
             copilot.compose(
-                task, action: action, prompt: prompts.worktree, sessionPrompt: prompts.session, createdAt: pr.createdAt, handOff: handOff
+                task, action: action, prompt: prompts.worktree, sessionPrompt: prompts.session, createdAt: pr.createdAt, handOff: handOff,
+                start: start, threads: threads
             )
         }
     }
@@ -793,8 +811,9 @@ final class PRStore: ObservableObject {
     /// What a task takes off Needs You once you send it: for Fix Comments and Push & Reply on your pull request, the comments
     /// that wait on you as the prompt is written from `record`, not as they are when you send it, for the account signed in
     /// now.
-    func commentHandOff(_ action: PullRequestAction, for record: PRRecord) -> CommentHandOff? {
+    /// - Parameter threads: for Push & Reply, the threads it ships alone.
+    func commentHandOff(_ action: PullRequestAction, for record: PRRecord, threads: [Int]? = nil) -> CommentHandOff? {
         guard action.takesCareOfComments, record.role == .author else { return nil }
-        return CommentHandOff(record, dismissedCutoff: settings.dismissedCutoff(for: record.id), account: settings.account)
+        return CommentHandOff(record, dismissedCutoff: settings.dismissedCutoff(for: record.id), account: settings.account, threads: threads)
     }
 }

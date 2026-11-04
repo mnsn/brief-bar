@@ -93,7 +93,7 @@ $CHANGES
 
 ## Install
 
-Requires macOS 15 or later, on Apple silicon (M1 or later). Intel Macs aren't supported.
+Requires macOS 26 or later, on Apple silicon (M1 or later). Intel Macs aren't supported.
 
 1. Download **$ZIP** below, unzip it, and move **BriefBar** to your Applications folder. Or install
    it with [Homebrew](https://brew.sh): \`brew install --cask mnsn/tap/briefbar\`.

@@ -116,8 +116,8 @@ private struct PageContent: View {
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityFocused($isTitleFocused)
             if !sentence.isEmpty || date != nil {
-                (WhereItStandsSection.sentenceText(sentence, state: item.state)
-                    + Text(date.map { (sentence.isEmpty ? "" : " · ") + StoryTime.ago($0) } ?? "").foregroundStyle(.secondary))
+                let since = Text(date.map { (sentence.isEmpty ? "" : " · ") + StoryTime.ago($0) } ?? "").foregroundStyle(.secondary)
+                Text("\(WhereItStandsSection.sentenceText(sentence, state: item.state))\(since)")
                     .font(size: 12.5)
                     .fixedSize(horizontal: false, vertical: true)
             }

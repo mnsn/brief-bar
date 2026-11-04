@@ -100,7 +100,7 @@ signs_with() {
     [[ "$requirement" == *"certificate leaf = H\"$expected\""* ]] || { echo "Signed: $requirement"; return 1; }
 }
 
-# Puts a keychain on the search list, until the end. codesign on macOS 15 and 26 finds an identity only in a keychain
+# Puts a keychain on the search list, until the end. codesign finds an identity only in a keychain
 # there, even when told which, so the release workflow puts its own there too.
 add_to_search_list() {
     local line current=()

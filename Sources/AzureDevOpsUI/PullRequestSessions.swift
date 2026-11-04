@@ -26,6 +26,9 @@ final class PullRequestSessions: ObservableObject {
     var refreshEvery: Duration = .seconds(10)
     /// Hears of each session whose way there is checked, in tests.
     var deliveryCheckedForTests: ((_ sessionId: String) -> Void)?
+    /// Hears of each read of a pull request's sessions as it starts, before it looks for one under way, in tests, which may
+    /// hold it up there, as a busy Mac may start it only once another is done.
+    var readStartsForTests: (@MainActor (PRKey) async -> Void)?
     /// Hears of each read of a pull request's sessions, once they're read and before they're kept, in tests, which may hold
     /// it up there, as a slow read would be.
     var sessionsReadForTests: (@MainActor (PRKey) async -> Void)?
@@ -101,12 +104,16 @@ final class PullRequestSessions: ObservableObject {
     func follow(_ item: PRSnapshot, record: PRRecord?, on page: String?) async {
         let key = item.key
         let follower = UUID()
-        start(following: key, record: record, createdAt: item.createdAt, by: follower, on: page)
+        // Until its sessions have been read, starting to follow it reads them (`update`). Then not here too: on a busy Mac,
+        // that read can be done before one here starts, which would read them again, and check again how work would reach
+        // its session.
+        var readsNow = !start(following: key, record: record, createdAt: item.createdAt, by: follower, on: page)
         defer { stop(following: key, by: follower) }
         let pause = refreshEvery
         while !Task.isCancelled, !hasStopped {
             // Each as a task of its own, which stopping cancels too, such as a search of the logs that's under way.
-            await awaitSpawned(for: key) { [weak self] in await self?.read(key) }
+            if readsNow { await awaitSpawned(for: key) { [weak self] in await self?.read(key) } }
+            readsNow = true
             await awaitSpawned(for: key) { try? await Task.sleep(for: pause) }
         }
     }
@@ -129,14 +136,16 @@ final class PullRequestSessions: ObservableObject {
         }
     }
 
-    private func start(following key: PRKey, record: PRRecord?, createdAt: Date?, by follower: UUID, on page: String?) {
+    /// - Returns: whether its sessions are read, now or once the read under way ends (`update`).
+    @discardableResult
+    private func start(following key: PRKey, record: PRRecord?, createdAt: Date?, by follower: UUID, on page: String?) -> Bool {
         kept.removeAll { $0 == key }
         var state = followed[key] ?? Followed()
         state.followers.updateValue(page, forKey: follower)
         state.record = record ?? state.record
         state.createdAt = createdAt ?? record?.pullRequest.createdAt ?? state.createdAt
         followed[key] = state
-        update(key)
+        return update(key)
     }
 
     private func stop(following key: PRKey, by follower: UUID) {
@@ -282,6 +291,7 @@ final class PullRequestSessions: ObservableObject {
     /// would reach its session. Only while Send Work to Copilot is on and it's open, never in the demo; for pictures, only
     /// its sessions.
     private func read(_ key: PRKey, forPictures: Bool = false) async {
+        await readStartsForTests?(key)
         guard !reading.contains(key) else { return }
         guard isReadable(key, forPictures: forPictures), let state = followed[key], let record = current(state, key) else {
             update(key)
@@ -368,8 +378,10 @@ final class PullRequestSessions: ObservableObject {
     /// A followed pull request's session as things are now, from what was read last, BriefBar's tasks as they are, the
     /// session you chose and Show Links' links; reading its sessions once Send Work to Copilot is on, and how work would
     /// reach its session once that changed. What was read goes once Send Work to Copilot is off.
-    private func update(_ key: PRKey) {
-        guard var state = followed[key] else { return }
+    /// - Returns: whether its sessions are read, now or once the read under way ends, since they haven't been read yet.
+    @discardableResult
+    private func update(_ key: PRKey) -> Bool {
+        guard var state = followed[key] else { return false }
         if !copilot.isOn, state.found != nil || state.mentioned != nil || state.delivery != nil {
             state.found = nil
             state.mentioned = nil
@@ -379,7 +391,7 @@ final class PullRequestSessions: ObservableObject {
         }
         let session = make(state, key)
         if sessions[key] != session { sessions[key] = session }
-        guard isReadable(key) else { return }
+        guard isReadable(key) else { return false }
         if state.found == nil {
             // One under way may be one called off, as its details closed and showed again: then once it ends.
             if reading.contains(key) {
@@ -387,10 +399,12 @@ final class PullRequestSessions: ObservableObject {
             } else {
                 spawn(for: key) { [weak self] in await self?.read(key) }
             }
+            return true
         } else if let session, session.canChoose, session.delivery == nil, let choice = session.session, !choice.isUnavailable,
                   !checking.contains(key) {
             spawn(for: key) { [weak self] in await self?.checkDelivery(key, unlessKnown: true) }
         }
+        return false
     }
 
     /// What the list read of it now, or else as it was followed.

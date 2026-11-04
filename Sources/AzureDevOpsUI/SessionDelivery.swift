@@ -224,8 +224,26 @@ extension CopilotTasksStore {
     /// the prompt, once the session forked but the prompt didn't reach it. Once the prompt's sent, or copied and the
     /// session showing, what `handOff` says it takes care of leaves Needs You. Only while Send Work to Copilot is on, never
     /// in the demo, and one prompt at a time for each session.
+    /// - Parameter about: the pull request's comment threads it's about, and what for: once it's sent, or copied for you to
+    ///   paste, BriefBar keeps that, to follow its turn in the session (`SentPrompt`). Whatever it's about, the turns of
+    ///   the prompts sent the session before that weren't seen to end aren't followed after (`overlap`).
     /// - Returns: sent; forked and sent, with the fork; why it fell back; or why nothing went.
-    func deliver(_ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil) async -> SessionDelivery {
+    func deliver(
+        _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil
+    ) async -> SessionDelivery {
+        // Sent as delivering it starts: what the session does from then on is its turn, even one over before BriefBar heard
+        // it went. It's free then, or nothing goes.
+        let sentAt = Date()
+        // Until it's known whether it went, the turns of the prompts sent the session before aren't followed: it may reach
+        // the session, and its turn end, before BriefBar hears it went (`pauseFollowing`). A fork's goes to the fork.
+        if !forking { pauseFollowing(choice.id) }
+        defer { if !forking { resumeFollowing(choice.id) } }
+        let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff)
+        keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt)
+        return outcome
+    }
+
+    private func deliverPrompt(_ prompt: String, to choice: SessionChoice, forking: Bool, handOff: CommentHandOff?) async -> SessionDelivery {
         guard canSend, isOn, !hasStopped, ItemRef.session(choice.id) != nil else { return .notSent(Self.cantSendNow) }
         let id = choice.id
         if forking, !choice.canFork { return .notSent("The Copilot app can't fork this session.") }
@@ -451,7 +469,7 @@ extension CopilotTasksStore {
     }
 
     /// Where the sessions BriefBar can send to are: the Copilot app's folder and, when your shell sets another, the CLI's.
-    private func sessionHomes() async -> [URL] {
+    func sessionHomes() async -> [URL] {
         let home = appHome
         let cliHome = CopilotCLI.home(environment: await environment())
         return AppSessions.folderKey(cliHome) == AppSessions.folderKey(home) ? [home] : [home, cliHome]

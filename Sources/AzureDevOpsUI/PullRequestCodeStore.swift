@@ -307,6 +307,25 @@ final class PullRequestCodeStore: ObservableObject {
         }
     }
 
+    /// The code of a thread, for a prompt about it, from a view on screen that doesn't show the code itself, such as a
+    /// composer on a thread on its file's page: as it's read, once the read under way ends, whichever view asked for it.
+    /// It's read as a thread that comes on screen is (`show`), by `viewer`, only while a window shows `page` on screen, and
+    /// called off as one is once that window hides; the view lets go of it with `hide`. Nil for a thread that isn't on
+    /// lines or can't be read, and for one that isn't read, as while no window shows its page on screen.
+    func excerpt(of thread: ReviewThread, in pullRequest: PullRequest, by viewer: UUID, on page: String?) async -> ThreadExcerpt? {
+        let key = pullRequest.key
+        show(thread, of: pullRequest, by: viewer, on: page)
+        // To the end of the read under way: one called off, as its window hid, ends too, and one a push started in its
+        // place is waited for in turn.
+        while let task = reads[key]?.tasks[thread.id] {
+            await task.value
+            // Not again for one that's over but still there.
+            if reads[key]?.tasks[thread.id] == task { break }
+        }
+        guard case .read(let excerpt)? = state(of: thread.id, in: key) else { return nil }
+        return excerpt
+    }
+
     private func finish(_ id: Int, of key: PRKey, _ ask: Ask, _ result: Result<ThreadExcerpt, ThreadExcerpt.Problem>) {
         // Unless it was asked for again since, or its pull request forgotten.
         guard reads[key]?.asked[id] == ask else { return }

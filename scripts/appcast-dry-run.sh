@@ -3,7 +3,7 @@
 # a broken release pipeline shows up before a tag is pushed. Run it after scripts/package.sh; CI does.
 # It signs a copy of the packaged app that trusts the throwaway key, with scripts/make-appcast.sh,
 # then checks the result with scripts/verify-appcast.swift and Sparkle's sign_update, and checks that
-# the verifier rejects another key, a changed appcast, a changed zip and missing or wrong hardware requirements.
+# the verifier rejects another key, a changed appcast, a changed zip and missing or wrong hardware or macOS requirements.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -12,6 +12,7 @@ ZIP="BriefBar.zip"
 PREFIX="https://github.com/mnsn/brief-bar/releases/download/v0.0.0-dry-run/"
 TOOLS=".build/artifacts/sparkle/Sparkle/bin"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+MINIMUM="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist")"
 REAL_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist")"
 
 WORK="$(mktemp -d)"
@@ -48,7 +49,7 @@ cp build/release/changes.md "$WORK/release/changes.md"
 ./scripts/make-appcast.sh "$WORK/release" "$PREFIX" < "$WORK/private-key"
 
 swiftc -O scripts/verify-appcast.swift -o "$WORK/verify-appcast"
-verify() { "$WORK/verify-appcast" "$1" "$2" "$PREFIX" "$3" "$VERSION"; }
+verify() { "$WORK/verify-appcast" "$1" "$2" "$PREFIX" "$3" "$VERSION" "$MINIMUM"; }
 APPCAST="$WORK/release/appcast.xml"
 verify "$APPCAST" "$WORK/release/$ZIP" "$PUBLIC_KEY"
 "$TOOLS/sign_update" --verify --ed-key-file - "$APPCAST" < "$WORK/private-key"
@@ -71,11 +72,16 @@ expect_rejected "another key" "$APPCAST" "$WORK/release/$ZIP" "$REAL_KEY"
 expect_rejected "a changed appcast" "$WORK/changed.xml" "$WORK/release/$ZIP" "$PUBLIC_KEY"
 expect_rejected "a changed zip" "$APPCAST" "$WORK/$ZIP" "$PUBLIC_KEY"
 
-# Sign the invalid feeds again so it's the hardware requirement, not the signature, that fails.
+# Sign the invalid feeds again so it's the requirement, not the signature, that fails. An update that says it needs
+# an older macOS than it does would be offered to Macs it can't open on.
 sed '/<sparkle:hardwareRequirements>/d' "$APPCAST" > "$WORK/missing-hardware.xml"
 sed 's#<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>#<sparkle:hardwareRequirements>x86_64</sparkle:hardwareRequirements>#' \
     "$APPCAST" > "$WORK/wrong-hardware.xml"
-for name in missing-hardware wrong-hardware; do
+sed '/<sparkle:minimumSystemVersion>/d' "$APPCAST" > "$WORK/missing-macOS.xml"
+sed 's#<sparkle:minimumSystemVersion>[^<]*</sparkle:minimumSystemVersion>#<sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>#' \
+    "$APPCAST" > "$WORK/wrong-macOS.xml"
+for name in missing-hardware wrong-hardware missing-macOS wrong-macOS; do
+    cmp -s "$APPCAST" "$WORK/$name.xml" && { echo "appcast-dry-run: the appcast has no requirement for $name to change." >&2; exit 1; }
     "$TOOLS/sign_update" --ed-key-file - "$WORK/$name.xml" < "$WORK/private-key"
     "$TOOLS/sign_update" --verify --ed-key-file - "$WORK/$name.xml" < "$WORK/private-key"
     expect_rejected "$name requirement" "$WORK/$name.xml" "$WORK/release/$ZIP" "$PUBLIC_KEY"

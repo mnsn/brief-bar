@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 - 2026-11-03
 
+- **BriefBar now needs macOS 26 or later.** On macOS 15, BriefBar keeps the version it has: its updater doesn't
+  offer this release or any later one.
 - **HTML in work items' Markdown shows as Azure DevOps shows it.** In a work item's details, HTML such as a
   line break (`<br>`), a table or `<details>` shows as it does in Azure DevOps, and an HTML comment shows
   nothing, rather than showing as they were written.
@@ -13,8 +15,7 @@
   **↗** to see what changed. Each comment shows in full, formatted as it was written, and a long thread
   shows its first and latest comments until you ask for the rest. Each thread also says how it stands
   and who it waits on: you, or someone else, such as **Waiting on Sam**. BriefBar reads a comment's code
-  only as it comes on screen, and keeps it in memory only while those details show. Since Azure DevOps
-  now reads this, it asks you to look at what it reads once more after the update.
+  only as it comes on screen, and keeps it in memory only while those details show.
 - **Find out why a build failed without leaving BriefBar.** In a pull request's details, click a build that
   failed, or **Build failed** in What's Left, and it opens in place: its stages, where it failed, from its stage
   to its task, whether it's the change's doing (it built an older commit, it passed on the same commit before
@@ -22,8 +23,7 @@
   its stack trace, and the last lines of the failed step's log, selectable, with **Open Run**, **Open Log** and
   **Open Tests** for the rest, and **Fix the Build with Copilot…** while Send Work to Copilot is on. A build
   that's still going shows its stages as they are. BriefBar reads all this only as you open a build, with about
-  ten requests, and keeps it in memory only. Azure DevOps says what it reads for it, so it asks you to look
-  again once.
+  ten requests, and keeps it in memory only.
 - **Each pull request has one Copilot session, under its heading in its details.** With Send Work to
   Copilot on, a line names the session its work goes to, why it's its, such as **on its branch**, and how
   it stands, in its state's color: its last task's, the work item's task that opened it, or the Copilot
@@ -47,6 +47,22 @@
   pull request before, its files can show only what changed since. BriefBar reads which files changed, and
   each file, only as they come on screen or you open one, one file at a time, and keeps them in memory
   only while those details show; Azure DevOps' description says so.
+- **Ask Copilot about a comment, right where you read it.** With Send Work to Copilot on, each open comment
+  thread in a pull request's details has **✨ Explain** and **Fix**, which open a small composer under the comment:
+  say what you want, or just press Return. **Explain** asks the Copilot session that worked on it, or the pull
+  request's own, why you got the comment, what the reviewer wants and how to address it, and shows the answer under
+  the comment: it's asked aside, so it changes nothing, and the session's history stays as it was. **Ask More**
+  follows up on its answer. **Fix** has Copilot address that comment alone, as you say, building on the answer if you
+  like ("the second way"), or apply a reviewer's **Suggested change** as it's written, then build and test, without
+  committing, pushing or replying. Choose where it goes in **▾**: the session, a fork of it, a new session, or
+  another, each saying how it would go there; **Edit the Whole Prompt…** there opens the Send to Copilot window.
+  Each thread then says what Copilot does about it, such as **Fixing this in a fork of ‘Retry backoff’ · 2m** or
+  **Fixed in ‘Retry backoff’, not pushed**; **Fix All** sits at the top of the comments; and once fixes are done, a
+  bar at the foot of the details takes you to them and offers **Push & Reply**. The Send to Copilot window can also
+  fork BriefBar's own sessions, with **Fork with the CLI**. Explain sends the session's conversation, with the
+  comment and its code, to GitHub Copilot.
+- **After this update, Azure DevOps asks you once to look at what it reads.** A pull request's details
+  now read the code its comments are on, its files, its builds and the Copilot app's sessions that go with it.
 
 ## 0.11.1 - 2026-11-03
 

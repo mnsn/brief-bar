@@ -199,7 +199,7 @@ private struct RowSummaryContent: View {
             .foregroundStyle(.tint)
             .fixedSize()
             if let next = summary.next {
-                (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
+                Text("\(Text(summary.nextLabel).fontWeight(.semibold)) \(next)")
                     .font(size: options.rowDetailSize)
                     .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary.opacity(0.85)))
                     .fixedSize(horizontal: false, vertical: true)
@@ -246,7 +246,7 @@ private struct RowSummaryContent: View {
                 .padding(.leading, indent)
             } else if let changed {
                 HStack(spacing: 12) {
-                    (Text("Out of date").fontWeight(.semibold) + Text(": \(changed)"))
+                    Text("\(Text("Out of date").fontWeight(.semibold)): \(changed)")
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .help("Since it was written: \(changed).")

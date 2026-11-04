@@ -35,7 +35,8 @@ cp "$RELEASE/$ZIP" "$STAGING/$ZIP"
 cp "$RELEASE/changes.md" "$STAGING/${ZIP%.zip}.md"
 
 # The app sets SURequireSignedFeed, so this signs the appcast as well as the zip. No delta updates.
-# Sparkle infers hardwareRequirements=arm64 from BriefBar's binary, keeping Intel Macs on their last release.
+# Sparkle infers hardwareRequirements=arm64 from BriefBar's binary, keeping Intel Macs on their last release, and
+# minimumSystemVersion from its LSMinimumSystemVersion, keeping a Mac on an older macOS on the version it has.
 printf '%s\n' "$KEY" | "$TOOLS/generate_appcast" --ed-key-file - \
     --download-url-prefix "$PREFIX" --embed-release-notes --maximum-deltas 0 \
     -o "$RELEASE/appcast.xml" "$STAGING" | tee "$STAGING/output.txt"

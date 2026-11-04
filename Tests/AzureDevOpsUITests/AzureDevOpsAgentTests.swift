@@ -79,7 +79,8 @@ import Testing
         // By its link, and with its comment threads, word for word. You've opened it since Sam replied: his reply still
         // waits on you, but isn't new.
         let linked = try await call("pull_request", ["pull_request": .string("https://dev.azure.com/contoso/Storefront/_git/payments-api/pullrequest/4102?discussionId=11")])
-        #expect(linked.contains("## Unresolved comment threads (1)"))
+        // Sam's reply, and Priya's suggested change, which you said you'd take.
+        #expect(linked.contains("## Unresolved comment threads (2)"))
         #expect(linked.contains("Could we cap the backoff at 30 seconds?"))
         #expect(linked.contains("## Seen, still waiting on you\n- Sam Rivera replied"))
         #expect(!linked.contains("## New for you"))
@@ -522,10 +523,12 @@ import Testing
     @Test func quotesCommentsAndSaysWhenTheyCouldntBeRead() throws {
         let now = Date()
         let item = WorkItem(id: 7, organization: "contoso", project: "Storefront", type: "Bug", title: "Totals", state: "New", category: .proposed)
-        let comments = (1...7).map { index in
-            WorkItemDetails.Comment(
-                id: index, author: Person(id: index == 1 ? "me" : "sam", name: index == 1 ? "Robin Diaz" : "Sam Rivera"),
-                createdAt: now.addingTimeInterval(-Double(index) * 3_600), text: RichText(html: "<div>Line \(index)</div><div>More</div>")
+        let comments = (1...7).map { (index: Int) -> WorkItemDetails.Comment in
+            let mine = index == 1
+            let createdAt = now.addingTimeInterval(-3_600 * Double(index))
+            return WorkItemDetails.Comment(
+                id: index, author: Person(id: mine ? "me" : "sam", name: mine ? "Robin Diaz" : "Sam Rivera"),
+                createdAt: createdAt, text: RichText(html: "<div>Line \(index)</div><div>More</div>")
             )
         }
         let details = WorkItemDetails(item: item, comments: comments, commentCount: 9, readAt: now)

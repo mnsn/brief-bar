@@ -92,6 +92,29 @@ import BriefBarCore
         #expect(conflicts.contains("Don't push"))
     }
 
+    /// For some threads, such as one session's fixes when fixes are in more than one: it lists those alone, and replies on
+    /// them alone.
+    @Test func pushAndReplyForSomeThreadsRepliesOnThoseAlone() {
+        let ship = PullRequestPrompt.pushAndReply(record(), threads: [9])
+        #expect(ship.contains("The comment threads these changes take care of:\n\n1. General comment (thread 9)\n   Priya Shah: Please add a test."))
+        #expect(!ship.contains("thread 7"))
+        #expect(ship.contains("Don't reply on its other threads: other changes take care of them."))
+        // One resolved since is left out; none, or no list, is the pull request's.
+        #expect(PullRequestPrompt.shippedThreads(record(), only: [12, 9]).map(\.id) == [9])
+        #expect(PullRequestPrompt.shippedThreads(record(), only: nil).map(\.id) == [7, 9])
+        #expect(PullRequestPrompt.pushAndReply(record(), threads: []).contains("Its unresolved comment threads:"))
+    }
+
+    /// The threads a prompt takes on are those whose entries are still in it, as you send it.
+    @Test func takesOnTheThreadsWhoseEntriesAreStillInThePrompt() {
+        let prompt = PullRequestPrompt.fixComments(record())
+        #expect(PullRequestPrompt.threadsListed(in: prompt, among: [7, 9]) == [7, 9])
+        let without7 = prompt.components(separatedBy: "\n").filter { !$0.hasSuffix("(thread 7)") }.joined(separator: "\n")
+        #expect(PullRequestPrompt.threadsListed(in: without7, among: [7, 9]) == [9])
+        // A comment that mentions a thread, indented under its own entry, isn't one.
+        #expect(PullRequestPrompt.threadsListed(in: "Fix them.\n   Sam: see 1. x (thread 7)", among: [7]).isEmpty)
+    }
+
     /// An agent may be on another branch, or have other work in its checkout: it checks before it ships, and never rebases.
     @Test func anAgentChecksWhereItIsBeforeItPushes() {
         let ship = PullRequestPrompt.pushAndReply(record(), workplace: .agent)
@@ -176,6 +199,19 @@ import BriefBarCore
         #expect(after.pendingEvents.isEmpty)
         // A prompt rewritten without its entries hands nothing off.
         #expect(handOff.handedOff(in: "Fix every comment.") == nil)
+    }
+
+    /// A Push & Reply for some threads hands off what waits on you in those alone: the others still need you, and, as a
+    /// pull request has one cutoff, hold back what's handed off to before them.
+    @Test func pushAndReplyForSomeThreadsHandsOffThoseAlone() throws {
+        let threads = [waiting(1, People.sam, at: t(-2 * hour)), waiting(2, People.priya, at: t(-hour))]
+        let handOff = CommentHandOff(record(threads), dismissedCutoff: t(-3 * day), account: "tenant/robin", threads: [2])
+        #expect(handOff.waiting.map(\.entry) == [nil, "1. General comment (thread 2)"])
+        // Thread 1 waited on you first and isn't handed off: the cutoff stays before it, so thread 2 still needs you too.
+        let prompt = PullRequestPrompt.pushAndReply(record(threads), threads: [2])
+        #expect(handOff.handedOff(in: prompt) == t(-2 * hour).addingTimeInterval(-0.001))
+        let later = CommentHandOff(record(threads), dismissedCutoff: t(-3 * day), account: "tenant/robin", threads: [1])
+        #expect(later.handedOff(in: PullRequestPrompt.pushAndReply(record(threads), threads: [1])) == t(-2 * hour))
     }
 
     @Test func aCommentThatComesAfterThePromptIsWrittenStillNeedsYou() throws {
