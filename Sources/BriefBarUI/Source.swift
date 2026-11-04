@@ -170,6 +170,9 @@ package enum SettingsDestination: Hashable, Sendable {
     case source(SourceID)
     /// Which sections the menu bar, the widgets or the windows show, and which share an item.
     case layout(Surface)
+    /// The settings about pull requests, from every source that has some, each with where it works
+    /// (`PullRequestSettings`).
+    case pullRequests
     /// Whether agents may use BriefBar (`--mcp`).
     case agents
 }
@@ -235,8 +238,14 @@ package protocol BriefBarSource: AnyObject {
     /// open the app it reads.
     func widgetMenu(for section: SectionID) -> AnyView
 
-    /// Its settings in the Settings window, while it's on.
+    /// Its settings in the Settings window, while it's on, but for those about its pull requests.
     func settingsView() -> AnyView
+    /// Its settings about pull requests, on the Settings window's Pull Requests page rather than its own, whether it's on
+    /// or not: as they work while `state` is on, and disabled while it's off or paused, as they don't work then. Nil for a
+    /// source without any.
+    func pullRequestSettingsView(state: SourceState) -> AnyView?
+    /// The names of those settings, in the order that view shows them, for the page to say where each works.
+    var pullRequestSettings: [String] { get }
     /// How what it needs stands (signed in, allowed…), above its settings while it's on. Nil for nothing.
     func statusView() -> AnyView?
     /// A click on one of its notifications.
@@ -254,6 +263,8 @@ package protocol BriefBarSource: AnyObject {
 extension BriefBarSource {
     package func didTurnOn() {}
     package func statusView() -> AnyView? { nil }
+    package func pullRequestSettingsView(state: SourceState) -> AnyView? { nil }
+    package var pullRequestSettings: [String] { [] }
     package func openNotification(_ userInfo: [String: String]) {}
     package func openNotificationInWindow(_ userInfo: [String: String]) {
         openNotification(userInfo)

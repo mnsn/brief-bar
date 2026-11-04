@@ -226,7 +226,7 @@ final class AgentsModel: ObservableObject {
 
     // MARK: Pull Request Order's skill
 
-    /// Pull Request Order is on, in Settings › General.
+    /// Pull Request Order is on, in Settings › Pull Requests.
     var isOrderOn: Bool { PullRequestOrderSetting.isOn(in: defaults) }
 
     /// BriefBar asked the Copilot CLI to add Pull Request Order's skill, and the CLI hasn't said since that it's gone: kept
@@ -1026,7 +1026,8 @@ private struct SessionPromptsRow: View {
     }
 }
 
-/// Pull Request Order's skill in the Copilot CLI, which comes and goes with Pull Request Order, in Settings › General.
+/// Pull Request Order's skill in the Copilot CLI, which comes and goes with Pull Request Order, in Settings › Pull
+/// Requests.
 private struct OrderSkillRow: View {
     @ObservedObject var agents: AgentsModel
 
@@ -1053,7 +1054,7 @@ private struct OrderSkillRow: View {
         switch agents.orderSkill {
         case .unknown:
             Text(agents.hasPlugin
-                 ? "It comes with \(PullRequestOrderSettingView.title), in Settings › General."
+                 ? "It comes with \(PullRequestOrderSettingView.title), in Settings › Pull Requests."
                  : "This copy of BriefBar doesn't have it: BriefBar.app does.")
                 .foregroundStyle(.secondary)
         case .working:

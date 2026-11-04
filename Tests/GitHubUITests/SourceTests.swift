@@ -181,4 +181,16 @@ import Testing
         #expect(source.settings.refreshMinutes == 15)
         #expect(defaults.integer(forKey: AppSettings.Key.refreshMinutes) == 15)
     }
+
+    /// The Pull Requests page in Settings has none of GitHub's own, as how often it reads stays on its page, but Pull Request
+    /// Order works with its pull requests, under Azure DevOps and GitHub.
+    @Test func sharesPullRequestOrderOnThePullRequestsPage() {
+        let source = demoSource()
+        #expect(source.pullRequestSettings.isEmpty)
+        #expect(source.pullRequestSettingsView(state: .on) == nil)
+        #expect(PullRequestSettings.has(source.id, ownSettings: source.pullRequestSettings))
+        let groups = PullRequestSettings.groups([(id: source.id, settings: source.pullRequestSettings)])
+        #expect(groups == [PullRequestSettings.shared])
+        #expect(PullRequestSettings.shared.sources.contains(.github))
+    }
 }
