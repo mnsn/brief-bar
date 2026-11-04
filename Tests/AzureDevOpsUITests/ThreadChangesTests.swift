@@ -702,6 +702,34 @@ import Testing
         #expect(azure.sent.count == 3)
     }
 
+    /// Two replies on a thread that may have gone, each saying something else, are each checked before the same goes again:
+    /// the second doesn't take the first's place, so the first, which went, isn't sent twice.
+    @Test func twoRepliesThatMayHaveGoneAreEachChecked() async throws {
+        let (store, changes, azure) = live()
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key) == false)
+        #expect(await changes.reply("And tested it.", to: try thread(store), of: key) == false)
+        #expect(azure.sent.count == 2)
+        azure.fails = nil
+
+        // The first went, as its thread, read again first, says.
+        var read = try thread(store)
+        read.comments.append(ReviewComment(id: 3, author: DemoData.me, text: "Capped it.", publishedAt: store.now, content: "Capped it."))
+        let threads = [read]
+        var reads = 0
+        changes.readThreads = { _ in
+            reads += 1
+            return threads
+        }
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
+        #expect(reads == 1)
+        #expect(azure.sent.count == 2)
+        // The second didn't: it goes once its thread, read again for it too, says so.
+        #expect(await changes.reply("And tested it.", to: try thread(store), of: key))
+        #expect(reads == 2)
+        #expect(azure.sent.count == 3)
+    }
+
     /// A status goes as you chose it, and shows at once; it can be set back the same way.
     @Test func aStatusGoesAndShowsAtOnce() async throws {
         let (store, changes, azure) = live()

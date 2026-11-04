@@ -44,9 +44,10 @@ final class ThreadChanges: ObservableObject {
     /// When you resolved each thread you did here: what waited on you in it until then doesn't anymore, though its details
     /// show what was new as it was when they showed it (`waiting(_:of:)`).
     private var resolved: [Key: Date] = [:]
-    /// The threads whose reply may have gone though it failed, as one Azure DevOps didn't answer in time, with a fingerprint
-    /// of what it said (`Attempt`): until their threads, read again for it, tell, the same isn't sent there.
-    private var unsure: [Key: Attempt] = [:]
+    /// The threads whose replies may have gone though they failed, as one Azure DevOps didn't answer in time, each with a
+    /// fingerprint of what it said (`Attempt`), however many said something else: until their threads, read again for the
+    /// same reply, tell, it isn't sent there.
+    private var unsure: [Key: [Attempt]] = [:]
     /// The changes on their way to Azure DevOps, by thread: called off as replies go, when the setting is turned off, Azure
     /// DevOps stops or someone else signs in, so that one that hasn't gone yet, as one waiting for a token, never does.
     private var inFlight: [Key: Task<ADOWrite.Answer, Error>] = [:]
@@ -204,7 +205,8 @@ final class ThreadChanges: ObservableObject {
         // As the list read it last, which may have more than the view had; or, after a reply that may have gone, as Azure
         // DevOps has it now.
         var thread = record.details?.threads.first { $0.id == thread.id } ?? thread
-        if let attempt = unsure[key], attempt.digest == Self.digest(markdown) {
+        let digest = Self.digest(markdown)
+        if let attempt = unsure[key]?.first(where: { $0.digest == digest }) {
             states[key] = .sending(.reply(then: status))
             let threads = await readThreads(pullRequest)
             // Turned off meanwhile, or someone else signed in: what you wrote is gone, and nothing goes, though it's on again.
@@ -214,7 +216,7 @@ final class ThreadChanges: ObservableObject {
                 SpokenText.announce(ADOWriteProblem.unconfirmed.sentence(.reply))
                 return false
             }
-            unsure[key] = nil
+            forget(attempt, on: key)
             states[key] = nil
             thread = read
             // It went: it's there already.
@@ -251,7 +253,7 @@ final class ThreadChanges: ObservableObject {
             let problem = ADOWriteProblem(error, now: now())
             // One that may have gone is checked before the same goes again: unless someone else signed in since, whose it isn't.
             if problem.mayHaveGone, account == self.account {
-                unsure[key] = Attempt(digest: Self.digest(markdown), before: Set(thread.comments.map(\.id)))
+                remember(Attempt(digest: digest, before: Set(thread.comments.map(\.id))), on: key)
             }
             // Called off as it went, as the setting was turned off: the thread says nothing, but once it's settled, its pull
             // request is read again, to show it if it was made.
@@ -358,6 +360,19 @@ final class ThreadChanges: ObservableObject {
             guard !attempt.before.contains(comment.id), comment.author.id == me.lowercased() else { return false }
             return comment.content.map { digest($0) == attempt.digest } == true || digest(comment.markdown) == attempt.digest
         }
+    }
+
+    /// Keeps a reply that may have gone, until its thread, read again for the same reply, tells: beside the others on the
+    /// thread that may have, each saying something else, and in place of one that said the same.
+    private func remember(_ attempt: Attempt, on key: Key) {
+        unsure[key, default: []].removeAll { $0.digest == attempt.digest }
+        unsure[key, default: []].append(attempt)
+    }
+
+    /// A reply that may have gone is known now, as its thread, read again, tells.
+    private func forget(_ attempt: Attempt, on key: Key) {
+        unsure[key]?.removeAll { $0.digest == attempt.digest }
+        if unsure[key]?.isEmpty == true { unsure[key] = nil }
     }
 
     /// A fingerprint of a reply as it would go (`posted(_:)`): two say the same when theirs are, but for the lines that say
