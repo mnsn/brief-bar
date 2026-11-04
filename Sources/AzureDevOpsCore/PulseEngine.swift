@@ -350,9 +350,10 @@ public actor PulseEngine {
     private var buildAttempts: [FailedBuild: (last: Date, failures: Int)] = [:]
     /// The pipelines after your merges, by pull request, while Done keeps it.
     private var merges: [PRKey: MergeFollow] = [:]
-    /// How many changes BriefBar made to pull requests' threads (`changed(_:by:)`), and the count when each pull request's
-    /// last was made: a read of its details that started before then may not have it, and isn't taken, even after a read
-    /// that started since was, as a slow answer may come after a quick one.
+    /// How many changes BriefBar made to pull requests' threads, or may have (`changed(_:by:)`, `mayHaveChanged(_:)`), and
+    /// the count when each pull request's last was: a read of its details that started before then may not have it, and
+    /// isn't taken, neither its threads nor its policies, which a thread's status changes, even after a read that started
+    /// since was, as a slow answer may come after a quick one.
     private var changes = 0
     private var changedAt: [PRKey: Int] = [:]
     private var problem: PulseProblem?
@@ -460,19 +461,29 @@ public actor PulseEngine {
         await readAgain(key)
     }
 
-    /// Reads a pull request's details again now, as after a change BriefBar may or may not have made, such as one Azure
-    /// DevOps didn't answer in time: two requests, unless it isn't listed, or its organization waits on a sign-in, or Azure
-    /// DevOps asked to slow down. Returns whether its threads were read now, and taken: one that isn't read now is read at
-    /// the next refresh.
+    /// A change BriefBar sent to one of a pull request's threads may have been made, though Azure DevOps didn't say how, as
+    /// one it didn't answer in time, or whose answer can't be read: a read under way that started before now may not have
+    /// it, and isn't taken, and the pull request's details are read again, now. Returns its threads as that read has them,
+    /// or nil when they weren't read now.
     @discardableResult
-    public func readAgain(_ key: PRKey) async -> Bool {
+    public func mayHaveChanged(_ key: PRKey) async -> [ReviewThread]? {
+        changes += 1
+        changedAt[key] = changes
+        return await readAgain(key)
+    }
+
+    /// Reads a pull request's details again now: two requests, unless it isn't listed, or its organization waits on a
+    /// sign-in, or Azure DevOps asked to slow down. Returns its threads as this read has them, whatever another read takes
+    /// meanwhile, or nil when they weren't read now, and taken: one that isn't read now is read at the next refresh.
+    @discardableResult
+    public func readAgain(_ key: PRKey) async -> [ReviewThread]? {
         entries[key] = nil
         guard let pr = active[key]?.pullRequest, !waitingOnSignIn.contains(key.organization.lowercased()),
               await client.gate.remainingWait() == nil
-        else { return false }
+        else { return nil }
         let read = await fetchDetails([pr], configuration: configuration)
         publish()
-        return read.taken.contains(key)
+        return read.taken[key]?.threads
     }
 
     /// One refresh: the lists, then the details the planner picks.
@@ -801,19 +812,19 @@ public actor PulseEngine {
         merges = [:]
     }
 
-    /// Fetches details a few pull requests at a time. Returns the error if Azure DevOps asked to slow down, and the pull
-    /// requests whose details were read and taken. Those of a pull request whose thread BriefBar changed since this started
-    /// may not have the change: its threads stay as they are, with the change, and it's read again at the next refresh.
+    /// Fetches details a few pull requests at a time. Returns the error if Azure DevOps asked to slow down, and the details
+    /// read and taken. Those of a pull request whose thread BriefBar changed since this started, or may have, may not have
+    /// the change: its details stay as they are, with the change, and it's read again at the next refresh.
     private func fetchDetails(
         _ pullRequests: [PullRequest], configuration: Configuration
-    ) async -> (throttled: ADOError?, taken: Set<PRKey>) {
-        guard !pullRequests.isEmpty else { return (nil, []) }
+    ) async -> (throttled: ADOError?, taken: [PRKey: PRDetails]) {
+        guard !pullRequests.isEmpty else { return (nil, [:]) }
         let client = self.client
         let fetchedAt = now()
         let changesBefore = changes
         var queue = pullRequests[...]
         var throttled: ADOError?
-        var taken: Set<PRKey> = []
+        var taken: [PRKey: PRDetails] = [:]
         await withTaskGroup(of: (PullRequest, DetailsRead).self) { group in
             for _ in 0..<max(1, configuration.concurrency) {
                 guard let pr = queue.popFirst() else { break }
@@ -825,7 +836,7 @@ public actor PulseEngine {
                 case (.success(let policies), .success(let threads)) where !isBeforeChange:
                     let fetched = PRDetails(fetchedAt: fetchedAt, pullRequest: pr, evaluations: policies, threads: threads)
                     details[pr.key] = fetched
-                    taken.insert(pr.key)
+                    taken[pr.key] = fetched
                     entries[pr.key] = RefreshPlanner.Entry(
                         fetchedAt: fetchedAt, fingerprint: pr.fingerprint, isBusy: fetched.hasChecksInProgress,
                         isQuiet: isQuiet(pr, fetched, configuration: configuration, at: fetchedAt)
@@ -833,8 +844,9 @@ public actor PulseEngine {
                 default:
                     // Keep the old details, and try again on the normal schedule rather than every refresh. But what
                     // the policies say now replaces what they said, even when the threads couldn't be read: a pull
-                    // request whose policies you may no longer read, or whose build failed since, isn't ready.
-                    if case .success(let policies) = read.policies, var kept = details[pr.key] {
+                    // request whose policies you may no longer read, or whose build failed since, isn't ready. Not from
+                    // a read that started before a change, though, whose policies may be from before it too.
+                    if !isBeforeChange, case .success(let policies) = read.policies, var kept = details[pr.key] {
                         kept.checks = policies?.compactMap(Check.init) ?? []
                         kept.checksKnown = policies != nil
                         details[pr.key] = kept

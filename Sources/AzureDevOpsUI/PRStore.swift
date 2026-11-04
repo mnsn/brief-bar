@@ -733,18 +733,20 @@ final class PRStore: ObservableObject {
         Task { await engine.changed(key, by: change) }
     }
 
-    /// Reads a pull request again now, as after a change that may have been made though Azure DevOps didn't say so in time;
-    /// nothing in the demo.
-    func readAgain(_ key: PRKey) {
+    /// A change to a pull request's thread may have been made, though Azure DevOps didn't say how, as one it didn't answer in
+    /// time: a read under way that started before now isn't taken, and the pull request is read again now; nothing in the
+    /// demo.
+    func mayHaveChanged(_ key: PRKey) {
         guard mode == .live, let engine else { return }
-        Task { await engine.readAgain(key) }
+        Task { await engine.mayHaveChanged(key) }
     }
 
     /// A pull request's threads as Azure DevOps has them now, read again for it, as before a reply that may have gone is sent
-    /// again; nil when they couldn't be read now, and in the demo.
+    /// again: as a read that started now has them, never one under way before; nil when they couldn't be read now, and in
+    /// the demo.
     func threadsReadAgain(_ key: PRKey) async -> [ReviewThread]? {
-        guard mode == .live, let engine, await engine.readAgain(key) else { return nil }
-        return await engine.currentSnapshot().records.first { $0.id == key }?.details?.threads
+        guard mode == .live, let engine else { return nil }
+        return await engine.mayHaveChanged(key)
     }
 
     /// A pull request's changes with another: a status it sets replaces any set before on that thread, whose comments stay,

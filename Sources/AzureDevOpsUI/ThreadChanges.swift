@@ -195,7 +195,7 @@ final class ThreadChanges: ObservableObject {
                 if let change = ThreadChange(answer, to: write, pullRequest: record.pullRequest, known: thread) {
                     store.changed(pullRequest, by: change)
                 } else {
-                    store.readAgain(pullRequest)
+                    store.mayHaveChanged(pullRequest)
                 }
             }
         } catch is CancellationError {
@@ -233,7 +233,7 @@ final class ThreadChanges: ObservableObject {
                 if let change = ThreadChange(answer, to: write, pullRequest: record.pullRequest, known: thread) {
                     store.changed(pullRequest, by: change)
                 } else {
-                    store.readAgain(pullRequest)
+                    store.mayHaveChanged(pullRequest)
                 }
             }
         } catch is CancellationError {
@@ -274,10 +274,12 @@ final class ThreadChanges: ObservableObject {
         }
     }
 
-    /// Whether a reply that may have gone did: a comment of yours in the thread, which came since it was sent, says it.
+    /// Whether a reply that may have gone did: a comment of yours in the thread, which came since it was sent, says it, as
+    /// Azure DevOps keeps it, mentions as their IDs, or as the details show it, mentions as names.
     static func went(_ attempt: Attempt, in thread: ReviewThread, me: String) -> Bool {
         thread.comments.contains { comment in
-            !attempt.before.contains(comment.id) && comment.author.id == me.lowercased() && same(comment.markdown, attempt.markdown)
+            guard !attempt.before.contains(comment.id), comment.author.id == me.lowercased() else { return false }
+            return comment.content.map { same($0, attempt.markdown) } == true || same(comment.markdown, attempt.markdown)
         }
     }
 
@@ -285,7 +287,7 @@ final class ThreadChanges: ObservableObject {
     /// pull request is read again, to show it.
     private func fail(_ key: Key, _ problem: ADOWriteProblem, _ sending: Sending, pullRequest: PRKey) {
         states[key] = .failed(problem, sending)
-        if problem.mayHaveGone { store?.readAgain(pullRequest) }
+        if problem.mayHaveGone { store?.mayHaveChanged(pullRequest) }
         SpokenText.announce(problem.sentence(sending.kind))
     }
 

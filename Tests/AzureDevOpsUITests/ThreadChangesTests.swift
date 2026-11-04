@@ -183,6 +183,26 @@ import Testing
         #expect(changes.state(of: threadKey) == nil)
     }
 
+    /// A reply with a mention that may have gone is found as Azure DevOps keeps it, though the details show the mention as a
+    /// name: it isn't sent twice.
+    @Test func aReplyWithAMentionThatWentIsFound() async throws {
+        let (store, changes, azure) = live()
+        let reply = "Thanks @<8d3f0e7a-1b2c-4d5e-8f90-a1b2c3d4e5f6>, capped it."
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply(reply, to: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        var read = try thread(store)
+        read.comments.append(ReviewComment(
+            id: 3, author: DemoData.me, text: "Thanks @Sam Rivera, capped it.", markdown: "Thanks @Sam Rivera, capped it.",
+            mentions: ["8d3f0e7a-1b2c-4d5e-8f90-a1b2c3d4e5f6"], publishedAt: store.now, content: reply
+        ))
+        let threads = [read]
+        changes.readThreads = { _ in threads }
+        #expect(await changes.reply(reply, to: try thread(store), of: key))
+        #expect(azure.sent.count == 1)
+    }
+
     /// The same reply of yours from before the one that may have gone isn't it: read, the thread hasn't it, and it goes.
     @Test func aReplyLikeOneYouSentBeforeIsntTakenForIt() async throws {
         let (store, changes, azure) = live()
