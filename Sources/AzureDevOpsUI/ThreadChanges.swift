@@ -386,9 +386,10 @@ final class ThreadChanges: ObservableObject {
     }
 
     /// A fingerprint of a reply as it would go (`posted(_:)`): two say the same when theirs are, but for the lines that say
-    /// nothing before them, the spaces after them and how their lines end, and with their first line's indent.
+    /// nothing before them, the spaces after them and how their lines end, and with their first line's indent; and in
+    /// either Unicode form, as Swift compares text, so an é typed as one character or as an e and its accent is the same.
     static func digest(_ text: String) -> SHA256.Digest {
-        SHA256.hash(data: Data(posted(text).utf8))
+        SHA256.hash(data: Data(posted(text).precomposedStringWithCanonicalMapping.utf8))
     }
 
     /// A change that didn't happen, or may not have: the thread says why, and when it may have happened all the same, its

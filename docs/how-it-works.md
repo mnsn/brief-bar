@@ -1498,12 +1498,12 @@ code. After a reply that may have gone, as one Azure DevOps didn't answer in tim
 same reply is sent again, by a read that starts then, never one under way before, and nothing goes until it was
 (`ADOWriteProblem.unconfirmed`): a comment of yours that came since it was sent, and says the same as it would go, its
 first line's indent included, as Azure DevOps keeps it, its mentions as their IDs, or as the details show it, is it,
-whatever came after it, so it isn't sent twice (`ThreadChanges.Attempt`, which keeps a fingerprint of what it said, not
-what it said, `ThreadChanges.digest`, for each reply on the thread that may have gone, until its own is checked); a
-reply that says something else goes without that read. **Resolve**, or **Reactivate** on a resolved thread, sets its
-status at once, without asking, since the same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses
-Azure DevOps' own menu offers, Active, Pending, Resolved, Won't Fix and Closed, and By Design only for a thread that has
-it (`ThreadStatus.choices`).
+whatever came after it, so it isn't sent twice (`ThreadChanges.Attempt`, which keeps a fingerprint of what it said, in
+either Unicode form, as Swift compares text, not what it said, `ThreadChanges.digest`, for each reply on the thread that
+may have gone, until its own is checked); a reply that says something else goes without that read. **Resolve**, or
+**Reactivate** on a resolved thread, sets its status at once, without asking, since the same menu sets it back
+(`ThreadStatusButton`); its **▾** has the statuses Azure DevOps' own menu offers, Active, Pending, Resolved, Won't Fix
+and Closed, and By Design only for a thread that has it (`ThreadStatus.choices`).
 
 What Azure DevOps answers shows at once (`ThreadChange`, which `PRDetails.apply` applies once, however often): the list
 applies it (`PRStore.changed`), so the details, Needs You, What's Left, the brief and the counts follow it, then the

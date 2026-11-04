@@ -734,6 +734,29 @@ import Testing
         #expect(azure.sent.count == 3)
     }
 
+    /// A reply that may have gone is the same in either Unicode form, as Swift compares text: sent again with its é typed as
+    /// an e and its accent, it's checked first, and found, though its thread has it in that form too, so it isn't sent twice.
+    @Test func aReplyInEitherUnicodeFormIsTheSame() async throws {
+        let (store, changes, azure) = live()
+        let composed = "Corrig\u{E9}.", decomposed = "Corrige\u{301}."
+        #expect(Array(composed.utf8) != Array(decomposed.utf8))
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply(composed, to: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        var read = try thread(store)
+        read.comments.append(ReviewComment(id: 3, author: DemoData.me, text: decomposed, publishedAt: store.now, content: decomposed))
+        let threads = [read]
+        var reads = 0
+        changes.readThreads = { _ in
+            reads += 1
+            return threads
+        }
+        #expect(await changes.reply(decomposed, to: try thread(store), of: key))
+        #expect(reads == 1)
+        #expect(azure.sent.count == 1)
+    }
+
     /// A status goes as you chose it, and shows at once; it can be set back the same way.
     @Test func aStatusGoesAndShowsAtOnce() async throws {
         let (store, changes, azure) = live()
