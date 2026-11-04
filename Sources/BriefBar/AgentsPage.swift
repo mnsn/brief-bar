@@ -299,8 +299,13 @@ final class AgentsModel: ObservableObject {
     /// Turns Updates from Copilot Sessions on or off, which forgets what sessions told either way, and adds or removes its
     /// skill.
     func setSessionUpdates(_ isOn: Bool) {
-        sessionUpdates?.setOn(isOn)
         objectWillChange.send()
+        if let sessionUpdates {
+            sessionUpdates.setOn(isOn)
+        } else {
+            defaults.set(isOn, forKey: SessionUpdatesSetting.defaultsKey)
+            SessionReports.forgetAll(in: defaults)
+        }
         settingChanged(.updates, isOn: isOn)
     }
 

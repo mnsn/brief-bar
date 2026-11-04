@@ -210,14 +210,14 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   BriefBar's own lists, says so (`readOnly: false`), keeps the demo's changes in memory, and tells a
   running BriefBar with `AgentChanges`, whose notification carries nothing. The Copilot CLI's
   configuration changes only through its own commands (`CopilotMCPRegistration`, and
-  `CopilotPluginRegistration` for BriefBar's plugins, which only **Install** and **Send Prompts to
-  Copilot Sessions** install), when you turn
+  `CopilotPluginRegistration` for BriefBar's plugins, which only **Install**, **Send Prompts to
+  Copilot Sessions**, **Pull Request Order** and **Updates from Copilot Sessions** install), when you turn
   agents on or off or ask on the Agents page, and other agents' apps get BriefBar only through their own install
   links (`AgentApp`), which ask you first: BriefBar never reads or writes their settings. It changes a
   plugin marketplace only once it knows it's its own, in an app with BriefBar's bundle identifier, never
-  by its name or its folder's name alone, and never with `--force`. The plugin's
-  skill (`Resources/CopilotPlugin`) only says how to use the tools: what it names must be what `--mcp`
-  lists, which `CopilotPluginTests` checks. The other plugin holds only BriefBar's extension for the
+  by its name or its folder's name alone, and never with `--force`. The plugins'
+  skills (`Resources/CopilotPlugin`) only say how to use the tools: what they name must be what `--mcp`
+  lists, which `CopilotPluginTests` checks, and a new plugin is listed in `scripts/check-app.sh` too. The other plugin holds only BriefBar's extension for the
   Copilot app's sessions, which has no tools, hooks or commands, acts only on the requests BriefBar
   writes for its own session, and never logs or keeps a prompt; `Tests/CopilotPlugin` checks it.
 - **Whoever starts BriefBar as an app chooses its arguments and environment, and can read its

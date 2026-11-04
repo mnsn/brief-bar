@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Copilot sessions keep BriefBar up to date.** Turn on **Updates from Copilot Sessions** in Settings › Agents, and
+  sessions tell BriefBar the work items and pull requests they're working on, the pull requests they opened, and what
+  they just changed in Azure DevOps. With Show Links on, a session shows on what it's working on, in the Sprint, on your
+  pull requests and in their details, where it can be the pull request's session, and a click opens it; with Pull
+  Request Order on, a pull request it opened joins its lane in By Mission, whose Map says what it's working on now. What
+  a session changed, BriefBar reads again right away instead of at its next refresh, never more than it reads anyway.
+  Sessions change Azure DevOps with their own tools: BriefBar still gives them no way to. It's off by default, and agents
+  pause until you've seen what they get now.
+
 ## 0.14.0 - 2026-11-04
 
 - **See the order your pull requests merge in, By Mission.** Turn on **Pull Request Order** in Settings, and the
