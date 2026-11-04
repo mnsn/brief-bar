@@ -27,9 +27,14 @@ struct PullRequestCommentsSection: View {
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var code: PullRequestCodeStore
     @LocalState private var showsResolved = false
+    /// The threads you changed here, with your reply or their statuses, where each was as you first did: they stay there,
+    /// however they stand now, while the details show the pull request.
+    @LocalState private var held: [Int: PullRequestPanel.Thread.Placement] = [:]
 
     var body: some View {
         let threads = panel.threads
+        let arranged = threads.arranged(holding: held)
+        let resolvedCount = arranged.resolved.reduce(0) { $0 + $1.threads.count }
         VStack(alignment: .leading, spacing: 8) {
             // With Fix All, while comments wait on you on your pull request.
             CommentsHeader(
@@ -50,8 +55,8 @@ struct PullRequestCommentsSection: View {
                         .font(size: 12.5)
                         .foregroundStyle(.secondary)
                 }
-                files(threads.openByFile)
-                if !threads.resolved.isEmpty {
+                files(arranged.open)
+                if resolvedCount > 0 {
                     Button {
                         withAnimation(.easeOut(duration: 0.15)) { showsResolved.toggle() }
                     } label: {
@@ -59,7 +64,7 @@ struct PullRequestCommentsSection: View {
                             Image(systemName: "chevron.right")
                                 .font(size: 9, weight: .bold)
                                 .rotationEffect(.degrees(showsResolved ? 90 : 0))
-                            Text(verbatim: showsResolved ? "Hide Resolved" : "Show \(threads.resolved.count) Resolved")
+                            Text(verbatim: showsResolved ? "Hide Resolved" : "Show \(resolvedCount) Resolved")
                         }
                         .font(size: 11.5, weight: .medium)
                         .contentShape(Rectangle())
@@ -68,7 +73,7 @@ struct PullRequestCommentsSection: View {
                     .help(showsResolved ? "Hide the threads that are resolved" : "Show the threads that are fixed, won't be fixed, closed or by design")
                     .accessibilityValue(showsResolved ? "Expanded" : "Collapsed")
                     if showsResolved {
-                        files(threads.resolvedByFile)
+                        files(arranged.resolved)
                     }
                 }
             }
@@ -98,7 +103,8 @@ struct PullRequestCommentsSection: View {
             FileThreadsView(file: file, key: item.key) { thread in
                 ThreadCard(
                     thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now,
-                    isHighlighted: highlighted == .thread(thread.id), composing: $composing, drafts: drafts
+                    isHighlighted: highlighted == .thread(thread.id), composing: $composing, drafts: drafts,
+                    hold: { held[$0.id] = held[$0.id] ?? $0.placement }
                 )
             }
         }
@@ -212,7 +218,11 @@ struct ThreadCard: View {
     let drafts: CopilotDrafts
     /// Whether it shows the code it's on: not on its file's page, around it already.
     var showsCode = true
+    /// Keeps it where it is as you change it, with your reply or its status: in the comments, with the open ones it was
+    /// with; on its file's page, unfolded.
+    var hold: (PullRequestPanel.Thread) -> Void = { _ in }
 
+    @EnvironmentObject private var changes: ThreadChanges
     @Environment(\.detailsWidening) private var widening
     /// Opens its file's changes, from the details' comments; nil on its file's page, which shows them.
     @Environment(\.changedFileOpener) private var opener
@@ -228,6 +238,12 @@ struct ThreadCard: View {
 
     /// The pull request's page, at this thread.
     private var url: URL { item.pageURL(thread: thread.id) }
+
+    /// Reply and its status, while you can make changes in Azure DevOps: in the row with Copilot's Explain and Fix.
+    private var yours: AnyView? {
+        guard changes.canChange(pullRequest) else { return nil }
+        return AnyView(ThreadReplyButtons(thread: thread, item: item, composing: $composing, hold: hold))
+    }
 
     /// The lines it's on, which its code shows.
     private var span: (lines: ClosedRange<Int>, side: ThreadExcerpt.Side)? { ThreadCode.span(of: thread.thread) }
@@ -245,8 +261,10 @@ struct ThreadCard: View {
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
                 .padding(.bottom, 10)
-            // What Copilot does about it, and, on an open one, Explain and Fix.
-            ThreadCopilotActions(thread: thread, item: item, now: now, composing: $composing, drafts: drafts)
+            // What Copilot does about it, and, on an open one, Explain and Fix; and, with Make Changes in Azure DevOps on,
+            // Reply and its status in their row, your reply open under it, or what went wrong with a change.
+            ThreadCopilotActions(thread: thread, item: item, now: now, composing: $composing, drafts: drafts, yours: yours)
+            ThreadReplyArea(thread: thread, item: item, pullRequest: pullRequest, composing: $composing, hold: hold)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.04)))
@@ -256,6 +274,19 @@ struct ThreadCard: View {
                 .strokeBorder(Color.accentColor.opacity(isHighlighted ? 0.8 : 0), lineWidth: 1.5)
         }
         .contextMenu {
+            if changes.canChange(pullRequest) {
+                let sending = changes.isSending(ThreadChanges.Key(pullRequest: item.key, thread: thread.id))
+                Button("Reply") { ThreadReplyArea.open(thread, composing: $composing, hold: hold) }
+                    .disabled(sending)
+                Menu("Status") {
+                    ThreadStatusMenuItems(current: thread.thread.threadStatus) { status in
+                        hold(thread)
+                        Task { await changes.setStatus(status, of: thread.thread, in: item.key) }
+                    }
+                }
+                .disabled(sending)
+                Divider()
+            }
             if let path = thread.thread.filePath, !path.isEmpty, let opener {
                 Button("Show in Its File's Changes") { opener.open(path, thread.id) }
             }

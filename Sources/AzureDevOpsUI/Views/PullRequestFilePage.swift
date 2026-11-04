@@ -784,7 +784,9 @@ struct PullRequestFilePage: View {
         if Shown.isOpen(thread) || unfoldedResolved.contains(thread.id) {
             ThreadCard(
                 thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now, isHighlighted: highlighted == thread.id,
-                composing: $composing, drafts: drafts, showsCode: showsCode
+                composing: $composing, drafts: drafts, showsCode: showsCode,
+                // Resolved as you change it, it stays unfolded.
+                hold: { _ = unfoldedResolved.insert($0.id) }
             )
         } else {
             ResolvedThreadLine(thread: thread) {

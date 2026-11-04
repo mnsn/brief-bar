@@ -23,6 +23,7 @@ struct PullRequestDetailsContent: View {
     @EnvironmentObject private var sessions: PullRequestSessions
     @EnvironmentObject private var services: AppServices
     @EnvironmentObject private var files: PullRequestFilesStore
+    @EnvironmentObject private var changes: ThreadChanges
     @Environment(\.itemNavigation) private var navigation
     /// The window's page it's on, which its Copilot session is read only while the window shows on screen.
     @Environment(\.shownSection) private var section
@@ -54,7 +55,9 @@ struct PullRequestDetailsContent: View {
 
     var body: some View {
         let record = record
-        let panel = PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record))
+        // What waits on you, as when they showed it, but in a thread you resolved here since.
+        let events = changes.waiting(details.pendingEvents(of: item, record: record), of: item.key)
+        let panel = PullRequestPanel(item, record: record, events: events)
         let ref = item.key.linkRef
         VStack(alignment: .leading, spacing: 20) {
             if let file = isShown ? details.file : nil {
