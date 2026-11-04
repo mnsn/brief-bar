@@ -24,6 +24,12 @@ struct PullRequestFilePage: View {
     /// The threads you changed in the details, where each was as you first did, which the details keep as you go from its
     /// comments to a file's page and back: each stays where it was, unfolded, however it stands now.
     @Binding var held: [Int: PullRequestPanel.Thread.Held]
+    /// Which threads show, as you chose in the details' comments: all of them, or only the active ones; and All, from the
+    /// line that says how many it leaves out.
+    var filter: PullRequestPanel.CommentFilter = .all
+    var showAll: () -> Void = {}
+    /// Mark as Read and Mark as Unread on its threads, the details'.
+    var reading: ThreadReading? = nil
 
     @EnvironmentObject private var files: PullRequestFilesStore
     @EnvironmentObject private var code: PullRequestCodeStore
@@ -44,6 +50,8 @@ struct PullRequestFilePage: View {
     @LocalState private var highlighted: Int?
     /// The resolved threads you unfolded.
     @LocalState private var unfoldedResolved: Set<Int> = []
+    /// The threads it was taken to, which show with Active too, whatever their status.
+    @LocalState private var revealedThreads: Set<Int> = []
     /// The composer in place that's open on its threads, one at a time, and what you wrote in each.
     @LocalState private var composing: CopilotComposing?
     @LocalState private var drafts = CopilotDrafts()
@@ -74,9 +82,14 @@ struct PullRequestFilePage: View {
     var body: some View {
         let state = pullRequest.flatMap { files.list(of: $0.key, open.scope) }
         let threadFile = threadFile(state)
+        // The thread it goes to shows, and stays once it's there.
+        let listing = threads.listed(filter, holding: held, revealing: revealedThreads.union([open.thread].compactMap { $0 }))
         let shown: Shown? = if let pullRequest, case .read(let changes)? = state,
             let file = threadFile ?? changes.file(atPath: open.path) {
-            Shown(file: file, changes: changes, threads: threads, held: held, diff: diff(of: file, in: changes, pullRequest))
+            Shown(
+                file: file, changes: changes, threads: listing.shown, hidden: listing.hidden, held: held,
+                diff: diff(of: file, in: changes, pullRequest)
+            )
         } else {
             nil
         }
@@ -136,9 +149,13 @@ struct PullRequestFilePage: View {
         .onChange(of: shown?.file.id, initial: true) {
             if let shown, shown.file.id != open.id { details.follow(file: shown.file.path) }
         }
+        .onChange(of: open.thread, initial: true) {
+            if let thread = open.thread { revealedThreads.insert(thread) }
+        }
         .onChange(of: open.id) {
             current = nil
             unfoldedResolved = []
+            revealedThreads = Set([open.thread].compactMap { $0 })
             // Its threads' composers go with it, and what they, or Ask in the Session, send.
             composing = nil
             drafts.callOffAll()
@@ -192,6 +209,10 @@ struct PullRequestFilePage: View {
         var changes: ChangedFiles
         var index: Int
         var diff: PullRequestFilesStore.State<FileDiff>?
+        /// The pull request's threads that show, as you chose: all of them, or only the active ones.
+        var threads: PullRequestPanel.Threads
+        /// How many of its own the choice leaves out.
+        var hidden: Int
         /// By the line they show under.
         var placed: [Int: [PullRequestPanel.Thread]] = [:]
         /// Those on the whole file first, then those on lines, as they show.
@@ -204,13 +225,15 @@ struct PullRequestFilePage: View {
         var openThreads: [Int] = []
 
         init(
-            file: FileChange, changes: ChangedFiles, threads: PullRequestPanel.Threads, held: [Int: PullRequestPanel.Thread.Held],
-            diff: PullRequestFilesStore.State<FileDiff>?
+            file: FileChange, changes: ChangedFiles, threads: PullRequestPanel.Threads, hidden: PullRequestPanel.Threads,
+            held: [Int: PullRequestPanel.Thread.Held], diff: PullRequestFilesStore.State<FileDiff>?
         ) {
             self.file = file
             self.changes = changes
             index = changes.index(of: file.id) ?? 0
             self.diff = diff
+            self.threads = threads
+            self.hidden = hidden.isEmpty ? 0 : hidden.comments(on: file, in: changes).threads.count
             let onFile = threads.comments(on: file, in: changes, holding: held).threads
             guard case .read(let read)? = diff else {
                 apart = Self.asApart(onFile)
@@ -252,7 +275,7 @@ struct PullRequestFilePage: View {
     private func heading(_ shown: Shown) -> some View {
         let file = shown.file
         let kind = FileKindStyle(file.kind)
-        let comments = threads.comments(on: file, in: shown.changes)
+        let comments = shown.threads.comments(on: file, in: shown.changes)
         return VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: kind.symbol)
@@ -283,6 +306,10 @@ struct PullRequestFilePage: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+            }
+            // "2 closed or resolved comments hidden", of its own.
+            if let hidden = PullRequestPanel.CommentListing.hiddenSentence(shown.hidden) {
+                HiddenCommentsLine(sentence: hidden, showAll: showAll)
             }
         }
     }
@@ -411,7 +438,7 @@ struct PullRequestFilePage: View {
     /// way.
     @ViewBuilder
     private func commentNavigation(_ shown: Shown) -> some View {
-        let onFiles = threads.openOnFiles(of: shown.changes)
+        let onFiles = shown.threads.openOnFiles(of: shown.changes)
         let previous = commentTarget(-1, shown, onFiles)
         let next = commentTarget(1, shown, onFiles)
         if !onFiles.isEmpty || !shown.openThreads.isEmpty {
@@ -792,7 +819,7 @@ struct PullRequestFilePage: View {
                 thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now, isHighlighted: highlighted == thread.id,
                 composing: $composing, drafts: drafts, showsCode: showsCode,
                 // Resolved as you change it, it stays where it was, unfolded.
-                hold: { held[$0.id] = held[$0.id] ?? PullRequestPanel.Thread.Held($0) }
+                hold: { held[$0.id] = held[$0.id] ?? PullRequestPanel.Thread.Held($0) }, reading: reading
             )
         } else {
             ResolvedThreadLine(thread: thread) {

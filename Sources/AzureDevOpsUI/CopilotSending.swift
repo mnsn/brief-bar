@@ -300,7 +300,10 @@ extension CopilotSending {
         }
         var handOff: CommentHandOff?
         if record.role == .author {
-            handOff = CommentHandOff(record, thread: thread.id, dismissedCutoff: store.dismissedCutoff(for: record.id), account: store.settings.account)
+            handOff = CommentHandOff(
+                record, thread: thread.id, dismissedCutoff: store.dismissedCutoff(for: record.id),
+                read: store.settings.readThreads(of: record.id), account: store.settings.account
+            )
         }
         return Fix(
             prompts: (

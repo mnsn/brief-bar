@@ -219,6 +219,52 @@ import Testing
         #expect(settings.seenCutoff(for: sentInChat) == now)
     }
 
+    /// The threads you mark as read are remembered like what you've seen: yours in the preferences, and those of one listed
+    /// only because someone sent it to you in memory only, forgotten with the links, when someone else signs in, or with
+    /// what you saw of it; and what another program put in the preferences for one moves into memory.
+    @Test func keepsTheThreadsYouMarkAsReadThereInMemoryOnly() throws {
+        let defaults = preferences(enabled: true)
+        let settings = AppSettings(defaults: defaults, now: now)
+        settings.startSeeing(now: now)
+        #expect(!settings.useAccount("avery@contoso.example", now: now))
+        #expect(settings.addChatLinks([link(7, sentAt: now)], now: now))
+        let before = readable(defaults)
+
+        settings.markRead(5, of: sentInChat, upTo: now, for: settings.account, sentInChat: true)
+        #expect(settings.readThreads(of: sentInChat) == [5: now])
+        #expect(readable(defaults) == before)
+        settings.markRead(5, of: yours, upTo: now, for: settings.account)
+        #expect(try savedSeen(in: defaults).readThreads.keys.sorted() == ["contoso/9"])
+        #expect(AppSettings(defaults: defaults, now: now).readThreads(of: yours) == [5: now])
+
+        // Not for another account, whose isn't kept in memory.
+        settings.markRead(6, of: sentInChat, upTo: now, for: "sam@contoso.example", sentInChat: true)
+        #expect(settings.readThreads(of: sentInChat) == [5: now])
+        #expect(settings.useAccount("sam@contoso.example", now: now))
+        #expect(settings.readThreads(of: sentInChat).isEmpty)
+        #expect(settings.useAccount("avery@contoso.example", now: now))
+        settings.markRead(5, of: sentInChat, upTo: now, for: settings.account, sentInChat: true)
+        settings.chatLinksEnabled = false
+        #expect(settings.readThreads(of: sentInChat).isEmpty)
+
+        // Seen long ago, and not listed: gone with what you saw of it.
+        settings.markSeen([sentInChat], at: now, sentInChats: [sentInChat])
+        settings.markRead(5, of: sentInChat, upTo: now, for: settings.account, sentInChat: true)
+        settings.pruneSeen(keeping: [sentInChat, yours], now: now.addingTimeInterval(61 * 86_400))
+        #expect(settings.readThreads(of: sentInChat) == [5: now])
+        settings.pruneSeen(keeping: [yours], now: now.addingTimeInterval(61 * 86_400))
+        #expect(settings.readThreads(of: sentInChat).isEmpty)
+        #expect(settings.readThreads(of: yours) == [5: now])
+
+        var earlier = try savedSeen(in: defaults)
+        earlier.markRead(8, of: sentInChat, upTo: now)
+        defaults.set(try JSONEncoder().encode(earlier), forKey: SettingsKey.seen)
+        let again = AppSettings(defaults: defaults, now: now)
+        again.keepSeenInMemory([sentInChat])
+        #expect(try savedSeen(in: defaults).readThreads.keys.sorted() == ["contoso/9"])
+        #expect(again.readThreads(of: sentInChat) == [8: now])
+    }
+
     /// As the list does it: clearing Needs You, in the demo, keeps what you've seen of the pull request Dana sent you
     /// in memory, and of the others in the preferences.
     @Test func theListKeepsWhatYouveSeenOfPullRequestsSentInChatsInMemory() async throws {

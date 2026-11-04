@@ -337,31 +337,36 @@ public struct CommentHandOff: Sendable, Equatable {
     public var me: String
     /// What came up to then didn't wait on you anymore when the prompt was written (`SeenState.dismissedCutoff`).
     public var dismissedCutoff: Date
+    /// The threads you'd marked as read when the prompt was written, each up to when (`SeenState.readThreads`): what they
+    /// said up to then didn't wait on you, and doesn't hold back what leaves Needs You.
+    public var read: [Int: Date]
 
-    public init(key: PRKey, waiting: [Waiting], account: String?, me: String, dismissedCutoff: Date) {
+    public init(key: PRKey, waiting: [Waiting], account: String?, me: String, dismissedCutoff: Date, read: [Int: Date] = [:]) {
         self.key = key
         self.waiting = waiting
         self.account = account
         self.me = me
         self.dismissedCutoff = dismissedCutoff
+        self.read = read
     }
 
     /// As the prompt sees `record`, with `account` signed in.
     /// - Parameters:
     ///   - dismissedCutoff: what came up to then doesn't wait on you anymore (`SeenState.dismissedCutoff`).
+    ///   - read: the threads you marked as read, each up to when (`SeenState.readThreads`).
     ///   - only: the threads a Push & Reply ships, which its prompt lists alone (`PullRequestPrompt.shippedThreads`): the
     ///     others aren't handed off. Nil for those Fix Comments lists.
-    public init(_ record: PRRecord, dismissedCutoff: Date, account: String?, threads only: [Int]? = nil) {
+    public init(_ record: PRRecord, dismissedCutoff: Date, read: [Int: Date] = [:], account: String?, threads only: [Int]? = nil) {
         // The prompts list these, in this order, each under its entry's line.
         let listed = PullRequestPrompt.shippedThreads(record, only: only).prefix(PullRequestPrompt.threadLimit)
         let entries = Dictionary(listed.enumerated().map { ($1.id, PullRequestPrompt.entry($0, $1)) }, uniquingKeysWith: { first, _ in first })
         let threads = (record.details?.threads ?? []).filter { !$0.isResolved }
         self.init(key: record.id, waiting: threads.compactMap { thread in
-            let comments = PRClassifier.waitingComments(in: thread, me: record.me, dismissedCutoff: dismissedCutoff)
+            let comments = PRClassifier.waitingComments(in: thread, me: record.me, dismissedCutoff: dismissedCutoff, read: read[thread.id])
             let times = comments.map(\.publishedAt)
             guard let first = times.min(), let last = times.max() else { return nil }
             return Waiting(thread: thread.id, entry: entries[thread.id], comments: comments.map(\.id), first: first, last: last)
-        }, account: account, me: record.me, dismissedCutoff: dismissedCutoff)
+        }, account: account, me: record.me, dismissedCutoff: dismissedCutoff, read: read)
     }
 
     /// Up to when what waits on you leaves Needs You once `prompt` is sent: the last comment that waited on you in the
@@ -371,7 +376,8 @@ public struct CommentHandOff: Sendable, Equatable {
     /// one reopened since it was written, or one that came since. A thread answered or resolved meanwhile doesn't wait
     /// on you, and doesn't hold it back. Without it, that's one that waited on you in a thread whose entry isn't in the
     /// prompt, as it was written. A thread's entry is still there while its own line is: a comment in another entry
-    /// that names it doesn't count. Nil when none of them is still there.
+    /// that names it doesn't count. A thread you'd marked as read doesn't hold it back either, up to when you did. Nil when
+    /// none of them is still there.
     public func handedOff(in prompt: String, now: PRRecord? = nil) -> Date? {
         let lines = Set(prompt.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         let kept = waiting.filter { $0.entry.map(lines.contains) ?? false }
@@ -380,7 +386,7 @@ public struct CommentHandOff: Sendable, Equatable {
         if let threads = now?.details?.threads {
             let handed = Set(kept.flatMap { thread in thread.comments.map { "\(thread.thread).\($0)" } })
             stays = threads.filter { !$0.isResolved }.flatMap { thread in
-                PRClassifier.waitingComments(in: thread, me: me, dismissedCutoff: dismissedCutoff)
+                PRClassifier.waitingComments(in: thread, me: me, dismissedCutoff: dismissedCutoff, read: read[thread.id])
                     .filter { !handed.contains("\(thread.id).\($0.id)") }.map(\.publishedAt)
             }
         } else {

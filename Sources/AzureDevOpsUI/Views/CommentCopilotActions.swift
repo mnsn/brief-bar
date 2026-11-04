@@ -498,10 +498,12 @@ struct CommentComposer: View {
 
 /// The Comments header, with Fix All on your pull request while comments wait on you: Fix Comments, through the same
 /// composer in place as a thread's Fix, under it. It says what it takes on: "Fix 1 Comment" while others wait on someone
-/// else.
+/// else. Active | All, beside its title, chooses which threads show, for every pull request.
 struct CommentsHeader: View {
     let item: PRSnapshot
     let count: Int?
+    /// Which threads show: all of them, or only the active ones; nil for none to choose, as before there are any.
+    var filter: Binding<PullRequestPanel.CommentFilter>? = nil
     /// The composer in place that's open in the comments.
     @Binding var composing: CopilotComposing?
     let drafts: CopilotDrafts
@@ -531,6 +533,19 @@ struct CommentsHeader: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 PageSectionHeader(title: "Comments", count: count)
+                if let filter {
+                    Picker("Comments Shown", selection: filter) {
+                        Text("Active").tag(PullRequestPanel.CommentFilter.active)
+                        Text("All").tag(PullRequestPanel.CommentFilter.all)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .font(size: 11.5)
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help("Active: only the comments whose status is active or pending. All: every comment, the resolved ones folded")
+                    .accessibilityLabel("Comments Shown")
+                }
                 Spacer(minLength: 8)
                 if canFixAll, !isFixing {
                     Button {

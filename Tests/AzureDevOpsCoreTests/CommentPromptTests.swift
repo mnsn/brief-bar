@@ -307,4 +307,23 @@ import BriefBarCore
         let prompt = PullRequestPrompt.fixThread(record(threads), thread: threads[1], code: nil, how: nil)
         #expect(handOff.handedOff(in: prompt, now: record(threads)) == t(-2 * hour).addingTimeInterval(-0.001))
     }
+
+    /// Not one in a thread you marked as read, which doesn't wait on you; a newer comment there does, by the time the task
+    /// starts. Fix Comments' hand-off leaves it out too.
+    @Test func aThreadMarkedAsReadDoesntHoldItBack() {
+        let threads = [
+            ReviewThread(id: 12, comments: [comment(1, People.priya, "A test?", at: t(-2 * hour))]),
+            ReviewThread(id: 11, comments: [comment(1, People.sam, "Cap it?", at: t(-hour))]),
+        ]
+        let read = [12: t(-2 * hour)]
+        let handOff = CommentHandOff(record(threads), thread: 11, dismissedCutoff: t(-3 * day), read: read, account: nil)
+        #expect(handOff.waiting.map(\.thread) == [11])
+        let prompt = PullRequestPrompt.fixThread(record(threads), thread: threads[1], code: nil, how: nil)
+        #expect(handOff.handedOff(in: prompt, now: record(threads)) == t(-hour))
+        #expect(handOff.handedOff(in: prompt) == t(-hour))
+        var more = threads
+        more[0].comments.append(comment(2, People.priya, "Ping", at: t(-90 * minute)))
+        #expect(handOff.handedOff(in: prompt, now: record(more)) == t(-90 * minute).addingTimeInterval(-0.001))
+        #expect(CommentHandOff(record(threads), dismissedCutoff: t(-3 * day), read: read, account: nil).waiting.map(\.thread) == [11])
+    }
 }
