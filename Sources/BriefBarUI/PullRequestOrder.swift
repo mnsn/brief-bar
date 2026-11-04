@@ -17,6 +17,10 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var focus: MissionKey?
     /// The orders sessions told BriefBar: none while it's off.
     @Published package private(set) var orders = DeclaredOrders()
+    /// By Mission's view, List or Map, on both Pull Requests pages.
+    @Published package private(set) var view: OrderView
+    /// The mission a row's capsule asked By Mission to show, until it has.
+    @Published package var revealed: MissionKey?
 
     private let defaults: UserDefaults
     private let isDemo: Bool
@@ -43,7 +47,26 @@ package final class PullRequestOrder: ObservableObject {
         self.isDemo = isDemo
         self.now = now
         isOn = isDemo || PullRequestOrderSetting.isOn(in: defaults)
+        view = OrderView.load(from: defaults)
         if isOn { load() }
+    }
+
+    /// List or Map, remembered for both pages.
+    package func setView(_ view: OrderView) {
+        guard view != self.view else { return }
+        self.view = view
+        view.save(to: defaults)
+    }
+
+    /// Asks By Mission to show a mission, as clicking a row's capsule does.
+    package func reveal(_ key: MissionKey) {
+        revealed = key
+    }
+
+    /// Whether BriefBar keeps anything for Pull Request Order, on or off: an order, what it saw become of their pull
+    /// requests, or the mission you focus on.
+    package var keepsAnything: Bool {
+        [DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey].contains { defaults.object(forKey: $0) != nil }
     }
 
     /// Pull Request Order, in Settings. On, it reads the orders it kept, and the sources tell it what they show; off, it
@@ -175,6 +198,7 @@ package final class PullRequestOrder: ObservableObject {
     /// Forget All Orders: every order, what BriefBar saw become of their pull requests, and the mission you focus on,
     /// whether Pull Request Order is on or not.
     package func forgetAll() {
+        objectWillChange.send()
         DeclaredOrders.forgetAll(in: defaults)
         orders = DeclaredOrders()
         evidence = OrderEvidence()
@@ -182,8 +206,9 @@ package final class PullRequestOrder: ObservableObject {
         rebuild()
     }
 
-    /// The demo's orders, as if its sessions had told them, unless it has them: only in the demo, while it's on.
-    package func tellDemo(_ demo: DeclaredOrders) {
+    /// The demo's orders, as if its sessions had told them, unless it has them, with what BriefBar saw become of their pull
+    /// requests before, and the mission you focus on: only in the demo, while it's on.
+    package func tellDemo(_ demo: DeclaredOrders, evidence seen: OrderEvidence = OrderEvidence(), focus key: MissionKey? = nil) {
         guard isDemo, isOn else { return }
         let orders = DeclaredOrders.load(from: defaults)
         let missing = demo.plans.filter { orders.plan($0.id) == nil }
@@ -191,7 +216,25 @@ package final class PullRequestOrder: ObservableObject {
         let told = DeclaredOrders(plans: orders.plans + missing)
         told.save(to: defaults)
         self.orders = told
+        var evidence = self.evidence
+        for (ref, record) in seen.records.sorted(by: { $0.key < $1.key }) where evidence.records[ref] == nil {
+            evidence.observe(
+                OrderObservation(ref: ref, state: record.outcome == .merged ? .merged : .closed, witness: record.witness),
+                at: record.observedAt
+            )
+        }
+        self.evidence = evidence
+        evidence.save(to: defaults)
+        if let key, focus == nil {
+            focus = key
+            OrderFocus.save(key, to: defaults)
+        }
         rebuild()
+    }
+
+    /// What a source calls a session or a pull request, when one that's on says.
+    package func name(of ref: ItemRef) -> String? {
+        describe(ref)?.title
     }
 
     // MARK: Missions
