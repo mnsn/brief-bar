@@ -58,6 +58,10 @@ final class ThreadChanges: ObservableObject {
     /// How many times what was going on was called off (`forgetAll`): a change asked for before then does nothing more, as
     /// it comes back from what it waited for, though the setting is on again and another change on its thread is under way.
     private var generation = 0
+    /// How many times what was going on ended, as someone else signed in or Azure DevOps stopped (`forgetAll`): a change sent
+    /// before then does nothing more as it settles, whatever Azure DevOps answers, since it was the last one's; one called
+    /// off only as the setting went off settles all the same.
+    private var lifetime = 0
 
     /// A reply that may have gone: a fingerprint of what it said, as it went (`digest`), rather than what it said, so that it
     /// can outlast what you wrote, as the setting goes off; and the comments its thread had before it was sent, by their IDs.
@@ -96,12 +100,12 @@ final class ThreadChanges: ObservableObject {
         // Turned off, threads show none of it, what you wrote goes, and a change that hasn't gone yet is called off. One that
         // may have goes on, since Azure DevOps may make it all the same: its thread takes no other change until it settles,
         // and then says what happened; and a reply that may have gone is still checked before the same goes again
-        // (`forgetAll(keepingGuards:)`).
+        // (`forgetAll(turnedOff:)`).
         settings.$makesChanges.removeDuplicates().dropFirst()
             .sink { [weak self] on in
                 MainActor.assumeIsolated {
                     self?.objectWillChange.send()
-                    if !on { self?.forgetAll(keepingGuards: true) }
+                    if !on { self?.forgetAll(turnedOff: true) }
                 }
             }
             .store(in: &cancellables)
@@ -188,9 +192,10 @@ final class ThreadChanges: ObservableObject {
     /// Resolve does. Returns whether the reply went, and was still yours to finish: then what you wrote is forgotten;
     /// otherwise it's kept, and the thread says why. After one that may have gone, as one Azure DevOps didn't answer in
     /// time, the same reply goes only once the thread, read again first, says it didn't, whatever came after it. Called off
-    /// meanwhile (`forgetAll`), it does nothing more, though it's turned back on: but one that had gone keeps its thread
-    /// until it settles, then shows what Azure DevOps answered, or, when it may have been made without saying so, its pull
-    /// request is read again, and it's checked before the same goes again.
+    /// meanwhile (`forgetAll`), it does nothing more, though it's turned back on: but one that had gone as the setting went
+    /// off keeps its thread until it settles, then shows what Azure DevOps answered, or, when it may have been made without
+    /// saying so, its pull request is read again, and it's checked before the same goes again; one that had gone as someone
+    /// else signed in, or Azure DevOps stopped, was the last one's, and does nothing at all.
     @discardableResult
     func reply(_ text: String, then status: ThreadStatus? = nil, to thread: ReviewThread, of pullRequest: PRKey) async -> Bool {
         let key = Key(pullRequest: pullRequest, thread: thread.id)
@@ -201,7 +206,7 @@ final class ThreadChanges: ObservableObject {
             return false
         }
         guard let record = store.record(for: pullRequest) else { return false }
-        let generation = generation, account = account
+        let generation = generation, lifetime = lifetime, account = account
         // As the list read it last, which may have more than the view had; or, after a reply that may have gone, as Azure
         // DevOps has it now.
         var thread = record.details?.threads.first { $0.id == thread.id } ?? thread
@@ -238,6 +243,8 @@ final class ThreadChanges: ObservableObject {
                 store.changed(pullRequest, by: DemoThreadChanges.reply(markdown, to: thread, at: now()))
             case .live:
                 let answer = try await dispatch(write, for: key, as: account, in: generation)
+                // Someone else signed in, or Azure DevOps stopped, as it went: it was the last one's, and does nothing more.
+                guard lifetime == self.lifetime else { return false }
                 if let change = ThreadChange(answer, to: write, pullRequest: record.pullRequest, known: thread) {
                     store.changed(pullRequest, by: change)
                 } else {
@@ -250,9 +257,10 @@ final class ThreadChanges: ObservableObject {
             settled(key, sentIn: generation)
             return false
         } catch {
+            guard lifetime == self.lifetime else { return false }
             let problem = ADOWriteProblem(error, now: now())
-            // One that may have gone is checked before the same goes again: unless someone else signed in since, whose it isn't.
-            if problem.mayHaveGone, account == self.account {
+            // One that may have gone is checked before the same goes again.
+            if problem.mayHaveGone {
                 remember(Attempt(digest: digest, before: Set(thread.comments.map(\.id))), on: key)
             }
             // Called off as it went, as the setting was turned off: the thread says nothing, but once it's settled, its pull
@@ -290,7 +298,7 @@ final class ThreadChanges: ObservableObject {
             return
         }
         guard let record = store.record(for: pullRequest) else { return }
-        let generation = generation, account = account
+        let generation = generation, lifetime = lifetime, account = account
         states[key] = .sending(.status(status))
         let write = ADOWrite.setStatus(ThreadAddress(record.pullRequest, thread: thread.id), status)
         do {
@@ -299,6 +307,7 @@ final class ThreadChanges: ObservableObject {
                 store.changed(pullRequest, by: DemoThreadChanges.status(status, of: thread))
             case .live:
                 let answer = try await dispatch(write, for: key, as: account, in: generation)
+                guard lifetime == self.lifetime else { return }
                 if let change = ThreadChange(answer, to: write, pullRequest: record.pullRequest, known: thread) {
                     store.changed(pullRequest, by: change)
                 } else {
@@ -309,6 +318,7 @@ final class ThreadChanges: ObservableObject {
             settled(key, sentIn: generation)
             return
         } catch {
+            guard lifetime == self.lifetime else { return }
             let problem = ADOWriteProblem(error, now: now())
             guard generation == self.generation else {
                 if problem.mayHaveGone { readAgain(pullRequest) }
@@ -400,14 +410,16 @@ final class ThreadChanges: ObservableObject {
     }
 
     /// Forgets what you wrote, and what was going on, and calls off the changes on their way that haven't gone yet, as the
-    /// setting goes off, Azure DevOps stops or someone else signs in. As the setting goes off (`keepingGuards`), the changes
-    /// on their way, which may have gone already, keep their threads until they settle (`settling`), and a reply that may
-    /// have gone is still checked before the same goes again, by its fingerprint, not what it said.
-    func forgetAll(keepingGuards: Bool = false) {
-        if keepingGuards {
+    /// setting goes off, Azure DevOps stops or someone else signs in. As the setting goes off (`turnedOff`), the changes on
+    /// their way, which may have gone already, keep their threads until they settle (`settling`), and a reply that may have
+    /// gone is still checked before the same goes again, by its fingerprint, not what it said; otherwise what was going on
+    /// was the last one's, or ends, and does nothing more as it settles (`lifetime`).
+    func forgetAll(turnedOff: Bool = false) {
+        if turnedOff {
             for key in inFlight.keys { settling[key] = generation }
         } else {
             settling = [:]
+            lifetime += 1
         }
         generation += 1
         for task in inFlight.values { task.cancel() }
@@ -419,7 +431,7 @@ final class ThreadChanges: ObservableObject {
             return state
         }
         resolved = [:]
-        if !keepingGuards { unsure = [:] }
+        if !turnedOff { unsure = [:] }
         focusing = nil
     }
 

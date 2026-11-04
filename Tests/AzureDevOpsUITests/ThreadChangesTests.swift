@@ -607,11 +607,13 @@ import Testing
     }
 
     /// Someone else signing in while a change under way as the setting went off settles doesn't wait for it: it was the last
-    /// one's.
+    /// one's, and what Azure DevOps answers for it doesn't show over what the next one reads.
     @Test(.timeLimit(.minutes(1)))
     func someoneElseSigningInDoesntWaitForTheLastOnesChange() async throws {
         let (store, changes, azure) = live()
         let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        var readAgain: [PRKey] = []
+        changes.readAgain = { readAgain.append($0) }
         changes.accountChanged("home/robin")
         var waiting: CheckedContinuation<Void, Never>?
         changes.send = { write, _ in
@@ -630,6 +632,8 @@ import Testing
         #expect(await replying.value == false)
         #expect(changes.state(of: threadKey) == nil)
         #expect(azure.sent.map(\.kind) == [.reply])
+        #expect(try thread(store).comments.count == original.comments.count)
+        #expect(readAgain.isEmpty)
     }
 
     /// Someone else signing in forgets a reply that may have gone: what they write is theirs, and isn't checked against it.
