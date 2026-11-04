@@ -10,6 +10,8 @@ TESTING_PLUGINS := $(abspath $(dir $(shell xcrun --find swift))../lib/swift/host
 DEMO_DIR := $(abspath build/demo)
 DEMO_ENV := BRIEFBAR_TEAMS_DB="$(DEMO_DIR)/teams/db2/db" BRIEFBAR_TEAMS_STATE_DIR="$(DEMO_DIR)/teams/state" \
 	BRIEFBAR_COPILOT_DIR="$(DEMO_DIR)/copilot"
+MAKE_TEAMS_DEMO_DATA := swift scripts/make-teams-demo-data.swift "$(DEMO_DIR)/teams"
+MAKE_COPILOT_DEMO_DATA := swift scripts/make-copilot-demo-data.swift "$(DEMO_DIR)/copilot"
 # The binary that demo-check runs: the debug build, unless scripts/check-app.sh passes a built app.
 BRIEFBAR = $(shell swift build --arch arm64 --show-bin-path)/BriefBar
 SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-combined-light menubar-combined-dark \
@@ -100,8 +102,8 @@ diagnose: build
 	"$(BRIEFBAR)" --diagnose
 
 demo-data:
-	swift scripts/make-teams-demo-data.swift "$(DEMO_DIR)/teams"
-	swift scripts/make-copilot-demo-data.swift "$(DEMO_DIR)/copilot"
+	$(MAKE_TEAMS_DEMO_DATA)
+	$(MAKE_COPILOT_DEMO_DATA)
 
 # Runs the app with made-up data for every source instead of yours; ARGS=--window opens its window. Ctrl-C quits.
 demo: build demo-data
@@ -117,10 +119,17 @@ render: build
 	"$(BRIEFBAR)" --render render $(ARGS)
 
 # Renders the README's pictures from the demo data, with Teams' summaries if Apple Intelligence is on, and its
-# animated tours if ffmpeg is installed.
-screenshots: build demo-data
+# animated tours if ffmpeg is installed. A hundred to a process (--part, which exits with 3 while another part follows):
+# SwiftUI keeps a process's view graphs in one table, which can't grow past a limit, so however many pictures there
+# are, none runs out of room. Each part makes the demo data again, whose times are relative to now, so that its
+# pictures show the times they would in one process.
+screenshots: build
 	rm -rf build/screenshots
-	$(DEMO_ENV) BRIEFBAR_RENDER_SUMMARIES=1 "$(BRIEFBAR)" --demo --render build/screenshots
+	part=1; while :; do \
+		{ $(MAKE_TEAMS_DEMO_DATA) && $(MAKE_COPILOT_DEMO_DATA); } >/dev/null || exit 1; \
+		$(DEMO_ENV) BRIEFBAR_RENDER_SUMMARIES=1 "$(BRIEFBAR)" --demo --render build/screenshots --part $$part; \
+		status=$$?; [ $$status -eq 3 ] || exit $$status; part=$$((part + 1)); \
+	done
 	mkdir -p docs/images
 	for name in $(SCREENSHOTS); do cp build/screenshots/$$name.png docs/images/; done
 	for name in $(WINDOW_SHOTS); do sips -s format jpeg -s formatOptions 88 build/screenshots/$$name.png --out docs/images/$$name.jpg >/dev/null; done

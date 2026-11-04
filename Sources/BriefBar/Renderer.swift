@@ -9,7 +9,14 @@ import SwiftUI
 /// data.
 @MainActor
 enum Renderer {
-    static func run(directory: String, demo: Bool) -> Int32 {
+    /// How many pictures a process draws with `--part`. SwiftUI keeps every view graph of a process in one table, which
+    /// can't grow past a limit, so `make screenshots` draws them a hundred to a process, however many there are.
+    static let picturesPerPart = 100
+    /// What `--part` exits with once it drew its part, when another part follows.
+    static let anotherPartFollows: Int32 = 3
+
+    /// - Parameter part: With `--part`, only that hundred of the pictures, in the order it draws them all: the first is 1.
+    static func run(directory: String, demo: Bool, part: Int? = nil) -> Int32 {
         let output = URL(fileURLWithPath: directory, isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -18,6 +25,8 @@ enum Renderer {
             return 1
         }
         Snapshot.useOverlayScrollers()
+        // Apple Intelligence, when it words anything, says the same in each process that draws a part, and every time.
+        OnDeviceModel.useLikeliestWords()
         _ = NSApplication.shared
 
         // Never the app's own preferences: a copy of them in memory, or the demo's.
@@ -67,11 +76,11 @@ enum Renderer {
             RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         }
 
-        var written: [String] = []
-        func write(_ image: NSBitmapImageRep?, _ name: String) {
-            if let image, let file = Snapshot.write(image, to: output.appending(path: "\(name).png")) {
-                written.append(file)
-            }
+        // Each picture is drawn only when it's in this process's part. Everything else, which sets up what the pictures
+        // after it show, happens in every process, as it would in one that draws them all.
+        let pictures = Pictures(output: output, part: part.map { ($0 - 1) * picturesPerPart + 1...$0 * picturesPerPart })
+        func write(_ image: @autoclosure () -> NSBitmapImageRep?, _ name: String) {
+            pictures.write(name, image)
         }
 
         // Examples, drawn from copies of the layouts, so nothing is saved.
@@ -106,7 +115,7 @@ enum Renderer {
             func openedList(
                 of items: [SectionLayout.Item], pressed index: Int, at section: SectionID? = nil,
                 options: [String: MenuBarItemOptions] = [:]
-            ) -> (items: [MenuBarItemContent], image: NSBitmapImageRep)? {
+            ) -> (items: [MenuBarItemContent], view: some View) {
                 func itemOptions(_ item: SectionLayout.Item) -> MenuBarItemOptions {
                     options[item.id] ?? model.options(forMenuBarItem: item.id)
                 }
@@ -132,15 +141,16 @@ enum Renderer {
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
                     .background(Color(nsColor: .windowBackgroundColor))
-                return Snapshot.render(view, appearance: appearance).map { (contents, $0) }
+                return (contents, view)
             }
             func picture(
                 of items: [SectionLayout.Item], pressed index: Int, at section: SectionID? = nil, name: String,
                 options: [String: MenuBarItemOptions] = [:]
             ) {
-                if let opened = openedList(of: items, pressed: index, at: section, options: options) {
-                    write(MenuBarPicture.draw(panel: opened.image, items: opened.items, pressed: index, appearance: appearance), "\(name)-\(suffix)")
-                }
+                let opened = openedList(of: items, pressed: index, at: section, options: options)
+                write(Snapshot.render(opened.view, appearance: appearance).flatMap {
+                    MenuBarPicture.draw(panel: $0, items: opened.items, pressed: index, appearance: appearance)
+                }, "\(name)-\(suffix)")
             }
             for (index, item) in items.enumerated() {
                 picture(of: items, pressed: index, name: "menubar-\(item.id)")
@@ -157,20 +167,20 @@ enum Renderer {
                 picture(of: allItems, pressed: 0, name: "menubar-by-state", options: byState)
             }
 
-            func widgetImage(_ sections: [SectionID], size: WidgetSize) -> NSBitmapImageRep? {
+            func widgetView(_ sections: [SectionID], size: WidgetSize) -> some View {
                 let content = WidgetContent(id: "render", model: model)
                 content.sections = sections
                 content.options = WidgetOptions(size: size)
-                let view = WidgetView(content: content)
+                return WidgetView(content: content)
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
                     .background(Color(nsColor: .windowBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(16)
-                return Snapshot.render(view, appearance: appearance)
             }
             func widget(_ sections: [SectionID], size: WidgetSize, name: String) {
-                write(widgetImage(sections, size: size), "\(name)-\(suffix)")
+                let view = widgetView(sections, size: size)
+                write(Snapshot.render(view, appearance: appearance), "\(name)-\(suffix)")
             }
             for size in WidgetSize.allCases {
                 for section in widgetSections {
@@ -198,13 +208,22 @@ enum Renderer {
 
             // The desktop the README's tour plays on: every section in one item, its list open by state, beside a widget
             // with every section; then with the list closed; and bare, for the tour's window to open over.
-            if allItems.count == 1, allItems[0].sections.count > 1, shownWidgetSections.count > 1,
-               let opened = openedList(of: allItems, pressed: 0, options: byState) {
+            if allItems.count == 1, allItems[0].sections.count > 1, shownWidgetSections.count > 1 {
+                let opened = openedList(of: allItems, pressed: 0, options: byState)
+                let widgetShown = widgetView(shownWidgetSections, size: .medium)
                 let size = NSSize(width: 1_020, height: 728)
-                let widget = widgetImage(shownWidgetSections, size: .medium)
-                write(MenuBarPicture.desktop(size: size, items: opened.items, open: (0, opened.image), widget: widget,
-                                             appearance: appearance), "desktop-\(suffix)")
-                write(MenuBarPicture.desktop(size: size, items: opened.items, widget: widget, appearance: appearance),
+                // The widget, drawn once, for the first of these pictures that needs it.
+                var drawnWidget: NSBitmapImageRep??
+                func widgetImage() -> NSBitmapImageRep? {
+                    if let drawnWidget { return drawnWidget }
+                    let image = Snapshot.render(widgetShown, appearance: appearance)
+                    drawnWidget = image
+                    return image
+                }
+                write(Snapshot.render(opened.view, appearance: appearance).flatMap { panel in
+                    MenuBarPicture.desktop(size: size, items: opened.items, open: (0, panel), widget: widgetImage(), appearance: appearance)
+                }, "desktop-\(suffix)")
+                write(MenuBarPicture.desktop(size: size, items: opened.items, widget: widgetImage(), appearance: appearance),
                       "desktop-closed-\(suffix)")
                 write(MenuBarPicture.desktop(size: size, items: opened.items, appearance: appearance), "desktop-bare-\(suffix)")
             }
@@ -498,7 +517,52 @@ enum Renderer {
                 model.services.setTextSize(savedTextSize)
             }
         }
-        written.forEach { print($0) }
-        return written.isEmpty ? 1 : 0
+        pictures.written.forEach { print($0) }
+        if let part, pictures.endsBeforePart {
+            let parts = (pictures.count + picturesPerPart - 1) / picturesPerPart
+            fputs("There's no part \(part): BriefBar draws \(pictures.count) pictures, in \(parts) parts.\n", stderr)
+            return 1
+        }
+        if pictures.written.isEmpty { return 1 }
+        return pictures.hasPicturesAfterPart ? anotherPartFollows : 0
+    }
+}
+
+/// The pictures `--render` draws, numbered in the order it draws them, from 1. It draws and writes those of its part, or
+/// all of them, each in an autorelease pool of its own: `--render` never goes back to an event loop, which is what empties
+/// the main thread's pool, so without one, all that drawing and writing a picture autoreleased, such as its images and
+/// their PNG data, stayed until BriefBar quit.
+@MainActor
+private final class Pictures {
+    private let output: URL
+    /// The numbers of those it draws, or nil for all.
+    private let part: ClosedRange<Int>?
+    /// How many it came to, drawn or not.
+    private(set) var count = 0
+    private(set) var written: [String] = []
+
+    init(output: URL, part: ClosedRange<Int>?) {
+        self.output = output
+        self.part = part
+    }
+
+    /// Whether there are pictures after its part.
+    var hasPicturesAfterPart: Bool {
+        part.map { count > $0.upperBound } ?? false
+    }
+
+    /// Whether there were fewer pictures than its part starts at.
+    var endsBeforePart: Bool {
+        part.map { count < $0.lowerBound } ?? false
+    }
+
+    func write(_ name: String, _ image: () -> NSBitmapImageRep?) {
+        count += 1
+        guard part?.contains(count) ?? true else { return }
+        autoreleasepool {
+            if let image = image(), let file = Snapshot.write(image, to: output.appending(path: "\(name).png")) {
+                written.append(file)
+            }
+        }
     }
 }
