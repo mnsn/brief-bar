@@ -438,8 +438,9 @@ back; a thread's right-click menu has Reply and its statuses too. The thread sho
 answers, as it answered, and stays where it is in the details while they show that pull request, however it stands now;
 then BriefBar reads the pull request again, so Needs You, What's Left, the brief and the counts follow: a thread you replied
 to, or resolved, doesn't wait on you anymore. When it can't, the thread says why in a sentence, such as **Azure DevOps says
-you may not reply here**, **You're offline**, for a pull request that's completed or abandoned, or when the thread was
-deleted meanwhile, with what may help, such as **Try Again** or **Sign In…**; a reply that didn't go keeps what you wrote, in its field,
+you may not reply here**, **You're offline**, for a pull request that's completed or abandoned, when the thread was
+deleted meanwhile, or when someone else signed in to the Azure CLI since, which sends nothing as them, with what may
+help, such as **Try Again** or **Sign In…**; a reply that didn't go keeps what you wrote, in its field,
 and one that Azure DevOps didn't answer in time is read again before you send it twice. **Fix Grammar**, in the field,
 corrects your reply's spelling, grammar and punctuation, and only those, in the language you wrote it in, keeping your
 words, your Markdown, and your code, links and @mentions, which the model never sees; when a model does more, such as

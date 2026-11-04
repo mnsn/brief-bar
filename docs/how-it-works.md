@@ -1432,14 +1432,17 @@ pull request ends with **Reply** and its status (`ThreadReplyButtons`), in the r
 right-click menu has them. They're the only changes BriefBar makes in Azure DevOps (`ADOWrite`, in
 `Sources/AzureDevOpsCore`): your reply in a thread, a `POST` of a comment, in reply to the thread's first, with the body
 Azure DevOps' samples send (`content`, `parentCommentId` and `commentType` 1, text), and a thread's status, a `PATCH` of
-only that (`status`, by the number the API takes for it). `ADOClient.send(_:)` alone sends them, with a GET's sign-in,
+only that (`status`, by the number the API takes for it). `ADOClient.send(_:as:)` alone sends them, with a GET's sign-in,
 headers and redirect guard, from the same request path, once: it sends one again only when Azure DevOps rejected the
 sign-in, which it never acts on, so a change that fails otherwise, or times out, isn't made twice. When Azure DevOps refuses
 one, the error says why, as it said it (`ADOError.refused`, TF401181 for a pull request that's completed or abandoned), which
 shows on the thread but never goes to the log. Any answer from 200 to 299 says the change was made, but 203, a sign-in
 page's: an empty 204 too, and one whose answer can't be read, which says so (`ADOWrite.Answer.unreadable`), and the pull
 request is read again instead. A change called off before it goes, as when the setting is turned off while it waits for a
-token, never goes. `WriteTests` goes through every kind of change
+token, never goes. And it goes only as whom the list was read as when you clicked (`send(_:as:)`): when someone else
+signed in to the Azure CLI since, as the list doesn't know yet, nothing goes, and the thread says so, with **Sign In…**
+(`ADOError.otherAccount`). A token from your own directory says whom it's for; for an organization in another directory,
+whose tokens are a guest's there, with an ID of their own, your own directory's sign-in is read again, fresh, to tell. `WriteTests` goes through every kind of change
 (`ADOWrite.Kind`), and checks that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET. Agents
 (`--mcp`) and the command line get none of it, and the demo sends nothing: its changes are made up (`DemoThreadChanges`),
 in its made-up data only, while it runs.
@@ -1452,8 +1455,10 @@ line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘Retur
 & Reactivate** reactivates a resolved one, as Azure DevOps' own does. What you write is kept as you type
 (`ThreadChanges.keep`), in memory only, for each thread, until it's sent: closing the field, or the details, keeps it, and
 **Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure CLI forgets
-it, and calls off the changes on their way (`ThreadChanges.forgetAll`): one that hasn't gone yet never does, and nothing
-says it failed. After a reply that may have gone, as one Azure DevOps didn't answer in time, the thread is read again
+it, and calls off the changes on their way (`ThreadChanges.forgetAll`): one that hasn't gone yet never does, nothing
+says it failed, and one called off does nothing more as what it waited for comes back, though the setting is on again
+and another change on its thread is under way. A reply goes as you wrote it, but for the lines that say nothing before
+it and the spaces after it (`ThreadChanges.posted`): its first line's indent stays, which can make it code. After a reply that may have gone, as one Azure DevOps didn't answer in time, the thread is read again
 before it's sent again, by a read that starts then, never one under way before, and nothing goes until it was
 (`ADOWriteProblem.unconfirmed`): a comment of yours that came since it was sent, and says the same, as Azure DevOps keeps
 it, its mentions as their IDs, or as the details show it, is it, whatever came after it, so it isn't sent twice
