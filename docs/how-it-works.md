@@ -394,9 +394,11 @@ requests.
   sprint's work items, and the tasks you sent to Copilot: each one's session, with the work item or pull request it was
   sent from, and with the pull request it opened, which goes with the work item too. One of your pull requests, which
   the list has, also shows in BriefBar's window (`LinkedItem.show`): in a row's links, it has **Show in BriefBar**, for
-  its details on the Pull Requests page, beside **Open in Azure DevOps**, which a task's menu has too, as **Show Pull
-  Request in BriefBar**, for the pull request it works on or opened (`CopilotTaskEntry.pullRequestKey`). Where no window
-  has that page, it opens in Azure DevOps.
+  its details on the Pull Requests page, beside **Open in Azure DevOps**, and so does its own row's menu under Where It
+  Stands or Also Linked, and its preview's buttons (`StoryRow`, `StoryActions`), ↗ opening it in Azure DevOps all the
+  same; a task's menu has it too, as **Show Pull Request in BriefBar**, for the pull request it works on or opened
+  (`CopilotTaskEntry.pullRequestKey`), beside **Open Pull Request in Azure DevOps**. They show it at what its row is
+  about (`PullRequestDetailsStore.revealAtWhatItsAbout`). Where no window has that page, it opens in Azure DevOps.
 - Copilot: the pull request each app session started from or opened, as the app records it in its database
   (`workspaces`' `source_pr_*` and `created_pr_*` columns, and `workspace_pull_request_links`): GitHub's, and any
   other service's whose link it records.
@@ -1322,12 +1324,20 @@ its menu offers only that; otherwise its menu has both, what a click does first:
 menu bar and widgets, **Show Details** in the window, and **Open in Azure DevOps**. Showing it there sees it, as
 opening it in Azure DevOps does. It shows at what its row is about (`Place.about`): where its link leads
 (`PRSnapshot.place`, `PullRequestPlace` in `Sources/AzureDevOpsCore`), the thread of the comment that needs you
-or that you answered, or the run after its merge that failed or waits; else, for one that's failing, the first of
-its builds and checks that failed; else their top, which starts with what's left. A notification shows its own
+or that you answered, or the run after its merge that failed or waits; for a review you're asked for, new or seen,
+or one that waits on its author for the changes you asked for, or your rejection, while you're among its reviewers,
+its reviewers, where your vote is (`PRSnapshot.isAboutYourReview`), not one you only watch; else, for one that's
+failing, the first of its builds and checks that failed; else their top, which starts with what's left. A
+notification shows its own
 thread or run instead, which its link names, or else what its row is about (`reveal(notification:link:)`, by the
 pull request's key the notification keeps, `PRKey(description:)`). A **Your Pull Requests** card on the Pipelines
 page shows the run you click, or for its title the first that failed, else the builds and checks; an **After
-Your Merges** card, the run its merge's pipelines name, while the list still has the pull request.
+Your Merges** card, the run its merge's pipelines name, while the list still has the pull request. A task you sent
+to Copilot, in Copilot's list (`SentTask`), shows its pull request as the pull request's own row does: from a page of
+the window wherever it can (`canShow`), and from the menu bar or a widget with Open Pull Requests in BriefBar
+(`showsFromMenuBar`), at what its row is about; otherwise, and for a work item's task, it opens in Azure DevOps.
+Its menu says what a click does first, then the other (`SentTask.click(inWindow:)`, `otherOpening`), and its line
+in the Overview's brief shows it from there (`SessionStore.show`).
 
 On the Sprint page, the page of one of your pull requests over a work item's details, and on the Pull Requests page
 one over another pull request's, is the same view as its details (`LinkedItemPage`, `PullRequestDetailsContent`),
@@ -1359,11 +1369,16 @@ row does: at the comment that needs you or that you answered, or a merge's run; 
 that, and **⋯** has the row's menu, its Copilot actions among them while Send Work to Copilot is on.
 
 Something else can ask the details to show a pull request at a place (`PullRequestDetailsStore.Place`): a thread,
-which unfolds the resolved ones when it's one of them, a build by its run, a check by its name (the first of that
+which unfolds the resolved ones when it's among them as they list it, as one you reactivated there is
+(`Threads.listsResolved(_:holding:)`), a build by its run, a check by its name (the first of that
 name), or a part, such as its comments, which What's Left does. They scroll there once it shows, and point a
 thread, a build or a check out for a moment; for a thread they don't have, they scroll to their comments, and for
 a run or a check they don't have, such as a run that isn't the one a policy queued last, to their builds and
-checks (`Place.anchor(in:)`). Taken to a thread, the header names it after the pull request, `!4102 ›
+checks (`Place.anchor(in:)`). VoiceOver goes there too (`DetailsArrival`): to the thread, the file's row, the build
+or the check they point out, or else to the heading of the part they went to, or to their title for their top
+(`takesFocusOnArrival`); their title doesn't take it as they show while they're on their way somewhere, as it does
+otherwise. Shown again while a file's page is open, with no place, they go to their top (`show`), rather than staying
+where its diff was scrolled to. Taken to a thread, the header names it after the pull request, `!4102 ›
 PaymentsClient.cs:88` (`PullRequestDetailsStore.trailThread`), at the line its card shows, where it was made
 (`ThreadCode.place`), until they go elsewhere in them or over them; the pull request's number there takes them
 back to their top (`Place.top`). `reveal(_:at:)` shows them on the window's page and opens it there, unless no
@@ -1504,7 +1519,8 @@ its details, which keep what was new as it was when they showed it, leave out wh
 did, with the open ones or the resolved ones, with those that wait on you or not, and among them, by when something was
 last said in it then, though your reply is the latest now, however it stands now (`Threads.arranged(holding:)`), and on
 its file's page, unfolded, where it was among the threads on its line (`Threads.comments(on:in:holding:)`), as you go
-from one to the other and back, since the details keep them (`PullRequestDetailsContent`): so it doesn't move away as
+from one to the other and back, since the details keep them, and whether the resolved ones show
+(`PullRequestDetailsContent`): so it doesn't move away as
 you reply or resolve it, and the menu that sets it back is where you left it. A change that didn't happen says why on
 the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help, or,
 for a reply, in its field, which stays open with what you wrote, and **Sign In…** when that's why; and a status set from
@@ -1601,7 +1617,8 @@ new tag, last. The best match is chosen as you type, and with something typed on
 that shows, but for a tag the pull request has already, when none is and the field says so; as the tags are read again
 while the field is open, the same row stays chosen, where it's still offered, or else the best match, and none once the
 pull request has the tag typed, as when someone else added it (`TagChoices.chosen`). VoiceOver hears which, and how many
-there are, as it changes, and when the pull request has the tag typed. ↑ and ↓ choose another; Tab completes the one
+there are, as ↑ and ↓ choose one, as another suggestion is chosen, or what you typed is, as a new tag, or back, and when
+the pull request has the tag typed; not again at each key as a new tag grows (`TagChoices.Choice`). ↑ and ↓ choose another; Tab completes the one
 chosen in the field, sending nothing, and moves on, as it does anywhere, when there's nothing to complete; Return adds
 it; and Esc closes the field (`InlineComposerOpen`). BriefBar remembers the tags you add, by their names, up to 20 for
 each project, by its organization and ID, for the 20 projects you added tags in last (`UsedTags`, `ado.usedTags`), until
@@ -2818,7 +2835,9 @@ it applies. A few more details:
   (Starting…) and while Copilot works, with its current step; then **Done** or **Stopped**, highlighted as
   long as a session would be, until Clear or retention expiry, with optional dismissal on opening
   while **Move Viewed Sessions to Idle** is on. One you stopped yourself is idle at once.
-  Clicking one opens its pull request, or its work item, and its menu is the task's own: go on in
+  Clicking one shows its pull request as the pull request's own row does, in BriefBar's window from a page of it, and
+  from the menu bar or a widget with Open Pull Requests in BriefBar on, or else opens it, or its work item, in Azure
+  DevOps (`SentTask.click(inWindow:)`); its menu has the other way to it, then the task's own: go on in
   Terminal, or in the Copilot app for one of its sessions, show the worktree or what Copilot printed,
   stop it, remove its worktree or clear it.
 

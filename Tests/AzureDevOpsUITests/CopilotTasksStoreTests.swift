@@ -421,18 +421,74 @@ import Testing
         #expect(fix.detail == nil)
         #expect(fix.since == now)
         #expect(!fix.stoppedByYou)
-        #expect(fix.openTitle == "Open Pull Request")
+        #expect(fix.openTitle == "Open Pull Request in Azure DevOps")
+        #expect(fix.showTitle == "Show Pull Request in BriefBar")
 
         let sent = try #require(tasks.last)
         #expect(sent.name == "Work Item 4217")
         #expect(sent.place == "Storefront")
         #expect(sent.stage == .finished)
         #expect(sent.detail == "Finished, without a pull request")
-        #expect(sent.openTitle == "Open Work Item")
+        #expect(sent.openTitle == "Open Work Item in Azure DevOps")
         store.title = { _ in "Show the order total in the cart" }
         #expect(store.sentTasks().last?.name == "Work Item 4217: Show the order total in the cart")
         #expect(!readable(defaults).contains("Fix totals"))
         #expect(!readable(defaults).contains("Show the order total"))
+    }
+
+    /// A task's pull request shows in BriefBar's window as the pull request's own row does: from a page of the window
+    /// wherever it can, and from the menu bar or a widget once you chose to Open Pull Requests in BriefBar; its menu has
+    /// the other way to it, Azure DevOps. A work item's, and a pull request the window can't show, open only in Azure DevOps.
+    /// Nothing here takes a path that would open Azure DevOps.
+    @Test func aTasksPullRequestShowsInBriefBarAsItsRowDoes() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        let fixing = CopilotRun(
+            id: first, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,
+            repository: URL(fileURLWithPath: "/Users/robin/dev/shop-web"),
+            worktree: URL(fileURLWithPath: "/Users/robin/dev/copilot-worktrees/shop-web/pr-4071"), startedAt: now,
+            process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: pullRequest.url
+        )
+        settings.copilotRuns = [fixing, run(second, startedAt: now.addingTimeInterval(-60), ended: .finished)]
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        var listed: Set<PRKey> = [PRKey("Contoso", 4071)]
+        var shown: [PRKey] = []
+        store.canShowPullRequest = { listed.contains($0) }
+        store.showPullRequest = { key in
+            guard listed.contains(key) else { return false }
+            shown.append(key)
+            return true
+        }
+        let tasks = store.sentTasks()
+        let fix = try #require(tasks.first)
+        #expect(fix.canShow())
+        // From a page of the window: its details, and Azure DevOps second.
+        #expect(fix.clickShows(inWindow: true))
+        #expect(fix.clickTitle(inWindow: true) == "Show Pull Request in BriefBar")
+        #expect(fix.otherOpening(inWindow: true)?.title == "Open Pull Request in Azure DevOps")
+        fix.click(inWindow: true)
+        #expect(shown == [PRKey("Contoso", 4071)])
+        // From the menu bar: Azure DevOps, then its details second, until you choose to Open Pull Requests in BriefBar.
+        #expect(!fix.clickShows(inWindow: false))
+        #expect(fix.clickTitle(inWindow: false) == "Open Pull Request in Azure DevOps")
+        let other = try #require(fix.otherOpening(inWindow: false))
+        #expect(other.title == "Show Pull Request in BriefBar")
+        other.action()
+        #expect(shown.count == 2)
+        settings.opensPullRequestsInBriefBar = true
+        #expect(fix.clickShows(inWindow: false))
+        fix.click(inWindow: false)
+        #expect(shown.count == 3)
+        // One the window can't show: Azure DevOps alone.
+        listed = []
+        #expect(!fix.canShow() && !fix.clickShows(inWindow: true) && fix.otherOpening(inWindow: false) == nil)
+        #expect(fix.clickTitle(inWindow: true) == "Open Pull Request in Azure DevOps")
+
+        let workItem = try #require(tasks.last)
+        listed = [PRKey("Contoso", 4071)]
+        #expect(!workItem.canShow() && !workItem.clickShows(inWindow: true))
+        #expect(workItem.otherOpening(inWindow: true) == nil && workItem.otherOpening(inWindow: false) == nil)
+        #expect(shown.count == 3)
     }
 
     @Test func saysHowEachTaskStands() {

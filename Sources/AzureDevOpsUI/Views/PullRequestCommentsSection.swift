@@ -29,7 +29,8 @@ struct PullRequestCommentsSection: View {
     /// The threads you changed in the details, with your reply or their statuses, where each was as you first did: they
     /// stay there, however they stand now, while the details show the pull request, which keep them as a file's page shows.
     @Binding var held: [Int: PullRequestPanel.Thread.Held]
-    @LocalState private var showsResolved = false
+    /// Whether the resolved threads show, which the details keep with `held`, as a file's page shows in their place.
+    @Binding var showsResolved: Bool
 
     var body: some View {
         let threads = panel.threads
@@ -79,9 +80,9 @@ struct PullRequestCommentsSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Asked to go to a thread that's resolved: it shows.
+        // Asked to go to a thread among the resolved ones, as they show it, such as one you reactivated here: they unfold.
         .onChange(of: place, initial: true) {
-            if case .thread(let id)? = place, panel.threads.resolved.contains(where: { $0.id == id }) {
+            if case .thread(let id)? = place, threads.listsResolved(id, holding: held) {
                 showsResolved = true
             }
         }

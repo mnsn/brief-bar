@@ -27,8 +27,9 @@ struct PullRequestTagsRow: View {
     /// The row of the suggestions that ↑ and ↓ chose, which Tab completes and Return adds: the best match as you type; nil
     /// while nothing's typed and you chose none.
     @LocalState private var highlighted: Int?
-    /// The row VoiceOver last heard was chosen.
-    @LocalState private var announced: String?
+    /// What VoiceOver last heard was chosen: a suggestion, or what you typed, as a new tag, which it doesn't hear again as it
+    /// grows.
+    @LocalState private var announced: TagChoices.Choice?
     /// Add Tag takes the keyboard's focus back as the field closes, and once the tag whose ✕ had it is taken off.
     @LocalState private var refocusesAdd = false
     @FocusState private var focus: Focus?
@@ -268,7 +269,7 @@ struct PullRequestTagsRow: View {
                 announced = nil
                 SpokenText.announce("It has the tag \(already) already")
             } else {
-                announceChosen(new.rows)
+                announceChosen(new)
             }
         }
     }
@@ -399,22 +400,24 @@ struct PullRequestTagsRow: View {
         let lowest = PullRequestTag.name(typed) == nil || choices.alreadyOn != nil ? -1 : 0
         let next = min(max((highlighted ?? -1) + step, lowest), rows.count - 1)
         highlighted = next < 0 ? nil : next
-        announceChosen(rows, always: true)
+        announceChosen(choices, always: true)
     }
 
-    /// Says which row is chosen, and how many there are, as it changes, for VoiceOver: what Return would add.
-    private func announceChosen(_ rows: [String], always: Bool = false) {
+    /// Says which row is chosen, and how many there are, for VoiceOver: what Return would add. As you type, only as another
+    /// suggestion is chosen, or as what's chosen goes from a suggestion to what you typed, as a new tag, or back: not as a
+    /// new tag grows, key by key. ↑ and ↓ say it each time (`always`).
+    private func announceChosen(_ choices: TagChoices, always: Bool = false) {
         guard preview == nil else { return }
-        let chosen = highlighted.flatMap { rows.indices.contains($0) ? rows[$0] : nil }
+        let chosen = choices.choice(at: highlighted)
         guard always || chosen != announced else { return }
         announced = chosen
-        guard let chosen else {
+        guard let chosen, let highlighted else {
             if always { SpokenText.announce("No tag chosen") }
             return
         }
-        let isNew = chosen == choices.newTag
+        let rows = choices.rows
         let count = rows.count == 1 ? "1 choice" : "\(rows.count) choices"
-        SpokenText.announce("\(chosen), \(isNew ? "new tag" : "suggested"). \(count)")
+        SpokenText.announce("\(rows[highlighted]), \(chosen == .newTag ? "new tag" : "suggested"). \(count)")
     }
 
     /// Tab: what you typed, completed to the suggestion chosen, without sending anything. With nothing to complete, Tab

@@ -34,13 +34,27 @@ package struct SentTask: Identifiable {
     package var stoppedByYou: Bool
     /// What clicking it opens, such as "Pull Request" or "Work Item".
     package var opens: String
+    /// Where that lives, such as "Azure DevOps", which opening it there says (`openTitle`).
+    package var livesIn: String?
+    /// Opens what it's for where it lives, such as its pull request in Azure DevOps.
     package var open: () -> Void
-    /// Its own menu items, after the one that opens it: go on with it in Terminal, show its worktree, stop it…
+    /// Whether what it's for shows in BriefBar's window too, as it is now: its pull request, while a window has the Pull
+    /// Requests page and its list has it. Never for a work item.
+    package var canShow: () -> Bool
+    /// Shows what it's for in BriefBar's window, such as its pull request's details: whether it could, for `open` to open
+    /// it where it lives instead.
+    package var show: () -> Bool
+    /// Whether a click in the menu bar or a widget shows what it's for in BriefBar's window, where it can, rather than
+    /// opening it where it lives: as a pull request's own row does there, once you chose to Open Pull Requests in BriefBar.
+    /// From a page of the window, a click shows it there wherever it can.
+    package var showsFromMenuBar: () -> Bool
+    /// Its own menu items, after the ones that open it: go on with it in Terminal, show its worktree, stop it…
     package var menu: () -> AnyView
 
     package init(
         id: String, name: String, place: String?, stage: Stage, detail: String?, since: Date?, stoppedByYou: Bool = false,
-        opens: String, open: @escaping () -> Void, menu: @escaping () -> AnyView
+        opens: String, livesIn: String? = nil, open: @escaping () -> Void, canShow: @escaping () -> Bool = { false },
+        show: @escaping () -> Bool = { false }, showsFromMenuBar: @escaping () -> Bool = { false }, menu: @escaping () -> AnyView
     ) {
         self.id = id
         self.name = name
@@ -50,19 +64,52 @@ package struct SentTask: Identifiable {
         self.since = since
         self.stoppedByYou = stoppedByYou
         self.opens = opens
+        self.livesIn = livesIn
         self.open = open
+        self.canShow = canShow
+        self.show = show
+        self.showsFromMenuBar = showsFromMenuBar
         self.menu = menu
     }
 
-    /// "Open Pull Request", for menus.
-    package var openTitle: String { "Open \(opens)" }
+    /// "Open Pull Request in Azure DevOps", for menus: where it lives.
+    package var openTitle: String { "Open \(opens)" + (livesIn.map { " in \($0)" } ?? "") }
+
+    /// "Show Pull Request in BriefBar", for menus.
+    package var showTitle: String { "Show \(opens) in BriefBar" }
+
+    /// Whether a click shows what it's for in BriefBar's window rather than where it lives: where it can, from a page of the
+    /// window (`inWindow`), and from the menu bar or a widget as you chose (`showsFromMenuBar`).
+    package func clickShows(inWindow: Bool) -> Bool {
+        (inWindow || showsFromMenuBar()) && canShow()
+    }
+
+    /// What a click does, for its menu's first item: `showTitle` or `openTitle`.
+    package func clickTitle(inWindow: Bool) -> String {
+        clickShows(inWindow: inWindow) ? showTitle : openTitle
+    }
+
+    /// A click, from a page of BriefBar's window (`inWindow`), or else the menu bar or a widget: what it's for in the
+    /// window, where a click shows it (`clickShows`), or else where it lives.
+    package func click(inWindow: Bool) {
+        if clickShows(inWindow: inWindow), show() { return }
+        open()
+    }
+
+    /// What its menu has after what a click does: the other way to what it's for, where it lives or in BriefBar's window,
+    /// when there's one.
+    package func otherOpening(inWindow: Bool) -> (title: String, action: () -> Void)? {
+        if clickShows(inWindow: inWindow) { return (openTitle, open) }
+        guard canShow() else { return nil }
+        return (showTitle, { if !show() { open() } })
+    }
 }
 
 /// What the views compare to tell whether a task changed: everything but what its actions do.
 extension SentTask: Equatable {
     package static func == (lhs: SentTask, rhs: SentTask) -> Bool {
         lhs.id == rhs.id && lhs.name == rhs.name && lhs.place == rhs.place && lhs.stage == rhs.stage && lhs.detail == rhs.detail
-            && lhs.since == rhs.since && lhs.stoppedByYou == rhs.stoppedByYou && lhs.opens == rhs.opens
+            && lhs.since == rhs.since && lhs.stoppedByYou == rhs.stoppedByYou && lhs.opens == rhs.opens && lhs.livesIn == rhs.livesIn
     }
 }
 

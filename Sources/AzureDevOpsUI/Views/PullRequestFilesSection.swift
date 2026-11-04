@@ -111,6 +111,7 @@ struct PullRequestFilesSection: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             let count: Int? = if case .read(let changes)? = state, !changes.files.isEmpty { changes.files.count } else { nil }
             PageSectionHeader(title: "Files", count: count)
+                .takesFocusOnArrival(at: .files)
             Spacer(minLength: 6)
             if let lastSeen {
                 scopeMenu(since: lastSeen)

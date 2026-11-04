@@ -684,6 +684,11 @@ private struct StoryRow: View {
             .accessibilityLabel("\(kindName), \(name). \(sentence)")
             .accessibilityValue(accessibilityValue)
             .accessibilityHint(navigates ? "Shows its page" : isExpanded ? "Hides what's known of it" : "Shows what's known of it")
+            .accessibilityActions {
+                if item.menu == nil, item.show != nil {
+                    Button(StoryDetails.showTitle, action: show)
+                }
+            }
             .accessibilityAction(named: "Open") { open() }
             .accessibilityAction(named: connection.isKnownElsewhere ? "Hide Link" : "Unlink") { links.unlink(subject, item.ref) }
             // To come back to it from its page.
@@ -758,6 +763,12 @@ private struct StoryRow: View {
         item.open?()
     }
 
+    /// In BriefBar's window, such as one of your pull requests in its details on the Pull Requests page; where it lives when
+    /// it can't show there.
+    private func show() {
+        if item.show?() != true { item.open?() }
+    }
+
     /// Its page, where there's one; else its preview, in place.
     private func click() {
         if let navigation, navigation.open(item.ref) { return }
@@ -768,8 +779,15 @@ private struct StoryRow: View {
     private var menu: some View {
         if let menu = item.menu {
             menu()
-        } else if let open = item.open {
-            Button(StoryDetails.openTitle(for: item.ref.kind), action: open)
+        } else {
+            // One BriefBar shows in its window too, such as one of your pull requests: there first, then where it lives, as
+            // its links' menu has them (`LinksMenuContent`).
+            if item.show != nil {
+                Button(StoryDetails.showTitle, action: show)
+            }
+            if let open = item.open {
+                Button(StoryDetails.openTitle(for: item.ref.kind), action: open)
+            }
         }
         Divider()
         if navigates {
@@ -988,6 +1006,9 @@ struct StoryDetails: View {
     static func openTitle(for kind: ItemRef.Kind) -> String {
         kind.openTitle
     }
+
+    /// For what shows in BriefBar's window too (`LinkedItem.show`), such as one of your pull requests.
+    static let showTitle = "Show in BriefBar"
 }
 
 extension ItemRef.Kind {
@@ -1131,7 +1152,8 @@ enum StoryTime {
     }
 }
 
-/// What opens a thing: its own actions, for a task you sent to Copilot; or a button that opens it where it lives.
+/// What opens a thing: its own actions, for a task you sent to Copilot; or a button that opens it where it lives, after one
+/// that shows it in BriefBar's window, for what shows there too, such as one of your pull requests.
 struct StoryActions: View {
     let item: LinkedItem
 
@@ -1149,10 +1171,20 @@ struct StoryActions: View {
             .menuStyle(.button)
             .fixedSize()
         } else if let open = item.open {
-            Button(action: open) {
-                Label(StoryDetails.openTitle(for: item.ref.kind), systemImage: "arrow.up.forward.app")
+            HStack(spacing: 8) {
+                if let show = item.show {
+                    Button {
+                        if !show() { open() }
+                    } label: {
+                        Label(StoryDetails.showTitle, systemImage: "macwindow")
+                    }
+                    .fixedSize()
+                }
+                Button(action: open) {
+                    Label(StoryDetails.openTitle(for: item.ref.kind), systemImage: "arrow.up.forward.app")
+                }
+                .fixedSize()
             }
-            .fixedSize()
         }
     }
 }
