@@ -1448,50 +1448,56 @@ page's: an empty 204 too, and one whose answer can't be read, which says so (`AD
 request is read again instead. A change called off before it goes, as when the setting is turned off while it waits for a
 token, never goes. And it goes only as whom the list was read as when you clicked (`send(_:as:)`): when someone else
 signed in to the Azure CLI since, as the list doesn't know yet, nothing goes, and the thread says so, with **Sign In…**
-(`ADOError.otherAccount`). A token from your own directory says whom it's for; for an organization in another directory,
-whose tokens are a guest's there, with an ID of their own, your own directory's sign-in is read again, fresh, to tell. `WriteTests` goes through every kind of change
+(`ADOError.otherAccount`). A token from your own directory says whom it's for. For an organization in another directory,
+whose tokens are a guest's there, with an ID of their own that nothing in them ties to yours, the guest's token is read
+again, fresh, since one kept from before someone else signed in may be theirs, and the Azure CLI gets every directory's
+for whom it's signed in to now; then your own directory's sign-in, fresh, says who that is. `WriteTests` goes through every kind of change
 (`ADOWrite.Kind`), and checks that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET. Agents
 (`--mcp`) and the command line get none of it, and the demo sends nothing: its changes are made up (`DemoThreadChanges`),
 in its made-up data only, while it runs.
 
-**Reply** opens a field under the thread, in place (`ThreadReplyComposer`), as a composer of Copilot's does, and it's the
-details' one composer in place (`CopilotComposing.reply(to:)`): opening it closes Explain's or Fix's, and the other way
-round, Esc closes it rather than the details (`InlineComposerOpen`), and it scrolls itself into view as it opens
-(`detailsScroll`). It's Markdown, in a text view as tall as what's in it, from three lines to ten, where Return starts a new
-line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘Return, sends it then resolves the thread, or **Reply
-& Reactivate** reactivates a resolved one, as Azure DevOps' own does. What you write is kept as you type
-(`ThreadChanges.keep`), in memory only, for each thread, until it's sent: closing the field, or the details, keeps it, and
-**Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure CLI forgets
-it, and calls off the changes on their way (`ThreadChanges.forgetAll`): one that hasn't gone yet never does, nothing
-says it failed, and one called off does nothing more as what it waited for comes back, though the setting is on again
-and another change on its thread is under way. A reply goes as you wrote it, but for the lines that say nothing before
-it and the spaces after it (`ThreadChanges.posted`): its first line's indent stays, which can make it code. After a reply that may have gone, as one Azure DevOps didn't answer in time, the thread is read again
-before it's sent again, by a read that starts then, never one under way before, and nothing goes until it was
-(`ADOWriteProblem.unconfirmed`): a comment of yours that came since it was sent, and says the same, as Azure DevOps keeps
-it, its mentions as their IDs, or as the details show it, is it, whatever came after it, so it isn't sent twice
-(`ThreadChanges.Attempt`). **Resolve**, or **Reactivate** on a resolved thread, sets its status at once, without asking, since the
-same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps' own menu offers, Active, Pending,
-Resolved, Won't Fix and Closed, and By Design only for a thread that has it (`ThreadStatus.choices`).
+**Reply** opens a field under the thread, in place (`ThreadReplyComposer`), as a composer of Copilot's does, and it's
+the details' one composer in place (`CopilotComposing.reply(to:)`): opening it closes Explain's or Fix's, and the other
+way round, Esc closes it rather than the details (`InlineComposerOpen`), and it scrolls itself into view as it opens
+(`detailsScroll`). It's Markdown, in a text view as tall as what's in it, from three lines to ten, where Return starts a
+new line; **Reply**, or ⌘Return, sends it, and **Reply & Resolve**, or ⇧⌘Return, sends it then resolves the thread, or
+**Reply & Reactivate** reactivates a resolved one, as Azure DevOps' own does. What you write is kept as you type
+(`ThreadChanges.keep`), in memory only, for each thread, until it's sent: closing the field, or the details, keeps it,
+and **Reply (Draft)** says so; turning the setting off, Azure DevOps stopping or someone else signing in to the Azure
+CLI forgets it, and calls off the changes on their way (`ThreadChanges.forgetAll`): one that hasn't gone yet never does,
+nothing says it failed, and one called off does nothing more as what it waited for comes back, though the setting is on
+again and another change on its thread is under way. A reply goes as you wrote it, but for the lines that say nothing
+before it and the spaces after it (`ThreadChanges.posted`): its first line's indent stays, which can make it code. After
+a reply that may have gone, as one Azure DevOps didn't answer in time, the thread is read again before it's sent again,
+by a read that starts then, never one under way before, and nothing goes until it was (`ADOWriteProblem.unconfirmed`): a
+comment of yours that came since it was sent, and says the same as it would go, its first line's indent included, as
+Azure DevOps keeps it, its mentions as their IDs, or as the details show it, is it, whatever came after it, so it isn't
+sent twice (`ThreadChanges.Attempt`). **Resolve**, or **Reactivate** on a resolved thread, sets its status at once,
+without asking, since the same menu sets it back (`ThreadStatusButton`); its **▾** has the statuses Azure DevOps' own
+menu offers, Active, Pending, Resolved, Won't Fix and Closed, and By Design only for a thread that has it
+(`ThreadStatus.choices`).
 
 What Azure DevOps answers shows at once (`ThreadChange`, which `PRDetails.apply` applies once, however often): the list
-applies it (`PRStore.changed`), so the details, Needs You, What's Left, the brief and the counts follow it, then the engine
-does, and reads the pull request's details again, two requests, now (`PulseEngine.changed`, `readAgain`). A read that
-started before the change, such as a refresh under way, doesn't undo it, even when it answers after the change's own: its
-threads are left as they are, and its policies too, which a thread's status changes, such as one that wants comments
-resolved, and the pull request is read again at the next refresh. So it is after a change that may have been made, as one
-Azure DevOps didn't answer in time, or whose answer can't be read (`PulseEngine.mayHaveChanged`). The list keeps the change over its
-refreshes until a snapshot has it (`PRStore.pending`), a status replacing one set before on the thread, so that
-**Reactivate** after **Resolve** isn't undone by it. A thread you replied to doesn't wait on you, as your last word is after the comment; one you resolved
-doesn't either, as the pull request is seen as you resolve it, and its details, which keep what was new as it was when they
-showed it, leave out what was in it until then (`ThreadChanges.waiting`). While the details show the pull request, a thread
-you change stays where it was as you first did, with the open ones or the resolved ones, with those that wait on you or
-not, and among them, by when something was last said in it then, though your reply is the latest now, however it stands
-now (`Threads.arranged(holding:)`), and on its file's page, it stays unfolded: so it doesn't move
-away as you reply or resolve it, and the menu that sets it back is where you left it. A change that didn't happen says why
-on the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help, or,
-for a reply, in its field, which stays open with what you wrote, and **Sign In…** when that's why: no
-permission, a pull request that's completed or abandoned, a thread or pull request deleted meanwhile, offline, signed out,
-slowed down, or no answer in time, after which the pull request is read again, since it may have been made.
+applies it (`PRStore.changed`), so the details, Needs You, What's Left, the brief and the counts follow it, then the
+engine does, and reads the pull request's details again, two requests, now (`PulseEngine.changed`, `readAgain`). A read
+that started before the change, such as a refresh under way, doesn't undo it, even when it answers after the change's
+own: its threads are left as they are, and its policies too, which a thread's status changes, such as one that wants
+comments resolved, and the pull request is read again at the next refresh. So it is after a change that may have been
+made, as one Azure DevOps didn't answer in time, or whose answer can't be read (`PulseEngine.mayHaveChanged`). The list
+keeps the change over its refreshes until a snapshot has it (`PRStore.pending`), a status replacing one set before on
+the thread, so that **Reactivate** after **Resolve** isn't undone by it. A thread you replied to doesn't wait on you, as
+your last word is after the comment; one you resolved doesn't either, as the pull request is seen as you resolve it, and
+its details, which keep what was new as it was when they showed it, leave out what was in it until then
+(`ThreadChanges.waiting`). While the details show the pull request, a thread you change stays where it was as you first
+did, with the open ones or the resolved ones, with those that wait on you or not, and among them, by when something was
+last said in it then, though your reply is the latest now, however it stands now (`Threads.arranged(holding:)`), and on
+its file's page, unfolded, where it was among the threads on its line (`Threads.comments(on:in:holding:)`), as you go
+from one to the other and back, since the details keep them (`PullRequestDetailsContent`): so it doesn't move away as
+you reply or resolve it, and the menu that sets it back is where you left it. A change that didn't happen says why on
+the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may help, or,
+for a reply, in its field, which stays open with what you wrote, and **Sign In…** when that's why: no permission, a pull
+request that's completed or abandoned, a thread or pull request deleted meanwhile, offline, signed out, slowed down, or
+no answer in time, after which the pull request is read again, since it may have been made.
 
 **Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language it's
 written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its code blocks, fenced,

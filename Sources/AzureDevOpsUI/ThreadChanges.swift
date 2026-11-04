@@ -316,12 +316,10 @@ final class ThreadChanges: ObservableObject {
         return posted
     }
 
-    /// Whether two replies say the same, but for the spaces around them and how their lines end.
+    /// Whether two replies say the same, as they'd go (`posted(_:)`): but for the lines that say nothing before them, the
+    /// spaces after them and how their lines end, and with their first line's indent, which can make it code.
     static func same(_ lhs: String, _ rhs: String) -> Bool {
-        func plain(_ text: String) -> String {
-            text.replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return plain(lhs) == plain(rhs)
+        posted(lhs) == posted(rhs)
     }
 
     /// Forgets what you wrote, and what was going on, as Azure DevOps stops or someone else signs in.
