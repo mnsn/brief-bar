@@ -71,6 +71,22 @@ import Testing
         #expect(QuotedText.oneLine("\u{1FEF}\u{1FEF}") == "\u{1FEF}\u{1FEF}")
     }
 
+    /// What a fence writes out can always be told from what was written, and the text had back: "\u{200B}", unless the text
+    /// spells that out itself, as code does; then "⟦U+200B⟧", or with a number when that's in it too.
+    @Test func whatAFenceWritesOutCanBeToldFromWhatWasWritten() {
+        let mixed = "let a = \"\\u{200B}\" // \u{200B}"
+        let swapped = "let a = \"\u{200B}\" // \\u{200B}"
+        #expect(QuotedText.fenced(mixed) == ["```", "let a = \"\\u{200B}\" // ⟦U+200B⟧", "```"])
+        #expect(QuotedText.fenced(swapped) == ["```", "let a = \"⟦U+200B⟧\" // \\u{200B}", "```"])
+        #expect(QuotedText.writtenOut(in: mixed) == ["⟦U+200B⟧"])
+        let both = "\\u{41} ⟦U+41⟧ ⟦1U+41⟧ \u{200B}\r"
+        #expect(QuotedText.fenced(both) == ["```", "\\u{41} ⟦U+41⟧ ⟦1U+41⟧ ⟦2U+200B⟧⟦2U+D⟧", "```"])
+        #expect(QuotedText.writtenOut(in: both) == ["⟦2U+200B⟧", "⟦2U+D⟧"])
+        // With nothing to write out, nothing changes, whatever it spells out; and plain text is written as before.
+        #expect(QuotedText.fenced("\\u{200B}") == ["```", "\\u{200B}", "```"])
+        #expect(QuotedText.fenced("a\\b\u{200B}") == ["```", "a\\b\\u{200B}", "```"])
+    }
+
     /// What `fenced` writes out as escapes, each once, in order: not a tab or a line break, which it keeps.
     @Test func saysWhatAFenceWritesOut() {
         #expect(QuotedText.writtenOut(in: "a\u{200B}b\u{AD}c\u{200B}\td\r\ne\rf") == ["\\u{200B}", "\\u{AD}", "\\u{D}"])

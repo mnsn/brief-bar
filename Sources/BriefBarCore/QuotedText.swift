@@ -38,14 +38,16 @@ public enum QuotedText {
 
     /// Text quoted as it was written, line by line: in a fence nothing in it closes (`fence(for:)`), each line indented by
     /// `indent`, with its other characters that control how text reads, a carriage return among them, written out as
-    /// escapes, so that all of it stays what was said, whatever it says. Tabs stay, which code has.
+    /// escapes that can be told from what was written (`writingOut`), so that all of it stays what was said, whatever it
+    /// says, and can be had back as it was. Tabs stay, which code has.
     public static func fenced(_ text: String, indent: String = "") -> [String] {
-        let all = text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false)
-        let lines = all.map { (line: Substring) -> String in
+        let text = text.replacingOccurrences(of: "\r\n", with: "\n")
+        let writeOut = writingOut(for: text)
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { (line: Substring) -> String in
             var kept = ""
             for scalar in line.unicodeScalars {
                 if scalar != "\t", isControl(scalar) {
-                    kept += escaped(scalar)
+                    kept += writeOut(scalar)
                 } else {
                     kept.unicodeScalars.append(scalar)
                 }
@@ -79,15 +81,31 @@ public enum QuotedText {
     }
 
     /// The characters `fenced` writes out of `text` as escapes, each once, in the order they first come, as it writes them:
-    /// "\u{200B}". Empty when it writes none.
+    /// "\u{200B}", or "⟦U+200B⟧" in text that spells out the first itself (`writingOut`). Empty when it writes none.
     public static func writtenOut(in text: String) -> [String] {
+        let text = text.replacingOccurrences(of: "\r\n", with: "\n")
+        let writeOut = writingOut(for: text)
         var seen: Set<Unicode.Scalar> = []
         var written: [String] = []
-        for scalar in text.replacingOccurrences(of: "\r\n", with: "\n").unicodeScalars
-        where scalar != "\t" && scalar != "\n" && isControl(scalar) && seen.insert(scalar).inserted {
-            written.append(escaped(scalar))
+        for scalar in text.unicodeScalars where scalar != "\t" && scalar != "\n" && isControl(scalar) && seen.insert(scalar).inserted {
+            written.append(writeOut(scalar))
         }
         return written
+    }
+
+    /// How `fenced` writes out a character nobody sees in `text`, so that what it wrote out can always be told from what
+    /// was written, and the text had back from it: "\u{200B}", unless `text` has "\u{" in it itself, as code that writes a
+    /// character that way does; then "⟦U+200B⟧", or, when that's in it too, "⟦1U+200B⟧", "⟦2U+200B⟧" and on, with a
+    /// number nothing in it has.
+    private static func writingOut(for text: String) -> (Unicode.Scalar) -> String {
+        guard text.contains("\\u{") else { return escaped }
+        var opening = "⟦U+"
+        var number = 0
+        while text.contains(opening) {
+            number += 1
+            opening = "⟦\(number)U+"
+        }
+        return { opening + String($0.value, radix: 16, uppercase: true) + "⟧" }
     }
 
     /// A word for a shell, as a command in a prompt holds it, such as a branch's name: as it is when it's only ASCII

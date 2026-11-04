@@ -419,6 +419,17 @@ import Testing
             record, thread: thread, code: nil, how: nil, applying: CommentSuggestion(author: People.sam, commentId: 1, code: "let x = 1")
         )
         #expect(!plain.contains("nobody sees"))
+        // Code that spells such a character out itself keeps that as it is, and the character it has is written so that
+        // it can be told apart: swapped, they're written differently.
+        for (code, written) in [
+            ("let a = \"\\u{200B}\" // \u{200B}", "let a = \"\\u{200B}\" // ⟦U+200B⟧"),
+            ("let a = \"\u{200B}\" // \\u{200B}", "let a = \"⟦U+200B⟧\" // \\u{200B}"),
+        ] {
+            let mixed = PullRequestPrompt.fixThread(
+                record, thread: thread, code: nil, how: nil, applying: CommentSuggestion(author: People.sam, commentId: 1, code: code)
+            )
+            #expect(mixed.contains("```\n\(written)\n```\n\nIn it, ⟦U+200B⟧ stands for a character nobody sees, which BriefBar wrote out: "))
+        }
     }
 
     // MARK: What each prompt keeps

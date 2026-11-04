@@ -1074,7 +1074,7 @@ enum AgentText {
         if let item {
             var status = "- In BriefBar: \(item.group.title), \(QuotedText.inLine(item.headline))"
             if let since = item.since { status += ", \(ago(since, now: now))" }
-            if let detail = item.detail, !detail.isEmpty { status += ". \(QuotedText.oneLine(detail))" }
+            if let detail = item.detail, !detail.isEmpty { status += ". \(Self.statusDetail(detail, of: pr))" }
             lines.append(status)
         }
         let reviewers = pr.reviewers.map { reviewer in
@@ -1137,6 +1137,23 @@ enum AgentText {
             lines.append(Self.task(task, titles: [:], workItems: [:], now: now))
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// What the lists say of a pull request after its headline, on its line (`QuotedText.oneLine`), with its branches as a
+    /// command may hold them where it names them, as the rest of `pull_request` does (`QuotedText.commandWord`): where its
+    /// conflicts are, what failed to merge, or what it merged into. The lists themselves show them as they are.
+    static func statusDetail(_ detail: String, of pr: PullRequest) -> String {
+        let named = { (naming: (String) -> String) -> [String?] in
+            [
+                "\(naming(pr.sourceBranch)) into \(naming(pr.targetBranch))",
+                pr.mergeProblem(naming: naming)?.detail,
+                "Merged into \(naming(pr.targetBranch))",
+            ]
+        }
+        for case let (raw?, quoted?) in zip(named { $0 }, named(QuotedText.commandWord)) where detail.hasPrefix(raw) {
+            return quoted + QuotedText.inLine(String(detail.dropFirst(raw.count)))
+        }
+        return QuotedText.oneLine(detail)
     }
 
     /// A pull request's Copilot session, for `pull_request`, as its details show it (`PullRequestSession`): the session
