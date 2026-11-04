@@ -17,8 +17,9 @@ enum CLI {
             "  --mcp              Serve agents, such as the Copilot CLI, over the Model Context Protocol on",
             "                     standard input and output: what needs you, your pull requests, pipelines,",
             "                     sprint and Copilot sessions, from Azure DevOps and Copilot, never Teams or",
-            "                     GitHub, and with Pull Request Order on, the orders sessions tell it. It",
-            "                     answers only once you let agents use BriefBar, in its Settings, under Agents",
+            "                     GitHub; with Pull Request Order on, the orders sessions tell it; and with",
+            "                     Updates from Copilot Sessions on, what sessions tell it they work on and changed.",
+            "                     It answers only once you let agents use BriefBar, in its Settings, under Agents",
             "  --render <dir>     Draw the menu bar with each list open, the widgets, the window and Settings",
             "                     into PNGs (light and dark)",
             "  --window           Run the app, and open its window",
@@ -171,8 +172,8 @@ enum CLI {
 
     /// `--mcp`: the sources' tools, for an agent, until it closes standard input. Each call checks, as it comes, that you
     /// still let agents use BriefBar, and that its source is still on: `--source` narrows the sources, and never adds one
-    /// that's off. With Pull Request Order on when it starts, its tools too, each call checking that it's still on. The
-    /// demo answers with made-up data, whatever the app's settings.
+    /// that's off. With Pull Request Order on when it starts, its tools too, and Updates from Copilot Sessions' with that
+    /// on, each call checking that it's still on. The demo answers with made-up data, whatever the app's settings.
     private static func serveAgents(named: [SourceID], options: CommandLineOptions) -> Int32 {
         var sources: [MCPSource] = []
         for commandLine in SourceCatalog.commandLines where named.isEmpty || named.contains(commandLine.source) {
@@ -196,21 +197,29 @@ enum CLI {
             demo ? nil : AgentAccess.refusal(AppIdentity.installedAppDefaults.map { AgentAccess.state(in: $0) } ?? .off)
         }
         let orderTools = orderTools(options)
-        let tools = MCPSource.tools(sources, refusal: consent) + orderTools.map { $0.guarded(by: consent) }
-        let changes = orderTools.isEmpty
-            ? "the pull requests it watches and the pipelines it pins"
-            : "the pull requests it watches, the pipelines it pins and the orders sessions tell it their pull requests merge in"
-        let ordering = orderTools.isEmpty ? "" : """
+        let updateTools = updateTools(options)
+        let tools = MCPSource.tools(sources, refusal: consent) + (orderTools + updateTools).map { $0.guarded(by: consent) }
+        var changes = ["the pull requests it watches", "the pipelines it pins"]
+        if !orderTools.isEmpty { changes.append("the orders sessions tell it their pull requests merge in") }
+        if !updateTools.isEmpty { changes.append("what sessions tell it they work on and opened") }
+        var ordering = orderTools.isEmpty ? "" : """
              When you open pull requests that must merge in an order, tell BriefBar with order_pull_requests, and again \
             whenever that order changes.
             """
+        if !updateTools.isEmpty {
+            ordering += """
+                 Tell BriefBar what you work on with working_on, and what you just changed in Azure DevOps with \
+                changed_in_azure_devops.
+                """
+        }
+        let changed = changes.dropLast().joined(separator: ", ") + " and " + (changes.last ?? "")
         let identity = MCPServer.Identity(
             name: "briefbar", title: AppIdentity.name, version: AppIdentity.version,
             instructions: """
                 BriefBar is the user's macOS menu-bar app for what needs them: \(sources.map(\.name).joined(separator: " and ")). \
                 Start with needs_me. Its answers speak to the user, as BriefBar does: "you" is the user. It reads Azure \
                 DevOps with the user's Azure CLI sign-in and only reads there; the only things it changes are BriefBar's \
-                own lists, \(changes). To work on a pull request, follow the prompt pull_request_prompt gives.\(ordering)
+                own lists, \(changed). To work on a pull request, follow the prompt pull_request_prompt gives.\(ordering)
                 """
         )
         MCPStandardIO.serve(identity: identity, tools: tools)
@@ -235,6 +244,23 @@ enum CLI {
             return kinds
         }
         return PullRequestOrderMCP.tools(
+            defaults: defaults, demo: demo, sourcesOn: sourcesOn, session: Attribution.environment["COPILOT_AGENT_SESSION_ID"]
+        )
+    }
+
+    /// Updates from Copilot Sessions' tools, while it's on in the app, as it's off until you turn it on; the demo's always
+    /// are, and keep what they're told in memory. They tell only the work of the Copilot session that started `--mcp`, as
+    /// the Copilot CLI says.
+    private static func updateTools(_ options: CommandLineOptions) -> [MCPTool] {
+        let demo = options.demo
+        guard let defaults = demo ? MemoryDefaults() : AppIdentity.installedAppDefaults else { return [] }
+        let versions = Dictionary(
+            SourceCatalog.commandLines.map { ($0.source, $0.descriptionVersion) }, uniquingKeysWith: { first, _ in first }
+        )
+        let sourcesOn: @Sendable () -> Set<SourceID> = {
+            Set(SourceID.allCases.filter { source in demo || versions[source].map { isOnInTheApp(source, version: $0) } == true })
+        }
+        return SessionUpdatesMCP.tools(
             defaults: defaults, demo: demo, sourcesOn: sourcesOn, session: Attribution.environment["COPILOT_AGENT_SESSION_ID"]
         )
     }

@@ -22,6 +22,8 @@ struct SessionChoice: Identifiable, Equatable {
         case earlierTask
         /// The Copilot app records that it started from the pull request, or opened it.
         case recordedByCopilot
+        /// It told BriefBar it's working on it, with Updates from Copilot Sessions on, and BriefBar still shows that.
+        case toldBriefBar
         /// It works on the pull request's branch, in its repository.
         case onItsBranch
         /// You linked them, with Show Links.
@@ -39,6 +41,7 @@ struct SessionChoice: Identifiable, Equatable {
             case .openedIt: return "opened it"
             case .earlierTask: return "an earlier task"
             case .recordedByCopilot: return "recorded by Copilot"
+            case .toldBriefBar: return "told BriefBar it's working on it"
             case .onItsBranch: return "on its branch"
             case .linkedByYou: return "linked by you"
             case .linked: return "linked"
@@ -220,6 +223,7 @@ extension CopilotTasksStore {
                 switch origin {
                 case .you: why.insert(.linkedByYou)
                 case .copilot: why.insert(.recordedByCopilot)
+                case .session: why.insert(.toldBriefBar)
                 case .branch: why.insert(.onItsBranch)
                 case .azureDevOps: why.insert(.linked)
                 }
