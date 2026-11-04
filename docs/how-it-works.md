@@ -2582,8 +2582,9 @@ its row's Stop does, or a prompt's turn in one of the app's sessions, which Brie
 the app's own Stop does; where it can't, BriefBar shows the session, to stop it there, and says so
 (`CopilotTasksStore.canStop(_:of:)`, `stop(_:of:)`, `stopTurn(in:)`). **Try Again**, for a fix that failed or stopped,
 opens its composer anew, even one that's open already (`CopilotComposerID`), with the words that fix went with, as its
-composer sent them, kept in memory only and only for that fix, not one sent another way since, such as from the Send to
-Copilot window (`CopilotTasksStore.words(for:of:)`), and sends them where that fix went, never elsewhere: for one that
+composer sent them, kept in memory only and only for that very attempt, as when it took on what it's about tells, not
+another sent meanwhile or since, such as from the Send to Copilot window (`CopilotTasksStore.words(for:of:)`), and sends
+them where that fix went, never elsewhere: for one that
 couldn't start, a new fork of the session it was to fork, or a new session; never a new fork of the session that a fork
 it went to forked, which wouldn't have what the fork did (`CopilotSessionNames.retryDestination`). Its
 ▾ leads with that session, so that it's there to send to, even when it isn't the pull request's (`retryLead`). When

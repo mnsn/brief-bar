@@ -166,10 +166,11 @@ final class CopilotTasksStore: ObservableObject {
     /// The words you last sent a fix of each thing of a pull request with, from its composer in place, with when, for Try
     /// Again to send them again only for that fix (`words(for:of:)`): in memory only.
     var fixWords: [PartKey: FixWords] = [:]
-    /// Words a fix was sent with, and when: from as its send started to as it went.
+    /// Words a fix was sent with, and when it took on what it's about: its task's start, or its prompt's `sentAt`, which
+    /// tells that attempt from any other.
     struct FixWords {
         var text: String
-        var sent: ClosedRange<Date>
+        var takenAt: Date
     }
     /// What Clear let go of in the demo, whose made-up work is made anew each time: in memory only.
     var clearedInDemo: Set<PartKey> = []
@@ -429,18 +430,20 @@ final class CopilotTasksStore: ObservableObject {
     /// session stays as it is (`CopilotLauncher.Request.forking`). Once it has started, what `handOff` says its prompt took
     /// care of leaves Needs You, and its run keeps what of the pull request it takes on (`CopilotRun.taken`).
     /// - Parameter parts: what of the pull request it takes on: its comment threads, builds or conflicts.
+    /// - Returns: when it took them on, which is the task's, as its parts' `since`; nil when nothing starts.
+    @discardableResult
     func send(
         _ subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, continuing: CopilotRun? = nil,
         forking: CopilotRun? = nil, parts: [PullRequestPart] = [], handOff: CommentHandOff? = nil
-    ) {
+    ) -> Date? {
         // Not once Azure DevOps stopped, as it may have while an inline Fix looked for where to send it.
-        guard canSend, isOn, !hasStopped, continuing == nil || forking == nil else { return }
+        guard canSend, isOn, !hasStopped, continuing == nil || forking == nil else { return nil }
         // A second run in a session Copilot still works in would fork its history; one in a checkout it works in, for another
         // session, would mix their work up, as when two of the Copilot app's sessions share one. A fork works in a worktree
         // of its own, so the session it forks may be busy.
         if let continuing, isWorking(inSession: continuing.id) || isWorking(inFolder: continuing.worktree) {
             Log.app.error("Didn't send a task to Copilot: it still works in that session or its folder")
-            return
+            return nil
         }
         // An app's session's folder is no repository to start new work in.
         if continuing?.isAppSession != true {
@@ -566,6 +569,7 @@ final class CopilotTasksStore: ObservableObject {
                 }
             }
         }
+        return now
     }
 
     /// Lets go of what the sends getting ready, or that couldn't start, took on, as `letsGo` says: what's over

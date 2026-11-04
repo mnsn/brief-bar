@@ -229,13 +229,14 @@ extension CopilotTasksStore {
     ///   sent, or copied for you to paste, BriefBar keeps that, to follow its turn in the session (`SentPrompt`). Whatever
     ///   it's about, the turns of the prompts sent the session before that weren't seen to end aren't followed after
     ///   (`overlap`).
+    ///   - sentAt: as delivering it starts, which its sender may tell, as the time it took on what it's about: what the
+    ///     session does from then on is its turn, even one over before BriefBar heard it went. It's free then, or nothing
+    ///     goes.
     /// - Returns: sent; forked and sent, with the fork; why it fell back; or why nothing went.
     func deliver(
-        _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil
+        _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil,
+        at sentAt: Date = Date()
     ) async -> SessionDelivery {
-        // Sent as delivering it starts: what the session does from then on is its turn, even one over before BriefBar heard
-        // it went. It's free then, or nothing goes.
-        let sentAt = Date()
         // Until it's known whether it went, the turns of the prompts sent the session before aren't followed: it may reach
         // the session, and its turn end, before BriefBar hears it went (`pauseFollowing`). A fork's goes to the fork.
         if !forking { pauseFollowing(choice.id) }

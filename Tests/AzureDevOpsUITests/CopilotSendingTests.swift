@@ -58,8 +58,9 @@ import Testing
         let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
         let fix = Task { await sending.fix(sending.commentFix(nil, how: nil, suggestion: nil, excerpt: nil), to: .newSession, choice: nil) }
         fix.cancel()
-        let outcome = await fix.value
-        #expect(outcome == CopilotSending.Outcome.notSent(CopilotSending.calledOff))
+        let sent = await fix.value
+        #expect(sent.outcome == CopilotSending.Outcome.notSent(CopilotSending.calledOff))
+        #expect(sent.takenAt == nil)
         #expect(copilot.pending.isEmpty)
         #expect(settings.copilotRuns.isEmpty)
     }
@@ -82,7 +83,7 @@ import Testing
         let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
         #expect(!sending.isOpen)
         let fix = CopilotSending.Fix(prompts: ("Resolve them.", "Resolve them."), action: .resolveConflicts, parts: [.conflicts], handOff: nil)
-        #expect(await sending.fix(fix, to: .newSession, choice: nil) == .notSent(CopilotSending.pullRequestGone))
+        #expect(await sending.fix(fix, to: .newSession, choice: nil).outcome == .notSent(CopilotSending.pullRequestGone))
         #expect(await sending.explainAsPrompt("Why?", about: .conflicts, to: appChoice(app)) == .notSent(CopilotSending.pullRequestGone))
         #expect(copilot.pending.isEmpty)
         #expect(settings.copilotRuns.isEmpty)
@@ -90,7 +91,7 @@ import Testing
         let done = try #require(prs.items.first { prs.record(for: $0.key)?.pullRequest.status == .completed })
         let completed = CopilotSending(item: done, record: try #require(prs.record(for: done.key)), store: prs, copilot: copilot, session: nil)
         #expect(!completed.isOpen)
-        #expect(await completed.fix(fix, to: .newSession, choice: nil) == .notSent(CopilotSending.pullRequestGone))
+        #expect(await completed.fix(fix, to: .newSession, choice: nil).outcome == .notSent(CopilotSending.pullRequestGone))
         #expect(copilot.pending.isEmpty)
         // Open in your lists, it goes on.
         #expect(CopilotSending(item: listed, record: try #require(prs.record(for: listed.key)), store: prs, copilot: copilot, session: nil).isOpen)

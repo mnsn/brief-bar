@@ -1446,21 +1446,33 @@ import Testing
         #expect(CopilotComposerID(ask: .fix, tries: 0) != CopilotComposerID(ask: .fix, tries: 1))
     }
 
-    /// Try Again sends the words a fix went with only for that fix, taken on as they were sent: not for one sent another
-    /// way since, such as from the Send to Copilot window, whose words BriefBar doesn't keep.
+    /// Try Again sends the words a fix went with only for that very attempt, as when it took on what it's about tells: not
+    /// for another sent meanwhile, as while the first waited for its session, or since, such as from the Send to Copilot
+    /// window, whose words BriefBar doesn't keep.
     @Test func tryAgainSendsTheWordsOfThatFixAlone() {
         let store = store()
-        let sent = now.addingTimeInterval(-600)
+        let taken = now.addingTimeInterval(-600)
         store.fixWords[CopilotTasksStore.PartKey(pullRequest: key, part: .thread(11))] = CopilotTasksStore.FixWords(
-            text: "Use the shared helper", sent: sent...sent.addingTimeInterval(2)
+            text: "Use the shared helper", takenAt: taken
         )
         func work(takenAt: Date) -> CopilotWork {
             CopilotWork(part: .thread(11), purpose: .fix, state: .failed(nil), session: session, isTask: false, since: takenAt, takenAt: takenAt)
         }
-        #expect(store.words(for: work(takenAt: sent.addingTimeInterval(1)), of: key) == "Use the shared helper")
+        #expect(store.words(for: work(takenAt: taken), of: key) == "Use the shared helper")
+        #expect(store.words(for: work(takenAt: taken.addingTimeInterval(0.5)), of: key) == nil)
         #expect(store.words(for: work(takenAt: now), of: key) == nil)
-        #expect(store.words(for: work(takenAt: sent.addingTimeInterval(-1)), of: key) == nil)
-        #expect(store.words(for: work(takenAt: sent.addingTimeInterval(1)), of: PRKey("contoso", 4099)) == nil)
+        #expect(store.words(for: work(takenAt: taken), of: PRKey("contoso", 4099)) == nil)
+        // A task's send says when it took them on, as its parts keep it.
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let sending = self.store(settings)
+        sending.launchForTests = { _, _, _ in throw CancellationError() }
+        let at = sending.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 12", options: CopilotModel.standard,
+                              repository: URL(fileURLWithPath: "/tmp/payments-api"), parts: [.thread(12)])
+        #expect(at != nil)
+        #expect(sending.pending.first?.taken?.first?.since == at)
+        sending.stop()
+        #expect(sending.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 13", options: CopilotModel.standard,
+                             repository: URL(fileURLWithPath: "/tmp/payments-api"), parts: [.thread(13)]) == nil)
     }
 
     /// Try Again sends a fix that couldn't start where it was to go: a fork of the session it was to fork, again, rather
@@ -1506,6 +1518,23 @@ import Testing
         let fallback = SessionFallback(reason: "BriefBar's extension in the session didn't answer.", session: session)
         let copied = try #require(store.keep(about(threads: [13]), sentTo: .fellBack(fallback), from: session, forking: false, copying: "Fix 13"))
         #expect(store.copiedPrompts[copied.id]?.text == "Fix 13")
+    }
+
+    /// Clearing the last thread a Push & Reply listed leaves the push, seen done only once so far, for the fixes it pushed
+    /// along to stay pushed.
+    @Test func clearLeavesAPushItEmpties() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let fixed = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: now.addingTimeInterval(-600), copied: false, ended: .finished))
+        let push = try #require(SentPrompt(about(.pushAndReply, threads: [12]), session: session, sentAt: now.addingTimeInterval(-60), copied: false))
+        settings.copilotSentPrompts = [fixed, push]
+        store.promptTurns[push.id] = SessionTurn(phase: .finished(summary: nil), since: now)
+        let pushedAlong = "Pushed from ‘Retry backoff’, without a reply"
+        #expect(store.work(on: .thread(11), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == pushedAlong)
+        store.clear(.thread(12), of: key)
+        #expect(store.work(on: .thread(12), of: key) == nil)
+        #expect(settings.copilotSentPrompts.first { $0.id == push.id }?.parts == [])
+        #expect(store.work(on: .thread(11), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == pushedAlong)
     }
 
     /// Waits for the store's work, which runs on the main actor between this test's awaits, for as long as a busy machine

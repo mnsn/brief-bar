@@ -940,20 +940,19 @@ struct CopilotPartComposer<Options: View>: View {
                 return
             }
             let fix = asking.fix(words, answer)
-            let started = Date()
-            let outcome = await sending.fix(fix, to: target, choice: choice)
+            let (outcome, takenAt) = await sending.fix(fix, to: target, choice: choice)
             guard !Task.isCancelled else { return }
             drafts.sends[key] = nil
             isSending = false
             switch outcome {
             case .sent:
                 drafts.texts[key] = nil
-                remember(words, for: fix, sent: started...Date())
+                remember(words, for: fix, takenAt: takenAt)
                 SpokenText.announce("Sent to Copilot")
                 done(outcome)
             case .copied(let note):
                 drafts.texts[key] = nil
-                remember(words, for: fix, sent: started...Date())
+                remember(words, for: fix, takenAt: takenAt)
                 SpokenText.announce(note)
                 done(outcome)
             case .notSent(let why):
@@ -966,11 +965,12 @@ struct CopilotPartComposer<Options: View>: View {
         }
     }
 
-    /// The words a fix went with, for each thing it took on, with when it was sent, for Try Again to send them again for
+    /// The words a fix went with, for each thing it took on, with when it took it on, for Try Again to send them again for
     /// that fix alone (`CopilotTasksStore.words(for:of:)`).
-    private func remember(_ words: String, for fix: CopilotSending.Fix, sent: ClosedRange<Date>) {
+    private func remember(_ words: String, for fix: CopilotSending.Fix, takenAt: Date?) {
+        guard let takenAt else { return }
         for part in fix.parts {
-            copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)] = CopilotTasksStore.FixWords(text: words, sent: sent)
+            copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: part)] = CopilotTasksStore.FixWords(text: words, takenAt: takenAt)
         }
     }
 

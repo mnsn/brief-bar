@@ -955,13 +955,13 @@ extension CopilotTasksStore {
         }
     }
 
-    /// The words a fix that Try Again tries again went with, as its composer sent them: only when that fix was taken on as
-    /// they were sent, and not one sent another way since, such as from the Send to Copilot window, whose words BriefBar
-    /// doesn't keep. Nil otherwise, and once BriefBar restarted.
+    /// The words a fix that Try Again tries again went with, as its composer sent them: only for that very attempt, as
+    /// when it took on what it's about tells (`FixWords.takenAt`), not another sent meanwhile or since, such as from the
+    /// Send to Copilot window, whose words BriefBar doesn't keep. Nil otherwise, and once BriefBar restarted.
     func words(for work: CopilotWork, of key: PRKey) -> String? {
-        guard let words = fixWords[PartKey(pullRequest: key, part: work.part)], words.sent.contains(work.takenAt ?? work.since) else {
-            return nil
-        }
+        guard let words = fixWords[PartKey(pullRequest: key, part: work.part)],
+              abs(words.takenAt.timeIntervalSince(work.takenAt ?? work.since)) < 0.001
+        else { return nil }
         return words.text
     }
 
@@ -998,13 +998,16 @@ extension CopilotTasksStore {
         }
         if runs != settings.copilotRuns { settings.copilotRuns = runs }
         var prompts = settings.copilotSentPrompts
-        // Those it leaves with nothing, not a Push & Reply of no thread, which pushes what its session changed.
+        // The fixes it leaves with nothing, which it lets go of: not a Push & Reply, which still says that its session
+        // pushed what it changed, though it may not have been seen to end yet, for the fixes it pushed along.
         var emptied: Set<String> = []
         for index in prompts.indices where prompts[index].isFor(key) && prompts[index].parts.contains(part) {
             let work = CopilotWork.from(prompts[index], about: part, turn: promptTurns[prompts[index].id])
             guard Self.canClear(work) else { continue }
             prompts[index].parts.removeAll { $0 == part }
-            if prompts[index].parts.isEmpty, prompts[index].isFollowed { emptied.insert(prompts[index].id) }
+            if prompts[index].parts.isEmpty, prompts[index].isFollowed, prompts[index].purpose != .pushAndReply {
+                emptied.insert(prompts[index].id)
+            }
         }
         for id in emptied {
             copiedPrompts[id] = nil
