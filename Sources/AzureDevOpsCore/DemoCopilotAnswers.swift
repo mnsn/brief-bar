@@ -27,13 +27,4 @@ extension DemoData {
             carry main's fix in this pull request; once main's fixed, merging it in turns this build green.
             """
     }
-
-    /// What the demo says a Copilot session answers about a pull request's merge conflicts, with Explain: made up.
-    public static func conflictsExplanation(pullRequest number: Int) -> String {
-        """
-        This pull request and its target branch both changed the same lines since they parted: here, the order status \
-        values are renamed, and the target branch added one to them meanwhile. Merging it in keeps both: the new value, \
-        under this pull request's names.
-        """
-    }
 }

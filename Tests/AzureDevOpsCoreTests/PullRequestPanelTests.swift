@@ -312,14 +312,25 @@ import BriefBarCore
             PullRequestPanel.section(of: PRReadiness.Item(kind: kind, state: nil, label: ""))
         }
         #expect(section(.comments) == .comments)
+        #expect(section(.conflicts) == .conflicts)
         #expect(section(.builds) == .checks)
         #expect(section(.checks) == .checks)
         #expect(section(.approvals) == .reviewers)
         #expect(section(.requiredReviewers) == .reviewers)
         #expect(section(.changesRequested) == .reviewers)
-        for kind: PRReadiness.Item.Kind in [.draft, .workItems, .policy, .conflicts, .mergeFailed, .unreadablePolicies] {
+        for kind: PRReadiness.Item.Kind in [.draft, .workItems, .policy, .mergeFailed, .unreadablePolicies] {
             #expect(section(kind) == nil, "\(kind)")
         }
+    }
+
+    /// Its merge conflicts show while it's open and Azure DevOps says it has them.
+    @Test func showsItsConflictsWhileItsOpenAndHasThem() throws {
+        #expect(try panel(record(makePR(merge: "conflicts"))).hasConflicts)
+        #expect(try !panel(record(makePR(merge: "succeeded"))).hasConflicts)
+        #expect(try !panel(record(makePR(status: .completed, closed: t(-hour), merge: "conflicts"), details: false)).hasConflicts)
+        // Without what the list read of it, BriefBar can't tell.
+        let row = try snapshot(record(makePR(merge: "conflicts")))
+        #expect(!PullRequestPanel(row, record: nil).hasConflicts)
     }
 
     // MARK: The demo

@@ -160,13 +160,13 @@ import Testing
         // Conflicts while it has them.
         record.pullRequest.mergeStatus = "conflicts"
         #expect(record.partsToFix.last == .conflicts)
-        // And each says where it is in the details: a build by its row, conflicts at their top.
+        // And each says where it is in the details: a build by its row, conflicts at theirs.
         let snapshot = try #require(PRClassifier.snapshot(for: record, seenCutoff: now, dismissedCutoff: now, now: now))
         let panel = PullRequestPanel(snapshot, record: record)
         #expect(PullRequestDetailsStore.Place.of(pipeline, in: panel) == .of(try #require(panel.checks.first { $0.check?.part == pipeline })))
         #expect(PullRequestDetailsStore.Place.of(.thread(11), in: panel) == .thread(11))
         #expect(PullRequestDetailsStore.Place.of(.build(999), in: panel) == .section(.checks))
-        #expect(PullRequestDetailsStore.Place.of(.conflicts, in: panel) == .top)
+        #expect(PullRequestDetailsStore.Place.of(.conflicts, in: panel) == .section(.conflicts))
     }
 
     /// A run that passes after Copilot took a build on ends what it took on, a task's or a prompt's, for good: a later run

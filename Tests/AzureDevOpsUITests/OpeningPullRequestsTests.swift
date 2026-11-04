@@ -59,7 +59,7 @@ import Testing
     typealias Place = PullRequestDetailsStore.Place
 
     /// The comment that needs you, the run after a merge that waits for an approval, or the build that failed; the top of the
-    /// details for what's ready, and for conflicts, which have no part of their own.
+    /// details for what's ready, and for conflicts, which show right under what's left.
     @Test func aRowIsAboutTheCommentOrTheRunItSays() throws {
         #expect(Place.about(try item(4102), record: record(4102)) == .thread(11))
         #expect(Place.about(try item(4097), record: record(4097)) == .thread(21))
@@ -85,6 +85,12 @@ import Testing
         #expect(Place.run(1).anchor(in: retry) == .section(.checks))
         #expect(Place.check("Nothing of the kind").anchor(in: retry) == .section(.checks))
         #expect(Place.section(.reviewers).anchor(in: retry) == .section(.reviewers))
+        // Its conflicts while it has some, as What's Left's Merge conflicts asks; their top once it has none.
+        #expect(Place.section(.conflicts).anchor(in: retry) == .top)
+        let conflicting = PullRequestPanel(try item(4079), record: record(4079))
+        #expect(Place.section(.conflicts).anchor(in: conflicting) == .section(.conflicts))
+        let merge = try #require(conflicting.readiness?.items.first { $0.kind == .conflicts })
+        #expect(Place.of(merge, in: conflicting) == .section(.conflicts))
         let failing = PullRequestPanel(try item(4088), record: record(4088))
         #expect(Place.run(204_417).anchor(in: failing) == .check("run 204417"))
         // Without what the list read: their parts.
