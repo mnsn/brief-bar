@@ -90,8 +90,8 @@ struct ThreadCopilotActions: View {
         let work = work
         let question = question
         let hasLines = copilot.isOn && (question != nil || work != nil || copied != nil)
-        // Your reply, open on it, takes the row's place, as a composer of Copilot's does.
-        let isReplying = composing == .reply(to: thread.id)
+        // Your reply, open on it, takes the row's place, as a composer of Copilot's does: while you can reply.
+        let isReplying = yours != nil && composing == .reply(to: thread.id)
         let showsRow = !isReplying && (canAct || yours != nil)
         if hasLines || (canAct && asking != nil) || showsRow {
             VStack(alignment: .leading, spacing: 8) {

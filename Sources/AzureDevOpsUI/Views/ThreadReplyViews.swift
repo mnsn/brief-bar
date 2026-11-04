@@ -162,6 +162,10 @@ struct ThreadReplyArea: View {
         .onAppear {
             if preview?.replies[thread.id] != nil { composing = .reply(to: thread.id) }
         }
+        // Turned off, or the pull request closed, while your reply was open: it's closed, so Explain and Fix show again.
+        .onChange(of: changes.canChange(pullRequest)) { _, can in
+            if !can, composing == .reply(to: thread.id) { composing = nil }
+        }
     }
 
     private var showsSomething: Bool {
@@ -331,6 +335,8 @@ struct ThreadReplyComposer: View {
             if preview == nil { changes.keep(text, for: key) }
             // Changed after you used a suggestion: Undo would take what you wrote since too.
             if let undo, text != undo.corrected { self.undo = nil }
+            // Changed while a suggestion shows: it corrects what you wrote before, and would take what you wrote since.
+            if let suggestion, text != suggestion.original { self.suggestion = nil }
         }
         .onAppear(perform: appear)
         // Fix Grammar is this reply's own: it stops as the reply closes. What it sends isn't: a reply you sent goes on.
