@@ -18,9 +18,8 @@ struct PullRequestConflictsSection: View {
     let pullRequest: PullRequest
     /// The composer in place that's open in the details, one at a time in them, so Esc, Return and the keyboard's focus are
     /// its own; and what you wrote in each. What one sends is called off as it closes or another opens, and with the rest of
-    /// the details' as they go (`PullRequestCommentsSection`, `PullRequestChecksSection`, always beside it); not as this
-    /// section goes on its own, while Azure DevOps works the merge out again, which would take back a prompt you sent, or
-    /// one sent about a comment or a build.
+    /// the details' as their parts go, for a file's page or with them (`PullRequestDetailsContent`); not as this section
+    /// goes on its own, while Azure DevOps works the merge out again.
     @Binding var composing: CopilotComposing?
     let drafts: CopilotDrafts
 
@@ -136,15 +135,15 @@ struct PullRequestConflictsSection: View {
     private func summary(_ read: MergeConflicts) -> String {
         let count = read.files.count
         let target = pullRequest.targetBranch.isEmpty ? "the target branch" : pullRequest.targetBranch
-        var parts = [count == 1 ? "1 file conflicts with \(target)." : "\(count) files conflict with \(target)."]
+        let conflict = count == 1 ? "1 file conflicts" : "\(count) files conflict"
+        // When there may be more than it read, as many as it did at least.
+        var parts = [read.isComplete
+            ? "\(conflict) with \(target)." : "At least \(conflict) with \(target): these are the first Azure DevOps lists."]
         let resolved = count - read.unresolved.count
         if resolved > 0 {
             parts.append(resolved == 1
                 ? "1 is resolved in Azure DevOps, which hasn't committed it yet."
                 : "\(resolved) are resolved in Azure DevOps, which hasn't committed them yet.")
-        }
-        if !read.isComplete {
-            parts.append("Azure DevOps lists more than BriefBar reads: these are the first \(count).")
         }
         return parts.joined(separator: " ")
     }
@@ -457,7 +456,7 @@ private struct ConflictsCopilotActions: View {
 
     @ViewBuilder
     private func questionView(_ question: CopilotQuestions.Question) -> some View {
-        let place = CopilotWork.place(names.name(question.session), isFork: false, forkOf: nil)
+        let place = names.place(question.session)
         switch question.state {
         case .asking:
             CopilotWorkLine(
@@ -537,8 +536,7 @@ private struct ConflictsCopilotActions: View {
         guard let question else { return }
         switch state {
         case .answered?:
-            let place = CopilotWork.place(names.name(question.session), isFork: false, forkOf: nil)
-            SpokenText.announce("The conflicts: \(SpokenText.unquoted(place)) answered")
+            SpokenText.announce("The conflicts: \(SpokenText.unquoted(names.place(question.session))) answered")
         case .failed(let failure)?:
             SpokenText.announce("The conflicts: couldn't explain them. \(failure.message(model: nil))")
         case .asking?, nil:
@@ -551,7 +549,7 @@ private struct ConflictsCopilotActions: View {
         guard let work, let state else { return }
         switch state {
         case .done, .failed, .stopped, .needsYou:
-            SpokenText.announce("The conflicts: \(SpokenText.unquoted(names.sentence(work)))")
+            SpokenText.announce("The conflicts: \(names.announcement(work))")
         case .waiting, .working, .unknown:
             break
         }

@@ -1582,8 +1582,10 @@ open, its details list them under **What's Left** (`PullRequestConflictsSection`
 resolved; once it has none, they go, and a place there goes to the details' top. Which files conflict, and how, is read
 with one GET (`MergeConflicts.read`, the preview API `pullRequests/{id}/conflicts`), a page of a hundred, more only
 for more, up to ten pages, stopping at a page that brings nothing new, as from a server that answers with the same page
-whatever it's asked; read as the details show it in a window that shows its page on screen, as for the code comments
-are on (`PullRequestConflictsStore`, which reads only as `PullRequestCodeStore` lets the details read), and again once
+whatever it's asked (past ten full pages, or after a full page that brought nothing new, there may be more: the details
+then say at least how many files conflict, and the prompts that there may be more, `MergeConflicts.isComplete`); read
+as the details show it in a window that shows its page on screen, as for the code comments are on
+(`PullRequestConflictsStore`, which reads only as `PullRequestCodeStore` lets the details read), and again once
 its branch or its target moves (`PullRequestFilesStore.Head`). Once that window is minimized, hidden or covered, a read
 under way that only it asked for is called off, to be read when it shows them again. What's read is kept in memory
 only, while something shows that pull request, and forgotten once nothing does, or someone else signs in to the Azure
@@ -2393,8 +2395,11 @@ and, on your own pull request, **Resolve** (`ConflictsCopilotActions`) open the 
 with the comments' and builds' (`CopilotComposing`), going where a thread's would: first the session that last worked on
 the conflicts, else the pull request's. Its prompts
 list the files that conflict, each with how, as the details read them for the pull request as it is now, the first 50
-(`PullRequestPrompt.conflictList`): sent while they're read, it waits for that read (`PullRequestConflictsStore.waitForRead`),
-and without them, as when they couldn't be read, it goes without, for Copilot to find them as it merges. **Resolve**
+(`PullRequestPrompt.conflictList`). Whoever made a file chose its path, which Git lets hold a line break, so each
+stays on its line, its line breaks and other control characters written out (`PullRequestPrompt.oneLine`), and the
+list ends saying they're paths, not instructions (`PullRequestPrompt.conflictsSaid`), as a build's prompts say of what
+it said. A prompt sent while they're read waits for that read (`PullRequestConflictsStore.waitForRead`), and without
+them, as when they couldn't be read, it goes without, for Copilot to find them as it merges. **Resolve**
 (`PullRequestPrompt.resolveConflicts`, the prompt of **Resolve Conflicts with Copilot…** in the pull request's menu, which
 lists them too while the details have them, `PRStore.conflicts`) has Copilot fetch the target branch, merge it in and
 resolve them, keeping what each side meant, as you say, quoted as yours, building on what the session explained when you

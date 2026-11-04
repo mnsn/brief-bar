@@ -1069,13 +1069,14 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   or, when they can't, put it on the clipboard too. To say how a prompt would reach a session, the window and a
   pull request's details read which sessions the extension listens in, while the option is on. **Explain**
   sends a session's conversation, which the Copilot CLI copies into a fork it deletes after, with the comment
-  and its code, or with what BriefBar read of a failed build (its errors, the tests that failed with what each
-  said, and the last lines of its log), to GitHub Copilot, and keeps the answer in memory only; a build's **Fix**
-  quotes the same in its prompt. For a prompt about a pull request's comments or builds sent to one of the Copilot
-  app's sessions, BriefBar reads that session's log, from then until Copilot is done with it. In its preferences, it keeps which work items you sent, where, with which model, and the link to
+  and its code, with what BriefBar read of a failed build (its errors, the tests that failed with what each
+  said, and the last lines of its log), or with which files conflict and how, to GitHub Copilot, and keeps the
+  answer in memory only; a build's **Fix** quotes the same in its prompt, and **Resolve** lists the same files. For
+  a prompt about a pull request's comments, builds or conflicts sent to one of the Copilot app's sessions, BriefBar
+  reads that session's log, from then until Copilot is done with it. In its preferences, it keeps which work items you sent, where, with which model, and the link to
   the pull request, not their titles; the session you choose for a pull request's work, by its ID only; the comment
   threads, builds and conflicts each task or prompt took on, and which session a prompt about them went to and when, by
-  their IDs only; the IDs of the forks it made to ask a session about a comment or a build, until they're deleted;
+  their IDs only; the IDs of the forks it made to ask a session about a comment, a build or merge conflicts, until they're deleted;
   and, in a file only you can read, what Copilot printed when it ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same

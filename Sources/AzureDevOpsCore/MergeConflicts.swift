@@ -257,7 +257,8 @@ public struct MergeConflict: Sendable, Equatable, Identifiable {
 /// the order a change lists its files (`PullRequestPanel.listsFirst`).
 public struct MergeConflicts: Sendable, Equatable {
     public var files: [MergeConflict]
-    /// False when Azure DevOps listed more than BriefBar reads, and the rest aren't here.
+    /// False when there may be more than BriefBar read: past the pages it reads, or from a server that answers each page
+    /// with the first.
     public var isComplete: Bool
     /// What the pull request was as they were read: its head, its target branch and that branch's head, which the merge
     /// Azure DevOps tries changes with.
@@ -296,12 +297,13 @@ public struct MergeConflicts: Sendable, Equatable {
     /// How many pages it reads at most: past that, the rest are left out, and it says so.
     public static let maxPages = 10
 
-    /// Reads a pull request's conflicts from Azure DevOps, with GETs: one, or one for each hundred.
+    /// Reads a pull request's conflicts from Azure DevOps, with GETs: one, or one for each hundred. They're complete unless
+    /// there may be more than it read: past the pages it reads, or from a server that answers each page with the first.
     public static func read(
         _ pullRequest: PullRequest, with client: ADOClient, pageSize: Int = pageSize, maxPages: Int = maxPages
     ) async throws -> MergeConflicts {
         var read: [ADOConflict] = []
-        var seen: Set<Int> = []
+        var seen: Set<Seen> = []
         var isComplete = true
         var skip = 0
         for page in 0..<max(1, maxPages) {
@@ -310,17 +312,42 @@ public struct MergeConflicts: Sendable, Equatable {
                 pullRequestId: pullRequest.key.number, top: pageSize, skip: skip
             )
             let list = try await client.get(address, as: ADOList<ADOConflict>.self)
-            // One that ignores the page's start, and answers with the same page again, has nothing more to give.
-            let new = list.value.filter { $0.conflictId.map { seen.insert($0).inserted } ?? true }
+            // Those it hadn't read: one without a number or a path can't show, and brings nothing.
+            let new = list.value.filter { (conflict: ADOConflict) -> Bool in
+                guard let key = Seen(conflict) else { return false }
+                return seen.insert(key).inserted
+            }
             read += new
             let answered = list.value.count + list.skipped
             // A page that isn't full is the last; so is one longer than asked for, from a server that answers with all of
             // them at once.
-            guard answered == pageSize, !new.isEmpty else { break }
+            guard answered == pageSize else { break }
+            // A full one that brings nothing new is from a server that ignores where a page starts, and answers with the
+            // same page again: it may have more, which it won't give.
+            guard !new.isEmpty else {
+                isComplete = false
+                break
+            }
             if page == max(1, maxPages) - 1 { isComplete = false }
             skip += answered
         }
         let files = read.enumerated().compactMap { MergeConflict($1, index: $0) }
         return MergeConflicts(files: files, isComplete: isComplete, of: pullRequest)
+    }
+
+    /// What tells a conflict from the others as pages repeat them: its number, else its path.
+    private enum Seen: Hashable {
+        case id(Int)
+        case path(String)
+
+        init?(_ conflict: ADOConflict) {
+            if let id = conflict.conflictId {
+                self = .id(id)
+            } else if let path = conflict.conflictPath, !path.isEmpty {
+                self = .path(path)
+            } else {
+                return nil
+            }
+        }
     }
 }

@@ -186,18 +186,29 @@ import Testing
         #expect(!capped.isComplete)
     }
 
-    /// A server that answers with the same page whatever it's asked for, or with all of them at once, isn't asked forever.
+    /// A server that answers with the same page whatever it's asked for, or with all of them at once, isn't asked forever;
+    /// and once a full page brings nothing new, there may be more, which it won't give.
     @Test func stopsWhenAPageBringsNothingNew() async throws {
         let server = StubServer()
         server.on("/pullRequests/7/conflicts", json: Fixture.list([Self.conflict(1, "/a.cs", "editEdit"), Self.conflict(2, "/b.cs", "editEdit")]))
         let read = try await MergeConflicts.read(pullRequest, with: server.client(), pageSize: 2)
         #expect(read.files.count == 2)
+        #expect(!read.isComplete)
         #expect(server.requests.count == 2)
+
+        // Told apart by their paths when Azure DevOps doesn't number them.
+        let unnumbered = StubServer()
+        unnumbered.on("/pullRequests/7/conflicts", json: Fixture.list([Self.conflict(nil, "/a.cs", "editEdit"), Self.conflict(nil, "/b.cs", "editEdit")]))
+        let byPath = try await MergeConflicts.read(pullRequest, with: unnumbered.client(), pageSize: 2)
+        #expect(byPath.files.map(\.path) == ["/a.cs", "/b.cs"])
+        #expect(!byPath.isComplete)
+        #expect(unnumbered.requests.count == 2)
 
         let all = StubServer()
         all.on("/pullRequests/7/conflicts", json: Fixture.list((1...3).map { Self.conflict($0, "/\($0).cs", "editEdit") }))
         let everything = try await MergeConflicts.read(pullRequest, with: all.client(), pageSize: 2)
         #expect(everything.files.count == 3)
+        #expect(everything.isComplete)
         #expect(all.requests.count == 1)
     }
 
