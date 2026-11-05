@@ -48,7 +48,10 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// pull requests, and what those stories are when BriefBar hasn't read them; and, while Apple Intelligence is on,
     /// missions named on this Mac from the titles of their pull requests, work items, stories and sessions, with the names
     /// you give missions kept.
-    nonisolated package static let descriptionVersion = 24
+    /// 25: with Make Changes in Azure DevOps, your own comment edited, a PATCH of what it says, or deleted, a DELETE of it,
+    /// each when you click it; what you write in place of one, kept in memory until it's saved; and Fix Grammar there, which
+    /// sends it to GitHub Copilot when you choose a Copilot model for it.
+    nonisolated package static let descriptionVersion = 25
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
@@ -1367,12 +1370,12 @@ extension AzureDevOpsSource {
 
 extension AzureDevOpsSource {
     /// For `--render`, in the demo: lists of their own, as the demo's, on the first thread that waits on you on the first of
-    /// your pull requests that needs you, one with your reply made with Reply & Resolve, and one with the thread set to Won't
-    /// Fix, made as the demo makes them, in their made-up data only.
+    /// your pull requests that needs you, one with your reply made with Reply & Resolve, one with the thread set to Won't
+    /// Fix, and one with your comment there edited, made as the demo makes them, in their made-up data only.
     private func loadChangesForRendering(store: PRStore) async {
         renderedChanges = []
         guard store.mode == .demo else { return }
-        for name in ["pull-requests-replied-resolved", "pull-requests-status-wont-fix"] {
+        for name in ["pull-requests-replied-resolved", "pull-requests-status-wont-fix", "pull-requests-comment-edited"] {
             // Settings of its own, so what it sees and changes leaves the other pictures as they are.
             let own = AppSettings(defaults: MemoryDefaults())
             // The other pictures' brief, as their list's.
@@ -1384,6 +1387,9 @@ extension AzureDevOpsSource {
             else { return }
             if name.hasSuffix("-resolved") {
                 await changes.reply(Self.renderedReply, then: .fixed, to: waiting.thread, of: item.key)
+            } else if name.hasSuffix("-edited") {
+                guard let mine = waiting.comments.first(where: { $0.isEditable(by: record.me) }) else { return }
+                await changes.edit(Self.renderedEdit, of: mine, in: waiting.thread, of: item.key)
             } else {
                 await changes.setStatus(.wontFix, of: waiting.thread, in: item.key)
             }
@@ -1394,13 +1400,17 @@ extension AzureDevOpsSource {
     /// What you reply in the demo's pictures, and what Fix Grammar makes of it.
     private static let renderedReply = "Capped it at RetryOptions.MaxDelay, 30 seconds by default. Thanks @Priya!"
     private static let renderedDraft = "i capped teh backoff at `RetryOptions.MaxDelay` , its 30 seconds by default"
+    /// What your comment says once you edit it in the demo's pictures, as you do and once you saved it.
+    private static let renderedEdit = "I went with exponential backoff, starting at 200 ms and doubling each time, up to "
+        + "`RetryOptions.MaxDelay`: 30 seconds by default."
 
     /// The Pull Requests page with the details of the first of your pull requests that needs you, taken to its first thread
     /// that waits on you, with Reply and its status beside Explain and Fix; your reply open there, with what you wrote,
     /// with Fix Grammar's suggestion, once you used it, with a Copilot model chosen, and when it couldn't go; a status that
-    /// couldn't be set; then, from the demo's list with them made, the thread replied to and resolved, and another set to
-    /// Won't Fix; and Make Changes in Azure DevOps in Settings. In a narrow window too. Each from made-up states, through
-    /// `ThreadChangesPreview`, or made as the demo makes them: nothing's sent.
+    /// couldn't be set; your comment there with its ⋯ menu open, as you edit it, as you delete it, and when it couldn't be
+    /// deleted; then, from the demo's list with them made, the thread replied to and resolved, another set to Won't Fix, and
+    /// your comment edited; and Make Changes in Azure DevOps in Settings. In a narrow window too. Each from made-up states,
+    /// through `ThreadChangesPreview`, or made as the demo makes them: nothing's sent.
     func threadChangeRenderings() -> [(name: String, view: AnyView)] {
         guard let store, store.mode == .demo, let item = renderedPullRequests(store).first, let record = store.record(for: item.key) else {
             return []
@@ -1411,7 +1421,17 @@ extension AzureDevOpsSource {
         let suggestion = GrammarSuggestion(original: Self.renderedDraft, corrected: corrected, model: StorySummaries.appleIntelligenceModel)
         let wide = CGSize(width: 1_000, height: 900), narrow = CGSize(width: 560, height: 900)
         let reply = ThreadChangesPreview.Reply(text: Self.renderedReply)
-        let shown: [(name: String, preview: ThreadChangesPreview, sizes: [(suffix: String, size: CGSize)])] = [
+        // Your comment in that thread.
+        let mine = waiting.comments.first { $0.isEditable(by: record.me) }.map { PreviewComment(thread: waiting.id, comment: $0.id) }
+        let yours: [(name: String, preview: ThreadChangesPreview, sizes: [(suffix: String, size: CGSize)])] = mine.map { mine in [
+            ("pull-requests-comment-menu", ThreadChangesPreview(menu: mine), [("", wide), ("-narrow", narrow)]),
+            ("pull-requests-comment-edit", ThreadChangesPreview(edits: [mine: .init(text: Self.renderedEdit)]),
+             [("", wide), ("-narrow", narrow)]),
+            ("pull-requests-comment-delete", ThreadChangesPreview(deleting: mine), [("", wide), ("-narrow", narrow)]),
+            ("pull-requests-comment-delete-failed", ThreadChangesPreview(states: [waiting.id: .failed(.notAllowed, .delete(comment: mine.comment))]),
+             [("", wide), ("-narrow", narrow)]),
+        ] } ?? []
+        let shown: [(name: String, preview: ThreadChangesPreview, sizes: [(suffix: String, size: CGSize)])] = yours + [
             ("pull-requests-reply", ThreadChangesPreview(replies: [waiting.id: reply]), [("", wide), ("-narrow", narrow)]),
             ("pull-requests-reply-grammar", ThreadChangesPreview(replies: [
                 waiting.id: .init(text: Self.renderedDraft, suggestion: suggestion),
