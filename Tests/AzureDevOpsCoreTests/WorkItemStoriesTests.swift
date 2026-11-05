@@ -69,10 +69,19 @@ import Testing
         }
     }
 
-    @Test func oneWhoseTypeIsntReadYetGivesNoneUntilItIs() {
+    @Test func oneWhoseTypeIsntReadYetGivesNoneUntilItIs() throws {
         let stories = WorkItemStories(workItems: [], board: nil)
         #expect(stories.stories(of: Self.pullRequest, workItems: [5102]).isEmpty)
         #expect(stories.parents(ofTasksIn: [WorkItemKey(Self.organization, 5102)]).isEmpty)
+        // One read without its type: the same, never a story itself.
+        let dto = try JSONDecoder().decode(
+            ADOWorkItem.self, from: Data(#"{"id": 5102, "fields": {"System.Title": "Round coupon totals", "System.Parent": 5101}}"#.utf8)
+        )
+        let untyped = WorkItem(organization: Self.organization, project: "Storefront", dto)
+        #expect(untyped.type == WorkItem.untyped && untyped.parentId == 5101)
+        let unknown = WorkItemStories(workItems: [untyped, Self.item(5160, " ")], board: nil)
+        #expect(unknown.stories(of: Self.pullRequest, workItems: [5102, 5160]).isEmpty)
+        #expect(unknown.parents(ofTasksIn: [WorkItemKey(Self.organization, 5102)]).isEmpty)
     }
 
     @Test func theTeamsBacklogConfigurationDecidesInItsProjectAndTheSprintsBoardPlacesTasks() {

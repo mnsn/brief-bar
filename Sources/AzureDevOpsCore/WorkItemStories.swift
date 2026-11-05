@@ -63,14 +63,15 @@ public struct WorkItemStories: Sendable {
         return project.types
     }
 
-    /// The story a work item is for, by its own type; nil for none, or while its type isn't read. Where the sprint's board
-    /// puts it says only which story a task is under, when its parent wasn't read with it, which the board's links may
-    /// predate: a bug or a story the board shows under another is a story itself.
+    /// The story a work item is for, by its own type; nil for none, or while its type isn't read, as for one read without
+    /// it. Where the sprint's board puts it says only which story a task is under, when its parent wasn't read with it,
+    /// which the board's links may predate: a bug or a story the board shows under another is a story itself.
     public func story(of key: WorkItemKey) -> OrderStory? {
         guard let item = workItems[key] else { return nil }
         let ref = ItemRef.workItem(organization: key.organization, id: key.id)
         let types = types(of: item)
-        let type = item.type.lowercased()
+        let type = item.type.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !type.isEmpty, type != WorkItem.untyped.lowercased() else { return nil }
         if types.tasks.contains(type) {
             return (item.parentId ?? placed[key]).map { story(WorkItemKey(key.organization, $0), task: ref, rank: item.rank) }
         }

@@ -193,10 +193,13 @@ public struct WorkItem: Sendable, Codable, Equatable, Identifiable {
         self.tags = tags
     }
 
+    /// What a work item read without its type is called. Which story it's for isn't known (`WorkItemStories`).
+    public static let untyped = "Work Item"
+
     /// `categories` maps a work item type, then a state, to its category, as the team's backlog configuration does.
     public init(organization: String, project: String, _ dto: ADOWorkItem, categories: [String: [String: String]] = [:]) {
         let fields = dto.fields
-        let type = fields.workItemType ?? "Work Item"
+        let type = fields.workItemType ?? Self.untyped
         let state = fields.state ?? ""
         self.init(
             id: dto.id, organization: organization, project: fields.teamProject ?? project, type: type,
