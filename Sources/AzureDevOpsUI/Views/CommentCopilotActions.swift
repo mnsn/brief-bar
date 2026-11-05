@@ -125,7 +125,7 @@ struct ThreadCopilotActions: View {
                     // A new composer for each, with its own words and where it goes, and for each Try Again.
                     .id(CopilotComposerID(ask: asking, tries: tries))
                 } else if showsRow {
-                    buttons(hasAnswer: question?.answer != nil, showsCopilot: canAct, isFixing: work?.isFixing == true)
+                    buttons(hasAnswer: question?.answer != nil, showsCopilot: canAct, isFixing: isFixing(work))
                 }
             }
             .padding(.horizontal, 10)
@@ -202,6 +202,12 @@ struct ThreadCopilotActions: View {
             return "Have Copilot address this comment, as you say, with what the session answered: it doesn't commit, push or reply"
         }
         return "Have Copilot address this comment, as you say: it doesn't commit, push or reply"
+    }
+
+    /// Whether Copilot fixes it now, or pushes its fix: by a fix or Push & Reply, whatever its line says, as a question sent
+    /// since to another session (`CopilotTasksStore.isFixing`); in pictures, as their line draws it.
+    private func isFixing(_ work: CopilotWork?) -> Bool {
+        preview == nil ? copilot.isFixing(part, of: item.key) : work?.isFixing == true
     }
 
     /// Opens its composer, closing any other in the comments, whose words stay for when it opens again: for you to send, not

@@ -944,6 +944,13 @@ extension CopilotTasksStore {
         return await stopTurn(in: work.session)
     }
 
+    /// Whether Copilot fixes something of a pull request now, or pushes its fix, which its Fix, or Resolve, waits for: by
+    /// the latest fix, or Push & Reply, that took it on, whatever came after, such as a question about it sent since to
+    /// another session, which its line says instead (`work(on:of:for:)`).
+    func isFixing(_ part: PullRequestPart, of key: PRKey) -> Bool {
+        work(on: part, of: key, for: [.fix, .pushAndReply])?.isFixing == true
+    }
+
     /// Whether a line's Try Again sends what it says again, with the same words: a fix that failed or stopped.
     static func canTryAgain(_ work: CopilotWork) -> Bool {
         guard work.purpose == .fix else { return false }

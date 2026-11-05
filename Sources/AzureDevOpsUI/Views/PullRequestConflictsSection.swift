@@ -421,7 +421,10 @@ private struct ConflictsCopilotActions: View {
                         // A new composer for each, with its own words and where it goes, and for each Try Again.
                         .id(CopilotComposerID(ask: asking, tries: tries))
                     } else {
-                        buttons(hasAnswer: question?.answer != nil, isFixing: work?.isFixing == true)
+                        buttons(
+                            hasAnswer: question?.answer != nil,
+                            isFixing: preview == nil ? copilot.isFixing(part, of: item.key) : work?.isFixing == true
+                        )
                     }
                 }
             }

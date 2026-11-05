@@ -1497,6 +1497,53 @@ import Testing
         #expect(CopilotComposerID(ask: .fix, tries: 0) != CopilotComposerID(ask: .fix, tries: 1))
     }
 
+    /// Taking what Try Again asked of a composer, as it opens anew, calls off what the composer it replaces was sending,
+    /// as closing it would, whether or not the new one sends at once; and it's taken once.
+    @Test func takingARetryCallsOffWhatItsComposerWasSending() async {
+        let drafts = CopilotDrafts()
+        let composer = CopilotComposing(part: .thread(11), ask: .fix)
+        let other = CopilotComposing(part: .thread(12), ask: .fix)
+        let sending = Task<Void, Never> { try? await Task.sleep(for: .seconds(60)) }
+        let elsewhere = Task<Void, Never> { try? await Task.sleep(for: .seconds(60)) }
+        defer { elsewhere.cancel() }
+        drafts.sends[composer] = sending
+        drafts.sends[other] = elsewhere
+        #expect(drafts.takeRetry(for: composer) == nil)
+        #expect(drafts.sends[composer] != nil)
+        drafts.retry(composer, words: nil, to: .session(session))
+        let retry = drafts.takeRetry(for: composer)
+        #expect(retry?.destination == .session(session))
+        #expect(drafts.sends[composer] == nil)
+        #expect(sending.isCancelled)
+        #expect(drafts.sends[other] != nil)
+        #expect(!elsewhere.isCancelled)
+        #expect(drafts.takeRetry(for: composer) == nil)
+    }
+
+    /// Fix, or Resolve, waits while a fix of it runs, or a push of its fix, though a question about it sent since to another
+    /// session is what its line says.
+    @Test func aQuestionSentSinceDoesntBringFixBack() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let other = "2f8a4c6e-1b3d-4e5f-8a7b-9c0d1e2f3a15"
+        settings.copilotRuns = [run(task, startedAt: now.addingTimeInterval(-600), taken: [TakenPart(.thread(11), since: now.addingTimeInterval(-600))])]
+        #expect(store.isFixing(.thread(11), of: key))
+        settings.copilotSentPrompts = [try #require(SentPrompt(about(.explain, threads: [11]), session: other, sentAt: now, copied: false))]
+        let shown = try #require(store.work(on: .thread(11), of: key))
+        #expect(shown.purpose == .explain)
+        #expect(!shown.isFixing)
+        #expect(store.isFixing(.thread(11), of: key))
+        // Once the fix is over, it's offered again.
+        settings.copilotRuns[0].ended = .finished
+        #expect(!store.isFixing(.thread(11), of: key))
+        // And while a push of its fix runs in its session.
+        settings.copilotRuns = [run(task, .pushAndReply, startedAt: now.addingTimeInterval(-60), taken: [
+            TakenPart(.thread(11), since: now.addingTimeInterval(-60), ships: true),
+        ])]
+        #expect(store.isFixing(.thread(11), of: key))
+        #expect(!store.isFixing(.thread(12), of: key))
+    }
+
     /// What a composer that Try Again opened does as it opens (`CopilotDrafts.plan`): it sends at once only a moment after
     /// Try Again, as the fix went, quoting the same answer, or none, as Include the Answer Above was; else the words still
     /// come back, going where the fix went, and it says why it waits for you; and nothing of it comes back once BriefBar

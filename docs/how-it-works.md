@@ -2626,7 +2626,8 @@ or applied, still shows as it did; else its words come back all the same, going 
 you, as when it opened a while after Try Again, or the suggestion that fix applied isn't the thread's latest now, which
 it doesn't apply in its place. When BriefBar can't find where it went now, or it can't go there, the composer says so,
 with the words, and waits for you to choose (`CopilotDrafts.retryGone`). Without those words, as once BriefBar
-restarted, it opens going there, with what you wrote in it, for you to send. Nothing of it comes back once BriefBar
+restarted, it opens going there, with what you wrote in it, for you to send. What the composer it opens anew was sending
+is called off, as closing it would (`CopilotDrafts.takeRetry`). Nothing of it comes back once BriefBar
 forgot the words, as Send Work to Copilot was turned off, or Azure DevOps stopped, even for a send that ends after; and
 what Try Again asked of a composer that didn't open for it goes as you open the composer yourself, or close it. On a
 build, its composer shows only once what shows of the build's run is current (`BuildCopilot.composer`): opened from the
@@ -2639,7 +2640,8 @@ before BriefBar recorded what tasks take on, and the task says what it took on i
 (`CopilotRun.workLetGo`). A prompt copied for you to paste that takes on more, or a Push & Reply, which
 stays, no longer takes the thread's comments off Needs You once you paste it, and they hold back how far the others leave
 it (`CommentHandOff.without(thread:)`). The demo's go in memory. While Copilot fixes it, or
-pushes its fix, its Fix, or Resolve, waits (`CopilotWork.isFixing`).
+pushes its fix, its Fix, or Resolve, waits, whatever its line says, as a question about it sent since to another session
+(`CopilotTasksStore.isFixing`).
 
 #### About a failed build
 

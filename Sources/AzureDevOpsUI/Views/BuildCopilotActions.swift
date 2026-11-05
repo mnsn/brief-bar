@@ -400,7 +400,10 @@ struct BuildCopilotActions<Trailing: View>: View {
                         // A new composer for each, with its own words and where it goes, and for each Try Again.
                         .id(CopilotComposerID(ask: asking, tries: tries))
                     } else {
-                        buttons(hasAnswer: question?.answer != nil, isFixing: work?.isFixing == true)
+                        buttons(
+                            hasAnswer: question?.answer != nil,
+                            isFixing: preview == nil ? part.map { copilot.isFixing($0, of: item.key) } == true : work?.isFixing == true
+                        )
                     }
                 }
             }

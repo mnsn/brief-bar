@@ -381,6 +381,14 @@ final class CopilotDrafts {
     /// What it says when it opened later than a moment after Try Again (`retryWait`), as a build that took a while to read.
     static let retryLate = "It opened a while after Try Again, so nothing went yet: check it, then send it."
 
+    /// Takes what Try Again asked of a composer, as it opens anew, once: what the composer it replaces was sending is
+    /// called off, as closing it would, whether or not this one sends at once.
+    func takeRetry(for composer: CopilotComposing) -> Retry? {
+        guard let retry = retries.removeValue(forKey: composer) else { return nil }
+        callOff(composer)
+        return retry
+    }
+
     /// Readies a composer for Try Again: the words the fix it tries again went with, and where that went, for the composer
     /// to send them there as it opens (`CopilotPartComposer`). Without those words, as once BriefBar restarted, it opens
     /// going there, with what you wrote in it, for you to send. Whoever opens it should open it anew, as one already open
@@ -883,9 +891,10 @@ struct CopilotPartComposer<Options: View>: View {
     }
 
     /// Try Again opened it: it does as `CopilotDrafts.plan` says, with what BriefBar keeps of the fix it tries again, and
-    /// its ▾ led by where that went (`retryLead`), from then on.
+    /// its ▾ led by where that went (`retryLead`), from then on; what the composer it replaces was sending goes
+    /// (`CopilotDrafts.takeRetry`).
     private func retryIfAsked() {
-        guard let retry = drafts.retries.removeValue(forKey: asking.draftKey) else { return }
+        guard let retry = drafts.takeRetry(for: asking.draftKey) else { return }
         let kept = asking.part.flatMap { copilot.fixWords[CopilotTasksStore.PartKey(pullRequest: item.key, part: $0)] }
         let destinations = CopilotDestinations.make(session, worked: retry.destination?.sessionID ?? worked, ask: ask)
         let restore = asking.restore
