@@ -455,8 +455,10 @@ final class ThreadChanges: ObservableObject {
                 fail(key, .gone, .edit(comment: comment.id), pullRequest: pullRequest)
                 return false
             }
-            // It went: the comment says it already.
+            // It went: the comment says it already. It shows so, over an edit of it from before that the list may still show
+            // until a snapshot has it, which this one replaces (`PRStore.adding`).
             if Self.digest(read.content ?? read.markdown) == digest {
+                store.changed(pullRequest, by: ThreadChange(thread: thread.id, edited: [read]))
                 edits[draft] = nil
                 SpokenText.announce("Your edit is saved already")
                 return true
@@ -533,8 +535,10 @@ final class ThreadChanges: ObservableObject {
             unsureDeletions[key]?.remove(comment.id)
             if unsureDeletions[key]?.isEmpty == true { unsureDeletions[key] = nil }
             states[key] = nil
-            // It went: the thread hasn't it anymore, or is gone with it.
+            // It went: the thread hasn't it anymore, or is gone with it. It leaves the thread here too, with the reply that added
+            // it and its edits, which the list may still show until a snapshot has them (`PRStore.adding`).
             if threads.first(where: { $0.id == thread.id })?.comments.contains(where: { $0.id == comment.id }) != true {
+                store.changed(pullRequest, by: ThreadChange(thread: thread.id, deleted: [comment.id]))
                 edits[CommentKey(thread: key, comment: comment.id)] = nil
                 SpokenText.announce("Your comment is deleted already")
                 return true

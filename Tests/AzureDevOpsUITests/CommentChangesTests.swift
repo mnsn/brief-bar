@@ -30,13 +30,19 @@ import Testing
                 ] as [String: Any])))
             case .deleteComment:
                 return .done
+            case .reply(_, let markdown, _):
+                // Your reply, which you may delete then.
+                return .comment(try ADOJSON.decoder().decode(ADOComment.self, from: JSONSerialization.data(withJSONObject: [
+                    "id": 3, "parentCommentId": 1, "content": markdown, "commentType": "text", "publishedDate": "2030-01-01T10:00:00Z",
+                    "author": ["id": DemoData.me.id, "displayName": DemoData.me.name, "uniqueName": "robin@contoso.example"],
+                ] as [String: Any])))
             case .setStatus(let address, let status):
                 // A status set meanwhile, as from its thread's menu.
                 return .thread(try ADOJSON.decoder().decode(ADOThread.self, from: JSONSerialization.data(withJSONObject: [
                     "id": address.id, "status": status.rawValue,
                 ] as [String: Any])))
-            case .reply, .addTag, .removeTag:
-                // Comments' changes never send one (ThreadChangesTests, TagChangesTests).
+            case .addTag, .removeTag:
+                // Comments' changes never send one (TagChangesTests).
                 throw ADOError.http(400)
             }
         }
@@ -398,6 +404,56 @@ import Testing
         #expect(await changes.edit("Capped it at 30 seconds.", of: mine, in: try thread(store), of: key))
         #expect(reads == 2)
         #expect(azure.sent.count == 2)
+    }
+
+    /// An edit found saved, after an answer that didn't say, shows over an edit of the comment before it, which the list
+    /// keeps showing until a snapshot has it: the snapshot that has the later one doesn't, and would never.
+    @Test func anEditFoundSavedShowsOverTheEditBeforeIt() async throws {
+        let (store, changes, azure, _) = live()
+        let (mine, _) = try comments(store)
+        #expect(await changes.edit("Capped it.", of: mine, in: try thread(store), of: key))
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.edit("Capped it at 30 seconds.", of: try comments(store).mine, in: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        // Azure DevOps made it, as the list reads it, from a snapshot that never had the edit before it.
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        let at = try #require(snapshot.records[index].details?.threads[0].comments.firstIndex { $0.id == mine.id })
+        snapshot.records[index].details?.threads[0].comments[at].text = "Capped it at 30 seconds."
+        snapshot.records[index].details?.threads[0].comments[at].markdown = "Capped it at 30 seconds."
+        store.receive(snapshot)
+        let read = try #require(snapshot.records[index].details?.threads.first { $0.id == 11 })
+        changes.readThreads = { _ in [read] }
+        #expect(await changes.edit("Capped it at 30 seconds.", of: try comments(store).mine, in: try thread(store), of: key))
+        #expect(azure.sent.map(\.kind) == [.editComment, .editComment])
+        #expect(try comments(store).mine.markdown == "Capped it at 30 seconds.")
+        // And stays so, as the list reads it again.
+        store.receive(snapshot)
+        #expect(try comments(store).mine.markdown == "Capped it at 30 seconds.")
+    }
+
+    /// A reply of yours you deleted, found deleted after an answer that didn't say, leaves the thread, though the list kept
+    /// showing it until a snapshot had it, which none will now.
+    @Test func aDeletionFoundDoneTakesTheReplyTheListShows() async throws {
+        let (store, changes, azure, _) = live()
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
+        let reply = try #require(try thread(store).comments.last)
+        #expect(reply.markdown == "Capped it.")
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.delete(reply, in: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        // Deleted, as the list reads it: the thread as it was before the reply.
+        let snapshot = DemoData.snapshot(now: store.now)
+        store.receive(snapshot)
+        let read = try #require(snapshot.records.first { $0.id == key }?.details?.threads.first { $0.id == 11 })
+        changes.readThreads = { _ in [read] }
+        #expect(await changes.delete(reply, in: try thread(store), of: key))
+        #expect(azure.sent.map(\.kind) == [.reply, .deleteComment])
+        #expect(try thread(store).comments.contains { $0.id == reply.id } == false)
+        store.receive(snapshot)
+        #expect(try thread(store).comments.contains { $0.id == reply.id } == false)
     }
 
     /// Read, a comment that doesn't say the edit that may have gone gets it, once.
