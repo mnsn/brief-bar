@@ -102,9 +102,7 @@ package struct StagePill: View {
             } label: {
                 StagePillLabel(reading.stage)
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
+            .labelMenuStyle()
             .fixedSize()
             .help(StageText.sentence(reading, now: now, name: order.name(of:)) + "\nClick to change it")
             .stageAccessibility(reading, order: order, now: now)
@@ -365,9 +363,7 @@ private struct StageControlsOverRow: View {
                         Color.clear.contentShape(Capsule())
                             .frame(width: frame.width, height: frame.height)
                     }
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .menuIndicator(.hidden)
+                    .labelMenuStyle()
                     .frame(width: frame.width, height: frame.height)
                     .offset(x: frame.minX, y: frame.minY)
                     .help(StageText.sentence(reading, now: now, name: order.name(of:)) + "\nClick to change it")
@@ -414,8 +410,12 @@ package struct StageUndoLine: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Undo") { StageCommand.undo(order) }
-                    .buttonStyle(.link)
+                Button {
+                    StageCommand.undo(order)
+                } label: {
+                    Text("Undo").foregroundStyle(.tint)
+                }
+                .buttonStyle(.plain)
                 Spacer(minLength: 4)
                 Button {
                     order.dismissLastChange()
