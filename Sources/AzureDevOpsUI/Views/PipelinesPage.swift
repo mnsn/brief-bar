@@ -19,16 +19,16 @@ struct PipelinesPage: View {
                 Button {
                     add()
                 } label: {
-                    Label("Add Pipeline", systemImage: "plus")
+                    ControlLabel("Add Pipeline", systemImage: "plus")
                 }
                 .glassButtonStyle()
-                .help("Pin pipelines to follow here and in widgets")
+                .help("Add Pipeline: pin pipelines to follow here and in widgets")
             }
             if pipelines.statuses.isEmpty && pipelines.pullRequests.isEmpty && pipelines.problem == nil && store.merges.isEmpty {
                 if pipelines.hasLoaded || pipelines.settings.pinnedPipelines.isEmpty {
                     EmptyPage(symbol: "point.3.connected.trianglepath.dotted", title: "Follow your pipelines",
                               message: "Pin pipelines to follow their runs here and in widgets. Your active pull requests' pipelines also appear here, grouped by pull request.") {
-                        Button("Add Pipeline…") { add() }
+                        Button { add() } label: { ControlLabel("Add Pipeline…") }
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
@@ -446,9 +446,9 @@ private struct PipelineCard: View {
                             .font(size: 14)
                             .foregroundStyle(.secondary)
                             .frame(minWidth: options.visibleActions ? 28 : nil, minHeight: options.visibleActions ? 28 : nil)
+                            .contentShape(Rectangle())
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
+                    .labelMenuStyle()
                     .fixedSize()
                     .help("Branch, order and more")
                 }

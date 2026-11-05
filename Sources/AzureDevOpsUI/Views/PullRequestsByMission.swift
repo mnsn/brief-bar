@@ -94,8 +94,9 @@ private struct StoriesNeedShowLinks: View {
 
 extension PullRequestsByMission {
     /// For `--render`, with Pull Request Order on and a mission to show: the page By Mission, in List and on the Map, also
-    /// with text at 150%; every mission, a story's among them, wide, narrow and at 150%; and By Status, with the order's
-    /// capsules on the rows. And the line at By Mission's foot while Show Links is off.
+    /// with text at 150%, and in a narrow window, its header's controls their symbols alone; every mission, a story's among
+    /// them, wide, narrow and at 150%; and By Status, with the order's capsules on the rows. And the line at By Mission's
+    /// foot while Show Links is off.
     @MainActor
     static func renderings(
         store: PRStore, services: AppServices, environment: (AnyView) -> AnyView
@@ -106,8 +107,9 @@ extension PullRequestsByMission {
             ("pull-requests-by-mission", .byMission, .list, nil, CGSize(width: 1_000, height: 1_000)),
             ("pull-requests-by-mission-map", .byMission, .map, nil, CGSize(width: 1_000, height: 720)),
             ("pull-requests-by-mission-150", .byMission, .list, 1.5, CGSize(width: 1_000, height: 1_000)),
+            ("pull-requests-by-mission-narrow", .byMission, .list, nil, CGSize(width: 560, height: 720)),
             ("pull-requests-by-mission-all", .byMission, .list, nil, CGSize(width: 1_000, height: 2_000)),
-            ("pull-requests-by-mission-all-narrow", .byMission, .list, nil, CGSize(width: 640, height: 2_600)),
+            ("pull-requests-by-mission-all-narrow", .byMission, .list, nil, CGSize(width: 560, height: 2_800)),
             ("pull-requests-by-mission-all-150", .byMission, .list, 1.5, CGSize(width: 1_000, height: 3_000)),
             ("pull-requests-by-mission-map-all", .byMission, .map, nil, CGSize(width: 1_000, height: 1_600)),
             ("pull-requests-by-status-order", .status, .list, nil, CGSize(width: 1_000, height: 2_400)),

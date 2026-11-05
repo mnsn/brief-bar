@@ -487,12 +487,19 @@ private struct StandingContent: View {
             .buttonStyle(.borderless)
             .help(LinkPickerView.buttonTitle(for: subject.kind))
             if !hidden.isEmpty {
-                Menu("\(hidden.count) Hidden") {
+                Menu {
                     ForEach(hidden) { connection in
                         Button("Show \(connection.item.menuTitle)") { links.showAgain(subject, connection.item.ref) }
                     }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("\(hidden.count) Hidden")
+                        MenuChevron()
+                    }
+                    .font(size: 13)
+                    .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
+                .labelMenuStyle()
                 .fixedSize()
                 .help("Links you hid here")
             }
@@ -1172,9 +1179,9 @@ struct StoryActions: View {
                 menu()
             } label: {
                 if item.sent != nil {
-                    Label("Copilot", systemImage: "paperplane")
+                    ControlLabel("Copilot", systemImage: "paperplane")
                 } else {
-                    Label("Actions", systemImage: "ellipsis.circle")
+                    ControlLabel("Actions", systemImage: "ellipsis.circle")
                 }
             }
             .menuStyle(.button)
@@ -1185,12 +1192,12 @@ struct StoryActions: View {
                     Button {
                         if !show() { open() }
                     } label: {
-                        Label(StoryDetails.showTitle, systemImage: "macwindow")
+                        ControlLabel(StoryDetails.showTitle, systemImage: "macwindow")
                     }
                     .fixedSize()
                 }
                 Button(action: open) {
-                    Label(StoryDetails.openTitle(for: item.ref.kind), systemImage: "arrow.up.forward.app")
+                    ControlLabel(StoryDetails.openTitle(for: item.ref.kind), systemImage: "arrow.up.forward.app")
                 }
                 .fixedSize()
             }

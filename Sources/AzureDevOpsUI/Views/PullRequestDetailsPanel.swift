@@ -166,6 +166,7 @@ struct PullRequestDetailsPanel: View {
                     store.refresh()
                 } label: {
                     Image(systemName: "arrow.clockwise")
+                        .font(size: 13)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
@@ -182,9 +183,11 @@ struct PullRequestDetailsPanel: View {
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
+                    .font(size: 13)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .labelMenuStyle()
             .fixedSize()
             .help("More")
             .accessibilityLabel("More")
