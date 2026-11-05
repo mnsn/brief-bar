@@ -34,6 +34,11 @@ struct PRRowView: View {
     var showsInWindow = false
     /// Where it stands in its mission, for its order capsule, on a window's Pull Requests page with Pull Request Order on.
     var order: OrderRowContext? = nil
+    /// Its stage, on a line of its own under its title, while Pull Request Order is on: nil on a row of one line, such as a
+    /// widget's, which keeps one height. A value, so that the row draws again as it changes.
+    var stage: StageReading? = nil
+    /// Pull Request Order, for its stage's menu and VoiceOver's actions, and the names of the sessions its stage names.
+    var ordering: PullRequestOrder? = nil
     /// Opens it in Azure DevOps.
     var action: () -> Void
 
@@ -72,7 +77,10 @@ struct PRRowView: View {
                 .accessibilityActions {
                     SummarizeMenuItems(item.key.linkRef, divided: false)
                     if let open = order?.open { Button("Show Its Mission", action: open) }
+                    if stage != nil, let ordering { StageAccessibilityActions(ref: item.key.linkRef, order: ordering) }
                 }
+                // Its stage's menu and Finished My Review, over the row's button, which would take their clicks.
+                .stageControls(ref: item.key.linkRef, order: stage == nil ? nil : ordering, now: now)
                 RowSummary(subject: item.key.linkRef)
                     .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
                     .padding(.trailing, 8)
@@ -140,6 +148,9 @@ struct PRRowView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else {
+                    if let stage, let ordering {
+                        RowStageLine(stage: stage, order: order, ordering: ordering, now: now)
+                    }
                     HStack(spacing: 6) {
                         Text(item.subtitle)
                             .font(size: options.rowReasonSize, weight: .medium)
@@ -147,7 +158,8 @@ struct PRRowView: View {
                             .lineLimit(1)
                         PullRequestCopilotStatus(key: item.key, showsActions: showsActions)
                         PullRequestLinks(key: item.key)
-                        if let order { OrderCapsule(order) }
+                        // With a stage, its capsule is on the stage's line.
+                        if let order, stage == nil || ordering == nil { OrderCapsule(order) }
                     }
                     if let detail = item.detail {
                         Text(detail)
@@ -180,7 +192,9 @@ struct PRRowView: View {
     }
 
     private var additionalMenuItems: some View {
-        PullRequestMenuItems(item: item, openSource: openSource, dismiss: dismiss, stopWatching: stopWatching)
+        PullRequestMenuItems(
+            item: item, openSource: openSource, dismiss: dismiss, stopWatching: stopWatching, ordering: stage == nil ? nil : ordering
+        )
     }
 
     private var compactLine: String {
@@ -194,7 +208,9 @@ struct PRRowView: View {
     }
 
     private var accessibilityValue: String {
-        var parts = [isNew ? "New" : nil, item.repository, item.detail, order?.sentence].compactMap { $0 }
+        var parts = [isNew ? "New" : nil, item.repository, item.detail].compactMap { $0 }
+        if let stage, let ordering { parts.append(StageWords.spoken(stage, order: ordering, now: now)) }
+        if let sentence = order?.sentence { parts.append(sentence) }
         if let readiness = item.readiness, !readiness.items.isEmpty { parts += readiness.lines }
         // What a list by date is sorted by, which its time says.
         if showsCreated, let created = item.createdAt { parts.append("Created \(Elapsed.short(since: created, now: now)) ago") }
@@ -310,5 +326,46 @@ struct CountChips: View {
             }
             .accessibilityElement(children: .combine)
         }
+    }
+}
+
+/// A row's stage, on its own line under its title, while Pull Request Order is on: its pill, why, and who set it; where it
+/// stands in its order, unless its stage says it, as Can merge and Waits do; and Finished My Review in Your review. As
+/// many lines as it needs, so it wraps rather than squeezes when narrow. The row is a button, which would take every click:
+/// the pill's menu and Finished My Review go over it, where their spots are (`stageControls`). Someone else's that you
+/// finished reviewing says so, without a pill: it's off your board.
+struct RowStageLine: View {
+    let stage: StageReading
+    let order: OrderRowContext?
+    @ObservedObject var ordering: PullRequestOrder
+    let now: Date
+
+    @Environment(\.interfaceOptions) private var options
+
+    var body: some View {
+        let name = { (ref: ItemRef) in ordering.name(of: ref) }
+        FlowLayout(spacing: 6, lineSpacing: 3) {
+            if stage.isOnBoard {
+                StagePillLabel(stage.stage, opensMenu: stage.stage != .merged)
+                    .stageSpot(.pill)
+            }
+            Text(StageText.why(stage, name: name))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            if stage.isOnBoard, let who = StageText.who(stage, now: now, name: name) {
+                Text("· " + who)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            if let order, stage.stage != .canMerge, stage.stage != .waits {
+                OrderCapsule(order)
+            }
+            if stage.isOnBoard, stage.stage == .yourReview {
+                FinishedReviewLabel()
+                    .stageSpot(.finishedReview)
+            }
+        }
+        .font(size: options.rowDetailSize)
+        .padding(.vertical, 1)
     }
 }

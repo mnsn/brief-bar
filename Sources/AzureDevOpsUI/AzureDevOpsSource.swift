@@ -377,7 +377,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilot?.start()
         workLinks?.start()
         orderFacts = PullRequestOrderFacts(
-            order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails
+            order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails, copilot: copilot
         ).started()
         agentRereads = AgentRereads(
             updates: services.sessionUpdates, store: store, sprint: sprint, workLinks: workLinks, details: details, tags: tagChanges
@@ -811,7 +811,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         await pipelines?.loadOnce()
         await workLinks?.loadOnce()
         orderFacts = PullRequestOrderFacts(
-            order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails
+            order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails, copilot: copilot
         ).loadOnce()
         // Before Copilot's list loads, which shows them with the sessions.
         publishSentTasks()

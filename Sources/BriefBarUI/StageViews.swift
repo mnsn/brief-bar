@@ -337,10 +337,11 @@ extension View {
         anchorPreference(key: StageSpots.self, value: .bounds) { [spot: $0] }
     }
 
-    /// Over a row that's a button: the stage pill's menu and Finished My Review, each where its spot is in the row.
-    package func stageControls(ref: ItemRef, order: PullRequestOrder, now: Date) -> some View {
+    /// Over a row that's a button: the stage pill's menu and Finished My Review, each where its spot is in the row; nothing
+    /// without Pull Request Order.
+    package func stageControls(ref: ItemRef, order: PullRequestOrder?, now: Date) -> some View {
         overlayPreferenceValue(StageSpots.self) { spots in
-            if !spots.isEmpty {
+            if let order, !spots.isEmpty {
                 StageControlsOverRow(spots: spots, ref: ref, order: order, now: now)
             }
         }
