@@ -192,11 +192,11 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   release raises its `version`, so whoever turned it on sees the change before it reads more.
 - **Only Azure DevOps and GitHub use the network**, each only its own service: to Azure DevOps every
   request a GET, and to GitHub one fixed GraphQL query, never a mutation. Neither writes, but for the
-  changes `ADOWrite` lists, your reply in a pull request's thread, a thread's status and a tag added to
-  or taken off a pull request, which only `ADOClient.send(_:as:)` sends, only with **Make Changes in
-  Azure DevOps** on, off by default, and only when you click one: never by itself, from agents, the
-  command line or the demo. A new kind of change is a case there, behind the same setting, with its
-  tests, and its description says it.
+  changes `ADOWrite` lists, your reply in a pull request's thread, a thread's status, your own comment
+  edited or deleted, and a tag added to or taken off a pull request, which only `ADOClient.send(_:as:)`
+  sends, only with **Make Changes in Azure DevOps** on, off by default, and only when you click one:
+  never by itself, from agents, the command line or the demo. A new kind of change is a case there,
+  behind the same setting, with its tests, and its description says it.
   Teams and Copilot make no network requests, and neither does anything else but the updater,
   Sparkle, which fetches only this project's releases, and only if you allow it. Networking code goes
   in `AzureDevOpsCore` or `GitHubCore`, and `make check-boundaries` fails if any other module uses
@@ -300,8 +300,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 
 - Keep each pull request focused, and describe the change users will see.
 - Run `make test`, `make check-boundaries` and `make demo-check` first, and `make plugin-test` when you
-  change BriefBar's extension for the Copilot app's sessions. CI runs them on macOS 26,
-  checks the signing keys' protection, packages the app and checks its updater, on Apple silicon only.
+  change BriefBar's extension for the Copilot app's sessions. CI runs them on macOS 26 and
+  checks the signing keys' protection, on Apple silicon only, and packages the app and checks its updater when
+  the pull request changes what they use ([CI](#ci)).
 - Update the README, or [How it works](docs/how-it-works.md), when behavior or settings change.
 - For UI changes, include before and after screenshots from `make screenshots`, never of your own data.
 - Write what users will notice in a file of your own in `changes/`, never in `CHANGELOG.md`, and when a source reads
@@ -394,17 +395,29 @@ pull requests, and when started by hand. A new run cancels the one in progress o
 `main` included.
 
 - It builds and tests on Apple silicon on macOS 26, and tests BriefBar's extension for the Copilot app's
-  sessions with the runner's Node. It runs the boundary and demo checks and
-  `make signing-key-check`, packages the arm64 app with a throwaway certificate, signs its update with
-  a throwaway key, the way a release does (`scripts/appcast-dry-run.sh`), checks that its updater can't
-  use BriefBar's permissions (`scripts/test-updater-isolation.sh`), installs an update through it
-  (`scripts/update-rehearsal.sh`), and uploads the package as the `BriefBar` artifact.
+  sessions with the runner's Node. It runs the boundary and demo checks on the tests' build, rather than building
+  the app again, and `make signing-key-check`.
+- On every push to `main` and every run started by hand, it also packages the arm64 app with a throwaway
+  certificate, signs its update with a throwaway key, the way a release does (`scripts/appcast-dry-run.sh`),
+  checks that its updater can't use BriefBar's permissions (`scripts/test-updater-isolation.sh`), installs an
+  update through it (`scripts/update-rehearsal.sh`), and uploads the package as the `BriefBar` artifact.
+- A pull request does that only when it changes what packaging uses beyond what the tests build and check:
+  anything but the Swift code in `Sources`, the tests, the docs, the Markdown at the top and the pull request's
+  own notes in `CHANGELOG.md`. The updater's code counts, and so does the code that starts it and talks to it,
+  which the package's checks run; `scripts/ci-changes.sh` lists them. So a pull request that changes
+  `scripts/`, `Resources/`, the `Makefile`, `Package.swift` or a workflow packages the app, and one that changes
+  only the app's code, its tests and its docs doesn't, and says so in the run's summary: its optimized build
+  happens on `main`, which packages every change.
 - A pull request that changes only BriefBar for Windows (`windows/` and its workflow) builds nothing for
   the Mac: `scripts/ci-changes.sh` says what changed, and the build job still runs, on Linux, skipping
   every step, so its required check passes.
 - Before it builds, it checks the release notes in `changes/`, and that no pull request changed a description's
   version, against the last release's tag, and tests the script that gathers the notes (`make release-notes-check`).
 - Intel builds and checks aren't supported.
+- Every run builds from scratch. A cached build folder would save a minute or two on a typical pull request, but
+  Swift's incremental builds can miss a change: from a cache, a correct change failed its test, because a file that
+  reads a struct wasn't compiled again when another file changed the type of one of its fields; built from scratch,
+  it passed.
 
 `.github/workflows/codeql.yml` scans the Swift code and the workflows with CodeQL on the same pushes
 to `main`, weekly, and when started by hand, never on pull requests, since the Swift scan holds a

@@ -27,8 +27,8 @@ import Testing
                 return .tag(ADOTag(id: "id-\(name.lowercased())", name: spelling[name.lowercased()] ?? name, active: true))
             case .removeTag:
                 return .done
-            case .reply, .setStatus:
-                // Tags' changes never send one (ThreadChangesTests).
+            case .reply, .setStatus, .editComment, .deleteComment:
+                // Tags' changes never send one (ThreadChangesTests, CommentChangesTests).
                 throw ADOError.http(400)
             }
         }

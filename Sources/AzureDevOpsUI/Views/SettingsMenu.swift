@@ -223,13 +223,14 @@ struct MakeChangesSetting: View {
 
     nonisolated static let title = "Make Changes in Azure DevOps"
     static let explanation = """
-        Adds Reply and a status menu to each comment thread in a pull request's details in BriefBar's window, and Add Tag \
-        and ✕ to its tags. BriefBar then writes these to Azure DevOps, as you, with your Azure CLI sign-in, and only when you \
-        click: your reply in a thread, a thread's status, such as Resolved or Won't Fix, and a tag you add to a pull \
-        request or remove from it. Nothing else, and never by itself: otherwise it only reads. It remembers the tags you \
-        add, for each project, to suggest them. Fix Grammar, in a reply, uses Apple Intelligence on this Mac unless you \
-        choose a Copilot model, which sends the reply to GitHub Copilot. Agents get none of it. Turning it off forgets the \
-        replies you haven't sent and the tags you added.
+        Adds Reply and a status menu to each comment thread in a pull request's details in BriefBar's window, Edit and \
+        Delete to your own comments, and Add Tag and ✕ to its tags. BriefBar then writes these to Azure DevOps, as you, \
+        with your Azure CLI sign-in, and only when you click: your reply in a thread, a thread's status, such as Resolved or \
+        Won't Fix, your comment as you edited it, or deleted, and a tag you add to a pull request or remove from it. Nothing \
+        else, and never by itself: otherwise it only reads. It remembers the tags you add, for each project, to suggest \
+        them. Fix Grammar, in a reply or an edit, uses Apple Intelligence on this Mac unless you choose a Copilot model, \
+        which sends what you wrote to GitHub Copilot. Agents get none of it. Turning it off forgets the replies and edits \
+        you haven't sent and the tags you added.
         """
 
     var body: some View {
