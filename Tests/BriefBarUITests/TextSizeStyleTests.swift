@@ -88,4 +88,23 @@ import Testing
         #expect(Font.scaled(.headline, by: 1.5) == .system(size: 19.5, weight: .bold))
         #expect(Font.scaled(.title2, weight: .semibold, by: 1.2) == .system(size: 17 * 1.2, weight: .semibold))
     }
+
+    /// A bordered or glass button's title, or a menu's, in AppKit's font for its control's size, as much bigger as the text.
+    @Test func controlsTitlesAreAppKitsFontTimesTheTextSize() {
+        #expect(Font.control(.regular, by: 1) == .system(size: NSFont.systemFontSize(for: .regular)))
+        #expect(Font.control(.small, by: 1) == .system(size: NSFont.systemFontSize(for: .small)))
+        #expect(Font.control(.small, by: 1.5) == .system(size: NSFont.systemFontSize(for: .small) * 1.5))
+        #expect(Font.control(.regular, weight: .semibold, by: 1.2) == .system(size: NSFont.systemFontSize(for: .regular) * 1.2, weight: .semibold))
+    }
+
+    /// A bezel that holds a title as big as the text takes the next size up from 120%, as far as there are.
+    @Test func bezelsGoASizeUpFrom120Percent() {
+        #expect(ControlSize.small.followingText(1) == .small)
+        #expect(ControlSize.small.followingText(1.1) == .small)
+        #expect(ControlSize.small.followingText(1.2) == .regular)
+        #expect(ControlSize.small.followingText(1.5) == .regular)
+        #expect(ControlSize.regular.followingText(1.5) == .large)
+        #expect(ControlSize.large.followingText(1.5) == .extraLarge)
+        #expect(ControlSize.extraLarge.followingText(1.5) == .extraLarge)
+    }
 }

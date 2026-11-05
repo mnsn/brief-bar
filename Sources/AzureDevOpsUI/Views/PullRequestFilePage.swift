@@ -417,11 +417,12 @@ struct PullRequestFilePage: View {
                     }
                 }
             } label: {
+                // As AppKit drew it, as a borderless menu, before it followed the text size.
                 Text(verbatim: "\(shown.index + 1) of \(files.count)")
-                    .font(size: 11.5, weight: .medium).monospacedDigit()
+                    .font(size: 13, weight: .medium).monospacedDigit()
+                    .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .labelMenuStyle()
             .fixedSize()
             .help("Go to another of the change's files")
             .accessibilityLabel("File \(shown.index + 1) of \(files.count)")

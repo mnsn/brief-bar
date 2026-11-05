@@ -569,20 +569,26 @@ private enum ChangeFixture {
         // Forty lines, changed at 20: lines 17 to 23 show.
         let lines = ChangeFixture.lines(40, changed: [20])
         #expect(DiffLayout.blocks(of: lines) == [.folded(0..<17), .lines(17..<24), .folded(24..<40)])
-        // Two changes close together share a run; a single line between their runs shows with them; farther apart, the
-        // lines between them fold.
+        // Two changes close together share a run; a few lines between their runs show with them; farther apart, the lines
+        // between them fold.
         #expect(DiffLayout.blocks(of: ChangeFixture.lines(40, changed: [10, 16])) == [.folded(0..<7), .lines(7..<20), .folded(20..<40)])
         #expect(DiffLayout.blocks(of: ChangeFixture.lines(40, changed: [10, 18])) == [.folded(0..<7), .lines(7..<22), .folded(22..<40)])
-        #expect(DiffLayout.blocks(of: ChangeFixture.lines(40, changed: [10, 20])) == [
-            .folded(0..<7), .lines(7..<14), .folded(14..<17), .lines(17..<24), .folded(24..<40),
+        #expect(DiffLayout.blocks(of: ChangeFixture.lines(40, changed: [10, 21])) == [
+            .folded(0..<7), .lines(7..<14), .folded(14..<18), .lines(18..<25), .folded(25..<40),
         ])
     }
 
-    @Test func showsASingleFoldedLineRatherThanFoldingIt() {
+    @Test func showsAFewFoldedLinesRatherThanFoldingThem() {
         // Changed at 4 and 12: lines 1 to 7 and 9 to 15 show, and line 8 between them takes no more room shown.
         #expect(DiffLayout.blocks(of: ChangeFixture.lines(16, changed: [4, 12])) == [.lines(0..<16)])
-        // Line 0 alone above the first change's lines.
-        #expect(DiffLayout.blocks(of: ChangeFixture.lines(10, changed: [4])) == [.lines(0..<8), .folded(8..<10)])
+        // Two lines between them, and three, take little more room than their fold would.
+        #expect(DiffLayout.blocks(of: ChangeFixture.lines(40, changed: [10, 19])) == [.folded(0..<7), .lines(7..<23), .folded(23..<40)])
+        #expect(DiffLayout.blocks(of: ChangeFixture.lines(40, changed: [10, 20])) == [.folded(0..<7), .lines(7..<24), .folded(24..<40)])
+        // Line 0 alone above the first change's lines, and the two under them.
+        #expect(DiffLayout.blocks(of: ChangeFixture.lines(10, changed: [4])) == [.lines(0..<10)])
+        // Four under them fold.
+        #expect(DiffLayout.blocks(of: ChangeFixture.lines(12, changed: [4])) == [.lines(0..<8), .folded(8..<12)])
+        #expect(DiffLayout.smallestFold == 4)
     }
 
     @Test func showsTheLinesThreadsAreOnAndWhatYouUnfold() {
@@ -608,6 +614,8 @@ private enum ChangeFixture {
 
     @Test func foldsAFileWhoseLinesDidntChange() {
         #expect(DiffLayout.blocks(of: ChangeFixture.lines(30)) == [.folded(0..<30)])
+        #expect(DiffLayout.blocks(of: ChangeFixture.lines(4)) == [.folded(0..<4)])
+        #expect(DiffLayout.blocks(of: ChangeFixture.lines(3)) == [.lines(0..<3)])
         #expect(DiffLayout.blocks(of: ChangeFixture.lines(1)) == [.lines(0..<1)])
         #expect(DiffLayout.blocks(of: []) == [])
         // A file added, all of it.

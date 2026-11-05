@@ -419,6 +419,9 @@ public enum DiffLayout {
     public static let context = 3
     /// How many lines unfolding shows at a time.
     public static let unfoldStep = 20
+    /// The fewest unchanged lines that fold: fewer show, since a fold, a line of its own with its buttons, would save
+    /// little room, if any.
+    public static let smallestFold = 4
 
     /// A run of a diff's lines, by their indices.
     public enum Block: Sendable, Equatable, Hashable {
@@ -437,8 +440,9 @@ public enum DiffLayout {
     }
 
     /// The diff's lines in runs, shown or folded: those within `context` of a change or an anchor, such as a line a thread
-    /// is on, show, and so do those in `revealed`; the rest fold, but for a single line between shown ones, which takes no
-    /// more room shown. A shown run ends at each of `breaks`, for what shows under that line, such as a thread.
+    /// is on, show, and so do those in `revealed`; the rest fold, but for runs shorter than `smallestFold` between or
+    /// around shown ones, which take little more room shown. A shown run ends at each of `breaks`, for what shows under
+    /// that line, such as a thread.
     public static func blocks(
         of lines: [DiffLine], context: Int = context, anchors: [Int] = [], revealed: IndexSet = [], breaks: Set<Int> = []
     ) -> [Block] {
@@ -450,21 +454,21 @@ public enum DiffLayout {
         }
         for index in lines.indices where lines[index].kind != .unchanged { show(around: index) }
         for anchor in anchors where lines.indices.contains(anchor) { show(around: anchor) }
-        // A fold of one line takes as much room as the line.
+        // A fold of a few lines takes about as much room as they do.
         var blocks: [Block] = []
         var start = 0
         while start < lines.count {
             let isShown = shown.contains(start)
             var end = start + 1
             while end < lines.count, shown.contains(end) == isShown { end += 1 }
-            if isShown || end - start < 2 {
+            if isShown || end - start < smallestFold {
                 blocks.append(.lines(start..<end))
             } else {
                 blocks.append(.folded(start..<end))
             }
             start = end
         }
-        // Shown runs that a single line's fold joined, as one; then each ended at its breaks.
+        // Shown runs that a short run joined, as one; then each ended at its breaks.
         var joined: [Block] = []
         for block in blocks {
             if case .lines(let range) = block, case .lines(let previous)? = joined.last {
