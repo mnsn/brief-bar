@@ -5,10 +5,10 @@ import CryptoKit
 import Foundation
 
 /// What you change in Azure DevOps from BriefBar, with **Make Changes in Azure DevOps** on: your replies in pull requests'
-/// comment threads and their statuses (`ADOWrite`), each when you click it, in their details. What Azure DevOps answers
-/// shows at once, and the pull request is read again (`PRStore.changed`). Nothing goes there otherwise, and the demo changes
-/// only its own made-up data. What you write in a reply is kept here, in memory only, until it's sent or BriefBar stops
-/// reading Azure DevOps: one that fails stays.
+/// comment threads, their statuses, and your own comments, edited or deleted (`ADOWrite`), each when you click it, in their
+/// details. What Azure DevOps answers shows at once, and the pull request is read again (`PRStore.changed`). Nothing goes
+/// there otherwise, and the demo changes only its own made-up data. What you write in a reply, or in place of a comment, is
+/// kept here, in memory only, until it's sent or BriefBar stops reading Azure DevOps: one that fails stays.
 @MainActor
 final class ThreadChanges: ObservableObject {
     /// A thread of a pull request.
@@ -24,16 +24,36 @@ final class ThreadChanges: ObservableObject {
         case failed(ADOWriteProblem, Sending)
     }
 
+    /// One of your comments in a thread of a pull request.
+    struct CommentKey: Hashable {
+        var thread: Key
+        var comment: Int
+    }
+
     /// A change being sent.
     enum Sending: Equatable {
         /// Your reply; then, for Reply & Resolve or Reply & Reactivate, the thread's status.
         case reply(then: ThreadStatus?)
         case status(ThreadStatus)
+        /// Your comment, by its ID, as you edited it.
+        case edit(comment: Int)
+        /// Your comment, by its ID, deleted.
+        case delete(comment: Int)
 
         var kind: ADOWrite.Kind {
             switch self {
             case .reply: .reply
             case .status: .setStatus
+            case .edit: .editComment
+            case .delete: .deleteComment
+            }
+        }
+
+        /// The comment it edits or deletes; nil for a reply or a status.
+        var comment: Int? {
+            switch self {
+            case .edit(let comment), .delete(let comment): comment
+            case .reply, .status: nil
             }
         }
     }
@@ -41,6 +61,9 @@ final class ThreadChanges: ObservableObject {
     @Published private(set) var states: [Key: State] = [:]
     /// The replies you're writing, by thread. Not published: what you type redraws its own field only.
     private var drafts: [Key: String] = [:]
+    /// What you write in place of your comments, by comment, while you edit them, until you save it or cancel. Not published
+    /// either.
+    private var edits: [CommentKey: String] = [:]
     /// When you resolved each thread you did here: what waited on you in it until then doesn't anymore, though its details
     /// show what was new as it was when they showed it (`waiting(_:of:)`).
     private var resolved: [Key: Date] = [:]
@@ -48,6 +71,13 @@ final class ThreadChanges: ObservableObject {
     /// fingerprint of what it said (`Attempt`), however many said something else: until their threads, read again for the
     /// same reply, tell, it isn't sent there.
     private var unsure: [Key: [Attempt]] = [:]
+    /// The edits of your comments that may have been saved though they failed, by thread, each with its comment and a
+    /// fingerprint of what it said (`EditAttempt`): until their threads, read again for the same edit, tell, it isn't sent
+    /// again.
+    private var unsureEdits: [Key: [EditAttempt]] = [:]
+    /// Your comments that may have been deleted though it failed, by thread: until their threads, read again, tell, they
+    /// aren't deleted again.
+    private var unsureDeletions: [Key: Set<Int>] = [:]
     /// The changes on their way to Azure DevOps, by thread: called off as replies go, when the setting is turned off, Azure
     /// DevOps stops or someone else signs in, so that one that hasn't gone yet, as one waiting for a token, never does.
     private var inFlight: [Key: Task<ADOWrite.Answer, Error>] = [:]
@@ -69,6 +99,13 @@ final class ThreadChanges: ObservableObject {
     struct Attempt: Equatable {
         var digest: SHA256.Digest
         var before: Set<Int>
+    }
+
+    /// An edit that may have been saved: its comment, and a fingerprint of what it said, as it went (`digest`). The comment,
+    /// read again, saying the same, is it.
+    struct EditAttempt: Equatable {
+        var comment: Int
+        var digest: SHA256.Digest
     }
 
     let settings: AppSettings
@@ -131,6 +168,14 @@ final class ThreadChanges: ObservableObject {
         return (listed ?? pullRequest).status == .active ? Self.notListed : Self.closed
     }
 
+    /// Whether you can edit or delete a comment: you can change its pull request's threads (`canChange(_:)`), and it's yours,
+    /// as the list was read, and what someone wrote (`ReviewComment.isEditable`). In the demo too, whose comments of yours
+    /// it changes only in its made-up data.
+    func canChange(_ comment: ReviewComment, of pullRequest: PullRequest?) -> Bool {
+        guard canChange(pullRequest), let pullRequest, let record = store?.record(for: pullRequest.key) else { return false }
+        return comment.isEditable(by: record.me)
+    }
+
     static let closed = "Azure DevOps takes no change to a completed or abandoned pull request."
     static let notListed = "This pull request is no longer in your lists, so its threads can't be changed here."
 
@@ -153,6 +198,25 @@ final class ThreadChanges: ObservableObject {
 
     func keep(_ draft: String, for key: Key) {
         drafts[key] = draft.isEmpty ? nil : draft
+    }
+
+    /// What you wrote in place of a comment of yours, not saved yet: nil until you change it.
+    func edit(_ key: CommentKey) -> String? { edits[key] }
+
+    func keepEdit(_ text: String, for key: CommentKey) {
+        edits[key] = text
+    }
+
+    /// Forgets what you wrote in place of a comment, as you cancel: it stays as it is.
+    func forgetEdit(_ key: CommentKey) {
+        edits[key] = nil
+    }
+
+    /// What you'd edit of a comment of yours: what it says, its mentions as the names the details show
+    /// (`CommentEditing`), or, while you're editing it, what you wrote.
+    func editing(_ comment: ReviewComment, in thread: ReviewThread, of pullRequest: PullRequest) -> String {
+        edits[CommentKey(thread: Key(pullRequest: pullRequest.key, thread: thread.id), comment: comment.id)]
+            ?? CommentEditing(comment, in: thread, of: pullRequest).text
     }
 
     /// Dismisses what a thread says went wrong.
@@ -331,6 +395,190 @@ final class ThreadChanges: ObservableObject {
         SpokenText.announce(afterReply ? "Replied, and set to \(status.title)" : "Set to \(status.title)")
     }
 
+    /// Saves your comment as you edited it (`posted(_:)`), each name a mention showed as its mention again (`CommentEditing`),
+    /// in place of what it says, as you, and returns whether it was saved, and was still yours to finish: then what you wrote
+    /// is forgotten; otherwise it's kept, and your edit says why. One that says what the comment says already goes nowhere.
+    /// After one that may have gone, as one Azure DevOps didn't answer in time, the same edit goes only once the thread, read
+    /// again first, says the comment doesn't say it. Called off, it settles as a reply does (`reply(_:then:to:of:)`).
+    @discardableResult
+    func edit(_ text: String, of comment: ReviewComment, in thread: ReviewThread, of pullRequest: PRKey) async -> Bool {
+        let key = Key(pullRequest: pullRequest, thread: thread.id)
+        let draft = CommentKey(thread: key, comment: comment.id)
+        guard !Self.posted(text).isEmpty, !isSending(key), let store, settings.makesChanges else { return false }
+        if let problem = refusal(pullRequest, in: store) {
+            fail(key, problem, .edit(comment: comment.id), pullRequest: pullRequest)
+            return false
+        }
+        guard let record = store.record(for: pullRequest), let (current, known) = yours(comment, in: thread, of: record, as: .edit(comment: comment.id))
+        else { return false }
+        let editing = CommentEditing(known, in: current, of: record.pullRequest)
+        let markdown = editing.content(of: Self.posted(text))
+        let digest = Self.digest(markdown)
+        // It says that already.
+        guard digest != Self.digest(editing.content) else {
+            edits[draft] = nil
+            SpokenText.announce("Your comment says that already")
+            return true
+        }
+        let generation = generation, lifetime = lifetime, account = account
+        let attempt = EditAttempt(comment: comment.id, digest: digest)
+        if unsureEdits[key]?.contains(attempt) == true {
+            states[key] = .sending(.edit(comment: comment.id))
+            let threads = await readThreads(pullRequest)
+            // Turned off meanwhile, or someone else signed in: what you wrote is gone, and nothing goes, though it's on again.
+            guard generation == self.generation, settings.makesChanges else { return false }
+            guard let threads else {
+                states[key] = .failed(.unconfirmed, .edit(comment: comment.id))
+                SpokenText.announce(ADOWriteProblem.unconfirmed.sentence(.editComment))
+                return false
+            }
+            forget(attempt, on: key)
+            states[key] = nil
+            guard let read = threads.first(where: { $0.id == thread.id })?.comments.first(where: { $0.id == comment.id }) else {
+                fail(key, .gone, .edit(comment: comment.id), pullRequest: pullRequest)
+                return false
+            }
+            // It went: the comment says it already.
+            if Self.digest(read.content ?? read.markdown) == digest {
+                edits[draft] = nil
+                SpokenText.announce("Your edit is saved already")
+                return true
+            }
+        }
+        states[key] = .sending(.edit(comment: comment.id))
+        let write = ADOWrite.editComment(ThreadAddress(record.pullRequest, thread: thread.id), comment: comment.id, markdown: markdown)
+        do {
+            switch store.mode {
+            case .demo:
+                store.changed(pullRequest, by: DemoThreadChanges.edit(markdown, of: known, in: current, at: now()))
+            case .live:
+                let answer = try await dispatch(write, for: key, as: account, in: generation)
+                // Someone else signed in, or Azure DevOps stopped, as it went: it was the last one's, and does nothing more.
+                guard lifetime == self.lifetime else { return false }
+                if let change = ThreadChange(answer, to: write, pullRequest: record.pullRequest, known: current, at: now()) {
+                    store.changed(pullRequest, by: change)
+                } else {
+                    readAgain(pullRequest)
+                }
+            }
+        } catch is CancellationError {
+            settled(key, sentIn: generation)
+            return false
+        } catch {
+            guard lifetime == self.lifetime else { return false }
+            let problem = ADOWriteProblem(error, now: now())
+            // One that may have gone is checked before the same goes again.
+            if problem.mayHaveGone { remember(attempt, on: key) }
+            guard generation == self.generation else {
+                if problem.mayHaveGone { readAgain(pullRequest) }
+                settled(key, sentIn: generation)
+                return false
+            }
+            fail(key, problem, .edit(comment: comment.id), pullRequest: pullRequest)
+            return false
+        }
+        guard generation == self.generation else {
+            settled(key, sentIn: generation)
+            return false
+        }
+        edits[draft] = nil
+        states[key] = nil
+        SpokenText.announce("Saved")
+        return true
+    }
+
+    /// Deletes your comment, as you, once you confirmed it, and returns whether it was deleted, and was still yours to finish.
+    /// Azure DevOps keeps it marked deleted, which it doesn't show, and deletes its thread too once none of its comments is
+    /// left: so it leaves the thread, and the thread leaves the details then. After one that may have gone, as one Azure
+    /// DevOps didn't answer in time, it goes again only once the thread, read again first, still has the comment. Called
+    /// off, it settles as a reply does (`reply(_:then:to:of:)`).
+    @discardableResult
+    func delete(_ comment: ReviewComment, in thread: ReviewThread, of pullRequest: PRKey) async -> Bool {
+        let key = Key(pullRequest: pullRequest, thread: thread.id)
+        guard !isSending(key), let store, settings.makesChanges else { return false }
+        if let problem = refusal(pullRequest, in: store) {
+            fail(key, problem, .delete(comment: comment.id), pullRequest: pullRequest)
+            return false
+        }
+        guard let record = store.record(for: pullRequest),
+              let (current, known) = yours(comment, in: thread, of: record, as: .delete(comment: comment.id))
+        else { return false }
+        let generation = generation, lifetime = lifetime, account = account
+        if unsureDeletions[key]?.contains(comment.id) == true {
+            states[key] = .sending(.delete(comment: comment.id))
+            let threads = await readThreads(pullRequest)
+            guard generation == self.generation, settings.makesChanges else { return false }
+            guard let threads else {
+                states[key] = .failed(.unconfirmed, .delete(comment: comment.id))
+                SpokenText.announce(ADOWriteProblem.unconfirmed.sentence(.deleteComment))
+                return false
+            }
+            unsureDeletions[key]?.remove(comment.id)
+            if unsureDeletions[key]?.isEmpty == true { unsureDeletions[key] = nil }
+            states[key] = nil
+            // It went: the thread hasn't it anymore, or is gone with it.
+            if threads.first(where: { $0.id == thread.id })?.comments.contains(where: { $0.id == comment.id }) != true {
+                edits[CommentKey(thread: key, comment: comment.id)] = nil
+                SpokenText.announce("Your comment is deleted already")
+                return true
+            }
+        }
+        states[key] = .sending(.delete(comment: comment.id))
+        let write = ADOWrite.deleteComment(ThreadAddress(record.pullRequest, thread: thread.id), comment: comment.id)
+        do {
+            switch store.mode {
+            case .demo:
+                store.changed(pullRequest, by: DemoThreadChanges.delete(known, in: current))
+            case .live:
+                let answer = try await dispatch(write, for: key, as: account, in: generation)
+                guard lifetime == self.lifetime else { return false }
+                if let change = ThreadChange(answer, to: write, pullRequest: record.pullRequest, known: current) {
+                    store.changed(pullRequest, by: change)
+                } else {
+                    readAgain(pullRequest)
+                }
+            }
+        } catch is CancellationError {
+            settled(key, sentIn: generation)
+            return false
+        } catch {
+            guard lifetime == self.lifetime else { return false }
+            let problem = ADOWriteProblem(error, now: now())
+            // One that may have gone is checked before it goes again.
+            if problem.mayHaveGone { unsureDeletions[key, default: []].insert(comment.id) }
+            guard generation == self.generation else {
+                if problem.mayHaveGone { readAgain(pullRequest) }
+                settled(key, sentIn: generation)
+                return false
+            }
+            fail(key, problem, .delete(comment: comment.id), pullRequest: pullRequest)
+            return false
+        }
+        guard generation == self.generation else {
+            settled(key, sentIn: generation)
+            return false
+        }
+        edits[CommentKey(thread: key, comment: comment.id)] = nil
+        states[key] = nil
+        SpokenText.announce("Deleted")
+        return true
+    }
+
+    /// A comment of yours, as the list read its thread last, with the thread: nil, saying why when that helps, when the list
+    /// doesn't have it anymore, as one deleted meanwhile, or it isn't yours to change.
+    private func yours(
+        _ comment: ReviewComment, in thread: ReviewThread, of record: PRRecord, as sending: Sending
+    ) -> (thread: ReviewThread, comment: ReviewComment)? {
+        let key = Key(pullRequest: record.id, thread: thread.id)
+        let current = record.details?.threads.first { $0.id == thread.id } ?? thread
+        guard let known = current.comments.first(where: { $0.id == comment.id }) else {
+            fail(key, .gone, sending, pullRequest: record.id)
+            return nil
+        }
+        guard known.isEditable(by: record.me) else { return nil }
+        return (current, known)
+    }
+
     /// Sends a change, while you can make changes and nothing called it off since it was asked for (`generation`), as whom
     /// it was asked for as, in a task that's called off as replies go (`forgetAll`): before it goes, as while it waits for a
     /// token, it never does, and throws `CancellationError`; once it's gone, it settles all the same, with Azure DevOps'
@@ -370,6 +618,19 @@ final class ThreadChanges: ObservableObject {
         if unsure[key]?.isEmpty == true { unsure[key] = nil }
     }
 
+    /// Keeps an edit that may have gone, until its thread, read again for the same edit, tells: beside the others of the
+    /// thread's comments that may have, each saying something else.
+    private func remember(_ attempt: EditAttempt, on key: Key) {
+        unsureEdits[key, default: []].removeAll { $0 == attempt }
+        unsureEdits[key, default: []].append(attempt)
+    }
+
+    /// An edit that may have gone is known now, as its thread, read again, tells.
+    private func forget(_ attempt: EditAttempt, on key: Key) {
+        unsureEdits[key]?.removeAll { $0 == attempt }
+        if unsureEdits[key]?.isEmpty == true { unsureEdits[key] = nil }
+    }
+
     /// A fingerprint of a reply as it would go (`posted(_:)`): two say the same when theirs are, but for the lines that say
     /// nothing before them, the spaces after them and how their lines end, and with their first line's indent; and in
     /// either Unicode form, as Swift compares text, so an é typed as one character or as an e and its accent is the same.
@@ -381,7 +642,8 @@ final class ThreadChanges: ObservableObject {
     /// pull request is read again, to show it.
     private func fail(_ key: Key, _ problem: ADOWriteProblem, _ sending: Sending, pullRequest: PRKey) {
         states[key] = .failed(problem, sending)
-        if problem.mayHaveGone { readAgain(pullRequest) }
+        // And a comment Azure DevOps doesn't have anymore, as one deleted elsewhere, is read again, to show it gone.
+        if problem.mayHaveGone || (problem == .gone && sending.comment != nil) { readAgain(pullRequest) }
         SpokenText.announce(problem.sentence(sending.kind))
     }
 
@@ -411,13 +673,18 @@ final class ThreadChanges: ObservableObject {
         for task in inFlight.values { task.cancel() }
         inFlight = [:]
         drafts = [:]
+        edits = [:]
         // What's left of a change still settling: a reply's status after it doesn't go.
         states = states.filter { settling[$0.key] != nil }.mapValues { state in
             if case .sending(.reply) = state { return .sending(.reply(then: nil)) }
             return state
         }
         resolved = [:]
-        if !turnedOff { unsure = [:] }
+        if !turnedOff {
+            unsure = [:]
+            unsureEdits = [:]
+            unsureDeletions = [:]
+        }
     }
 
     /// A change on its way as the setting went off has settled, and said what it could: its thread takes changes again.

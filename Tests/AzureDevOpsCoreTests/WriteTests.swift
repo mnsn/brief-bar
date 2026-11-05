@@ -2,17 +2,18 @@ import Foundation
 import Testing
 @testable import AzureDevOpsCore
 
-/// What BriefBar changes in Azure DevOps, with Make Changes in Azure DevOps on: a reply in a thread and a thread's status
-/// (`ADOWrite`), which only `ADOClient.send(_:as:)` sends; and nothing else, which every other request, a GET, can't.
+/// What BriefBar changes in Azure DevOps, with Make Changes in Azure DevOps on: a reply in a thread, a thread's status, a
+/// comment of yours edited or deleted, and a pull request's tags (`ADOWrite`), which only `ADOClient.send(_:as:)` sends; and
+/// nothing else, which every other request, a GET, can't.
 @Suite struct WriteTests {
     let pullRequest = makePR(7)
     var address: ThreadAddress { ThreadAddress(pullRequest, thread: 12) }
 
     // MARK: What it can send
 
-    /// Four changes, and only those: a new one comes with its kind, which fails this until it's tested here.
+    /// Six changes, and only those: a new one comes with its kind, which fails this until it's tested here.
     @Test func makesOnlyTheChangesItLists() {
-        #expect(ADOWrite.Kind.allCases == [.reply, .setStatus, .addTag, .removeTag])
+        #expect(ADOWrite.Kind.allCases == [.reply, .setStatus, .editComment, .deleteComment, .addTag, .removeTag])
         for kind in ADOWrite.Kind.allCases {
             let write = sample(kind)
             #expect(write.kind == kind)
@@ -31,6 +32,20 @@ import Testing
                 #expect(write.url.absoluteString
                     == "https://dev.azure.com/contoso/p1/_apis/git/repositories/r1/pullRequests/7/threads/12?api-version=7.1")
                 #expect(String(decoding: write.body, as: UTF8.self) == #"{"status":2}"#)
+            case .editComment:
+                #expect(write.thread == address)
+                #expect(write.kind.isComment)
+                #expect(write.method == "PATCH")
+                #expect(write.url.absoluteString
+                    == "https://dev.azure.com/contoso/p1/_apis/git/repositories/r1/pullRequests/7/threads/12/comments/3?api-version=7.1")
+                #expect(String(decoding: write.body, as: UTF8.self) == #"{"content":"Capped it at 30 seconds."}"#)
+            case .deleteComment:
+                #expect(write.thread == address)
+                #expect(write.kind.isComment)
+                #expect(write.method == "DELETE")
+                #expect(write.url.absoluteString
+                    == "https://dev.azure.com/contoso/p1/_apis/git/repositories/r1/pullRequests/7/threads/12/comments/3?api-version=7.1")
+                #expect(write.body.isEmpty)
             case .addTag:
                 #expect(write.thread == nil)
                 #expect(write.kind.isTags)
@@ -49,6 +64,16 @@ import Testing
         }
         #expect(!ADOWrite.Kind.reply.isTags)
         #expect(!ADOWrite.Kind.setStatus.isTags)
+        #expect(ADOWrite.Kind.allCases.filter(\.isComment) == [.editComment, .deleteComment])
+        #expect(ADOWrite.Kind.allCases.filter(\.isTags) == [.addTag, .removeTag])
+    }
+
+    /// An edit says what you wrote instead, as you wrote it, and nothing else of the comment.
+    @Test func anEditSaysWhatYouWroteAndNothingElse() throws {
+        let markdown = "Capped at `RetryOptions.MaxDelay`: see https://example.invalid/a/b \"why\", @<\(People.sam.id)>\n\n- one ✓"
+        let write = ADOWrite.editComment(address, comment: 3, markdown: markdown)
+        let body = try #require(JSONSerialization.jsonObject(with: write.body) as? [String: Any])
+        #expect(body as? [String: String] == ["content": markdown])
     }
 
     /// A reply says what you wrote as you wrote it: Markdown, quotes, slashes and all, which JSON encodes.
@@ -355,6 +380,103 @@ import Testing
         #expect(server.requests.count == 1)
     }
 
+    // MARK: Your comments
+
+    /// Editing a comment is a PATCH of what it says alone, with a read's sign-in and headers, and Azure DevOps answers with the
+    /// comment as it keeps it now.
+    @Test func editsACommentWithAPatchOfWhatItSays() async throws {
+        let server = StubServer()
+        server.on("/pullRequests/7/threads/12/comments/3") { _ in
+            var comment = Fixture.comment(3, People.me, "Capped it at 30 seconds.", at: t(-hour))
+            comment["lastContentUpdatedDate"] = iso(t(0))
+            return .json(comment)
+        }
+        let answer = try await server.client().send(sample(.editComment), as: nil)
+        guard case .comment(let comment) = answer else {
+            Issue.record("Expected a comment, got \(answer)")
+            return
+        }
+        #expect(comment.id == 3)
+        #expect(comment.lastContentUpdatedDate == t(0))
+        let request = try #require(server.requests.first)
+        #expect(server.requests.count == 1)
+        #expect(request.httpMethod == "PATCH")
+        #expect(request.url == sample(.editComment).url)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(server.id)")
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+        #expect(request.value(forHTTPHeaderField: "X-TFS-FedAuthRedirect") == "Suppress")
+        #expect(body(of: request) == Data(#"{"content":"Capped it at 30 seconds."}"#.utf8))
+    }
+
+    /// Deleting a comment sends nothing but its address, and whatever Azure DevOps answers it with, it was deleted: its
+    /// reference says 200, with nothing.
+    @Test func deletesACommentWithADeleteOfNothingMore() async throws {
+        let replies: [StubServer.Reply] = [
+            StubServer.Reply(status: 200, headers: [:], body: Data()),
+            StubServer.Reply(status: 204, headers: [:], body: Data()),
+            .json([String: Any]()),
+        ]
+        for reply in replies {
+            let server = StubServer()
+            server.on("/pullRequests/7/threads/12/comments/3") { _ in reply }
+            let answer = try await server.client().send(sample(.deleteComment), as: nil)
+            guard case .done = answer else {
+                Issue.record("Expected it done, got \(answer) for \(reply.status)")
+                continue
+            }
+            let request = try #require(server.requests.first)
+            #expect(server.requests.count == 1)
+            #expect(request.httpMethod == "DELETE")
+            #expect(request.value(forHTTPHeaderField: "Content-Type") == nil)
+            #expect(body(of: request) == nil)
+        }
+    }
+
+    /// Why an edit or a deletion didn't happen, as for a reply: no permission, a completed pull request, a comment gone,
+    /// offline, slowed down; and one answered 503 may have been made, after one request.
+    @Test func saysWhyAChangeToACommentDidntHappen() async throws {
+        let cases: [(StubServer.Reply, ADOError)] = [
+            (.json(["message": "TF401181: The pull request cannot be edited due to its state.", "typeKey": "GitPullRequestNotEditableException"],
+                   status: 400), .refused(.notEditable, message: "TF401181: The pull request cannot be edited due to its state.")),
+            (.status(403), .forbidden),
+            (.status(404), .notFound),
+            (.failure(.notConnectedToInternet), .offline),
+            (StubServer.Reply(status: 429, headers: ["Retry-After": "120"], body: Data()), .throttled(retryAfter: 120)),
+            (.status(503), .network(ADOClient.unansweredMessage)),
+        ]
+        for kind in [ADOWrite.Kind.editComment, .deleteComment] {
+            for (reply, expected) in cases {
+                let server = StubServer()
+                server.on("/pullRequests/7/threads/12/comments/3") { _ in reply }
+                await #expect(throws: expected) { try await server.client().send(sample(kind), as: nil) }
+                #expect(server.requests.count == 1, "\(kind) \(reply.status)")
+            }
+        }
+    }
+
+    @Test func saysWhatHappenedToAChangeToACommentInASentence() {
+        #expect(ADOWriteProblem.notAllowed.sentence(.editComment) == "Azure DevOps says you may not edit this comment.")
+        #expect(ADOWriteProblem.notAllowed.sentence(.deleteComment) == "Azure DevOps says you may not delete this comment.")
+        #expect(ADOWriteProblem.closed.sentence(.deleteComment)
+            == "Azure DevOps takes no change to this pull request anymore: it's completed or abandoned.")
+        #expect(ADOWriteProblem.gone.sentence(.editComment).hasPrefix("Azure DevOps doesn't have this comment anymore"))
+        #expect(ADOWriteProblem.offline.sentence(.editComment) == "You're offline. Your edit is kept: save it once you're back.")
+        #expect(ADOWriteProblem.offline.sentence(.deleteComment) == "You're offline: try again once you're back.")
+        let until = Date(timeIntervalSinceReferenceDate: 60 * 1_000 + 40)
+        #expect(ADOWriteProblem.slowedDown(until: until).sentence(.deleteComment)
+            == "Azure DevOps asked BriefBar to slow down, until \(ADOWriteProblem.time(until)): try again then.")
+        #expect(ADOWriteProblem.unanswered.sentence(.editComment).hasSuffix("won't save it twice."))
+        #expect(ADOWriteProblem.unanswered.sentence(.deleteComment).contains("may have been deleted"))
+        #expect(ADOWriteProblem.unconfirmed.sentence(.editComment).contains("didn't save it again"))
+        #expect(ADOWriteProblem.unconfirmed.sentence(.deleteComment).contains("didn't delete it again"))
+        #expect(ADOWriteProblem.otherAccount.sentence(.editComment).contains("sent nothing as them"))
+        #expect(ADOWriteProblem.notListed.sentence(.editComment) == "This pull request is no longer in your lists, so your edit wasn't saved.")
+        #expect(ADOWriteProblem.notListed.sentence(.deleteComment) == "This pull request is no longer in your lists, so your comment wasn't deleted.")
+        #expect(ADOWriteProblem.failed("HTTP 500.").sentence(.editComment) == "Couldn't save your edit: HTTP 500.")
+        #expect(ADOWriteProblem.failed("HTTP 500.").sentence(.deleteComment) == "Couldn't delete your comment: HTTP 500.")
+        #expect(ADOWriteProblem.refused("Too long").sentence(.editComment) == "Azure DevOps refused it: Too long")
+    }
+
     // MARK: Tags
 
     /// A tag's name goes as you typed it, in JSON, whatever it has in it; taking one off goes by the tag's ID, or else its
@@ -535,6 +657,96 @@ import Testing
         #expect(ThreadChange(.unreadable("missing id"), to: .setStatus(address, .fixed), pullRequest: pullRequest, known: thread) == nil)
     }
 
+    /// An edit's answer is the comment as Azure DevOps keeps it now, in place of what it said, edited, mentions named, as it
+    /// was published; the same twice is the same as once, and a comment that says it already, or that isn't there, stays.
+    @Test func anEditReplacesWhatTheCommentSaid() throws {
+        let thread = ReviewThread(id: 12, comments: [
+            comment(1, People.sam, "Cap it?", at: t(-hour)), comment(3, People.me, "Done", at: t(-minute)),
+        ])
+        let details = makeDetails(for: pullRequest, threads: [thread])
+        var json = Fixture.comment(3, People.me, "Done, @<\(People.sam.id.uppercased())>: capped at 30 seconds.", at: t(-minute))
+        json["lastContentUpdatedDate"] = iso(t(0))
+        let answer = try Fixture.decode(ADOComment.self, json)
+        let write = ADOWrite.editComment(address, comment: 3, markdown: "Done")
+        let change = try #require(ThreadChange(.comment(answer), to: write, pullRequest: pullRequest, known: thread, at: t(5)))
+        #expect(change.thread == 12)
+        #expect(change.comments.isEmpty)
+        #expect(change.edited.map(\.markdown) == ["Done, @Sam Rivera: capped at 30 seconds."])
+        #expect(change.edited.first?.editedAt == t(0))
+
+        let changed = details.applying(change)
+        #expect(changed.threads[0].comments.map(\.id) == [1, 3])
+        #expect(changed.threads[0].comments[1].markdown == "Done, @Sam Rivera: capped at 30 seconds.")
+        #expect(changed.threads[0].comments[1].publishedAt == t(-minute))
+        #expect(changed.threads[0].comments[1].editedAt == t(0))
+        #expect(changed.threads[0].comments[0] == thread.comments[0])
+        #expect(changed.lastActivity == details.lastActivity)
+        #expect(changed.applying(change) == changed)
+        // Read with what it says now, though without when it was edited: it has it.
+        var read = changed
+        read.threads[0].comments[1].editedAt = nil
+        #expect(read.applying(change) == read)
+        // Edited, though Azure DevOps doesn't say when: as it answered.
+        json["lastContentUpdatedDate"] = nil
+        let undated = try #require(ThreadChange(
+            .comment(try Fixture.decode(ADOComment.self, json)), to: write, pullRequest: pullRequest, known: thread, at: t(5)
+        ))
+        #expect(undated.edited.first?.editedAt == t(5))
+        // Not another comment's answer, nor a comment the thread doesn't have.
+        #expect(ThreadChange(.comment(answer), to: .editComment(address, comment: 4, markdown: "Done"), pullRequest: pullRequest,
+                             known: thread) == nil)
+        #expect(details.applying(ThreadChange(thread: 12, edited: [comment(9, People.me, "New", at: t(0))])) == details)
+    }
+
+    /// A deletion's answer says nothing: the comment leaves its thread, and the thread leaves too once none of its comments is
+    /// left, as Azure DevOps deletes it then. The same twice is the same as once.
+    @Test func aDeletionTakesTheCommentAndThenItsThread() throws {
+        let thread = ReviewThread(id: 12, comments: [
+            comment(1, People.me, "Cap it?", at: t(-hour)), comment(2, People.sam, "Done", at: t(-minute)),
+        ])
+        let other = ReviewThread(id: 13, comments: [comment(1, People.alex, at: t(-day))])
+        let details = makeDetails(for: pullRequest, threads: [thread, other])
+        let change = try #require(ThreadChange(.done, to: .deleteComment(address, comment: 1), pullRequest: pullRequest, known: thread))
+        #expect(change == ThreadChange(thread: 12, deleted: [1]))
+        let changed = details.applying(change)
+        #expect(changed.threads.map(\.id) == [12, 13])
+        #expect(changed.threads[0].comments.map(\.id) == [2])
+        #expect(changed.applying(change) == changed)
+        let emptied = changed.applying(ThreadChange(thread: 12, deleted: [2]))
+        #expect(emptied.threads.map(\.id) == [13])
+        #expect(emptied.applying(change) == emptied)
+        // A tag's answer, the same, isn't a comment's.
+        #expect(ThreadChange(.done, to: .setStatus(address, .fixed), pullRequest: pullRequest, known: thread) == nil)
+    }
+
+    /// Only a comment of yours that someone wrote, rather than a code change's, can be edited or deleted; system comments and
+    /// deleted ones are never read. When it was edited is when what it says changed, a second after it was published or more.
+    @Test func onlyYourOwnWrittenCommentsCanBeChanged() throws {
+        var edited = Fixture.comment(4, People.me, "Edited", at: t(-hour))
+        edited["lastContentUpdatedDate"] = iso(t(-minute))
+        var unedited = Fixture.comment(5, People.me, "As it was", at: t(-hour + 1))
+        unedited["lastContentUpdatedDate"] = iso(t(-hour + 1.4))
+        let json = Fixture.thread(12, comments: [
+            Fixture.comment(1, People.me, "Mine", at: t(-5 * hour)),
+            Fixture.comment(2, People.sam, "Sam's", at: t(-4 * hour)),
+            Fixture.comment(3, People.me, "Deleted", at: t(-3 * hour), deleted: true),
+            Fixture.comment(6, People.me, "Policy says", at: t(-3 * hour), type: "system"),
+            Fixture.comment(7, People.me, "Updated the code", at: t(-2 * hour), type: "codeChange"),
+            edited, unedited,
+        ], published: t(-5 * hour))
+        let thread = try #require(ReviewThread(try Fixture.decode(ADOThread.self, json), names: [:]))
+        #expect(thread.comments.map(\.id) == [1, 2, 7, 4, 5])
+        let me = People.me.id.uppercased()
+        #expect(thread.comments.filter { $0.isEditable(by: me) }.map(\.id) == [1, 4, 5])
+        #expect(thread.comments.filter { $0.isEditable(by: People.sam.id) }.map(\.id) == [2])
+        #expect(thread.comments.allSatisfy { !$0.isEditable(by: nil) })
+        #expect(thread.comments.first { $0.id == 4 }?.editedAt == t(-minute))
+        #expect(thread.comments.first { $0.id == 5 }?.editedAt == nil)
+        #expect(thread.comments.first { $0.id == 1 }?.editedAt == nil)
+        // The demo's, which say no type.
+        #expect(comment(1, People.me, at: t(0)).isEditable(by: People.me.id))
+    }
+
     /// A thread the details don't have stays out: reading the pull request again brings it.
     @Test func aChangeToAThreadItDoesntHaveChangesNothing() {
         let details = makeDetails(for: pullRequest, threads: [ReviewThread(id: 13, comments: [comment(1, People.alex, at: t(-day))])])
@@ -593,6 +805,8 @@ import Testing
         switch kind {
         case .reply: .reply(address, markdown: "Thanks, done", parentCommentId: 1)
         case .setStatus: .setStatus(address, .fixed)
+        case .editComment: .editComment(address, comment: 3, markdown: "Capped it at 30 seconds.")
+        case .deleteComment: .deleteComment(address, comment: 3)
         case .addTag: .addTag(PullRequestAddress(pullRequest), name: "deploy-eu")
         case .removeTag: .removeTag(PullRequestAddress(pullRequest), tag: "0f5d2c1e-tag")
         }

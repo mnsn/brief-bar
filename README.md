@@ -203,8 +203,8 @@ unless you add `--greedy`), and keep Full Disk Access.
 **No BriefBar account. No telemetry. Nothing starts acting on your work unless you ask.**
 
 Sources are read-only, but for one opt-in: with **Make Changes in Azure DevOps**, off by default,
-BriefBar posts your replies in pull requests' threads, sets threads' statuses, and adds and removes pull
-requests' tags, as you, only when you click. Azure DevOps and GitHub use your existing CLI sign-ins, and Teams and Copilot tracking reads
+BriefBar posts your replies in pull requests' threads, sets threads' statuses, edits and deletes your own
+comments, and adds and removes pull requests' tags, as you, only when you click. Azure DevOps and GitHub use your existing CLI sign-ins, and Teams and Copilot tracking reads
 files on your Mac. Full Disk Access is needed for Teams and the optional
 **Pull Requests Sent in Chats**, not for ordinary pull-request or session tracking.
 

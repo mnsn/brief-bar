@@ -5,8 +5,9 @@ import BriefBarUI
 import SwiftUI
 
 // Your own part in a pull request's comment threads, with Make Changes in Azure DevOps on: Reply, and the thread's status,
-// in the row with Copilot's Explain and Fix (`ThreadCopilotActions`); your reply in place, with Fix Grammar; and what went
-// wrong, in a sentence on the thread. What they change, and how, is `ThreadChanges`'.
+// in the row with Copilot's Explain and Fix (`ThreadCopilotActions`); your reply in place, with Fix Grammar, and your comment
+// as you edit it, the same way; and what went wrong, in a sentence on the thread. What they change, and how, is
+// `ThreadChanges`'.
 
 // MARK: - The buttons
 
@@ -64,13 +65,15 @@ struct ThreadReplyButtons: View {
         }
     }
 
-    /// "Replying…", "Resolving…", "Setting to Won't Fix…".
+    /// "Replying…", "Resolving…", "Setting to Won't Fix…", "Saving…", "Deleting…".
     static func sendingTitle(_ sending: ThreadChanges.Sending) -> String {
         switch sending {
         case .reply: "Replying…"
         case .status(.fixed): "Resolving…"
         case .status(.active): "Reactivating…"
         case .status(let status): "Setting to \(status.title)…"
+        case .edit: "Saving…"
+        case .delete: "Deleting…"
         }
     }
 }
@@ -168,7 +171,7 @@ struct ThreadReplyArea: View {
         let canChange = preview?.readOnly == nil && changes.canChange(pullRequest)
         let isReplying = canChange && composing == .reply(to: thread.id)
         VStack(alignment: .leading, spacing: 8) {
-            if case .failed(let problem, let sending)? = state, !(isReplying && sending.kind == .reply) {
+            if case .failed(let problem, let sending)? = state, !showsInItsComposer(sending, canChange: canChange) {
                 // A status that didn't change says so above your reply too, while it's open, as one set from the card's
                 // menu: a reply's own says so in its field. Also once it can't be changed, as the pull request left your
                 // lists as you sent: but nothing to try again.
@@ -204,16 +207,29 @@ struct ThreadReplyArea: View {
         .onAppear {
             if preview?.replies[thread.id] != nil { composing = .reply(to: thread.id) }
         }
-        // Turned off, or the pull request closed, while your reply was open: it's closed, so Explain and Fix show again.
+        // Turned off, or the pull request closed, while your reply, or your edit of a comment, was open: it's closed, so
+        // Explain and Fix show again.
         .onChange(of: changes.canChange(pullRequest)) { _, can in
-            if !can, composing == .reply(to: thread.id) { composing = nil }
+            if !can, composing?.isYours(on: thread.id) == true { composing = nil }
         }
     }
 
     private var showsSomething: Bool {
-        if preview?.readOnly == nil, changes.canChange(pullRequest), composing == .reply(to: thread.id) { return true }
-        if case .failed? = state { return true }
+        let canChange = preview?.readOnly == nil && changes.canChange(pullRequest)
+        if canChange, composing == .reply(to: thread.id) { return true }
+        if case .failed(_, let sending)? = state { return !showsInItsComposer(sending, canChange: canChange) }
         return false
+    }
+
+    /// Whether what went wrong with a change shows in its own composer, open, rather than here: your reply's in your reply,
+    /// and your edit's in your edit.
+    private func showsInItsComposer(_ sending: ThreadChanges.Sending, canChange: Bool) -> Bool {
+        guard canChange else { return false }
+        switch sending {
+        case .reply: return composing == .reply(to: thread.id)
+        case .edit(let comment): return composing == .edit(comment, in: thread.id)
+        case .status, .delete: return false
+        }
     }
 
     /// Opens your reply on a thread, closing any other composer in the details, and keeps the thread where it is.
@@ -222,8 +238,9 @@ struct ThreadReplyArea: View {
         composing.wrappedValue = .reply(to: thread.id)
     }
 
-    /// What tries again: a status, again; a reply, its composer, with what you wrote.
-    private func retry(_ sending: ThreadChanges.Sending) -> (title: String, action: () -> Void) {
+    /// What tries again: a status, again; a reply, its composer, with what you wrote; an edit, the same; and a deletion,
+    /// again, while the comment's there.
+    private func retry(_ sending: ThreadChanges.Sending) -> (title: String, action: () -> Void)? {
         switch sending {
         case .reply:
             return ("Reply…", { Self.open(thread, composing: $composing, hold: hold) })
@@ -231,6 +248,18 @@ struct ThreadReplyArea: View {
             return ("Try Again", {
                 hold(thread)
                 Task { await changes.setStatus(status, of: thread.thread, in: item.key) }
+            })
+        case .edit(let comment):
+            guard thread.comments.contains(where: { $0.id == comment }) else { return nil }
+            return ("Edit…", {
+                hold(thread)
+                composing = .edit(comment, in: thread.id)
+            })
+        case .delete(let id):
+            guard let comment = thread.comments.first(where: { $0.id == id }) else { return nil }
+            return ("Try Again", {
+                hold(thread)
+                Task { await changes.delete(comment, in: thread.thread, of: item.key) }
             })
         }
     }
@@ -287,19 +316,29 @@ struct ThreadChangeProblemLine: View {
     }
 }
 
-// MARK: - Your reply
+// MARK: - Your reply, and your comment as you edit it
 
 /// Your reply on a thread, in place, under it, as Copilot's composers are: a field for Markdown, which ⌘Return sends, as
 /// you, in Azure DevOps, and ⇧⌘Return sends and resolves the thread, or reactivates a resolved one; Fix Grammar, one ▾ from
 /// its model; ✕ or Esc closes it, keeping what you wrote until you send it. As it opens, the details scroll to show it all.
-/// Nothing goes until you click.
+/// Nothing goes until you click. Editing a comment of yours (`editing`), it's the same, in place of what the comment says,
+/// with what it says, but for Save, which ⌘Return presses, and Cancel, or Esc, which keeps the comment as it was. The Mac
+/// checks your spelling as you type, but corrects nothing by itself (`spellChecked()`).
 struct ThreadReplyComposer: View {
     let thread: PullRequestPanel.Thread
     let item: PRSnapshot
     let hold: (PullRequestPanel.Thread) -> Void
-    /// It's closed: with ✕ or Esc, or once it's sent. Reply takes the keyboard's focus back then, unless another composer
-    /// opened meanwhile, as while your reply was on its way (`ThreadReplyArea`).
+    /// A comment of yours, as you edit it, rather than your reply.
+    var editing: Editing?
+    /// It's closed: with ✕ or Esc, or once it's sent; or, editing a comment, saved or canceled. Reply takes the keyboard's
+    /// focus back then, unless another composer opened meanwhile, as while your reply was on its way (`ThreadReplyArea`).
     let close: () -> Void
+
+    /// A comment of yours you edit, and what you edit of it (`ThreadChanges.editing`).
+    struct Editing {
+        var comment: ReviewComment
+        var text: String
+    }
 
     @EnvironmentObject private var changes: ThreadChanges
     @EnvironmentObject private var settings: AppSettings
@@ -329,6 +368,26 @@ struct ThreadReplyComposer: View {
         return false
     }
 
+    /// The comment you edit, by its thread and its ID; nil for your reply.
+    private var commentKey: ThreadChanges.CommentKey? {
+        editing.map { ThreadChanges.CommentKey(thread: key, comment: $0.comment.id) }
+    }
+
+    /// What it writes: "reply", or "comment".
+    private var noun: String { editing == nil ? "reply" : "comment" }
+
+    /// Whether a change it shows is its own: your reply, or your edit of the comment.
+    private func isOwn(_ sending: ThreadChanges.Sending) -> Bool {
+        guard let editing else { return sending.kind == .reply }
+        return sending == .edit(comment: editing.comment.id)
+    }
+
+    /// What `--render` shows in it.
+    private var previewed: ThreadChangesPreview.Reply? {
+        guard let editing else { return preview?.replies[thread.id] }
+        return preview?.edits[PreviewComment(thread: thread.id, comment: editing.comment.id)]
+    }
+
     private var isFixing: Bool { fixing != nil }
     private var isBlank: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var canSend: Bool { !isBlank && !isSending && !isFixing }
@@ -339,12 +398,14 @@ struct ThreadReplyComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Divider()
-                .padding(.bottom, 2)
+            if editing == nil {
+                Divider()
+                    .padding(.bottom, 2)
+            }
             header
             editor
             if let suggestion {
-                GrammarSuggestionView(suggestion: suggestion, model: modelName(suggestion.model)) {
+                GrammarSuggestionView(suggestion: suggestion, model: modelName(suggestion.model), isEdit: editing != nil) {
                     use(suggestion)
                 } dismiss: {
                     self.suggestion = nil
@@ -358,13 +419,13 @@ struct ThreadReplyComposer: View {
                 HStack(spacing: 8) {
                     grammarButton
                     Spacer(minLength: 4)
-                    sendButtons
+                    buttons
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     grammarButton
                     HStack(spacing: 8) {
                         Spacer(minLength: 0)
-                        sendButtons
+                        buttons
                     }
                 }
             }
@@ -374,7 +435,9 @@ struct ThreadReplyComposer: View {
         .preference(key: InlineComposerOpen.self, value: true)
         .id(Self.scrollID)
         .onChange(of: text) {
-            if preview == nil { changes.keep(text, for: key) }
+            if preview == nil {
+                if let commentKey { changes.keepEdit(text, for: commentKey) } else { changes.keep(text, for: key) }
+            }
             // Changed after you used a suggestion: Undo would take what you wrote since too.
             if let undo, text != undo.corrected { self.undo = nil }
             // Changed while a suggestion shows: it corrects what you wrote before, and would take what you wrote since.
@@ -389,7 +452,7 @@ struct ThreadReplyComposer: View {
             fixing = nil
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Reply")
+        .accessibilityLabel(editing == nil ? "Reply" : "Edit Your Comment")
     }
 
     /// The composer, for the details to scroll to as it opens: one is open at a time.
@@ -398,13 +461,13 @@ struct ThreadReplyComposer: View {
     private func appear() {
         guard !hasAppeared else { return }
         hasAppeared = true
-        if let preview = preview?.replies[thread.id] {
+        if let preview = previewed {
             text = preview.text
             suggestion = preview.suggestion
             undo = preview.undo
             grammarProblem = preview.grammarProblem
         } else {
-            text = changes.draft(key)
+            text = editing?.text ?? changes.draft(key)
             guard !isRendering else { return }
             isFocused = true
         }
@@ -422,25 +485,31 @@ struct ThreadReplyComposer: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "arrowshape.turn.up.left")
+            Image(systemName: editing == nil ? "arrowshape.turn.up.left" : "pencil")
                 .font(size: 11.5, weight: .semibold)
                 .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
-            Text("Reply")
+            Text(editing == nil ? "Reply" : "Edit Your Comment")
                 .font(size: 12.5, weight: .semibold)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 6)
-            Button(action: closeKeepingFocus) {
-                Image(systemName: "xmark")
-                    .font(size: 10, weight: .semibold)
-                    .frame(width: 18 * textScale, height: 18 * textScale)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut(.cancelAction)
-            .help("Close (Esc): what you wrote stays, until you send it")
-            .accessibilityLabel("Close Reply")
+            // Editing, Cancel, by Save, closes it.
+            if editing == nil { closeButton }
         }
+    }
+
+    /// ✕, which Esc presses: your reply closes, and what you wrote stays.
+    private var closeButton: some View {
+        Button(action: closeKeepingFocus) {
+            Image(systemName: "xmark")
+                .font(size: 10, weight: .semibold)
+                .frame(width: 18 * textScale, height: 18 * textScale)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut(.cancelAction)
+        .help("Close (Esc): what you wrote stays, until you send it")
+        .accessibilityLabel("Close Reply")
     }
 
     /// A field for Markdown as tall as what's in it, from three lines to ten, then it scrolls. Return starts a new line.
@@ -456,13 +525,14 @@ struct ThreadReplyComposer: View {
                 TextEditor(text: $text)
                     .font(size: 12.5)
                     .scrollContentBackground(.hidden)
+                    .spellChecked()
                     .focused($isFocused)
                     .disabled(isSending || isFixing)
-                    .accessibilityLabel("Your reply, in Markdown")
+                    .accessibilityLabel("Your \(noun), in Markdown")
             }
             .overlay(alignment: .topLeading) {
                 if text.isEmpty {
-                    Text("Write your reply, in Markdown")
+                    Text("Write your \(noun), in Markdown")
                         .font(size: 12.5)
                         .foregroundStyle(.tertiary)
                         .padding(.leading, 5)
@@ -477,6 +547,41 @@ struct ThreadReplyComposer: View {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(Color.accentColor.opacity(isFocused ? 0.6 : 0.2), lineWidth: isFocused ? 1.5 : 1)
             )
+    }
+
+    /// Its buttons at the end: Reply's, or, editing a comment, Cancel and Save.
+    @ViewBuilder
+    private var buttons: some View {
+        if editing == nil { sendButtons } else { saveButtons }
+    }
+
+    /// Cancel, which Esc presses, then Save, which ⌘Return presses.
+    private var saveButtons: some View {
+        HStack(spacing: 6) {
+            if case .sending(let sending)? = state {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text(ThreadReplyButtons.sendingTitle(sending))
+                }
+                .font(size: 12, weight: .medium)
+                .foregroundStyle(.secondary)
+            } else {
+                Button("Cancel", action: cancel)
+                    .font(size: 12, weight: .medium)
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction)
+                    .help("Keep your comment as it was (Esc)")
+                Button("Save", action: save)
+                    // As big as the text on windows' pages, which a control's own font isn't.
+                    .font(size: 12, weight: .semibold)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help("Save your comment as you edited it, in Azure DevOps, as you (⌘Return)")
+                    .disabled(!canSend)
+            }
+        }
+        .controlSize(.small)
+        .fixedSize()
     }
 
     /// Reply & Resolve, or Reply & Reactivate on a resolved thread, then Reply, which ⌘Return presses.
@@ -516,11 +621,11 @@ struct ThreadReplyComposer: View {
     @ViewBuilder
     private var notes: some View {
         let isDemo = store.mode == .demo
-        let problem: ADOWriteProblem? = if case .failed(let problem, let sending)? = state, sending.kind == .reply { problem } else { nil }
+        let problem: ADOWriteProblem? = if case .failed(let problem, let sending)? = state, isOwn(sending) { problem } else { nil }
         VStack(alignment: .leading, spacing: 3) {
             if let problem {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    note(problem.sentence(.reply), symbol: "exclamationmark.triangle.fill", isWarning: true)
+                    note(problem.sentence(editing == nil ? .reply : .editComment), symbol: "exclamationmark.triangle.fill", isWarning: true)
                     if problem == .signedOut || problem == .otherAccount, !isDemo {
                         Button("Sign In…") { store.signIn() }
                             .buttonStyle(.borderless)
@@ -529,13 +634,15 @@ struct ThreadReplyComposer: View {
                             .help("Sign in to the Azure CLI, in Terminal: what you wrote stays here")
                     }
                 }
+            } else if isDemo {
+                note("Markdown. The demo changes only its made-up pull requests: nothing goes to Azure DevOps.", symbol: "info.circle")
             } else {
-                note(isDemo ? "Markdown. The demo changes only its made-up pull requests: nothing goes to Azure DevOps."
-                    : "Markdown. ⌘Return replies in Azure DevOps, as you.", symbol: "info.circle")
+                note(editing == nil ? "Markdown. ⌘Return replies in Azure DevOps, as you." : "Markdown. ⌘Return saves it in Azure DevOps, as you.",
+                     symbol: "info.circle")
             }
             if settings.grammarModel != StorySummaries.appleIntelligenceModel {
                 note(
-                    "Fix Grammar uses \(modelName(settings.grammarModel)): each fix is one premium request, and sends your reply to "
+                    "Fix Grammar uses \(modelName(settings.grammarModel)): each fix is one premium request, and sends your \(noun) to "
                         + "GitHub Copilot through the Copilot CLI.",
                     symbol: "network"
                 )
@@ -571,6 +678,32 @@ struct ThreadReplyComposer: View {
         }
     }
 
+    /// Saves your comment as you edited it.
+    private func save() {
+        guard canSend, let editing else {
+            NSSound.beep()
+            return
+        }
+        let markdown = text
+        hold(thread)
+        changes.dismiss(key)
+        Task {
+            guard await changes.edit(markdown, of: editing.comment, in: thread.thread, of: item.key) else { return }
+            close()
+        }
+    }
+
+    /// Closes your edit: your comment stays as it was, and what you wrote goes, with what went wrong with it.
+    private func cancel() {
+        fixing?.cancel()
+        fixing = nil
+        if let commentKey, preview == nil {
+            changes.forgetEdit(commentKey)
+            if case .failed(_, let sending)? = changes.state(of: key), isOwn(sending) { changes.dismiss(key) }
+        }
+        close()
+    }
+
     /// Closes it, keeping what you wrote, and the keyboard's focus goes back to Reply.
     private func closeKeepingFocus() {
         fixing?.cancel()
@@ -597,7 +730,7 @@ struct ThreadReplyComposer: View {
                 }
                 .buttonStyle(.borderless)
                 .font(size: 11.5, weight: .medium)
-                .help("Stop Fix Grammar: your reply stays as it is")
+                .help("Stop Fix Grammar: your \(noun) stays as it is")
             }
         } else {
             Menu {
@@ -621,9 +754,9 @@ struct ThreadReplyComposer: View {
 
     private var grammarHelp: String {
         let model = settings.grammarModel
-        let does = "Correct the spelling, grammar and punctuation of your reply, keeping your words, code, links and mentions"
+        let does = "Correct the spelling, grammar and punctuation of your \(noun), keeping your words, code, links and mentions"
         if model == StorySummaries.appleIntelligenceModel { return does + ", with Apple Intelligence, on this Mac. Its menu chooses another model." }
-        return does + ", with \(modelName(model)) through GitHub Copilot: one premium request, which sends your reply to GitHub Copilot. Its menu chooses another model."
+        return does + ", with \(modelName(model)) through GitHub Copilot: one premium request, which sends your \(noun) to GitHub Copilot. Its menu chooses another model."
     }
 
     /// Apple Intelligence, then the Copilot models summaries offer.
@@ -773,6 +906,8 @@ struct GrammarSuggestionView: View {
     let suggestion: GrammarSuggestion
     /// The model's name: "Apple Intelligence".
     let model: String
+    /// It's in your edit of a comment, rather than your reply.
+    var isEdit = false
     let use: () -> Void
     let dismiss: () -> Void
 
@@ -810,8 +945,8 @@ struct GrammarSuggestionView: View {
                         .font(size: 12, weight: .semibold)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
-                        .help("Put the correction in your reply: Undo puts back what you wrote")
-                    Text("Nothing goes until you reply.")
+                        .help("Put the correction in your \(isEdit ? "comment" : "reply"): Undo puts back what you wrote")
+                    Text(isEdit ? "Nothing changes until you save." : "Nothing goes until you reply.")
                         .font(size: 11)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -844,7 +979,8 @@ struct GrammarSuggestionView: View {
 // MARK: - For --render
 
 /// For `--render`: what threads' replies and statuses show, as you'd have them, to draw each state without sending
-/// anything: a reply open, with your words, Fix Grammar's suggestion or Undo; and a change being sent, or that failed.
+/// anything: a reply open, with your words, Fix Grammar's suggestion or Undo; a comment of yours as you edit it, delete it,
+/// or with its menu open; and a change being sent, or that failed.
 struct ThreadChangesPreview {
     struct Reply {
         var text: String
@@ -855,10 +991,22 @@ struct ThreadChangesPreview {
 
     /// The replies open, by thread.
     var replies: [Int: Reply] = [:]
+    /// Your comments as you edit them, by thread and comment.
+    var edits: [PreviewComment: Reply] = [:]
+    /// A comment of yours you confirm you delete.
+    var deleting: PreviewComment?
+    /// A comment of yours with its ⋯ menu open.
+    var menu: PreviewComment?
     /// What threads' changes are doing, or why they didn't happen, by thread.
     var states: [Int: ThreadChanges.State] = [:]
     /// Why its threads can't be changed, as for a pull request that left your lists: each shows a lock where Reply would be.
     var readOnly: String?
+}
+
+/// A comment in a thread, by their IDs, for `ThreadChangesPreview`.
+struct PreviewComment: Hashable {
+    var thread: Int
+    var comment: Int
 }
 
 private struct ThreadChangesPreviewKey: EnvironmentKey {

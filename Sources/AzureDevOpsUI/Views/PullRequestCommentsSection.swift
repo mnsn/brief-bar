@@ -358,34 +358,7 @@ struct ThreadCard: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Color.accentColor.opacity(isHighlighted ? 0.8 : 0), lineWidth: 1.5)
         }
-        .contextMenu {
-            // BriefBar's own, with or without Make Changes in Azure DevOps.
-            if let reading, thread.waitsOnYou {
-                Button("Mark as Read") { reading.markRead(thread) }
-                Divider()
-            } else if let reading, reading.marked.contains(thread.id) {
-                Button("Mark as Unread") { reading.markUnread(thread.id) }
-                Divider()
-            }
-            if changes.canChange(pullRequest) {
-                let sending = changes.isSending(ThreadChanges.Key(pullRequest: item.key, thread: thread.id))
-                Button("Reply") { ThreadReplyArea.open(thread, composing: $composing, hold: hold) }
-                    .disabled(sending)
-                Menu("Status") {
-                    ThreadStatusMenuItems(current: thread.thread.threadStatus) { status in
-                        hold(thread)
-                        Task { await changes.setStatus(status, of: thread.thread, in: item.key) }
-                    }
-                }
-                .disabled(sending)
-                Divider()
-            }
-            if let path = thread.thread.filePath, !path.isEmpty, let opener {
-                Button("Show in Its File's Changes") { opener.open(path, thread.id) }
-            }
-            Button("Open in Azure DevOps") { AzureDevOps.open(url) }
-            Button("Copy Link") { PullRequestDetailsPanel.copy(url.absoluteString) }
-        }
+        .contextMenu { menuItems }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityActions {
@@ -397,7 +370,15 @@ struct ThreadCard: View {
         }
         .accessibilityFocused($isFocused)
         // Also as it's made, once the details scrolled to it; and as its file's page points it out, going on to it.
-        .onAppear { if isHighlighted { isFocused = true } }
+        .onAppear {
+            if isHighlighted { isFocused = true }
+            // For --render: your comment as you edit it, or delete it.
+            if let id = preview?.edits.keys.first(where: { $0.thread == thread.id }) {
+                composing = .edit(id.comment, in: thread.id)
+            } else if let id = preview?.deleting, id.thread == thread.id {
+                composing = .deleting(id.comment, in: thread.id)
+            }
+        }
         .onChange(of: isHighlighted) {
             if isHighlighted { isFocused = true }
         }
@@ -407,6 +388,41 @@ struct ThreadCard: View {
         .onChange(of: composing) { _, open in
             if open != nil { refocusesReply = false }
         }
+    }
+
+    /// Its right-click menu: BriefBar's own, Mark as Read or Unread, with or without Make Changes in Azure DevOps; then, with
+    /// it, Reply and its status; then where it is. A comment of yours has Edit and Delete before them.
+    @ViewBuilder
+    private var menuItems: some View {
+        if let reading, thread.waitsOnYou {
+            Button("Mark as Read") { reading.markRead(thread) }
+            Divider()
+        } else if let reading, reading.marked.contains(thread.id) {
+            Button("Mark as Unread") { reading.markUnread(thread.id) }
+            Divider()
+        }
+        if changes.canChange(pullRequest) {
+            Button("Reply") { ThreadReplyArea.open(thread, composing: $composing, hold: hold) }
+                .disabled(isSending)
+            Menu("Status") {
+                ThreadStatusMenuItems(current: thread.thread.threadStatus) { status in
+                    hold(thread)
+                    Task { await changes.setStatus(status, of: thread.thread, in: item.key) }
+                }
+            }
+            .disabled(isSending)
+            Divider()
+        }
+        if let path = thread.thread.filePath, !path.isEmpty, let opener {
+            Button("Show in Its File's Changes") { opener.open(path, thread.id) }
+        }
+        Button("Open in Azure DevOps") { AzureDevOps.open(url) }
+        Button("Copy Link") { PullRequestDetailsPanel.copy(url.absoluteString) }
+    }
+
+    /// A change to it is on its way: nothing else changes it until it's done.
+    private var isSending: Bool {
+        changes.isSending(ThreadChanges.Key(pullRequest: item.key, thread: thread.id))
     }
 
     // MARK: Header
@@ -558,7 +574,50 @@ struct ThreadCard: View {
     }
 
     private func line(_ comment: ReviewComment) -> some View {
-        CommentLine(comment: comment, now: now, isMine: me.map { comment.author.id == $0.lowercased() } ?? false, isQuiet: isQuiet)
+        CommentLine(
+            comment: comment, now: now, isMine: me.map { comment.author.id == $0.lowercased() } ?? false, isQuiet: isQuiet,
+            yours: yours(comment), menuItems: AnyView(menuItems)
+        )
+    }
+
+    /// Edit and Delete on a comment of yours, while you can change it (`ThreadChanges.canChange(_:of:)`); your edit, open in
+    /// place of what it says, or what confirms you delete it, under it, each the details' one composer in place; nil for
+    /// another's, and while you can't.
+    private func yours(_ comment: ReviewComment) -> CommentLine.Yours? {
+        guard preview?.readOnly == nil, changes.canChange(comment, of: pullRequest), let pullRequest else { return nil }
+        let id = PreviewComment(thread: thread.id, comment: comment.id)
+        let edit = CopilotComposing.edit(comment.id, in: thread.id), deleting = CopilotComposing.deleting(comment.id, in: thread.id)
+        var yours = CommentLine.Yours(isSending: isSending, showsMenu: preview?.menu == id) {
+            hold(thread)
+            composing = edit
+        } delete: {
+            hold(thread)
+            composing = deleting
+        }
+        if composing == edit {
+            yours.editor = AnyView(
+                ThreadReplyComposer(
+                    thread: thread, item: item, hold: hold,
+                    editing: .init(comment: comment, text: changes.editing(comment, in: thread.thread, of: pullRequest))
+                ) {
+                    // Saved, or canceled: unless another composer opened meanwhile.
+                    if composing == edit { composing = nil }
+                }
+                // A new one for each comment, with its own words.
+                .id(edit)
+            )
+        } else if composing == deleting {
+            yours.confirmation = AnyView(
+                CommentDeleteConfirmation {
+                    if composing == deleting { composing = nil }
+                } delete: {
+                    if composing == deleting { composing = nil }
+                    hold(thread)
+                    Task { await changes.delete(comment, in: thread.thread, of: item.key) }
+                }
+            )
+        }
+        return yours
     }
 
     /// "PaymentsClient.cs, line 88, waits on you, Active, 2 comments".
@@ -777,35 +836,145 @@ private struct ThreadCodeArea: View {
     }
 }
 
-/// What someone said in a thread: who and when, then all of it, formatted as they wrote it.
+/// What someone said in a thread: who and when, and whether they edited it since, then all of it, formatted as they wrote it.
+/// A comment of yours you can change has Edit and Delete, in its ⋯ menu, its right-click menu and for VoiceOver; your edit
+/// opens in place of what it says, and what confirms you delete it, under it.
 private struct CommentLine: View {
     let comment: ReviewComment
     let now: Date
     let isMine: Bool
     let isQuiet: Bool
+    /// Edit and Delete, on a comment of yours you can change: nil otherwise.
+    var yours: Yours?
+    /// Its thread's right-click menu, after Edit and Delete in a comment of yours'.
+    var menuItems: AnyView?
+
+    @Environment(\.textScale) private var textScale
+
+    /// What you can do with a comment of yours, and what shows of it.
+    struct Yours {
+        /// A change to its thread is on its way: Edit and Delete wait.
+        var isSending: Bool
+        /// For --render: its ⋯ menu, open.
+        var showsMenu = false
+        var edit: () -> Void
+        var delete: () -> Void
+        /// Your edit, open in place of what it says.
+        var editor: AnyView?
+        /// What confirms you delete it, under what it says.
+        var confirmation: AnyView?
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Avatar(name: comment.author.name, size: 20, isMe: isMine)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(comment.author.name)
-                        .font(size: 12, weight: .semibold)
-                        .lineLimit(1)
-                    Text(WorkItemDetailsPanel.ago(comment.publishedAt, now: now))
-                        .font(size: 11)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .help(comment.publishedAt.formatted(date: .complete, time: .shortened))
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(comment.author.name)
+                            .font(size: 12, weight: .semibold)
+                            .lineLimit(1)
+                        Text(WorkItemDetailsPanel.ago(comment.publishedAt, now: now))
+                            .font(size: 11)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .help(comment.publishedAt.formatted(date: .complete, time: .shortened))
+                        if let edited = comment.editedAt {
+                            Text("· Edited")
+                                .font(size: 11)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .help("Edited " + edited.formatted(date: .complete, time: .shortened))
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    if let yours, yours.editor == nil {
+                        Spacer(minLength: 4)
+                        menuButton(yours)
+                    }
                 }
-                .accessibilityElement(children: .combine)
-                // Parsed once for what it says, not again each time "ago" changes.
-                CommentBody(markdown: comment.markdown, isQuiet: isQuiet)
-                    .equatable()
+                if let editor = yours?.editor {
+                    editor
+                        .padding(.top, 3)
+                } else {
+                    // Parsed once for what it says, not again each time "ago" changes.
+                    CommentBody(markdown: comment.markdown, isQuiet: isQuiet)
+                        .equatable()
+                    if let confirmation = yours?.confirmation {
+                        confirmation
+                            .padding(.top, 5)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // For --render: its ⋯ menu, open under it, over the comments after it.
+        .overlay(alignment: .topTrailing) {
+            if yours?.showsMenu == true {
+                MenuPicture(items: ["Edit", "Delete…"])
+                    .offset(y: 20 * textScale)
+                    .accessibilityHidden(true)
+            }
+        }
+        .zIndex(yours?.showsMenu == true ? 1 : 0)
+        .modifier(YoursMenu(yours: yours, items: { yourItems }, menuItems: menuItems))
         .accessibilityElement(children: .contain)
+        .accessibilityActions {
+            if let yours, yours.editor == nil, !yours.isSending {
+                Button("Edit", action: yours.edit)
+                Button("Delete…", action: yours.delete)
+            }
+        }
+    }
+
+    /// Edit, and Delete…, which asks first.
+    @ViewBuilder
+    private var yourItems: some View {
+        if let yours {
+            Button("Edit", action: yours.edit)
+                .disabled(yours.isSending)
+            Button("Delete…", role: .destructive, action: yours.delete)
+                .disabled(yours.isSending)
+        }
+    }
+
+    /// ⋯, with Edit and Delete…, at the end of who and when.
+    private func menuButton(_ yours: Yours) -> some View {
+        Menu {
+            yourItems
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(size: 11, weight: .semibold)
+                .frame(width: 18 * textScale, height: 14 * textScale)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(.secondary)
+        .help("Edit or delete your comment in Azure DevOps, as you")
+        .accessibilityLabel("Your Comment's Actions")
+    }
+}
+
+/// A comment of yours' right-click menu: Edit and Delete…, then its thread's. Another's has its thread's alone.
+private struct YoursMenu<Items: View>: ViewModifier {
+    let yours: CommentLine.Yours?
+    @ViewBuilder let items: () -> Items
+    let menuItems: AnyView?
+
+    func body(content: Content) -> some View {
+        if yours != nil {
+            content.contextMenu {
+                items()
+                if let menuItems {
+                    Divider()
+                    menuItems
+                }
+            }
+        } else {
+            content
+        }
     }
 }
 

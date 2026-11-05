@@ -24,8 +24,8 @@ project's GitHub releases. Worth reporting:
 
 - any way it could send anything about your chats, pull requests, work items, pipelines or sessions
   anywhere but Azure DevOps (and anything but GET requests there, and, with Make Changes in Azure
-  DevOps on, the reply, thread status or tag you click) and GitHub (and anything but its one read-only
-  GraphQL query there), or expose it to other users or apps
+  DevOps on, the reply, thread status, edit or deletion of your own comment, or tag you click) and
+  GitHub (and anything but its one read-only GraphQL query there), or expose it to other users or apps
   on the Mac (its saved chats, the links it finds in chats, its preferences, its log, its summaries),
   other than the work items you send to Copilot yourself, with Send Work to Copilot,
 - any way another app could use BriefBar's Full Disk Access: by injecting code into it or into a copy
@@ -34,9 +34,9 @@ project's GitHub releases. Worth reporting:
   are signed with,
 - any way a source could read anything, or check its access, while it's off, or turn on without you,
 - any way it could change Notification Center's data or the Copilot app's data, change anything in
-  Azure DevOps but the reply, thread status or pull request's tag you click with Make Changes in Azure
-  DevOps on, or change even that by itself, or start Copilot, which changes your code and opens pull
-  requests, without you sending it a work item,
+  Azure DevOps but the reply, thread status, edit or deletion of your own comment, or pull request's tag
+  you click with Make Changes in Azure DevOps on, or change even that by itself, or start Copilot, which
+  changes your code and opens pull requests, without you sending it a work item,
 - any way to make it install an update that the release workflow here didn't sign, and
 - problems with how the build scripts and workflows here create, sign, check or publish the app.
 
