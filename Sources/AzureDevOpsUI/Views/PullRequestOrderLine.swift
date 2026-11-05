@@ -78,32 +78,43 @@ private struct OrderLineContent: View {
         }
     }
 
-    /// "Fix the payments bugs · 1st of 4 · Next to merge", its mission's name showing it By Mission; or "Not in a mission".
+    /// "Fix the payments bugs · 1st of 4 · Next to merge" on one line where it fits, else its name, then where it stands; its
+    /// mission's name showing it By Mission. Or "Not in a mission".
     @ViewBuilder
     private func headline(mission: OrderMission?, step: OrderStep?, names: OrderNames) -> some View {
         if let mission {
             let title = OrderText.title(of: mission, name: order.name(of:))
             let numbered = mission.steps.filter { $0.number != nil }.count
             let place = step?.number.map { "\(Self.ordinal($0)) of \(numbered)" }
-            let standing = step.flatMap { OrderText.capsule($0) }
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Button(title) {
-                    settings.pullRequestOrder = .byMission
-                    order.reveal(mission.key)
+            let rest = [place, step.flatMap { OrderText.capsule($0) }].compactMap { $0 }.joined(separator: " · ")
+            let button = Button(title) {
+                settings.pullRequestOrder = .byMission
+                order.reveal(mission.key)
+            }
+            .buttonStyle(.plain)
+            .font(size: 12.5, weight: .semibold)
+            .lineLimit(1)
+            .help("Show its mission By Mission")
+            .accessibilityHint("Shows its mission By Mission")
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    button
+                    if !rest.isEmpty {
+                        Text("· " + rest)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-                .buttonStyle(.plain)
-                .font(size: 12.5, weight: .semibold)
-                .lineLimit(1)
-                .help("Show its mission By Mission")
-                .accessibilityHint("Shows its mission By Mission")
-                let rest = [place, standing].compactMap { $0 }
-                if !rest.isEmpty {
-                    Text("· " + rest.joined(separator: " · "))
-                        .font(size: 12.5)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 1) {
+                    button
+                    if !rest.isEmpty {
+                        Text(rest)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
+            .font(size: 12.5)
             .help(step.flatMap { OrderText.sentence(of: $0, names: names) } ?? title)
         } else {
             Text("Not in a mission")
