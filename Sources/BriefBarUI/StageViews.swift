@@ -161,7 +161,7 @@ package struct StageMenuItems: View {
             Divider()
             ForEach(PullRequestStage.settable, id: \.self) { stage in
                 Toggle(isOn: Binding(
-                    get: { reading.stage == stage && reading.isOnBoard },
+                    get: { reading.stage == stage },
                     set: { isOn in if isOn { StageCommand.set(stage, of: ref, order: order) } }
                 )) {
                     Label(stage.title, systemImage: stage.symbol)
@@ -202,18 +202,9 @@ package struct StageAccessibilityActions: View {
     }
 
     package var body: some View {
-        if let reading = order.stage(of: ref), reading.stage != .merged {
-            if reading.stage == .yourReview {
-                Button("Finished My Review") { StageCommand.finishedReview(ref, order: order) }
-            }
-            ForEach(PullRequestStage.settable.filter { $0 != reading.stage || !reading.isOnBoard }, id: \.self) { stage in
-                Button("Move to \(stage.menuTitle)") { StageCommand.set(stage, of: ref, order: order) }
-            }
-            if reading.replaced != nil {
-                Button("Put Yours Back") { StageCommand.putYoursBack(ref, order: order) }
-            }
-            if reading.isSetByYou {
-                Button("Let BriefBar Decide") { StageCommand.letBriefBarDecide(ref, order: order) }
+        if let reading = order.stage(of: ref) {
+            ForEach(StageAction.offered(for: reading), id: \.self) { action in
+                Button(action.title) { StageCommand.perform(action, on: ref, order: order) }
             }
         }
     }
@@ -223,6 +214,15 @@ package struct StageAccessibilityActions: View {
 /// couldn't be, with a beep.
 @MainActor
 package enum StageCommand {
+    package static func perform(_ action: StageAction, on ref: ItemRef, order: PullRequestOrder) {
+        switch action {
+        case .finishedReview: finishedReview(ref, order: order)
+        case .move(let stage): set(stage, of: ref, order: order)
+        case .putYoursBack: putYoursBack(ref, order: order)
+        case .letBriefBarDecide: letBriefBarDecide(ref, order: order)
+        }
+    }
+
     package static func set(_ stage: PullRequestStage, of ref: ItemRef, order: PullRequestOrder) {
         tell(order.setStage(stage, of: ref), ref: ref, order: order)
     }
@@ -243,16 +243,14 @@ package enum StageCommand {
     package static func undo(_ order: PullRequestOrder) {
         guard let ref = order.lastChange?.ref else { return }
         order.undo()
-        let stage = order.stage(of: ref)?.stage.title.lowercased()
-        SpokenText.announce("Undone" + (stage.map { ": \(ref.shortOrderLabel) is in \($0) again" } ?? ""))
+        SpokenText.announce(StageText.undone(ref, to: order.stage(of: ref)))
     }
 
     private static func tell(_ outcome: StageChange.Outcome, ref: ItemRef, order: PullRequestOrder) {
         switch outcome {
         case .done:
             guard let reading = order.stage(of: ref) else { return }
-            let place = reading.isOnBoard ? "is in \(reading.stage.title) now" : "is off your board now"
-            SpokenText.announce("\(ref.shortOrderLabel) \(place). Undo is in its stage's menu.")
+            SpokenText.announce(StageText.changed(ref, to: reading))
         case .unchanged:
             break
         case .refused(let why):

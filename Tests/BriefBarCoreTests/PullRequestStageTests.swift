@@ -392,4 +392,45 @@ import Testing
         #expect(!waiting.why.saysWhen)
         #expect(StageWhy.merged.saysWhen && !StageWhy.findReviewer.saysWhen && !StageWhy.set.saysWhen)
     }
+
+    /// VoiceOver offers, on a row or a card, Finished My Review in Your review, each stage you can set but the one it's
+    /// in, Put Yours Back once a session's change replaced yours, and Let BriefBar Decide for one you set; nothing once it
+    /// merged. Someone else's that you finished reviewing is in Teammate's review: moving it there again would do nothing.
+    @Test func voiceOverOffersWhatCanBeDoneToItsStage() {
+        let finished = Self.reading(StageFacts(role: .author), sessions: [Self.session(.finished, at: 10)])!
+        #expect(StageAction.offered(for: finished).map(\.title) ==
+            ["Finished My Review", "Move to In Progress", "Move to Teammate's Review"])
+
+        let set = Self.reading(StageFacts(role: .author), marks: [StageMark(stage: .teammateReview, at: t(10))])!
+        #expect(StageAction.offered(for: set) == [.move(.inProgress), .move(.yourReview), .letBriefBarDecide])
+
+        let replaced = Self.reading(
+            StageFacts(role: .author),
+            marks: [StageMark(stage: .teammateReview, at: t(10)), StageMark(stage: .inProgress, at: t(20), by: Self.cart)]
+        )!
+        #expect(StageAction.offered(for: replaced) == [.move(.yourReview), .move(.teammateReview), .putYoursBack])
+
+        let reviewed = Self.reading(
+            StageFacts(role: .reviewer, asksYou: "Sam asked you", commit: "c1"), marks: [StageMark(stage: .teammateReview, at: t(10), commit: "c1")]
+        )!
+        #expect(!reviewed.isOnBoard)
+        #expect(StageAction.offered(for: reviewed) == [.move(.inProgress), .move(.yourReview), .letBriefBarDecide])
+
+        let ready = Self.reading(StageFacts(role: .author, isReady: true))!
+        #expect(StageAction.offered(for: ready).map(\.title) == ["Move to In Progress", "Move to Your Review", "Move to Teammate's Review"])
+        #expect(StageAction.offered(for: Self.reading(StageFacts(role: .author, state: .merged))!).isEmpty)
+    }
+
+    /// After a change, VoiceOver hears where it is now and where Undo is; after Undo, where it is again.
+    @Test func voiceOverHearsWhatBecameOfIt() {
+        let set = Self.reading(StageFacts(role: .author), marks: [StageMark(stage: .teammateReview, at: t(10))])!
+        #expect(StageText.changed(Self.pr(4093), to: set) == "!4093 is in Teammate's review now. Undo is in its stage's menu.")
+        let reviewed = Self.reading(
+            StageFacts(role: .reviewer, asksYou: "Sam asked you"), marks: [StageMark(stage: .teammateReview, at: t(10))]
+        )!
+        #expect(StageText.changed(Self.pr(4110), to: reviewed) == "!4110 is off your board now. Undo is in its stage's menu.")
+        let asked = Self.reading(StageFacts(role: .reviewer, asksYou: "Sam asked you"))!
+        #expect(StageText.undone(Self.pr(4110), to: asked) == "Undone: !4110 is in Your review again")
+        #expect(StageText.undone(Self.pr(4110), to: nil) == "Undone")
+    }
 }
