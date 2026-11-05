@@ -332,7 +332,7 @@ import Testing
         facts = OrderFacts(pullRequests: merged + [Self.ado(4110)])
         missions = Self.missions(facts, DeclaredOrders(), changes)
         let moved = changes.moveAnchors(in: missions)
-        #expect(moved)
+        #expect(moved == [Self.pr(4101): Self.pr(4102)])
         #expect(changes[Self.pr(4110)]?.placement == .into(.chain(Self.pr(4102))))
         // Once no list has 4101, the chain is still where you put it.
         facts = OrderFacts(pullRequests: Array(chain.dropFirst()) + [Self.ado(4110)])
@@ -560,7 +560,7 @@ import Testing
         missions = Self.missions(facts, DeclaredOrders(), changes)
         #expect(missions.first { $0.contains(Self.pr(4110)) }?.steps.first?.ref == Self.pr(4101))
         let moved = changes.moveAnchors(in: missions)
-        #expect(moved)
+        #expect(moved == [Self.pr(4101): Self.pr(4102)])
         #expect(changes[Self.pr(4110)]?.placement == .into(.chain(Self.pr(4102))) && changes[Self.pr(4110)]?.first == .chain(Self.pr(4102)))
 
         // Once no list has 4101, 4102 alone is still that chain, with what you put in it.
@@ -828,5 +828,76 @@ import Testing
             .contains(MissionChoices.Prerequisite(ref: Self.pr(4102), state: .checked)))
         try changes.apply(.mergeAfter(Self.pr(4101), Self.pr(4102), in: .plan(planID), false), missions: missions, orders: orders, now: t(70))
         #expect(changes.isEmpty)
+    }
+
+    /// Two orders' lines that go round through stacked branches from one mission to the other: the mission made later sets
+    /// its line aside, with a note, so nothing waits for itself.
+    @Test func ordersLinesThatGoRoundThroughAnotherMissionAreSetAside() throws {
+        var orders = try tell([(4101, [4104]), (4104, [])])
+        orders = try tell([(4102, []), (4103, [4102])], replacing: orders, id: otherID, at: 10)
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a"), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            OrderBoardTests.ado(4103, from: "users/robin/c"), OrderBoardTests.ado(4104, from: "users/robin/d", into: "users/robin/c"),
+        ])
+        let missions = Self.missions(facts, orders, OrderChanges())
+        let first = try Self.mission(.plan(planID), in: missions)
+        #expect(try Self.step(4101, in: first).standing == .waiting(open: [Self.pr(4104)], unknown: []))
+        let second = try Self.mission(.plan(otherID), in: missions)
+        let set = try Self.step(4103, in: second)
+        #expect(set.prerequisites.isEmpty && set.notes.contains(.goesRound(Self.pr(4102), by: Self.session)))
+        #expect(OrderText.note(.goesRound(Self.pr(4102), by: nil), of: Self.pr(4103)).hasSuffix(
+            "puts it after !4102, but !4102 waits for it through another mission"
+        ))
+        #expect(try Self.step(4102, in: second).standing == .waiting(open: [Self.pr(4101)], unknown: []))
+        #expect(missions.allSatisfy { mission in mission.steps.allSatisfy { if case .inCycle = $0.standing { false } else { true } } })
+    }
+
+    /// Two orders that put the same two pull requests the other way round each keep their own line: each mission says what
+    /// its order says of its own pull requests.
+    @Test func twoOrdersOfTheSamePullRequestsKeepTheirOwnLines() throws {
+        var orders = try tell([(4101, [4102]), (4102, [])])
+        orders = try tell([(4101, []), (4102, [4101])], replacing: orders, id: otherID, at: 10)
+        let missions = Self.missions(Self.facts([4101, 4102]), orders, OrderChanges())
+        #expect(try Self.step(4101, in: Self.mission(.plan(planID), in: missions)).standing == .waiting(open: [Self.pr(4102)], unknown: []))
+        #expect(try Self.step(4102, in: Self.mission(.plan(otherID), in: missions)).standing == .waiting(open: [Self.pr(4101)], unknown: []))
+    }
+
+    /// Put Yours Back puts the one you set as next back in its order's mission, though nothing else is left there to show
+    /// it.
+    @Test func puttingBackOneSetAsNextBringsBackAMissionNothingElseShows() throws {
+        var orders = try tell([(4101, []), (4102, [])])
+        let facts = Self.facts([4101, 4102])
+        var changes = OrderChanges()
+        try changes.apply(.move([Self.pr(4102)], to: .outside, from: nil), missions: Self.missions(facts, orders, changes), orders: orders, now: t(50))
+        try changes.apply(.setNext(Self.pr(4101), in: .plan(planID), true), missions: Self.missions(facts, orders, changes), orders: orders, now: t(60))
+        orders = try tell([(4102, [])], replacing: orders, at: 70)
+        changes.noteOverrides(in: orders, now: t(70))
+        var missions = Self.missions(facts, orders, changes)
+        #expect(missions.isEmpty)
+
+        try changes.apply(.putBack(Self.pr(4101)), missions: missions, orders: orders, now: t(80))
+        #expect(changes[Self.pr(4101)]?.placement == .into(.plan(planID)))
+        missions = Self.missions(facts, orders, changes)
+        #expect(try Self.step(4101, in: Self.mission(.plan(planID), in: missions)).standing == .next)
+    }
+
+    /// One stacked with an order's pull requests that its order doesn't name keeps what it's stacked on that you moved out
+    /// of every mission, and can't be set as next before it.
+    @Test func oneTheOrderDoesntNameKeepsWhatItsStackedOnThatYouMovedOut() throws {
+        let orders = try tell([(4103, [])])
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a"), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            OrderBoardTests.ado(4103, from: "users/robin/c", into: "users/robin/b"),
+        ])
+        var changes = OrderChanges()
+        try changes.apply(.move([Self.pr(4101)], to: .outside, from: nil), missions: Self.missions(facts, orders, changes), orders: orders, now: t(60))
+        let missions = Self.missions(facts, orders, changes)
+        let attached = try Self.step(4102, in: Self.mission(.plan(planID), in: missions))
+        #expect(attached.standing == .notInOrder && attached.prerequisites.map(\.ref) == [Self.pr(4101)])
+        #expect(!attached.notes.contains { if case .stackedWith(Self.pr(4101), _, _) = $0 { true } else { false } })
+        #expect(MissionChoices.of(Self.pr(4102), missions: missions, changes: changes, orders: orders).next == .stacked(on: Self.pr(4101)))
+        #expect(throws: OrderChangeError.stacked(on: Self.pr(4101))) {
+            try changes.apply(.setNext(Self.pr(4102), in: .plan(planID), true), missions: missions, orders: orders)
+        }
     }
 }

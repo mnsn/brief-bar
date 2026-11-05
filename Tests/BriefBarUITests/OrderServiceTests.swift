@@ -607,4 +607,25 @@ private final class Clock {
         #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] != nil)
         #expect(OrderChanges.load(from: defaults)[Self.ref(4130)] != nil)
     }
+
+    /// Undo after a chain's anchor moved on puts back what you changed as the chain is named now: the pull request you put
+    /// in it stays with the chain's others.
+    @Test func undoFollowsAChainNamedByAnotherOfItsPullRequests() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4200))])
+        let order = Self.service(defaults)
+        let (first, second) = (Self.ado(4101, from: "robin/a"), Self.ado(4102, from: "robin/b", into: "robin/a"))
+        let search = Self.ado(4130, from: "sam/search")
+        order.publish(.azureDevOps, pullRequests: [first, second, search])
+        let chain = MissionKey.chain(Self.ref(4101))
+        order.change(.move([Self.ref(4130)], to: .into(chain), from: nil))
+        order.change(.setNext(Self.ref(4130), in: chain, true))
+
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/a", state: .merged), second, search])
+        #expect(order.lastChange?.touched[Self.ref(4130)]??.placement == .into(.chain(Self.ref(4102))))
+        order.publish(.azureDevOps, pullRequests: [second, search])
+        #expect(order.undoLastChange())
+
+        #expect(order.changes[Self.ref(4130)]?.placement == .into(.chain(Self.ref(4102))) && order.changes[Self.ref(4130)]?.first == nil)
+        #expect(OrderBoard.mission(of: Self.ref(4130), in: order.missions)?.contains(Self.ref(4102)) == true)
+    }
 }

@@ -514,8 +514,11 @@ package final class PullRequestOrder: ObservableObject {
             facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date
         )
         var anchored = self.changes
-        if anchored.moveAnchors(in: missions) {
+        let renamed = anchored.moveAnchors(in: missions)
+        if !renamed.isEmpty {
             keep(anchored)
+            // What Undo would put back names those chains as they're named now too.
+            if let last = lastChange { lastChange = last.renamingChains(renamed) }
             missions = OrderBoard.missions(facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date)
         }
         cachedNames = nil
@@ -537,4 +540,15 @@ package struct OrderLastChange: Equatable {
 
     /// Whether it was made, and Undo can put back what it touched.
     package var canUndo: Bool { !touched.isEmpty }
+
+    /// The same, with the chains it names named as `OrderChanges.moveAnchors` renamed them.
+    func renamingChains(_ renamed: [ItemRef: ItemRef]) -> OrderLastChange {
+        var undo = OrderChanges(touched.values.compactMap { $0 })
+        undo.renameChains(renamed)
+        var mission = mission
+        if case .chain(let anchor)? = mission, let new = renamed[anchor] { mission = .chain(new) }
+        return OrderLastChange(
+            said: said, refs: refs, mission: mission, touched: touched.mapValues { change in change.map { undo[$0.ref] ?? $0 } }
+        )
+    }
 }

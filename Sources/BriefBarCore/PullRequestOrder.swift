@@ -605,6 +605,9 @@ public enum OrderNote: Equatable, Sendable {
     /// Its order, told by that session when known, puts it after this one, which goes after it by a stacked branch or a
     /// change of yours: BriefBar set that aside.
     case setAside(ItemRef, by: ItemRef?, stacked: Bool)
+    /// Its order, told by that session when known, puts it after this one, which waits for it through stacked branches and
+    /// another mission's order: BriefBar set that aside.
+    case goesRound(ItemRef, by: ItemRef?)
     /// This one is stacked on it, or waits for it, now: your "after" it doesn't hold.
     case yoursDoesntHold(ItemRef, stacked: Bool)
     /// It's stacked on this one now, which hasn't merged, or which merged while it still targets its branch: your "next to
@@ -803,8 +806,14 @@ public enum OrderBoard {
     ) -> [OrderMission] {
         let board = Board(facts: facts, evidence: evidence)
         let layer = Layer(changes: changes, orders: orders, board: board)
-        var missions = board.groups(orders: orders, layer: layer).compactMap { group in
-            board.mission(of: group, orders: orders, layer: layer, now: now)
+        // The orders' lines each mission keeps, for those made after it: a line that goes round with them through stacked
+        // branches, from one mission to another, is set aside.
+        var declared: [ItemRef: Set<ItemRef>] = [:]
+        var missions: [OrderMission] = []
+        for group in board.groups(orders: orders, layer: layer) {
+            if let mission = board.mission(of: group, orders: orders, layer: layer, now: now, declared: &declared) {
+                missions.append(mission)
+            }
         }
         for index in missions.indices {
             missions[index].isFocused = missions[index].key == focus
@@ -1131,12 +1140,19 @@ extension Board {
 
     /// Whether one goes before the other, directly or through others, by `before`.
     static func isBefore(_ earlier: ItemRef, _ later: ItemRef, in before: [ItemRef: Set<ItemRef>]) -> Bool {
-        var pending = Array(before[later] ?? [])
+        isBefore(earlier, later, in: before, [:])
+    }
+
+    /// Whether one goes before the other, directly or through others, by either.
+    static func isBefore(
+        _ earlier: ItemRef, _ later: ItemRef, in before: [ItemRef: Set<ItemRef>], _ more: [ItemRef: Set<ItemRef>]
+    ) -> Bool {
+        var pending = Array(before[later, default: []].union(more[later, default: []]))
         var seen: Set<ItemRef> = []
         while let ref = pending.popLast() {
             if ref == earlier { return true }
             guard seen.insert(ref).inserted else { continue }
-            pending += before[ref] ?? []
+            pending += before[ref, default: []].union(more[ref, default: []])
         }
         return false
     }
@@ -1237,12 +1253,16 @@ extension Board {
     /// when you moved all its pull requests elsewhere.
     ///
     /// What goes before a pull request: the pull requests it's stacked on, wherever they are; what you put it after,
-    /// wherever that is; its order's, but what you took away and what you moved
-    /// elsewhere. Of its order's, what goes round in a circle with stacked branches or yours is set aside, with a note. The
-    /// one you set as next goes first, and what waits for nothing that hasn't merged waits for it. An order's pull request
-    /// with nothing before or after it merges any time, as its order says; one BriefBar or you put with others has no order
-    /// known.
-    func mission(of group: Group, orders: DeclaredOrders, layer: Layer, now: Date) -> OrderMission? {
+    /// wherever that is; its order's, but what you took away and what you moved elsewhere. Of its order's, what goes round
+    /// in a circle with stacked branches or yours is set aside, with a note, as is what goes round with them and the lines
+    /// of the missions made before it, from one mission to another. The one you set as next goes first, and what waits for
+    /// nothing that hasn't merged waits for it. An order's pull request with nothing before or after it merges any time, as
+    /// its order says; one BriefBar or you put with others has no order known.
+    /// - Parameter declared: the lines the missions made before it kept, by pull request, what goes before each; it adds
+    ///   its own.
+    func mission(
+        of group: Group, orders: DeclaredOrders, layer: Layer, now: Date, declared: inout [ItemRef: Set<ItemRef>]
+    ) -> OrderMission? {
         let refs = group.refs
         guard !refs.isEmpty else { return nil }
         let members = Set(refs)
@@ -1269,6 +1289,12 @@ extension Board {
             return left != right ? left < right : lhs > rhs
         }
         if let plan {
+            // Other missions' lines, but those between two of this one's pull requests, which its own order says.
+            var elsewhere: [ItemRef: Set<ItemRef>] = [:]
+            for (later, earlier) in declared {
+                let kept = members.contains(later) ? earlier.subtracting(members) : earlier
+                if !kept.isEmpty { elsewhere[later] = kept }
+            }
             for ref in group.members where ref != next {
                 guard let entry = plan.entry(for: ref) else { continue }
                 let tookAway = layer.holding[ref]?.notAfter ?? []
@@ -1276,10 +1302,15 @@ extension Board {
                     if Self.isBefore(ref, earlier, in: before) {
                         let stacked = Self.isBefore(ref, earlier, in: self.before)
                         added[ref, default: []].append(.setAside(earlier, by: plan.declaredBy, stacked: stacked))
+                    } else if Self.isBefore(ref, earlier, in: before, elsewhere) {
+                        added[ref, default: []].append(.goesRound(earlier, by: plan.declaredBy))
                     } else {
                         add(earlier, before: ref, [.declared(revision: plan.revision)])
                     }
                 }
+            }
+            for (edge, origins) in why where origins.contains(where: { if case .declared = $0 { true } else { false } }) {
+                declared[edge.after, default: []].insert(edge.before)
             }
         }
         for ref in refs {
@@ -1441,13 +1472,15 @@ extension Board {
         return false
     }
 
-    /// A pull request the order doesn't name, with how it's stacked with the others, and what it's stacked on among them,
-    /// for what its Mission menu offers.
+    /// A pull request the order doesn't name, with how it's stacked with the others, and what it's stacked on, wherever that
+    /// is, for what its Mission menu offers.
     func attachedStep(_ ref: ItemRef, among group: Set<ItemRef>) -> OrderStep {
         var notes: [OrderNote] = []
         var prerequisites: [OrderPrerequisite] = []
-        for earlier in before[ref, default: []].sorted() where group.contains(earlier) {
-            if let origin = origins(earlier, ref).first { notes.append(.stackedWith(earlier, comesAfter: true, origin)) }
+        for earlier in before[ref, default: []].sorted() {
+            if group.contains(earlier), let origin = origins(earlier, ref).first {
+                notes.append(.stackedWith(earlier, comesAfter: true, origin))
+            }
             prerequisites.append(OrderPrerequisite(ref: earlier, origins: origins(earlier, ref), status: status(earlier)))
         }
         for later in after[ref, default: []].sorted() where group.contains(later) {
@@ -1625,6 +1658,9 @@ public enum OrderText {
             return stacked
                 ? "\(teller(session)) puts it after \(label), but \(label) is stacked on it"
                 : "\(teller(session)) puts it after \(label); you put \(label) after it"
+        case .goesRound(let earlier, let session):
+            let label = earlier.orderLabel(near: ref)
+            return "\(teller(session)) puts it after \(label), but \(label) waits for it through another mission"
         case .yoursDoesntHold(let earlier, let stacked):
             let label = earlier.orderLabel(near: ref)
             return "\(label) \(stacked ? "is stacked on it" : "waits for it") now, so your ‘after \(label)’ doesn't hold"

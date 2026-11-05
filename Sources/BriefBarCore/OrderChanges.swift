@@ -366,10 +366,11 @@ public struct OrderChanges: Equatable, Sendable {
     /// Moves a chain's mission on to another of its own open pull requests as the one it's named by merges or closes, for
     /// the changes that put pull requests in it, moved them out of it or set one as next in it, while BriefBar still sees
     /// the chain: so that it's still that chain once the one it was named by is gone. Never to one you put in it, which the
-    /// chain doesn't have of its own. True when that moved something.
+    /// chain doesn't have of its own.
     /// - Parameter missions: as By Mission shows them now.
+    /// - Returns: what each chain it moved was named by, and is now: for what Undo would put back to follow (`renameChains`).
     @discardableResult
-    public mutating func moveAnchors(in missions: [OrderMission]) -> Bool {
+    public mutating func moveAnchors(in missions: [OrderMission]) -> [ItemRef: ItemRef] {
         var moved: [ItemRef: ItemRef] = [:]
         let placed = changes
         func anchor(after ended: ItemRef) -> ItemRef? {
@@ -383,7 +384,13 @@ public struct OrderChanges: Equatable, Sendable {
         }
         let before = changes
         rename { anchor(after: $0) }
-        return changes != before
+        return changes != before ? moved : [:]
+    }
+
+    /// Names the chains these name as `moveAnchors` renamed them.
+    public mutating func renameChains(_ renamed: [ItemRef: ItemRef]) {
+        guard !renamed.isEmpty else { return }
+        rename { renamed[$0] }
     }
 
     /// The first open pull request a stack has of its own, but these: not one you put in it.
@@ -616,9 +623,10 @@ extension OrderChanges {
             edited.remove(ref)
         }
         // One for each mission: the others set as next there aren't anymore.
-        func clearOtherFirsts(in mission: OrderMission, besides ref: ItemRef) throws {
+        func clearOtherFirsts(named key: MissionKey, in mission: OrderMission?, besides ref: ItemRef) throws {
             for other in edited.all where other.ref != ref {
-                guard let key = other.first, Self.names(mission, key), other.holds(in: orders) else { continue }
+                guard let first = other.first, mission.map({ Self.names($0, first) }) ?? (first == key), other.holds(in: orders)
+                else { continue }
                 var cleared = other
                 cleared.first = nil
                 try keep(cleared)
@@ -637,7 +645,7 @@ extension OrderChanges {
                 change.after = []
                 change.notAfter = []
                 if isAttached { change.placement = .into(key) }
-                try clearOtherFirsts(in: mission, besides: ref)
+                try clearOtherFirsts(named: key, in: mission, besides: ref)
             } else {
                 change.first = nil
             }
@@ -707,15 +715,29 @@ extension OrderChanges {
 
         case .putBack(let ref):
             guard var change = edited.changes[ref] else { break }
-            if let key = change.first, let mission = missions.first(where: { Self.names($0, key) }) {
-                // Back in the mission you set it as next in, where its order no longer has it.
-                if !mission.steps.contains(where: { $0.ref == ref }) { change.placement = .into(key) }
-                try clearOtherFirsts(in: mission, besides: ref)
+            if let key = change.first {
+                // Back in the mission you set it as next in, where its order no longer has it, even when nothing's left there
+                // to show it but this one.
+                let mission = missions.first { Self.names($0, key) }
+                if mission.map({ !$0.steps.contains { $0.ref == ref } }) ?? Self.lasts(key, in: orders) {
+                    change.placement = .into(key)
+                }
+                try clearOtherFirsts(named: key, in: mission, besides: ref)
             }
             try keep(change)
         }
         self = edited
         return touched
+    }
+
+    /// Whether a mission a key names is there to put a pull request back in, though By Mission shows nothing of it now: an
+    /// order BriefBar still keeps, or a mission of your own.
+    static func lasts(_ key: MissionKey, in orders: DeclaredOrders) -> Bool {
+        switch key {
+        case .plan(let id): orders.plan(id) != nil
+        case .mine: true
+        case .stack, .chain, .family: false
+        }
     }
 
     /// Whether a mission is the one a key names: by its own key, or a chain by one of its own pull requests.

@@ -140,7 +140,7 @@ extension OrderNote {
         case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .afterYourNext, .setAside, .yoursDoesntHold, .nextDoesntHold,
              .orderChangedIt:
             return true
-        case .showsAgainst, .orderDisagrees, .alsoIn, .stackedWith:
+        case .showsAgainst, .orderDisagrees, .alsoIn, .stackedWith, .goesRound:
             return false
         }
     }
