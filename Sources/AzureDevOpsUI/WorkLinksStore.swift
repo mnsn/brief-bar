@@ -10,15 +10,33 @@ import SwiftUI
 /// sprint's work items, the work items and pull requests you sent to Copilot and the pull requests it opened; and what each
 /// of them is, for other rows to show, what's known of each beyond its row, for the details, and more of each for a summary,
 /// as one is written (`ItemStories`). It reads Azure DevOps for it only while Show Links is on, with the pull requests'
-/// client: after each of their refreshes (`LinkEngine`), and for a summary (`context`).
+/// client: after each of their refreshes (`LinkEngine`), and for a summary (`context`). While Pull Request Order is on too,
+/// it works out which stories your pull requests are for (`WorkItemStories`), with the parent and place in the backlog of
+/// their work items, and what those stories are when nothing else has them, which the engine reads then.
 @MainActor
 final class WorkLinksStore {
+    /// The stories your pull requests are for, while Show Links reads them and Pull Request Order wants them.
+    struct Stories: Equatable {
+        /// Whether it reads them: Show Links and Pull Request Order are both on.
+        var areRead = false
+        /// By pull request, its organization lowercased: none for one whose work items aren't read yet.
+        var byPullRequest: [PRKey: [OrderStory]] = [:]
+        /// Their work items, all of them, by pull request as those stories are, for their missions' names.
+        var workItemsByPullRequest: [PRKey: [ItemRef]] = [:]
+        /// Those stories and work items, for their titles.
+        var workItems: [WorkItem] = []
+    }
+
     private let links: Links
     private let stories: ItemStories
     private let store: PRStore
     private let sprint: SprintStore
     private let copilot: CopilotTasksStore
     private let settings: AppSettings
+    /// Pull Request Order, which wants stories while it's on.
+    private let order: PullRequestOrder?
+    /// The stories your pull requests are for, for Pull Request Order.
+    @Published private(set) var storiesRead = Stories()
     private var engine: LinkEngine?
     /// How many engines it started: what one reads is taken only while it's the last started, as one replaced, when
     /// someone else signed in, may still tell what it was reading as the last one.
@@ -45,13 +63,17 @@ final class WorkLinksStore {
     /// or not, as `ItemStories` asks only while it is.
     private var tellsStories = false
 
-    init(links: Links, stories: ItemStories, store: PRStore, sprint: SprintStore, copilot: CopilotTasksStore, settings: AppSettings) {
+    init(
+        links: Links, stories: ItemStories, store: PRStore, sprint: SprintStore, copilot: CopilotTasksStore, settings: AppSettings,
+        order: PullRequestOrder? = nil
+    ) {
         self.links = links
         self.stories = stories
         self.store = store
         self.sprint = sprint
         self.copilot = copilot
         self.settings = settings
+        self.order = order
         makeEngine = { [client = store.client] onChange in LinkEngine(client: client, onChange: onChange) }
     }
 
@@ -79,6 +101,11 @@ final class WorkLinksStore {
         store.$refreshedAt.removeDuplicates().dropFirst()
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.refreshEngine() } }
             .store(in: &cancellables)
+        // Stories, while Pull Request Order wants them.
+        order?.$isOn.removeDuplicates().dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.update() } }
+            .store(in: &cancellables)
     }
 
     func stop() {
@@ -89,6 +116,7 @@ final class WorkLinksStore {
         links.withdraw(.azureDevOps)
         stories.withdraw(.azureDevOps)
         tellsStories = false
+        storiesRead = Stories()
     }
 
     /// Reads once and tells Show Links, for `--render`: the demo's made-up links, or yours while Show Links is on.
@@ -100,6 +128,9 @@ final class WorkLinksStore {
             read = DemoData.workLinks(now: Date())
         case .live:
             let engine = makeEngine { _ in }
+            await engine.update(inputs())
+            read = await engine.currentLinks()
+            // And the stories of what it read, when they're wanted.
             await engine.update(inputs())
             read = await engine.currentLinks()
         }
@@ -145,6 +176,8 @@ final class WorkLinksStore {
         guard engine != nil, number == engines, read != self.read else { return }
         self.read = read
         publish()
+        // What it read can change what's to read: the parents of tasks, once their parents are read with them.
+        updateEngine()
     }
 
     private func update() {
@@ -164,6 +197,11 @@ final class WorkLinksStore {
     func reread(pullRequests: Set<PRKey>, workItems: Set<WorkItemKey>) {
         guard let engine else { return }
         Task { await engine.reread(pullRequests: pullRequests, workItems: workItems) }
+    }
+
+    /// What the engine was told to read last, while it reads.
+    var engineInputs: LinkEngine.Inputs? {
+        engine == nil ? nil : lastInputs
     }
 
     /// The organizations of what it looks up, what's linked that your lists and the sprint don't show, while it reads:
@@ -188,13 +226,60 @@ final class WorkLinksStore {
         }
         let listed = Set(store.items.map(\.key.linkRef)).union(sprintItems.map(\.linkRef))
         let lookups = Self.lookups(links.linked([.workItem, .pullRequest]), listed: listed)
+        let wantsStories = order?.isOn == true
         return LinkEngine.Inputs(
             pullRequests: pullRequests,
             sprintItems: Set(sprintItems.map { WorkItemKey($0.organization, $0.id) }),
             sprintShows: sprint.isShowing,
             workItemLookups: lookups.workItems,
-            pullRequestLookups: lookups.pullRequests
+            pullRequestLookups: lookups.pullRequests,
+            wantsStories: wantsStories,
+            parentLookups: wantsStories ? storyFinder.parents(ofTasksIn: linkedToPullRequests) : []
         )
+    }
+
+    /// The work items linked to your pull requests, as read.
+    private var linkedToPullRequests: Set<WorkItemKey> {
+        Set(read.workItemsOfPullRequests.flatMap { key, ids in ids.map { WorkItemKey(key.organization, $0) } })
+    }
+
+    /// Which stories work items are for, from what's read of them: the sprint's, the linked ones' and their parents'.
+    private var storyFinder: WorkItemStories {
+        WorkItemStories(workItems: sprintItems + Array(read.workItems.values) + Array(read.parents.values), board: sprint.board)
+    }
+
+    /// Works out which stories your pull requests are for, while Show Links reads them and Pull Request Order wants them;
+    /// none otherwise.
+    private func updateStories() {
+        guard links.isOn, order?.isOn == true else {
+            if storiesRead != Stories() { storiesRead = Stories() }
+            return
+        }
+        let finder = storyFinder
+        let known = Dictionary(
+            (sprintItems + Array(read.workItems.values) + Array(read.parents.values)).map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first }
+        )
+        var byPullRequest: [PRKey: [OrderStory]] = [:]
+        var workItemsByPullRequest: [PRKey: [ItemRef]] = [:]
+        var named: Set<WorkItemKey> = []
+        for (key, ids) in read.workItemsOfPullRequests {
+            // Until each of its work items is read, or Azure DevOps says it can't be, its stories aren't known: its mission
+            // isn't named from half of what it's made of.
+            guard !ids.contains(where: { read.pendingWorkItems.contains(WorkItemKey(key.organization, $0)) }) else { continue }
+            let found = finder.stories(of: key, workItems: ids)
+            let pullRequest = PRKey(key.organization.lowercased(), key.number)
+            byPullRequest[pullRequest] = found
+            workItemsByPullRequest[pullRequest] = Set(ids).sorted().map { ItemRef.workItem(organization: key.organization, id: $0) }
+            for id in ids { named.insert(WorkItemKey(key.organization, id)) }
+            for ref in found.flatMap({ [$0.ref, $0.task].compactMap { $0 } }) {
+                if let id = ref.number { named.insert(WorkItemKey(ref.scope, id)) }
+            }
+        }
+        let stories = Stories(
+            areRead: true, byPullRequest: byPullRequest, workItemsByPullRequest: workItemsByPullRequest,
+            workItems: named.sorted().compactMap { known[$0] }
+        )
+        if stories != storiesRead { storiesRead = stories }
     }
 
     /// The work items and pull requests in links that your lists and the sprint don't show.
@@ -219,6 +304,7 @@ final class WorkLinksStore {
     // MARK: Telling Show Links
 
     private func publish() {
+        updateStories()
         guard links.isOn else {
             links.withdraw(.azureDevOps)
             return

@@ -42,7 +42,9 @@ package struct MissionCard: View {
         let mine = mission.steps(of: kinds)
         let folded = mine.filter { $0.status == .merged || $0.status == .closed }
         let shown = showsFolded ? mine : mine.filter { $0.status != .merged && $0.status != .closed }
-        let gutter = mission.isFamily ? nil : OrderGutter(shown)
+        // No graph for pull requests with no order known, but for those stacked on each other among a story's.
+        let hasGraph = mission.hasOrder || mission.isStory && shown.contains { $0.number != nil }
+        let gutter = hasGraph ? OrderGutter(shown) : nil
         let width = gutter.map { OrderGutterRowView.width(lanes: $0.laneCount, scale: textScale) } ?? 0
         VStack(alignment: .leading, spacing: 6) {
             MissionHeader(mission: mission, order: order, place: place)
@@ -59,7 +61,11 @@ package struct MissionCard: View {
                 }
                 let attached = mission.attached.filter { kinds.contains($0.ref.kind) }
                 if !attached.isEmpty {
-                    attachedRows(attached, width: width)
+                    apartRows(attached, title: "Not in this order", width: width)
+                }
+                let sameStory = mission.sameStory.filter { kinds.contains($0.ref.kind) }
+                if !sameStory.isEmpty {
+                    apartRows(sameStory, title: OrderText.sameStory, width: width)
                 }
             }
             .padding(.vertical, 4)
@@ -146,10 +152,11 @@ package struct MissionCard: View {
         .padding(.vertical, 6)
     }
 
-    private func attachedRows(_ steps: [OrderStep], width: CGFloat) -> some View {
+    /// Pull requests that show with it apart: those stacked with its own that its order doesn't name, or those for its story.
+    private func apartRows(_ steps: [OrderStep], title: String, width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Divider().padding(.horizontal, 12)
-            Text("Not in this order")
+            Text(title)
                 .font(size: 11, weight: .semibold)
                 .foregroundStyle(.secondary)
                 .padding(.leading, max(width, 6) + 8)

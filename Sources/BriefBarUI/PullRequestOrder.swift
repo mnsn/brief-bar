@@ -7,7 +7,9 @@ import Foundation
 /// Copilot sessions told BriefBar through its agents' tools, which `--mcp` keeps in BriefBar's preferences and tells the app
 /// it changed (`AgentChanges`). It's off until you turn it on (`PullRequestOrderSetting`): until then it reads nothing, not
 /// even the orders it kept, and the sources tell it nothing. Turned off, it shows nothing again, and keeps the orders, what
-/// it saw become of their pull requests and the mission you focus on, unused, until you forget them.
+/// it saw become of their pull requests, the mission you focus on and the names you gave missions, unused, until you
+/// forget them. A mission is called by the name you gave it, else the one Apple Intelligence gave it on this Mac while By
+/// Mission showed it (`MissionNamer`), else the one BriefBar gives it from its sources.
 @MainActor
 package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var isOn: Bool
@@ -21,6 +23,19 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var view: OrderView
     /// The mission a row's capsule asked By Mission to show, until it has.
     @Published package var revealed: MissionKey?
+    /// The mission whose name you're editing in its header, while you are: Escape cancels that, rather than closing the
+    /// details beside the list.
+    @Published package var renaming: MissionKey?
+    /// The names you gave missions: none while it's off. It says it changed when a name did, not as their time counts.
+    package private(set) var names = MissionNames()
+    /// The names Apple Intelligence gave missions, in memory only; in the demo, made-up ones.
+    @Published package private(set) var modelNames: [MissionKey: String] = [:]
+    /// Asks Apple Intelligence for missions' names: only the app's, never the demo's or `--render`'s.
+    package var namer: MissionNamer? {
+        didSet {
+            namer?.named = { [weak self] key, name in self?.modelNamed(key, name) }
+        }
+    }
 
     private let defaults: UserDefaults
     private let isDemo: Bool
@@ -33,18 +48,27 @@ package final class PullRequestOrder: ObservableObject {
     private var agentChanges: AnyObject?
     /// Looks at the time every hour, while it's on (`timePassed`).
     private var clock: Timer?
+    /// When it last counted the time against the names you gave missions, while it's on.
+    private var namesCounted: Date?
+    /// The missions By Mission shows now, by the views that show them, the first to show first.
+    private var shown: [(viewer: WeakViewer, keys: [MissionKey])] = []
 
     /// How often it looks at the time, for what time alone changes: an order that hasn't changed for 30 days shows as stale,
     /// and one that finished goes two weeks later, whether or not the sources show anything new meanwhile.
     package static let timeCheckInterval: TimeInterval = 3_600
 
-    /// What a source told: its pull requests and sessions, how its things look, for what shows them, and what each of its
-    /// sessions told BriefBar it works on, which the Map shows.
+    /// What a source told: its pull requests and sessions, how its things look, for what shows them, what each of its
+    /// sessions told BriefBar it works on, which the Map shows, and whether it reads the stories its pull requests are for.
     private struct Told {
         var pullRequests: [OrderPullRequest]
         var sessions: [OrderSession]
         var items: [ItemRef: LinkedItem]
         var working: [ItemRef: [ItemRef]] = [:]
+        var readsStories = false
+    }
+
+    private struct WeakViewer {
+        weak var object: AnyObject?
     }
 
     /// - Parameters:
@@ -72,9 +96,10 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Whether BriefBar keeps anything for Pull Request Order, on or off: an order, what it saw become of their pull
-    /// requests, or the mission you focus on.
+    /// requests, the mission you focus on, or a name you gave a mission.
     package var keepsAnything: Bool {
-        [DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey].contains { defaults.object(forKey: $0) != nil }
+        [DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, MissionNames.defaultsKey]
+            .contains { defaults.object(forKey: $0) != nil }
     }
 
     /// Pull Request Order, in Settings. On, it reads the orders it kept, and the sources tell it what they show; off, it
@@ -94,6 +119,10 @@ package final class PullRequestOrder: ObservableObject {
             orders = DeclaredOrders()
             evidence = OrderEvidence()
             focus = nil
+            names = MissionNames()
+            namesCounted = nil
+            modelNames = [:]
+            namer?.stop()
             missions = []
         }
     }
@@ -102,6 +131,8 @@ package final class PullRequestOrder: ObservableObject {
         orders = DeclaredOrders.load(from: defaults)
         evidence = OrderEvidence.load(from: defaults)
         focus = OrderFocus.load(from: defaults)
+        names = MissionNames.load(from: defaults)
+        namesCounted = nil
         // The demo's agents keep their orders in their own memory.
         if !isDemo, agentChanges == nil {
             agentChanges = AgentChanges.observe { [weak self] in self?.reloadOrders() }
@@ -136,25 +167,30 @@ package final class PullRequestOrder: ObservableObject {
     // MARK: What the sources show
 
     /// What a source shows now, while it's on: the pull requests it lists, with what an order needs of each, the sessions
-    /// it knows, how its things look, for what shows them, and what each session told BriefBar it works on now
-    /// (`SessionUpdates`), which changes no mission. It replaces what the source told before. Nothing's kept while Pull
-    /// Request Order is off.
+    /// it knows, how its things look, for what shows them, what each session told BriefBar it works on now
+    /// (`SessionUpdates`), which changes no mission, and whether it reads the stories its pull requests are for. It replaces
+    /// what the source told before. Nothing's kept while Pull Request Order is off.
     package func publish(
         _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = [],
-        working: [ItemRef: [ItemRef]] = [:]
+        working: [ItemRef: [ItemRef]] = [:], readsStories: Bool = false
     ) {
         guard isOn else { return }
         var byRef: [ItemRef: LinkedItem] = [:]
         for item in items where byRef[item.ref] == nil {
             byRef[item.ref] = item
         }
-        let new = Told(pullRequests: pullRequests, sessions: sessions, items: byRef, working: working)
+        let new = Told(pullRequests: pullRequests, sessions: sessions, items: byRef, working: working, readsStories: readsStories)
         let old = told[source]
-        let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions
+        let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions && old?.readsStories == new.readsStories
         guard !sameFacts || old?.items != new.items || old?.working != new.working else { return }
         objectWillChange.send()
         told[source] = new
-        if !sameFacts { rebuild() }
+        if !sameFacts {
+            rebuild()
+        } else {
+            // What missions are named from, such as a title.
+            askNames()
+        }
     }
 
     /// A source stopped: what it showed goes, and its pull requests can't be seen until it's on again.
@@ -167,7 +203,7 @@ package final class PullRequestOrder: ObservableObject {
 
     /// Forgets a source's things when you turn it off, as each source forgets what it kept, whether Pull Request Order is on
     /// or not: its pull requests' places in every order, which goes up a revision, the orders left with none, what BriefBar
-    /// saw become of them, and the mission you focus on, when it's theirs.
+    /// saw become of them, and the mission you focus on and the names you gave missions, when they're theirs.
     package func forget(_ source: SourceID) {
         let kinds = ItemRef.Kind.of(source)
         guard !kinds.isEmpty else { return }
@@ -180,11 +216,22 @@ package final class PullRequestOrder: ObservableObject {
         let focus = OrderFocus.load(from: defaults)
         let kept = OrderFocus.kept(focus, in: orders, forgetting: kinds)
         if kept != focus { OrderFocus.save(kept, to: defaults) }
+        let plans = Set(orders.plans.map(\.id))
+        var names = MissionNames.load(from: defaults)
+        if names.forget(kinds, keepingPlans: plans) { names.save(to: defaults) }
+        if isOn {
+            // Before the source goes, whose rebuild would otherwise save what was forgotten again, such as a name.
+            objectWillChange.send()
+            self.orders = orders
+            self.evidence = evidence
+            self.focus = kept
+            self.names = names
+            let forgets = { (key: MissionKey) in MissionNames.forgets(key, kinds: kinds, keepingPlans: plans) }
+            modelNames = modelNames.filter { !forgets($0.key) }
+            namer?.forget(where: forgets)
+        }
         withdraw(source)
         guard isOn else { return }
-        self.orders = orders
-        self.evidence = evidence
-        self.focus = kept
         rebuild()
     }
 
@@ -241,21 +288,29 @@ package final class PullRequestOrder: ObservableObject {
         rebuild()
     }
 
-    /// Forget All Orders: every order, what BriefBar saw become of their pull requests, and the mission you focus on,
-    /// whether Pull Request Order is on or not.
+    /// Forget All Orders: every order, what BriefBar saw become of their pull requests, the mission you focus on and the
+    /// names you gave missions, whether Pull Request Order is on or not.
     package func forgetAll() {
         objectWillChange.send()
         DeclaredOrders.forgetAll(in: defaults)
         orders = DeclaredOrders()
         evidence = OrderEvidence()
         focus = nil
+        names = MissionNames()
         rebuild()
     }
 
     /// The demo's orders, as if its sessions had told them, unless it has them, with what BriefBar saw become of their pull
-    /// requests before, and the mission you focus on: only in the demo, while it's on.
-    package func tellDemo(_ demo: DeclaredOrders, evidence seen: OrderEvidence = OrderEvidence(), focus key: MissionKey? = nil) {
+    /// requests before, the mission you focus on, and the names Apple Intelligence would give missions, made up: only in
+    /// the demo, while it's on.
+    package func tellDemo(
+        _ demo: DeclaredOrders, evidence seen: OrderEvidence = OrderEvidence(), focus key: MissionKey? = nil,
+        names madeUp: [MissionKey: String] = [:]
+    ) {
         guard isDemo, isOn else { return }
+        for (key, name) in madeUp where modelNames[key] == nil {
+            modelNames[key] = name
+        }
         let orders = DeclaredOrders.load(from: defaults)
         let missing = demo.plans.filter { orders.plan($0.id) == nil }
         guard !missing.isEmpty else { return }
@@ -283,6 +338,124 @@ package final class PullRequestOrder: ObservableObject {
         describe(ref)?.title
     }
 
+    // MARK: Missions' names
+
+    /// Who named a mission, for its help.
+    package enum Naming: Equatable {
+        case you
+        case appleIntelligence
+        case briefBar
+    }
+
+    /// What a mission is called: the name you gave it, else the one Apple Intelligence gave it, else BriefBar's own.
+    package func title(of mission: OrderMission) -> String {
+        names.name(for: mission.key) ?? briefBarsName(of: mission)
+    }
+
+    /// What it's called without your name: Apple Intelligence's, while it has an Azure DevOps pull request, else the name
+    /// BriefBar gives it from its sources (`OrderText.title`). Use BriefBar's Name gives it this.
+    package func briefBarsName(of mission: OrderMission) -> String {
+        modelName(of: mission) ?? OrderText.title(of: mission, name: name(of:))
+    }
+
+    /// Who named it: you, else Apple Intelligence while its name is the one it has, though it kept BriefBar's own, as it's
+    /// asked to while that fits, else BriefBar.
+    package func naming(of mission: OrderMission) -> Naming {
+        if names.name(for: mission.key) != nil { return .you }
+        return modelName(of: mission) != nil ? .appleIntelligence : .briefBar
+    }
+
+    /// The name Apple Intelligence gave it, while it has an Azure DevOps pull request.
+    private func modelName(of mission: OrderMission) -> String? {
+        guard !MissionNaming.pullRequests(of: mission).isEmpty else { return nil }
+        return modelNames[mission.key]
+    }
+
+    /// Whether Rename… can give it a name: it has one of yours, or BriefBar keeps fewer than it can.
+    package func canRename(_ key: MissionKey) -> Bool {
+        names.name(for: key) != nil || !names.isFull
+    }
+
+    /// Rename…: what you typed becomes its name, as you typed it; nothing, or BriefBar's name for it, gives it BriefBar's
+    /// name again, and keeps nothing. At the cap, it keeps none. Never logged.
+    /// - Parameter shown: what the field started with: left as it was, it changes nothing, though Apple Intelligence named
+    ///   the mission meanwhile.
+    @discardableResult
+    package func rename(_ mission: OrderMission, to typed: String, from shown: String? = nil) -> MissionNames.Outcome {
+        guard isOn else { return .unchanged }
+        if let shown, MissionNames.cleaned(typed) == MissionNames.cleaned(shown) { return .unchanged }
+        var names = self.names
+        let outcome = names.rename(mission.key, to: typed, briefBarsName: briefBarsName(of: mission))
+        guard names != self.names else { return outcome }
+        objectWillChange.send()
+        self.names = names
+        names.save(to: defaults)
+        askNames()
+        return outcome
+    }
+
+    /// Use BriefBar's Name: forgets the name you gave it.
+    package func useBriefBarsName(_ key: MissionKey) {
+        guard isOn, names.name(for: key) != nil else { return }
+        objectWillChange.send()
+        names.clear(key)
+        names.save(to: defaults)
+        askNames()
+    }
+
+    /// By Mission shows these missions now, in this view, the first first: Apple Intelligence names them as they settle.
+    package func showing(_ keys: [MissionKey], in viewer: AnyObject) {
+        if let index = shown.firstIndex(where: { $0.viewer.object === viewer }) {
+            guard shown[index].keys != keys else { return }
+            shown[index].keys = keys
+        } else {
+            shown.append((WeakViewer(object: viewer), keys))
+        }
+        askNames()
+    }
+
+    /// That view no longer shows By Mission.
+    package func stopShowing(in viewer: AnyObject) {
+        guard let index = shown.firstIndex(where: { $0.viewer.object === viewer }) else { return }
+        shown.remove(at: index)
+        askNames()
+    }
+
+    /// The missions By Mission shows on screen now, in all its views, the first first: those Apple Intelligence names.
+    package var onScreen: [MissionKey] {
+        var keys: [MissionKey] = []
+        for view in shown where view.viewer.object != nil {
+            for key in view.keys where !keys.contains(key) { keys.append(key) }
+        }
+        return keys
+    }
+
+    /// Asks Apple Intelligence to name the missions on screen that you didn't name, from what they're made of now.
+    private func askNames() {
+        guard let namer else { return }
+        shown.removeAll { $0.viewer.object == nil }
+        guard isOn else {
+            namer.stop()
+            return
+        }
+        let facts = facts
+        let requests = onScreen.compactMap { key -> MissionNamer.Request? in
+            guard names.name(for: key) == nil, let mission = missions.first(where: { $0.key == key }),
+                  let inputs = MissionNaming.inputs(
+                      for: mission, stories: { facts.pullRequests[$0]?.stories ?? [] },
+                      workItems: { facts.pullRequests[$0]?.workItems ?? [] }, name: name(of:)
+                  )
+            else { return nil }
+            return MissionNamer.Request(key: key, inputs: inputs, isSettled: MissionNaming.isSettled(mission, facts: facts))
+        }
+        namer.update(requests)
+    }
+
+    private func modelNamed(_ key: MissionKey, _ name: String) {
+        guard isOn, modelNames[key] != name else { return }
+        modelNames[key] = name
+    }
+
     // MARK: Missions
 
     /// What the sources that are on show now.
@@ -291,8 +464,14 @@ package final class PullRequestOrder: ObservableObject {
         return OrderFacts(
             pullRequests: sources.flatMap { told[$0]?.pullRequests ?? [] },
             sessions: sources.flatMap { told[$0]?.sessions ?? [] },
-            sourcesOn: Set(sources.flatMap(ItemRef.Kind.of).filter(\.isPullRequest))
+            sourcesOn: Set(sources.flatMap(ItemRef.Kind.of).filter(\.isPullRequest)),
+            readsStories: sources.contains { told[$0]?.readsStories == true }
         )
+    }
+
+    /// The kinds of thing whose source is on and tells it what it shows.
+    private var kindsOn: Set<ItemRef.Kind> {
+        Set(SourceID.allCases.filter { told[$0] != nil }.flatMap(ItemRef.Kind.of))
     }
 
     /// The missions again, from what the sources show and the orders: first keeping what the sources show become of the
@@ -327,7 +506,49 @@ package final class PullRequestOrder: ObservableObject {
             self.evidence = evidence
             evidence.save(to: defaults)
         }
-        let missions = OrderBoard.missions(facts: facts, orders: orders, evidence: evidence, focus: focus, now: date)
+        var missions = OrderBoard.missions(facts: facts, orders: orders, evidence: evidence, focus: focus, now: date)
+        // Focus follows the mission you focus on as its key changes: to its pull requests' story's, or a chain's whose
+        // earliest left. Else it waits, as ever.
+        if let focus, let next = OrderBoard.successor(of: focus, from: self.missions, to: missions) {
+            self.focus = next
+            OrderFocus.save(next, to: defaults)
+            missions = OrderBoard.missions(facts: facts, orders: orders, evidence: evidence, focus: next, now: date)
+        }
+        keepNames(following: missions, facts: facts, at: date)
+        forgetModelNames(keepingPlans: Set(orders.plans.map(\.id)))
         if missions != self.missions { self.missions = missions }
+        askNames()
+    }
+
+    /// Apple Intelligence's names of orders BriefBar no longer keeps go, with what it was asked of them, as yours do,
+    /// however the orders went: forgotten, finished, or left with no pull request as a source was turned off.
+    private func forgetModelNames(keepingPlans plans: Set<UUID>) {
+        let forgets = { (key: MissionKey) in MissionNames.forgets(key, kinds: [], keepingPlans: plans) }
+        if modelNames.keys.contains(where: forgets) { modelNames = modelNames.filter { !forgets($0.key) } }
+        namer?.forget(where: forgets)
+    }
+
+    /// The names you gave missions, as the missions change: each follows its mission as Focus does, those of orders BriefBar
+    /// no longer keeps go, and the time since BriefBar last saw a mission counts against its name while BriefBar could
+    /// see it, at most two hours at a time, as when the Mac slept.
+    private func keepNames(following missions: [OrderMission], facts: OrderFacts, at date: Date) {
+        var names = self.names
+        var renamed = false
+        for key in names.entries.keys.sorted(by: { $0.description < $1.description }) {
+            if let next = OrderBoard.successor(of: key, from: self.missions, to: missions), names.follow(key, to: next) { renamed = true }
+        }
+        let plans = Set(orders.plans.map(\.id))
+        if names.forget([], keepingPlans: plans) { renamed = true }
+        let elapsed = namesCounted.map { min(max(date.timeIntervalSince($0), 0), 2 * Self.timeCheckInterval) } ?? 0
+        namesCounted = date
+        let kindsOn = kindsOn
+        let before = names.entries.count
+        let changed = names.account(shown: Set(missions.map(\.key)), canSee: { key in
+            MissionNames.canSee(key, plans: plans, kindsOn: kindsOn, readsStories: facts.readsStories)
+        }, elapsed: elapsed)
+        if names.entries.count != before { renamed = true }
+        if renamed { objectWillChange.send() }
+        self.names = names
+        if renamed || changed { names.save(to: defaults) }
     }
 }

@@ -65,4 +65,16 @@ enum DemoPullRequestOrder {
 
     /// The mission you focus on.
     static let focus = MissionKey.plan(paymentsID)
+
+    /// User Story 5180, "Checkout redesign", outside the sprint: Show Links' demo links its tasks to !4113, !4088 and !4105
+    /// (`DemoData.workLinks`), which are its mission.
+    static let checkoutRedesign = ItemRef.workItem(organization: DemoData.organization, id: 5180)
+
+    /// The names Apple Intelligence would give the demo's missions, as their work drifted from where it started: made up,
+    /// as the demo never asks the model.
+    static let names: [MissionKey: String] = [
+        .plan(paymentsID): "Payment retries and coupons",
+        .plan(id): "Dark mode everywhere",
+        .story(checkoutRedesign): "Faster checkout",
+    ]
 }

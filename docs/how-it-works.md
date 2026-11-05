@@ -35,6 +35,15 @@ Pull Request Order, with Azure DevOps' and GitHub's, then Azure DevOps' own, whi
 same keys. A source's settings work only while it's on: while it's off or paused, they show all the same,
 disabled, saying so, drawn from its settings alone, as a source that's off reads nothing for them.
 
+Pull Request Order keeps the names you give missions with **Rename…** (`MissionNames`, under `order.names`), by what
+makes each mission: only names you typed, never one left as it was or set back to BriefBar's own, up to 200, of 80
+characters at most. A name is forgotten once its mission hasn't shown for 14 days, counted only while Pull Request
+Order, and what makes the mission, are on; with the order that makes it; with the source whose things make it, as you
+turn that off; and with **Forget All Orders…**. The names Apple Intelligence gives missions with Azure DevOps' pull
+requests, on this Mac (`MissionNamer`, `MissionNaming`), from their pull requests', work items' and sessions' titles,
+only for the missions By Mission shows on screen, those scrolled out of sight once they come into it, are kept in memory
+only. No name goes to the log, to agents or to Apple Intelligence.
+
 ## Permissions that macOS grants once
 
 macOS gives some permissions to the whole app, and asks for them only once. That's why BriefBar's own
@@ -1197,7 +1206,8 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
-| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed |
+| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
+| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links and Pull Request Order: for the parents of the tasks linked to your pull requests, their stories, that BriefBar doesn't read already, every quarter of an hour; 200 a request | their title, type, state, project and when they changed, to name a story's mission |
 | `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
@@ -2172,7 +2182,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 |---|---|---|
 | `_apis/teams?$mine=true` | every six hours while the sprint shows | your teams, in every project |
 | `{project}/{team}/_apis/work/teamsettings/iterations?$timeframe=current` | every hour, and once per team to find one with a sprint today | the team's current sprint and its dates |
-| `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, and each state's category |
+| `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, which are features and epics (its portfolio backlogs'), and each state's category |
 | `{project}/{team}/_apis/work/teamsettings/iterations/{id}/workitems` | every refresh | the sprint's work items, and which task is under which story or bug |
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
 | `_apis/wit/workitems/{id}?$expand=relations` | when you open a work item's details, unless they were read less than a minute ago; and again when the sprint shows it changed while they show | all its fields, its links, attachments and web pages, and which of its long text fields are Markdown |

@@ -159,6 +159,48 @@ import Testing
         #expect(await Self.eventually { order.describe(DemoPullRequestOrder.retry) != nil })
     }
 
+    /// The demo's story outside the sprint (§7.4): its three pull requests, for its tasks, are its mission, in the tasks'
+    /// order, with no order known, and the made-up name Apple Intelligence would give it; with Show Links off, there are no
+    /// stories, and they're in no mission.
+    @Test func theDemosStoryIsAMissionWithAMadeUpName() async throws {
+        let store = await Self.demoStore()
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        await sprint.loadOnce()
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        func facts(showLinks: Bool) async -> (PullRequestOrder, PullRequestOrderFacts, WorkLinksStore) {
+            let links = Links(defaults: MemoryDefaults(), isDemo: showLinks)
+            let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
+            let workLinks = WorkLinksStore(
+                links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
+                order: order
+            )
+            await workLinks.loadOnce()
+            let facts = PullRequestOrderFacts(order: order, store: store, settings: settings, details: nil, workLinks: workLinks)
+            return (order, facts.loadOnce(), workLinks)
+        }
+
+        let (order, held, workLinks) = await facts(showLinks: true)
+        let key = MissionKey.story(DemoPullRequestOrder.checkoutRedesign)
+        let mission = try #require(order.missions.first { $0.key == key })
+        #expect(mission.steps.map(\.ref.id) == ["4113", "4088", "4105"])
+        #expect(mission.steps.allSatisfy { $0.standing == .unordered })
+        #expect(OrderText.story(of: mission, title: order.title(of: mission)) == "User Story 5180")
+        #expect(order.title(of: mission) == "Faster checkout" && order.naming(of: mission) == .appleIntelligence)
+        #expect(order.name(of: DemoPullRequestOrder.checkoutRedesign) == "Checkout redesign")
+        #expect(order.describe(.workItem(organization: "contoso", id: 5181))?.title == "Speed up the checkout page")
+        // Each pull request goes with all its work items, for its mission's name.
+        let seen = PullRequestOrderFacts.pullRequests(store.records, items: store.items, showToReview: false, stories: workLinks.storiesRead)
+        #expect(seen.first { $0.ref.id == "4091" }?.workItems == [5110, 5112].map { .workItem(organization: "contoso", id: $0) })
+        // The orders keep their own: their pull requests aren't a story's mission's.
+        #expect(order.missions.first { $0.key == DemoPullRequestOrder.focus }?.steps.count == 5)
+        _ = held
+
+        let (withoutLinks, _, _) = await facts(showLinks: false)
+        #expect(!withoutLinks.missions.contains { $0.isStory })
+        #expect(!withoutLinks.missions.contains { $0.contains(.pullRequest(organization: "contoso", number: 4113)) })
+    }
+
     /// The demo's orders are ones an agent could tell: BriefBar would keep them as they are.
     @Test func theDemosOrdersAreOnesAnAgentCouldTell() throws {
         let demos = DemoPullRequestOrder.orders(now: Date()).plans

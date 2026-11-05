@@ -31,6 +31,10 @@ package struct MissionsBody: View {
     let rest: ([ItemRef]) -> AnyView
 
     @EnvironmentObject private var services: AppServices
+    /// Who shows the missions, for Apple Intelligence to name them while they're on screen.
+    @LocalState private var viewer = MissionsViewer()
+    /// The missions whose card or band is in the scroll view's sight now: Apple Intelligence names only those.
+    @LocalState private var inSight: Set<MissionKey> = []
 
     package init(
         view: OrderView, ordering: PullRequestOrder, kinds: Set<ItemRef.Kind>, elsewhere: String, openElsewhere: (() -> Void)?,
@@ -65,6 +69,8 @@ package struct MissionsBody: View {
     package var body: some View {
         let missions = Self.missions(ordering.missions, kinds: kinds)
         let rest = listed.filter { !Self.isIn(missions, $0) }
+        // Apple Intelligence names only the missions on screen: those scrolled out of sight wait.
+        let onScreen = missions.map(\.key).filter(inSight.contains)
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 18) {
                 if missions.isEmpty {
@@ -74,6 +80,7 @@ package struct MissionsBody: View {
                 case .list:
                     ForEach(missions) { mission in
                         card(mission)
+                            .onSightChange { see(mission.key, $0) }
                     }
                     if !rest.isEmpty {
                         Text("Not in a mission")
@@ -89,14 +96,25 @@ package struct MissionsBody: View {
                             mission: mission, place: place(of: mission), links: services.links,
                             order: ordering, isSelected: isSelected, select: open, list: { AnyView(card(mission)) }
                         )
+                        .onSightChange { see(mission.key, $0) }
                     }
                     let undrawn = OrderMap.undrawn(listed + apart, in: missions)
                     NotInAMissionLine(inNoMission: undrawn.inNoMission, notInOrder: undrawn.notInOrder) { ordering.setView(.list) }
                 }
             }
             .onChange(of: ordering.revealed) { _, key in reveal(key, with: proxy) }
-            .onAppear { reveal(ordering.revealed, with: proxy) }
+            .onAppear {
+                reveal(ordering.revealed, with: proxy)
+                ordering.showing(onScreen, in: viewer)
+            }
+            .onChange(of: onScreen) { _, keys in ordering.showing(keys, in: viewer) }
+            .onDisappear { ordering.stopShowing(in: viewer) }
         }
+    }
+
+    /// A mission's card or band came into the scroll view's sight, or left it.
+    private func see(_ key: MissionKey, _ isInSight: Bool) {
+        if isInSight { inSight.insert(key) } else { inSight.remove(key) }
     }
 
     private func card(_ mission: OrderMission) -> MissionCard {
@@ -142,5 +160,17 @@ package struct MissionsBody: View {
             withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(key, anchor: .top) }
             ordering.revealed = nil
         }
+    }
+}
+
+/// A page that shows missions, as Pull Request Order knows it while it does.
+final class MissionsViewer {}
+
+private extension View {
+    /// Says whether it's in its scroll view's sight, as it comes in or leaves it; outside a scroll view, it is.
+    func onSightChange(_ action: @escaping (Bool) -> Void) -> some View {
+        onGeometryChange(for: Bool.self) { proxy in
+            proxy.bounds(of: .scrollView).map { $0.intersects(CGRect(origin: .zero, size: proxy.size)) } ?? true
+        } action: { action($0) }
     }
 }
