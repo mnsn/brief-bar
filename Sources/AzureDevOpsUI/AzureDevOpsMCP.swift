@@ -1262,10 +1262,10 @@ enum AgentText {
     }
 
     /// A pipeline as `--pipelines` prints it, as a list item, with its latest run's link: each of its lines one line, whatever
-    /// its pipeline, stages, branch or errors are named (`QuotedText.inLine`), and its branches as a command may hold them
-    /// (`runBranch`).
+    /// its pipeline, stages, branch or errors are named, and none starting a fence, as a pipeline named "~~~Deploy" would
+    /// once it's a list item's (`QuotedText.oneLine`), and its branches as a command may hold them (`runBranch`).
     static func pipeline(_ status: PipelineStatus, now: Date) -> [String] {
-        var lines = WorkCLI.pipelineLines(status, now: now, naming: runBranch).map(QuotedText.inLine)
+        var lines = WorkCLI.pipelineLines(status, now: now, naming: runBranch).map(QuotedText.oneLine)
         guard !lines.isEmpty else { return [] }
         lines[0] = "- " + lines[0]
         if let run = status.latest { lines.append("  \(run.webURL.absoluteString)") }
@@ -1371,7 +1371,7 @@ enum AgentText {
             lines.append("- Under \(QuotedText.oneLine(parent.type.lowercased())) \(parent.id) “\(QuotedText.oneLine(parent.title))”")
         }
         lines.append("- " + standing(item, details: read.details, me: me, now: now))
-        if let progress = progress(read, now: now) { lines.append("- " + QuotedText.inLine(progress)) }
+        if let progress = progress(read, now: now) { lines.append("- " + QuotedText.oneLine(progress)) }
         let waits = Self.waits(read, tasks: tasks, allSent: allSent, related: parts.flatMap(\.items), me: me)
         if !waits.isEmpty { lines.append("- Waiting on: " + waits.map { QuotedText.inLine($0.text) }.joined(separator: " · ")) }
         lines.append("- You can: " + QuotedText.inLine(youCan(waits, read: read, tasks: tasks, me: me)))
@@ -1460,13 +1460,14 @@ enum AgentText {
     }
 
     /// "5103 Show saved items under the cart: Active · you · 3 h left · Copilot working (started 6m ago): Run the cart
-    /// tests": a task, who has it, its hours left, and the latest work sent to Copilot for it.
+    /// tests": a task, who has it, its hours left, and the latest work sent to Copilot for it. All on its line, with no
+    /// fence after its number, whatever its title (`QuotedText.oneLine`).
     static func taskLine(_ task: WorkItem, me: String?, copilot: CopilotTaskEntry?, now: Date) -> String {
         var parts = [task.state.isEmpty ? "unknown" : task.state]
         parts.append(task.assignedTo.map { isMe($0, me) ? "you" : $0.name } ?? "unassigned")
         if let hours = task.remainingWork, hours > 0, !task.isDone { parts.append("\(Hours.text(hours)) left") }
         if let copilot { parts.append("Copilot " + sentStatus(copilot, now: now)) }
-        return QuotedText.inLine("\(task.id) \(task.title): " + parts.joined(separator: " · "))
+        return QuotedText.oneLine("\(task.id) \(task.title): " + parts.joined(separator: " · "))
     }
 
     /// How work sent to Copilot is going: "working (started 6m ago): Run the cart tests", "finished 12m ago. Opened pull
@@ -1523,7 +1524,7 @@ enum AgentText {
         var branch = QuotedText.commandWord(pullRequest.sourceBranch)
         if !pullRequest.targetBranch.isEmpty { branch += " → \(QuotedText.commandWord(pullRequest.targetBranch))" }
         let place = (branch.isEmpty ? "" : "\(branch), ") + "in \(QuotedText.oneLine(pullRequest.repositoryName))"
-        let state = story.sentence.isEmpty ? pullRequest.status.rawValue.capitalized : QuotedText.inLine(story.sentence)
+        let state = story.sentence.isEmpty ? pullRequest.status.rawValue.capitalized : QuotedText.oneLine(story.sentence)
         lines.append("- \(state) · \(place)")
         // Who wrote it, once, saying "you" for yours.
         lines += story.facts.filter { $0.label != "Author" }.map {
@@ -1559,7 +1560,7 @@ enum AgentText {
             let why = item.links.map(\.reason).joined(separator: ", ")
             lines += ["", "### “\(QuotedText.oneLine(item.title))”: \(QuotedText.inLine(item.status))" + (why.isEmpty ? "" : ", \(why)")]
             if let url = item.url { lines.append(url.absoluteString) }
-            lines += item.lines.map { "- \(QuotedText.inLine($0))" }
+            lines += item.lines.map { "- \(QuotedText.oneLine($0))" }
         }
         let rest = part.items.dropFirst(relatedShown)
         if !rest.isEmpty {
@@ -1607,10 +1608,10 @@ enum AgentText {
     }
 
     /// Text as a Markdown quote, a line each, at every line break, with what controls how a line reads or hides text
-    /// written out (`QuotedText.inLine`), so that all of it stays quoted.
+    /// written out, and no line starting a fence (`QuotedText.oneLine`), so that all of it stays quoted.
     static func quote(_ text: String, indent: String = "") -> [String] {
         text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map { line in
-            let line = QuotedText.inLine(String(line))
+            let line = QuotedText.oneLine(String(line))
             return line.isEmpty ? "\(indent)>" : "\(indent)> \(line)"
         }
     }

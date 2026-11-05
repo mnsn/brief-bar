@@ -8,8 +8,8 @@ public enum QuotedText {
     /// Text quoted on one of a prompt's lines: its line breaks, and characters that control how text reads or hide text,
     /// written out as escapes (`inLine`), so that all of it stays on that line, nothing in it starts a line of the prompt's
     /// own, and nothing in it is unseen. Nor does it start with a fence, three backticks or tildes or more, which would open
-    /// one where it starts a line, as a name does before what its author said, after a space or a joiner or not: the first
-    /// is written out, "\u{60}" (`withoutFenceAtStart`).
+    /// one where it starts a line, as a name does before what its author said, after a space or a joiner or not, or after
+    /// a list's or a quote's marker, "- ```": the first is written out, "\u{60}" (`withoutFenceAtStart`).
     public static func oneLine(_ text: String) -> String {
         withoutFenceAtStart(inLine(text))
     }
@@ -162,28 +162,43 @@ public enum QuotedText {
         text.isEmpty ? text : inLine(shellWord(text))
     }
 
-    /// A line that starts with three backticks or tildes or more, as a fence does, with the first of them written out, so
-    /// it opens none. Before them may be anything that reads as space or isn't seen at all, a no-break space or a joiner
-    /// say, and between them what has no width; and what becomes a backtick or a tilde once text is normalized counts as
-    /// one (`fenceMark`), as a model may read it. Any other line as it is.
+    /// A line that may open a fence (`fenceStart`), with the first of its fence's backticks or tildes written out, so it
+    /// opens none. Any other line as it is.
     private static func withoutFenceAtStart(_ line: String) -> String {
         let scalars = line.unicodeScalars
-        guard let start = scalars.firstIndex(where: { !$0.properties.isWhitespace && !hasNoWidth($0) }),
-              let mark = fenceMark(scalars[start])
-        else { return line }
+        guard let start = fenceStart(in: scalars) else { return line }
+        var kept = String.UnicodeScalarView(scalars[..<start])
+        kept.append(contentsOf: escaped(scalars[start]).unicodeScalars)
+        kept.append(contentsOf: scalars[scalars.index(after: start)...])
+        return String(kept)
+    }
+
+    /// Whether a line may open a fence, as CommonMark reads one in a list or a quote, or as a model may read it
+    /// (`fenceStart`): a reader that goes by what's outside a prompt's fences can stop there, whatever pairs it with what.
+    public static func mayOpenFence(_ line: some StringProtocol) -> Bool {
+        fenceStart(in: line.unicodeScalars) != nil
+    }
+
+    /// Where the fence a line may open starts: the first of three backticks or tildes or more, those with no width between
+    /// them too, and what becomes a backtick or a tilde once text is normalized counted as one (`fenceMark`), as a model
+    /// may read it. Before them may be anything that reads as space or isn't seen, a no-break space or a joiner, say, and
+    /// what a list's or a quote's marker is made of, `>`, `-`, `+`, `*`, digits, `.` and `)`, as in "- ```" or "> 1. ~~~",
+    /// which CommonMark reads as a fence in a list or a quote, or what becomes one once normalized, a fullwidth `＞` say.
+    /// Nil when it may open none.
+    private static func fenceStart<Line: BidirectionalCollection>(in line: Line) -> Line.Index? where Line.Element == Unicode.Scalar {
+        let markers = ">-+*.)0123456789".unicodeScalars
+        guard let start = line.firstIndex(where: { !$0.properties.isWhitespace && !hasNoWidth($0) && !markers.contains(asRead($0)) }),
+              let mark = fenceMark(line[start])
+        else { return nil }
         var count = 0
-        for scalar in scalars[start...] {
+        for scalar in line[start...] {
             if fenceMark(scalar) == mark {
                 count += 1
             } else if !hasNoWidth(scalar) {
                 break
             }
         }
-        guard count >= 3 else { return line }
-        var kept = String.UnicodeScalarView(scalars[..<start])
-        kept.append(contentsOf: escaped(scalars[start]).unicodeScalars)
-        kept.append(contentsOf: scalars[scalars.index(after: start)...])
-        return String(kept)
+        return count >= 3 ? start : nil
     }
 
     /// The fence character a character is, or becomes once text is normalized, as a model may read it (`asRead`): a

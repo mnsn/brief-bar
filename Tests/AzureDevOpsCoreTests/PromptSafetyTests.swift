@@ -249,12 +249,13 @@ import Testing
         let without = lines.joined(separator: "\n")
         #expect(PullRequestPrompt.threadsListed(in: without, among: [11]).isEmpty)
         #expect(handOff.handedOff(in: without) == nil)
-        // Nor in a fence of tildes you write as you edit the prompt, which backticks don't close; after it, it's one again.
+        // Nor in a fence of tildes you write as you edit the prompt, which backticks don't close, nor after it: what's after
+        // a fence may be in one, however it's closed.
         let example = without + "\n~~~\n" + entry + "\n```\n~~~"
         #expect(PullRequestPrompt.threadsListed(in: example, among: [11]).isEmpty)
         #expect(handOff.handedOff(in: example) == nil)
-        #expect(PullRequestPrompt.threadsListed(in: example + "\n" + entry, among: [11]) == [11])
-        #expect(handOff.handedOff(in: example + "\n" + entry) == t(-hour))
+        #expect(PullRequestPrompt.threadsListed(in: example + "\n" + entry, among: [11]).isEmpty)
+        #expect(handOff.handedOff(in: example + "\n" + entry) == nil)
     }
 
     /// A line that starts with what others wrote, a name before what its author said, or a build's hint that starts with
@@ -291,10 +292,11 @@ import Testing
     }
 
     /// A name may start with what reads as space or isn't seen, a no-break space, an em space, a joiner or a variation
-    /// selector, before what would open a fence: that's written out all the same, so the comment under the name stays in
-    /// its own fence, and the note after the thread reads as the prompt's.
-    @Test func aNameOpensNoFenceAfterASpaceOrAJoiner() {
-        for lead in ["\u{A0}", "\u{2003}", "\u{200D}", "\u{200C}", "\u{FE0F}"] {
+    /// selector, or with a list's or a quote's marker, which CommonMark reads a fence after under the thread's entry, before
+    /// what would open a fence: that's written out all the same, so the comment under the name stays in its own fence, and
+    /// the note after the thread reads as the prompt's.
+    @Test func aNameOpensNoFenceAfterASpaceAJoinerOrAMarker() {
+        for lead in ["\u{A0}", "\u{2003}", "\u{200D}", "\u{200C}", "\u{FE0F}", "- ", "> ", "1. ", "2) ", "* ", "+\u{A0}"] {
             let name = Person(id: "88888888-8888-8888-8888-888888888888", name: lead + "```")
             let thread = ReviewThread(id: 7, comments: [
                 ReviewComment(
@@ -347,48 +349,71 @@ import Testing
         }
     }
 
-    /// A line that would close a fence counts only at the fence's own indentation, a tab to the next multiple of four, so no
-    /// line CommonMark keeps in a fence is taken for one outside it, whatever list the fence is in: indented further, as in
-    /// a fence you add as you edit the prompt, top-level or indented, it's in the fence, and an entry after it isn't one, nor
-    /// is what waits on you in its thread handed off. Indented less, it may end the list and open a fence of its own: what
-    /// follows is in that one until it closes. The prompts' own fences, indented under an entry or a build's, close where
-    /// they open.
-    @Test func aFenceClosesOnlyAtItsOwnIndentation() {
+    /// A thread's entry counts only before anything fenced, or anything that may open a fence, in a list or a quote or not,
+    /// or once normalized (`PullRequestPrompt.entryLines`): a prompt lists its entries before what it fences, so however a
+    /// fence you add as you edit the prompt is indented or closed, an entry after it isn't taken for one, nor is what waits
+    /// on you in its thread handed off. Indented, it isn't one either, as no prompt writes one so.
+    @Test func entriesCountOnlyBeforeAnythingFenced() {
         let entry = "1. General comment (thread 7)"
-        for (opening, closer) in [
-            ("```", "    ```"), ("```", "\t```"), ("```", "  \t```"), ("```", " ```"), ("```", "   ````"),
-            ("   ```", "    ```"), ("   ```", "      ```"), ("     ```", "        ```"),
-        ] {
-            let prompt = "Fix them.\n\(opening)\n\(closer)\n\(entry)\n\(opening)"
-            #expect(PullRequestPrompt.threadsListed(in: prompt, among: [7]).isEmpty, "\(opening.debugDescription) \(closer.debugDescription)")
-        }
-        for (opening, closer) in [("```", "```"), ("   ```", "   ````  "), ("\t```", "    ```"), ("     ```", "     ```")] {
-            #expect(PullRequestPrompt.threadsListed(in: "\(opening)\nx\n\(closer)\n\(entry)", among: [7]) == [7], "\(opening.debugDescription)")
-        }
         let other = "2. General comment (thread 8)"
-        #expect(PullRequestPrompt.threadsListed(in: "   ```\n```\n\(entry)\n```\n\(other)", among: [7, 8]) == [8])
         let thread = ReviewThread(id: 7, comments: [comment(1, People.sam, "Cap it?", at: t(-hour))])
         let pr = makePR(4071)
         let record = PRRecord(pullRequest: pr, role: .author, details: makeDetails(for: pr, threads: [thread]), me: People.me.id)
         let handOff = CommentHandOff(record, thread: 7, dismissedCutoff: t(-day), account: nil)
-        #expect(handOff.handedOff(in: "```\n    ```\n\(entry)\n```") == nil)
-        #expect(handOff.handedOff(in: "   ```\n    ```\n\(entry)\n   ```") == nil)
-        #expect(handOff.handedOff(in: "```\n```\n\(entry)") == t(-hour))
+        for prompt in [
+            "```\n```\n\(entry)",
+            "```\n    ```\n\(entry)\n```",
+            "   ```\n    ```\n\(entry)\n   ```",
+            // Opened three spaces in and closed unindented, which CommonMark takes as its end, then another around the entry.
+            "   ```\nx\n```\n```\n\(entry)\n```",
+            // Closed a space in, then another around the entry.
+            "~~~\nx\n ~~~\n~~~\n\(entry)\n~~~",
+            // In a list's item, or a quote.
+            "- ~~~\n  \(entry)\n  ~~~",
+            "Fix them.\n1. ```\n\(entry)\n   ```",
+            "> ```\n\(entry)",
+            // After what reads as space or isn't seen, with what has no width between, or once normalized.
+            "\u{A0}~~~\n\(entry)\n~~~",
+            "``\u{200B}`x\n\(entry)",
+            "\u{1FEF}\u{1FEF}\u{1FEF}\n\(entry)",
+            "\u{FF5E}\u{FF5E}\u{FF5E}\n\(entry)",
+        ] {
+            #expect(PullRequestPrompt.threadsListed(in: prompt, among: [7]).isEmpty, "\(prompt.debugDescription)")
+            #expect(handOff.handedOff(in: prompt) == nil, "\(prompt.debugDescription)")
+        }
+        // Before them, entries are entries; what doesn't open a fence, fewer than three, a break, or a fence's characters
+        // after other text, doesn't end them.
+        let listed = "Fix them.\n``\n---\n- a ~~~ b\nSee ```x```.\n\(entry)\n\(other)\n```\n3. General comment (thread 9)\n```"
+        #expect(PullRequestPrompt.threadsListed(in: listed, among: [7, 8, 9]) == [7, 8])
+        #expect(handOff.handedOff(in: listed) == t(-hour))
+        #expect(PullRequestPrompt.threadsListed(in: "  \(entry)\n\(other)", among: [7, 8]) == [8])
+        #expect(handOff.handedOff(in: "  \(entry)") == nil)
+        #expect(handOff.handedOff(in: "\(entry)  \r\n```") == t(-hour))
         // The prompts' own: Fix on the thread lists it, its comment fenced under its author's name when it's longer.
         let fix = PullRequestPrompt.fixThread(record, thread: thread, code: nil, how: nil)
         #expect(PullRequestPrompt.threadsListed(in: fix, among: [7]) == [7])
     }
 
-    /// Which lines are the prompt's own is read by their scalars: what's a backtick only once normalized, such as a Greek
-    /// varia, opens no fence there and closes none, as BriefBar's own fences are only ever backticks.
-    @Test func onlyBackticksMakeTheFencesItReads() {
-        let varia = "\u{1FEF}\u{1FEF}\u{1FEF}"
-        let entry = "1. General comment (thread 7)"
-        #expect(PullRequestPrompt.unfencedLines("\(varia)\n\(entry)\n\(varia)").map(String.init) == [varia, entry, varia])
-        #expect(PullRequestPrompt.threadsListed(in: "\(varia)\n\(entry)", among: [7]) == [7])
-        #expect(PullRequestPrompt.threadsListed(in: "```\n\(entry)\n\(varia)\n```", among: [7]).isEmpty)
-        #expect(PullRequestPrompt.threadsListed(in: "```\n\(varia)\n```\n\(entry)", among: [7]) == [7])
-        #expect(PullRequestPrompt.threadsListed(in: "```x\u{1FEF}\n\(entry)", among: [7]).isEmpty)
+    /// A name before what its author said starts a line under its thread's entry: one that would open a fence there, in a
+    /// list or a quote, after a space, or once normalized, opens none, so the entries of the threads after it are still
+    /// read as entries, and what waits on you in them is handed off with them.
+    @Test func aNameThatWouldOpenAFenceKeepsTheEntriesAfterIt() {
+        for name in ["```", "- ```", "> ~~~", "1. ```", "2) ~~~", "* ```", "+\u{A0}```", "\u{200D}~~~", "\u{1FEF}\u{1FEF}\u{1FEF}", "\u{FF5E}\u{FF5E}\u{FF5E}"] {
+            let fence = Person(id: "88888888-8888-8888-8888-888888888888", name: name)
+            let threads = [7, 8, 9].map { id in
+                ReviewThread(id: id, comments: [ReviewComment(id: 1, author: id == 7 ? fence : People.sam, text: "Thread \(id)", publishedAt: t(-hour))])
+            }
+            let pr = makePR(4071)
+            let record = PRRecord(pullRequest: pr, role: .author, details: makeDetails(for: pr, threads: threads), me: People.me.id)
+            let fix = PullRequestPrompt.fixComments(record)
+            for prompt in [fix, PullRequestPrompt.pushAndReply(record)] {
+                #expect(PullRequestPrompt.threadsListed(in: prompt, among: [7, 8, 9]) == [7, 8, 9], "\(name.debugDescription)")
+                let opening = prompt.split(separator: "\n").filter(QuotedText.mayOpenFence)
+                #expect(opening.isEmpty, "\(name.debugDescription): \(opening)")
+            }
+            // All three handed off: had thread 9's entry not been read, it would stop just before what waits in it.
+            #expect(CommentHandOff(record, dismissedCutoff: t(-day), account: nil).handedOff(in: fix) == t(-hour), "\(name.debugDescription)")
+        }
     }
 
     /// A build's hint names the target branch, which Git lets hold what a shell runs, or a fence after a no-break space: the

@@ -52,6 +52,28 @@ import Testing
         }
     }
 
+    /// Nor after a list's or a quote's marker, as CommonMark reads a fence in a list or a quote: "- ```", "> ~~~", "1. ```"
+    /// or "2) ~~~", nested or not, with spaces or none, or after what becomes a marker once normalized, a fullwidth "＞".
+    /// `mayOpenFence` says so of such a line, and of none `oneLine` writes.
+    @Test func aLineNeverStartsWithAFenceAfterAListsOrAQuotesMarker() {
+        #expect(QuotedText.oneLine("- ```") == "- \\u{60}``")
+        #expect(QuotedText.oneLine("> 1. ~~~ x") == "> 1. \\u{7E}~~ x")
+        #expect(QuotedText.oneLine("* >```swift") == "* >\\u{60}``swift")
+        #expect(QuotedText.oneLine("10) \u{A0}~~~") == "10) \u{A0}\\u{7E}~~")
+        #expect(QuotedText.oneLine("\u{FF1E} ```") == "\u{FF1E} \\u{60}``")
+        for line in [
+            "```", "- ```", "> ~~~", "1. ```swift", "2) ~~~", "* > ```", "+\t```", ">```", "- \u{200D}```", "- \u{1FEF}\u{1FEF}\u{1FEF}",
+            "> ``\u{200B}`", "\u{A0}~~~", "\u{FF1E} ```", "\u{FF11}\u{FF0E} ~~~", "\u{FF0D}\u{3000}```",
+        ] {
+            #expect(QuotedText.mayOpenFence(line), "\(line.debugDescription)")
+            #expect(!QuotedText.mayOpenFence(QuotedText.oneLine(line)), "\(line.debugDescription)")
+        }
+        for kept in ["- ``", "---", "***", "> a ```", "- [ ] ```", "1. Fix it", "See ```x```.", "", "`~`"] {
+            #expect(!QuotedText.mayOpenFence(kept), "\(kept.debugDescription)")
+            #expect(QuotedText.oneLine(kept) == kept, "\(kept.debugDescription)")
+        }
+    }
+
     /// What becomes a backtick or a tilde once text is normalized, as a model may read it, counts as one: a Greek varia
     /// (U+1FEF, a backtick canonically), a fullwidth grave accent (U+FF40) and a fullwidth tilde (U+FF5E). A fence is
     /// longer than any run of them, and a line never starts with three of them; the first is written out.

@@ -1,3 +1,4 @@
+import BriefBarCore
 import Foundation
 
 /// A failed build of a pull request, for the prompts that ask Copilot to fix it or explain it: where it failed, and its
@@ -302,54 +303,24 @@ public enum PullRequestPrompt {
     }
 
     /// Those of `ids` whose entries the prompt still has, as `entry` writes them, on lines of their own: one whose entry you
-    /// took out of the prompt isn't taken on. A line in a fence, such as one of a suggested change or of an earlier answer,
-    /// is what was quoted, not an entry (`unfencedLines`).
+    /// took out of the prompt isn't taken on. Only the lines before anything fenced count (`entryLines`).
     public static func threadsListed(in prompt: String, among ids: [Int]) -> [Int] {
-        let listed = Set(unfencedLines(prompt).compactMap { line -> Int? in
+        let listed = Set(entryLines(prompt).compactMap { line -> Int? in
             guard line.first?.isNumber == true, let match = line.wholeMatch(of: /\d+\. .* \(thread (\d+)\)\s*/) else { return nil }
             return Int(match.1)
         })
         return ids.filter(listed.contains)
     }
 
-    /// The lines of a prompt outside its fences, where its own lines are: what it quotes in a fence (`fenced`), whatever
-    /// that says, isn't, and neither is what you put in one of your own as you edit it. A fence opens with a line of three
-    /// backticks or tildes or more, and closes with one of as many or more of the same and nothing else, as CommonMark has
-    /// it; the prompt's fences are longer than any run of backticks in what they quote, and close where they open, under a
-    /// thread's entry or a build's. Where it's closed is read so that no line CommonMark keeps in a fence is taken for one
-    /// outside, whatever list the fence is in, whose indentation a line alone doesn't say: a closing line counts only at the
-    /// fence's own indentation, a tab to the next multiple of four. Indented further, as it may be in a fence you add as you
-    /// edit the prompt, it's in the fence, as CommonMark keeps it at least four columns past the list it's in. Indented
-    /// less, it may end that list, and open a fence of its own then: it's taken to, so what follows is in a fence until
-    /// that one closes. The worst a fence you indent otherwise does is keep the threads after it on Needs You. Read by
-    /// their scalars: a character that's only the same as a backtick once normalized, such as a Greek varia, isn't one
-    /// here, as the prompt's own fences never are, and what's quoted that a model may read as one opens none and closes
-    /// none (`QuotedText`).
-    static func unfencedLines(_ prompt: String) -> [Substring] {
-        var lines: [Substring] = []
-        var open: (mark: Unicode.Scalar, length: Int, indent: Int)?
-        for line in prompt.split(whereSeparator: \.isNewline) {
-            var indent = 0
-            let trimmed = line.unicodeScalars.drop { scalar in
-                guard scalar == " " || scalar == "\t" else { return false }
-                indent += scalar == "\t" ? 4 - indent % 4 : 1
-                return true
-            }
-            let mark = trimmed.first.flatMap { $0 == "`" || $0 == "~" ? $0 : nil }
-            let run = mark.map { mark in trimmed.prefix { $0 == mark }.count } ?? 0
-            let rest = trimmed.dropFirst(run)
-            if let fence = open {
-                guard mark == fence.mark, run >= fence.length, indent <= fence.indent, rest.allSatisfy({ $0 == " " || $0 == "\t" }),
-                      let mark
-                else { continue }
-                open = indent == fence.indent ? nil : (mark, run, indent)
-            } else if run >= 3, let mark, mark == "~" || !rest.contains("`") {
-                open = (mark, run, indent)
-            } else {
-                lines.append(line)
-            }
-        }
-        return lines
+    /// The lines of a prompt where its threads' entries may be: those before the first line that may open a fence, as
+    /// CommonMark reads one in a list or a quote, or as a model may read one (`QuotedText.mayOpenFence`). A prompt lists
+    /// its entries before anything it fences, such as a comment of more than a line, the code a thread is on, a suggested
+    /// change or an earlier answer, and writes nothing others wrote so that it starts a fence (`oneLine`). So a line like an
+    /// entry in what's quoted is never one, and neither is one in a fence you add as you edit the prompt, however it's
+    /// indented or closed, in a list or not: the worst a fence you add before them does is keep the threads after it on
+    /// Needs You. What pairs a fence with which, which depends on the lists it's in, isn't needed.
+    static func entryLines(_ prompt: String) -> [Substring] {
+        Array(prompt.split(whereSeparator: \.isNewline).prefix { !QuotedText.mayOpenFence($0) })
     }
 
     /// When you last voted or commented on it.
@@ -430,11 +401,12 @@ public struct CommentHandOff: Sendable, Equatable {
     /// that's one that waits on you then that the prompt doesn't have: in a thread whose entry isn't in the prompt, in
     /// one reopened since it was written, or one that came since. A thread answered or resolved meanwhile doesn't wait
     /// on you, and doesn't hold it back. Without it, that's one that waited on you in a thread whose entry isn't in the
-    /// prompt, as it was written. A thread's entry is still there while its own line is: a comment in another entry
-    /// that names it doesn't count, and neither does a line in a fence, such as one of a suggested change, whatever it
-    /// says (`PullRequestPrompt.unfencedLines`). Nil when none of them is still there.
+    /// prompt, as it was written. A thread's entry is still there while its own line is, unindented, as the prompt writes
+    /// it and `PullRequestPrompt.threadsListed` reads it: a comment in another entry that names it doesn't count, and
+    /// neither does a line after anything fenced, such as one of a suggested change, whatever it says
+    /// (`PullRequestPrompt.entryLines`). Nil when none of them is still there.
     public func handedOff(in prompt: String, now: PRRecord? = nil) -> Date? {
-        let lines = Set(PullRequestPrompt.unfencedLines(prompt).map { $0.trimmingCharacters(in: .whitespaces) })
+        let lines = Set(PullRequestPrompt.entryLines(prompt).map { line in String(line.reversed().drop(while: \.isWhitespace).reversed()) })
         let kept = waiting.filter { $0.entry.map(lines.contains) ?? false }
         guard let last = kept.map(\.last).max() else { return nil }
         let stays: [Date]

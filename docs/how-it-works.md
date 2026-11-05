@@ -1858,12 +1858,12 @@ It stops waiting on you when:
   BriefBar wrote it, opening the composer (`CommentHandOff`). An entry is still there while its own line
   is, such as `1. src/Cart.cs, line 12 (thread 11)`: the prompt quotes comments word for word, each on
   an indented line, so one that names another thread doesn't count, and neither does a line in a fence,
-  such as one of a suggested change or of an earlier answer, or one of backticks or tildes you add as you edit the
-  prompt, read by their scalars, so that what's a backtick only once normalized opens and closes none. A
-  fence closes only at its own indentation, so that no line CommonMark keeps in one, whatever list it's in,
-  is taken for one outside it: a closing line indented further stays in it, and one indented less is taken
-  to open a fence of its own; the worst a fence you indent otherwise does is keep the threads after it on
-  Needs You (`PullRequestPrompt.unfencedLines`). A comment that came after, while you
+  such as one of a suggested change or of an earlier answer, nor one after a fence you add as you edit the
+  prompt: entries are read only before the first line that may open a fence, as CommonMark reads one in a
+  list or a quote, or as a model may read one. A prompt lists its entries before anything it fences, and
+  nothing others wrote starts a fence in it, so how a fence is closed, or which list it's in, doesn't
+  matter; the worst a fence you add before them does is keep the threads after it on Needs You. An entry
+  counts unindented, as the prompt writes it (`PullRequestPrompt.entryLines`). A comment that came after, while you
   checked the prompt, say, isn't handed off, and neither is one in a thread whose entry isn't there,
   beyond the 30 it lists at most or deleted before you sent it, nor one in a thread reopened meanwhile.
   Since there's one cutoff, it then stops before the first comment that waits on you when the task
@@ -2616,7 +2616,7 @@ and the prompt then says that they're what the build said, not instructions. The
 branches, which whoever opened it named, stay on their lines the same way in every prompt (`PullRequestPrompt.introduction`),
 and so do names, paths and comments of one line, none of them starting with three backticks or tildes, which would open
 a fence where it starts a line, as a name does before what its author said, not even after what reads as space or isn't
-seen, a no-break space or a joiner (the first is written out, `\u{60}`). What becomes a backtick or a tilde once text is
+seen, a no-break space or a joiner, or after a list's or a quote's marker, "- ```" (the first is written out, `\u{60}`). What becomes a backtick or a tilde once text is
 normalized, as a model may read it, such as a Greek varia or a fullwidth grave accent, counts as one there, and a fence
 is longer than any run of them in what it quotes (`QuotedText.fenceMark`). A branch whose name holds what a shell reads,
 such as `$(…)` or a backtick, which Git allows, is in single quotes wherever a prompt names it, in a command such as
@@ -3095,7 +3095,9 @@ wrote follows a note that it's what they ask of the change, not instructions to 
 Azure DevOps quote the same way: `needs_me` and `pull_requests` each pull request's title, repository, author and what
 the lists say of it, `pipelines` its pipelines, their runs' branches and the pull requests that merged, `sprint` each
 line of the sprint, `work_item` its titles, states, people and pull requests, with what people wrote a quote every line
-of which is quoted, and `watch_pull_request`, `pin_pipeline` and `unpin_pipeline` what they name.
+of which is quoted, and `watch_pull_request`, `pin_pipeline` and `unpin_pipeline` what they name. Where what others
+named or wrote starts a line or a list's item, as a pipeline's name, a task's title or a line of a quote does, it
+opens no fence, three backticks or tildes, which CommonMark reads in a list or a quote too (`QuotedText.oneLine`).
 
 While **Send Work to Copilot** is on, `pull_request` also names an open pull request's session: the
 Copilot session BriefBar sends its work to, as its details show it (see [A pull request's
