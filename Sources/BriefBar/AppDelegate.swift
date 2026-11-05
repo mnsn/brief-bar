@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model: AppModel
     private let mainMenu: MainMenu
     private let updater: Updater
+    private let menus = MenusOverFullScreen()
     private let demo: Bool
     private let opensWindow: Bool
 
@@ -22,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A menu-bar app has no visible windows most of the time; don't let macOS reclaim it.
         ProcessInfo.processInfo.disableAutomaticTermination("Shows what needs you in the menu bar")
         NSApp.mainMenu = mainMenu.make()
+        menus.start()
         model.launch()
         if opensWindow {
             model.openWindow(at: nil)
