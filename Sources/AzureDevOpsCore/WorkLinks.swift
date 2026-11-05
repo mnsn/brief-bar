@@ -220,6 +220,9 @@ public actor LinkEngine {
     private var lookupsRead: [PRKey: Date] = [:]
     /// When each read failed, by what it read, to try again later rather than every refresh.
     private var failures: [String: Date] = [:]
+    /// When a Copilot session said it changed what each read reads (`reread`), by what it reads: it's due until read after
+    /// then, even when a read under way, which started before, finishes after.
+    private var asked: [String: Date] = [:]
     private var isRefreshing = false
     private var again = false
     private var isStopped = false
@@ -265,8 +268,50 @@ public actor LinkEngine {
         links
     }
 
+    /// The most pull requests, and work items, a re-read reads again at once.
+    static let mostRereads = 10
+
+    /// Reads again now, rather than when they're due, what a Copilot session said it changed: the work items of these of
+    /// your pull requests, and what these linked pull requests no list shows are, the first `mostRereads` of each; the
+    /// sprint's pull requests, when it names one of the sprint's work items; and what these linked work items are. Only
+    /// what it reads anyway, ahead of the rest; one that failed still waits its hour. A read under way that started before
+    /// now doesn't count, though it's the first: it's read again after it. A request is forgotten after a quarter of an
+    /// hour, when it's read again anyway.
+    public func reread(pullRequests: Set<PRKey>, workItems: Set<WorkItemKey>) async {
+        let date = now()
+        forgetOldRequests(at: date)
+        let named = Set(pullRequests.map { PRKey($0.organization.lowercased(), $0.number) })
+        for key in inputs.pullRequests.keys.filter(named.contains).sorted().prefix(Self.mostRereads) {
+            asked["pr \(key)"] = date
+        }
+        for key in wantedPullRequests().filter(named.contains).sorted().prefix(Self.mostRereads) {
+            asked["lookup \(key)"] = date
+        }
+        if !inputs.sprintItems.isDisjoint(with: workItems) { asked["sprint"] = date }
+        for key in wantedWorkItems().filter(workItems.contains).sorted().prefix(Self.mostRereads) {
+            asked["wi \(key)"] = date
+        }
+        await refresh()
+    }
+
+    /// Whether a session asked to read it again after it was last read.
+    private func isAsked(_ what: String, read: Date?) -> Bool {
+        guard let asked = asked[what] else { return false }
+        return read.map { $0 < asked } ?? true
+    }
+
+    /// It was read, in a read that started at `date`: what a session asked before then is done.
+    private func settle(_ what: String, readAt date: Date) {
+        if let asked = asked[what], asked <= date { self.asked[what] = nil }
+    }
+
+    private func forgetOldRequests(at date: Date) {
+        asked = asked.filter { date.timeIntervalSince($0.value) < Self.relinkAfter }
+    }
+
     private func readDue() async {
         let date = now()
+        forgetOldRequests(at: date)
         do {
             try await readWorkItemsOfPullRequests(at: date)
             try await readPullRequestsOfSprint(at: date)
@@ -283,17 +328,23 @@ public actor LinkEngine {
         return try await client.get(url, as: type)
     }
 
-    private func isDue(_ read: Date?, failed: Date?, at date: Date, after interval: TimeInterval = relinkAfter) -> Bool {
+    private func isDue(
+        _ read: Date?, failed: Date?, at date: Date, after interval: TimeInterval = relinkAfter, asked: Bool = false
+    ) -> Bool {
         if let failed, date.timeIntervalSince(failed) < Self.retryAfter { return false }
-        guard let read else { return true }
+        guard let read, !asked else { return true }
         return date.timeIntervalSince(read) >= interval
     }
 
     /// The pull requests' work items: the ones never read first, many at a time, then a few of those read longest ago.
     private func readWorkItemsOfPullRequests(at date: Date) async throws {
-        let due = inputs.pullRequests.keys.filter { isDue(pullRequestsRead[$0], failed: failures["pr \($0)"], at: date) }
-        let first = due.filter { pullRequestsRead[$0] == nil }.sorted().prefix(Self.firstReadsPerRefresh)
-        let again = due.filter { pullRequestsRead[$0] != nil }
+        let isAsked = { (key: PRKey) in self.isAsked("pr \(key)", read: self.pullRequestsRead[key]) }
+        let due = inputs.pullRequests.keys.filter {
+            isDue(pullRequestsRead[$0], failed: failures["pr \($0)"], at: date, asked: isAsked($0))
+        }
+        // Those never read, and those a session asked for, first.
+        let first = due.filter { pullRequestsRead[$0] == nil || isAsked($0) }.sorted().prefix(Self.firstReadsPerRefresh)
+        let again = due.filter { pullRequestsRead[$0] != nil && !isAsked($0) }
             .sorted { (pullRequestsRead[$0] ?? .distantPast, $0) < (pullRequestsRead[$1] ?? .distantPast, $1) }
             .prefix(Self.rereadsPerRefresh)
         for key in Array(first) + Array(again) {
@@ -306,6 +357,7 @@ public actor LinkEngine {
                 links.workItemsOfPullRequests[key] = Set(refs.ids).sorted()
                 pullRequestsRead[key] = date
                 failures["pr \(key)"] = nil
+                settle("pr \(key)", readAt: date)
             } catch {
                 try Self.rethrowThrottling(error)
                 failures["pr \(key)"] = date
@@ -316,7 +368,8 @@ public actor LinkEngine {
     /// The sprint's work items' pull requests, while it shows: when its work items change, and every quarter of an hour.
     private func readPullRequestsOfSprint(at date: Date) async throws {
         guard inputs.sprintShows, !inputs.sprintItems.isEmpty else { return }
-        if let sprintRead, sprintRead.items == inputs.sprintItems, date.timeIntervalSince(sprintRead.at) < Self.relinkAfter { return }
+        if let sprintRead, sprintRead.items == inputs.sprintItems, date.timeIntervalSince(sprintRead.at) < Self.relinkAfter,
+           !isAsked("sprint", read: sprintRead.at) { return }
         if let failed = failures["sprint"], date.timeIntervalSince(failed) < Self.relinkAfter { return }
         let items = inputs.sprintItems
         var found: [WorkItemKey: [PRKey]] = [:]
@@ -341,18 +394,35 @@ public actor LinkEngine {
         links.pullRequestsOfWorkItems = found.filter { inputs.sprintItems.contains($0.key) && !$0.value.isEmpty }
         sprintRead = (items, date)
         failures["sprint"] = nil
+        settle("sprint", readAt: date)
     }
 
-    /// What the work items linked to your pull requests are, when the sprint doesn't show them, and those you linked.
-    private func readLinkedWorkItems(at date: Date) async throws {
+    /// The linked work items to read what they are: those linked to your pull requests, when the sprint doesn't show them,
+    /// and those you linked; whether they were read or not yet, as for the first time now.
+    private func wantedWorkItems() -> Set<WorkItemKey> {
         var wanted = inputs.workItemLookups
         for (pullRequest, ids) in links.workItemsOfPullRequests {
             for id in ids { wanted.insert(WorkItemKey(pullRequest.organization, id)) }
         }
-        wanted.subtract(inputs.sprintItems)
+        return wanted.subtracting(inputs.sprintItems)
+    }
+
+    /// The linked pull requests to read what they are: those linked to the sprint's work items, when your lists don't show
+    /// them, and those you linked; whether they were read or not yet, as for the first time now.
+    private func wantedPullRequests() -> Set<PRKey> {
+        var wanted = inputs.pullRequestLookups
+        for pullRequests in links.pullRequestsOfWorkItems.values { wanted.formUnion(pullRequests) }
+        return wanted.subtracting(inputs.pullRequests.keys)
+    }
+
+    /// What the work items linked to your pull requests are, when the sprint doesn't show them, and those you linked.
+    private func readLinkedWorkItems(at date: Date) async throws {
+        let wanted = wantedWorkItems()
         links.workItems = links.workItems.filter { wanted.contains($0.key) }
         workItemsRead = workItemsRead.filter { wanted.contains($0.key) }
-        let due = wanted.filter { isDue(workItemsRead[$0], failed: failures["wi \($0)"], at: date) }
+        let due = wanted.filter {
+            isDue(workItemsRead[$0], failed: failures["wi \($0)"], at: date, asked: isAsked("wi \($0)", read: workItemsRead[$0]))
+        }
         for (organization, keys) in Dictionary(grouping: due, by: \.organization) {
             let ids = keys.map(\.id).sorted()
             for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
@@ -368,7 +438,10 @@ public actor LinkEngine {
                         links.workItems[key] = WorkItem(organization: organization, project: dto.fields.teamProject ?? "", dto)
                     }
                     // Those left out were deleted, or can't be read: there's nothing more to show of them.
-                    for id in batch { workItemsRead[WorkItemKey(organization, id)] = date }
+                    for id in batch {
+                        workItemsRead[WorkItemKey(organization, id)] = date
+                        settle("wi \(WorkItemKey(organization, id))", readAt: date)
+                    }
                 } catch {
                     try Self.rethrowThrottling(error)
                     for id in batch { failures["wi \(WorkItemKey(organization, id))"] = date }
@@ -381,22 +454,25 @@ public actor LinkEngine {
     /// linked: ten a refresh, the ones never read first. An open one is read again every quarter of an hour, a closed one
     /// every six hours.
     private func readLinkedPullRequests(at date: Date) async throws {
-        var wanted = inputs.pullRequestLookups
-        for pullRequests in links.pullRequestsOfWorkItems.values { wanted.formUnion(pullRequests) }
-        wanted.subtract(inputs.pullRequests.keys)
+        let wanted = wantedPullRequests()
         links.pullRequests = links.pullRequests.filter { wanted.contains($0.key) }
         lookupsRead = lookupsRead.filter { wanted.contains($0.key) }
+        let isAsked = { (key: PRKey) in self.isAsked("lookup \(key)", read: self.lookupsRead[key]) }
         let due = wanted.filter { key in
             let interval = links.pullRequests[key].map { $0.status == .active ? Self.relinkAfter : Self.closedRereadAfter } ?? 0
-            return isDue(lookupsRead[key], failed: failures["lookup \(key)"], at: date, after: interval)
+            return isDue(lookupsRead[key], failed: failures["lookup \(key)"], at: date, after: interval, asked: isAsked(key))
         }
-        .sorted { (lookupsRead[$0] ?? .distantPast, $0) < (lookupsRead[$1] ?? .distantPast, $1) }
+        // Those a session asked for first, then those read longest ago.
+        .sorted {
+            (isAsked($0) ? 0 : 1, lookupsRead[$0] ?? .distantPast, $0) < (isAsked($1) ? 0 : 1, lookupsRead[$1] ?? .distantPast, $1)
+        }
         for key in due.prefix(Self.lookupsPerRefresh) {
             do {
                 let dto = try await get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
                 if wanted.contains(key) { links.pullRequests[key] = PullRequest(organization: key.organization, dto) }
                 lookupsRead[key] = date
                 failures["lookup \(key)"] = nil
+                settle("lookup \(key)", readAt: date)
             } catch {
                 try Self.rethrowThrottling(error)
                 failures["lookup \(key)"] = date

@@ -38,11 +38,14 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// and Fix Grammar, which sends the reply to GitHub Copilot when you choose a Copilot model for it.
     /// 19: pull requests' tags: those their lists carry, and, for one read on its own, one request as its details show; with
     /// Make Changes in Azure DevOps, a tag you add or remove, when you click it, and the tags you add, kept to suggest them.
+
     /// 20: stopping the turn of a prompt sent to one of the Copilot app's sessions, through BriefBar's extension there; the
     /// messages sent a session since BriefBar copied a prompt for you to paste there, to tell the one you pasted it in; and,
     /// for a pull request's conflicts that a task or prompt takes on, the name of the branch it targets then, and when each
     /// Push & Reply in a task's session ran, and how it ended.
-    nonisolated package static let descriptionVersion = 20
+    /// 21: with Updates from Copilot Sessions on, what a Copilot session says it changed in Azure DevOps, read again sooner
+    /// than the next refresh. (20 is "PR detail view design"'s part 14, which sets the final number as they merge.)
+    nonisolated package static let descriptionVersion = 21
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
@@ -118,6 +121,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private(set) var detailsDrafts: DetailsDrafts?
     /// Tells Pull Request Order what Azure DevOps shows, while it's on.
     private var orderFacts: PullRequestOrderFacts?
+    /// Reads again sooner what Copilot sessions say they changed, with Updates from Copilot Sessions on.
+    private var agentRereads: AgentRereads?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     /// For `--render`: a pull request's details with a build open, one that failed and one still going.
@@ -368,6 +373,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         orderFacts = PullRequestOrderFacts(
             order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails
         ).started()
+        agentRereads = AgentRereads(
+            updates: services.sessionUpdates, store: store, sprint: sprint, workLinks: workLinks, details: details, tags: tagChanges
+        ).started()
         // Your name, as your pull requests have it, for a summary to call you "you".
         services.summaries.setYourName(.azureDevOps) { [weak store] in store?.reader }
         // The tasks sent to Copilot, for its list to show with your sessions: as they go, and with the titles the lists
@@ -425,6 +433,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilot?.stop()
         workLinks?.stop()
         orderFacts?.stop()
+        agentRereads?.stop()
         details?.stop()
         pullRequestDetails?.stop()
         buildInvestigations?.stop()
@@ -443,6 +452,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilot = nil
         workLinks = nil
         orderFacts = nil
+        agentRereads = nil
         details = nil
         pullRequestDetails = nil
         buildInvestigations = nil

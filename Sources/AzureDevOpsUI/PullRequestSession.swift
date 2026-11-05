@@ -93,9 +93,9 @@ struct PullRequestSessionChoice: Codable, Equatable, Sendable {
 /// and how work would reach it now: for the line under its heading in its details (`PullRequestSessionLine`), for what
 /// sends its work there, and for agents (`pull_request`). One session for each pull request: the one you chose, unless a
 /// task started on it since; else its last task's; else the work item's task that opened it; else the Copilot app's
-/// session that Copilot recorded with it, that you linked to it or that's on its branch. When two of those go with it as
-/// well as each other, BriefBar asks which rather than guess; and a session whose log only mentions it is a guess, which
-/// is offered, never picked.
+/// session that Copilot recorded with it, that told BriefBar it's working on it, that you linked to it or that's on its
+/// branch. When two of those go with it as well as each other, BriefBar asks which rather than guess; and a session whose
+/// log only mentions it is a guess, which is offered, never picked.
 struct PullRequestSession: Equatable, Sendable {
     /// Why a session is the pull request's.
     enum Basis: Equatable, Sendable {
@@ -107,6 +107,8 @@ struct PullRequestSession: Equatable, Sendable {
         case openedIt
         /// The Copilot app records that it started from it, or opened it.
         case recordedByCopilot
+        /// It told BriefBar it's working on it (`SessionReports`).
+        case toldBriefBar
         /// It works on its branch, in its repository.
         case onItsBranch
         /// You linked them, with Show Links.
@@ -119,6 +121,7 @@ struct PullRequestSession: Equatable, Sendable {
             case .lastTask: return "its last task"
             case .openedIt: return "opened it"
             case .recordedByCopilot: return "recorded by Copilot"
+            case .toldBriefBar: return "told BriefBar it's working on it"
             case .onItsBranch: return "on its branch"
             case .linkedByYou: return "linked by you"
             }
@@ -128,6 +131,7 @@ struct PullRequestSession: Equatable, Sendable {
         init?(_ reason: SessionChoice.Reason) {
             switch reason {
             case .recordedByCopilot: self = .recordedByCopilot
+            case .toldBriefBar: self = .toldBriefBar
             case .onItsBranch: self = .onItsBranch
             case .linkedByYou: self = .linkedByYou
             case .openedIt: self = .openedIt
@@ -205,7 +209,7 @@ struct PullRequestSession: Equatable, Sendable {
     static let otherLimit = 30
 
     /// What make one of the Copilot app's sessions the pull request's.
-    static let likelyReasons: Set<SessionChoice.Reason> = [.recordedByCopilot, .onItsBranch, .linkedByYou]
+    static let likelyReasons: Set<SessionChoice.Reason> = [.recordedByCopilot, .toldBriefBar, .onItsBranch, .linkedByYou]
 
     /// The latest task BriefBar started on a pull request (`CopilotTasksStore.lastTask`): its session's ID, and when.
     struct LastTask: Equatable, Sendable {
@@ -232,9 +236,10 @@ struct PullRequestSession: Equatable, Sendable {
     /// Where its work goes: the session you chose, or a new one if you chose that, unless BriefBar started a task on it
     /// since (`chosen(_:after:)`); else the session of its last task, as the Send to Copilot window goes on with it, whether
     /// or not Copilot still works in it, while its worktree is there; else the session of the work item's task that opened
-    /// it; else the Copilot app's session that Copilot recorded with it, that you linked to it or that's on its branch. Two
-    /// of those go with it as well as each other unless one has every reason the other has and more: then BriefBar asks
-    /// which. Else a new session: one whose log only mentions it is a guess (`guess`).
+    /// it; else the Copilot app's session that Copilot recorded with it, that told BriefBar it's working on it, that you
+    /// linked to it or that's on its branch. Two of those go with it as well as each other unless one has every reason the
+    /// other has and more: then BriefBar asks which. Else a new session: one whose log only mentions it is a guess
+    /// (`guess`).
     static func pick(_ choices: [SessionChoice], chosen: PullRequestSessionChoice?, lastTask: LastTask?) -> Pick {
         if let chosen = Self.chosen(chosen, after: lastTask) {
             guard let id = chosen.session?.id else { return .newSession(chosenByYou: true) }
