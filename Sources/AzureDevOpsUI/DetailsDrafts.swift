@@ -101,11 +101,14 @@ final class DetailsDrafts: ObservableObject {
     }
 
     /// Keeps where a thread is, as you change it with your reply or its status, for it to stay there while the details show
-    /// its pull request, however it stands: where it was as you first did, though you change it again.
-    func hold(_ thread: PullRequestPanel.Thread, in pullRequest: PRKey) {
-        guard held[pullRequest]?[thread.id] == nil else { return }
+    /// its pull request, however it stands: where it was as you first did, though you change it again; or, for one you
+    /// marked as read there before (`read`, `PullRequestDetailsStore.readHolds`), where it was then, which stays once you
+    /// mark it as unread.
+    func hold(_ thread: PullRequestPanel.Thread, in pullRequest: PRKey, read: [Int: PullRequestPanel.Thread.Held] = [:]) {
+        let changed = held(in: pullRequest)
+        guard changed[thread.id] == nil else { return }
         objectWillChange.send()
-        held[pullRequest, default: [:]][thread.id] = PullRequestPanel.Thread.Held(thread)
+        held[pullRequest, default: [:]][thread.id] = .holding(thread, changed: changed, read: read)
     }
 
     /// Whether a pull request's details show its resolved threads, which they keep as you go to a file's page and back, or

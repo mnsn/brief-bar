@@ -4,7 +4,8 @@ import Foundation
 /// The groups the panel shows, in display order.
 public enum PRGroup: String, Sendable, Codable, CaseIterable, Comparable {
     /// Something new for you: a reply, a mention, a comment, a review request, a vote that wants changes. And comments
-    /// you've seen that still wait on you, until you reply, they're resolved, or you remove the pull request from here.
+    /// you've seen that still wait on you, until you reply, they're resolved, you mark their threads as read, or you remove
+    /// the pull request from here.
     case needsYou
     /// Something that needed you that you've since answered yourself in Azure DevOps, until you've seen it
     /// in the panel. Only for pull requests that would otherwise wait or be idle.
@@ -82,7 +83,8 @@ public struct PREvent: Sendable, Codable, Equatable, Hashable, Identifiable {
     /// The app it was sent in, for `sentInChat`: "Teams".
     public var app: String?
     /// You haven't seen it: it came after you last opened the pull request. A comment you've seen is kept while it
-    /// waits on you, until you reply, its thread is resolved, or you remove the pull request from Needs You.
+    /// waits on you, until you reply, its thread is resolved or marked as read, or you remove the pull request from Needs
+    /// You.
     public var isNew: Bool
 
     public init(
@@ -252,10 +254,12 @@ public struct ClassifierOptions: Sendable, Equatable {
 public enum PRClassifier {
     /// `seenCutoff`: activity up to this time counts as seen. `dismissedCutoff`: comments up to this time that still
     /// wait on you don't need you anymore, since you removed the pull request from Needs You or sent them to Copilot;
-    /// those after it that you've seen still do. Nil when the pull request shouldn't be listed: done a while ago, or
-    /// done and already seen.
+    /// those after it that you've seen still do. `read`: the threads you marked as read, by their IDs, each up to when
+    /// what it said doesn't need you anymore, seen or not, whatever its status; a comment after that does. Nil when the
+    /// pull request shouldn't be listed: done a while ago, or done and already seen.
     public static func snapshot(
-        for record: PRRecord, seenCutoff: Date, dismissedCutoff: Date, now: Date, options: ClassifierOptions = ClassifierOptions()
+        for record: PRRecord, seenCutoff: Date, dismissedCutoff: Date, read: [Int: Date] = [:], now: Date,
+        options: ClassifierOptions = ClassifierOptions()
     ) -> PRSnapshot? {
         // Removing it from Needs You saw it, too.
         let seenCutoff = max(seenCutoff, dismissedCutoff)
@@ -334,8 +338,8 @@ public enum PRClassifier {
         var events: [PREvent] = []
         if let details {
             events = record.role == .author
-                ? authorEvents(pr, details, me: me, seenCutoff: seenCutoff, dismissedCutoff: dismissedCutoff)
-                : reviewerEvents(pr, details, me: me, seenCutoff: seenCutoff, dismissedCutoff: dismissedCutoff)
+                ? authorEvents(pr, details, me: me, seenCutoff: seenCutoff, dismissedCutoff: dismissedCutoff, read: read)
+                : reviewerEvents(pr, details, me: me, seenCutoff: seenCutoff, dismissedCutoff: dismissedCutoff, read: read)
         }
         // Comments you've seen wait on you while the pull request is active: once nothing has happened on it for a
         // while, it's idle, as it would be without them.
@@ -402,12 +406,15 @@ public enum PRClassifier {
 
     /// On your pull request: comments from others that came after your last word in their thread, and
     /// votes that are still standing. Comments you've seen count while their thread is open, from
-    /// `dismissedCutoff`; everything else only while it's new.
-    static func authorEvents(_ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date, dismissedCutoff: Date) -> [PREvent] {
+    /// `dismissedCutoff`; everything else only while it's new. None from a thread you marked as read, up to then (`read`).
+    static func authorEvents(
+        _ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date, dismissedCutoff: Date, read: [Int: Date] = [:]
+    ) -> [PREvent] {
         var events: [PREvent] = []
         for thread in details.threads {
             let lastMine = thread.comments.last { $0.author.id == me }?.publishedAt
-            for comment in unanswered(thread, me: me, after: max(waitingSince(thread, seenCutoff, dismissedCutoff), lastMine ?? .distantPast)) {
+            let since = max(waitingSince(thread, seenCutoff, dismissedCutoff), lastMine ?? .distantPast, read[thread.id] ?? .distantPast)
+            for comment in unanswered(thread, me: me, after: since) {
                 let kind: PREvent.Kind = comment.mentions.contains(me) ? .mention : lastMine != nil ? .reply : .comment
                 events.append(event(kind, comment, in: thread, seenCutoff: seenCutoff))
             }
@@ -436,12 +443,16 @@ public enum PRClassifier {
     }
 
     /// On a pull request you review: replies and mentions, a review request you haven't seen, and pushes
-    /// since your vote. Replies and mentions you've seen count while their thread is open, from `dismissedCutoff`.
-    static func reviewerEvents(_ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date, dismissedCutoff: Date) -> [PREvent] {
+    /// since your vote. Replies and mentions you've seen count while their thread is open, from `dismissedCutoff`. None
+    /// from a thread you marked as read, up to then (`read`).
+    static func reviewerEvents(
+        _ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date, dismissedCutoff: Date, read: [Int: Date] = [:]
+    ) -> [PREvent] {
         var events: [PREvent] = []
         for thread in details.threads {
             let lastMine = thread.comments.last { $0.author.id == me }?.publishedAt
-            for comment in unanswered(thread, me: me, after: max(waitingSince(thread, seenCutoff, dismissedCutoff), lastMine ?? .distantPast)) {
+            let since = max(waitingSince(thread, seenCutoff, dismissedCutoff), lastMine ?? .distantPast, read[thread.id] ?? .distantPast)
+            for comment in unanswered(thread, me: me, after: since) {
                 if comment.mentions.contains(me) {
                     events.append(event(.mention, comment, in: thread, seenCutoff: seenCutoff))
                 } else if lastMine != nil {
@@ -648,10 +659,11 @@ public enum PRClassifier {
     }
 
     /// The comments in an unresolved thread on your pull request that wait on you: from people other than you, after your
-    /// last word in it and after `dismissedCutoff`, as `authorEvents` finds them.
-    static func waitingComments(in thread: ReviewThread, me: String, dismissedCutoff: Date) -> [ReviewComment] {
+    /// last word in it, after `dismissedCutoff`, and after what you marked as read in it (`read`), as `authorEvents` finds
+    /// them.
+    static func waitingComments(in thread: ReviewThread, me: String, dismissedCutoff: Date, read: Date? = nil) -> [ReviewComment] {
         let lastMine = thread.comments.last { $0.author.id == me }?.publishedAt ?? .distantPast
-        return unanswered(thread, me: me, after: max(dismissedCutoff, lastMine))
+        return unanswered(thread, me: me, after: max(dismissedCutoff, lastMine, read ?? .distantPast))
     }
 
     /// Since when a thread's comments can need you: in an open one, those you've seen wait on you too, back to when you

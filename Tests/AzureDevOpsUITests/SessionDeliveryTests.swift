@@ -112,7 +112,9 @@ private final class TakenAt: Sendable {
     }
 
     private var handOff: CommentHandOff {
-        CommentHandOff(key: PRKey("contoso", 4071), waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast)
+        CommentHandOff(
+            key: PRKey("contoso", 4071), waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast, read: [:], unanswered: [:]
+        )
     }
 
     private func choice(_ id: String, isChat: Bool = false) -> SessionChoice {

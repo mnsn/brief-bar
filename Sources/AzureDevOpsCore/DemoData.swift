@@ -100,9 +100,10 @@ public enum DemoData {
         }
         func record(_ pr: PullRequest, role: PRRole = .author, checks: [Check] = [], threads: [ReviewThread] = [],
                     activity: [Activity] = [], chatLinks: [ChatLink] = []) -> PRRecord {
-            // And the threads resolved before what its row is about, for its details (DemoPullRequestDetails.swift), and the
-            // open ones beside it (DemoOpenThreads.swift).
+            // And the threads resolved before what its row is about, for its details (DemoPullRequestDetails.swift), the
+            // open ones beside it (DemoOpenThreads.swift), and a resolved one that waits on you (DemoAssistantThreads.swift).
             let threads = threads + resolvedThreads(of: pr.key.number, now: now) + openThreads(of: pr.key.number, now: now)
+                + assistantThreads(of: pr.key.number, now: now)
             let dates = threads.flatMap { $0.comments.map(\.publishedAt) } + activity.map(\.at)
             let details = PRDetails(
                 fetchedAt: now, fingerprint: pr.fingerprint, checks: checks, threads: threads, activity: activity,

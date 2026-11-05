@@ -190,12 +190,13 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         return error.description
     }
 
-    /// Without pull requests sent in chats: only the app finds those, and keeps them in memory. With the ones you watch.
+    /// Without pull requests sent in chats: only the app finds those, and keeps them in memory. With the ones you watch, and
+    /// without what you marked as read in the app.
     static func resolve(_ snapshot: PulseSnapshot, seen: SeenState, options: ClassifierOptions, now: Date = Date()) -> [PRSnapshot] {
         PROrdering.sorted(snapshot.records.compactMap { record in
             PRClassifier.snapshot(
-                for: record, seenCutoff: seen.cutoff(for: record.id), dismissedCutoff: seen.dismissedCutoff(for: record.id), now: now,
-                options: options
+                for: record, seenCutoff: seen.cutoff(for: record.id), dismissedCutoff: seen.dismissedCutoff(for: record.id),
+                read: seen.readThreads(of: record.id), now: now, options: options
             )
         })
     }

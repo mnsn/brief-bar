@@ -53,6 +53,13 @@ enum CopilotAsk: Equatable, Hashable, Sendable {
         if waiting >= open { return "Fix All" }
         return waiting == 1 ? "Fix 1 Comment" : "Fix \(waiting) Comments"
     }
+
+    /// Fix All's title for a pull request: of all its unresolved threads, as Fix Comments takes them on, whichever its
+    /// details show, Active or All.
+    static func fixAllTitle(_ record: PRRecord) -> String {
+        let open = (record.details?.threads ?? []).filter { !$0.isResolved }.count
+        return fixAllTitle(waiting: PullRequestPrompt.waitingThreads(record).count, open: open)
+    }
 }
 
 /// Where a composer's prompt goes.
@@ -300,7 +307,10 @@ extension CopilotSending {
         }
         var handOff: CommentHandOff?
         if record.role == .author {
-            handOff = CommentHandOff(record, thread: thread.id, dismissedCutoff: store.dismissedCutoff(for: record.id), account: store.settings.account)
+            handOff = CommentHandOff(
+                record, thread: thread.id, dismissedCutoff: store.dismissedCutoff(for: record.id),
+                read: store.settings.readThreads(of: record.id), account: store.settings.account
+            )
         }
         return Fix(
             prompts: (

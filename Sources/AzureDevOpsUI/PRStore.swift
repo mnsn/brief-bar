@@ -233,6 +233,7 @@ final class PRStore: ObservableObject {
         settings.$seen.dropFirst().map { _ in () }
             .merge(with: settings.$seenSentInChats.dropFirst().map { _ in () })
             .merge(with: settings.$dismissedSentInChats.dropFirst().map { _ in () })
+            .merge(with: settings.$readSentInChats.dropFirst().map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.recompute() } }
             .store(in: &cancellables)
@@ -517,7 +518,9 @@ final class PRStore: ObservableObject {
     /// leaves the Needs You of the account the prompt was written with, even if another has signed in to the Azure CLI
     /// since.
     func sentToCopilot(_ handOff: CommentHandOff, prompt: String) {
-        guard let through = handOff.handedOff(in: prompt, now: record(for: handOff.key)) else { return }
+        // With the threads its account has marked as read as they are now, such as one marked as unread since.
+        let read = settings.readThreads(of: handOff.key, for: handOff.account)
+        guard let through = handOff.handedOff(in: prompt, now: record(for: handOff.key), read: read) else { return }
         settings.dismiss([(handOff.key, through)], for: handOff.account)
     }
 
@@ -652,7 +655,7 @@ final class PRStore: ObservableObject {
             record.chatLinks += found
             return PRClassifier.snapshot(
                 for: record, seenCutoff: settings.seenCutoff(for: record.id), dismissedCutoff: settings.dismissedCutoff(for: record.id),
-                now: now, options: options
+                read: settings.readThreads(of: record.id), now: now, options: options
             )
         }
         let sorted = PROrdering.sorted(resolved)
@@ -917,13 +920,38 @@ final class PRStore: ObservableObject {
     }
 
     /// A pull request as the list would have it had you last looked at it at `seenCutoff`, the rest as it is now: what
-    /// was new then, and what waited on you, but not what you've answered, removed from Needs You or sent to Copilot
-    /// since.
+    /// was new then, and what waited on you, but not what you've answered, removed from Needs You, sent to Copilot or
+    /// marked as read since.
     func snapshot(of record: PRRecord, seenAt seenCutoff: Date) -> PRSnapshot? {
         PRClassifier.snapshot(
             for: record, seenCutoff: seenCutoff, dismissedCutoff: settings.dismissedCutoff(for: record.id),
-            now: now, options: settings.classifierOptions
+            read: settings.readThreads(of: record.id), now: now, options: settings.classifierOptions
         )
+    }
+
+    /// What a thread was read up to before you marked it as read, and for whom: what Mark as Unread puts back.
+    struct ReadMark: Equatable {
+        var before: Date?
+        var account: String?
+    }
+
+    /// Marks one of a pull request's comment threads as read, up to `date`, the latest comment in it as its details show
+    /// it: what waited on you there until then doesn't anymore, whatever its status, and once nothing else does, the pull
+    /// request leaves Needs You. A comment after it waits on you again. It's BriefBar's own, as what you've seen is:
+    /// nothing goes to Azure DevOps. It's kept for the account signed in now, whose list it's in; for a pull request
+    /// listed only because someone sent it to you, in memory only. Returns what Mark as Unread puts back.
+    @discardableResult
+    func markRead(_ thread: Int, of key: PRKey, upTo date: Date) -> ReadMark {
+        let mark = ReadMark(before: settings.readThreads(of: key)[thread], account: settings.account)
+        settings.markRead(thread, of: key, upTo: date, for: mark.account, sentInChat: sentInChats([key]).contains(key))
+        return mark
+    }
+
+    /// Puts a thread you marked as read back as it was before, as Mark as Unread does: what waited on you there does again.
+    /// Where the pull request's marks are kept now, which may have changed since, as for one you stopped watching that
+    /// someone also sent you.
+    func markUnread(_ thread: Int, of key: PRKey, as mark: ReadMark) {
+        settings.setRead(thread, of: key, to: mark.before, for: mark.account, sentInChat: sentInChats([key]).contains(key))
     }
 
     /// What Copilot can do with a pull request now (`PullRequestTasks.actions`): Push & Reply once a task that changed
@@ -1007,6 +1035,9 @@ final class PRStore: ObservableObject {
     /// - Parameter threads: for Push & Reply, the threads it ships alone.
     func commentHandOff(_ action: PullRequestAction, for record: PRRecord, threads: [Int]? = nil) -> CommentHandOff? {
         guard action.takesCareOfComments, record.role == .author else { return nil }
-        return CommentHandOff(record, dismissedCutoff: settings.dismissedCutoff(for: record.id), account: settings.account, threads: threads)
+        return CommentHandOff(
+            record, dismissedCutoff: settings.dismissedCutoff(for: record.id), read: settings.readThreads(of: record.id),
+            account: settings.account, threads: threads
+        )
     }
 }
