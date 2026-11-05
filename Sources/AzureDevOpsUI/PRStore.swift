@@ -1078,3 +1078,5 @@ final class PRStore: ObservableObject {
         )
     }
 }
+
+// Scratch: measures CI for a pull request that changes only Sources (never merged).
