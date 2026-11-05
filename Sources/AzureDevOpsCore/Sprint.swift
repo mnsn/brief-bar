@@ -283,20 +283,30 @@ public struct SprintBoard: Sendable, Equatable {
     public var rows: [Row]
     /// Your identity in the team's organization, for Just Mine.
     public var me: String
+    /// The types that are cards on the team's task board, such as Task, and Bug for teams that track bugs as tasks; and
+    /// its portfolio backlogs' types, such as Feature and Epic, empty when its configuration couldn't be read. For which
+    /// stories pull requests are for (`WorkItemStories`).
+    public var taskTypes: Set<String>
+    public var portfolioTypes: Set<String>
 
-    public init(team: TeamRef, sprint: Sprint, rows: [Row], me: String) {
+    public init(
+        team: TeamRef, sprint: Sprint, rows: [Row], me: String, taskTypes: Set<String> = ["Task"], portfolioTypes: Set<String> = []
+    ) {
         self.team = team
         self.sprint = sprint
         self.rows = rows
         self.me = me.lowercased()
+        self.taskTypes = taskTypes
+        self.portfolioTypes = portfolioTypes
     }
 
     /// Lays the sprint's work items out as a task board. `relations` are the sprint's (each work item at the top
     /// level, and each task under its parent); `taskTypes` are the types that are cards rather than rows, such as
-    /// Task (and Bug, for teams that track bugs as tasks). Removed work items are left out.
+    /// Task (and Bug, for teams that track bugs as tasks); `portfolioTypes` are those of the team's portfolio backlogs.
+    /// Removed work items are left out.
     public static func build(
         team: TeamRef, sprint: Sprint, me: String, relations: [ADOIterationWorkItems.Relation], items: [WorkItem],
-        taskTypes: Set<String>
+        taskTypes: Set<String>, portfolioTypes: Set<String> = []
     ) -> SprintBoard {
         var byId: [Int: WorkItem] = [:]
         for item in items where item.category != .removed {
@@ -340,7 +350,7 @@ public struct SprintBoard: Sendable, Equatable {
         if !unparented.isEmpty {
             rows.append(Row(parent: nil, tasks: unparented.sorted(by: WorkItem.ordered)))
         }
-        return SprintBoard(team: team, sprint: sprint, rows: rows, me: me)
+        return SprintBoard(team: team, sprint: sprint, rows: rows, me: me, taskTypes: taskTypes, portfolioTypes: portfolioTypes)
     }
 
     /// Just Mine: your stories and bugs with all their tasks, and your tasks under anyone else's.

@@ -70,11 +70,16 @@ package enum OnDeviceModel {
     }
 
     /// Asks the on-device model, giving up after `timeout`.
+    /// - Parameter likeliestWords: always the likeliest words, so the same question gets the same answer, as mission names
+    ///   need; otherwise only after `useLikeliestWords`.
     package static func respond(
-        to prompt: String, instructions: String, maximumTokens: Int, temperature: Double = 0.2, timeout: TimeInterval = 20
+        to prompt: String, instructions: String, maximumTokens: Int, temperature: Double = 0.2, timeout: TimeInterval = 20,
+        likeliestWords: Bool = false
     ) async -> Result<String, Failure> {
         await withTaskGroup(of: Result<String, Failure>?.self) { group in
-            group.addTask { await answer(prompt, instructions: instructions, maximumTokens: maximumTokens, temperature: temperature) }
+            group.addTask {
+                await answer(prompt, instructions: instructions, maximumTokens: maximumTokens, temperature: temperature, likeliestWords: likeliestWords)
+            }
             group.addTask {
                 try? await Task.sleep(for: .seconds(timeout))
                 return nil
@@ -86,12 +91,12 @@ package enum OnDeviceModel {
     }
 
     private static func answer(
-        _ prompt: String, instructions: String, maximumTokens: Int, temperature: Double
+        _ prompt: String, instructions: String, maximumTokens: Int, temperature: Double, likeliestWords: Bool
     ) async -> Result<String, Failure> {
         if let reason = unavailableReason { return .failure(.unavailable(reason)) }
         // Explicitly the on-device model.
         let session = LanguageModelSession(model: model, instructions: instructions)
-        let options = picksLikeliestWords.withLock { $0 }
+        let options = likeliestWords || picksLikeliestWords.withLock { $0 }
             ? GenerationOptions(sampling: .greedy, maximumResponseTokens: maximumTokens)
             : GenerationOptions(temperature: temperature, maximumResponseTokens: maximumTokens)
         do {

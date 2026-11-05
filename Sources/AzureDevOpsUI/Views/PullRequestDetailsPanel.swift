@@ -21,6 +21,8 @@ struct PullRequestDetailsPanel: View {
     @LocalState private var pageDetails = PullRequestDetailsStore()
     /// A composer in place is open in them, which takes Esc: they close once it's closed.
     @LocalState private var isComposing = false
+    /// A mission's name is being edited beside them, in By Mission, which takes Esc too.
+    @LocalState private var isRenamingMission = false
 
     var body: some View {
         if let item = details.selected {
@@ -63,6 +65,7 @@ struct PullRequestDetailsPanel: View {
                 }
             }
             .onPreferenceChange(InlineComposerOpen.self) { isComposing = $0 }
+            .onReceive(services.pullRequestOrder.$renaming) { isRenamingMission = $0 != nil }
             // Pages come from Show Links: without it, they go.
             .onReceive(services.links.$isOn) { isOn in
                 if !isOn { details.closePages() }
@@ -195,7 +198,7 @@ struct PullRequestDetailsPanel: View {
             }
             .buttonStyle(.borderless)
             // On a page, or a file's, Esc goes back to what's under it; in a composer in place, it closes that.
-            .keyboardShortcut(details.canGoBack || isComposing ? nil : .cancelAction)
+            .keyboardShortcut(details.canGoBack || isComposing || isRenamingMission ? nil : .cancelAction)
             .help(details.canGoBack ? "Close" : "Close (Esc)")
             .accessibilityLabel("Close Details")
         }
@@ -203,7 +206,7 @@ struct PullRequestDetailsPanel: View {
         .padding(.trailing, 10)
         .frame(height: 44)
         .background {
-            if details.canGoBack, !isComposing {
+            if details.canGoBack, !isComposing, !isRenamingMission {
                 Button("Back", action: goBack)
                     .keyboardShortcut(.cancelAction)
                     .opacity(0)

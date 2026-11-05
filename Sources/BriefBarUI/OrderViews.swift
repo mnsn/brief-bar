@@ -145,8 +145,9 @@ package struct OrderNodeMark: View {
 
 // MARK: - A mission's header
 
-/// A mission's title, what kind it is, its progress and its sessions: ★ Focus, "Fix the payments bugs · payments-api", a
-/// bar with one segment for each pull request, "1 of 5 merged", "2 sessions ⌄", and its menu.
+/// A mission's title, the story it's for, what kind it is, its progress and its sessions: ★ Focus, "Checkout coupons · User
+/// Story 5101 · No order known · shop-web", a bar with one segment for each pull request, "1 of 5 merged", "2 sessions ⌄",
+/// and its menu, where Rename… makes its title a field, as Finder renames.
 package struct MissionHeader: View {
     let mission: OrderMission
     @ObservedObject var order: PullRequestOrder
@@ -154,6 +155,11 @@ package struct MissionHeader: View {
     let place: String?
 
     @LocalState private var confirmsForget = false
+    @LocalState private var isRenaming = false
+    @LocalState private var draft = ""
+    @LocalState private var isFull = false
+    @FocusState private var isEditing: Bool
+    @Environment(\.textScale) private var textScale
 
     package init(mission: OrderMission, order: PullRequestOrder, place: String?) {
         self.mission = mission
@@ -166,7 +172,7 @@ package struct MissionHeader: View {
             focusButton
             titleLine
             Spacer(minLength: 8)
-            if !mission.isFamily {
+            if mission.hasOrder {
                 OrderProgressBar(mission: mission)
                 Text(OrderText.progress(mission))
                     .foregroundStyle(.secondary)
@@ -186,10 +192,15 @@ package struct MissionHeader: View {
         } message: {
             Text("BriefBar no longer shows it, and tells a session that names it that it forgot it. Its pull requests stay in your lists.")
         }
+        .alert("BriefBar can't keep another name", isPresented: $isFull) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(OrderText.namesAtTheCap)
+        }
     }
 
     private var title: String {
-        OrderText.title(of: mission, name: order.name(of:))
+        order.title(of: mission)
     }
 
     private var focusButton: some View {
@@ -205,11 +216,21 @@ package struct MissionHeader: View {
     }
 
     private var titleLine: some View {
+        let title = title
+        let story = OrderText.story(of: mission, title: title)
         let details = [place, OrderText.kind(of: mission), mission.isStale ? OrderText.stale : nil].compactMap { $0 }
+        let storyItem = mission.story.flatMap { order.describe($0.ref) }
         return HStack(spacing: 4) {
-            Text(title)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
+            if isRenaming {
+                renameField
+            } else {
+                Text(title)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            if let story {
+                storyButton(story, item: storyItem)
+            }
             if !details.isEmpty {
                 Text("· " + details.joined(separator: " · "))
                     .foregroundStyle(mission.isStale ? Color.orange : Color.secondary)
@@ -217,15 +238,111 @@ package struct MissionHeader: View {
             }
         }
         .truncationMode(.tail)
-        .help(OrderText.told(mission, name: order.name(of:)) ?? title)
-        .accessibilityElement(children: .combine)
+        .help(help(title))
+        .accessibilityElement(children: isRenaming ? .contain : .combine)
         .accessibilityAddTraits(.isHeader)
+        .accessibilityAction(named: "Rename") { rename() }
+        .accessibilityAction(named: story.map { "Show \($0)" } ?? "Show Its Story") { storyItem?.open?() }
+    }
+
+    /// Who named it, who told its order or what it was opened under, and what a story's mission is.
+    private func help(_ title: String) -> String {
+        var lines: [String] = []
+        switch order.naming(of: mission) {
+        case .you: lines.append(OrderText.namedByYou)
+        case .appleIntelligence: lines.append(OrderText.namedByAppleIntelligence)
+        case .briefBar: break
+        }
+        if let told = OrderText.told(mission, name: order.name(of:)) {
+            lines.append(told)
+        } else if order.naming(of: mission) != .briefBar, let opened = OrderText.openedUnder(mission, name: order.name(of:)) {
+            lines.append(opened)
+        }
+        if let story = OrderText.storyHelp(mission, title: mission.story.flatMap { order.name(of: $0.ref) }) {
+            lines.append(story)
+        }
+        return ([title] + lines).joined(separator: "\n")
+    }
+
+    /// "· User Story 5101": shows the story in BriefBar's window, or opens it in Azure DevOps, as Show Links' rows do.
+    @ViewBuilder
+    private func storyButton(_ story: String, item: LinkedItem?) -> some View {
+        if let item, let open = item.open {
+            Button(action: open) {
+                Text("· \(story)")
+                    .foregroundStyle(Color.secondary)
+                    .lineLimit(1)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("\(story) “\(item.title)”: click to show it")
+        } else {
+            Text("· \(story)")
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    /// Its title as a field, as Finder renames: Return keeps it, Escape doesn't, and an empty one goes back to BriefBar's.
+    private var renameField: some View {
+        TextField("Name", text: $draft)
+            .textFieldStyle(.plain)
+            .font(size: 12, weight: .semibold)
+            .focused($isEditing)
+            .frame(minWidth: 140 * textScale, maxWidth: 320 * textScale)
+            .padding(.horizontal, 4)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .textBackgroundColor).opacity(0.8)))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1))
+            .onSubmit(commit)
+            .onExitCommand(perform: cancel)
+            .onChange(of: isEditing) { _, editing in
+                // Clicking elsewhere keeps it, as in Finder.
+                if !editing, isRenaming { commit() }
+            }
+            .onAppear {
+                Task { @MainActor in isEditing = true }
+            }
+            .onDisappear {
+                if isRenaming { stopRenaming() }
+            }
+            .accessibilityLabel("Mission's Name")
+            .accessibilityHint("Return keeps it, and Escape doesn't. An empty name gives it BriefBar's name again.")
+    }
+
+    private func rename() {
+        guard order.canRename(mission.key) else {
+            isFull = true
+            return
+        }
+        draft = title
+        isRenaming = true
+        order.renaming = mission.key
+    }
+
+    private func commit() {
+        guard isRenaming else { return }
+        stopRenaming()
+        if order.rename(mission, to: draft) == .full { isFull = true }
+    }
+
+    private func cancel() {
+        stopRenaming()
+    }
+
+    private func stopRenaming() {
+        isRenaming = false
+        if order.renaming == mission.key { order.renaming = nil }
     }
 
     private var menu: some View {
         Menu {
             Button(mission.isFocused ? "Stop Focusing" : "Focus on It") {
                 order.setFocus(mission.isFocused ? nil : mission.key)
+            }
+            Divider()
+            Button("Rename…") { rename() }
+            if order.naming(of: mission) == .you {
+                Button("Use BriefBar's Name") { order.useBriefBarsName(mission.key) }
             }
             if case .plan = mission.key {
                 Divider()

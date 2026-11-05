@@ -31,6 +31,8 @@ package struct MissionsBody: View {
     let rest: ([ItemRef]) -> AnyView
 
     @EnvironmentObject private var services: AppServices
+    /// Who shows the missions, for Apple Intelligence to name them while they're on screen.
+    @LocalState private var viewer = MissionsViewer()
 
     package init(
         view: OrderView, ordering: PullRequestOrder, kinds: Set<ItemRef.Kind>, elsewhere: String, openElsewhere: (() -> Void)?,
@@ -65,6 +67,7 @@ package struct MissionsBody: View {
     package var body: some View {
         let missions = Self.missions(ordering.missions, kinds: kinds)
         let rest = listed.filter { !Self.isIn(missions, $0) }
+        let keys = missions.map(\.key)
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 18) {
                 if missions.isEmpty {
@@ -95,7 +98,13 @@ package struct MissionsBody: View {
                 }
             }
             .onChange(of: ordering.revealed) { _, key in reveal(key, with: proxy) }
-            .onAppear { reveal(ordering.revealed, with: proxy) }
+            .onAppear {
+                reveal(ordering.revealed, with: proxy)
+                ordering.showing(keys, in: viewer)
+            }
+            // Apple Intelligence names only the missions on screen.
+            .onChange(of: keys) { _, keys in ordering.showing(keys, in: viewer) }
+            .onDisappear { ordering.stopShowing(in: viewer) }
         }
     }
 
@@ -144,3 +153,6 @@ package struct MissionsBody: View {
         }
     }
 }
+
+/// A page that shows missions, as Pull Request Order knows it while it does.
+final class MissionsViewer {}

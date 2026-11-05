@@ -189,6 +189,70 @@ import Testing
         #expect(server.requests.isEmpty)
     }
 
+    private func query(_ request: URLRequest, _ name: String) -> String? {
+        request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == name }?.value }
+    }
+
+    /// Stories (§7.4.1): only while Pull Request Order wants them, the linked work items' parent and place in the backlog,
+    /// three more fields in the read Show Links makes anyway, and the parents nothing else has, with what they are only,
+    /// up to 200 a GET; without them, nothing more.
+    @Test func readsParentsAndPlacesInTheBacklogOnlyWhileStoriesAreWanted() async {
+        let server = StubServer()
+        server.on("/pullRequests/7/workitems", json: Fixture.list([["id": "5102"]]))
+        // Whatever fields are asked for, as a check that what isn't wanted isn't kept.
+        server.on("/_apis/wit/workitems", json: Fixture.list([WorkFixture.workItem(5102, "Task", "Round coupon totals", parent: 5101, rank: 2)]))
+        server.on("/_apis/wit/workitems", query: ["ids": "5101"], json: Fixture.list([WorkFixture.workItem(5101, "User Story", "Checkout redesign")]))
+        let clock = Clock()
+        let engine = engine(server, clock: clock)
+        let task = WorkItemKey("contoso", 5102)
+        let story = WorkItemKey("contoso", 5101)
+        let inSprint = WorkItemKey("contoso", 5110)
+        let pullRequests = [PRKey("contoso", 7): Self.place]
+        func workItemReads() -> [URLRequest] { server.requests.filter { $0.url?.path.hasSuffix("/_apis/wit/workitems") == true } }
+
+        await engine.update(.init(pullRequests: pullRequests, parentLookups: [story]))
+        var links = await engine.currentLinks()
+        #expect(workItemReads().map { query($0, "fields") } == [WorkLinks.workItemFields.joined(separator: ",")])
+        #expect(links.workItems[task]?.title == "Round coupon totals")
+        #expect(links.workItems[task]?.parentId == nil && links.workItems[task]?.rank == nil)
+        #expect(links.parents.isEmpty)
+
+        // Wanted: the linked work items are read again at once, with their parent and place in the backlog, and the parent
+        // with what it is only; one the sprint has isn't read.
+        await engine.update(.init(pullRequests: pullRequests, sprintItems: [inSprint], wantsStories: true, parentLookups: [story, inSprint]))
+        links = await engine.currentLinks()
+        let reads = workItemReads()
+        #expect(reads.map { query($0, "fields") } == [
+            WorkLinks.workItemFields.joined(separator: ","), (WorkLinks.workItemFields + WorkLinks.storyFields).joined(separator: ","),
+            WorkLinks.workItemFields.joined(separator: ","),
+        ])
+        #expect(reads.last.flatMap { query($0, "ids") } == "5101")
+        #expect(links.workItems[task]?.parentId == 5101 && links.workItems[task]?.rank == 2)
+        #expect(links.parents.keys.sorted() == [story])
+        #expect(links.parents[story]?.title == "Checkout redesign" && links.parents[story]?.type == "User Story")
+        // Read again, as linked work items are, every quarter of an hour.
+        await engine.refresh()
+        #expect(workItemReads().count == 3)
+        clock.advance(15 * minute)
+        await engine.refresh()
+        #expect(workItemReads().count == 5)
+
+        // Up to 200 a GET.
+        let many = Set((6_000...6_200).map { WorkItemKey("contoso", $0) }).union([story])
+        await engine.update(.init(pullRequests: pullRequests, sprintItems: [inSprint], wantsStories: true, parentLookups: many))
+        #expect(workItemReads().count == 7)
+        #expect(workItemReads().suffix(2).map { query($0, "ids")?.split(separator: ",").count } == [200, 1])
+
+        // No longer wanted: what they wanted goes at once, and nothing more is read for them.
+        let before = server.requests.count
+        await engine.update(.init(pullRequests: pullRequests, sprintItems: [inSprint], parentLookups: many))
+        links = await engine.currentLinks()
+        #expect(links.parents.isEmpty)
+        #expect(links.workItems[task]?.parentId == nil && links.workItems[task]?.rank == nil)
+        #expect(server.requests.count == before)
+        #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
+    }
+
     @Test func looksUpWhatYouLinkedThatNoListShows() async {
         let server = StubServer()
         server.on("/_apis/git/pullrequests/4130") { _ in .status(404) }
@@ -249,5 +313,9 @@ import Testing
         #expect(linkedPullRequests.subtracting(listed) == Set(links.pullRequests.keys))
         let linkedWorkItems = Set(links.workItemsOfPullRequests.flatMap { key, ids in ids.map { WorkItemKey(key.organization, $0) } })
         #expect(linkedWorkItems.subtracting(sprint) == Set(links.workItems.keys))
+        // The stories read as parents are what nothing else has, and their tasks' parents.
+        #expect(Set(links.parents.keys).isDisjoint(with: sprint.union(links.workItems.keys)))
+        let parents = Set(links.workItems.values.compactMap { $0.parentId.map { WorkItemKey(DemoData.organization, $0) } })
+        #expect(Set(links.parents.keys).isSubset(of: parents))
     }
 }

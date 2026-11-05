@@ -74,7 +74,7 @@ import Testing
         // What's linked that the lists and the sprint don't show stays looked up once it's been read, so the engine keeps
         // it rather than forgetting it and reading it again.
         let inputs = workLinks.inputs()
-        #expect(inputs.workItemLookups == [WorkItemKey(organization, 5160), WorkItemKey(organization, 5170)])
+        #expect(inputs.workItemLookups == Set([5160, 5170, 5181, 5182, 5183].map { WorkItemKey(organization, $0) }))
         #expect(inputs.pullRequestLookups == [PRKey(organization, 4118), PRKey(organization, 4120)])
         await workLinks.loadOnce()
         #expect(workLinks.inputs() == inputs)
@@ -82,6 +82,50 @@ import Testing
         links.setOn(false)
         #expect(links.connections(of: .pullRequest(organization: organization, number: 4091)).isEmpty)
         #expect(workLinks.inputs().workItemLookups.isEmpty)
+    }
+
+    /// Stories (§7.4.1, §7.4.2): only while Pull Request Order is on too, which stories your pull requests are for, by
+    /// each linked work item's own type, with the parents of tasks to read when nothing else has them.
+    @Test func itWorksOutYourPullRequestsStoriesOnlyWhilePullRequestOrderWantsThem() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let off = PullRequestOrder(defaults: MemoryDefaults(), isDemo: false)
+        let withoutOrder = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings, order: off
+        )
+        await withoutOrder.loadOnce()
+        #expect(withoutOrder.storiesRead == WorkLinksStore.Stories())
+        #expect(!withoutOrder.inputs().wantsStories && withoutOrder.inputs().parentLookups.isEmpty)
+
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
+            order: order
+        )
+        await workLinks.loadOnce()
+        let read = workLinks.storiesRead
+        #expect(read.areRead)
+        let checkout = ItemRef.workItem(organization: organization, id: 5180)
+        #expect(read.byPullRequest[PRKey(organization, 4113)] == [
+            OrderStory(ref: checkout, type: "User Story", task: .workItem(organization: organization, id: 5181), rank: 1),
+        ])
+        // A bug on the backlog is a story itself, and its task in the sprint gives it.
+        #expect(read.byPullRequest[PRKey(organization, 4091)]?.map(\.ref) == [.workItem(organization: organization, id: 5110)])
+        #expect(read.byPullRequest[PRKey(organization, 4091)]?.first?.task == .workItem(organization: organization, id: 5112))
+        // A pull request whose work items aren't read: none known yet.
+        #expect(read.byPullRequest[PRKey(organization, 4110)] == nil)
+        // The stories and tasks, for their titles: the one outside the sprint, read as a parent, among them.
+        #expect(read.workItems.first { $0.id == 5180 }?.title == "Checkout redesign")
+        #expect(Set(read.workItems.map(\.id)).isSuperset(of: [5180, 5181, 5182, 5183, 5110, 5112]))
+        // The parents of tasks: the engine reads only those nothing else has.
+        let inputs = workLinks.inputs()
+        #expect(inputs.wantsStories)
+        #expect(inputs.parentLookups == Set([5110, 5140, 5180].map { WorkItemKey(organization, $0) }))
     }
 
     /// One of your pull requests, in the lists, shows in BriefBar's window from a link to it, as the source says; a
@@ -389,6 +433,53 @@ import Testing
 
     /// Someone else signed in while Show Links reads: what was read as the last one goes at once, before it's told of
     /// again, and what the engine that read as them still brings is left out; what's read as the new one is taken.
+    /// Turned on while Show Links reads already: the linked work items are read again with their parents, and then the
+    /// parents that nothing else has, as soon as that read lands.
+    @Test func turningPullRequestOrderOnReadsTheStoriesParentsOnceTheirTasksAreRead() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
+        let sprint = SprintStore(settings: settings, mode: .live, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: false)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
+            order: order
+        )
+        // An engine that reads nothing, and whose own reads don't reach the store: the test tells what it read.
+        let engines = Engines()
+        workLinks.makeEngine = { onChange in
+            engines.told.append(onChange)
+            return LinkEngine(client: ADOClient(tokens: NoTokens())) { _ in }
+        }
+        workLinks.start()
+        defer { workLinks.stop() }
+        try await until("Show Links reads") { engines.told.count == 1 && workLinks.engineInputs != nil }
+        #expect(workLinks.engineInputs?.wantsStories == false)
+        // Show Links read the pull request's task, without its parent, as stories weren't wanted.
+        var task = WorkItem(
+            id: 5181, organization: organization, project: "Storefront", type: "Task", title: "Speed up the checkout page",
+            state: "Active", category: .inProgress
+        )
+        let pullRequest = PRKey(organization, 4113)
+        engines.told[0](WorkLinks(workItemsOfPullRequests: [pullRequest: [5181]], workItems: [WorkItemKey(organization, 5181): task]))
+        // Once the engine was told to look it up, as Links changed, and what the lists and Links changed has settled (their
+        // debounces take up to 300 ms): nothing else tells the engine anything after.
+        try await until("the task's looked up") { workLinks.engineInputs?.workItemLookups.contains(WorkItemKey(organization, 5181)) == true }
+        try await Task.sleep(for: .milliseconds(600))
+
+        order.setOn(true)
+        try await until("stories are wanted") { workLinks.engineInputs?.wantsStories == true }
+        #expect(workLinks.engineInputs?.parentLookups.isEmpty == true)
+        // The task, read again with its parent, which changes no link: its story is to read next.
+        task.parentId = 5180
+        task.rank = 1
+        engines.told[0](WorkLinks(workItemsOfPullRequests: [pullRequest: [5181]], workItems: [WorkItemKey(organization, 5181): task]))
+        try await until("the story's to read") { workLinks.engineInputs?.parentLookups == [WorkItemKey(organization, 5180)] }
+        #expect(workLinks.storiesRead.byPullRequest[pullRequest]?.map(\.ref) == [.workItem(organization: organization, id: 5180)])
+    }
+
     @Test func anotherAccountForgetsWhatWasReadAsTheLastOne() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)

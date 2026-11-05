@@ -77,14 +77,15 @@ extension OrderText {
 
 extension OrderBoard {
     /// The mission a pull request's capsule speaks for, and its step there: the first, as they're sorted, that has it in
-    /// its order, else the first it's stacked with. Nil when it's in none, or only in a group with no order, which has no
-    /// capsule.
+    /// its order, else the first it's stacked with, or that has it for its story. Nil when it's in none, or only in a group
+    /// of a session's pull requests, which has no capsule. A story's pull request with no order known has none either, but
+    /// says what its notes say, and shows its mission.
     public static func step(for ref: ItemRef, in missions: [OrderMission]) -> (mission: OrderMission, step: OrderStep)? {
         for mission in missions where !mission.isFamily {
             if let step = mission.steps.first(where: { $0.ref == ref }) { return (mission, step) }
         }
         for mission in missions where !mission.isFamily {
-            if let step = mission.attached.first(where: { $0.ref == ref }) { return (mission, step) }
+            if let step = (mission.attached + mission.sameStory).first(where: { $0.ref == ref }) { return (mission, step) }
         }
         return nil
     }
@@ -115,15 +116,18 @@ extension OrderMission {
 }
 
 extension OrderText {
-    /// A mission's title: the name of the session that told its order, or that its pull requests were opened under; else
-    /// its first pull request's title, or else its label.
-    /// - Parameter name: what a source calls a session or a pull request, when it says.
+    /// A mission's title as BriefBar names it without Apple Intelligence or you: the name of the session that told its
+    /// order, or that its pull requests were opened under; a story's title, or else "Work Item 5101"; else its first pull
+    /// request's title, or else its label.
+    /// - Parameter name: what a source calls a session, a work item or a pull request, when it says.
     public static func title(of mission: OrderMission, name: (ItemRef) -> String?) -> String {
         switch mission.kind {
         case .declared(_, _, let declaredBy, _):
             if let declaredBy, let session = name(declaredBy) { return session }
         case .family(let session):
             if let session = name(session) { return session }
+        case .story(let story):
+            return name(story) ?? "Work Item \(story.id)"
         case .stack:
             break
         }
@@ -132,16 +136,56 @@ extension OrderText {
         return name(first.ref) ?? first.ref.fullOrderLabel
     }
 
-    /// What kind of group a mission is, after its title: "GitHub stack 41", "Stacked branches", "Opened under one session ·
-    /// no order known"; nil for a session's order, whose header says who told it.
+    /// What kind of group a mission is, after its title and its story: "GitHub stack 41", "Stacked branches", "No order
+    /// known" for a session's pull requests or a story's; nil for a session's order, whose header says who told it.
     public static func kind(of mission: OrderMission) -> String? {
         switch mission.key {
         case .plan: return nil
         case .stack(_, let number): return "GitHub stack \(number)"
         case .chain: return "Stacked branches"
-        case .family: return "No order known"
+        case .family, .story: return "No order known"
         }
     }
+
+    /// The story a mission is for, after its title, "User Story 5101": nil for one that isn't for one story, or when its
+    /// title says it already, as "Work Item 5101" does while BriefBar can't read the story.
+    public static func story(of mission: OrderMission, title: String) -> String? {
+        guard let story = mission.story else { return nil }
+        let label = Self.story(story)
+        return label == title ? nil : label
+    }
+
+    /// What a story's mission says of itself: "Its story: ‘Checkout redesign’. Listed in the order of its tasks in the
+    /// backlog. Nothing says which merges first." Stacked ones among them say how they're stacked on their rows.
+    /// - Parameter title: the story's title, when BriefBar read it.
+    public static func storyHelp(_ mission: OrderMission, title: String?) -> String? {
+        guard mission.isStory, let story = mission.story else { return nil }
+        let its = title.map { "Its story: ‘\($0)’." } ?? "Its story: \(Self.story(story))."
+        return "\(its) Listed in the order of its tasks in the backlog. Nothing says which merges first."
+    }
+
+    /// The head of the part of a session's order with the pull requests for its story it doesn't name.
+    public static let sameStory = "Same story · not in this order"
+
+    /// At By Mission's foot while Show Links is off, as stories need it.
+    public static let storiesNeedShowLinks = "Turn on Show Links to put each story's pull requests together."
+
+    /// Who named a mission, in its header's help.
+    public static let namedByYou = "You named it"
+    public static let namedByAppleIntelligence = "Named by Apple Intelligence from its pull requests, work items and sessions"
+
+    /// The session a session's pull requests' mission was opened under, in its help once it has another name than that
+    /// session's: "Opened under ‘Cart’".
+    public static func openedUnder(_ mission: OrderMission, name: (ItemRef) -> String?) -> String? {
+        guard case .family(let session) = mission.kind, let named = name(session) else { return nil }
+        return "Opened under ‘\(named)’"
+    }
+
+    /// What Rename… says at the cap, keeping none.
+    public static let namesAtTheCap = """
+        BriefBar keeps up to \(MissionNames.mostNames) names you give missions. Use BriefBar's Name on one you no longer need \
+        first.
+        """
 
     /// Who told a session's order, and when: "Told by ‘Ship the cart’ · revision 3"; nil for any other mission.
     public static func told(_ mission: OrderMission, name: (ItemRef) -> String?) -> String? {
@@ -192,7 +236,7 @@ extension OrderMap {
         var shown: Set<ItemRef> = []
         for mission in missions {
             shown.formUnion(mission.steps.map(\.ref))
-            if mission.steps.count > mostPullRequests { shown.formUnion(mission.attached.map(\.ref)) }
+            if mission.steps.count > mostPullRequests { shown.formUnion((mission.attached + mission.sameStory).map(\.ref)) }
         }
         var counts = (inNoMission: 0, notInOrder: 0)
         for ref in Set(refs) where !shown.contains(ref) {
