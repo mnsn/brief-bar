@@ -30,6 +30,10 @@ menu-bar items or widgets, change your layout, or enable optional features in th
 Views set fonts with `.font(size:)` and `.font(style:)` from `BriefBarUI`, never `.font(.system(size:))`
 or `.font(.headline)`, so their text follows the text size on windows' pages (`TextSizeTests` checks);
 size anything that must fit that text, such as a label's column, by the `textScale` environment value.
+AppKit draws a bordered, prominent or glass button's title, and a menu's, in the control's own font whatever font is
+around it: give it a `ControlLabel`, whose font follows the text size. Draw a borderless menu with `labelMenuStyle()`,
+and use `SegmentedPicker` and `SplitMenuButton` rather than a segmented `Picker` or a `Menu` with a primary action, whose
+titles AppKit draws at a fixed size whatever their labels say.
 
 Other targets:
 
