@@ -99,8 +99,8 @@ private struct CheckRow: View {
 
     @EnvironmentObject private var investigations: BuildInvestigationStore
     @LocalState private var isHovered = false
-    /// VoiceOver goes to it as the details point it out, going to it, as for a failing pull request opened from the menu
-    /// bar or the Pipelines page.
+    /// VoiceOver goes to it each time the details go to it, as a failing pull request opened from the menu bar or the
+    /// Pipelines page does, though it's still pointed out from the time before.
     @AccessibilityFocusState private var isFocused: Bool
 
     private var run: ItemStory.Run { line.run }
@@ -192,9 +192,8 @@ private struct CheckRow: View {
         .accessibilityFocused($isFocused)
         // Also as it's made, once the details scrolled to it.
         .onAppear { if isHighlighted { isFocused = true } }
-        .onChange(of: isHighlighted) {
-            if isHighlighted { isFocused = true }
-        }
+        // Each time the details go to it, though it's still pointed out, as when it's asked for again within that moment.
+        .focusesOnArrival(at: .check(line.id), $isFocused)
     }
 
     /// Its symbol, name and status, and, when it opens, a chevron that says whether it's open.

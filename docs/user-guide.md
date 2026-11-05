@@ -344,8 +344,8 @@ BriefBar** in **Settings › Pull Requests**: then those show its details in Bri
 about, while a window shows the Pull Requests page. Either way, its menu has both: **Show in BriefBar**, or
 **Show Details** in the window, and **Open in Azure DevOps**, which opens it where its row does, at the comment
 that needs you or the run after its merge, from the Pipelines page's cards too. With VoiceOver, the details
-take you there too: to the thread, the build or check they point out, or the heading of the part they go to,
-such as **Comments** from What's Left, rather than their title.
+take you there too, every time: to the thread, the build or check they point out, or the heading of the part they go
+to, such as **Comments** from What's Left, rather than their title.
 
 **Its Copilot session.** With Send Work to Copilot on, a line under the heading, in its details and on its
 page over a work item's, names the Copilot session the pull request's work goes to, why it's its, and how it

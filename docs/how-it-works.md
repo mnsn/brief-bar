@@ -1388,9 +1388,11 @@ which unfolds the resolved ones when it's among them as they list it, as one you
 name), or a part, such as its comments, which What's Left does. They scroll there once it shows, and point a
 thread, a build or a check out for a moment; for a thread they don't have, they scroll to their comments, and for
 a run or a check they don't have, such as a run that isn't the one a policy queued last, to their builds and
-checks (`Place.anchor(in:)`). VoiceOver goes there too (`DetailsArrival`): to the thread, the file's row, the build
-or the check they point out, or else to the heading of the part they went to, or to their title for their top
-(`takesFocusOnArrival`); their title doesn't take it as they show while they're on their way somewhere, as it does
+checks (`Place.anchor(in:)`). VoiceOver goes there too (`DetailsArrival`): to the thread, the file's row, the build or
+the check they point out (`focusesOnArrival`), or else to the heading of the part they went to, or to their title for
+their top (`takesFocusOnArrival`). It does each time they go there, though they went there a moment ago and still point
+it out, as when a build is asked for again (`arrived(at:since:)`), which is then pointed out for a moment of its own.
+Their title doesn't take it as they show while they're on their way somewhere, as it does
 otherwise. Shown again while a file's page is open, with no place, they go to their top (`show`), rather than staying
 where its diff was scrolled to. Taken to a thread, the header names it after the pull request, `!4102 ›
 PaymentsClient.cs:88` (`PullRequestDetailsStore.trailThread`), at the line its card shows, where it was made

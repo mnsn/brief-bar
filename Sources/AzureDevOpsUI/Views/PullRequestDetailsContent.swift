@@ -203,8 +203,8 @@ struct PullRequestDetailsContent: View {
     }
 
     /// To where they were asked to go, once it shows, pointing out a thread, a file's row, a build or a check for a moment:
-    /// to their comments, or their builds and checks, for one they don't have. VoiceOver goes there too: to what's pointed
-    /// out, or else to the header of the part they went to, or to their title (`DetailsArrival`).
+    /// to their comments, or their builds and checks, for one they don't have. VoiceOver goes there too, each time: to what's
+    /// pointed out, or else to the header of the part they went to, or to their title (`DetailsArrival`).
     private func go(in panel: PullRequestPanel) {
         guard let place = details.place, details.pages.isEmpty, details.file == nil, isShown else { return }
         let listed: ChangedFiles? = if case .read(let changes)? = files.list(of: item.key, details.scope) { changes } else { nil }
@@ -217,11 +217,13 @@ struct PullRequestDetailsContent: View {
             let position: UnitPoint = if case .file = anchor { .center } else { .top }
             withAnimation(isRendering ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(anchor, anchor: position) }
             arrival.arrive(at: anchor)
+            let arrived = arrival.count
             if case .section = anchor { return }
             if anchor == .top || anchor == .files { return }
             withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { highlighted = anchor }
             try? await Task.sleep(for: .seconds(1.6))
-            if highlighted == anchor {
+            // Unless they went there again meanwhile, which points it out for a moment of its own.
+            if highlighted == anchor, arrival.count == arrived {
                 withAnimation(.easeOut(duration: 0.4)) { highlighted = nil }
             }
         }

@@ -233,7 +233,7 @@ struct ThreadCard: View {
     /// open: with ✕ or Esc, or sent while you're still in it (`ThreadReplyArea`). Not once another composer opened
     /// meanwhile, nor anywhere but in this card.
     @LocalState private var refocusesReply = false
-    /// VoiceOver goes to it as the details point it out, going to it or coming back to it.
+    /// VoiceOver goes to it each time the details go to it, or come back to it, and as its file's page points it out.
     @AccessibilityFocusState private var isFocused: Bool
     /// How much wider its code's longest line is than the room it has.
     @LocalState private var codeOverflow: CGFloat = 0
@@ -307,11 +307,13 @@ struct ThreadCard: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityFocused($isFocused)
-        // Also as it's made, once the details scrolled to it.
+        // Also as it's made, once the details scrolled to it; and as its file's page points it out, going on to it.
         .onAppear { if isHighlighted { isFocused = true } }
         .onChange(of: isHighlighted) {
             if isHighlighted { isFocused = true }
         }
+        // And each time the details go to it, though it's still pointed out, as when it's asked for again within that moment.
+        .focusesOnArrival(at: .thread(thread.id), $isFocused)
         // Another composer opened, or its own reply again: Reply doesn't take the keyboard's focus as its buttons show later.
         .onChange(of: composing) { _, open in
             if open != nil { refocusesReply = false }

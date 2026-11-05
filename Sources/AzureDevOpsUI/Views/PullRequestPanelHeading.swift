@@ -74,11 +74,9 @@ struct PullRequestPanelHeading<Tags: View>: View {
         }
         .accessibilityElement(children: .contain)
         // VoiceOver goes to its title as it shows, but while the details are on their way somewhere, which takes it there
-        // instead; and as they go to their top.
+        // instead; and each time they go to their top.
         .onAppear { if !arrival.isGoing { isTitleFocused = true } }
-        .onChange(of: arrival.count) {
-            if arrival.anchor == .top { isTitleFocused = true }
-        }
+        .focusesOnArrival(at: .top, $isTitleFocused)
     }
 
     /// Where it stands, as its row says it, its opening words in its state's color, and since when.
