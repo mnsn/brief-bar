@@ -119,6 +119,9 @@ import Testing
         #expect(read.byPullRequest[PRKey(organization, 4091)]?.first?.task == .workItem(organization: organization, id: 5112))
         // A pull request whose work items aren't read: none known yet.
         #expect(read.byPullRequest[PRKey(organization, 4110)] == nil)
+        // Each one's work items, all of them, for its mission's name, once its stories are known.
+        #expect(read.workItemsByPullRequest[PRKey(organization, 4091)] == [5110, 5112].map { .workItem(organization: organization, id: $0) })
+        #expect(Set(read.workItemsByPullRequest.keys) == Set(read.byPullRequest.keys))
         // The stories and tasks, for their titles: the one outside the sprint, read as a parent, among them.
         #expect(read.workItems.first { $0.id == 5180 }?.title == "Checkout redesign")
         #expect(Set(read.workItems.map(\.id)).isSuperset(of: [5180, 5181, 5182, 5183, 5110, 5112]))

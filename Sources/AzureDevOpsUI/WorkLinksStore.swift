@@ -21,7 +21,9 @@ final class WorkLinksStore {
         var areRead = false
         /// By pull request, its organization lowercased: none for one whose work items aren't read yet.
         var byPullRequest: [PRKey: [OrderStory]] = [:]
-        /// Those stories and their tasks, for their titles.
+        /// Their work items, all of them, by pull request as those stories are, for their missions' names.
+        var workItemsByPullRequest: [PRKey: [ItemRef]] = [:]
+        /// Those stories and work items, for their titles.
         var workItems: [WorkItem] = []
     }
 
@@ -258,18 +260,25 @@ final class WorkLinksStore {
             (sprintItems + Array(read.workItems.values) + Array(read.parents.values)).map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first }
         )
         var byPullRequest: [PRKey: [OrderStory]] = [:]
+        var workItemsByPullRequest: [PRKey: [ItemRef]] = [:]
         var named: Set<WorkItemKey> = []
         for (key, ids) in read.workItemsOfPullRequests {
             // Until each of its work items is read, or Azure DevOps says it can't be, its stories aren't known: its mission
             // isn't named from half of what it's made of.
             guard !ids.contains(where: { read.pendingWorkItems.contains(WorkItemKey(key.organization, $0)) }) else { continue }
             let found = finder.stories(of: key, workItems: ids)
-            byPullRequest[PRKey(key.organization.lowercased(), key.number)] = found
+            let pullRequest = PRKey(key.organization.lowercased(), key.number)
+            byPullRequest[pullRequest] = found
+            workItemsByPullRequest[pullRequest] = Set(ids).sorted().map { ItemRef.workItem(organization: key.organization, id: $0) }
+            for id in ids { named.insert(WorkItemKey(key.organization, id)) }
             for ref in found.flatMap({ [$0.ref, $0.task].compactMap { $0 } }) {
                 if let id = ref.number { named.insert(WorkItemKey(ref.scope, id)) }
             }
         }
-        let stories = Stories(areRead: true, byPullRequest: byPullRequest, workItems: named.sorted().compactMap { known[$0] })
+        let stories = Stories(
+            areRead: true, byPullRequest: byPullRequest, workItemsByPullRequest: workItemsByPullRequest,
+            workItems: named.sorted().compactMap { known[$0] }
+        )
         if stories != storiesRead { storiesRead = stories }
     }
 

@@ -332,6 +332,35 @@ import Testing
         #expect(await engine.currentLinks().parents[story] == nil)
     }
 
+    /// A linked work item a read leaves out, deleted or that can't be read now, is forgotten, with the story it gave its
+    /// pull requests; one whose read failed is kept.
+    @Test func aLinkedWorkItemLeftOutOfAReadIsForgottenUnlessTheReadFailed() async {
+        let server = StubServer()
+        let reply = Mutex("task")
+        server.on("/pullRequests/7/workitems", json: Fixture.list([["id": "5102"]]))
+        server.on("/_apis/wit/workitems") { _ in
+            switch reply.withLock({ $0 }) {
+            case "task": .json(Fixture.list([WorkFixture.workItem(5102, "Task", "Round coupon totals", parent: 5101, rank: 2)]))
+            case "fails": .status(500)
+            default: .json(Fixture.list([]))
+            }
+        }
+        let clock = Clock()
+        let engine = engine(server, clock: clock)
+        let task = WorkItemKey("contoso", 5102)
+        await engine.update(.init(pullRequests: [PRKey("contoso", 7): Self.place], wantsStories: true))
+        #expect(await engine.currentLinks().workItems[task]?.parentId == 5101)
+        reply.withLock { $0 = "fails" }
+        clock.advance(15 * minute)
+        await engine.refresh()
+        #expect(await engine.currentLinks().workItems[task]?.parentId == 5101)
+        reply.withLock { $0 = "left out" }
+        clock.advance(61 * minute)
+        await engine.refresh()
+        #expect(await engine.currentLinks().workItems[task] == nil)
+        #expect(await engine.currentLinks().pendingWorkItems.isEmpty)
+    }
+
     /// While stories are wanted, a pull request's work items that no read answered for yet, with what stories want, are
     /// pending, and so are those whose read failed, until one answers; one a read leaves out isn't.
     @Test func aPullRequestsWorkItemsArePendingUntilAReadAnswersForThem() async {

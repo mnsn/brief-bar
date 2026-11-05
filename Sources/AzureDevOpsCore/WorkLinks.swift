@@ -481,6 +481,10 @@ public actor LinkEngine {
                         ADOEndpoint.workItems(organization: organization, ids: batch, fields: fields),
                         as: ADOList<ADOWorkItem>.self
                     )
+                    // Those left out were deleted, or can't be read: there's nothing more to show of them, nor stories.
+                    for id in batch {
+                        links.workItems[WorkItemKey(organization, id)] = nil
+                    }
                     // Stories may have been turned on or off while it read: what they don't want isn't kept, and what was
                     // read without what they want is read again.
                     let wantsStories = inputs.wantsStories
@@ -495,7 +499,6 @@ public actor LinkEngine {
                         links.workItems[key] = item
                     }
                     guard readsStories || !wantsStories else { continue }
-                    // Those left out were deleted, or can't be read: there's nothing more to show of them.
                     for id in batch {
                         workItemsRead[WorkItemKey(organization, id)] = date
                         settle("wi \(WorkItemKey(organization, id))", readAt: date)

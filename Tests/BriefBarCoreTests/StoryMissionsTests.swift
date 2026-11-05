@@ -236,6 +236,38 @@ import Testing
         #expect(missions.map(\.key) == [.story(Self.item(5101))])
     }
 
+    /// An order's mission whose pull requests are all for one story names it: each of them, and each stacked with them,
+    /// says what other stories it's for.
+    @Test func anOrdersMissionForOneStorySaysWhatElseEachOfItsPullRequestsIsFor() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [
+            .init(link: OrderPlansTests.link(4101)), .init(link: OrderPlansTests.link(4102), after: ["4101"]),
+        ]), now: t(0), newID: planID)
+        let missions = Self.missions(Self.facts([
+            Self.ado(4101, [Self.task(5102, rank: 1), Self.task(5122, rank: 1, of: 5120)]),
+            Self.ado(4102, [Self.task(5103, rank: 2)], from: "users/robin/b"),
+            // Stacked on !4102, and not in the order.
+            Self.ado(
+                4103, [Self.task(5104, rank: 3), Self.task(5131, rank: 1, of: 5130, type: nil)], from: "users/robin/c",
+                into: "users/robin/b"
+            ),
+        ]), orders)
+        #expect(missions.map(\.key) == [.plan(planID)])
+        let mission = try #require(missions.first)
+        #expect(mission.story == MissionStory(ref: Self.item(5101), type: "User Story"))
+        let alsoFor = { (step: OrderStep) -> [OrderNote] in
+            step.notes.filter {
+                guard case .alsoFor = $0 else { return false }
+                return true
+            }
+        }
+        #expect(alsoFor(mission.steps[0]) == [.alsoFor(MissionStory(ref: Self.item(5120), type: "User Story"))])
+        #expect(alsoFor(mission.steps[1]).isEmpty)
+        #expect(mission.attached.map(\.ref) == [Self.pr(4103)])
+        #expect(alsoFor(mission.attached[0]) == [.alsoFor(MissionStory(ref: Self.item(5130)))])
+        #expect(OrderText.sentence(of: mission.steps[0])?.contains("Also for User Story 5120") == true)
+    }
+
     @Test func storiesChangeNothingWhileShowLinksReadsNone() throws {
         let coordinator = ItemRef.session("00000000-0000-4000-8000-000000000002")!
         let sessions = [OrderSession(ref: coordinator, pullRequests: [Self.pr(4101), Self.pr(4102), Self.pr(4110)])]

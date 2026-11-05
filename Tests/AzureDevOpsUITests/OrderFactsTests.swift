@@ -168,7 +168,7 @@ import Testing
         let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
         await sprint.loadOnce()
         let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
-        func facts(showLinks: Bool) async -> (PullRequestOrder, PullRequestOrderFacts) {
+        func facts(showLinks: Bool) async -> (PullRequestOrder, PullRequestOrderFacts, WorkLinksStore) {
             let links = Links(defaults: MemoryDefaults(), isDemo: showLinks)
             let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
             let workLinks = WorkLinksStore(
@@ -177,10 +177,10 @@ import Testing
             )
             await workLinks.loadOnce()
             let facts = PullRequestOrderFacts(order: order, store: store, settings: settings, details: nil, workLinks: workLinks)
-            return (order, facts.loadOnce())
+            return (order, facts.loadOnce(), workLinks)
         }
 
-        let (order, held) = await facts(showLinks: true)
+        let (order, held, workLinks) = await facts(showLinks: true)
         let key = MissionKey.story(DemoPullRequestOrder.checkoutRedesign)
         let mission = try #require(order.missions.first { $0.key == key })
         #expect(mission.steps.map(\.ref.id) == ["4113", "4088", "4105"])
@@ -189,11 +189,14 @@ import Testing
         #expect(order.title(of: mission) == "Faster checkout" && order.naming(of: mission) == .appleIntelligence)
         #expect(order.name(of: DemoPullRequestOrder.checkoutRedesign) == "Checkout redesign")
         #expect(order.describe(.workItem(organization: "contoso", id: 5181))?.title == "Speed up the checkout page")
+        // Each pull request goes with all its work items, for its mission's name.
+        let seen = PullRequestOrderFacts.pullRequests(store.records, items: store.items, showToReview: false, stories: workLinks.storiesRead)
+        #expect(seen.first { $0.ref.id == "4091" }?.workItems == [5110, 5112].map { .workItem(organization: "contoso", id: $0) })
         // The orders keep their own: their pull requests aren't a story's mission's.
         #expect(order.missions.first { $0.key == DemoPullRequestOrder.focus }?.steps.count == 5)
         _ = held
 
-        let (withoutLinks, _) = await facts(showLinks: false)
+        let (withoutLinks, _, _) = await facts(showLinks: false)
         #expect(!withoutLinks.missions.contains { $0.isStory })
         #expect(!withoutLinks.missions.contains { $0.contains(.pullRequest(organization: "contoso", number: 4113)) })
     }

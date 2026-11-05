@@ -244,18 +244,19 @@ public enum MissionNaming {
 
     /// What it's asked to name a mission from, or nil for one it doesn't name: one with no Azure DevOps pull request.
     /// - Parameters:
-    ///   - stories: the stories each of its pull requests is for, as the sources read them.
+    ///   - stories: the stories each of its pull requests is for, as the sources read them: its tasks there come first.
+    ///   - workItems: each of its pull requests' work items, all of them, as the sources read them.
     ///   - name: what a source calls a session, a work item or a pull request, when it says.
     public static func inputs(
-        for mission: OrderMission, stories: (ItemRef) -> [OrderStory], name: (ItemRef) -> String?
+        for mission: OrderMission, stories: (ItemRef) -> [OrderStory], workItems: (ItemRef) -> [ItemRef], name: (ItemRef) -> String?
     ) -> MissionNameInputs? {
         let pullRequests = mission.steps.map(\.ref).filter { $0.kind == .pullRequest }
         guard !pullRequests.isEmpty else { return nil }
-        var workItems: [ItemRef] = []
+        var items: [ItemRef] = []
         for ref in pullRequests {
-            for story in stories(ref) {
-                let item = story.task ?? story.ref
-                if item != mission.story?.ref, !workItems.contains(item) { workItems.append(item) }
+            for item in stories(ref).map({ $0.task ?? $0.ref }) + workItems(ref)
+            where item != mission.story?.ref && !items.contains(item) {
+                items.append(item)
             }
         }
         let withoutGitHub = { (ref: ItemRef) in ref.kind == .gitHubPullRequest ? nil : name(ref) }
@@ -263,7 +264,7 @@ public enum MissionNaming {
         let titles = Set([mission.story?.ref].compactMap { $0 } + pullRequests + mission.sessions).compactMap(name)
         return MissionNameInputs(
             current: titles.contains(current) ? current : nil, story: mission.story.flatMap { name($0.ref) },
-            workItems: workItems.compactMap(name), pullRequests: pullRequests.compactMap(name),
+            workItems: items.compactMap(name), pullRequests: pullRequests.compactMap(name),
             sessions: mission.sessions.compactMap(name)
         )
     }

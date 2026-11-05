@@ -7,10 +7,10 @@ import Foundation
 /// Tells Pull Request Order what Azure DevOps shows, while it's on: the pull requests the list read, the ones Done keeps a
 /// day included, merged or abandoned, for what BriefBar sees become of them; with their branches, repositories and
 /// authors, what each means for you now, how each looks and opens, as its row does, and, with Show Links on too, the
-/// stories each is for, by reference, with those stories and their tasks, for their titles. Only Show Links reads more
-/// from Azure DevOps for it, the stories (`WorkLinksStore`). As the list doesn't read which branches are forks' or which
-/// is a repository's default, a pull request that targets another's branch goes after it only when the same person opened
-/// both.
+/// stories and work items each is for, by reference, with those stories and work items, for their titles. Only Show Links
+/// reads more from Azure DevOps for it, the stories (`WorkLinksStore`). As the list doesn't read which branches are forks'
+/// or which is a repository's default, a pull request that targets another's branch goes after it only when the same
+/// person opened both.
 @MainActor
 final class PullRequestOrderFacts {
     private let order: PullRequestOrder
@@ -113,7 +113,9 @@ final class PullRequestOrderFacts {
         return records.compactMap { record in
             var seen = pullRequest(record.pullRequest, attention: groups[record.id]?.state(showToReview: showToReview))
             if stories.areRead {
-                seen?.stories = stories.byPullRequest[PRKey(record.id.organization.lowercased(), record.id.number)]
+                let key = PRKey(record.id.organization.lowercased(), record.id.number)
+                seen?.stories = stories.byPullRequest[key]
+                seen?.workItems = stories.workItemsByPullRequest[key]
             }
             return seen
         }

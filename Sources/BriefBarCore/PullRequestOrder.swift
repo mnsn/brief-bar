@@ -95,11 +95,14 @@ public struct OrderPullRequest: Equatable, Sendable {
     /// The stories it's for, through its work items, each once: none when none of its work items is a story or a story's
     /// task; nil until its source read them, or for a source that doesn't.
     public var stories: [OrderStory]?
+    /// Its work items, all of them, whatever they are, for its mission's name; nil until its source read them, or for a
+    /// source that doesn't.
+    public var workItems: [ItemRef]?
 
     public init(
         ref: ItemRef, repository: String, sourceBranch: String, targetBranch: String, isFork: Bool? = nil,
         defaultBranch: String? = nil, author: String? = nil, state: PullRequestState = .open, attention: ItemState? = nil,
-        createdAt: Date? = nil, stack: GitHubStack? = nil, stories: [OrderStory]? = nil
+        createdAt: Date? = nil, stack: GitHubStack? = nil, stories: [OrderStory]? = nil, workItems: [ItemRef]? = nil
     ) {
         self.ref = ref
         self.repository = repository.lowercased()
@@ -113,6 +116,7 @@ public struct OrderPullRequest: Equatable, Sendable {
         self.createdAt = createdAt
         self.stack = stack
         self.stories = stories
+        self.workItems = workItems
     }
 }
 
@@ -1156,6 +1160,17 @@ extension Board {
         stories(of: ref).filter { $0.ref != story }.sorted { $0.ref < $1.ref }
             .map { .alsoFor(MissionStory(ref: $0.ref, type: $0.type ?? missionStory($0.ref).type)) }
     }
+
+    /// A mission's steps, each saying the other stories its pull request is for, when the mission names one story, the one
+    /// all its own are for.
+    func notingOtherStories(_ steps: [OrderStep], besides story: MissionStory?) -> [OrderStep] {
+        guard let story else { return steps }
+        return steps.map { step in
+            var step = step
+            step.notes += alsoFor(step.ref, besides: story.ref)
+            return step
+        }
+    }
 }
 
 // MARK: Building missions
@@ -1194,16 +1209,18 @@ extension Board {
         }
         let group = Set(refs).union(attached)
         let sameStorySteps = self.sameStorySteps(sameStory)
+        let story = commonStory(of: refs)
         let isFinished = !steps.isEmpty && steps.allSatisfy { $0.status.hasEnded }
         return OrderMission(
             key: .plan(plan.id),
             kind: .declared(id: plan.id, revision: plan.revision, declaredBy: plan.declaredBy, updatedAt: plan.updatedAt),
-            steps: steps, attached: attached.sorted(by: isEarlier).map { attachedStep($0, among: group) }, cycles: cycles,
-            isFocused: false, isFinished: isFinished,
+            steps: notingOtherStories(steps, besides: story),
+            attached: notingOtherStories(attached.sorted(by: isEarlier).map { attachedStep($0, among: group) }, besides: story),
+            cycles: cycles, isFocused: false, isFinished: isFinished,
             isStale: !isFinished && now.timeIntervalSince(plan.updatedAt) > DeclaredOrders.staleAfter,
             attention: attention(refs), date: plan.updatedAt,
             sessions: sessions(of: steps.map(\.ref) + attached + sameStorySteps.map(\.ref), first: plan.declaredBy),
-            story: commonStory(of: refs), sameStory: sameStorySteps
+            story: story, sameStory: sameStorySteps
         )
     }
 
@@ -1317,10 +1334,11 @@ extension Board {
         } else {
             key = .chain(refs.min(by: isEarlier) ?? refs[0])
         }
+        let story = commonStory(of: refs)
         return OrderMission(
-            key: key, kind: .stack, steps: steps, attached: [], cycles: cycles, isFocused: false,
+            key: key, kind: .stack, steps: notingOtherStories(steps, besides: story), attached: [], cycles: cycles, isFocused: false,
             isFinished: steps.allSatisfy { $0.status.hasEnded }, isStale: false, attention: attention(refs), date: newest(refs),
-            sessions: sessions(of: steps.map(\.ref), first: nil), story: commonStory(of: refs)
+            sessions: sessions(of: steps.map(\.ref), first: nil), story: story
         )
     }
 
@@ -1367,11 +1385,14 @@ extension Board {
         }
         return groups.keys.sorted().compactMap { session in
             guard let refs = groups[session]?.sorted(by: isEarlier), refs.count > 1 else { return nil }
+            let story = commonStory(of: refs)
             return OrderMission(
                 key: .family(session), kind: .family(session: session),
-                steps: refs.map { OrderStep(ref: $0, status: status($0), standing: .unordered, session: openers[$0]?.first) },
+                steps: notingOtherStories(
+                    refs.map { OrderStep(ref: $0, status: status($0), standing: .unordered, session: openers[$0]?.first) }, besides: story
+                ),
                 attached: [], cycles: [], isFocused: false, isFinished: false, isStale: false, attention: attention(refs),
-                date: newest(refs), sessions: sessions(of: refs, first: session), story: commonStory(of: refs)
+                date: newest(refs), sessions: sessions(of: refs, first: session), story: story
             )
         }
     }

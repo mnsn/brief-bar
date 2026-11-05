@@ -187,7 +187,9 @@ import Testing
 
     @Test func itsAskedFromAzureDevOpsAndSessionsTitlesWithBriefBarsOwnName() throws {
         let (mission, stories) = Self.storyMission()
-        let inputs = try #require(MissionNaming.inputs(for: mission, stories: { stories[$0] ?? [] }, name: { Self.titles[$0] }))
+        let inputs = try #require(MissionNaming.inputs(
+            for: mission, stories: { stories[$0] ?? [] }, workItems: { _ in [] }, name: { Self.titles[$0] }
+        ))
         #expect(inputs == MissionNameInputs(
             current: "Checkout redesign", story: "Checkout redesign", workItems: ["Add the coupon field", "Gift cards", "Round coupon totals"],
             pullRequests: ["Add the coupon field", "Round coupon totals"], sessions: ["Coupons"]
@@ -208,10 +210,29 @@ import Testing
             The mission's name:
             """)
         // While BriefBar can't read the story, its name is no title, and isn't given.
-        let unread = try #require(MissionNaming.inputs(for: mission, stories: { stories[$0] ?? [] }) { ref in
+        let unread = try #require(MissionNaming.inputs(for: mission, stories: { stories[$0] ?? [] }, workItems: { _ in [] }) { ref in
             ref.kind == .workItem ? nil : Self.titles[ref]
         })
         #expect(unread.current == nil && unread.story == nil && unread.workItems.isEmpty)
+    }
+
+    /// Every work item of its pull requests, whatever it is, such as a story's other tasks or a feature: after the tasks
+    /// that place them in their stories, and never the story it's named for.
+    @Test func itsAskedFromEveryWorkItemOfItsPullRequestsTheirStoriesTasksFirst() throws {
+        let (mission, stories) = Self.storyMission()
+        let workItems: [ItemRef: [ItemRef]] = [
+            .pullRequest(organization: "contoso", number: 4101): [5001, 5102, 5104, 5120].map { .workItem(organization: "contoso", id: $0) },
+            .pullRequest(organization: "contoso", number: 4102): [5101, 5103].map { .workItem(organization: "contoso", id: $0) },
+        ]
+        var titles = Self.titles
+        titles[.workItem(organization: "contoso", id: 5001)] = "Faster checkout"
+        titles[.workItem(organization: "contoso", id: 5104)] = "Coupons for gift cards"
+        let inputs = try #require(MissionNaming.inputs(
+            for: mission, stories: { stories[$0] ?? [] }, workItems: { workItems[$0] ?? [] }, name: { titles[$0] }
+        ))
+        #expect(inputs.workItems == [
+            "Add the coupon field", "Gift cards", "Faster checkout", "Coupons for gift cards", "Round coupon totals",
+        ])
     }
 
     @Test func gitHubsTitlesArentUsedAndAMissionWithoutAzureDevOpsIsntNamed() throws {
@@ -220,10 +241,10 @@ import Testing
         let azure = ItemRef.pullRequest(organization: "contoso", number: 4101)
         let titles: [ItemRef: String] = [gitHub: "Secret GitHub title", azure: "Round coupon totals", session: "Ship it"]
         let onlyGitHub = OrderPresentationTests.mission([OrderPresentationTests.step(gitHub, .next)])
-        #expect(MissionNaming.inputs(for: onlyGitHub, stories: { _ in [] }, name: { titles[$0] }) == nil)
+        #expect(MissionNaming.inputs(for: onlyGitHub, stories: { _ in [] }, workItems: { _ in [] }, name: { titles[$0] }) == nil)
         // A stack whose first open pull request is GitHub's: its name today is that title, so it isn't given.
         let mixed = OrderPresentationTests.mission([OrderPresentationTests.step(gitHub, .next), OrderPresentationTests.step(azure, .next)])
-        let inputs = try #require(MissionNaming.inputs(for: mixed, stories: { _ in [] }, name: { titles[$0] }))
+        let inputs = try #require(MissionNaming.inputs(for: mixed, stories: { _ in [] }, workItems: { _ in [] }, name: { titles[$0] }))
         #expect(inputs.current == nil && inputs.pullRequests == ["Round coupon totals"])
         #expect(!MissionNaming.prompt(inputs).contains("Secret"))
     }

@@ -28,8 +28,11 @@ import Testing
                 // Read with the sprint, without its parent.
                 item(5103, "Task", rank: 2),
             ]),
-            // A bug the sprint puts under a story, as a team that tracks bugs as tasks does.
-            SprintBoard.Row(parent: item(5110, "User Story", rank: 2), tasks: [item(5111, "Bug", parent: 5110, rank: 3)]),
+            // A bug the sprint puts under a story, as a team that tracks bugs as tasks does; and a task moved to another
+            // story after the sprint read its links.
+            SprintBoard.Row(parent: item(5110, "User Story", rank: 2), tasks: [
+                item(5111, "Bug", parent: 5110, rank: 3), item(5112, "Task", parent: 5101, rank: 5),
+            ]),
             // A story the board shows under another, as a team that nests them does.
             SprintBoard.Row(parent: item(5120, "User Story", rank: 3), tasks: [item(5121, "User Story", parent: 5120, rank: 4)]),
         ],
@@ -92,6 +95,10 @@ import Testing
         // shows under another is a story itself.
         #expect(stories.stories(of: Self.pullRequest, workItems: [5103]) == [
             OrderStory(ref: Self.ref(5101), type: "User Story", task: Self.ref(5103), rank: 2),
+        ])
+        // Its parent, read with it, wins over the board's links, which may be older.
+        #expect(stories.stories(of: Self.pullRequest, workItems: [5112]) == [
+            OrderStory(ref: Self.ref(5101), type: "User Story", task: Self.ref(5112), rank: 5),
         ])
         #expect(stories.stories(of: Self.pullRequest, workItems: [5121]) == [OrderStory(ref: Self.ref(5121), type: "User Story")])
         #expect(stories.parents(ofTasksIn: [WorkItemKey(Self.organization, 5121)]).isEmpty)

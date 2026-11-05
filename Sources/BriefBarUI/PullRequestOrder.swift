@@ -423,7 +423,10 @@ package final class PullRequestOrder: ObservableObject {
         let facts = facts
         let requests = keys.compactMap { key -> MissionNamer.Request? in
             guard names.name(for: key) == nil, let mission = missions.first(where: { $0.key == key }),
-                  let inputs = MissionNaming.inputs(for: mission, stories: { facts.pullRequests[$0]?.stories ?? [] }, name: name(of:))
+                  let inputs = MissionNaming.inputs(
+                      for: mission, stories: { facts.pullRequests[$0]?.stories ?? [] },
+                      workItems: { facts.pullRequests[$0]?.workItems ?? [] }, name: name(of:)
+                  )
             else { return nil }
             return MissionNamer.Request(key: key, inputs: inputs, isSettled: MissionNaming.isSettled(mission, facts: facts))
         }
