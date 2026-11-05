@@ -154,10 +154,14 @@ final class PullRequestOrderFacts {
         _ records: [PRRecord], items: [PRSnapshot], tasks: [CopilotTaskEntry], watched: Set<PRKey> = []
     ) -> [ItemRef: StageFacts] {
         let rows = Dictionary(items.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        // Newest first, as they come.
+        var tasksOn: [PRKey: [CopilotTaskEntry]] = [:]
+        for task in tasks {
+            if let key = task.pullRequestKey { tasksOn[key, default: []].append(task) }
+        }
         var facts: [ItemRef: StageFacts] = [:]
         for record in records {
-            let on = tasks.filter { $0.pullRequestKey == record.id }
-            guard var fact = stageFacts(record, item: rows[record.id], tasks: on) else { continue }
+            guard var fact = stageFacts(record, item: rows[record.id], tasks: tasksOn[record.id] ?? []) else { continue }
             if fact.role == .sentToYou, watched.contains(record.id) { fact.role = .watching }
             facts[record.id.linkRef] = fact
         }

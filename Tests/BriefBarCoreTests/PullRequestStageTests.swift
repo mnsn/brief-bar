@@ -433,4 +433,21 @@ import Testing
         #expect(StageText.undone(Self.pr(4110), to: asked) == "Undone: !4110 is in Your review again")
         #expect(StageText.undone(Self.pr(4110), to: nil) == "Undone")
     }
+
+    /// Of the sessions at work on it, the one that started latest says why; of two that started together, the earliest
+    /// reference, whichever order the sources list them in.
+    @Test func theSessionThatStartedLatestSaysWhyWhateverTheOrder() {
+        let other = ItemRef.session("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d")!
+        let older = StageSession(ref: other, activity: .working, since: t(10))
+        let newer = Self.session(.working, at: 20)
+        #expect(StageRules.latest([older, newer])?.ref == Self.cart)
+        #expect(StageRules.latest([newer, older])?.ref == Self.cart)
+        let together = [Self.session(.working, at: 20), StageSession(ref: other, activity: .working, since: t(20))]
+        let first = min(Self.cart, other)
+        #expect(StageRules.latest(together)?.ref == first)
+        #expect(StageRules.latest(together.reversed())?.ref == first)
+        let unknown = StageSession(ref: other, activity: .working, since: nil)
+        #expect(StageRules.latest([unknown, Self.session(.working, at: 1)])?.ref == Self.cart)
+        #expect(StageRules.latest([]) == nil)
+    }
 }

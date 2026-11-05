@@ -236,8 +236,7 @@ package enum StageCommand {
     }
 
     package static func letBriefBarDecide(_ ref: ItemRef, order: PullRequestOrder) {
-        order.letBriefBarDecide(ref)
-        tell(.done, ref: ref, order: order)
+        tell(order.letBriefBarDecide(ref), ref: ref, order: order)
     }
 
     package static func undo(_ order: PullRequestOrder) {

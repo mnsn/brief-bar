@@ -434,8 +434,12 @@ public enum StageRules {
         }
     }
 
-    private static func latest(_ sessions: [StageSession]) -> StageSession? {
-        sessions.max { ($0.since ?? .distantPast, $1.ref) < ($1.since ?? .distantPast, $0.ref) }
+    /// The one that started latest; of those that started together, the earliest reference, whatever order they come in.
+    static func latest(_ sessions: [StageSession]) -> StageSession? {
+        sessions.max { a, b in
+            let (first, second) = (a.since ?? .distantPast, b.since ?? .distantPast)
+            return first != second ? first < second : a.ref > b.ref
+        }
     }
 }
 

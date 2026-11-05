@@ -113,10 +113,27 @@ private final class Clock {
     @Test func onlyTheThreeStagesCanBeSetAndOnlyWhereTheSourceTellsStages() {
         let order = Self.service(Self.defaults())
         Self.tell(order, [4093: StageFacts(role: .author, isReady: true)])
-        #expect(order.setStage(.canMerge, of: Self.ref(4093)) != .done)
-        #expect(order.setStage(.merged, of: Self.ref(4093)) != .done)
-        #expect(order.setStage(.yourReview, of: Self.ref(4999)) != .done)
+        #expect(order.setStage(.canMerge, of: Self.ref(4093)) == .refused("Azure DevOps decides: once it's approved and its checks pass"))
+        #expect(order.setStage(.waits, of: Self.ref(4093)) == .refused("Its order decides"))
+        #expect(order.setStage(.merged, of: Self.ref(4093)) == .refused("It merges in Azure DevOps"))
+        #expect(order.setStage(.yourReview, of: Self.ref(4999)) == .refused("BriefBar doesn't list that pull request now"))
         #expect(order.stage(of: Self.ref(4093))?.stage == .canMerge)
+
+        let off = Self.service(Self.defaults(on: false))
+        #expect(off.setStage(.yourReview, of: Self.ref(4093)) ==
+            .refused("Pull Request Order is off: turn it on in Settings › Pull Requests"))
+    }
+
+    /// Let BriefBar Decide says whether it changed anything, so VoiceOver hears a change only when there was one.
+    @Test func letBriefBarDecideChangesNothingWhereYouSetNone() {
+        let order = Self.service(Self.defaults())
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        #expect(order.letBriefBarDecide(Self.ref(4093)) == .unchanged)
+        #expect(order.lastChange == nil)
+        order.setStage(.yourReview, of: Self.ref(4093))
+        #expect(order.letBriefBarDecide(Self.ref(4093)) == .done)
+        #expect(order.letBriefBarDecide(Self.ref(4093)) == .unchanged)
+        #expect(order.letBriefBarDecide(Self.ref(4999)) == .unchanged)
     }
 
     @Test func eachAccountHasItsOwnStages() {

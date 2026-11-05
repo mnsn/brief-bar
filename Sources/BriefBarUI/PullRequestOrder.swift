@@ -410,10 +410,13 @@ package final class PullRequestOrder: ObservableObject {
     /// Sets a pull request's stage, as you choose it, In progress, Your review or Teammate's review, which stands until
     /// something ends it (`StageRules.stands`) or you change it; Teammate's review is Finished My Review. Undo puts back
     /// what it replaced. A pull request listed only because someone sent it to you keeps it in memory only. Refused, saying
-    /// why, for a stage only BriefBar sets, one whose source tells no stages, or a new one once the account keeps the most.
+    /// why, while Pull Request Order is off, for a stage only BriefBar sets, for one no list that tells stages has now, or
+    /// for a new one once the account keeps the most.
     @discardableResult
     package func setStage(_ stage: PullRequestStage, of ref: ItemRef) -> StageChange.Outcome {
-        guard isOn, stage.isSettable, let facts = stageFacts[ref] else { return .refused("BriefBar sets that stage itself") }
+        guard isOn else { return .refused(StageChange.orderIsOff) }
+        guard stage.isSettable else { return .refused(StageText.whyNotSettable(stage) ?? StageChange.setByBriefBar) }
+        guard let facts = stageFacts[ref] else { return .refused(StageChange.notListed) }
         let before = yourMark(of: ref, facts: facts)
         if let before, before.stage == stage, stages[ref]?.mark == before { return .unchanged }
         let mark = StageMark(stage: stage, at: now(), votes: facts.votes, commit: facts.commit)
@@ -441,12 +444,14 @@ package final class PullRequestOrder: ObservableObject {
         return setStage(yours.stage, of: ref)
     }
 
-    /// Let BriefBar Decide: forgets the stage you set, and BriefBar works it out again.
-    package func letBriefBarDecide(_ ref: ItemRef) {
-        guard isOn, let facts = stageFacts[ref], let before = yourMark(of: ref, facts: facts) else { return }
+    /// Let BriefBar Decide: forgets the stage you set, and BriefBar works it out again. Unchanged when you set none.
+    @discardableResult
+    package func letBriefBarDecide(_ ref: ItemRef) -> StageChange.Outcome {
+        guard isOn, let facts = stageFacts[ref], let before = yourMark(of: ref, facts: facts) else { return .unchanged }
         forgetMark(of: ref, facts: facts)
         lastChange = StageChange(ref: ref, before: before, after: nil)
         restage()
+        return .done
     }
 
     /// Undo: puts back exactly the stage your last change replaced, or none.
@@ -625,4 +630,9 @@ package struct StageChange: Equatable, Sendable {
     package var words: String {
         StageText.moved(ref, to: after)
     }
+
+    /// Why a stage can't be set, as VoiceOver hears it with a beep.
+    package static let orderIsOff = "Pull Request Order is off: turn it on in Settings › Pull Requests"
+    package static let setByBriefBar = "BriefBar sets that stage itself"
+    package static let notListed = "BriefBar doesn't list that pull request now"
 }
