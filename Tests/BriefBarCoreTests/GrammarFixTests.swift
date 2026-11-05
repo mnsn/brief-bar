@@ -200,7 +200,7 @@ import Testing
         #expect(GrammarFix.isCorrection(of: text, changed(21)))
         let long = String(repeating: "This retries the request when the server is busy. ", count: 400)
         #expect(!GrammarFix.keepsWords(of: long, String(repeating: "Ceci réessaie la requête quand le serveur est occupé. ", count: 400)))
-        let calledOff = Task {
+        let calledOff = Task(executorPreference: TestThreads.shared) {
             withUnsafeCurrentTask { $0?.cancel() }
             return GrammarFix.isCorrection(of: long, long)
         }
@@ -208,7 +208,7 @@ import Testing
     }
 
     /// How far a correction may go, worked out within a band of the table, is what the whole table says.
-    @Test func measuresACorrectionAsTheWholeTableWould() {
+    @Test(.onTestThreads) func measuresACorrectionAsTheWholeTableWould() {
         var seed: UInt64 = 0x5EED
         func next(_ bound: Int) -> Int {
             seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407

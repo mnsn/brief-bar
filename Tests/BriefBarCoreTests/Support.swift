@@ -81,6 +81,7 @@ extension Trait where Self == OnTestThreads {
 }
 
 /// The package's Swift sources that match `pattern`, by path under `Sources/`, such as `BriefBarCore/Attribution.swift`.
+/// It reads every source, which takes long: a test that calls it runs `.onTestThreads`.
 func sourcesMatching(_ pattern: some RegexComponent, filePath: String = #filePath) throws -> Set<String> {
     // Resolved, as the enumerator's paths can be: a checkout under /tmp is under /private/tmp.
     let sources = URL(fileURLWithPath: filePath).deletingLastPathComponent()
