@@ -377,6 +377,8 @@ import Testing
             "``\u{200B}`x\n\(entry)",
             "\u{1FEF}\u{1FEF}\u{1FEF}\n\(entry)",
             "\u{FF5E}\u{FF5E}\u{FF5E}\n\(entry)",
+            // After what reads as a list's marker once normalized, "⒈" as "1.".
+            "\u{2488} ```\n\(entry)\n```",
         ] {
             #expect(PullRequestPrompt.threadsListed(in: prompt, among: [7]).isEmpty, "\(prompt.debugDescription)")
             #expect(handOff.handedOff(in: prompt) == nil, "\(prompt.debugDescription)")
@@ -402,6 +404,7 @@ import Testing
             ("```", "\\u{60}``"), ("- ```", "- \\u{60}``"), ("> ~~~", "> \\u{7E}~~"), ("1. ```", "1. \\u{60}``"), ("2) ~~~", "2) \\u{7E}~~"),
             ("* ```", "* \\u{60}``"), ("+\u{A0}```", "+\u{A0}\\u{60}``"), ("\u{FF1E} ```", "\u{FF1E} \\u{60}``"), ("\u{200D}~~~", "\u{200D}\\u{7E}~~"),
             ("\u{1FEF}\u{1FEF}\u{1FEF}", "\\u{1FEF}\u{1FEF}\u{1FEF}"), ("\u{FF5E}\u{FF5E}\u{FF5E}", "\\u{FF5E}\u{FF5E}\u{FF5E}"),
+            ("\u{2488} ~~~", "\u{2488} \\u{7E}~~"), ("\u{2469}) ```", "\u{2469}) \\u{60}``"),
         ] {
             let fence = Person(id: "88888888-8888-8888-8888-888888888888", name: name)
             let threads = [7, 8, 9].map { id in

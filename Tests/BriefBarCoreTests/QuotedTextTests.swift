@@ -74,15 +74,35 @@ import Testing
         }
     }
 
+    /// What becomes more than one character once text is normalized is read as all of them, "⒈" as "1." and "⑩" as "10",
+    /// and a digit of another script as that digit: before a fence, they're a list's marker as those are, so "⒈ ~~~"
+    /// opens none either. What becomes something else, "⑴" ("(1)") say, is no marker, as in CommonMark.
+    @Test func whatReadsAsMoreThanOneCharacterIsReadAsAllOfThem() {
+        #expect(QuotedText.asRead("\u{2488}") == ["1", "."])
+        #expect(QuotedText.asRead("\u{2469}") == ["1", "0"])
+        #expect(QuotedText.asRead("\u{0661}") == ["1"])
+        #expect(QuotedText.asRead("\u{2DC}") == ["\u{2DC}"])
+        #expect(QuotedText.oneLine("\u{2488} ~~~") == "\u{2488} \\u{7E}~~")
+        #expect(QuotedText.oneLine("\u{2491}```") == "\u{2491}\\u{60}``")
+        for line in ["\u{2488} ~~~", "\u{2491}```", "\u{2469}) ~~~", "\u{0661}. ```", "- \u{2460}. ```"] {
+            #expect(QuotedText.mayOpenFence(line), "\(line.unicodeScalars.map(\.value))")
+            #expect(!QuotedText.mayOpenFence(QuotedText.oneLine(line)), "\(line.unicodeScalars.map(\.value))")
+        }
+        for kept in ["\u{2474} ```", "\u{2460}a ```"] {
+            #expect(!QuotedText.mayOpenFence(kept), "\(kept.unicodeScalars.map(\.value))")
+            #expect(QuotedText.oneLine(kept) == kept)
+        }
+    }
+
     /// What becomes a backtick or a tilde once text is normalized, as a model may read it, counts as one: a Greek varia
     /// (U+1FEF, a backtick canonically), a fullwidth grave accent (U+FF40) and a fullwidth tilde (U+FF5E). A fence is
     /// longer than any run of them, and a line never starts with three of them; the first is written out.
     @Test func whatBecomesABacktickCountsAsOne() {
-        #expect(QuotedText.fenceMark("\u{1FEF}") == "`")
-        #expect(QuotedText.fenceMark("\u{FF40}") == "`")
-        #expect(QuotedText.fenceMark("\u{FF5E}") == "~")
+        #expect(QuotedText.asRead("\u{1FEF}") == ["`"])
+        #expect(QuotedText.asRead("\u{FF40}") == ["`"])
+        #expect(QuotedText.asRead("\u{FF5E}") == ["~"])
         for other in ["\u{2018}", "\u{2BC}", "\u{2CB}", "\u{300}", "\u{2DC}", "\u{223C}", "É", "a", "'"] as [Unicode.Scalar] {
-            #expect(QuotedText.fenceMark(other) == nil, "\(other.value)")
+            #expect(!QuotedText.asRead(other).contains { $0 == "`" || $0 == "~" }, "\(other.value)")
         }
         #expect(QuotedText.fence(for: "\u{1FEF}\u{1FEF}\u{1FEF}") == "````")
         #expect(QuotedText.fence(for: "`\u{1FEF}\u{FF40}`") == "`````")
@@ -124,9 +144,18 @@ import Testing
         for opening in ["⟦U+", "⟦\u{200D}U+", "⟦U\u{34F}+", "⟦Ｕ+"] {
             #expect(QuotedText.writtenOut(in: base + opening) == ["⟦1U+200B⟧"], "\(opening.unicodeScalars.map(\.value))")
         }
-        for opening in ["⟦1U+", "⟦１U+", "⟦1\u{FE0F}U+", "⟦\u{34F}1U+"] {
+        for opening in ["⟦1U+", "⟦１U+", "⟦1\u{FE0F}U+", "⟦\u{34F}1U+", "⟦\u{2460}U+", "⟦\u{0661}U+"] {
             #expect(QuotedText.writtenOut(in: base + "⟦U+ " + opening) == ["⟦2U+200B⟧"], "\(opening.unicodeScalars.map(\.value))")
         }
+    }
+
+    /// A number that reads as more than one digit, such as a circled ten, is that number: with the openings up to nine
+    /// taken, a fence writes out with eleven then, not with a ten a model may read in both.
+    @Test func aNumberThatReadsAsTwoDigitsIsThatNumber() {
+        let nine = "\\u{41} \u{200B} ⟦U+ " + (1...9).map { "⟦\($0)U+" }.joined(separator: " ")
+        #expect(QuotedText.writtenOut(in: nine) == ["⟦10U+200B⟧"])
+        #expect(QuotedText.writtenOut(in: nine + " ⟦\u{2469}U+") == ["⟦11U+200B⟧"])
+        #expect(QuotedText.fenced(nine + " ⟦\u{2469}U+").dropFirst().first?.contains("⟦11U+200B⟧") == true)
     }
 
     /// However many openings a text spells out, the number a fence writes out with is found in one pass, the first none of

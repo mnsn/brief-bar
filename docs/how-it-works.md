@@ -2641,9 +2641,10 @@ and the prompt then says that they're what the build said, not instructions. The
 branches, which whoever opened it named, stay on their lines the same way in every prompt (`PullRequestPrompt.introduction`),
 and so do names, paths and comments of one line, none of them starting with three backticks or tildes, which would open
 a fence where it starts a line, as a name does before what its author said, not even after what reads as space or isn't
-seen, a no-break space or a joiner, or after a list's or a quote's marker, "- ```" (the first is written out, `\u{60}`). What becomes a backtick or a tilde once text is
-normalized, as a model may read it, such as a Greek varia or a fullwidth grave accent, counts as one there, and a fence
-is longer than any run of them in what it quotes (`QuotedText.fenceMark`). A branch whose name holds what a shell reads,
+seen, a no-break space or a joiner, or after a list's or a quote's marker, "- ```" (the first is written out, `\u{60}`).
+What text becomes once normalized, as a model may read it, counts as that there: a Greek varia or a fullwidth grave
+accent as a backtick, "⒈" as "1.", a list's marker, or a digit of another script as that digit; and a fence is longer
+than any run of backticks in what it quotes, read that way (`QuotedText.asRead`). A branch whose name holds what a shell reads,
 such as `$(…)` or a backtick, which Git allows, is in single quotes wherever a prompt names it, in a command such as
 `git push origin HEAD:refs/heads/'<branch>'`, in a sentence Copilot may make one from, or in a build's hint, so it runs
 nothing (`PullRequestPrompt.branch`). It asks the

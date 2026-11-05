@@ -63,18 +63,20 @@ public enum QuotedText {
 
     /// A backtick fence that nothing in `text` closes, so all of it stays quoted, whatever it says: one longer than its
     /// longest run of backticks, and at least three, as CommonMark has it. What becomes a backtick once text is normalized,
-    /// such as a Greek varia (`fenceMark`), counts as one, and a character with no width of its own between two of them,
+    /// such as a Greek varia (`asRead`), counts as one, and a character with no width of its own between two of them,
     /// such as a joiner, an accent or a variation selector, doesn't end their run, since nobody sees it, and a model may not
     /// either.
     public static func fence(for text: String) -> String {
         var longest = 0
         var run = 0
-        for scalar in text.unicodeScalars {
-            if fenceMark(scalar) == "`" {
-                run += 1
-                longest = max(longest, run)
-            } else if !hasNoWidth(scalar) {
-                run = 0
+        for scalar in text.unicodeScalars where !hasNoWidth(scalar) {
+            for read in asRead(scalar) {
+                if read == "`" {
+                    run += 1
+                    longest = max(longest, run)
+                } else {
+                    run = 0
+                }
             }
         }
         return String(repeating: "`", count: max(3, longest + 1))
@@ -115,9 +117,10 @@ public enum QuotedText {
     /// writes a character that way does; then "⟦U+200B⟧", or, when a line spells that out too, "⟦1U+200B⟧", "⟦2U+200B⟧"
     /// and on, with the first number none has. What a line spells out is what a model reads of it (`asRead`): without what
     /// nobody sees, such as a combining grapheme joiner after the brace, and with what becomes a backslash, a digit or a
-    /// brace once normalized, such as their fullwidth forms, as that. The numbers are read in one pass, whatever it says.
+    /// brace once normalized, such as their fullwidth forms, as that, a circled ten as "10", and a digit of another script
+    /// as that digit. The numbers are read in one pass, whatever it says.
     private static func writingOut(for lines: [[Unicode.Scalar]]) -> (Unicode.Scalar) -> String {
-        let read = lines.map { $0.filter { !hasNoWidth($0) && !isControl($0) }.map(asRead) }
+        let read = lines.map { $0.filter { !hasNoWidth($0) && !isControl($0) }.flatMap(asRead) }
         guard read.contains(where: { spells(["\\", "u", "{"], in: $0) }) else { return escaped }
         // The numbers of the openings the lines spell out, each as its digits: "" for none.
         var taken: Set<String> = []
@@ -179,44 +182,42 @@ public enum QuotedText {
         fenceStart(in: line.unicodeScalars) != nil
     }
 
-    /// Where the fence a line may open starts: the first of three backticks or tildes or more, those with no width between
-    /// them too, and what becomes a backtick or a tilde once text is normalized counted as one (`fenceMark`), as a model
-    /// may read it. Before them may be anything that reads as space or isn't seen, a no-break space or a joiner, say, and
-    /// what a list's or a quote's marker is made of, `>`, `-`, `+`, `*`, digits, `.` and `)`, as in "- ```" or "> 1. ~~~",
-    /// which CommonMark reads as a fence in a list or a quote, or what becomes one once normalized, a fullwidth `＞` say.
-    /// Nil when it may open none.
+    /// Where the fence a line may open starts: the character that starts three backticks or tildes or more, with what has
+    /// no width between them too, as a model may read them (`asRead`), a Greek varia as a backtick, say. Before them may
+    /// be anything that reads as space or isn't seen, a no-break space or a joiner, say, and what a list's or a quote's
+    /// marker is made of, `>`, `-`, `+`, `*`, digits, `.` and `)`, as in "- ```" or "> 1. ~~~", which CommonMark reads as a
+    /// fence in a list or a quote, read the same way: "＞ ```", "⒈ ~~~" ("1. ~~~") or "⑩) ```". Nil when it may open none.
     private static func fenceStart<Line: BidirectionalCollection>(in line: Line) -> Line.Index? where Line.Element == Unicode.Scalar {
-        let markers = ">-+*.)0123456789".unicodeScalars
-        guard let start = line.firstIndex(where: { !$0.properties.isWhitespace && !hasNoWidth($0) && !markers.contains(asRead($0)) }),
-              let mark = fenceMark(line[start])
-        else { return nil }
-        var count = 0
-        for scalar in line[start...] {
-            if fenceMark(scalar) == mark {
-                count += 1
-            } else if !hasNoWidth(scalar) {
-                break
+        var fence: (start: Line.Index, mark: Unicode.Scalar, count: Int)?
+        for index in line.indices where !hasNoWidth(line[index]) {
+            for read in asRead(line[index]) {
+                if let open = fence {
+                    guard read == open.mark else { return open.count >= 3 ? open.start : nil }
+                    fence = (open.start, open.mark, open.count + 1)
+                } else if read == "`" || read == "~" {
+                    fence = (index, read, 1)
+                } else if !read.properties.isWhitespace && !">-+*.)0123456789".unicodeScalars.contains(read) {
+                    return nil
+                }
             }
         }
-        return count >= 3 ? start : nil
+        return fence.flatMap { $0.count >= 3 ? $0.start : nil }
     }
 
-    /// The fence character a character is, or becomes once text is normalized, as a model may read it (`asRead`): a
-    /// backtick for a backtick, a Greek varia (U+1FEF, which is one canonically) or a fullwidth grave accent (U+FF40); a
-    /// tilde for a tilde or a fullwidth one (U+FF5E). Nil for any other.
-    static func fenceMark(_ scalar: Unicode.Scalar) -> Unicode.Scalar? {
-        let read = asRead(scalar)
-        return read == "`" || read == "~" ? read : nil
-    }
-
-    /// A character as a model may read it: one that becomes a single ASCII character once text is normalized, such as a
-    /// fullwidth digit or brace, or a Greek varia, a backtick canonically, as that character; any other as it is. Only a
-    /// character outside ASCII that changes once normalized is looked up, so most text costs nothing.
-    static func asRead(_ scalar: Unicode.Scalar) -> Unicode.Scalar {
-        guard !scalar.isASCII, scalar.properties.changesWhenNFKCCaseFolded else { return scalar }
+    /// A character as a model may read it: what it becomes once text is normalized, when that's ASCII, a character or
+    /// more, such as a fullwidth digit, brace or tilde, a Greek varia (a backtick canonically), "⒈" ("1.") or "⑩" ("10");
+    /// a digit of another script as that digit, "١" as "1"; any other as it is. Only a character outside ASCII is looked
+    /// up, and normalized only when that changes it, so most text costs little.
+    static func asRead(_ scalar: Unicode.Scalar) -> [Unicode.Scalar] {
+        guard !scalar.isASCII else { return [scalar] }
+        let properties = scalar.properties
+        if properties.numericType == .decimal, let value = properties.numericValue, (0...9).contains(value) {
+            return [Unicode.Scalar(UInt8(48 + Int(value)))]
+        }
+        guard properties.changesWhenNFKCCaseFolded else { return [scalar] }
         let normalized = String(scalar).precomposedStringWithCompatibilityMapping.unicodeScalars
-        guard normalized.count == 1, let only = normalized.first, only.isASCII else { return scalar }
-        return only
+        guard normalized.allSatisfy(\.isASCII) else { return [scalar] }
+        return Array(normalized)
     }
 
     /// A character written out as an escape: "\u{202E}".
