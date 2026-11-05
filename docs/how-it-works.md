@@ -1313,6 +1313,44 @@ Idle's is in one list, by when it was created, the newest or the oldest first, a
 its age. Idle's, folded below it, are in the same order; Done's, closed already, stay the latest first.
 Counts, the brief, notifications, widgets and lists by state stay by status.
 
+### A pull request's stage
+
+With Pull Request Order on, each Azure DevOps pull request also has a stage (`PullRequestStage`), where it is in its
+flow, which a row's colored label shows, in the window, the menu bar's list and the Overview, and its details as a
+track. `StageRules` works it out from what the lists already read (`PullRequestOrderFacts.stageFacts`), the Copilot
+sessions on it (the tasks BriefBar sent to Copilot, and the Copilot app's sessions that opened it or say they work on
+it), what you set, and its order. The first rule that applies decides:
+
+| When | Stage | Says |
+|---|---|---|
+| BriefBar saw it merge | Merged | **Merged** |
+| A session works on it, or waits for you, since what you set | In progress | **‘Cart’ is writing it**, **‘Cart’ asks you** |
+| You set one, and it still holds | What you set | **Find a reviewer**, **Waiting on Sam**, **You set it 2h ago** |
+| Someone else's: you're asked, or someone sent it to you | Your review | **Sam asked you**, **Priya sent it in Teams** |
+| Someone else's: you want changes | In progress | **Waiting for Sam's changes** |
+| Yours: a required item failed, or someone wants changes | In progress | **Build failed**, **Merge conflicts**, **Sam wants changes** |
+| Yours: a session that worked on it finished, and nobody else voted | Your review | **‘Cart’ finished** |
+| Yours: a draft | In progress | **Draft** |
+| Yours: ready to complete, and its order lets it | Can merge | **Complete it** |
+| Yours: ready to complete, after one BriefBar hasn't seen merge | Waits for another PR | **After !4102** |
+| Yours: reviewed, with something else left | In progress | What's Left's first item |
+| Yours: otherwise | Teammate's review | Who it waits for, as What's Left says it, or **Find a reviewer** |
+
+Someone else's pull request that asks nothing of you has no stage. You can set In progress, Your review or Teammate's
+review; Can merge, Waits and Merged come only from what Azure DevOps and the order show. What you set holds until the
+pull request moves on (`StageRules.stands`): In progress until new commits come, or a session on it finishes; Teammate's
+review until others' votes change (a digest of them, never who cast them), and, on someone else's, new commits; Your
+review until you change it; merging or closing ends any. **Finished My Review** sets Teammate's review: on someone
+else's, it takes it off your board until something new needs you there. BriefBar never votes or changes anything in
+Azure DevOps for a stage.
+
+What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one
+entry for each pull request: its number, the stage, when, the votes' digest and its commit, up to 500 for each account;
+one no list has had for 30 days goes. For a pull request listed only because someone sent it to you in a chat, it's kept
+in memory only, as what you've seen of it is. **Forget Stages…** forgets them all, and turning Azure DevOps off forgets
+its own; turning Pull Request Order off keeps them, unused. Stages change no group, count, notification or brief: they
+only label rows.
+
 ### A pull request's details
 
 A click on a pull request on the window's page shows its details beside the list, or over it when the page is narrower

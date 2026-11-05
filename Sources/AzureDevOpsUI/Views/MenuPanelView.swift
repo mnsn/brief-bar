@@ -268,18 +268,23 @@ struct PullRequestRow: View {
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var details: PullRequestDetailsStore
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var ordering: PullRequestOrder
     @Environment(\.panelStyle) private var panelStyle
 
     var body: some View {
         // On a page of BriefBar's window, such as the Overview, rather than in the menu bar or a widget.
         let inWindow = panelStyle == .page
+        // Its stage on a full row, in the menu bar's list and the Overview as on the Pull Requests page; none on a row of
+        // one line, which keeps one height.
+        let stage = compact || !ordering.isOn ? nil : ordering.stage(of: item.key.linkRef)
         PRRowView(
             item: item, now: store.now, compact: compact, showsCreated: showsCreated, showsReadiness: showsReadiness,
             openSource: item.chatSource == nil ? nil : { store.openSource(item) },
             stopWatching: stopsWatching && item.isWatched ? { store.stopWatching(item) } : nil,
             dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil,
             showDetails: details.hasPage() ? { details.showDetails(item) } : nil,
-            opensDetails: inWindow || settings.opensPullRequestsInBriefBar, showsInWindow: !inWindow
+            opensDetails: inWindow || settings.opensPullRequestsInBriefBar, showsInWindow: !inWindow,
+            stage: stage, ordering: stage == nil ? nil : ordering
         ) {
             store.open(item)
         }

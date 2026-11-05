@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **See each pull request's stage, and change it in one click.** With Pull Request Order on, every Azure DevOps pull
+  request shows where it is in its flow, in color, in BriefBar's window and the menu bar: In progress, Your review,
+  Teammate's review, Can merge, or Waits for another PR. BriefBar works it out from Azure DevOps and your Copilot
+  sessions; click it to pick another, or **Finished My Review** to send it to your teammates. Its details show the
+  whole track, and who set it, and By Mission draws each mission's pull requests in their stages' colors.
+
 ## 0.16.2 - 2026-11-05
 
 - **Copilot's prompts keep what others wrote as theirs.** Fix, Resolve, Explain, Review and Push & Reply quote comments,

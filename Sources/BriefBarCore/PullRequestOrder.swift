@@ -247,6 +247,15 @@ public enum OrderOrigin: Hashable, Sendable {
     /// They're next to each other in a GitHub stack: its number, and the later one's place in it, of how many.
     case gitHubStack(number: Int, position: Int, size: Int)
 
+    /// Whether BriefBar sees it in their branches, a GitHub stack or one targeting the other's branch, rather than an
+    /// order's say: merging one before the other would merge it into the other's branch.
+    public var isStacked: Bool {
+        switch self {
+        case .declared: false
+        case .branch, .gitHubStack: true
+        }
+    }
+
     /// Which says the most, for the one a row names first: a session's order, then GitHub's stack, then a branch.
     var rank: Int {
         switch self {
