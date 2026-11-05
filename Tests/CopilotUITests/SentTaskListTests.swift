@@ -121,7 +121,7 @@ import Testing
         let sent = SentTasks()
         sent.publish(.azureDevOps, tasks: [SentTask(
             id: "t1", name: "Fix Comments: !4071 Fix totals", place: "shop-web", stage: .finished, detail: nil, since: now,
-            opens: "Pull Request", livesIn: "Azure DevOps", open: { opened += 1 }, canShow: { canShow },
+            opens: "Pull Request", whereItOpens: "in Azure DevOps", open: { opened += 1 }, canShow: { canShow },
             show: {
                 shown += 1
                 return true

@@ -71,7 +71,7 @@ import Testing
         var fromMenuBar = false
         let sent = SentTask(
             id: "a", name: "Fix Comments: !4071 Fix totals", place: "shop-web", stage: .finished, detail: nil, since: nil,
-            opens: "Pull Request", livesIn: "Azure DevOps", open: { opened += 1 }, canShow: { canShow },
+            opens: "Pull Request", whereItOpens: "in Azure DevOps", open: { opened += 1 }, canShow: { canShow },
             show: {
                 shown += 1
                 return shows
@@ -113,5 +113,14 @@ import Testing
             id: "a", name: "Fix Comments: !4071 Fix totals", place: "shop-web", stage: .finished, detail: nil, since: nil,
             opens: "Pull Request", open: {}, menu: { AnyView(EmptyView()) }
         ))
+        // A pull request on GitHub, as a work item's task can open, is said to open there; one that says nothing of where,
+        // as before.
+        let onGitHub = SentTask(
+            id: "b", name: "Work Item 4217", place: "shop-web", stage: .finished, detail: nil, since: nil,
+            opens: "Pull Request", whereItOpens: "on GitHub", open: {}, menu: { AnyView(EmptyView()) }
+        )
+        #expect(onGitHub.openTitle == "Open Pull Request on GitHub")
+        #expect(onGitHub.clickTitle(inWindow: true) == "Open Pull Request on GitHub" && onGitHub.otherOpening(inWindow: true) == nil)
+        #expect(task("c").openTitle == "Open Pull Request")
     }
 }

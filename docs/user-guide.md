@@ -712,7 +712,7 @@ to the work item, which you'll find under Pull Requests as your own; a notificat
 done, or why it stopped. While **GitHub Copilot** is on, each task you sent is listed with your Copilot
 sessions too, marked ✈︎ ([below](#github-copilot)). The badge's menu, and the task's there, show the pull
 request in BriefBar's window with **Show Pull Request in BriefBar**, or open it with **Open Pull Request in
-Azure DevOps**, go on
+Azure DevOps**, or **on GitHub** for one Copilot opened there, go on
 with the session in Terminal, show the worktree, stop Copilot or remove the worktree, and the ✈︎
 menu at the top of the Sprint page lists every task you sent. Copilot keeps going if BriefBar quits.
 
@@ -844,8 +844,9 @@ app doesn't list them. Each is in **Running** while it gets ready and works, the
 **Stopped**, as a session is; one you stopped yourself goes straight to **Idle**. Click one to see its
 pull request, as the pull request's own row shows it: its details in BriefBar's window, from the window,
 and from the menu bar and widgets with **Open Pull Requests in BriefBar** on; otherwise in Azure DevOps, as
-a work item's task opens its work item. Right-click it for the other of the two, **Show Pull Request in
-BriefBar** or **Open Pull Request in Azure DevOps**, then the task's own menu. The same **Move Viewed
+a work item's task opens its work item, or on GitHub, for a pull request Copilot opened there, which the menu
+says too. Right-click it for the other way to its pull request, where there's one, **Show Pull Request in BriefBar**
+or **Open Pull Request in Azure DevOps**, then the task's own menu. The same **Move Viewed
 Sessions to Idle** setting controls whether opening a finished task dismisses it.
 
 ### GitHub

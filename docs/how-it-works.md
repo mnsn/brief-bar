@@ -397,7 +397,9 @@ requests.
   its details on the Pull Requests page, beside **Open in Azure DevOps**, and so does its own row's menu under Where It
   Stands or Also Linked, and its preview's buttons (`StoryRow`, `StoryActions`), ↗ opening it in Azure DevOps all the
   same; a task's menu has it too, as **Show Pull Request in BriefBar**, for the pull request it works on or opened
-  (`CopilotTaskEntry.pullRequestKey`), beside **Open Pull Request in Azure DevOps**. They show it at what its row is
+  (`CopilotTaskEntry.pullRequestKey`), beside **Open Pull Request in Azure DevOps**, or **on GitHub** for one a work
+  item's task opened there, which says where it opens from its link (`whereItsPullRequestOpens`, with
+  `ItemRef.Kind.whereItOpens`). They show it at what its row is
   about (`PullRequestDetailsStore.revealAtWhatItsAbout`). Where no window has that page, it opens in Azure DevOps.
 - Copilot: the pull request each app session started from or opened, as the app records it in its database
   (`workspaces`' `source_pr_*` and `created_pr_*` columns, and `workspace_pull_request_links`): GitHub's, and any
@@ -1335,7 +1337,9 @@ page shows the run you click, or for its title the first that failed, else the b
 Your Merges** card, the run its merge's pipelines name, while the list still has the pull request. A task you sent
 to Copilot, in Copilot's list (`SentTask`), shows its pull request as the pull request's own row does: from a page of
 the window wherever it can (`canShow`), and from the menu bar or a widget with Open Pull Requests in BriefBar
-(`showsFromMenuBar`), at what its row is about; otherwise, and for a work item's task, it opens in Azure DevOps.
+(`showsFromMenuBar`), at what its row is about; otherwise it opens where it is, in Azure DevOps, or on GitHub for a
+pull request a work item's task opened there, which BriefBar's window doesn't show, and a work item's task opens its
+work item in Azure DevOps; its row, its menus and VoiceOver say where (`SentTask.whereItOpens`).
 Its menu says what a click does first, then the other (`SentTask.click(inWindow:)`, `otherOpening`), and its line
 in the Overview's brief shows it from there (`SessionStore.show`).
 

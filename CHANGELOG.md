@@ -5,7 +5,8 @@
 - **A task you sent to Copilot shows its pull request in BriefBar.** In Copilot's list, clicking a task about one of
   your pull requests shows its details in BriefBar's window, as the pull request's own row does: always from the window,
   and from the menu bar and widgets with **Open Pull Requests in BriefBar** on. Its menu has **Open Pull Request in Azure
-  DevOps** too, and a linked pull request's row under **Where It Stands** or **Also Linked** has **Show in BriefBar**
+  DevOps** too, or **Open Pull Request on GitHub** for one Copilot opened there, and a linked pull request's row under
+  **Where It Stands** or **Also Linked** has **Show in BriefBar**
   beside **Open in Azure DevOps**. Shown from a link or a task, a pull request's details open at what its row is about.
 - **A review you're asked for opens at its reviewers.** From anywhere but beside the list, a review request, or a pull
   request that waits on its author for the changes you asked for, opens its details at **Reviewers**, where your vote

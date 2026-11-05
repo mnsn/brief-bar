@@ -34,9 +34,10 @@ package struct SentTask: Identifiable {
     package var stoppedByYou: Bool
     /// What clicking it opens, such as "Pull Request" or "Work Item".
     package var opens: String
-    /// Where that lives, such as "Azure DevOps", which opening it there says (`openTitle`).
-    package var livesIn: String?
-    /// Opens what it's for where it lives, such as its pull request in Azure DevOps.
+    /// Where `open` opens that, as menus say it (`ItemRef.Kind.whereItOpens`), such as "in Azure DevOps", or "on GitHub"
+    /// for a pull request there (`openTitle`); nil when it says nothing of where.
+    package var whereItOpens: String?
+    /// Opens what it's for where it lives, such as its pull request in Azure DevOps or on GitHub.
     package var open: () -> Void
     /// Whether what it's for shows in BriefBar's window too, as it is now: its pull request, while a window has the Pull
     /// Requests page and its list has it. Never for a work item.
@@ -53,7 +54,7 @@ package struct SentTask: Identifiable {
 
     package init(
         id: String, name: String, place: String?, stage: Stage, detail: String?, since: Date?, stoppedByYou: Bool = false,
-        opens: String, livesIn: String? = nil, open: @escaping () -> Void, canShow: @escaping () -> Bool = { false },
+        opens: String, whereItOpens: String? = nil, open: @escaping () -> Void, canShow: @escaping () -> Bool = { false },
         show: @escaping () -> Bool = { false }, showsFromMenuBar: @escaping () -> Bool = { false }, menu: @escaping () -> AnyView
     ) {
         self.id = id
@@ -64,7 +65,7 @@ package struct SentTask: Identifiable {
         self.since = since
         self.stoppedByYou = stoppedByYou
         self.opens = opens
-        self.livesIn = livesIn
+        self.whereItOpens = whereItOpens
         self.open = open
         self.canShow = canShow
         self.show = show
@@ -72,8 +73,8 @@ package struct SentTask: Identifiable {
         self.menu = menu
     }
 
-    /// "Open Pull Request in Azure DevOps", for menus: where it lives.
-    package var openTitle: String { "Open \(opens)" + (livesIn.map { " in \($0)" } ?? "") }
+    /// "Open Pull Request in Azure DevOps", "Open Pull Request on GitHub", for menus: where it lives.
+    package var openTitle: String { "Open \(opens)" + (whereItOpens.map { " \($0)" } ?? "") }
 
     /// "Show Pull Request in BriefBar", for menus.
     package var showTitle: String { "Show \(opens) in BriefBar" }
@@ -109,7 +110,8 @@ package struct SentTask: Identifiable {
 extension SentTask: Equatable {
     package static func == (lhs: SentTask, rhs: SentTask) -> Bool {
         lhs.id == rhs.id && lhs.name == rhs.name && lhs.place == rhs.place && lhs.stage == rhs.stage && lhs.detail == rhs.detail
-            && lhs.since == rhs.since && lhs.stoppedByYou == rhs.stoppedByYou && lhs.opens == rhs.opens && lhs.livesIn == rhs.livesIn
+            && lhs.since == rhs.since && lhs.stoppedByYou == rhs.stoppedByYou && lhs.opens == rhs.opens
+            && lhs.whereItOpens == rhs.whereItOpens
     }
 }
 

@@ -148,7 +148,7 @@ struct CopilotRunMenuItems: View {
             Button("Show Pull Request in BriefBar") { _ = copilot.showPullRequest(key) }
         }
         if entry.pullRequest != nil {
-            Button("Open Pull Request in Azure DevOps") { copilot.openPullRequest(entry) }
+            Button(entry.openPullRequestTitle) { copilot.openPullRequest(entry) }
         }
         if entry.workItem != nil {
             Button("Open Work Item in Azure DevOps") { copilot.openWorkItem(entry) }
@@ -277,16 +277,19 @@ extension CopilotTasksStore {
     /// Every task, as the GitHub Copilot list shows it with your sessions: what it's for, where, how it stands, and what
     /// clicking it and its menu do, with the task as it is then. A pull request's shows in BriefBar's window, as its own
     /// row does: from a page of the window wherever it can, and from the menu bar or a widget once you chose to Open Pull
-    /// Requests in BriefBar; or else it opens in Azure DevOps, as a work item's does.
+    /// Requests in BriefBar; or else it opens where it is, in Azure DevOps or on GitHub, as a work item's opens in Azure
+    /// DevOps.
     func sentTasks() -> [SentTask] {
         entries.map { entry in
             let id = entry.id
             let current = { [weak self] in self?.entries.first { $0.id == id } ?? entry }
+            let opensPullRequest = entry.pullRequest != nil
             return SentTask(
                 id: id, name: name(of: entry), place: entry.onPullRequest?.repository ?? entry.run?.repository.lastPathComponent,
                 stage: entry.status.phase.sentTaskStage, detail: Self.detail(of: entry, stoppedByYou: wasStoppedByYou(id)),
                 since: entry.status.since ?? entry.startedAt, stoppedByYou: wasStoppedByYou(id),
-                opens: entry.pullRequest != nil ? "Pull Request" : "Work Item", livesIn: "Azure DevOps",
+                opens: opensPullRequest ? "Pull Request" : "Work Item",
+                whereItOpens: opensPullRequest ? entry.whereItsPullRequestOpens : ItemRef.Kind.workItem.whereItOpens,
                 open: { [weak self] in
                     let entry = current()
                     if entry.pullRequest != nil { self?.openPullRequest(entry) } else { self?.openWorkItem(entry) }

@@ -255,17 +255,19 @@ struct SessionRowView: View {
         }
     }
 
-    /// "Shows its pull request in BriefBar", or "Opens its work item in Azure DevOps", for VoiceOver.
+    /// "Shows its pull request in BriefBar", "Opens its pull request on GitHub", or "Opens its work item in Azure DevOps", for
+    /// VoiceOver.
     private func hint(_ task: SentTask) -> String {
         let click = clickDoes(task)
         return "\(click.verb.capitalized)s \(click.what)"
     }
 
-    /// What a click does with a task: ("show", "its pull request in BriefBar"), ("open", "its work item in Azure DevOps").
+    /// What a click does with a task: ("show", "its pull request in BriefBar"), ("open", "its pull request on GitHub"),
+    /// ("open", "its work item in Azure DevOps").
     private func clickDoes(_ task: SentTask) -> (verb: String, what: String) {
         let what = "its " + task.opens.lowercased()
         if task.clickShows(inWindow: inWindow) { return ("show", what + " in BriefBar") }
-        return ("open", what + (task.livesIn.map { " in \($0)" } ?? ""))
+        return ("open", what + (task.whereItOpens.map { " \($0)" } ?? ""))
     }
 
     /// The session's context usage, when the setting is on and the app has measured it.

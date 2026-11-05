@@ -491,6 +491,49 @@ import Testing
         #expect(shown.count == 3)
     }
 
+    /// A work item's task can open its pull request on GitHub, where its repository lives: its row, its menus and VoiceOver
+    /// say it opens there, as it does, never in BriefBar's window, which shows Azure DevOps' pull requests. One that opened a
+    /// pull request in Azure DevOps says so, and shows in BriefBar too.
+    @Test func aTaskSaysWhereItsPullRequestOpens() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        func opened(_ id: String, workItem: Int, startedAt: Date, pullRequest: String) -> CopilotRun {
+            CopilotRun(
+                id: id, workItem: WorkItemReference(organization: "contoso", project: "Storefront", id: workItem),
+                options: CopilotModel.standard, repository: URL(fileURLWithPath: "/Users/robin/dev/shop-web"),
+                worktree: URL(fileURLWithPath: "/Users/robin/dev/copilot-worktrees/shop-web/wi-\(workItem)"), startedAt: startedAt,
+                process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: .finished, pullRequest: URL(string: pullRequest)
+            )
+        }
+        settings.copilotRuns = [
+            opened(first, workItem: 4217, startedAt: now, pullRequest: "https://github.com/octo/shop-web/pull/12"),
+            opened(second, workItem: 4218, startedAt: now.addingTimeInterval(-60),
+                   pullRequest: "https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4091"),
+        ]
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        // Whatever the window has: a pull request on GitHub isn't one of its.
+        store.canShowPullRequest = { _ in true }
+
+        let tasks = store.sentTasks()
+        #expect(tasks.map(\.id) == [first, second])
+        let onGitHub = try #require(tasks.first)
+        #expect(onGitHub.opens == "Pull Request" && onGitHub.whereItOpens == "on GitHub")
+        #expect(onGitHub.openTitle == "Open Pull Request on GitHub")
+        #expect(!onGitHub.canShow())
+        #expect(onGitHub.clickTitle(inWindow: true) == "Open Pull Request on GitHub")
+        #expect(onGitHub.otherOpening(inWindow: true) == nil && onGitHub.otherOpening(inWindow: false) == nil)
+        let inAzureDevOps = try #require(tasks.last)
+        #expect(inAzureDevOps.whereItOpens == "in Azure DevOps")
+        #expect(inAzureDevOps.openTitle == "Open Pull Request in Azure DevOps")
+        #expect(inAzureDevOps.canShow() && inAzureDevOps.clickTitle(inWindow: true) == "Show Pull Request in BriefBar")
+
+        // The task's own menus, its badge's and the Sprint page's ✈︎, say the same.
+        #expect(store.entries.map(\.openPullRequestTitle) == ["Open Pull Request on GitHub", "Open Pull Request in Azure DevOps"])
+        var none = try #require(store.entries.first)
+        none.pullRequest = nil
+        #expect(none.whereItsPullRequestOpens == "in Azure DevOps")
+    }
+
     @Test func saysHowEachTaskStands() {
         var entry = CopilotTaskEntry(
             id: first, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,

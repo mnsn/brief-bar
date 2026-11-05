@@ -1018,10 +1018,15 @@ struct StoryDetails: View {
 extension ItemRef.Kind {
     /// "Open in Azure DevOps", for what opens a thing of this kind where it lives.
     package var openTitle: String {
+        "Open \(whereItOpens)"
+    }
+
+    /// Where a thing of this kind opens, as menus say it: "in Azure DevOps", "on GitHub", "in Copilot".
+    package var whereItOpens: String {
         switch self {
-        case .workItem, .pullRequest: return "Open in Azure DevOps"
-        case .gitHubPullRequest: return "Open on GitHub"
-        case .session: return "Open in Copilot"
+        case .workItem, .pullRequest: return "in Azure DevOps"
+        case .gitHubPullRequest: return "on GitHub"
+        case .session: return "in Copilot"
         }
     }
 }
