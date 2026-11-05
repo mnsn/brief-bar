@@ -439,6 +439,37 @@ public enum StageRules {
     }
 }
 
+/// What you can do to a pull request's stage, as VoiceOver offers it on its row or its card, in its rotor.
+public enum StageAction: Hashable, Sendable {
+    case finishedReview
+    case move(PullRequestStage)
+    case putYoursBack
+    case letBriefBarDecide
+
+    /// "Move to Teammate's Review".
+    public var title: String {
+        switch self {
+        case .finishedReview: "Finished My Review"
+        case .move(let stage): "Move to \(stage.menuTitle)"
+        case .putYoursBack: "Put Yours Back"
+        case .letBriefBarDecide: "Let BriefBar Decide"
+        }
+    }
+
+    /// What's offered for a pull request in this stage: Finished My Review in Your review; each stage you can set but the
+    /// one it's in, where someone else's that you finished reviewing is in Teammate's review; Put Yours Back once a
+    /// session's change replaced yours; Let BriefBar Decide for one you set. Nothing once it merged.
+    public static func offered(for reading: StageReading) -> [StageAction] {
+        guard reading.stage != .merged else { return [] }
+        var actions: [StageAction] = []
+        if reading.stage == .yourReview { actions.append(.finishedReview) }
+        actions += PullRequestStage.settable.filter { $0 != reading.stage }.map(StageAction.move)
+        if reading.replaced != nil { actions.append(.putYoursBack) }
+        if reading.isSetByYou { actions.append(.letBriefBarDecide) }
+        return actions
+    }
+}
+
 // MARK: - Words
 
 /// What a stage says, in BriefBar's words, for the pull requests' rows, their details and VoiceOver: sessions by their
@@ -499,6 +530,20 @@ public enum StageText {
     /// What became of it, for the Undo line and VoiceOver: "Moved !4093 to Teammate's review".
     public static func moved(_ ref: ItemRef, to stage: PullRequestStage?) -> String {
         stage.map { "Moved \(ref.shortOrderLabel) to \($0.title)" } ?? "Let BriefBar decide \(ref.shortOrderLabel)'s stage"
+    }
+
+    /// What VoiceOver hears once you changed it: where it is now, and where Undo is. "!4093 is in Teammate's review now.
+    /// Undo is in its stage's menu."
+    public static func changed(_ ref: ItemRef, to reading: StageReading) -> String {
+        let place = reading.isOnBoard ? "is in \(reading.stage.title) now" : "is off your board now"
+        return "\(ref.shortOrderLabel) \(place). Undo is in its stage's menu."
+    }
+
+    /// What VoiceOver hears once you undid it: "Undone: !4093 is in Your review again".
+    public static func undone(_ ref: ItemRef, to reading: StageReading?) -> String {
+        guard let reading else { return "Undone" }
+        let place = reading.isOnBoard ? "is in \(reading.stage.title) again" : "is off your board again"
+        return "Undone: \(ref.shortOrderLabel) \(place)"
     }
 
     /// How many of a mission's pull requests are in each stage, in the stages' order, for its progress bar: "1 in progress ·
