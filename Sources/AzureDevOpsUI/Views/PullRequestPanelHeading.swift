@@ -8,20 +8,24 @@ import SwiftUI
 struct PullRequestPanelHeading<Tags: View>: View {
     let item: PRSnapshot
     let panel: PullRequestPanel
-    /// The list still has it; once it doesn't, such as a review that merged, this is how it was last.
+    /// The list still has it; once it doesn't, such as a review that merged, this is how it was last read open.
     var isListed = true
+    /// The list still reads it open though it doesn't have it anymore, as one sent to you in a chat that you've seen: this
+    /// is how it is now.
+    var isStillRead = false
     /// How it's linked to what it opened from, as a page over a work item's details or another pull request's.
     var linked: ItemStory.Fact? = nil
     /// Its tags, under its branch and who wrote it (`PullRequestTagsRow`).
     @ViewBuilder var tags: () -> Tags
 
     init(
-        item: PRSnapshot, panel: PullRequestPanel, isListed: Bool = true, linked: ItemStory.Fact? = nil,
+        item: PRSnapshot, panel: PullRequestPanel, isListed: Bool = true, isStillRead: Bool = false, linked: ItemStory.Fact? = nil,
         @ViewBuilder tags: @escaping () -> Tags
     ) {
         self.item = item
         self.panel = panel
         self.isListed = isListed
+        self.isStillRead = isStillRead
         self.linked = linked
         self.tags = tags
     }
@@ -62,7 +66,10 @@ struct PullRequestPanelHeading<Tags: View>: View {
                 .accessibilityFocused($isTitleFocused)
             standing
             if !isListed {
-                Label("It's no longer in your lists: this is how it was when it left them.", systemImage: "clock.arrow.circlepath")
+                Label(
+                    Self.notListed(isStillRead: isStillRead, wasReadOpen: !panel.isClosed),
+                    systemImage: isStillRead ? "arrow.clockwise" : "clock.arrow.circlepath"
+                )
                     .font(size: 11.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -124,7 +131,20 @@ struct PullRequestPanelHeading<Tags: View>: View {
 
 extension PullRequestPanelHeading where Tags == EmptyView {
     /// Without its tags.
-    init(item: PRSnapshot, panel: PullRequestPanel, isListed: Bool = true, linked: ItemStory.Fact? = nil) {
-        self.init(item: item, panel: panel, isListed: isListed, linked: linked) { EmptyView() }
+    init(item: PRSnapshot, panel: PullRequestPanel, isListed: Bool = true, isStillRead: Bool = false, linked: ItemStory.Fact? = nil) {
+        self.init(item: item, panel: panel, isListed: isListed, isStillRead: isStillRead, linked: linked) { EmptyView() }
+    }
+}
+
+extension PullRequestPanelHeading {
+    /// What its heading says of a pull request your lists don't have anymore: that BriefBar still reads it, as one sent to
+    /// you in a chat that you've seen, so what shows is how it is now; that what shows is how it was when BriefBar last read
+    /// it open (`wasReadOpen`), as a review that merged; or else, as your own in Done, read completed, how it was when it
+    /// left them.
+    static func notListed(isStillRead: Bool, wasReadOpen: Bool) -> String {
+        if isStillRead { return "It's no longer in your lists, but BriefBar still reads it while it's open: this is how it is now." }
+        return wasReadOpen
+            ? "It's no longer in your lists: this is how it was when BriefBar last read it open."
+            : "It's no longer in your lists: this is how it was when it left them."
     }
 }

@@ -13,6 +13,9 @@
 - **A suggested change that holds `{baseBranch}` is applied as it's written.** Work sent to Copilot on a pull request
   had your base branch's name put in wherever its prompt said `{baseBranch}`, even in the code it quoted; now only a
   work item's prompt has it filled in.
+
+## 0.16.0 - 2026-11-05
+
 - **Mark a comment thread as read, and show only the active ones.** In a pull request's details, **✓** beside a
   thread's **Waits on you**, or **Mark as Read** in its right-click menu, stops it waiting on you, and the pull request
   leaves Needs You once nothing else there does, until someone comments in the thread again. It's BriefBar's own:
@@ -20,6 +23,24 @@
   a closed thread, say, as soon as you've read it. **Active | All**, beside **Comments**, shows only the threads that are
   active or pending, in every pull request's details and their files' pages, and says how many it hides; BriefBar
   remembers which you chose.
+- **Your reply on a pull request someone sent you shows.** Once you'd seen a pull request sent to you in a chat, which
+  leaves your lists, its details stopped following it: a reply, or a status you set there, went to Azure DevOps but
+  didn't show, and replying again posted it twice. Its details now follow it while BriefBar still reads it, and its
+  heading says whether what it shows is how it is now.
+- **"Slow down" says until when.** When Azure DevOps asks BriefBar to slow down, a reply, a status or a tag it held back
+  says until when, rather than "try again in a minute".
+- **Nothing goes twice when you turn Make Changes off.** Turning off **Make Changes in Azure DevOps** stops a reply, a
+  status or a tag that hasn't gone yet. One that has finishes and shows, and, turned back on, its thread or tags wait for
+  it. A reply that may have gone is checked before it's sent again, though you sent another that may have gone since.
+- **A build stops being read when you're done with it.** A build you opened in a pull request's details stops being read
+  as you close them or show another pull request, or as someone else signs in to the Azure CLI.
+- **Azure DevOps' description says when it reads again.** It now says that a pull request's updates and Files are read
+  again as its branch or its target moves, a build you opened as Azure DevOps merges it again, and tags whose read
+  failed half a minute later, and asks you once to look at what it reads.
+- **After this update, Azure DevOps asks you once to look at what it reads and keeps, and waits until you have.** It
+  now keeps the comment threads you mark as read, with what you'd seen of them, and only in memory for a pull request
+  sent to you in a chat. It also says when it reads a pull request's details again: its updates and Files whenever its
+  branch or target moves, a build as it finishes or runs again, and its tags half a minute after a read of them failed.
 
 ## 0.15.1 - 2026-11-05
 
