@@ -435,7 +435,7 @@ private struct ConflictsCopilotActions: View {
             Button {
                 open(.explain)
             } label: {
-                Label(hasAnswer ? "Ask More" : "Explain", systemImage: CopilotAsk.explain.symbol)
+                ControlLabel(hasAnswer ? "Ask More" : "Explain", systemImage: CopilotAsk.explain.symbol)
             }
             .focused($focused, equals: .explain)
             .disabled(nobody)
@@ -444,7 +444,7 @@ private struct ConflictsCopilotActions: View {
                 Button {
                     open(.fix)
                 } label: {
-                    Label("Resolve", systemImage: CopilotAsk.fix.symbol)
+                    ControlLabel("Resolve", systemImage: CopilotAsk.fix.symbol)
                 }
                 .focused($focused, equals: .fix)
                 .help("Have Copilot merge \(target) in and resolve the conflicts, as you say"

@@ -9,6 +9,8 @@ import SwiftUI
 /// own below, its comments, its merge conflicts, its builds and checks or its reviewers, takes you there.
 struct PullRequestLeftSection: View {
     let readiness: PRReadiness
+    /// It's set to complete automatically, as its heading says: once nothing's left, it does.
+    var completesByItself = false
     /// What the task Copilot is at work on for it does, while Send Work to Copilot is on: what it takes care of is
     /// Copilot's turn.
     var copilotAction: PullRequestAction?
@@ -23,7 +25,8 @@ struct PullRequestLeftSection: View {
         VStack(alignment: .leading, spacing: 8) {
             PageSectionHeader(title: "What's Left", count: left > 0 ? left : nil)
             if readiness.isReady {
-                Label("Nothing's left: you can complete it", systemImage: "checkmark.seal.fill")
+                Label(completesByItself ? "Nothing's left: it completes by itself" : "Nothing's left: you can complete it",
+                      systemImage: "checkmark.seal.fill")
                     .font(size: 12, weight: .medium)
                     .foregroundStyle(ItemState.done.textColor)
             } else if !readiness.isCurrent {
