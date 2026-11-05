@@ -55,6 +55,9 @@ final class WorkItemDetailsStore: ObservableObject {
     private var account: String?
     /// The work item being read, and whether the sprint showed it changed meanwhile, which what's read may not have.
     private var loading: (key: WorkItemKey, task: Task<Void, Never>?, changedMeanwhile: Bool)?
+    /// A Copilot session said the work item being read changed while it was read (`reloadIfShowing`): what's read may be
+    /// from before, so it's read once more.
+    private var rereadAfterLoading: WorkItemKey?
     /// Forgets what was read a quarter of an hour ago, when it's due.
     private var expiry: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
@@ -164,6 +167,17 @@ final class WorkItemDetailsStore: ObservableObject {
     /// Reads it again, now.
     func reload() {
         guard let selected else { return }
+        load(selected)
+    }
+
+    /// Reads it again now if it's one of these, as a Copilot session said it changed it (`AgentRereads`): only while a
+    /// window shows the details; and once more after the read under way, which may be from before the change.
+    func reloadIfShowing(_ keys: Set<WorkItemKey>) {
+        guard let selected, !viewers.isEmpty, keys.contains(selected.key) else { return }
+        if let loading {
+            if loading.key == selected.key { rereadAfterLoading = selected.key }
+            return
+        }
         load(selected)
     }
 
@@ -313,6 +327,13 @@ final class WorkItemDetailsStore: ObservableObject {
         guard let current = loading, current.key == key else { return }
         loading = nil
         isLoading = false
+        let readsAgain = rereadAfterLoading == key
+        if readsAgain { rereadAfterLoading = nil }
+        defer {
+            // A session said it changed while it was read: once more, while it's on screen, unless a read is under way
+            // again already.
+            if readsAgain, loading == nil, !viewers.isEmpty, let selected, selected.key == key { load(selected) }
+        }
         if let account = outcome.account, let known = self.account, account != known {
             // Someone else signed in while it was read: start over, without what was read as either.
             accountChanged(account)
@@ -346,6 +367,7 @@ final class WorkItemDetailsStore: ObservableObject {
     private func cancelLoading() {
         loading?.task?.cancel()
         loading = nil
+        rereadAfterLoading = nil
         isLoading = false
     }
 

@@ -22,6 +22,9 @@ public struct CopilotPluginRegistration: Sendable {
         /// The skill with which the sessions that open pull requests together tell BriefBar the order those merge in,
         /// for Pull Request Order.
         case order = "briefbar-pr-order"
+        /// The skill with which sessions tell BriefBar what they work on and what they changed in Azure DevOps, for
+        /// Updates from Copilot Sessions.
+        case updates = "briefbar-updates"
     }
 
     /// The name of BriefBar's marketplace, and of its first plugin, the skill.

@@ -57,7 +57,7 @@ final class AppModel: ObservableObject {
         }
         services = AppServices(defaults: defaults, isDemo: demo)
         // Only the app itself asks the Copilot CLI.
-        agents = AgentsModel(defaults: defaults, isLive: !demo && !rendering)
+        agents = AgentsModel(defaults: defaults, isLive: !demo && !rendering, sessionUpdates: services.sessionUpdates)
         // Summaries use the selected provider only when asked; the demo makes them up, and `--render` writes none.
         services.summaries.models = [StorySummaries.appleIntelligence]
             + CopilotModel.forSummaries.map { StorySummaries.Model(id: $0.id, name: $0.name) }
@@ -183,6 +183,8 @@ final class AppModel: ObservableObject {
         source.deleteSavedData()
         services.notifier.removeDelivered(from: id)
         services.recentNotifications.forget(id)
+        // What sessions told BriefBar of its things, or, for Copilot's, all of it.
+        services.sessionUpdates.forget(id)
         choices.turnOff(id)
         choices.save(to: services.defaults)
         Log.app.info("Turned off \(id.rawValue, privacy: .public)")

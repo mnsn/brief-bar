@@ -139,6 +139,9 @@ package struct WhereItStandsSection: View {
             switch connection.origins.first {
             case .azureDevOps?: value = "In Azure DevOps, to \(what)"
             case .copilot?: value = "By Copilot, to \(what)"
+            // A session and what it told BriefBar it works on: `what` is the other, whichever the page shows.
+            case .session?:
+                value = connection.item.ref.kind == .session ? "Working on \(what), it told BriefBar" : "\(what) told BriefBar it's working on it"
             case .branch?: value = subject.ref.kind.isPullRequest ? "On \(what)'s branch" : "On the same branch as \(what)"
             case .you?: value = "By you, to \(what)"
             case nil: value = "To \(what)"
@@ -154,6 +157,7 @@ package struct WhereItStandsSection: View {
         switch connection.origins.first {
         case .azureDevOps?: return "Linked in Azure DevOps"
         case .copilot?: return "Linked by Copilot"
+        case .session?: return connection.item.ref.kind == .session ? "Working on it, it told BriefBar" : "It's working on it"
         case .branch?: return "On the same branch"
         case .you?: return "Linked by you"
         case nil: return ""
