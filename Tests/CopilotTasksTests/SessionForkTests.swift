@@ -186,9 +186,7 @@ import Testing
         defer { fixture.remove() }
         let server = try start(fixture)
         let asking = Task { try await server.askAside("Why?", in: FakeCopilot.fork, timeout: 60) }
-        for _ in 0..<2000 where !fixture.methods.contains("session.ui.ephemeralQuery") {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await fixture.waitUntilSent("session.ui.ephemeralQuery")
         asking.cancel()
         await #expect(throws: CopilotServer.Failure.cancelled) { try await asking.value }
         // Cancelled before it's sent, nothing's sent.
@@ -209,9 +207,7 @@ import Testing
         defer { fixture.remove() }
         let server = try start(fixture)
         let forking = Task { try await server.fork(FakeCopilot.session, name: nil, timeout: 20) }
-        for _ in 0..<2000 where !fixture.methods.contains("sessions.fork") {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await fixture.waitUntilSent("sessions.fork")
         // Cancelled while the server makes the fork, which it then says it made.
         forking.cancel()
         try fixture.openForkGate()
@@ -591,9 +587,7 @@ import Testing
         )
         let launcher = launcher(fixture)
         let launching = Task { try await launcher.launch(request) { _ in } }
-        for _ in 0..<2000 where !fixture.methods.contains("sessions.fork") {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await fixture.waitUntilSent("sessions.fork")
         launching.cancel()
         try fixture.openForkGate()
         await #expect(throws: LaunchError.cantFork("Forking the session was cancelled.")) { try await launching.value }
@@ -894,9 +888,7 @@ import Testing
         defer { fixture.remove() }
         let questions = questions(fixture)
         let asking = Task { await questions.ask("Why?", session: FakeCopilot.session) }
-        for _ in 0..<2000 where !fixture.methods.contains("sessions.fork") {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await fixture.waitUntilSent("sessions.fork")
         asking.cancel()
         try fixture.openForkGate()
         #expect(await asking.value == .failure(.cancelled))
@@ -952,9 +944,7 @@ import Testing
         let kept = InMemoryLeftoverForks()
         let questions = questions(fixture, leftovers: kept)
         let asking = Task { await questions.ask("Why?", session: FakeCopilot.session) }
-        for _ in 0..<2000 where !fixture.methods.contains("session.ui.ephemeralQuery") {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await fixture.waitUntilSent("session.ui.ephemeralQuery")
         let fork = LeftoverFork(home: AppSessions.folderKey(fixture.home), id: FakeCopilot.fork)
         #expect(await kept.leftoverForks() == [fork])
         await SessionForker(copilot: fixture.copilot, environment: fixture.environment, timeout: 20, leftovers: kept).deleteLeftovers()
@@ -974,9 +964,7 @@ import Testing
         defer { fixture.remove() }
         let questions = questions(fixture)
         let asking = Task { await questions.ask("Why?", session: FakeCopilot.session) }
-        for _ in 0..<2000 where !fixture.methods.contains("session.ui.ephemeralQuery") {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await fixture.waitUntilSent("session.ui.ephemeralQuery")
         asking.cancel()
         #expect(await asking.value == .failure(.cancelled))
         #expect(fixture.methods.last == "session.delete")
