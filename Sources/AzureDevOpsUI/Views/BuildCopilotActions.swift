@@ -78,6 +78,15 @@ enum BuildCopilot {
         )
     }
 
+    /// The composer in place that shows on an open build, of the one open on it: only while what shows of its run is of
+    /// the run as its check and pull request are now (`BuildInvestigationStore.current`), so that what it sends, a fix Try
+    /// Again sends as it opens included, quotes the run as it is, not the attempt before, which shows while it's read
+    /// again, as after its failed jobs ran again under the same ID. Till then, one that Try Again opened, from the build's
+    /// row while it was closed, waits for the read, with what it asked (`CopilotDrafts.retries`).
+    static func composer(_ asking: CopilotAsk?, isCurrent: Bool) -> CopilotAsk? {
+        isCurrent ? asking : nil
+    }
+
     /// Try Again, from its line's menu: Fix's composer on its row, with the words the fix that failed or stopped went with,
     /// which sends them again, where that fix went, as it opens, if it can go: once the build is open, and its run read.
     /// One that's open already has to open anew (`CopilotComposerID`).
@@ -379,7 +388,7 @@ struct BuildCopilotActions<Trailing: View>: View {
                     CopilotCopiedNote(note: stopNote, symbol: "stop.circle") { self.stopNote = nil }
                 }
                 if canAct {
-                    if let asking, let part {
+                    if let asking = BuildCopilot.composer(asking, isCurrent: isCurrent), let part {
                         BuildComposer(
                             ask: asking, line: line, part: part, investigation: investigation, attempt: attempt, item: item,
                             worked: work?.session, drafts: drafts, answer: question?.answer, preview: preview?.composer(about: part),

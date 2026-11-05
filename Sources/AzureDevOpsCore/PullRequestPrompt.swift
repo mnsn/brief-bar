@@ -364,6 +364,17 @@ public struct CommentHandOff: Sendable, Equatable {
         }, account: account, me: record.me, dismissedCutoff: dismissedCutoff)
     }
 
+    /// Without a thread, as Clear lets Copilot's work on it go: its comments aren't handed off, though its entry is still in
+    /// the prompt; and while they wait on you, they hold back how far the others leave Needs You, as those of a thread whose
+    /// entry isn't in it do (`handedOff(in:now:)`).
+    public func without(thread id: Int) -> CommentHandOff {
+        var handOff = self
+        for index in handOff.waiting.indices where handOff.waiting[index].thread == id {
+            handOff.waiting[index].entry = nil
+        }
+        return handOff
+    }
+
     /// Up to when what waits on you leaves Needs You once `prompt` is sent: the last comment that waited on you in the
     /// threads whose entries are still in it, but before the first that still waits on you and isn't handed off, since
     /// a pull request has one cutoff. With the pull request as BriefBar last read it when the task starts (`now`),

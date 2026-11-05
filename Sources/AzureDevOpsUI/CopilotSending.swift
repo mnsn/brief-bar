@@ -179,6 +179,8 @@ struct CopilotSending {
         /// in, pushed to or retargeted meanwhile or not: what's kept with what it takes on, such as the branch its conflicts
         /// are with, and the task it starts, go by it too. Nil for the pull request as the fix was asked for.
         var record: PRRecord?
+        /// For a thread's fix, the change suggested in it that it applies as written, for Try Again to apply it again.
+        var suggestion: CommentSuggestion?
     }
 
     var task: TaskPullRequest { PullRequestTasks.task(for: record) }
@@ -330,7 +332,7 @@ extension CopilotSending {
                 PullRequestPrompt.fixThread(record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .worktree),
                 PullRequestPrompt.fixThread(record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .agent)
             ),
-            action: .fixComments, parts: [.thread(thread.id)], handOff: handOff
+            action: .fixComments, parts: [.thread(thread.id)], handOff: handOff, suggestion: suggestion
         )
     }
 }

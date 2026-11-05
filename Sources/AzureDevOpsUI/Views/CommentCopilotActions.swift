@@ -407,6 +407,8 @@ struct CommentComposer: View {
     @Environment(\.shownWindow) private var window
 
     @LocalState private var appliesSuggestion = false
+    /// Try Again set whether it applies the suggestion, as the fix it tries again did: its default doesn't change that.
+    @LocalState private var restoredByRetry = false
     @LocalState private var hasAppeared = false
     /// What it tells the code store it is, as a view that shows its thread's code does, for the code to be read for it.
     @LocalState private var viewer = UUID()
@@ -450,12 +452,14 @@ struct CommentComposer: View {
         return excerpt
     }
 
-    /// What it asks, and the prompts it sends: the thread's, or Fix Comments' for Fix All.
+    /// What it asks, and the prompts it sends: the thread's, or Fix Comments' for Fix All. Whether a fix applies the
+    /// suggestion is as it is when the fix is written, which Try Again may have set as it opened.
     private var asking: CopilotAsking {
         let item = item
         let record = record
         let thread = ask == .fixAll ? nil : thread
-        let suggestion = appliesSuggestion ? suggestion : nil
+        let composer = self
+        let suggestion = suggestion
         let store = store
         let copilot = copilot
         let session = sessions.session(for: item.key)
@@ -475,12 +479,15 @@ struct CommentComposer: View {
         return CopilotAsking(
             ask: ask, part: thread.map { .thread($0.id) }, action: .fixComments,
             title: ask == .fixAll ? fixAllTitle : nil, sendTitle: ask == .fixAll ? fixAllTitle : nil, prepare: prepare,
+            restore: { words in composer.restore(words, suggestion: suggestion) },
             fix: { how, answer in
                 guard let record else {
                     return CopilotSending.Fix(prompts: ("", ""), action: .fixComments, parts: [], handOff: nil)
                 }
                 return CopilotSending(item: item, record: record, store: store, copilot: copilot, session: session)
-                    .commentFix(thread, how: how, suggestion: suggestion, answer: answer, excerpt: readExcerpt())
+                    .commentFix(
+                        thread, how: how, suggestion: composer.appliesSuggestion ? suggestion : nil, answer: answer, excerpt: readExcerpt()
+                    )
             },
             question: { asked, earlier in
                 guard let record, let thread else { return "" }
@@ -522,10 +529,24 @@ struct CommentComposer: View {
                 appliesSuggestion = preview.appliesSuggestion
                 return
             }
-            // A suggestion that's the thread's last word is what it asks for: Fix applies it, unless you say otherwise.
-            if let suggestion, suggestion.commentId == thread?.comments.last?.id { appliesSuggestion = true }
+            // A suggestion that's the thread's last word is what it asks for: Fix applies it, unless you say otherwise, or
+            // Try Again said as the fix it tries again did.
+            if !restoredByRetry, let suggestion, suggestion.commentId == thread?.comments.last?.id { appliesSuggestion = true }
         }
     }
+
+    /// Try Again: applies the suggestion as the fix it tries again did, the same one, or none (`CopilotAsking.restore`).
+    /// Nil once it can go as that fix did; else why not, as when the suggestion it applied isn't the thread's latest now,
+    /// which it doesn't apply in its place.
+    private func restore(_ words: CopilotTasksStore.FixWords, suggestion: CommentSuggestion?) -> String? {
+        restoredByRetry = true
+        appliesSuggestion = words.suggestion != nil && words.suggestion == suggestion
+        guard words.suggestion == nil || words.suggestion == suggestion else { return Self.suggestionGone }
+        return nil
+    }
+
+    /// What Try Again's composer says when the suggestion the fix it tries again applied isn't the thread's latest now.
+    static let suggestionGone = "The suggestion that fix applied isn't the thread's latest now, so nothing went yet: check it, then send it."
 }
 
 // MARK: - The comments' header

@@ -97,6 +97,24 @@ import Testing
         #expect(CopilotSending(item: listed, record: try #require(prs.record(for: listed.key)), store: prs, copilot: copilot, session: nil).isOpen)
     }
 
+    /// A thread's fix keeps the change suggested in it that it applies as written, for Try Again to apply it again, and
+    /// none when it doesn't apply one.
+    @Test func aThreadsFixKeepsTheSuggestionItApplies() async throws {
+        let prs = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        await prs.loadOnce()
+        let item = try #require(prs.items.first { prs.record(for: $0.key)?.role == .author && prs.record(for: $0.key)?.details?.threads.isEmpty == false })
+        let record = try #require(prs.record(for: item.key))
+        let thread = try #require(record.details?.threads.first)
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
+        let suggestion = CommentSuggestion(author: Person(id: "sam", name: "Sam Rivera"), commentId: 2, code: "delay = min(delay * 2, cap)")
+        #expect(sending.commentFix(thread, how: nil, suggestion: suggestion, excerpt: nil).suggestion == suggestion)
+        #expect(sending.commentFix(thread, how: nil, suggestion: nil, excerpt: nil).suggestion == nil)
+        #expect(sending.commentFix(nil, how: nil, suggestion: nil, excerpt: nil).suggestion == nil)
+    }
+
     /// Sent while the pull request's branches move, as its conflicts are read again, a fix or a question doesn't build on
     /// what a session answered about them as they were: it stops, saying so, and goes without it once sent again. Builds'
     /// and comments' answers go as they are.

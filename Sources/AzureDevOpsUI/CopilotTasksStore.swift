@@ -167,11 +167,13 @@ final class CopilotTasksStore: ObservableObject {
     /// Again to send them again only for that fix (`retryWords(for:of:)`): in memory only.
     var fixWords: [PartKey: FixWords] = [:]
     /// Words a fix was sent with, and when it took on what it's about: its task's start, or its prompt's `sentAt`, which
-    /// tells that attempt from any other; and what a session answered that it quoted, if it quoted that.
-    struct FixWords {
+    /// tells that attempt from any other; what a session answered that it quoted, if it quoted that; and, for a thread's,
+    /// the change suggested there that it applied as written, if it did.
+    struct FixWords: Equatable {
         var text: String
         var takenAt: Date
         var answer: CopilotAnswer? = nil
+        var suggestion: CommentSuggestion? = nil
     }
     /// What Clear let go of in the demo, whose made-up work is made anew each time: in memory only.
     var clearedInDemo: Set<PartKey> = []
@@ -580,7 +582,7 @@ final class CopilotTasksStore: ObservableObject {
             guard let taken = pending[index].taken else { continue }
             let entry = pending[index]
             let kept = taken.filter { !letsGo($0, entry) }
-            if kept.count != taken.count { pending[index].taken = CopilotRun.keeping(kept, for: entry.action) }
+            if kept.count != taken.count { pending[index].taken = kept }
         }
     }
 

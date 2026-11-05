@@ -56,19 +56,25 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// Resolve Conflicts, and what its fixes ship with Push & Reply. Going on with a session whose changes aren't pushed keeps
     /// what it took on before, with how that went (`taken(goingOnWith:on:taking:for:at:)`), so each can say what became of
     /// it. Nil for a task that took on nothing, and for runs that BriefBar kept before it had this; a Push & Reply's is
-    /// empty instead, once it replies on no thread (`keeping(_:for:)`).
+    /// empty instead, once it replies on no thread (`keeping(_:for:)`), and so is a task's once what it took on was let go,
+    /// as it's over or you cleared it, which tells it from those (`workLetGo`).
     public var taken: [TakenPart]?
     /// The Push & Reply tasks that ran in its session before it, on the same pull request, each with when it started and
     /// how it ended (`pushes(goingOnWith:on:)`): each committed and pushed all the session had changed by then, whatever
     /// its prompt listed, so a fix it didn't list was pushed, though not replied on, even once what it listed is taken on
     /// again. Nil when none did, and for runs that BriefBar kept before it had this.
     public var pushes: [SessionPush]?
+    /// BriefBar let go of what it took on itself (`taken`), as it was over, such as a resolution of conflicts that are gone,
+    /// or with another target branch, or as you cleared it: what it changed isn't offered to push on its own then. Nil
+    /// otherwise: for a task that took on nothing itself, though it went on with a session whose earlier tasks did, and so
+    /// keeps only what they took on; and for runs that BriefBar kept before it had this.
+    public var workLetGo: Bool?
 
     public init(
         id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
         ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil,
-        forkedFrom: String? = nil, taken: [TakenPart]? = nil, pushes: [SessionPush]? = nil
+        forkedFrom: String? = nil, taken: [TakenPart]? = nil, pushes: [SessionPush]? = nil, workLetGo: Bool? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -86,6 +92,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.forkedFrom = forkedFrom
         self.taken = taken
         self.pushes = pushes
+        self.workLetGo = workLetGo
     }
 
     /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a
@@ -163,9 +170,9 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         return keeping(kept, for: action)
     }
 
-    /// What a task keeps of what it took on (`taken`), as it starts or as some is let go: nil once that's nothing, as for a
-    /// task that took on nothing; but a Push & Reply's stays, empty, so that it's known to reply on no thread
-    /// (`PullRequestAction.title(taken:)`), rather than taken for one of the runs kept before BriefBar recorded that.
+    /// What a task keeps of what it took on (`taken`), as it starts: nil once that's nothing, as for a task that took on
+    /// nothing; but a Push & Reply's stays, empty, so that it's known to reply on no thread (`PullRequestAction.title(taken:)`),
+    /// rather than taken for one of the runs kept before BriefBar recorded that. What's let go later leaves it empty.
     public static func keeping(_ parts: [TakenPart], for action: PullRequestAction?) -> [TakenPart]? {
         parts.isEmpty && action != .pushAndReply ? nil : parts
     }

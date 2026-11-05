@@ -2583,8 +2583,10 @@ their threads alone, and is called **Push…** for fixes of no thread, as of a b
 is its task, wherever it's named, even one that takes on nothing, which keeps that, empty, rather than nothing, as tasks
 from before BriefBar recorded what they took on do (`CopilotRun.keeping(_:for:)`).
 **Push & Reply with Copilot…**, in the pull request's ⋯ and context menus, offers the same, a menu of them with fixes in
-more than one session; with none ready, what its last task changed, pushed without a reply
-(`CopilotTasksStore.pushes(of:)`). Sent to one of the Copilot app's sessions, a Push & Reply is kept as a prompt even when
+more than one session; with none ready, what its last task changed, pushed without a reply, but not once what that task
+took on itself was let go, and none of it is left, as it's over, such as a resolution of conflicts that are gone, or with
+another target branch, whose merge it would push, or as you cleared it (`CopilotRun.workLetGo`); one that took on nothing
+itself, going on with a session whose earlier task did, still is (`CopilotTasksStore.pushes(of:)`). Sent to one of the Copilot app's sessions, a Push & Reply is kept as a prompt even when
 it lists no thread, for the fixes there to say they're pushed (`CopilotComposerView.aboutParts`), and Clear leaves it. Either way: its prompt lists them and replies on them alone, or on none for a build's fix alone, and
 hands off what waits on you in them alone (`PullRequestPrompt.pushAndReply(_:workplace:threads:)`,
 `PullRequestPrompt.shippedThreads`), and the task that ships them takes them on, with their builds and conflicts, so they
@@ -2601,23 +2603,32 @@ the app's own Stop does; where it can't, BriefBar shows the session, to stop it 
 (`CopilotTasksStore.canStop(_:of:)`, `stop(_:of:)`, `stopTurn(in:)`). **Try Again**, for a fix that failed or stopped,
 opens its composer anew, even one that's open already (`CopilotComposerID`), with the words that fix went with, as its
 composer sent them, kept in memory only and only for that very attempt, as when it took on what it's about tells, not
-another sent meanwhile or since, such as from the Send to Copilot window (`CopilotTasksStore.retryWords(for:of:)`), and sends
-them where that fix went, never elsewhere: for one that
-couldn't start, a new fork of the session it was to fork, or a new session; never a new fork of the session that a fork
-it went to forked, which wouldn't have what the fork did (`CopilotSessionNames.retryDestination`). Its
-▾ leads with that session, so that it's there to send to, even when it isn't the pull request's (`retryLead`). When
-BriefBar can't find that session now, or it can't go there, the composer says so and waits for you to choose
-(`CopilotDrafts.retry`, `CopilotDrafts.retryGone`). It quotes the answer that fix quoted, and no other, as **Include the
-answer above** was then (`CopilotTasksStore.FixWords.answer`). It sends at once only as it opens right after Try Again,
-and only while that answer, if it quoted one, still shows; else, as for a build that took a while to read, it opens with
-those words, going there, for you to send. Without those words, as once BriefBar restarted, it opens going there, with
-what you wrote in it, for you to send. What Try Again asked of a composer that didn't open for it goes as you open the
-composer yourself, or close it; and the words aren't kept once Send Work to Copilot is off, or Azure DevOps stopped,
-though a send ends after (`CopilotTasksStore.remember`). On a closed build's row, it's there only for a failed build,
-which opens to its Fix.
+another sent meanwhile or since, such as from the Send to Copilot window (`CopilotTasksStore.retryWords(for:of:)`); not
+Fix All's either, written for all the threads it took on, which Try Again on one of them doesn't send for it alone
+(`CopilotTasksStore.remember`). It goes where that fix went, never elsewhere: for one that couldn't start, a new fork of
+the session it was to fork, or a new session; never a new fork of the session that a fork it went to forked, which
+wouldn't have what the fork did (`CopilotSessionNames.retryDestination`). Its ▾ leads with that session, so that it's
+there to send to, even when it isn't the pull request's (`retryLead`). It quotes the answer that fix quoted, and no other,
+as **Include the answer above** was then, and applies the change suggested in its thread as written, as that fix did,
+or doesn't (`CopilotTasksStore.FixWords`, `CopilotAsking.restore`). What the composer does as it opens is one decision
+(`CopilotDrafts.plan`): it sends at once only right after Try Again (`retryWait`), and only while what that fix quoted,
+or applied, still shows as it did; else its words come back all the same, going there, and it says why it waits for
+you, as when it opened a while after Try Again, or the suggestion that fix applied isn't the thread's latest now, which
+it doesn't apply in its place. When BriefBar can't find where it went now, or it can't go there, the composer says so,
+with the words, and waits for you to choose (`CopilotDrafts.retryGone`). Without those words, as once BriefBar
+restarted, it opens going there, with what you wrote in it, for you to send. Nothing of it comes back once BriefBar
+forgot the words, as Send Work to Copilot was turned off, or Azure DevOps stopped, even for a send that ends after; and
+what Try Again asked of a composer that didn't open for it goes as you open the composer yourself, or close it. On a
+build, its composer shows only once what shows of the build's run is current (`BuildCopilot.composer`): opened from the
+build's row while it was closed, Try Again waits for the run to be read again, rather than send what was read of an
+attempt before; and on a closed build's row it's there only for a failed build, which opens to its Fix.
 **Clear**, once it's over, or copied for you to paste, lets go of what each task and prompt took on of it, and of what a
 send that couldn't start keeps of it, or one getting ready carries from before, so the line goes and nothing older takes
-its place, as Dismiss does for an answer (`CopilotTasksStore.clear`); the demo's go in memory. While Copilot fixes it, or
+its place, as Dismiss does for an answer (`CopilotTasksStore.clear`); a task's is left empty, which tells it from one kept
+before BriefBar recorded what tasks take on, and the task says what it took on itself was let go, when it was
+(`CopilotRun.workLetGo`). A prompt copied for you to paste that takes on more, or a Push & Reply, which
+stays, no longer takes the thread's comments off Needs You once you paste it, and they hold back how far the others leave
+it (`CommentHandOff.without(thread:)`). The demo's go in memory. While Copilot fixes it, or
 pushes its fix, its Fix, or Resolve, waits (`CopilotWork.isFixing`).
 
 #### About a failed build

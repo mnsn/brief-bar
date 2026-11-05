@@ -521,13 +521,18 @@ extension CopilotTasksStore {
 
     /// What a pull request's menus can push, by session, as the bar at the foot of its details has it (`readyFixes`), each
     /// for a Push & Reply that ships those alone, in that session; with none ready, what its last task changed, which a
-    /// push ships, with the builds and conflicts fixed there, replying on no thread. Only on an open pull request of yours.
+    /// push ships, with the builds and conflicts fixed there, replying on no thread: not once what it took on itself was
+    /// let go, and none of it is left, as it's over, such as a resolution of conflicts that are gone or with another target
+    /// branch, or you cleared it (`CopilotRun.workLetGo`); but one that took on nothing itself, as it went on with a
+    /// session, is. Only on an open pull request of yours.
     func pushes(of record: PRRecord) -> [ReadyFixes] {
         guard isOn, record.pullRequest.status == .active, record.role == .author else { return [] }
         let key = record.pullRequest.key
         let ready = readyFixes(of: key, among: record.partsToFix)
         guard ready.isEmpty else { return ready }
-        guard let run = continuable(forPullRequest: key), run.action?.changesCode == true, run.ended == .finished else { return [] }
+        guard let run = continuable(forPullRequest: key), run.action?.changesCode == true, run.ended == .finished,
+              run.workLetGo != true || run.taken?.contains(where: { $0.ended == nil }) == true
+        else { return [] }
         return [ReadyFixes(
             session: run.id, forkedFrom: run.forkedFrom, isTask: run.isAppSession != true, parts: unpushedParts(of: key, in: run.id),
             latest: run.startedAt
@@ -653,7 +658,8 @@ extension CopilotTasksStore {
             }
             let kept = taken.filter { (part: TakenPart) -> Bool in atNow.contains(part.part) || !isOver(part, on: reference) }
             guard kept.count != taken.count else { continue }
-            runs[index].taken = CopilotRun.keeping(kept, for: runs[index].action)
+            if taken.contains(where: { $0.ended == nil && !kept.contains($0) }) { runs[index].workLetGo = true }
+            runs[index].taken = kept
             runsChanged = true
         }
         if runsChanged { settings.copilotRuns = runs }
@@ -966,11 +972,13 @@ extension CopilotTasksStore {
         return words
     }
 
-    /// Keeps the words a fix went with, for each thing it took on, for Try Again (`retryWords(for:of:)`), in memory only: not
-    /// once Send Work to Copilot is off, or Azure DevOps stopped, which forgot them, as a send that took a while may end
-    /// after.
-    func remember(_ words: FixWords, for parts: [PullRequestPart], of key: PRKey) {
-        guard isOn, !hasStopped else { return }
+    /// Keeps the words a fix went with, for what it took on, for Try Again (`retryWords(for:of:)`), in memory only: those of
+    /// a fix of one thread, build or the conflicts, from its own composer, `ask`, not Fix All's, written for all the threads
+    /// it takes on, which Try Again on one of them doesn't send for it alone, but opens its composer, going where Fix All
+    /// went, for you to write. Not once Send Work to Copilot is off, or Azure DevOps stopped, which forgot them, as a send
+    /// that took a while may end after.
+    func remember(_ words: FixWords, for parts: [PullRequestPart], of key: PRKey, from ask: CopilotAsk) {
+        guard isOn, !hasStopped, ask == .fix else { return }
         for part in parts {
             fixWords[PartKey(pullRequest: key, part: part)] = words
         }
@@ -980,7 +988,9 @@ extension CopilotTasksStore {
     /// what each task and prompt took on of it (`CopilotRun.taken`, `SentPrompt.parts`), so that the line goes and nothing
     /// older takes its place, and a fix of it is no longer ready to push; and what a send that couldn't start keeps of it,
     /// or one getting ready carries from before, which it would launch with. What Copilot is still at stays; a prompt copied
-    /// for you to paste that takes on nothing else goes, and hands nothing off. The demo's are let go in memory.
+    /// for you to paste that takes on nothing else goes, and hands nothing off, and one that takes on more, or a Push &
+    /// Reply, which stays, no longer hands off a thread's comments, once you paste it (`CommentHandOff.without(thread:)`).
+    /// The demo's are let go in memory.
     func clear(_ part: PullRequestPart, of key: PRKey) {
         guard isOn else { return }
         objectWillChange.send()
@@ -1005,17 +1015,21 @@ extension CopilotTasksStore {
             }
             guard !isAtIt else { continue }
             let kept = taken.filter { $0.part != part }
-            if kept.count != taken.count { runs[index].taken = CopilotRun.keeping(kept, for: runs[index].action) }
+            guard kept.count != taken.count else { continue }
+            if taken.contains(where: { $0.part == part && $0.ended == nil }) { runs[index].workLetGo = true }
+            runs[index].taken = kept
         }
         if runs != settings.copilotRuns { settings.copilotRuns = runs }
         var prompts = settings.copilotSentPrompts
         // The fixes it leaves with nothing, which it lets go of: not a Push & Reply, which still says that its session
         // pushed what it changed, though it may not have been seen to end yet, for the fixes it pushed along.
         var emptied: Set<String> = []
+        var clearedIn: Set<String> = []
         for index in prompts.indices where prompts[index].isFor(key) && prompts[index].parts.contains(part) {
             let work = CopilotWork.from(prompts[index], about: part, turn: promptTurns[prompts[index].id])
             guard Self.canClear(work) else { continue }
             prompts[index].parts.removeAll { $0 == part }
+            clearedIn.insert(prompts[index].id)
             if prompts[index].parts.isEmpty, prompts[index].isFollowed, prompts[index].purpose != .pushAndReply {
                 emptied.insert(prompts[index].id)
             }
@@ -1023,6 +1037,13 @@ extension CopilotTasksStore {
         for id in emptied {
             copiedPrompts[id] = nil
             promptTurns[id] = nil
+        }
+        // One it keeps, copied for you to paste, no longer takes the thread's comments off Needs You once you do.
+        if let thread = part.thread {
+            for id in clearedIn.subtracting(emptied) {
+                guard let copied = copiedPrompts[id], let handOff = copied.handOff else { continue }
+                copiedPrompts[id] = (copied.text, handOff.without(thread: thread))
+            }
         }
         prompts.removeAll { emptied.contains($0.id) }
         if prompts != settings.copilotSentPrompts { settings.copilotSentPrompts = prompts }

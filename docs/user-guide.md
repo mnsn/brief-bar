@@ -424,7 +424,7 @@ thread says **Sent to ‘Retry backoff’ · see the session** instead, as it do
 hours, such as one that waited overnight for your answer. A line's **⋯**, or its right-click menu, has what it allows:
 **Stop**, while Copilot is at it, which stops one of BriefBar's tasks, or the session's turn in the Copilot app, or shows
 the session to stop it there when BriefBar's extension in it can't; **Try Again**, for a fix that failed or stopped,
-which sends it again with the same words, to where it went, or says it can't find that session; and **Clear**, which
+which sends it again with the same words, to where it went, or, when it can't go just as it did, opens it there for you to check and send, saying why; and **Clear**, which
 lets the line go. **Fix** waits while Copilot fixes the
 thread. Once fixes are done, of comments or of a build
 (below), a bar at the foot of the details, or of a pull request's
