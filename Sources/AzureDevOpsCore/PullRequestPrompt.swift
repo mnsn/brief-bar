@@ -306,7 +306,7 @@ public enum PullRequestPrompt {
 /// signed in then. Sending it takes those in the entries still in the prompt off that account's Needs You. A comment that
 /// came after it was written isn't among them, and neither is one in a thread whose entry isn't in the prompt you send,
 /// beyond the most it lists or deleted from it, nor one that waits on you when the task starts but didn't when the prompt
-/// was written, such as in a thread reopened since: those still need you.
+/// was written, such as in a thread reopened, or marked as unread, since: those still need you.
 public struct CommentHandOff: Sendable, Equatable {
     /// An unresolved thread, with its comments that waited on you.
     public struct Waiting: Sendable, Equatable {
@@ -340,14 +340,22 @@ public struct CommentHandOff: Sendable, Equatable {
     /// The threads you'd marked as read when the prompt was written, each up to when (`SeenState.readThreads`): what they
     /// said up to then didn't wait on you, and doesn't hold back what leaves Needs You.
     public var read: [Int: Date]
+    /// Every comment that waited on you in its unresolved threads when the prompt was written, those you'd marked as read
+    /// included, by thread, then by ID, with when it was published: without the pull request as BriefBar reads it when the
+    /// task starts, what still waits on you then is found among them, as the marks are then (`handedOff`).
+    public var unanswered: [Int: [Int: Date]]
 
-    public init(key: PRKey, waiting: [Waiting], account: String?, me: String, dismissedCutoff: Date, read: [Int: Date] = [:]) {
+    public init(
+        key: PRKey, waiting: [Waiting], account: String?, me: String, dismissedCutoff: Date, read: [Int: Date],
+        unanswered: [Int: [Int: Date]]
+    ) {
         self.key = key
         self.waiting = waiting
         self.account = account
         self.me = me
         self.dismissedCutoff = dismissedCutoff
         self.read = read
+        self.unanswered = unanswered
     }
 
     /// As the prompt sees `record`, with `account` signed in.
@@ -366,7 +374,20 @@ public struct CommentHandOff: Sendable, Equatable {
             let times = comments.map(\.publishedAt)
             guard let first = times.min(), let last = times.max() else { return nil }
             return Waiting(thread: thread.id, entry: entries[thread.id], comments: comments.map(\.id), first: first, last: last)
-        }, account: account, me: record.me, dismissedCutoff: dismissedCutoff, read: read)
+        }, account: account, me: record.me, dismissedCutoff: dismissedCutoff, read: read,
+        unanswered: Self.unanswered(in: record, dismissedCutoff: dismissedCutoff))
+    }
+
+    /// Every comment that waits on you in `record`'s unresolved threads, in those you marked as read too, by thread, then by
+    /// ID, with when it was published (`unanswered`).
+    static func unanswered(in record: PRRecord, dismissedCutoff: Date) -> [Int: [Int: Date]] {
+        var unanswered: [Int: [Int: Date]] = [:]
+        for thread in record.details?.threads ?? [] where !thread.isResolved {
+            let comments = PRClassifier.waitingComments(in: thread, me: record.me, dismissedCutoff: dismissedCutoff)
+            guard !comments.isEmpty else { continue }
+            unanswered[thread.id] = Dictionary(comments.map { ($0.id, $0.publishedAt) }, uniquingKeysWith: { first, _ in first })
+        }
+        return unanswered
     }
 
     /// Up to when what waits on you leaves Needs You once `prompt` is sent: the last comment that waited on you in the
@@ -374,25 +395,29 @@ public struct CommentHandOff: Sendable, Equatable {
     /// a pull request has one cutoff. With the pull request as BriefBar last read it when the task starts (`now`),
     /// that's one that waits on you then that the prompt doesn't have: in a thread whose entry isn't in the prompt, in
     /// one reopened since it was written, or one that came since. A thread answered or resolved meanwhile doesn't wait
-    /// on you, and doesn't hold it back. Without it, that's one that waited on you in a thread whose entry isn't in the
-    /// prompt, as it was written. A thread's entry is still there while its own line is: a comment in another entry
-    /// that names it doesn't count. A thread you've marked as read doesn't hold it back either, up to when you did: as the
-    /// marks are then (`read`), when they're known, such as after Mark as Unread since; else as they were. Nil when none of
-    /// them is still there.
+    /// on you, and doesn't hold it back. Without it, that's one that waited on you as it was written that the prompt
+    /// doesn't have (`unanswered`): in a thread whose entry isn't in the prompt, or in one you'd marked as read then. A
+    /// thread's entry is still there while its own line is: a comment in another entry that names it doesn't count. A
+    /// thread you've marked as read doesn't hold it back either, up to when you did, with the pull request or without it:
+    /// as the marks are then (`read`), when they're known, such as after Mark as Unread since; else as they were. Nil when
+    /// none of them is still there.
     public func handedOff(in prompt: String, now: PRRecord? = nil, read current: [Int: Date]? = nil) -> Date? {
         let read = current ?? self.read
         let lines = Set(prompt.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         let kept = waiting.filter { $0.entry.map(lines.contains) ?? false }
         guard let last = kept.map(\.last).max() else { return nil }
+        let handed = Set(kept.flatMap { thread in thread.comments.map { "\(thread.thread).\($0)" } })
         let stays: [Date]
         if let threads = now?.details?.threads {
-            let handed = Set(kept.flatMap { thread in thread.comments.map { "\(thread.thread).\($0)" } })
             stays = threads.filter { !$0.isResolved }.flatMap { thread in
                 PRClassifier.waitingComments(in: thread, me: me, dismissedCutoff: dismissedCutoff, read: read[thread.id])
                     .filter { !handed.contains("\(thread.id).\($0.id)") }.map(\.publishedAt)
             }
         } else {
-            stays = waiting.filter { !kept.contains($0) }.map(\.first)
+            // As it was written, but for what's marked as read now: as `PRClassifier.waitingComments` finds it.
+            stays = unanswered.flatMap { thread, comments in
+                comments.filter { id, at in at > (read[thread] ?? .distantPast) && !handed.contains("\(thread).\(id)") }.map(\.value)
+            }
         }
         guard let first = stays.min() else { return last }
         return min(last, first.addingTimeInterval(-0.001))

@@ -329,4 +329,33 @@ import BriefBarCore
         #expect(handOff.handedOff(in: prompt, now: record(threads), read: [:]) == t(-2 * hour).addingTimeInterval(-0.001))
         #expect(handOff.handedOff(in: prompt, now: record(threads), read: read) == t(-hour))
     }
+
+    /// With the pull request unread as the prompt goes, as after you switch accounts, the marks are as they are then too: a
+    /// thread marked as unread since holds the cutoff back again, from the first of its comments that waits on you, and one
+    /// marked as read since doesn't, up to when it was. Fix Comments' hand-off too.
+    @Test func withoutTheRecordTheMarksAreAsTheyAreThen() {
+        let threads = [
+            ReviewThread(id: 12, comments: [
+                comment(1, People.priya, "A test?", at: t(-2 * hour)), comment(2, People.priya, "Ping", at: t(-90 * minute)),
+            ]),
+            ReviewThread(id: 11, comments: [comment(1, People.sam, "Cap it?", at: t(-hour))]),
+        ]
+        let prompt = PullRequestPrompt.fixThread(record(threads), thread: threads[1], code: nil, how: nil)
+        // Read up to 12's first comment as the prompt was written: its second still waits on you, and holds it back.
+        let handOff = CommentHandOff(record(threads), thread: 11, dismissedCutoff: t(-3 * day), read: [12: t(-2 * hour)], account: nil)
+        #expect(handOff.handedOff(in: prompt, now: nil) == t(-90 * minute).addingTimeInterval(-0.001))
+        // Marked as unread since: its first holds it back, as it does with the pull request.
+        #expect(handOff.handedOff(in: prompt, now: nil, read: [:]) == t(-2 * hour).addingTimeInterval(-0.001))
+        #expect(handOff.handedOff(in: prompt, now: record(threads), read: [:]) == t(-2 * hour).addingTimeInterval(-0.001))
+        // Marked as read up to its latest since: nothing there holds it back.
+        #expect(handOff.handedOff(in: prompt, now: nil, read: [12: t(-90 * minute)]) == t(-hour))
+        #expect(handOff.handedOff(in: prompt, now: record(threads), read: [12: t(-90 * minute)]) == t(-hour))
+        // Fix Comments lists 12 too, but you'd marked all of it as read: marked as unread since, it holds the cutoff back.
+        let fixComments = CommentHandOff(record(threads), dismissedCutoff: t(-3 * day), read: [12: t(-90 * minute)], account: nil)
+        #expect(fixComments.waiting.map(\.thread) == [11])
+        let all = PullRequestPrompt.fixComments(record(threads))
+        #expect(fixComments.handedOff(in: all, now: nil) == t(-hour))
+        #expect(fixComments.handedOff(in: all, now: nil, read: [:]) == t(-2 * hour).addingTimeInterval(-0.001))
+        #expect(fixComments.handedOff(in: all, now: record(threads), read: [:]) == t(-2 * hour).addingTimeInterval(-0.001))
+    }
 }

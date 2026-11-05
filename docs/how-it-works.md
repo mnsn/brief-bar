@@ -1871,10 +1871,10 @@ It stops waiting on you when:
   Since there's one cutoff, it then stops before the first comment that waits on you when the task
   starts, as BriefBar last read the pull request, and wasn't handed off: one in a thread answered or
   resolved meanwhile doesn't hold it back, nor one in a thread its account has marked as read, as the
-  marks are then. If BriefBar doesn't have the pull request then, it goes by
-  the prompt as it was written. They leave the Needs You of the account signed in to the Azure CLI when
-  the prompt was written, even if another has signed in since: that account's seen state keeps it for
-  when it signs in again. What comes after needs you again, as new;
+  marks are then. If BriefBar doesn't have the pull request then, it goes by the prompt as it was
+  written, with the marks as they are then. They leave the Needs You of the account signed in to the
+  Azure CLI when the prompt was written, even if another has signed in since: that account's seen state
+  keeps it for when it signs in again. What comes after needs you again, as new;
 - you mark its thread as read in the pull request's details: up to the thread's latest comment as they show it,
   whatever its status, seen or not (`SeenState.readThreads`, by pull request and thread, which `PRClassifier.snapshot`
   takes as `read`), so a comment after it needs you again, as new. It's kept for the account signed in now, whose list
