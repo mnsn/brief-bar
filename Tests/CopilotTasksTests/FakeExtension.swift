@@ -33,7 +33,9 @@ final class FakeExtension: Sendable {
 
     let outbox: URL
     let sessionId: String
-    private let state = Mutex<(received: [Received], refused: Int, task: Task<Void, Never>?)>(([], 0, nil))
+    /// What it acted on and refused; the looking under way, and the token of the one `start` began last, which alone
+    /// claims requests, until `stop()`.
+    private let state = Mutex<(received: [Received], refused: Int, task: Task<Void, Never>?, looking: UUID?)>(([], 0, nil, nil))
 
     init(outbox: URL, sessionId: String) {
         self.outbox = outbox
@@ -61,36 +63,44 @@ final class FakeExtension: Sendable {
 
     /// Starts taking its session's requests, looking every `lookEvery`, until `stop()`. Started again, it answers as it's
     /// told then, and stops looking as it was told before, which would otherwise go on until the tests end. It looks, and
-    /// answers, on `TestThreads`, beside the tests, as an extension in another process would.
+    /// answers, on `TestThreads`, beside the tests, as an extension in another process would: so once `stop()` or `start`
+    /// returns, a look begun before may still be under way, but claims nothing.
     func start(answer: @escaping @Sendable (Received) -> Answer = { _ in .done() }) {
-        let task = Task(executorPreference: TestThreads.shared) { [self] in
-            while !Task.isCancelled {
-                takeRequests(answer: answer)
-                try? await Task.sleep(for: Self.lookEvery)
-            }
-        }
+        let looking = UUID()
         state.withLock {
             $0.task?.cancel()
-            $0.task = task
+            $0.looking = looking
+            $0.task = Task(executorPreference: TestThreads.shared) { [self] in
+                while !Task.isCancelled {
+                    takeRequests(answer: answer, while: looking)
+                    try? await Task.sleep(for: Self.lookEvery)
+                }
+            }
         }
     }
 
     func stop() {
-        state.withLock { $0.task?.cancel() }
+        state.withLock {
+            $0.task?.cancel()
+            $0.looking = nil
+        }
     }
 
     private func folder(_ name: String) -> URL {
         outbox.appendingPathComponent(name, isDirectory: true)
     }
 
-    private func takeRequests(answer: @escaping @Sendable (Received) -> Answer) {
+    private func takeRequests(answer: @escaping @Sendable (Received) -> Answer, while looking: UUID) {
         let requests = folder("requests")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: requests.path)) ?? []
         for name in names where name.hasPrefix("\(sessionId).") && name.hasSuffix(".json") {
             let requestId = String(name.dropFirst(sessionId.count + 1).dropLast(5))
             let claimed = requests.appendingPathComponent(".\(sessionId).\(requestId).claimed-\(getpid())")
-            // Claimed by renaming, so it's handled once; gone when BriefBar withdrew it first.
-            guard rename(requests.appendingPathComponent(name).path, claimed.path) == 0 else { continue }
+            // Claimed by renaming, so it's handled once; gone when BriefBar withdrew it first. Claimed under the lock `start`
+            // and `stop()` take, only while this looking is still the one `start` began last: once either returns, an
+            // earlier look claims nothing.
+            guard state.withLock({ $0.looking == looking && rename(requests.appendingPathComponent(name).path, claimed.path) == 0 })
+            else { continue }
             guard let request = Self.check(claimed, requestId: requestId, sessionId: sessionId) else {
                 state.withLock { $0.refused += 1 }
                 try? FileManager.default.removeItem(at: claimed)
