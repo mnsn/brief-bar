@@ -44,6 +44,7 @@ make demo-check         # check that each source's made-up data lands in the exp
 make check-boundaries   # check that only AzureDevOpsCore and GitHubCore use the network, and only
                         # BriefBarCore starts programs
 make signing-key-check  # check what keeps signing keys safe, in throwaway keychains (it asks nothing)
+make release-notes-check # check the release notes in changes/, and test the script that gathers them
 make updater-check      # check, on a copy of build/BriefBar.app, that its updater can't use its permissions
 make update-rehearsal   # install an update through the updater, in copies of build/BriefBar.app
 make render             # draw the menu bar, lists, widgets, window and Settings from your own data into render/
@@ -129,6 +130,7 @@ scripts/                       app bundling, signing and checks, the optional si
                                the demo data, the MDM profile and the icon
 windows/                       BriefBar for Windows, in development: a WinUI 3 app with its own README
 .github/workflows/             CI and releases
+changes/                       the release notes of the pull requests merged since the last release
 ```
 
 Each source's code came from its Pulse app (Teams Pulse, ADO Pulse, Copilot Pulse) and keeps its
@@ -186,8 +188,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   letting agents use BriefBar, starts off too, says what it does first, and does nothing, adds nothing
   and registers nothing until you turn it on.
 - **Say what a source reads.** When a source starts reading something new, update its
-  `SourceDescription` and raise its `version`, so whoever turned it on sees the change before it reads
-  more.
+  `SourceDescription`, and say so in your release notes, under Descriptions ([Release notes](#release-notes)): the
+  release raises its `version`, so whoever turned it on sees the change before it reads more.
 - **Only Azure DevOps and GitHub use the network**, each only its own service: to Azure DevOps every
   request a GET, and to GitHub one fixed GraphQL query, never a mutation. Neither writes, but for the
   changes `ADOWrite` lists, your reply in a pull request's thread, a thread's status, your own comment
@@ -208,8 +210,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   demo.
 - **Agents get what the command line prints, and only once you let them.** `--mcp` is a command-line
   mode, under the same rules, and answers only while `AgentAccess` holds your consent. When agents get
-  something new, a tool or another source's data, raise `AgentAccess.version`, so they wait until
-  you've seen it. It serves only the sources that are on (`--source` narrows them, never adds one),
+  something new, a tool or another source's data, say so in your release notes, under Descriptions, as `Agents:`:
+  the release raises `AgentAccess.version`, so they wait until you've seen it. It serves only the sources that are
+  on (`--source` narrows them, never adds one),
   gives no Teams data, and never writes to a source. A tool that changes something changes only
   BriefBar's own lists, says so (`readOnly: false`), keeps the demo's changes in memory, and tells a
   running BriefBar with `AgentChanges`, whose notification carries nothing. The Copilot CLI's
@@ -307,11 +310,64 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   the pull request changes what they use ([CI](#ci)).
 - Update the README, or [How it works](docs/how-it-works.md), when behavior or settings change.
 - For UI changes, include before and after screenshots from `make screenshots`, never of your own data.
+- Write what users will notice in a file of your own in `changes/`, never in `CHANGELOG.md`, and when a source reads
+  something new, or agents get something new, say so there too, rather than raising a version
+  ([Release notes](#release-notes)).
 
 `main` requires a pull request, CI's `Build and test (macos-26)` job and the Windows workflow's
-`Build and test (windows-2025)` job to pass on an up-to-date branch, and all review conversations to be
-resolved. A second person's approval isn't required, so a solo maintainer can merge their own pull request.
-Force-pushing to `main` and deleting it are blocked.
+`Build and test (windows-2025)` job to pass on its branch, and all review conversations to be resolved. The branch
+needn't be up to date with `main`: pull requests don't conflict over release notes or versions, so those that are
+ready merge one after another, without CI running again. A second person's approval isn't required, so a solo
+maintainer can merge their own pull request. Force-pushing to `main` and deleting it are blocked.
+
+### Release notes
+
+A pull request that changes something users will notice writes its release notes in a file of its own,
+`changes/<branch>.md`, named after its branch (with `-` for any `/`), never in `CHANGELOG.md`, so that no two pull
+requests conflict over them. The release gathers every file into its section of `CHANGELOG.md`, in the order their pull
+requests merged, and deletes them (`scripts/prepare-release.sh`). Write the bullets as `CHANGELOG.md`'s are: one for
+each change users will notice, with a bold lead, for users, and the lines that go on with it indented by two spaces. A
+change users won't notice needs no file.
+
+When a source reads something new, update its `SourceDescription`, but leave its `descriptionVersion` and its `/// N:`
+lines as they are: say it under `## Descriptions`, after the source's name, as its doc line would, without the number.
+When agents get something new, do the same for `AgentAccess.version`, as `Agents:`. Then, after `After this update:`,
+say what changed, for users, naming each source, since other pull requests' notes go on the same bullet:
+
+```markdown
+- **Edit and delete your comments.** With **Make Changes in Azure DevOps** on, a comment you wrote in a pull request's
+  details has **Edit** and **Delete…**, in its **⋯** and right-click menus.
+
+## Descriptions
+
+Azure DevOps: with Make Changes in Azure DevOps, your own comment edited, a PATCH of what it says, or deleted, a
+DELETE of it, each when you click it.
+
+After this update: with Make Changes in Azure DevOps on, Azure DevOps edits and deletes your comments when you click.
+```
+
+The names are `Teams:`, `Azure DevOps:`, `Copilot:`, `GitHub:` and `Agents:`. The release raises each version that
+changed once, with a doc line of what each pull request said, and ends its section with the bullet that starts
+**After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.**, followed by
+what they said after `After this update:`. So between releases, a description on `main` can say more than its version
+did: users install releases, which raise it, so they're asked all the same, but a build from `main` doesn't ask again.
+
+`make test` checks the notes first, and that neither a version nor `CHANGELOG.md` changed since the last release, in a
+second (`scripts/prepare-release.sh --check`); `make release-notes-check`, which CI runs, tests that script too. A new
+source goes in its lists.
+
+A pull request that wrote its notes under `## Unreleased` in `CHANGELOG.md`, or raised a version, moves them as it
+merges `main`:
+
+1. Copy its bullets from `## Unreleased` into `changes/<branch>.md` as they are, then make `CHANGELOG.md` what `main`
+   has: `git checkout origin/main -- CHANGELOG.md`.
+2. For each version it raised, a source's `descriptionVersion` or `AgentAccess.version`, put back `main`'s number,
+   take out the `/// N:` line it added, and put that line's text, without its number, under `## Descriptions` in the
+   file, after the source's name.
+3. Under `After this update:`, say what changed, from its "After this update, …" bullet without the bold sentence, or
+   from the sentence that said so at the end of another bullet, and take that bullet or sentence out: the release
+   writes it.
+4. Run `scripts/prepare-release.sh --check`.
 
 ## Signing
 
@@ -353,14 +409,17 @@ pull requests, and when started by hand. A new run cancels the one in progress o
   update through it (`scripts/update-rehearsal.sh`), and uploads the package as the `BriefBar` artifact.
 - A pull request does that only when it changes what packaging uses beyond what the tests build and check:
   anything but the Swift code in `Sources`, the tests, the docs, the Markdown at the top and the pull request's
-  own notes in `CHANGELOG.md`. The updater's code counts, and so does the code that starts it and talks to it,
+  own release notes, in `changes/`. The updater's code counts, and so does the code that starts it and talks to it,
   which the package's checks run; `scripts/ci-changes.sh` lists them. So a pull request that changes
   `scripts/`, `Resources/`, the `Makefile`, `Package.swift` or a workflow packages the app, and one that changes
-  only the app's code, its tests and its docs doesn't, and says so in the run's summary: its optimized build
-  happens on `main`, which packages every change.
+  only the app's code, its tests, its docs and its release notes doesn't, and says so in the run's summary: its
+  optimized build happens on `main`, which packages every change.
 - A pull request that changes only BriefBar for Windows (`windows/` and its workflow) builds nothing for
   the Mac: `scripts/ci-changes.sh` says what changed, and the build job still runs, on Linux, skipping
   every step, so its required check passes.
+- Before it builds, it checks the release notes in `changes/`, and that no pull request changed a description's
+  version or `CHANGELOG.md`, against the last release's tag, and tests the script that gathers the notes
+  (`make release-notes-check`).
 - Intel builds and checks aren't supported.
 - Every run builds from scratch. A cached build folder would save a minute or two on a typical pull request, but
   Swift's incremental builds can miss a change: from a cache, a correct change failed its test, because a file that
@@ -381,23 +440,31 @@ A pull request that doesn't change it skips the build, which counts as passing, 
 
 Releases are built and signed by GitHub Actions, not on a maintainer's Mac.
 
-1. Set the new version as `CFBundleShortVersionString` in `Resources/Info.plist`, as three numbers
-   such as `0.2.0`. The build sets `CFBundleVersion` to the same value. Sparkle compares it to decide
-   whether a release is newer, so a release fails unless its version is higher than every earlier
-   tag.
-2. Add a section for it at the top of `CHANGELOG.md`, with the date, such as
-   `## 0.2.0 - 2026-11-30`. It becomes the release notes, on GitHub and in the app's update window, so
-   write it for users.
-3. Merge the changes into `main` through a pull request. If no runner picks a CI job up, start the
+1. On the branch the release merges from, with all of `main` merged and the tags fetched, run
+   `scripts/prepare-release.sh 0.2.0 2026-11-30`, with the new version, three numbers, and the date, today's if you
+   leave it out. It sets the version as `CFBundleShortVersionString` in `Resources/Info.plist`, gathers the notes in
+   `changes/` into a section at the top of `CHANGELOG.md`, `## 0.2.0 - 2026-11-30`, in the order their pull requests
+   merged, raises the version of each description they changed, with its doc line, ends the section with **After this
+   update, …** when one changed, and deletes the notes ([Release notes](#release-notes)). It changes only those files,
+   in the working tree, and nothing unless it can do all of it, so it's safe in a throwaway worktree; `--main <ref>`
+   names the branch the pull requests merged into, if it isn't `origin/main`. The section becomes the release notes,
+   on GitHub and in the app's update window: read it, then commit it all, the deleted notes too, as
+   "Prepare BriefBar 0.2.0". The build sets `CFBundleVersion` to the same version. Sparkle compares it to decide
+   whether a release is newer, so a release fails unless its version is higher than every earlier tag.
+2. Merge the changes into `main` through a pull request. If no runner picks a CI job up, start the
    workflow again from **Actions** with **Run workflow**.
-4. Tag the commit and push the tag:
+3. Tag the commit that merged the release, and push the tag. If a pull request with notes merged into `main` after the
+   release was prepared, its change and its notes aren't in the release: tag the release's merge if that pull request
+   merged after it, or the release's own commit, "Prepare BriefBar 0.2.0", if it merged before. The release workflow's
+   `make test` refuses a tag whose commit still has notes in `changes/`, which would ship a change without them, and
+   without raising the versions of the descriptions it changed.
 
    ```sh
    git tag v0.2.0
    git push origin v0.2.0
    ```
 
-5. Approve the release once CI has passed on `main`: in the run under **Actions**, click
+4. Approve the release once CI has passed on `main`: in the run under **Actions**, click
    **Review deployments**, select `release` and click **Approve and deploy**.
 
 The tag starts the [release workflow](.github/workflows/release.yml). Its first job checks the
