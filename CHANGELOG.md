@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.16.1 - 2026-11-05
 
 - **Buttons and menus grow with Text Size in Windows.** At a bigger text size, in Settings › Appearance, the controls on
   windows' pages grow with their text: the pages' headers, such as By Status, List | Map and Open in Azure DevOps on the
