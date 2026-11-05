@@ -712,7 +712,7 @@ struct AzureDevOpsAgent: Sendable {
             let items = read.items.filter { $0.group == group }
             guard !items.isEmpty else { continue }
             sections.append("\(group.title) (\(items.count)):\n" + items.map { item in
-                AgentText.line(item, record: read.records.first { $0.id == item.key }, now: now)
+                AgentText.line(item, now: now)
             }.joined(separator: "\n"))
         }
         let pinned = await reader.pinnedStatuses(now: now)
@@ -747,7 +747,7 @@ struct AzureDevOpsAgent: Sendable {
             let items = read.items.filter { $0.group == group }
             guard !items.isEmpty || only != nil else { continue }
             lines.append("\n## \(group.title) (\(items.count))")
-            lines += items.isEmpty ? ["None."] : items.map { item in AgentText.line(item, record: read.records.first { $0.id == item.key }, now: now) }
+            lines += items.isEmpty ? ["None."] : items.map { item in AgentText.line(item, now: now) }
         }
         return lines.joined(separator: "\n")
     }
@@ -1032,16 +1032,16 @@ enum AgentText {
 
     /// A pull request in a list: what it is, why it's there and since when, and its link. In Needs You, whether you've
     /// seen what's there. What others named or wrote in it stays on its line (`QuotedText`), and the branches its detail
-    /// names are written as a command may hold them, given its record (`statusDetail`).
-    static func line(_ item: PRSnapshot, record: PRRecord? = nil, now: Date) -> String {
+    /// names are written as a command may hold them (`statusDetail`).
+    static func line(_ item: PRSnapshot, now: Date) -> String {
         let whose = whose(role: item.role, author: QuotedText.oneLine(item.author), isWatched: item.isWatched, isDraft: item.isDraft)
         var text = "- !\(item.key.number) “\(QuotedText.oneLine(item.title))” in \(QuotedText.oneLine(item.repository)) "
             + "(\(whose)): \(QuotedText.inLine(item.headline))"
         if let since = item.since { text += ", \(ago(since, now: now))" }
         if item.group == .needsYou && !item.hasNews { text += " (seen, still waiting on you)" }
         // Its detail says who wrote it, when that's all it says, as whose it is does.
-        if let detail = item.detail, !detail.isEmpty, detail != "By \(item.author)" {
-            text += ". " + (record.map { statusDetail(detail, of: $0.pullRequest) } ?? QuotedText.oneLine(detail))
+        if let detail = statusDetail(of: item), item.detail != "By \(item.author)" {
+            text += ". " + detail
         }
         return text + "\n  \(item.url.absoluteString)"
     }
@@ -1073,7 +1073,7 @@ enum AgentText {
         if let item {
             var status = "- In BriefBar: \(item.group.title), \(QuotedText.inLine(item.headline))"
             if let since = item.since { status += ", \(ago(since, now: now))" }
-            if let detail = item.detail, !detail.isEmpty { status += ". \(Self.statusDetail(detail, of: pr))" }
+            if let detail = Self.statusDetail(of: item) { status += ". \(detail)" }
             lines.append(status)
         }
         let reviewers = pr.reviewers.map { reviewer in
@@ -1094,7 +1094,7 @@ enum AgentText {
             if !checks.isEmpty { lines.append("- Checks:\n" + checks.map { "  - \($0)" }.joined(separator: "\n")) }
         }
         if pr.hasConflicts { lines.append("- It has merge conflicts with \(target).") }
-        if let problem = pr.mergeProblem(naming: QuotedText.commandWord) { lines.append("- \(problem.detail).") }
+        if let problem = pr.mergeProblem { lines.append("- \(problem.detail.text(naming: QuotedText.commandWord)).") }
         if let merge = record.merge {
             lines.append("- After it merged into \(QuotedText.commandWord(merge.targetBranch)) \(ago(merge.mergedAt, now: now)):")
             for status in merge.pipelines {
@@ -1140,9 +1140,11 @@ enum AgentText {
 
     /// What the lists say of a pull request after its headline, on its line (`QuotedText.oneLine`), with its branches as a
     /// command may hold them where it names them, as the rest of `pull_request` does (`QuotedText.commandWord`): where its
-    /// conflicts are, what failed to merge, or what it merged into. The lists themselves show them as they are.
-    static func statusDetail(_ detail: String, of pr: PullRequest) -> String {
-        QuotedText.oneLine(pr.detail(detail, naming: QuotedText.commandWord))
+    /// conflicts are, what failed to merge, or what it merged into. The classifier keeps them apart in it
+    /// (`PRSnapshot.detailText`), so they're named so whatever they hold. The lists themselves show them as they are. Nil
+    /// when it says nothing.
+    static func statusDetail(of item: PRSnapshot) -> String? {
+        item.detail(naming: QuotedText.commandWord).flatMap { $0.isEmpty ? nil : QuotedText.oneLine($0) }
     }
 
     /// A pull request's Copilot session, for `pull_request`, as its details show it (`PullRequestSession`): the session

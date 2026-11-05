@@ -35,7 +35,7 @@ public enum PullRequestStory {
         if let merge = snapshot.merge { runs.append(run(merge)) }
         // Who sent it to you in a chat, and in which app, stays on this Mac: what's shared says what the pull request says.
         let shared = snapshot.isFromChat ? pullRequest.map { standing($0, me: record?.me, naming: naming) } ?? sharedStatus(snapshot) : nil
-        let sentence = sentence(of: snapshot, pullRequest: pullRequest, naming: naming)
+        let sentence = sentence(of: snapshot, naming: naming)
         return ItemStory(
             sentence: sentence, sharedSentence: shared, date: snapshot.since, facts: withoutApprovals(facts, saidIn: sentence),
             more: more, runs: runs.sorted(by: ItemStory.Run.showsFirst),
@@ -85,11 +85,10 @@ public enum PullRequestStory {
 
     /// Where one of your pull requests stands, as its row says it, without how long it's been so, which its date says:
     /// "No activity for 15 days" says a day more each day.
-    /// The branches its detail names, as its pull request has them, are written as `naming` writes them, before the line is
-    /// cut to its length (`PullRequest.detail(_:naming:)`).
-    static func sentence(of snapshot: PRSnapshot, pullRequest: PullRequest? = nil, naming: (String) -> String = { $0 }) -> String {
-        let detail = snapshot.detail.map { detail in pullRequest.map { $0.detail(detail, naming: naming) } ?? detail }
-        return snapshot.reason == .inactive ? "No recent activity" : sentence(snapshot.headline, detail)
+    /// The branches its detail names are written as `naming` writes them, before the line is cut to its length
+    /// (`PRSnapshot.detail(naming:)`).
+    static func sentence(of snapshot: PRSnapshot, naming: (String) -> String = { $0 }) -> String {
+        snapshot.reason == .inactive ? "No recent activity" : sentence(snapshot.headline, snapshot.detail(naming: naming))
     }
 
     /// "Sam Rivera replied: Could we cap it?": a row's headline and its detail, in a line.

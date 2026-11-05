@@ -205,31 +205,14 @@ public struct PullRequest: Sendable, Codable, Equatable, Identifiable {
     public var hasConflicts: Bool { mergeStatus == "conflicts" }
 
     /// What went wrong with the merge Azure DevOps checks it with, other than conflicts, in a word or two and then in a
-    /// line: the merge failed, or a policy rejected it. It can't be completed until it merges, usually once you push again.
-    /// Nil while nothing did.
-    public var mergeProblem: (headline: String, detail: String)? { mergeProblem(naming: { $0 }) }
-
-    /// The same, with its branches named as `naming` writes them: as agents get them, say, in single quotes when a shell
-    /// would read something in them (`QuotedText.commandWord`).
-    public func mergeProblem(naming: (String) -> String) -> (headline: String, detail: String)? {
+    /// line, which names its branches (`BranchText`): the merge failed, or a policy rejected it. It can't be completed until
+    /// it merges, usually once you push again. Nil while nothing did.
+    public var mergeProblem: (headline: String, detail: BranchText)? {
         switch mergeStatus {
-        case "failure"?: ("Merge failed", "Azure DevOps couldn't merge \(naming(sourceBranch)) into \(naming(targetBranch))")
-        case "rejectedByPolicy"?: ("Merge rejected", "A policy rejected merging \(naming(sourceBranch)) into \(naming(targetBranch))")
+        case "failure"?: ("Merge failed", "Azure DevOps couldn't merge \(branch: sourceBranch) into \(branch: targetBranch)")
+        case "rejectedByPolicy"?: ("Merge rejected", "A policy rejected merging \(branch: sourceBranch) into \(branch: targetBranch)")
         default: nil
         }
-    }
-
-    /// What the lists say of it after its headline (`PRSnapshot.detail`), with the branches it names written as `naming`
-    /// writes them: where its conflicts are, "fix-total into main", what failed to merge (`mergeProblem`), or what it merged
-    /// into, "Merged into main", as `PRClassifier` says them. Any other detail as it is.
-    public func detail(_ detail: String, naming: (String) -> String) -> String {
-        let said = { (naming: (String) -> String) -> [String?] in
-            ["\(naming(sourceBranch)) into \(naming(targetBranch))", mergeProblem(naming: naming)?.detail, "Merged into \(naming(targetBranch))"]
-        }
-        for case let (raw?, named?) in zip(said { $0 }, said(naming)) where detail.hasPrefix(raw) {
-            return named + detail.dropFirst(raw.count)
-        }
-        return detail
     }
 
     public var webURL: URL {

@@ -3152,6 +3152,9 @@ line of the sprint, `work_item` its titles, states, people and pull requests, wi
 of which is quoted, and `watch_pull_request`, `pin_pipeline` and `unpin_pipeline` what they name. Where what others
 named or wrote starts a line or a list's item, as a pipeline's name, a task's title or a line of a quote does, it
 opens no fence, three backticks or tildes, which CommonMark reads in a list or a quote too (`QuotedText.oneLine`).
+What the lists say of a pull request keeps the branches it names apart (`PRSnapshot.detailText`, a `BranchText`): what
+it merged into, where its conflicts are, or what failed to merge. So the tools name them in quotes when they're
+written, rather than by finding them in the text, whatever a branch's name ends in.
 
 While **Send Work to Copilot** is on, `pull_request` also names an open pull request's session: the
 Copilot session BriefBar sends its work to, as its details show it (see [A pull request's
