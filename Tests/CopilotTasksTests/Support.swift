@@ -116,12 +116,31 @@ struct RepositoryFixture {
         try await git(["clone", "--quiet", origin.path, checkout.path])
     }
 
+    /// Runs git on `TestThreads`, as a repository made beforehand would be: in Swift's cooperative pool, starting it and
+    /// waiting for it would hold up every other test.
     func git(_ arguments: [String]) async throws {
-        let result = try await ProcessRunner().run(URL(fileURLWithPath: "/usr/bin/git"), arguments: arguments, environment: environment, timeout: 60)
+        let result = try await withTaskExecutorPreference(TestThreads.shared) {
+            try await ProcessRunner().run(URL(fileURLWithPath: "/usr/bin/git"), arguments: arguments, environment: environment, timeout: 60)
+        }
         guard result.status == 0 else { throw TestError("git \(arguments.joined(separator: " ")): \(String(decoding: result.stderr, as: UTF8.self))") }
     }
 
     func remove() {
-        try? FileManager.default.removeItem(at: folder)
+        Cleanup.remove(folder)
+    }
+}
+
+/// Removes folders tests are done with on a queue of its own, rather than in Swift's cooperative pool, where removing a
+/// repository's many files would hold up every other test. What's still being removed as the tests end is waited for.
+enum Cleanup {
+    private static let queue = DispatchQueue(label: "BriefBarTests.Cleanup")
+    private static let removing = DispatchGroup()
+    private static let waitsAtExit: Void = {
+        _ = atexit { Cleanup.removing.wait() }
+    }()
+
+    static func remove(_ folder: URL) {
+        _ = waitsAtExit
+        queue.async(group: removing) { try? FileManager.default.removeItem(at: folder) }
     }
 }

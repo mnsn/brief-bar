@@ -169,13 +169,23 @@ enum FakeCopilot {
             messages.compactMap { $0["method"] as? String }
         }
 
+        /// Waits until the server has been sent `method`, looking at its log up to 2,000 times, 10 ms apart: on
+        /// `TestThreads`, since reading it that often in Swift's cooperative pool would hold up every other test.
+        func waitUntilSent(_ method: String) async throws {
+            try await withTaskExecutorPreference(TestThreads.shared) {
+                for _ in 0..<2000 where !methods.contains(method) {
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+            }
+        }
+
         /// The parameters of the first request for `method`.
         func parameters(of method: String) -> [String: Any]? {
             messages.first { $0["method"] as? String == method }?["params"] as? [String: Any]
         }
 
         func remove() {
-            try? FileManager.default.removeItem(at: folder)
+            Cleanup.remove(folder)
         }
     }
 }
