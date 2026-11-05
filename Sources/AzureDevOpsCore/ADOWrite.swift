@@ -306,10 +306,11 @@ public struct ThreadChange: Sendable, Equatable {
 
 extension PRDetails {
     /// With a change BriefBar made to one of its threads, as Azure DevOps answered it: the comments it doesn't have, in the
-    /// order they were made; a comment of yours as you edited it, in place of one that says something else; without one you
-    /// deleted, and without the thread once none of its comments is left, as Azure DevOps deletes it then; and the thread's
-    /// status. Nothing changes for a thread it doesn't have, which reading the pull request again brings, nor for a comment
-    /// it doesn't have, and the same change twice is the same as once.
+    /// order they were made; a comment of yours as you edited it, in place of one that says something else, unless that one
+    /// was edited later, as elsewhere, which a read had before this edit's answer came, as Azure DevOps dates each edit;
+    /// without one you deleted, and without the thread once none of its comments is left, as Azure DevOps deletes it then;
+    /// and the thread's status. Nothing changes for a thread it doesn't have, which reading the pull request again brings,
+    /// nor for a comment it doesn't have, and the same change twice is the same as once.
     public mutating func apply(_ change: ThreadChange) {
         guard let index = threads.firstIndex(where: { $0.id == change.thread }) else { return }
         var thread = threads[index]
@@ -320,8 +321,11 @@ extension PRDetails {
             if let latest = added.map(\.publishedAt).max() { lastActivity = max(lastActivity ?? latest, latest) }
         }
         for edited in change.edited {
-            guard let at = thread.comments.firstIndex(where: { $0.id == edited.id }), thread.comments[at].kept != edited.kept else { continue }
-            thread.comments[at] = edited
+            guard let index = thread.comments.firstIndex(where: { $0.id == edited.id }) else { continue }
+            let known = thread.comments[index]
+            guard known.kept != edited.kept else { continue }
+            if let later = known.editedAt, let at = edited.editedAt, later > at { continue }
+            thread.comments[index] = edited
         }
         if !change.deleted.isEmpty { thread.comments.removeAll { change.deleted.contains($0.id) } }
         if let status = change.status { thread.status = status }

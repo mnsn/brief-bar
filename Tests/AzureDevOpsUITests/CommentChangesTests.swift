@@ -433,6 +433,38 @@ import Testing
         #expect(try comments(store).mine.markdown == "Capped it at 30 seconds.")
     }
 
+    /// An edit's answer that comes after the list read a later edit of the comment, made elsewhere meanwhile, doesn't put
+    /// back what it said, then or as the list reads it again: Azure DevOps dates each edit, and the later one stays.
+    @Test(.timeLimit(.minutes(1)))
+    func anEditsAnswerAfterALaterEditDoesntPutItBack() async throws {
+        let (store, changes, azure, _) = live()
+        let (mine, _) = try comments(store)
+        var waiting: CheckedContinuation<Void, Never>?
+        changes.send = { write, _ in
+            await withCheckedContinuation { waiting = $0 }
+            return try azure.send(write)
+        }
+        let original = try thread(store)
+        let editing = Task { await changes.edit("Capped it.", of: mine, in: original, of: key) }
+        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+
+        // Edited elsewhere after it was saved, as Azure DevOps dates it, and read so before its answer comes.
+        let elsewhere = "Capped it at 30 seconds, from Azure DevOps."
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        let at = try #require(snapshot.records[index].details?.threads[0].comments.firstIndex { $0.id == mine.id })
+        snapshot.records[index].details?.threads[0].comments[at].text = elsewhere
+        snapshot.records[index].details?.threads[0].comments[at].markdown = elsewhere
+        // The stand-in dates its edit at 10:00.
+        snapshot.records[index].details?.threads[0].comments[at].editedAt = try Date("2030-01-01T11:00:00Z", strategy: .iso8601)
+        store.receive(snapshot)
+        try #require(waiting).resume()
+        #expect(await editing.value)
+        #expect(try comments(store).mine.markdown == elsewhere)
+        store.receive(snapshot)
+        #expect(try comments(store).mine.markdown == elsewhere)
+    }
+
     /// A reply of yours you deleted, found deleted after an answer that didn't say, leaves the thread, though the list kept
     /// showing it until a snapshot had it, which none will now.
     @Test func aDeletionFoundDoneTakesTheReplyTheListShows() async throws {

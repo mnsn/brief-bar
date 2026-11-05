@@ -698,6 +698,29 @@ import Testing
         #expect(details.applying(ThreadChange(thread: 12, edited: [comment(9, People.me, "New", at: t(0))])) == details)
     }
 
+    /// An edit's answer never puts back what a later edit of the comment replaced, as one made elsewhere that a read had before
+    /// the answer came: Azure DevOps dates each edit. It changes nothing then, so that the list is done with it. Over a comment
+    /// edited before it, or never, it shows.
+    @Test func anEditNeverReplacesALaterEditOfTheComment() throws {
+        let thread = ReviewThread(id: 12, comments: [comment(1, People.sam, "Cap it?", at: t(-hour)), comment(3, People.me, "Done", at: t(-minute))])
+        var json = Fixture.comment(3, People.me, "Done, capped.", at: t(-minute))
+        json["lastContentUpdatedDate"] = iso(t(5))
+        let write = ADOWrite.editComment(address, comment: 3, markdown: "Done, capped.")
+        let change = try #require(ThreadChange(.comment(try Fixture.decode(ADOComment.self, json)), to: write, pullRequest: pullRequest,
+                                               known: thread, at: t(6)))
+        var later = thread
+        later.comments[1].text = "Done, capped at 30 seconds."
+        later.comments[1].markdown = "Done, capped at 30 seconds."
+        later.comments[1].editedAt = t(10)
+        let read = makeDetails(for: pullRequest, threads: [later])
+        #expect(read.applying(change) == read)
+
+        var earlier = later
+        earlier.comments[1].editedAt = t(1)
+        #expect(makeDetails(for: pullRequest, threads: [earlier]).applying(change).threads[0].comments[1].markdown == "Done, capped.")
+        #expect(makeDetails(for: pullRequest, threads: [thread]).applying(change).threads[0].comments[1].markdown == "Done, capped.")
+    }
+
     /// A deletion's answer says nothing: the comment leaves its thread, and the thread leaves too once none of its comments is
     /// left, as Azure DevOps deletes it then. The same twice is the same as once.
     @Test func aDeletionTakesTheCommentAndThenItsThread() throws {
