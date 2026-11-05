@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.16.2 - 2026-11-05
 
 - **Copilot's prompts keep what others wrote as theirs.** Fix, Resolve, Explain, Review and Push & Reply quote comments,
   code, builds' logs and earlier answers, and Copilot works on them on its own, with every tool but push: a comment of
