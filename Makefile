@@ -4,6 +4,9 @@
 # plugin (it lives in a subfolder), so point it there explicitly.
 TESTING_PLUGINS := $(abspath $(dir $(shell xcrun --find swift))../lib/swift/host/plugins/testing)
 
+# Swift Testing's events from `make test`, one JSON object a line, for scripts/check-test-events.sh.
+TEST_EVENTS := $(abspath .build/test-events.jsonl)
+
 # Made-up data for every source: Teams notifications in Notification Center's layout
 # (scripts/make-teams-demo-data.swift) and a Copilot data directory (scripts/make-copilot-demo-data.swift).
 # Azure DevOps and GitHub make up their own (--demo).
@@ -26,9 +29,14 @@ build:
 	swift build --arch arm64
 
 # With a single thread in Swift's cooperative pool, rather than one per core, code that blocks a thread of it while
-# waiting for async work hangs here too, as it would on a runner with few cores.
+# waiting for async work hangs here too, as it would on a runner with few cores. Swift Testing's events then show that
+# every test process ran to its end: one that ends early, with status 0, would otherwise pass without the tests it
+# hadn't run (scripts/check-test-events.sh).
 test:
-	LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test --arch arm64 $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS))
+	@rm -f "$(TEST_EVENTS)"
+	LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test --arch arm64 $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS)) \
+		--event-stream-output-path "$(TEST_EVENTS)" --event-stream-version 0
+	@scripts/check-test-events.sh "$(TEST_EVENTS)"
 
 # BriefBar's extension for the Copilot app's sessions (Resources/CopilotPlugin/briefbar-sessions), with Node's test
 # runner and a stand-in for the Copilot SDK, in Tests/CopilotPlugin so that the tests don't ship. CI runs it.

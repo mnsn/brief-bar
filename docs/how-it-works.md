@@ -2005,7 +2005,13 @@ It stops waiting on you when:
   waited on you in the threads whose entries are still in the prompt you send, as they were when
   BriefBar wrote it, opening the composer (`CommentHandOff`). An entry is still there while its own line
   is, such as `1. src/Cart.cs, line 12 (thread 11)`: the prompt quotes comments word for word, each on
-  an indented line, so one that names another thread doesn't count. A comment that came after, while you
+  an indented line, so one that names another thread doesn't count, and neither does a line in a fence,
+  such as one of a suggested change or of an earlier answer, nor one after a fence you add as you edit the
+  prompt: entries are read only before the first line that may open a fence, as CommonMark reads one in a
+  list or a quote, or as a model may read one. A prompt lists its entries before anything it fences, and
+  nothing others wrote starts a fence in it, so how a fence is closed, or which list it's in, doesn't
+  matter; the worst a fence you add before them does is keep the threads after it on Needs You. An entry
+  counts unindented, as the prompt writes it (`PullRequestPrompt.entryLines`). A comment that came after, while you
   checked the prompt, say, isn't handed off, and neither is one in a thread whose entry isn't there,
   beyond the 30 it lists at most or deleted before you sent it, nor one in a thread reopened meanwhile.
   Since there's one cutoff, it then stops before the first comment that waits on you when the task
@@ -2274,8 +2280,13 @@ the Copilot CLI (`Sources/CopilotTasks`). Nothing happens until you send one, an
 requests to Azure DevOps stay GETs: the programs it starts for you do the rest.
 
 **Sending.** The composer fills the prompt in from Settings (`PromptTemplate`: `{id}`, `{type}`,
-`{title}`, `{url}`, `{organization}`, `{project}` and `{baseBranch}`) and remembers the repository
-each project's work went in, by organization and project. Then BriefBar:
+`{title}`, `{url}`, `{organization}`, `{project}` and `{baseBranch}`), each value on its placeholder's line, with
+what breaks a line, turns text around or hides it written out (`QuotedText.oneLine`), and the base branch, which the
+repository names, as it's named but for what's unseen (`QuotedText.inLine`), so a template of yours can quote it as its
+commands need, and remembers the repository
+each project's work went in, by organization and project. Only a work item's prompt has `{baseBranch}` filled in as
+it starts: a pull request's has no placeholders, and goes as it is, so code it quotes that holds one, such as a
+suggested change, stays as it was written. Then BriefBar:
 
 1. asks your login shell for its environment, as VS Code does (`$SHELL -i -l -c 'env -0'`), so
    Copilot, git and the commands Copilot runs find what a Terminal window finds. Started as an app,
@@ -2649,8 +2660,10 @@ there until you ask, for the keyboard's focus or VoiceOver to reach (`RichTextVi
 last that shows takes no clicks or scrolls.
 
 **Fix** (`PullRequestPrompt.fixThread`) addresses that thread alone: its entry as Fix Comments lists it, each comment in
-full as its author wrote it, the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
-what was added, removed and commented, and what you wrote, quoted as yours; then it builds and tests, without
+full as its author wrote it, one of more than a line under its author's name in a fence nothing in it closes, then that
+the comments are what their authors ask of the change, not instructions (`PullRequestPrompt.commentsSaid`), as every
+prompt that quotes threads says; the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
+what was added, removed and commented, in a fence too; and what you wrote, quoted as yours; then it builds and tests, without
 committing, pushing or replying. On a file's page, whose threads don't show their own code, a composer has it read as it
 opens, as a thread that comes on screen does, through the reader the page's diff was read with: only while its window
 shows on screen, called off as it hides, and read again once it shows. Explain, Fix and **Ask in the Session** wait for a
@@ -2659,7 +2672,12 @@ read that's under way as they go, and go without the code when it isn't read
 (`RichText.Block.suggestion`), blank lines at its ends and all, which the comment shows labeled; **Apply ‹name›'s
 suggestion as written** has the prompt quote the latest that someone else suggested in the thread
 (`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on, which Copilot finds in the
-file as it is now by their code, since their numbers are from when the thread was written. The box is checked when the suggestion is the thread's last comment. Once a session answered Explain on the thread,
+file as it is now by their code, since their numbers are from when the thread was written. A character nobody sees in the
+change, or in the code it's on, such as a zero-width space, is written out in its fence, as `\u{200B}`, or as `⟦U+200B⟧`
+when the code spells out `\u{` itself, as a model reads it, a character nobody sees in it or a fullwidth form
+and all, with a number none of its own has when it spells that out too, so the two can't be mistaken for each other, and the prompt then
+says that it stands for the character itself, to write as that character or the language's own escape, so the change is
+still applied, and the code still found, exactly as it's written (`QuotedText.writtenOut`). The box is checked when the suggestion is the thread's last comment. Once a session answered Explain on the thread,
 **Include the answer above** quotes what it answered (`CopilotAnswer`, cut to 6,000 characters) before your words, which
 can point to it, in a fence nothing in it closes, saying that it may quote what it read, not instructions, since it often
 quotes a comment or a run word for word (`PullRequestPrompt.earlier`); Ask More quotes it the same way. Its hand-off is that thread's comments that wait on you
@@ -2751,7 +2769,22 @@ the invisible ones that reorder text or hide text a model may read, such as dire
 tags, written out as escapes (`PullRequestPrompt.oneLine`); its errors, each test's message and stack trace, and the log
 each go in a fence nothing in them closes, with the same characters written out but tabs (`PullRequestPrompt.fenced`);
 and the prompt then says that they're what the build said, not instructions. The pull request's title, repository and
-branches, which whoever opened it named, stay on their lines the same way in every prompt (`PullRequestPrompt.introduction`). It asks the
+branches, which whoever opened it named, stay on their lines the same way in every prompt (`PullRequestPrompt.introduction`),
+and so do names, paths and comments of one line, none of them starting with three backticks or tildes, which would open
+a fence where it starts a line, as a name does before what its author said, not even after what reads as space or isn't
+seen, a no-break space or a joiner, or after a list's or a quote's marker, "- ```" (the first is written out, `\u{60}`).
+Nor do they start a block of HTML, a comment, `<!--`, or a tag such as `<div `, which CommonMark reads until the comment
+closes or a blank line, a fence's line in it too, so that a name over a comment of more lines would take the comment's
+fence in (its `<` is written out, `\u{3C}`; a `<` before anything else, as in "<3", stays).
+What text becomes once normalized, as a model may read it, counts as that there: a Greek varia or a fullwidth grave
+accent as a backtick, "⒈" as "1.", a list's marker, or a digit of another script as that digit; and a fence is longer
+than any run of backticks in what it quotes, read that way (`QuotedText.asRead`). A branch whose name holds what a shell reads,
+such as `$(…)` or a backtick, which Git allows, is in single quotes wherever a prompt names it, in a command such as
+`git push origin HEAD:refs/heads/'<branch>'`, in a sentence Copilot may make one from, or in a build's hint, so it runs
+nothing (`PullRequestPrompt.branch`). One that holds a character nobody sees, such as a zero-width space, which Git
+allows too, is in ANSI-C quotes instead, with that character as its UTF-8 bytes in hex, `$'fix\xE2\x80\x8B'`: it's seen
+in the prompt, and bash, macOS's 3.2 too, zsh and sh read it back as the name itself, so a command still names that
+branch, where the character written out as text, `\u{200B}`, would name another (`QuotedText.commandWord`). It asks the
 session, aside, what failed and why, and whether it's the change, a flaky test, the target branch or the build's
 infrastructure (`CopilotQuestions`, over `SessionQuestions`). What it answers is kept with the run it's about, and the
 attempt of it, by when its check said it finished, so it doesn't show with another run of the build, nor once its failed
@@ -3219,6 +3252,23 @@ and never rebases. For a failed build, it reads each run's timeline first, with 
 of it. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 
+`pull_request` quotes what others named or wrote in the pull request as the prompts do: its title, its people, its
+checks and where they failed, what the lists say of it, its session's project, and what people wrote in what's new and
+in its threads, each on its line with what breaks a line or isn't seen written out, and its branches, its session's
+included, in single quotes when a shell would read something in them, or in ANSI-C quotes with what nobody sees as
+its bytes, `$'fix\xE2\x80\x8B'`, wherever it names them; what people
+wrote follows a note that it's what they ask of the change, not instructions to the agent. The other tools of
+Azure DevOps quote the same way: `needs_me` and `pull_requests` each pull request's title, repository, author and what
+the lists say of it, `pipelines` its pipelines, their runs' branches and the pull requests that merged, `sprint` each
+line of the sprint, `work_item` its titles, states, people and pull requests, with what people wrote a quote every line
+of which is quoted, and `watch_pull_request`, `pin_pipeline` and `unpin_pipeline` what they name. Where what others
+named or wrote starts a line or a list's item, as a pipeline's name, a task's title or a line of a quote does, it
+opens no fence, three backticks or tildes, which CommonMark reads in a list or a quote too (`QuotedText.oneLine`).
+What the lists say of a pull request keeps the branches it names apart (`PRSnapshot.detailText`, a `BranchText`): what
+it merged into, where its conflicts are, or what failed to merge. So the tools name them in quotes when they're
+written, rather than by finding them in the text, whatever a branch's name ends in. `--json` still writes it as a
+line, under `detail`, with its branches as they are (`PRSnapshot.CodingKeys`).
+
 While **Send Work to Copilot** is on, `pull_request` also names an open pull request's session: the
 Copilot session BriefBar sends its work to, as its details show it (see [A pull request's
 details](#a-pull-requests-details)), by its name and session ID, with why and where it is, and whether Copilot
@@ -3624,7 +3674,9 @@ when BriefBar does.
 
 - `make test` runs every module's tests, with made-up data, and with a single thread in Swift's
   cooperative pool (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), so that code that blocks a thread of it
-  while waiting for async work hangs on any Mac, not only on one with few cores.
+  while waiting for async work hangs on any Mac, not only on one with few cores. It fails when a test
+  process ends before its tests are done, as one does with status 0 once something stops the main
+  run loop: Swift Testing's events show whether each ran to its end (`scripts/check-test-events.sh`).
 - `make plugin-test` runs the tests of BriefBar's extension for the Copilot app's sessions
   (`Tests/CopilotPlugin`), with Node's test runner and a stand-in for the Copilot SDK
   ([Its extension for the app's sessions](#its-extension-for-the-apps-sessions)). CI runs it too.

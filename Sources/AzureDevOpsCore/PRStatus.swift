@@ -163,8 +163,9 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     public var group: PRGroup
     public var reason: PRReason
     public var headline: String
-    /// A comment, the names of failed checks, who approved...
-    public var detail: String?
+    /// A comment, the names of failed checks, who approved..., with the branches it names, what it merged into or where its
+    /// conflicts are, kept apart (`BranchText`), so that what writes it out names them its way (`detail(naming:)`).
+    public var detailText: BranchText?
     /// When it entered this state, or the latest activity.
     public var since: Date?
     /// The pull request, or the thread of the comment that needs you.
@@ -191,6 +192,26 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     public var readiness: PRReadiness? = nil
 
     public var id: String { key.description }
+
+    /// What `--json` writes of it: each of its fields under its name, and its detail as a line, as it always was, under
+    /// `detail`, with its branches as they are (`BranchText`). Every stored field has one.
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case key, title, repository, project, author, role, isDraft, group, reason, headline
+        case detailText = "detail"
+        case since, url, events, approvals, checkState, hasDetails, chatSource, failure, merge, isWatched, createdAt, readiness
+    }
+
+    /// Its detail, as the lists show it (`detailText`).
+    public var detail: String? {
+        get { detailText?.text() }
+        set { detailText = newValue.map(BranchText.init(_:)) }
+    }
+
+    /// Its detail, with the branches it names written as `naming` writes them: as agents get them, say, in single quotes
+    /// when a shell would read something in them (`QuotedText.commandWord`).
+    public func detail(naming: (String) -> String) -> String? {
+        detailText?.text(naming: naming)
+    }
 
     /// Events that need you, rather than news such as approvals.
     public var pendingEvents: [PREvent] { events.filter(\.kind.needsYou) }
@@ -273,17 +294,17 @@ public enum PRClassifier {
         var snapshot = PRSnapshot(
             key: pr.key, title: pr.title.isEmpty ? "Pull request \(pr.key.number)" : pr.title,
             repository: pr.repositoryName, project: pr.projectName, author: pr.author.name, role: record.role,
-            isDraft: pr.isDraft, group: .waiting, reason: .waitingForReviewers, headline: "", detail: nil,
+            isDraft: pr.isDraft, group: .waiting, reason: .waitingForReviewers, headline: "", detailText: nil,
             since: lastActivity, url: pr.webURL, events: [], approvals: approvals.map(\.person.name),
             checkState: details.flatMap { checkState($0.checks) }, hasDetails: details != nil
         )
         snapshot.isWatched = record.isWatched
         snapshot.createdAt = pr.createdAt
-        func set(_ group: PRGroup, _ reason: PRReason, _ headline: String, _ detail: String? = nil, since: Date? = nil) {
+        func set(_ group: PRGroup, _ reason: PRReason, _ headline: String, _ detail: BranchText? = nil, since: Date? = nil) {
             snapshot.group = group
             snapshot.reason = reason
             snapshot.headline = headline
-            snapshot.detail = detail.flatMap { $0.isEmpty ? nil : $0 }
+            snapshot.detailText = detail.flatMap { $0.text().isEmpty ? nil : $0 }
             snapshot.since = since ?? lastActivity
         }
 
@@ -302,20 +323,20 @@ public enum PRClassifier {
                 switch merge.outcome {
                 case .failed:
                     set(.failing, .failedAfterMerge, "Failed after merge",
-                        [merge.pipeline, merge.failure?.summary].compactMap { $0 }.joined(separator: " · "), since: merge.since ?? closed)
+                        BranchText([merge.pipeline, merge.failure?.summary].compactMap { $0 }.joined(separator: " · ")), since: merge.since ?? closed)
                     snapshot.failure = merge.failure
                 case .waiting:
                     set(.done, .waitingForApproval, "Waiting for approval",
-                        [merge.pipeline, merge.stage].compactMap { $0 }.joined(separator: " · "), since: merge.since ?? closed)
+                        BranchText([merge.pipeline, merge.stage].compactMap { $0 }.joined(separator: " · ")), since: merge.since ?? closed)
                 default:
                     let running = merge.running == 1 ? "1 pipeline running" : "\(merge.running) pipelines running"
-                    set(.done, .completed, "Completed", "Merged into \(pr.targetBranch) · \(running)", since: closed)
+                    set(.done, .completed, "Completed", "Merged into \(branch: pr.targetBranch) · \(running)", since: closed)
                 }
                 if merge.outcome != .running, let url = merge.runURL { snapshot.url = url }
                 return snapshot
             }
             guard closed > seenCutoff else { return nil }
-            var detail = completed ? "Merged into \(pr.targetBranch)" : nil
+            var detail: BranchText? = completed ? "Merged into \(branch: pr.targetBranch)" : nil
             if let merge {
                 let ended: String
                 switch (merge.outcome, merge.total) {
@@ -324,7 +345,7 @@ public enum PRClassifier {
                 case (_, 1): ended = "its pipeline passed"
                 default: ended = "\(merge.total) pipelines passed"
                 }
-                detail = (detail ?? "") + " · " + ended
+                detail = (detail ?? "") + " · \(ended)"
             }
             set(.done, completed ? .completed : .abandoned, completed ? "Completed" : "Abandoned", detail, since: closed)
             return snapshot
@@ -358,7 +379,7 @@ public enum PRClassifier {
         let named = fresh.isEmpty ? pending : fresh
         if let top = named.min(by: { ($0.kind.priority, -$0.at.timeIntervalSince1970) < ($1.kind.priority, -$1.at.timeIntervalSince1970) }) {
             let (reason, headline) = describe(top, among: named)
-            set(.needsYou, reason, headline, top.text ?? eventDetail(top, pr, role: record.role), since: pending.map(\.at).max())
+            set(.needsYou, reason, headline, (top.text ?? eventDetail(top, pr, role: record.role)).map(BranchText.init(_:)), since: pending.map(\.at).max())
             if let thread = top.threadId { snapshot.url = pr.threadURL(thread) }
             return snapshot
         }
@@ -371,7 +392,7 @@ public enum PRClassifier {
         func showAnswer() -> Bool {
             let byPriority = { (answer: Answer) in (answer.kind.priority, -answer.at.timeIntervalSince1970) }
             guard let top = yours.min(by: { byPriority($0) < byPriority($1) }) else { return false }
-            set(.answered, .answered, top.headline, top.question, since: yours.map(\.at).max())
+            set(.answered, .answered, top.headline, BranchText(top.question), since: yours.map(\.at).max())
             if let thread = top.threadId { snapshot.url = pr.threadURL(thread) }
             return true
         }
@@ -712,7 +733,7 @@ public enum PRClassifier {
 
     private static func classifyAuthor(
         _ pr: PullRequest, _ details: PRDetails?, approvals: [Reviewer], lastActivity: Date,
-        set: (PRGroup, PRReason, String, String?, Date?) -> Void
+        set: (PRGroup, PRReason, String, BranchText?, Date?) -> Void
     ) {
         let checks = details?.checks ?? []
         let blocking = checks.filter { $0.isBlocking && $0.kind != .completion && $0.state != .notApplicable }
@@ -732,16 +753,16 @@ public enum PRClassifier {
             // Each build with where it failed, once its timeline has been read: "shop-web CI · Run unit tests: …".
             let builds = failedBuilds.map { build in build.failure.map { "\(build.name) · \($0.summary)" } ?? build.name }
             set(.failing, .buildFailed, failedBuilds.count > 1 ? "\(failedBuilds.count) builds failed" : "Build failed",
-                (builds + failedChecks.map(\.name)).joined(separator: ", ") + conflicts, latestCompletion(failedBuilds))
+                BranchText((builds + failedChecks.map(\.name)).joined(separator: ", ") + conflicts), latestCompletion(failedBuilds))
             return
         }
         if !failedChecks.isEmpty {
             set(.failing, .checkFailed, failedChecks.count > 1 ? "\(failedChecks.count) checks failed" : "Check failed",
-                names(failedChecks) + conflicts, latestCompletion(failedChecks))
+                BranchText(names(failedChecks) + conflicts), latestCompletion(failedChecks))
             return
         }
         if pr.hasConflicts {
-            set(.failing, .conflicts, "Merge conflicts", "\(pr.sourceBranch) into \(pr.targetBranch)", nil)
+            set(.failing, .conflicts, "Merge conflicts", "\(branch: pr.sourceBranch) into \(branch: pr.targetBranch)", nil)
             return
         }
         // Azure DevOps couldn't merge it otherwise, so it can't be completed either, however its policies stand.
@@ -750,7 +771,7 @@ public enum PRClassifier {
             return
         }
         if !expired.isEmpty {
-            set(.failing, .buildExpired, "Build expired", names(expired) + " · queue it again", nil)
+            set(.failing, .buildExpired, "Build expired", "\(names(expired)) · queue it again", nil)
             return
         }
 
@@ -758,7 +779,7 @@ public enum PRClassifier {
         if let first = wantChanges.first(where: { $0.vote == .rejected }) ?? wantChanges.first {
             let who = wantChanges.map(\.person.name).joined(separator: ", ")
             set(.waiting, first.vote == .rejected ? .rejected : .changesRequested,
-                first.vote == .rejected ? "Rejected" : "Changes requested", who, nil)
+                first.vote == .rejected ? "Rejected" : "Changes requested", BranchText(who), nil)
             return
         }
 
@@ -776,7 +797,7 @@ public enum PRClassifier {
            hasReviewerPolicy || !approvals.isEmpty {
             set(.ready, pr.autoComplete ? .autoComplete : .readyToComplete,
                 pr.autoComplete ? "Completing automatically" : "Ready to complete",
-                approvedBy ?? "No approvals required", nil)
+                BranchText(approvedBy ?? "No approvals required"), nil)
             return
         }
 
@@ -797,29 +818,29 @@ public enum PRClassifier {
         }
 
         if !current {
-            set(.waiting, .waitingForReviewers, "Waiting for reviewers", progress.first, nil)
+            set(.waiting, .waitingForReviewers, "Waiting for reviewers", progress.first.map(BranchText.init(_:)), nil)
         } else if details?.checksKnown == false {
-            set(.waiting, .requirementsPending, "Can't read its policies", progress.first, nil)
+            set(.waiting, .requirementsPending, "Can't read its policies", progress.first.map(BranchText.init(_:)), nil)
         } else if !reviewersPending.isEmpty || !requiredWaiting.isEmpty || (!hasReviewerPolicy && approvals.isEmpty) {
-            set(.waiting, .waitingForReviewers, "Waiting for reviewers", progress.joined(separator: " · "), nil)
+            set(.waiting, .waitingForReviewers, "Waiting for reviewers", BranchText(progress.joined(separator: " · ")), nil)
         } else if !running.isEmpty {
             let builds = running.filter { $0.kind == .build }
-            set(.waiting, .checksRunning, builds.isEmpty ? "Checks running" : "Build running", names(running), nil)
+            set(.waiting, .checksRunning, builds.isEmpty ? "Checks running" : "Build running", BranchText(names(running)), nil)
         } else if !notRun.isEmpty {
-            set(.waiting, .requirementsPending, "Build hasn't run", names(notRun) + " · queue it", nil)
+            set(.waiting, .requirementsPending, "Build hasn't run", "\(names(notRun)) · queue it", nil)
         } else {
-            set(.waiting, .requirementsPending, requirementHeadline(requirements), progress.first, nil)
+            set(.waiting, .requirementsPending, requirementHeadline(requirements), progress.first.map(BranchText.init(_:)), nil)
         }
     }
 
     private static func classifyReviewer(
-        _ pr: PullRequest, me: String, approvals: [Reviewer], watched: Bool, set: (PRGroup, PRReason, String, String?, Date?) -> Void
+        _ pr: PullRequest, me: String, approvals: [Reviewer], watched: Bool, set: (PRGroup, PRReason, String, BranchText?, Date?) -> Void
     ) {
         let mine = pr.reviewer(me)
         switch mine?.vote ?? .none {
         case .approved, .approvedWithSuggestions:
             let others = approvals.filter { $0.person.id != me }.map(\.person.name)
-            set(.idle, .youApproved, "You approved", others.isEmpty ? "By \(pr.author.name)" : "Also approved by " + others.joined(separator: ", "), nil)
+            set(.idle, .youApproved, "You approved", BranchText(others.isEmpty ? "By \(pr.author.name)" : "Also approved by " + others.joined(separator: ", ")), nil)
         case .waitingForAuthor:
             set(.waiting, .waitingForAuthor, "Waiting for the author", "You asked \(pr.author.name) for changes", nil)
         case .rejected:

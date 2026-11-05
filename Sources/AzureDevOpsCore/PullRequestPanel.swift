@@ -50,12 +50,12 @@ public struct PullRequestPanel: Sendable, Equatable {
     public init(_ snapshot: PRSnapshot, record: PRRecord?, events: [PREvent]? = nil) {
         let pullRequest = record?.pullRequest
         let details = record?.details
-        branch = pullRequest.flatMap(PullRequestStory.branch)
+        branch = pullRequest.flatMap { PullRequestStory.branch($0) }
         author = snapshot.author
         isYours = snapshot.role == .author
         sentence = PullRequestStory.sentence(of: snapshot)
         since = snapshot.since
-        merge = pullRequest.flatMap(PullRequestStory.merge)
+        merge = pullRequest.flatMap { PullRequestStory.merge($0) }
         readiness = snapshot.readiness
         hasDetails = details != nil
         isClosed = pullRequest.map { $0.status == .completed || $0.status == .abandoned }

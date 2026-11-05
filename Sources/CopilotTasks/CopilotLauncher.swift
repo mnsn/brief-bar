@@ -220,8 +220,11 @@ public struct CopilotLauncher: Sendable {
 
         // A new session is named for what it's for; one that's there, a fork included, keeps its name.
         let isNew = request.continuing == nil && request.forking == nil
+        // Only a work item's prompt has the base branch to fill in. A pull request's has no placeholders, but quotes what
+        // others wrote, such as a suggested change, which may hold `{baseBranch}` as it's written: it goes as it is.
+        let prompt = request.workItem == nil ? request.prompt : PromptTemplate.render(request.prompt, baseBranch: repository.baseBranch)
         let arguments = CopilotCommand.arguments(
-            prompt: PromptTemplate.render(request.prompt, baseBranch: repository.baseBranch), options: request.options,
+            prompt: prompt, options: request.options,
             sessionId: id, name: isNew ? CopilotCommand.sessionName(for: request.subject) : nil, directory: worktree,
             denied: request.subject.deniedTools
         )

@@ -205,12 +205,12 @@ public struct PullRequest: Sendable, Codable, Equatable, Identifiable {
     public var hasConflicts: Bool { mergeStatus == "conflicts" }
 
     /// What went wrong with the merge Azure DevOps checks it with, other than conflicts, in a word or two and then in a
-    /// line: the merge failed, or a policy rejected it. It can't be completed until it merges, usually once you push again.
-    /// Nil while nothing did.
-    public var mergeProblem: (headline: String, detail: String)? {
+    /// line, which names its branches (`BranchText`): the merge failed, or a policy rejected it. It can't be completed until
+    /// it merges, usually once you push again. Nil while nothing did.
+    public var mergeProblem: (headline: String, detail: BranchText)? {
         switch mergeStatus {
-        case "failure"?: ("Merge failed", "Azure DevOps couldn't merge \(sourceBranch) into \(targetBranch)")
-        case "rejectedByPolicy"?: ("Merge rejected", "A policy rejected merging \(sourceBranch) into \(targetBranch)")
+        case "failure"?: ("Merge failed", "Azure DevOps couldn't merge \(branch: sourceBranch) into \(branch: targetBranch)")
+        case "rejectedByPolicy"?: ("Merge rejected", "A policy rejected merging \(branch: sourceBranch) into \(branch: targetBranch)")
         default: nil
         }
     }
