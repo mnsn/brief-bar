@@ -5,6 +5,40 @@
 - **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
   and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
   over an app in full screen, so clicking the gear seemed to do nothing.
+
+## 0.15.0 - 2026-11-04
+
+- **Copilot sessions keep BriefBar up to date.** Turn on **Updates from Copilot Sessions** in Settings › Agents, and
+  sessions tell BriefBar the work items and pull requests they're working on, the pull requests they opened, and what
+  they just changed in Azure DevOps. With Show Links on, a session shows on what it's working on, in the Sprint, on your
+  pull requests and in their details, where it can be the pull request's session, and a click opens it; with Pull
+  Request Order on, a pull request it opened joins its lane in By Mission, whose Map says what it's working on now. What
+  a session changed, BriefBar reads again right away instead of at its next refresh, never more than it reads anyway.
+  Sessions change Azure DevOps with their own tools: BriefBar still gives them no way to. It's off by default, and agents
+  pause until you've seen what they get now.
+- **After this update, Azure DevOps, Copilot and agents ask you once to look at what they read and get, and wait until
+  you have.** With Updates from Copilot Sessions on, Copilot reads what sessions tell BriefBar they're working on and
+  the pull requests they opened, Azure DevOps reads again right away what a session says it changed there, and agents
+  get the tools to tell BriefBar.
+
+## 0.14.1 - 2026-11-04
+
+- **What you write to Copilot in a pull request's details stays until you send it.** What you type in **Explain**,
+  **Fix**, **Resolve** or **Fix All** is there again when you open it after a page opened over the details, such as its
+  Copilot session's, after its file's page, where the same thread's composer has it too, and after you looked at another
+  pull request: while BriefBar runs, in memory only, as your replies are. The same composer open in two windows shows what
+  you write in either. A thread you just replied to or resolved stays where it was too, while the details show its pull
+  request, pages over them included, rather than folding away with the resolved ones as you come back.
+- **Back from a file's page, the details are where you left them.** A composer that was open closes as a file's page
+  opens, keeping what you wrote, so **‹** goes back to the file's row, or to the comment it opened from, rather than
+  opening the composer again and moving the keyboard's focus there.
+- **A reply that lands once you've moved on leaves the keyboard where you are.** Reply takes the keyboard's focus back
+  only when you were still in that reply as it went, and only on that thread, not as you type in another composer, such
+  as Reply on another thread, Add Tag or Explain.
+- **VoiceOver hears what became of Copilot's work once.** A pull request open in two windows, or a build that two
+  policies run, says "answered" or "fixed" once, rather than once for each place that shows it.
+- **A long answer shows its beginning, with Show More.** What a session answered with Explain shows its first dozen or
+  so lines, fading out, and **Show More** shows the rest, as a row's summary does.
 - **BriefBar no longer takes a little more memory each time a list updates with summaries on.** Each time a list or
   page that shows Apple Intelligence's summaries updated, such as Azure DevOps' Pull Requests page, BriefBar kept what
   checking that Apple Intelligence was available took, until it quit.
