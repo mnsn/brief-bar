@@ -27,10 +27,11 @@ package struct PullRequestOrderSettingView: View {
         a stack, in its usual refresh; and, from the Copilot app, which pull request each session opened. On Azure DevOps' \
         pull requests, in the window and the menu bar, it also shows each one's stage, In progress, Your review, \
         Teammate's review, Can merge or Waits for another PR, as BriefBar works it out from Azure DevOps and Copilot, or as \
-        you set it. With agents on, sessions get the tools to tell BriefBar an order as they start, and Copilot gets a skill \
-        that says when to. It keeps references only: the orders, and the stages you set, for each Azure DevOps account you \
-        sign in with, until they end or you forget them; none of it goes to Azure DevOps or GitHub. Turning it off keeps \
-        them, unused, until you forget them.
+        you set it; what's next, at the top of the Pull Requests page; and a Board beside List and Map. With agents on, \
+        sessions get the tools to tell BriefBar an order as they start, and Copilot gets a skill that says when to. It \
+        keeps references only: the orders, and the stages you set, for each Azure DevOps account you sign in with, until \
+        they end or you forget them; none of it goes to Azure DevOps or GitHub. Turning it off keeps them, unused, until \
+        you forget them.
         """
 
     package var body: some View {

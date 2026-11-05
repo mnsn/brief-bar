@@ -20,6 +20,10 @@ package struct MissionCard: View {
     /// A pull request's row as the page draws it; nil for one it doesn't list.
     let row: (OrderStep) -> AnyView?
     @ObservedObject var order: PullRequestOrder
+    /// Its lane on the Board, for its next steps under its header; nil where its pull requests have no stages.
+    let lane: BoardLane?
+    /// What a next step's click does: what its row's does.
+    let select: (ItemRef) -> Void
 
     @LocalState private var showsFolded = false
     @LocalState private var hovered: ItemRef?
@@ -27,7 +31,8 @@ package struct MissionCard: View {
 
     package init(
         mission: OrderMission, kinds: Set<ItemRef.Kind>, place: String?, elsewhere: String, openElsewhere: (() -> Void)?,
-        order: PullRequestOrder, row: @escaping (OrderStep) -> AnyView?
+        order: PullRequestOrder, lane: BoardLane? = nil, select: @escaping (ItemRef) -> Void = { _ in },
+        row: @escaping (OrderStep) -> AnyView?
     ) {
         self.mission = mission
         self.kinds = kinds
@@ -35,6 +40,8 @@ package struct MissionCard: View {
         self.elsewhere = elsewhere
         self.openElsewhere = openElsewhere
         self.order = order
+        self.lane = lane
+        self.select = select
         self.row = row
     }
 
@@ -46,6 +53,10 @@ package struct MissionCard: View {
         let width = gutter.map { OrderGutterRowView.width(lanes: $0.laneCount, scale: textScale) } ?? 0
         VStack(alignment: .leading, spacing: 6) {
             MissionHeader(mission: mission, order: order, place: place)
+            if let lane {
+                MissionNextStepsLine(lane: lane, order: order, select: select)
+                    .padding(.horizontal, 4)
+            }
             VStack(alignment: .leading, spacing: 0) {
                 if !folded.isEmpty {
                     foldedLine(folded, width: width)
@@ -55,7 +66,9 @@ package struct MissionCard: View {
                 }
                 let outside = mission.count(outside: kinds)
                 if outside > 0 {
-                    elsewhereLine(outside, width: width)
+                    OrderElsewhereLine(count: outside, elsewhere: elsewhere, open: openElsewhere)
+                        .padding(.leading, max(width, 6) + 8)
+                        .padding(.vertical, 6)
                 }
                 let attached = mission.attached.filter { kinds.contains($0.ref.kind) }
                 if !attached.isEmpty {
@@ -125,32 +138,6 @@ package struct MissionCard: View {
         .accessibilityLabel(showsFolded ? "Hide \(OrderText.folded(folded))" : "Show \(OrderText.folded(folded))")
     }
 
-    @ViewBuilder
-    private func elsewhereLine(_ count: Int, width: CGFloat) -> some View {
-        let text = OrderText.elsewhere(count, on: elsewhere)
-        Group {
-            if let openElsewhere {
-                Button(action: openElsewhere) {
-                    HStack(spacing: 4) {
-                        Text(text)
-                        Image(systemName: "chevron.right")
-                            .font(size: 9, weight: .bold)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Show its other pull requests on \(elsewhere)'s Pull Requests page")
-            } else {
-                Text(text)
-                    .help("Its other pull requests are on \(elsewhere)")
-            }
-        }
-        .font(size: 11.5, weight: .medium)
-        .foregroundStyle(.secondary)
-        .padding(.leading, max(width, 6) + 8)
-        .padding(.vertical, 6)
-    }
-
     private func attachedRows(_ steps: [OrderStep], width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Divider().padding(.horizontal, 12)
@@ -167,6 +154,43 @@ package struct MissionCard: View {
                     .padding(.vertical, 3)
             }
         }
+    }
+}
+
+/// How many of a mission's pull requests another page lists, "+1 on GitHub ›", which opens that page where it can.
+package struct OrderElsewhereLine: View {
+    let count: Int
+    /// The page that lists them, "GitHub".
+    let elsewhere: String
+    let open: (() -> Void)?
+
+    package init(count: Int, elsewhere: String, open: (() -> Void)?) {
+        self.count = count
+        self.elsewhere = elsewhere
+        self.open = open
+    }
+
+    package var body: some View {
+        let text = OrderText.elsewhere(count, on: elsewhere)
+        Group {
+            if let open {
+                Button(action: open) {
+                    HStack(spacing: 4) {
+                        Text(text)
+                        Image(systemName: "chevron.right")
+                            .font(size: 9, weight: .bold)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Show its other pull requests on \(elsewhere)'s Pull Requests page")
+            } else {
+                Text(text)
+                    .help("Its other pull requests are on \(elsewhere)")
+            }
+        }
+        .font(size: 11.5, weight: .medium)
+        .foregroundStyle(.secondary)
     }
 }
 

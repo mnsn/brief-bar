@@ -20,6 +20,10 @@ struct PullRequestsPage: View {
 
     static let kinds: Set<ItemRef.Kind> = [.gitHubPullRequest]
 
+    /// By Mission's views on this page, List and Map: GitHub's pull requests have no stages, so no Board. Where you chose the
+    /// Board on Azure DevOps' page, this one shows List, and saves nothing.
+    private static let views = OrderView.offered(for: kinds)
+
     /// By Mission only while Pull Request Order is on.
     private var listsByMission: Bool {
         ordering.isOn && (byMission ?? settings.listsByMission)
@@ -32,7 +36,7 @@ struct PullRequestsPage: View {
                     orderMenu
                 }
                 if listsByMission {
-                    OrderViewPicker(order: ordering, shown: view)
+                    OrderViewPicker(order: ordering, views: Self.views, shown: view)
                 }
                 Button {
                     store.openPullRequestsPage()
@@ -112,7 +116,7 @@ struct PullRequestsPage: View {
     private var byMissionBody: some View {
         let byRef = Dictionary(store.items.map { (Self.ref(of: $0), $0) }, uniquingKeysWith: { first, _ in first })
         return MissionsBody(
-            view: view ?? ordering.view, ordering: ordering, kinds: Self.kinds, elsewhere: "Azure DevOps",
+            view: view ?? ordering.view(offering: Self.views), ordering: ordering, kinds: Self.kinds, elsewhere: "Azure DevOps",
             openElsewhere: services.hasPage(.azureDevOpsPullRequests) ? { services.openWindow(.azureDevOpsPullRequests) } : nil,
             listed: store.items.map(Self.ref(of:)),
             row: { step, mission in

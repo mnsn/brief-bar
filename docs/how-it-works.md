@@ -1351,6 +1351,33 @@ in memory only, as what you've seen of it is. **Forget Stages…** forgets them 
 its own; turning Pull Request Order off keeps them, unused. Stages change no group, count, notification or brief: they
 only label rows.
 
+### What's next, and the Board
+
+Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
+works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
+lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`), so Up Next's pull
+request is always the first card in its column:
+
+| Stage | Which comes first, after the mission you focus on |
+|---|---|
+| In progress | What needs you, Fix next's: a session that asks you, then a build that failed, then changes someone wants, the oldest first; then the rest, as By Mission lists them |
+| Your review | The one that has waited longest; in a mission, an earlier one waits as long as the longest waiting after it, as they build on it |
+| Teammate's review | Find a reviewer first, then the earliest in its mission's order |
+| Can merge | Next to merge, then any time, then those with no order; the oldest first, then as By Mission lists them |
+| Waits | The one closest to merging: one merge away when what it waits for can merge, one more for each that waits itself |
+| Merged | The latest first |
+
+A pull request in two missions has a card in each lane, and counts once. On the Board (`OrderBoardView`), a card drags
+with SwiftUI's `draggable`, carrying only its reference, which a column takes only from a card of the same board, never
+text from another app; ⌘→ and ⌘← move a focused card to the next or previous stage you can set. `BoardRules` decides
+what a drop does: In progress, Your review and Teammate's review are set as you set them from a stage's menu, but
+someone else's pull request can't go to Teammate's review, as it asks its own reviewers; Can merge, Waits and Merged
+come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge,
+and never for one stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
+(`OrderMission.whyNotNext`, which Set as Next to Merge uses too). The Board, its lanes and whether Up Next is folded are
+kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
+`order.boardLanes` and `order.upNextFolded`.
+
 ### A pull request's details
 
 A click on a pull request on the window's page shows its details beside the list, or over it when the page is narrower

@@ -329,6 +329,28 @@ DevOps**. Stages only label rows: groups, Needs You, counts, notifications and t
 someone else's pull request, Finished My Review takes it off your board until something new needs you there; your
 vote is still yours to cast in Azure DevOps.
 
+**Up Next**, at the top of the window's page while [Pull Request Order](#settings) is on, says what's next for you,
+whichever way you sort: a slot for each kind of next, in its stage's color, each with its first pull request and
+how many it has. **Fix next** is what needs you to fix or answer: a session that asks you, then a build that
+failed, then changes someone wants. **Your next review** is the one that has waited longest, an earlier one in
+its mission first, as later ones build on it; **Next for a teammate**, one of yours that needs a reviewer first;
+**Merge next**, what can merge next; **Waits next**, the one closest to merging. The mission you focus on comes
+first in each. Click one for its details; **2 more ›** shows the rest on the Board. Click **Up Next** to fold it,
+and BriefBar remembers. It changes no group or count.
+
+By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
+review**, **Teammate's review**, **Can merge**, **Waits** and **Merged**, which shows only its count until you
+click it; and a lane for each mission, its header naming your next steps in it, such as **Review !4093** or
+**Find a reviewer: !4079**, then a lane for the pull requests in no mission. **Lanes: None** puts every card in
+one. Up Next's pull request wears **Next** in its column. Click a card for its details, or right-click it for its
+menu; drag it to another column of its lane, or press **⌘→** or **⌘←**, to change its stage, which says so with
+**Undo**. While you drag, the columns that take it light up, and those that don't say why: only Azure DevOps
+decides that a pull request can merge or merged, its order what it waits for, and someone else's pull request
+asks its own reviewers, so **Finished My Review** takes it off your board instead. Narrow, or with bigger text,
+the Board scrolls sideways; a line under it counts the pull requests in your lists that aren't on it, such as
+others' you approved, and **Show By Status** lists them. GitHub's page, whose pull requests have no stages,
+offers List and Map, and shows List where you chose the Board.
+
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote
 it, and **✨ Summarize**; **What's Left**, as its row's line says it, each item saying when it's **Your
@@ -1130,7 +1152,7 @@ DevOps' gear menu has its own too: they're the same settings.
 
 | Works with | Setting | Options |
 |---|---|---|
-| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage. **Forget All Orders…** forgets the orders sessions told it; **Forget Stages…**, the stages you set |
+| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. **Forget All Orders…** forgets the orders sessions told it; **Forget Stages…**, the stages you set |
 | Azure DevOps only | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |

@@ -1,0 +1,487 @@
+import Foundation
+import Testing
+@testable import BriefBarCore
+
+/// What's next, several at once: Up Next's slots, the order in each stage (plan §5.2), the Board's lanes and columns, each
+/// mission's next steps, what dropping a card or ⌘→ and ⌘← do (§6.2), and what's remembered.
+@Suite struct NextStepsTests {
+    static func pr(_ number: Int) -> ItemRef { OrderPlansTests.pr(number) }
+    static func gh(_ number: Int) -> ItemRef { .gitHubPullRequest(repository: "contoso/shop-web", number: number) }
+    static let cart = ItemRef.session("7c1e2a90-4b3d-4f5e-8a6b-1c2d3e4f5a6b")!
+    static let kinds: Set<ItemRef.Kind> = [.pullRequest]
+
+    static func name(_ ref: ItemRef) -> String? {
+        ref == cart ? "Cart" : nil
+    }
+
+    static func reading(
+        _ stage: PullRequestStage, _ why: StageWhy, at seconds: TimeInterval? = nil, mark: StageMark? = nil, isOnBoard: Bool = true
+    ) -> StageReading {
+        StageReading(stage: stage, why: why, since: seconds.map(t), mark: mark, isOnBoard: isOnBoard)
+    }
+
+    static func step(_ number: Int, _ standing: OrderStanding = .unordered, status: OrderStatus = .open) -> OrderStep {
+        OrderStep(ref: pr(number), status: status, standing: standing)
+    }
+
+    static func mission(_ steps: [OrderStep], attached: [OrderStep] = [], focused: Bool = false) -> OrderMission {
+        OrderMission(
+            key: .chain(steps.first?.ref ?? attached[0].ref), kind: .stack, steps: steps, attached: attached, cycles: [],
+            isFocused: focused, isFinished: false, isStale: false, attention: nil, date: nil, sessions: []
+        )
+    }
+
+    static func board(
+        _ stages: [Int: StageReading], missions: [OrderMission] = [], lanes: BoardLanes = .missions
+    ) -> PullRequestBoard {
+        PullRequestBoard.make(
+            stages: Dictionary(uniqueKeysWithValues: stages.map { (pr($0.key), $0.value) }), missions: missions, kinds: kinds, lanes: lanes
+        )
+    }
+
+    /// The numbers of a column's cards, in their order, across the board as Lanes: None has them.
+    static func column(_ stage: PullRequestStage, _ stages: [Int: StageReading], missions: [OrderMission] = []) -> [String] {
+        board(stages, missions: missions, lanes: .none).lanes.first?.cards(in: stage).map(\.ref.shortOrderLabel) ?? []
+    }
+
+    // MARK: Up Next
+
+    /// The user's own example: A waits, B's session finished, C needs someone to review it; with a failed build, a review
+    /// Priya asked for, one that can merge and one that merged.
+    @Test func upNextHasASlotForEachKindOfNextWithHowManyAndOnlyThoseWithSomething() {
+        let payments = Self.mission([
+            Self.step(4074, .merged, status: .merged), Self.step(4102, .next), Self.step(4079, .waiting(open: [Self.pr(4102)], unknown: [])),
+            Self.step(4091, .waiting(open: [Self.pr(4102)], unknown: [])),
+            Self.step(3990, .waiting(open: [Self.pr(4091)], unknown: [])),
+        ], focused: true)
+        let stages: [Int: StageReading] = [
+            4074: Self.reading(.merged, .merged, at: 50),
+            4102: Self.reading(.inProgress, .working(StageSession(ref: Self.cart, activity: .working, since: t(10))), at: 10),
+            4079: Self.reading(.teammateReview, .findReviewer, at: 20),
+            4091: Self.reading(.waits, .waitsFor([Self.pr(4102)], words: "After !4102"), at: 30),
+            3990: Self.reading(.teammateReview, .waitingFor("Waiting for Sam"), at: 40),
+            4131: Self.reading(.inProgress, .failing("Build failed"), at: 60),
+            4088: Self.reading(.yourReview, .asked("Priya asked you"), at: 5),
+            4093: Self.reading(.yourReview, .finished(StageSession(ref: Self.cart, activity: .finished, since: t(70))), at: 70),
+            4120: Self.reading(.canMerge, .ready(autoComplete: false), at: 80),
+        ]
+        let board = Self.board(stages, missions: [payments])
+        let slots = board.upNext.slots
+        #expect(slots.map(\.kind) == [.fix, .yourReview, .teammateReview, .canMerge, .waits])
+        #expect(slots.map(\.card.ref.shortOrderLabel) == ["!4131", "!4088", "!4079", "!4120", "!4091"])
+        #expect(slots.map(\.count) == [1, 2, 2, 1, 1])
+        #expect(slots.map(\.more) == [nil, "1 more", "1 more", nil, nil])
+        #expect(slots.map(\.kind.stage) == [.inProgress, .yourReview, .teammateReview, .canMerge, .waits])
+        #expect(UpNextSlot.allCases.map(\.title) == ["Fix next", "Your next review", "Next for a teammate", "Merge next", "Waits next"])
+
+        // Up Next's pull request wears Next in its column; a session writing one isn't yours to do, so In progress's Next
+        // is Fix next's, ahead of it.
+        #expect(board.next[.inProgress] == Self.pr(4131))
+        #expect(board.next[.teammateReview] == Self.pr(4079))
+        #expect(board.next[.merged] == nil)
+        #expect(Self.column(.inProgress, stages, missions: [payments]) == ["!4131", "!4102"])
+        #expect(board.counts == [.inProgress: 2, .yourReview: 2, .teammateReview: 2, .canMerge: 1, .waits: 1, .merged: 1])
+    }
+
+    @Test func withNothingNextItSaysSoAndASessionWritingItIsntFixNext() {
+        let writing = Self.reading(.inProgress, .working(StageSession(ref: Self.cart, activity: .working, since: t(10))))
+        let board = Self.board([4102: writing, 4104: Self.reading(.inProgress, .draft), 4105: Self.reading(.inProgress, .left("Build running"))])
+        #expect(board.upNext.isEmpty)
+        #expect(board.next[.inProgress] == nil)
+        #expect(UpNext.nothingNext == "Nothing's next for you")
+    }
+
+    // MARK: Which comes first in a stage
+
+    @Test func fixNextIsASessionAskingYouThenWhatFailedThenChangesWantedTheOldestFirst() {
+        let asking = StageSession(ref: Self.cart, activity: .waitsForYou, since: t(90))
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.inProgress, .changesWanted("Priya wants changes"), at: 1),
+            4102: Self.reading(.inProgress, .failing("Build failed"), at: 50),
+            4103: Self.reading(.inProgress, .failing("Merge conflicts"), at: 20),
+            4104: Self.reading(.inProgress, .asksYou(asking), at: 90),
+            4105: Self.reading(.inProgress, .authorChanges("Waiting for Sam's changes"), at: 0),
+            4106: Self.reading(.inProgress, .set, at: 0, mark: StageMark(stage: .inProgress, at: t(0))),
+        ]
+        #expect(Self.column(.inProgress, stages) == ["!4104", "!4103", "!4102", "!4101", "!4105", "!4106"])
+        #expect(Self.board(stages).upNext.slots.first?.count == 4)
+    }
+
+    @Test func theMissionYouFocusOnComesFirstInEveryStage() {
+        let focused = Self.mission([Self.step(4201, .next), Self.step(4202), Self.step(4203), Self.step(4204), Self.step(4205)], focused: true)
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.inProgress, .failing("Build failed"), at: 1),
+            4201: Self.reading(.inProgress, .failing("Build failed"), at: 99),
+            4102: Self.reading(.yourReview, .asked("Priya asked you"), at: 1),
+            4202: Self.reading(.yourReview, .asked("Sam asked you"), at: 99),
+            4103: Self.reading(.teammateReview, .findReviewer, at: 1),
+            4203: Self.reading(.teammateReview, .waitingFor("Waiting for Sam"), at: 99),
+            4104: Self.reading(.canMerge, .ready(autoComplete: false), at: 1),
+            4204: Self.reading(.canMerge, .ready(autoComplete: false), at: 99),
+            4105: Self.reading(.merged, .merged, at: 99),
+            4205: Self.reading(.merged, .merged, at: 1),
+        ]
+        let missions = [focused]
+        #expect(Self.column(.inProgress, stages, missions: missions) == ["!4201", "!4101"])
+        #expect(Self.column(.yourReview, stages, missions: missions) == ["!4202", "!4102"])
+        #expect(Self.column(.teammateReview, stages, missions: missions) == ["!4203", "!4103"])
+        #expect(Self.column(.canMerge, stages, missions: missions) == ["!4204", "!4104"])
+        #expect(Self.column(.merged, stages, missions: missions) == ["!4205", "!4105"])
+    }
+
+    @Test func yourReviewIsTheLongestWaitingAndAnEarlierOneInItsMissionFirstAsLaterOnesBuildOnIt() {
+        // !4202 has waited longest, but it builds on !4201, which comes first in their mission: so !4201, then !4202, then
+        // !4101, which waited less long than !4202.
+        let coupons = Self.mission([Self.step(4201, .next), Self.step(4202, .waiting(open: [Self.pr(4201)], unknown: []))])
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.yourReview, .asked("Priya asked you"), at: 30),
+            4201: Self.reading(.yourReview, .asked("Sam asked you"), at: 90),
+            4202: Self.reading(.yourReview, .asked("Sam asked you"), at: 10),
+            4102: Self.reading(.yourReview, .asked("Priya asked you")),
+        ]
+        #expect(Self.column(.yourReview, stages, missions: [coupons]) == ["!4201", "!4202", "!4101", "!4102"])
+    }
+
+    @Test func teammatesReviewPutsFindAReviewerFirstThenTheEarliestInItsMissionsOrder() {
+        let payments = Self.mission([
+            Self.step(4074, .merged, status: .merged), Self.step(4201, .next), Self.step(4202, .waiting(open: [Self.pr(4201)], unknown: [])),
+        ])
+        let stages: [Int: StageReading] = [
+            4202: Self.reading(.teammateReview, .waitingFor("Waiting for Sam"), at: 1),
+            4201: Self.reading(.teammateReview, .waitingFor("1 of 2 approvals"), at: 50),
+            4101: Self.reading(.teammateReview, .waitingFor("Waiting for Priya"), at: 0),
+            4102: Self.reading(.teammateReview, .findReviewer, at: 99),
+        ]
+        #expect(Self.column(.teammateReview, stages, missions: [payments]) == ["!4102", "!4201", "!4202", "!4101"])
+    }
+
+    @Test func canMergeIsNextToMergeThenAnyTimeThenTheRestTheOldestFirst() {
+        let order = Self.mission([Self.step(4201, .next), Self.step(4202, .anyTime), Self.step(4203, .anyTime)])
+        let ready = StageWhy.ready(autoComplete: false)
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.canMerge, ready, at: 0),
+            4203: Self.reading(.canMerge, ready, at: 5),
+            4202: Self.reading(.canMerge, .ready(autoComplete: true), at: 1),
+            4201: Self.reading(.canMerge, ready, at: 99),
+        ]
+        #expect(Self.column(.canMerge, stages, missions: [order]) == ["!4201", "!4202", "!4203", "!4101"])
+    }
+
+    @Test func waitsIsTheOneClosestToMergingFirst() {
+        let waits = { (refs: [Int]) in
+            StageWhy.waitsFor(refs.map(Self.pr), words: "After " + refs.map { "!\($0)" }.joined(separator: " and "))
+        }
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.canMerge, .ready(autoComplete: false)),
+            4102: Self.reading(.teammateReview, .findReviewer),
+            // Waits for one still in review: far.
+            4201: Self.reading(.waits, waits([4102]), at: 0),
+            // Waits for one that waits for one that can merge: two merges away.
+            4202: Self.reading(.waits, waits([4203]), at: 1),
+            // Waits for one that can merge: closest.
+            4203: Self.reading(.waits, waits([4101]), at: 2),
+            // Its order needs checking: last.
+            4204: Self.reading(.waits, .orderHolds("!4100 was closed without merging: check the order"), at: 0),
+        ]
+        #expect(Self.column(.waits, stages) == ["!4203", "!4202", "!4201", "!4204"])
+    }
+
+    @Test func mergedIsTheLatestFirst() {
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.merged, .merged, at: 10), 4102: Self.reading(.merged, .merged, at: 30), 4103: Self.reading(.merged, .merged),
+        ]
+        #expect(Self.column(.merged, stages) == ["!4102", "!4101", "!4103"])
+    }
+
+    // MARK: Lanes and cards
+
+    @Test func aLaneForEachMissionInByMissionsOrderThenTheRestAndEveryCardOnceInOne() {
+        let first = Self.mission([Self.step(4101, .next), Self.step(4102, .waiting(open: [Self.pr(4101)], unknown: []))], focused: true)
+        // !4102 is in two orders: it shows in both lanes, and counts once.
+        let second = Self.mission([Self.step(4102, .next), Self.step(4103, .anyTime)])
+        let review = Self.reading(.yourReview, .asked("Priya asked you"), at: 1)
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.inProgress, .draft, at: 1), 4102: review, 4103: review, 4200: review,
+            // Someone else's that you finished reviewing is off your board.
+            4300: Self.reading(.teammateReview, .finishedReview, isOnBoard: false),
+        ]
+        let board = Self.board(stages, missions: [first, second])
+        #expect(board.lanes.map(\.kind) == [.mission(first.key), .mission(second.key), .notInAMission])
+        #expect(board.lanes.map { $0.cards.map(\.ref.shortOrderLabel) } == [["!4101", "!4102"], ["!4102", "!4103"], ["!4200"]])
+        #expect(board.counts[.yourReview] == 3)
+        #expect(board.refs == [Self.pr(4101), Self.pr(4102), Self.pr(4103), Self.pr(4200)])
+        #expect(board.notOnBoard([Self.pr(4101), Self.pr(4300), Self.pr(4301)]) == 2)
+        #expect(BoardText.notOnBoard(2) == "2 more in your lists aren't on the board")
+        #expect(BoardText.notOnBoard(1) == "1 more in your lists isn't on the board")
+        #expect(BoardText.notOnBoard(0) == nil)
+
+        // Each card's place is in its own lane's mission; Up Next takes each from the first mission that has it.
+        #expect(board.lanes[1].cards(in: .yourReview).first?.mission == second.key)
+        #expect(board.upNext.slots.first?.card.mission == first.key)
+
+        let one = Self.board(stages, missions: [first, second], lanes: .none)
+        #expect(one.lanes.map(\.kind) == [.all])
+        #expect(one.lanes[0].cards.map(\.ref.shortOrderLabel) == ["!4101", "!4102", "!4103", "!4200"])
+    }
+
+    @Test func onlyThePagesKindsAndAMissionWithNoneOfThemHasNoLane() {
+        let github = OrderMission(
+            key: .stack(repository: "contoso/shop-web", number: 41), kind: .stack,
+            steps: [OrderStep(ref: Self.gh(212), status: .open, standing: .next)], attached: [], cycles: [], isFocused: false,
+            isFinished: false, isStale: false, attention: nil, date: nil, sessions: []
+        )
+        let board = PullRequestBoard.make(
+            stages: [Self.gh(212): Self.reading(.yourReview, .asked("Priya asked you")), Self.pr(4101): Self.reading(.inProgress, .draft)],
+            missions: [github], kinds: Self.kinds
+        )
+        #expect(board.lanes.map(\.kind) == [.notInAMission])
+        #expect(board.refs == [Self.pr(4101)])
+    }
+
+    @Test func upNextsPullRequestIsAlwaysTheFirstCardInItsColumnAcrossTheLanes() {
+        let focused = Self.mission([Self.step(4201, .next), Self.step(4202, .waiting(open: [Self.pr(4201)], unknown: []))], focused: true)
+        let other = Self.mission([Self.step(4301, .next), Self.step(4302, .anyTime)])
+        let stages: [Int: StageReading] = [
+            4201: Self.reading(.teammateReview, .waitingFor("Waiting for Sam"), at: 9),
+            4202: Self.reading(.yourReview, .asked("Sam asked you"), at: 9),
+            4301: Self.reading(.teammateReview, .findReviewer, at: 1),
+            4302: Self.reading(.yourReview, .asked("Priya asked you"), at: 1),
+            4101: Self.reading(.yourReview, .asked("Priya asked you"), at: 0),
+        ]
+        let board = Self.board(stages, missions: [focused, other])
+        for slot in board.upNext.slots {
+            let firstInColumn = board.lanes.lazy.compactMap { $0.cards(in: slot.kind.stage).first }.first
+            #expect(firstInColumn?.ref == slot.card.ref, "\(slot.kind)")
+        }
+        #expect(board.upNext.slots.map(\.card.ref.shortOrderLabel) == ["!4202", "!4201"])
+    }
+
+    // MARK: A mission's next steps
+
+    @Test func aMissionsNextStepsAreYoursAndWithNoneWhatItWaitsFor() {
+        let payments = Self.mission([
+            Self.step(4101, .next), Self.step(4102), Self.step(4103), Self.step(4104), Self.step(4105), Self.step(4106), Self.step(4107),
+        ])
+        let asking = StageSession(ref: Self.cart, activity: .waitsForYou, since: t(1))
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.canMerge, .ready(autoComplete: false)),
+            4102: Self.reading(.teammateReview, .findReviewer),
+            4103: Self.reading(.yourReview, .asked("Priya asked you")),
+            4104: Self.reading(.inProgress, .failing("Build failed")),
+            4105: Self.reading(.inProgress, .asksYou(asking)),
+            // Not yours: completing by itself, waiting for Priya, and a session writing it.
+            4106: Self.reading(.canMerge, .ready(autoComplete: true)),
+            4107: Self.reading(.teammateReview, .waitingFor("Waiting for Priya")),
+        ]
+        let lane = Self.board(stages, missions: [payments]).lane(for: payments.key)
+        let steps = lane?.nextSteps ?? []
+        #expect(steps.map(\.title) == ["Answer !4105", "Fix !4104", "Review !4103", "Find a reviewer: !4102", "Complete !4101"])
+        #expect(steps.map(\.stage) == [.inProgress, .inProgress, .yourReview, .teammateReview, .canMerge])
+        #expect(lane?.waiting(name: Self.name) == nil)
+
+        let waiting = Self.mission([Self.step(4091, .next), Self.step(4092, .waiting(open: [Self.pr(4091)], unknown: []))])
+        let theirs: [Int: StageReading] = [
+            4092: Self.reading(.waits, .waitsFor([Self.pr(4091)], words: "After !4091")),
+            4091: Self.reading(.teammateReview, .waitingFor("Waiting for Priya")),
+        ]
+        let quiet = Self.board(theirs, missions: [waiting]).lane(for: waiting.key)
+        #expect(quiet?.nextSteps.isEmpty == true)
+        #expect(quiet?.waiting(name: Self.name) == "Waiting for Priya (!4091)")
+    }
+
+    // MARK: Moving a card
+
+    static func card(
+        _ stage: PullRequestStage, _ why: StageWhy, step: OrderStep? = nil
+    ) -> BoardCard {
+        BoardCard(ref: pr(4091), reading: reading(stage, why), mission: step.map { _ in .chain(pr(4091)) }, step: step)
+    }
+
+    @Test func dropsSetTheStagesYouCanSetAndRefuseTheRestSayingWhy() {
+        let review = Self.card(.yourReview, .asked("Priya asked you"))
+        #expect(BoardRules.move(review, to: .inProgress, isYours: true) == .setStage(.inProgress))
+        #expect(BoardRules.move(review, to: .teammateReview, isYours: true) == .setStage(.teammateReview))
+        #expect(BoardRules.move(review, to: .yourReview, isYours: true) == .stays)
+        #expect(BoardRules.move(review, to: .canMerge, isYours: true)
+            == .refused("Azure DevOps decides when it can merge: once it says it's ready to complete"))
+        #expect(BoardRules.move(review, to: .waits, isYours: true) == .refused("Its order decides what it waits for"))
+        #expect(BoardRules.move(review, to: .waits, isYours: true, missionChanges: true)
+            == .refused("Its order decides what it waits for: Mission ▸ Merge After, in its menu"))
+        #expect(BoardRules.move(review, to: .merged, isYours: true) == .refused("It merges in Azure DevOps: complete it there"))
+
+        // Someone else's asks its own reviewers.
+        #expect(BoardRules.move(review, to: .teammateReview, isYours: false, author: "Priya")
+            == .refused("It's Priya's: Priya asks for its reviews. Finished My Review takes it off your board"))
+        #expect(BoardRules.move(review, to: .teammateReview, isYours: false)
+            == .refused("It's someone else's: its author asks for its reviews. Finished My Review takes it off your board"))
+        #expect(BoardRules.move(review, to: .inProgress, isYours: false) == .setStage(.inProgress))
+
+        // What can merge goes back to review, as you say.
+        let ready = Self.card(.canMerge, .ready(autoComplete: false))
+        #expect(BoardRules.move(ready, to: .teammateReview, isYours: true) == .setStage(.teammateReview))
+
+        // Merged stays, and another lane is Move to Mission's.
+        let merged = Self.card(.merged, .merged)
+        #expect(BoardRules.move(merged, to: .inProgress, isYours: true) == .refused("It merged: nothing changes its stage now"))
+        #expect(BoardRules.move(merged, to: .merged, isYours: true) == .stays)
+        #expect(BoardRules.move(review, to: .inProgress, sameLane: false, isYours: true)
+            == .refused("A card moves between stages in its own mission's lane"))
+        #expect(BoardRules.move(review, to: .inProgress, sameLane: false, isYours: true, missionChanges: true)
+            == .refused("It goes in another mission with Mission ▸ Move to Mission, in its menu"))
+        #expect(BoardMove.setStage(.inProgress).isTaken && BoardMove.setAsNext.isTaken)
+        #expect(!BoardMove.stays.isTaken && !BoardMove.refused("No").isTaken)
+    }
+
+    /// The missions of these pull requests, with an order a session told of them, as By Mission has them.
+    static func missions(_ pullRequests: [OrderPullRequest], plan entries: [OrderPlan.Entry]) -> [OrderMission] {
+        let orders = DeclaredOrders(plans: [OrderPlan(id: PullRequestStageTests.planID, createdAt: t(0), updatedAt: t(0), entries: entries)])
+        return OrderBoard.missions(facts: OrderFacts(pullRequests: pullRequests), orders: orders, evidence: OrderEvidence(), now: t(1_000))
+    }
+
+    static func waiting(_ number: Int, in missions: [OrderMission]) -> BoardCard {
+        let step = missions.lazy.compactMap { $0.steps.first { $0.ref == pr(number) } ?? $0.attached.first { $0.ref == pr(number) } }.first
+        let order = StageOrder.of(pr(number), in: missions)
+        let why: StageWhy = switch order {
+        case .waits(let refs, let words): .waitsFor(refs, words: words)
+        case .holds(let words): .orderHolds(words)
+        case .free: .ready(autoComplete: false)
+        }
+        return BoardCard(ref: pr(number), reading: reading(.waits, why), mission: missions.first?.key, step: step)
+    }
+
+    @Test func waitsOntoCanMergeSetsItAsNextToMergeUnlessItsStacked() {
+        let free = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/rounding"),
+             OrderBoardTests.ado(4102, from: "robin/cart")],
+            plan: [.init(ref: Self.pr(4101)), .init(ref: Self.pr(4102), after: [Self.pr(4101)])]
+        )
+        let waits = Self.waiting(4102, in: free)
+        #expect(free[0].whyNotNext(Self.pr(4102)) == nil)
+        #expect(BoardRules.move(waits, to: .canMerge, isYours: true, missionChanges: true, missions: free) == .setAsNext)
+        // Until you can change missions yourself, it says what it waits for.
+        #expect(BoardRules.move(waits, to: .canMerge, isYours: true, missions: free)
+            == .refused("It waits for !4101: it can merge once BriefBar sees it merge"))
+    }
+
+    /// Its order names only the nearest of what it waits for: one it's stacked on can hide behind another.
+    @Test func aStackedBaseBehindAnotherPrerequisiteStillRefusesIt() {
+        let missions = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/base"),
+             OrderBoardTests.ado(4102, from: "robin/docs"),
+             OrderBoardTests.ado(4103, from: "robin/top", into: "robin/base")],
+            plan: [
+                .init(ref: Self.pr(4101)), .init(ref: Self.pr(4102), after: [Self.pr(4101)]),
+                .init(ref: Self.pr(4103), after: [Self.pr(4101), Self.pr(4102)]),
+            ]
+        )
+        #expect(StageOrder.of(Self.pr(4103), in: missions) == .waits([Self.pr(4102)], words: "After !4102"))
+        #expect(missions[0].stackedBases(of: Self.pr(4103)) == [Self.pr(4101)])
+        #expect(BoardRules.move(Self.waiting(4103, in: missions), to: .canMerge, isYours: true, missionChanges: true, missions: missions)
+            == .refused("Stacked on !4101: retarget it in Azure DevOps first"))
+    }
+
+    /// Its order puts it after one that comes after its base, so it names neither the base nor the branch: what its changes
+    /// show against still does.
+    @Test func aBaseItsOrderPutsBeforeItOnlyThroughAnotherStillRefusesIt() {
+        let missions = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/base"),
+             OrderBoardTests.ado(4102, from: "robin/docs"),
+             OrderBoardTests.ado(4103, from: "robin/top", into: "robin/base")],
+            plan: [
+                .init(ref: Self.pr(4101)), .init(ref: Self.pr(4102), after: [Self.pr(4101)]),
+                .init(ref: Self.pr(4103), after: [Self.pr(4102)]),
+            ]
+        )
+        let step = missions[0].steps.first { $0.ref == Self.pr(4103) }
+        #expect(step?.prerequisites.map(\.ref) == [Self.pr(4102)])
+        #expect(step?.notes.contains { if case .orderDisagrees = $0 { true } else { false } } == false)
+        #expect(missions[0].stackedBases(of: Self.pr(4103)) == [Self.pr(4101)])
+        #expect(BoardRules.move(Self.waiting(4103, in: missions), to: .canMerge, isYours: true, missionChanges: true, missions: missions)
+            == .refused("Stacked on !4101: retarget it in Azure DevOps first"))
+    }
+
+    @Test func oneStackedOnAnOrdersPullRequestThatItDoesntNameIsRefused() {
+        let missions = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/rounding"),
+             OrderBoardTests.ado(4105, from: "robin/tests", into: "robin/rounding")],
+            plan: [.init(ref: Self.pr(4101))]
+        )
+        #expect(missions[0].attached.map(\.ref) == [Self.pr(4105)])
+        #expect(missions[0].whyNotNext(Self.pr(4105)) == "Stacked on !4101: retarget it in Azure DevOps first")
+    }
+
+    /// Its order doesn't put it after the branch it targets: BriefBar sees it stacked all the same.
+    @Test func oneStackedOnABranchItsOrderDoesntSayIsRefused() {
+        let missions = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/rounding"),
+             OrderBoardTests.ado(4102, from: "robin/cart"),
+             OrderBoardTests.ado(4103, from: "robin/checkout", into: "robin/cart")],
+            plan: [.init(ref: Self.pr(4101)), .init(ref: Self.pr(4102)), .init(ref: Self.pr(4103), after: [Self.pr(4101)])]
+        )
+        #expect(missions[0].steps.first { $0.ref == Self.pr(4103) }?.notes.contains(.orderDisagrees(Self.pr(4102), .branch)) == true)
+        #expect(missions[0].whyNotNext(Self.pr(4103)) == "Stacked on !4102: retarget it in Azure DevOps first")
+    }
+
+    @Test func oneThatStillTargetsAMergedBranchIsRetargetedFirstAndAMergedBaseHoldsNothing() {
+        let stale = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/rounding", state: .merged),
+             OrderBoardTests.ado(4102, from: "robin/cart", into: "robin/rounding")],
+            plan: [.init(ref: Self.pr(4101)), .init(ref: Self.pr(4102), after: [Self.pr(4101)])]
+        )
+        #expect(stale[0].whyNotNext(Self.pr(4102)) == "!4101 merged: retarget it to main")
+
+        let retargeted = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/rounding", state: .merged),
+             OrderBoardTests.ado(4102, from: "robin/cart")],
+            plan: [.init(ref: Self.pr(4101)), .init(ref: Self.pr(4102), after: [Self.pr(4101)])]
+        )
+        #expect(retargeted[0].stackedBases(of: Self.pr(4102)).isEmpty)
+        #expect(retargeted[0].whyNotNext(Self.pr(4102)) == nil)
+    }
+
+    @Test func theKeyboardMovesToTheNextOrPreviousStageYouCanSetElseSaysWhyNot() {
+        let forward = PullRequestStage.columns.map { BoardRules.keyTarget(from: $0, forward: true) }
+        let backward = PullRequestStage.columns.map { BoardRules.keyTarget(from: $0, forward: false) }
+        #expect(forward == [.yourReview, .teammateReview, .canMerge, .waits, .merged, nil])
+        #expect(backward == [nil, .inProgress, .yourReview, .teammateReview, .teammateReview, .teammateReview])
+        #expect(PullRequestStage.columns.map(\.columnTitle)
+            == ["In progress", "Your review", "Teammate's review", "Can merge", "Waits", "Merged"])
+    }
+
+    // MARK: Words and choices
+
+    @Test func aCardSaysWhoSetItsStageShortly() {
+        let set = Self.reading(.teammateReview, .findReviewer, mark: StageMark(stage: .teammateReview, at: t(0)))
+        #expect(BoardText.setter(set, now: t(7_200), name: Self.name) == "You · 2h")
+        let bySession = Self.reading(.yourReview, .set, mark: StageMark(stage: .yourReview, at: t(0), by: Self.cart))
+        #expect(BoardText.setter(bySession, now: t(300), name: Self.name) == "‘Cart’ · 5m")
+        #expect(BoardText.setter(Self.reading(.yourReview, .asked("Priya asked you")), now: t(0), name: Self.name) == nil)
+    }
+
+    @Test func itRemembersTheLanesAndWhetherUpNextIsFolded() {
+        let defaults = MemorySettings()
+        #expect(BoardLanes.load(from: defaults) == .missions)
+        BoardLanes.none.save(to: defaults)
+        #expect(BoardLanes.load(from: defaults) == .none)
+        #expect(defaults.string(forKey: "order.boardLanes") == "none")
+        defaults.set("swimlanes", forKey: BoardLanes.defaultsKey)
+        #expect(BoardLanes.load(from: defaults) == .missions)
+
+        #expect(!UpNext.isFolded(in: defaults))
+        UpNext.setFolded(true, in: defaults)
+        #expect(UpNext.isFolded(in: defaults))
+        #expect(defaults.bool(forKey: "order.upNextFolded"))
+        UpNext.setFolded(false, in: defaults)
+        #expect(defaults.object(forKey: UpNext.foldedKey) == nil)
+    }
+
+    @Test func theBoardIsAzureDevOpsPagesAndGitHubsShowsListWhereYouChoseIt() {
+        let azure = OrderView.offered(for: [.pullRequest])
+        let github = OrderView.offered(for: [.gitHubPullRequest])
+        #expect(azure == [.list, .map, .board])
+        #expect(github == [.list, .map])
+        #expect(OrderView.board.shown(offering: github) == .list)
+        #expect(OrderView.map.shown(offering: github) == .map)
+        #expect(OrderView.board.shown(offering: azure) == .board)
+    }
+}

@@ -11,6 +11,8 @@ struct PullRequestsPage: View {
     var order: PROrder? = nil
     /// By Mission's view, for pictures; nil for the one you chose.
     var view: OrderView? = nil
+    /// The Board's lanes, for pictures; nil for those you chose.
+    var lanes: BoardLanes? = nil
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var settings: AppSettings
@@ -22,10 +24,23 @@ struct PullRequestsPage: View {
 
     private static let shownGroups: [PRGroup] = [.needsYou, .answered, .failing, .ready, .toReview, .waiting, .done]
 
+    /// By Mission's views on this page: List, Map and the Board.
+    private static let views = OrderView.offered(for: PullRequestsByMission.kinds)
+
     /// By Mission only while Pull Request Order is on: by status otherwise.
     private var shownOrder: PROrder {
         let chosen = order ?? settings.pullRequestOrder
         return chosen == .byMission && !ordering.isOn ? .status : chosen
+    }
+
+    /// By Mission's view, as you chose it, or a picture's.
+    private var shownView: OrderView {
+        view ?? ordering.view(offering: Self.views)
+    }
+
+    /// It shows the Board.
+    private var showsBoard: Bool {
+        shownOrder == .byMission && shownView == .board
     }
 
     var body: some View {
@@ -37,7 +52,10 @@ struct PullRequestsPage: View {
                     .glassButtonStyle()
                     .fixedSize()
                 if shownOrder == .byMission {
-                    OrderViewPicker(order: ordering, shown: view)
+                    OrderViewPicker(order: ordering, views: Self.views, shown: view)
+                }
+                if showsBoard {
+                    BoardLanesPicker(order: ordering, shown: lanes)
                 }
                 Button {
                     store.openPullRequestsPage()
@@ -66,19 +84,58 @@ struct PullRequestsPage: View {
                     BriefView()
                         .padding(.horizontal, -4)
                 }
+                // What's next, in every order: it changes no group or count.
+                if ordering.isOn, store.hasLoaded, !store.items.isEmpty {
+                    UpNextView(
+                        upNext: ordering.board(kinds: PullRequestsByMission.kinds).upNext, order: ordering, select: showDetails(of:),
+                        showColumn: showColumn
+                    )
+                }
                 if shownOrder == .byMission {
                     PullRequestsByMission(
-                        view: view ?? ordering.view, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
-                        isSelected: isSelected, select: select, rest: { AnyView(groups($0, showsBrief: false)) }
+                        view: shownView, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
+                        card: boardCard, isSelected: isSelected, select: select, rest: { AnyView(groups($0, showsBrief: false)) },
+                        lanes: lanes, showByStatus: { settings.pullRequestOrder = .status }, now: store.now
                     )
                 } else if shownOrder.isByDate {
                     byDate
                 } else {
                     groups(store.items)
                 }
-                idle
+                // The Board has your own idle ones among its cards, and counts the rest.
+                if !showsBoard {
+                    idle
+                }
             }
         }
+    }
+
+    /// Shows a pull request's details from Up Next, which shows only those the list has.
+    private func showDetails(of ref: ItemRef) {
+        if let item = store.items.first(where: { $0.key.linkRef == ref }) { select(item) }
+    }
+
+    /// Up Next's "2 more ›": By Mission's Board, at that column.
+    private func showColumn(_ stage: PullRequestStage) {
+        settings.pullRequestOrder = .byMission
+        ordering.revealColumn(stage)
+    }
+
+    /// A pull request's card on the Board: what it shows, its menu as its row's, and what VoiceOver says of it.
+    private func boardCard(_ item: PRSnapshot, _ card: BoardCard) -> BoardCardContent {
+        let order = card.step.map { OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready) }
+        return BoardCardContent(
+            view: AnyView(PullRequestBoardCard(item: item, card: card, order: order, ordering: ordering, now: store.now)),
+            menu: AnyView(Group {
+                Button("Show Details") { select(item) }
+                Button("Open in Azure DevOps") { store.open(item) }
+                PullRequestMenuItems(
+                    item: item, openSource: source(item), dismiss: dismissing(item), stopWatching: watching(item), ordering: ordering
+                )
+            }),
+            label: "!\(item.key.number) \(item.title)",
+            details: PullRequestBoardCard.details(item, reading: card.reading, order: order, ordering: ordering)
+        )
     }
 
     /// The groups, each in a card: every pull request By Status, or those in no mission By Mission.
