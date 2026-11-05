@@ -16,6 +16,8 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
     case foreignMerge(target: String)
     /// BriefBar couldn't check what Push & Reply would push: what git said.
     case cantCheckPush(String)
+    /// The pull request merges into another branch now than the one Push & Reply checked the session against: that branch.
+    case retargeted(String)
 
     public var description: String {
         switch self {
@@ -31,6 +33,8 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
             return "This session holds a merge that \(target) doesn't have, so Copilot didn't push from it. Fix the pull request in a new session."
         case .cantCheckPush(let message):
             return "BriefBar couldn't check what this session would push, so Copilot didn't push from it: \(message)"
+        case .retargeted(let target):
+            return "The pull request now merges into \(target), so Copilot didn't push from this session. Send Push & Reply again, for BriefBar to check it against \(target)."
         }
     }
 }
@@ -61,10 +65,14 @@ public struct CopilotLauncher: Sendable {
         /// history and its checkout, stay as they were, even while it works, or the Copilot app has it open; and so do its
         /// changes that aren't committed, which the fork's worktree doesn't have, as with the CLI's own `/fork worktree`.
         public var forking: CopilotRun?
+        /// For Push & Reply, the branch the pull request merges into now, asked once git has checked what the session would
+        /// push against `targetBranch`, right before Copilot starts: when it's another, Copilot doesn't start
+        /// (`LaunchError.retargeted`). Nil when it can't be told.
+        public var targetNow: (@Sendable () async -> String?)?
 
         public init(
             subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, worktreesFolder: URL?,
-            continuing: CopilotRun? = nil, forking: CopilotRun? = nil
+            continuing: CopilotRun? = nil, forking: CopilotRun? = nil, targetNow: (@Sendable () async -> String?)? = nil
         ) {
             self.subject = subject
             self.prompt = prompt
@@ -73,6 +81,7 @@ public struct CopilotLauncher: Sendable {
             self.worktreesFolder = worktreesFolder
             self.continuing = continuing
             self.forking = forking
+            self.targetNow = targetNow
         }
 
         public init(workItem: TaskWorkItem, prompt: String, options: CopilotRunOptions, repository: URL, worktreesFolder: URL?) {
@@ -231,6 +240,11 @@ public struct CopilotLauncher: Sendable {
                 }
             } catch {
                 refusal = .cantCheckPush((error as? GitError)?.description ?? String(describing: error))
+            }
+            // Again, once git is done, right before Copilot starts: the list may have read meanwhile that the pull request
+            // merges into another branch, which the session wasn't checked against.
+            if refusal == nil, let now = await request.targetNow?(), !now.isEmpty, now != pullRequest.targetBranch {
+                refusal = .retargeted(now)
             }
             if let refusal {
                 if made { try? await git.removeWorktree(at: worktree, of: repository.root, force: true) }

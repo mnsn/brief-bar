@@ -801,15 +801,18 @@ import Testing
     }
 
     /// Push & Reply checks what it would push against the branch the pull request merges into now, as the list last read
-    /// it, which may not be the one it merged into as its window opened (`Git.checkPush(in:source:target:)`); what else is
-    /// sent goes as the window had it.
+    /// it, which may not be the one it merged into as its window opened (`Git.checkPush(in:source:target:)`), and asks the
+    /// list again right before Copilot starts (`CopilotLauncher.Request.targetNow`); what else is sent goes as the window
+    /// had it.
     @Test func pushAndReplyGoesByTheBranchThePullRequestMergesIntoNow() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = store(settings)
         var launched: [String] = []
+        var asks: [(@Sendable () async -> String?)?] = []
         store.launchForTests = { request, id, now in
             guard case .pullRequest(let pullRequest, let action) = request.subject else { throw CancellationError() }
             launched.append("\(action) \(pullRequest.targetBranch)")
+            asks.append(request.targetNow)
             return Self.makeRun(id, action, startedAt: now)
         }
         let current = self.key
@@ -826,6 +829,12 @@ import Testing
         store.send(.pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard, repository: repository)
         try await settle { launched.count == 4 }
         #expect(launched == ["pushAndReply release/x", "fixComments main", "pushAndReply main", "pushAndReply main"])
+        // Asked again, it's what the list has read since; or, once the list doesn't have it, the branch it was checked against.
+        #expect(asks.map { $0 != nil } == [true, false, true, true])
+        store.currentTarget = { $0 == current ? "release/y" : nil }
+        #expect(await asks[0]?() == "release/y")
+        store.currentTarget = { _ in nil }
+        #expect(await asks[0]?() == "release/x")
     }
 
     // MARK: Prompts to the Copilot app's sessions

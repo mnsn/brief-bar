@@ -333,6 +333,71 @@ private final class TakenAt: Sendable {
         #expect(copied.isEmpty)
     }
 
+    /// Checked against main, a Push & Reply doesn't go once the list reads that the pull request merges into release/x,
+    /// before the prompt is sent or copied: while git checks, after BriefBar wrote the prompt for the session's extension
+    /// but before the extension took it, which BriefBar takes back, and right before BriefBar copies it for you to paste.
+    @Test(.timeLimit(.minutes(1)))
+    func sendsNoPushOnceThePullRequestMergesIntoAnotherBranch() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        var copied: [String] = []
+        store.showForTests = { _ in true }
+        store.openForTests = { _, text in copied.append(text); return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        try work(session, in: try await resolvedAgainstMain(in: home), home: home)
+        // Main until the list reads release/x: from the given look on, or from when the test says.
+        var looks = 0
+        var retargetedAt = Int.max
+        var retargeted = false
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        store.currentTarget = { asked in
+            guard asked == key else { return nil }
+            looks += 1
+            return retargeted || looks >= retargetedAt ? "release/x" : "main"
+        }
+        let refused = SessionDelivery.notSent(
+            "The pull request now merges into release/x, so nothing went. Send it again, for BriefBar to check ‘Fix the totals’ against release/x."
+        )
+
+        // Read while git checks against main.
+        retargetedAt = 2
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(requests(home).isEmpty)
+
+        // Read once the prompt is written for the extension, which hasn't taken it.
+        looks = 0
+        retargetedAt = Int.max
+        let sending = Task { await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) }
+        for _ in 0..<2000 where requests(home).isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!requests(home).isEmpty)
+        retargeted = true
+        #expect(await sending.value == refused)
+        #expect(requests(home).isEmpty)
+
+        // Read right before BriefBar copies it, with Send Prompts to Copilot Sessions off.
+        CopilotSessionPrompts.set(false, in: store.settings.defaults)
+        looks = 0
+        retargetedAt = 3
+        retargeted = false
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(copied.isEmpty)
+        #expect(ext.received.isEmpty)
+        #expect(store.deliveringFolders.isEmpty && store.delivering.isEmpty)
+
+        // While it merges into main still, it goes.
+        CopilotSessionPrompts.set(true, in: store.settings.defaults)
+        retargetedAt = Int.max
+        ext.start()
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        #expect(ext.received == ["Push and reply"])
+    }
+
     /// A prompt about comments is kept as sent from when delivering it started, before the session's extension took it:
     /// whatever the session does from then on is its turn, even one that's over before BriefBar hears it went.
     @Test func keepsAPromptAboutCommentsAsSentFromWhenDeliveringItStarted() async throws {

@@ -2351,7 +2351,10 @@ doesn't pass either: from history alone it can't be told from a merge of the bra
 rebase rather than merge. For BriefBar's own tasks the launcher checks the session's worktree, or its fork's, before
 Copilot starts (`LaunchError.foreignMerge`), and the task fails with why; for the Copilot app's sessions the window
 checks the folder the session works in before the prompt is sent or copied, and says why it didn't send it
-(`CopilotTasksStore.deliver(_:to:forking:handOff:about:at:checkingPush:)`). When BriefBar can't check, as in a folder
+(`CopilotTasksStore.deliver(_:to:forking:handOff:about:at:checkingPush:)`). Each asks the list again once git is done:
+right before Copilot starts, and until the prompt is sent or copied. Once the list has read that the pull request merges
+into another branch than the one it checked against, nothing goes either, and it says so (`LaunchError.retargeted`,
+`CopilotTasksStore.retargetProblem`). When BriefBar can't check, as in a folder
 that isn't a clone of the pull request's repository, nothing goes either. The prompt names the branch it merges into,
 and has Copilot check the same and stop if it finds a merge of any other branch.
 

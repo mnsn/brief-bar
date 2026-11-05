@@ -102,8 +102,8 @@ import Testing
     }
 
     /// Push & Reply going on with a session whose worktree holds a merge of what the pull request's target doesn't have, as
-    /// when it was retargeted after its conflicts were resolved there: nothing starts, and the worktree stays as it is.
-    /// Against the branch it merged, it goes.
+    /// when it was retargeted after its conflicts were resolved there: nothing starts, and the worktree stays as it is; nor
+    /// when the list reads such a retarget while git checks. Against the branch it merged, it goes.
     @Test(.timeLimit(.minutes(1)))
     func pushesNoMergeOfWhatTheTargetDoesntHave() async throws {
         let fixture = try await repositoryWithBranch()
@@ -138,9 +138,19 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: resolve.worktree.appendingPathComponent("main.txt").path))
         #expect(LaunchError.foreignMerge(target: "release/x").description.hasPrefix("This session holds a merge that release/x doesn't have"))
 
+        // Checked against main, while the list read that it merges into release/x: asked again right before Copilot starts,
+        // it doesn't start.
+        let retargetedMeanwhile = CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: resolve, targetNow: { "release/x" }
+        )
+        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(retargetedMeanwhile, id: resolve.id) { _ in } }
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+        #expect(FileManager.default.fileExists(atPath: resolve.worktree.appendingPathComponent("main.txt").path))
+
         let ship = try await launch(launcher, CopilotLauncher.Request(
             subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
-            repository: fixture.checkout, worktreesFolder: nil, continuing: resolve
+            repository: fixture.checkout, worktreesFolder: nil, continuing: resolve, targetNow: { "main" }
         ), id: resolve.id)
         #expect(ship.worktree.path == resolve.worktree.path)
         #expect(try String(contentsOf: argumentsFile, encoding: .utf8).contains("Push and reply"))

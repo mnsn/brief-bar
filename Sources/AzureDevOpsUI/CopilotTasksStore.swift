@@ -525,10 +525,15 @@ final class CopilotTasksStore: ObservableObject {
         // Copilot works on its own, and nothing opens: say it's on it, now, rather than once its worktree is ready. A fork,
         // once the CLI made it (`rekey`): the notification goes by its ID, for the one that says how it ended to replace.
         if forking == nil { notifyStarted(entry) }
+        // Asked again once git has checked what it would push, right before Copilot starts.
+        var askTarget: (@Sendable () async -> String?)?
+        if case .pullRequest(let pullRequest, .pushAndReply) = subject {
+            askTarget = { [weak self] in await self?.targetNow(of: pullRequest) }
+        }
         let request = CopilotLauncher.Request(
             subject: subject, prompt: prompt, options: options, repository: repository,
             worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }, continuing: continuing,
-            forking: forking
+            forking: forking, targetNow: askTarget
         )
         // Going on with a session, its next turn may end before the run is known to have started: the turns of the prompts
         // sent it before aren't followed until then (`pauseFollowing`).
@@ -672,6 +677,7 @@ final class CopilotTasksStore: ObservableObject {
         case .cantFork?: return "the Copilot CLI didn't fork the session"
         case .foreignMerge?: return "the session holds a merge its target doesn't have"
         case .cantCheckPush?: return "couldn't check what it would push"
+        case .retargeted?: return "the pull request's target changed"
         case nil: return "unexpected error"
         }
     }
