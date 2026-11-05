@@ -567,6 +567,29 @@ import Testing
         #expect(store.file?.scope == .whole && store.scope == .since(1))
     }
 
+    /// Shown again while its file's page is open, as from a notification, the details go to their top, rather than staying
+    /// where the diff was scrolled to; at a place, there. Without a file's page, they stay where they are, as before.
+    @Test func showingItAgainFromAFilesPageGoesToTheTop() throws {
+        let store = PullRequestDetailsStore()
+        store.itemsChanged(items)
+        store.show(try item(4102))
+        #expect(store.place == nil)
+        store.open(file: path)
+        store.show(try item(4102))
+        #expect(store.file == nil && store.place == .top && store.trailThread == nil)
+        store.reached(.top)
+        store.open(file: path)
+        store.show(try item(4102), at: .thread(11))
+        #expect(store.file == nil && store.place == .thread(11) && store.trailThread == 11)
+        store.reached(.thread(11))
+        store.show(try item(4102))
+        #expect(store.place == nil)
+        // Another pull request's, from a file's page: its top too.
+        store.open(file: path)
+        store.show(try item(4088))
+        #expect(store.file == nil && store.place == .top)
+    }
+
     @Test func goingElsewhereClosesTheFile() throws {
         let store = PullRequestDetailsStore()
         store.itemsChanged(items)

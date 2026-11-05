@@ -33,6 +33,8 @@ struct PullRequestPanelHeading<Tags: View>: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: PRStore
     @AccessibilityFocusState private var isTitleFocused: Bool
+    /// Where the details it heads went last, and whether they're on their way somewhere.
+    @Environment(\.detailsArrival) private var arrival
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -78,7 +80,10 @@ struct PullRequestPanelHeading<Tags: View>: View {
                 .controlSize(.small)
         }
         .accessibilityElement(children: .contain)
-        .onAppear { isTitleFocused = true }
+        // VoiceOver goes to its title as it shows, but while the details are on their way somewhere, which takes it there
+        // instead; and each time they go to their top.
+        .onAppear { if !arrival.isGoing { isTitleFocused = true } }
+        .focusesOnArrival(at: .top, $isTitleFocused)
     }
 
     /// Where it stands, as its row says it, its opening words in its state's color, and since when.

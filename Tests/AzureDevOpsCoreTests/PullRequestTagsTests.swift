@@ -166,6 +166,22 @@ import Testing
         #expect(choices("", seen: []).chosen(0, before: all) == nil)
     }
 
+    /// What VoiceOver hears was chosen: a suggestion by its name, and what you typed as a new tag, the same however long it
+    /// grows, so it isn't heard again at each key.
+    @Test func aNewTagIsTheSameChoiceAsItGrows() {
+        let seen = [["deploy-eu", "deploy-us"].map { PullRequestTag($0) }]
+        func choices(_ typed: String) -> TagChoices { TagChoices(typed: typed, used: [], seen: seen, current: []) }
+        #expect(choices("hotfix-4").choice(at: 0) == .newTag)
+        #expect(choices("hotfix-4").choice(at: 0) == choices("hotfix-42").choice(at: 0))
+        let deploy = choices("deploy")
+        #expect(deploy.rows == ["deploy-eu", "deploy-us", "deploy"])
+        #expect(deploy.choice(at: 0) == .suggestion("deploy-eu"))
+        #expect(deploy.choice(at: 0) == choices("deploy-").choice(at: 0))
+        #expect(choices("deploy-u").choice(at: 0) == .suggestion("deploy-us"))
+        #expect(deploy.choice(at: 2) == .newTag)
+        #expect(deploy.choice(at: nil) == nil && deploy.choice(at: 3) == nil && deploy.choice(at: -1) == nil)
+    }
+
     /// What you typed is a new tag, unless it's a suggestion, or the pull request has it, ignoring letter case.
     @Test func offersWhatYouTypedAsANewTag() {
         let seen = [["deploy-us", "deploy-eu"].map { PullRequestTag($0) }]

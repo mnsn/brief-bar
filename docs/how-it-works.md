@@ -27,6 +27,14 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
   stay. The links
   to pull requests people sent you are kept in memory only, and forgotten with it.
 
+Settings has a page for each source, with its settings while it's on, and one for the settings about pull
+requests, **Settings › Pull Requests** (`PullRequestsSettingsPage`), from every source that has some. Each shows
+there and nowhere else in the window, under the sources whose pull requests it works with (`PullRequestSettings`):
+Pull Request Order, with Azure DevOps' and GitHub's, then Azure DevOps' own, which its page leaves out
+(`AzureDevOpsSettings.Place`), and which its gear menu has too. They're kept where they always were, under the
+same keys. A source's settings work only while it's on: while it's off or paused, they show all the same,
+disabled, saying so, drawn from its settings alone, as a source that's off reads nothing for them.
+
 ## Permissions that macOS grants once
 
 macOS gives some permissions to the whole app, and asks for them only once. That's why BriefBar's own
@@ -396,9 +404,13 @@ requests.
   sprint's work items, and the tasks you sent to Copilot: each one's session, with the work item or pull request it was
   sent from, and with the pull request it opened, which goes with the work item too. One of your pull requests, which
   the list has, also shows in BriefBar's window (`LinkedItem.show`): in a row's links, it has **Show in BriefBar**, for
-  its details on the Pull Requests page, beside **Open in Azure DevOps**, which a task's menu has too, as **Show Pull
-  Request in BriefBar**, for the pull request it works on or opened (`CopilotTaskEntry.pullRequestKey`). Where no window
-  has that page, it opens in Azure DevOps.
+  its details on the Pull Requests page, beside **Open in Azure DevOps**, and so does its own row's menu under Where It
+  Stands or Also Linked, and its preview's buttons (`StoryRow`, `StoryActions`), ↗ opening it in Azure DevOps all the
+  same; a task's menu has it too, as **Show Pull Request in BriefBar**, for the pull request it works on or opened
+  (`CopilotTaskEntry.pullRequestKey`), beside **Open Pull Request in Azure DevOps**, or **on GitHub** for one a work
+  item's task opened there, which says where it opens from its link (`whereItsPullRequestOpens`, with
+  `ItemRef.Kind.whereItOpens`). They show it at what its row is
+  about (`PullRequestDetailsStore.revealAtWhatItsAbout`). Where no window has that page, it opens in Azure DevOps.
 - Copilot: the pull request each app session started from or opened, as the app records it in its database
   (`workspaces`' `source_pr_*` and `created_pr_*` columns, and `workspace_pull_request_links`): GitHub's, and any
   other service's whose link it records.
@@ -1310,14 +1322,15 @@ the two pages share how they lay them out (`DetailsSplit`, `DetailsLayout`), and
 While they show it, though, what waits on you in its threads is as it was before they showed it
 (`PullRequestDetailsStore.pendingEvents`, with `PRStore.snapshot(of:seenAt:)`): a new comment in a resolved thread,
 which waits on you only while it's new, doesn't fold away as you read it, and what was new stays new. Answering it still
-counts, and removing the pull request from Needs You or sending its comments to Copilot ends that look, as showing
-another one or closing them does: then what you've seen is seen there too. One that leaves your lists while they show it
-keeps its last row; what was read of it follows while the list still reads it open, as one sent to you in a chat that
-you're not on once you've seen it (`PullRequestDetailsStore.isStillRead`), so that your reply, or a status you set,
-shows, and its heading says "It's no longer in your lists, but BriefBar still reads it while it's open: this is how it
-is now"; read closed, as a review that merged, or not read anymore, it stays as it was last read, and its heading says
-"…this is how it was when BriefBar last read it open" when that was open, or else, as your own pull request in Done,
-which was read completed, "…this is how it was when it left them".
+counts, and so does marking its thread as read there, at once; removing the pull request from Needs You or sending its
+comments to Copilot ends that look, as showing another one or closing them does: then what you've seen is seen there
+too. One that leaves your lists while they show it keeps its last row; what was read of it follows while the list still
+reads it open, as one sent to you in a chat that you're not on once you've seen it
+(`PullRequestDetailsStore.isStillRead`), so that your reply, or a status you set, shows, and its heading says "It's no
+longer in your lists, but BriefBar still reads it while it's open: this is how it is now"; read closed, as a review that
+merged, or not read anymore, it stays as it was last read, and its heading says "…this is how it was when BriefBar last
+read it open" when that was open, or else, as your own pull request in Done, which was read completed, "…this is how it
+was when it left them".
 
 A pull request opens there from anywhere else in BriefBar too, as the one place it opens
 (`PullRequestDetailsStore`): from the window's other pages, the Overview's rows and its brief (`BriefLine.show`),
@@ -1330,12 +1343,23 @@ its menu offers only that; otherwise its menu has both, what a click does first:
 menu bar and widgets, **Show Details** in the window, and **Open in Azure DevOps**. Showing it there sees it, as
 opening it in Azure DevOps does. It shows at what its row is about (`Place.about`): where its link leads
 (`PRSnapshot.place`, `PullRequestPlace` in `Sources/AzureDevOpsCore`), the thread of the comment that needs you
-or that you answered, or the run after its merge that failed or waits; else, for one that's failing, the first of
-its builds and checks that failed; else their top, which starts with what's left. A notification shows its own
+or that you answered, or the run after its merge that failed or waits; for a review you're asked for, new or seen,
+or one that waits on its author for the changes you asked for, or your rejection, while you're among its reviewers,
+its reviewers, where your vote is (`PRSnapshot.isAboutYourReview`), not one you only watch; else, for one that's
+failing, the first of its builds and checks that failed; else their top, which starts with what's left. A
+notification shows its own
 thread or run instead, which its link names, or else what its row is about (`reveal(notification:link:)`, by the
 pull request's key the notification keeps, `PRKey(description:)`). A **Your Pull Requests** card on the Pipelines
 page shows the run you click, or for its title the first that failed, else the builds and checks; an **After
-Your Merges** card, the run its merge's pipelines name, while the list still has the pull request.
+Your Merges** card, the run its merge's pipelines name, while the list still has the pull request. A task you sent
+to Copilot, in Copilot's list (`SentTask`), shows its pull request as the pull request's own row does: from a page of
+the window wherever it can (`canShow`), and from the menu bar or a widget with Open Pull Requests in BriefBar
+(`showsFromMenuBar`), at what its row is about; otherwise it opens where it is, in Azure DevOps, or on GitHub for a
+pull request a work item's task opened there, which BriefBar's window doesn't show, and a work item's task opens its
+work item in Azure DevOps; its row, its menus and VoiceOver say where (`SentTask.whereItOpens`).
+Its menu says what a click does first, then the other (`SentTask.click(inWindow:)`, `otherOpening`), which opens it as a
+click does, dismissing a finished task with Move Viewed Sessions to Idle (`SessionStore.open(_:theOtherWay:)`), and its line
+in the Overview's brief shows it from there (`SessionStore.show`).
 
 On the Sprint page, the page of one of your pull requests over a work item's details, and on the Pull Requests page
 one over another pull request's, is the same view as its details (`LinkedItemPage`, `PullRequestDetailsContent`),
@@ -1367,11 +1391,19 @@ row does: at the comment that needs you or that you answered, or a merge's run; 
 that, and **⋯** has the row's menu, its Copilot actions among them while Send Work to Copilot is on.
 
 Something else can ask the details to show a pull request at a place (`PullRequestDetailsStore.Place`): a thread,
-which unfolds the resolved ones when it's one of them, a build by its run, a check by its name (the first of that
+which unfolds the resolved ones when it's among them as they list it, as one you reactivated there is
+(`Threads.listsResolved(_:holding:)`), a build by its run, a check by its name (the first of that
 name), or a part, such as its comments, which What's Left does. They scroll there once it shows, and point a
 thread, a build or a check out for a moment; for a thread they don't have, they scroll to their comments, and for
 a run or a check they don't have, such as a run that isn't the one a policy queued last, to their builds and
-checks (`Place.anchor(in:)`). Taken to a thread, the header names it after the pull request, `!4102 ›
+checks (`Place.anchor(in:)`). VoiceOver goes there too (`DetailsArrival`): to the thread, the file's row, the build or
+the check they point out (`focusesOnArrival`), or else to the heading of the part they went to, or to their title for
+their top (`takesFocusOnArrival`). It does each time they go there, though they went there a moment ago and still point
+it out, as when a build is asked for again (`arrived(at:since:)`), which is then pointed out for a moment of its own;
+going to a part, their Files or their top ends what was pointed out at once (`DetailsArrival.pointedOut`).
+Their title doesn't take it as they show while they're on their way somewhere, as it does
+otherwise. Shown again while a file's page is open, with no place, they go to their top (`show`), rather than staying
+where its diff was scrolled to. Taken to a thread, the header names it after the pull request, `!4102 ›
 PaymentsClient.cs:88` (`PullRequestDetailsStore.trailThread`), at the line its card shows, where it was made
 (`ThreadCode.place`), until they go elsewhere in them or over them; the pull request's number there takes them
 back to their top (`Place.top`). `reveal(_:at:)` shows them on the window's page and opens it there, unless no
@@ -1443,6 +1475,23 @@ then it's your turn, not someone else's. Each comment shows in full, its Markdow
 (`ReviewComment.markdown`, `RichText`, `RichTextView`), mentions as names, parsed again only when it changes, not
 as the time beside it moves on (`CommentBody`); a thread of more than three shows its first and latest until you
 ask for the rest.
+
+**Active | All**, beside the heading (`PullRequestPanel.CommentFilter`, kept in `ado.commentFilter`, All until you
+choose), chooses which threads the details and a file's page show (`PullRequestPanel.Threads.listed`): All, as above;
+Active, only those whose status is active or pending (`ReviewThread.isActive`), as What's Left counts open comments, by
+file the same way, without the resolved ones, even one that waits on you, their fold, or those without a status, with a
+line that says how many it leaves out and **Show All**. A thread you
+changed or marked as read in the details stays, as it was then, unless it was resolved then and still is, and so does
+one they were taken to, as from a notification. The heading counts what shows that's open; What's Left, Needs You and
+the rows count every thread, as Azure DevOps and your attention need.
+
+**Mark as Read**, beside a thread's **Waits on you**, in its right-click menu and among VoiceOver's actions, takes the
+thread off waiting on you (`PullRequestDetailsStore.markRead`, `PRStore.markRead`; [below](#what-still-waits-on-you)),
+and works without **Make Changes in Azure DevOps**, since nothing goes there. The details show it at once, the thread
+staying where it was while they show the pull request (`markedRead`), kept apart from where the threads you replied to
+or set a status of stay (`DetailsDrafts.held`), though a change after Mark as Read keeps where it was then
+(`PullRequestPanel.Thread.Held.kept`, `holding`, `DetailsDrafts.hold`). **Mark as Unread** puts back what it was read up
+to before, until they show another pull request or close.
 
 #### Replying and setting a thread's status
 
@@ -1526,36 +1575,40 @@ pull request, a thread you change stays where it was as you first did, with the 
 those that wait on you or not, and among them, by when something was last said in it then, though your reply is the
 latest now, however it stands now (`Threads.arranged(holding:)`), and on its file's page, unfolded, where it was among
 the threads on its line (`Threads.comments(on:in:holding:)`), as you go from one to the other and back, and as pages
-open over the details and you come back, since they're kept above the views that show them (`DetailsDrafts.held`): so it
-doesn't move away as you reply or resolve it, and the menu that sets it back is where you left it. Where it was is
-forgotten once no details show the pull request, beside the list or as a page over a work item's or another pull
-request's (`DetailsDrafts.follow`): as they show it again, the thread is where it stands. A change that didn't happen
-says why on the thread, in a sentence (`ADOWriteProblem`), with **Try Again**, **Reply…** or **Sign In…** when they may
-help, or, for a reply, in its field, which stays open with what you wrote, and **Sign In…** when that's why; and a
-status set from the card's menu while your reply is open says how it goes above it, and why it didn't: no permission, a
-pull request that's completed or abandoned, a thread or pull request deleted meanwhile, offline, signed out, slowed
-down, until when Azure DevOps said, to the minute (`ADOWriteProblem.slowedDown`), or no answer in time, after which the
-pull request is read again, since it may have been made. **Fix Grammar**, in the field, corrects your reply's spelling,
-grammar and punctuation, and only those, in the language it's written in, keeping its meaning, voice and Markdown
-(`GrammarFix`, in `Sources/BriefBarCore`): its code blocks, fenced, found as Markdown closes them, in quotes too, or
-indented, as Markdown reads them, four columns past a list item's indent in a list, and inline code, links and pictures,
-web addresses, with the parentheses they have, and mentions, and characters that control how text reads, go to the model
-as markers, `{{1}}`, which it keeps, and are put back as they were; an answer that lost, repeated or moved one is turned
-down. The model is told to proofread, with an example, which Apple Intelligence corrects far more with, and gets the
-reply in a fence nothing in it closes, as what someone wrote rather than what to do. Each line keeps the Markdown the
-reply had before what it says, such as a quote's `>`, and the spaces after it, whatever the model did with them, and an
-answer that joined or split lines, kept fewer than half of its words, or changed more than half of what it says, or
-2,000 characters of a long one, what it held back aside, as a translation or an answer to what it asks does, is turned
-down too (`GrammarFix.Failure.changedMore`): it's checked off the main thread, as what it holds back is found, so the
-field and **Stop** answer meanwhile, and its work is bounded, however long the reply. It shows the correction under the
-field, what it changes marked word by word (`GrammarFix.changes`), a change to spaces on the word beside it, so that a
-correction never shows as nothing to correct, with **Use It**, then **Undo**, while the reply is as it left it: it never
-changes your reply without you, nor sends it, and the field waits while it runs, with **Stop**. It uses Apple
-Intelligence, on this Mac (`OnDeviceModel`), unless you choose a Copilot model in its **▾**, from those summaries offer,
-which BriefBar keeps (`ado.grammar.model`): then the Copilot CLI gets the reply, as a summary does, with no tools, in a
-session of its own, "BriefBar grammar fix" (`CopilotSummarizer`), one premium request each time, which the field says.
-Where Apple Intelligence can't run, or is turned off, it says so, and offers the Copilot models (`GrammarFixer`): what
-it can't do never goes to Copilot by itself. The demo makes its corrections up (`GrammarFix.madeUp`), and runs no model.
+open over the details and you come back, since they're kept above the views that show them (`DetailsDrafts.held`), with
+whether the resolved ones show (`DetailsDrafts.showsResolved`): so it doesn't move away as you reply or resolve it, the
+menu that sets it back is where you left it, and one you reactivated, which stays with the resolved ones, is there to go
+back to. Where it was is forgotten once no details show the pull request, beside the list or as a page over a work
+item's or another pull request's (`DetailsDrafts.follow`), and the resolved ones fold again: as they show it again, the
+thread is where it stands. A change that didn't happen says why on the thread, in a sentence (`ADOWriteProblem`), with
+**Try Again**, **Reply…** or **Sign In…** when they may help, or, for a reply, in its field, which stays open with what
+you wrote, and **Sign In…** when that's why; and a status set from the card's menu while your reply is open says how it
+goes above it, and why it didn't: no permission, a pull request that's completed or abandoned, a thread or pull request
+deleted meanwhile, offline, signed out, slowed down, until when Azure DevOps said, to the minute
+(`ADOWriteProblem.slowedDown`), or no answer in time, after which the pull request is read again, since it may have been
+made.
+
+**Fix Grammar**, in the field, corrects your reply's spelling, grammar and punctuation, and only those, in the language
+it's written in, keeping its meaning, voice and Markdown (`GrammarFix`, in `Sources/BriefBarCore`): its code blocks,
+fenced, found as Markdown closes them, in quotes too, or indented, as Markdown reads them, four columns past a list
+item's indent in a list, and inline code, links and pictures, web addresses, with the parentheses they have, and
+mentions, and characters that control how text reads, go to the model as markers, `{{1}}`, which it keeps, and are put
+back as they were; an answer that lost, repeated or moved one is turned down. The model is told to proofread, with an
+example, which Apple Intelligence corrects far more with, and gets the reply in a fence nothing in it closes, as what
+someone wrote rather than what to do. Each line keeps the Markdown the reply had before what it says, such as a quote's
+`>`, and the spaces after it, whatever the model did with them, and an answer that joined or split lines, kept fewer
+than half of its words, or changed more than half of what it says, or 2,000 characters of a long one, what it held back
+aside, as a translation or an answer to what it asks does, is turned down too (`GrammarFix.Failure.changedMore`): it's
+checked off the main thread, as what it holds back is found, so the field and **Stop** answer meanwhile, and its work is
+bounded, however long the reply. It shows the correction under the field, what it changes marked word by word
+(`GrammarFix.changes`), a change to spaces on the word beside it, so that a correction never shows as nothing to
+correct, with **Use It**, then **Undo**, while the reply is as it left it: it never changes your reply without you, nor
+sends it, and the field waits while it runs, with **Stop**. It uses Apple Intelligence, on this Mac (`OnDeviceModel`),
+unless you choose a Copilot model in its **▾**, from those summaries offer, which BriefBar keeps (`ado.grammar.model`):
+then the Copilot CLI gets the reply, as a summary does, with no tools, in a session of its own, "BriefBar grammar fix"
+(`CopilotSummarizer`), one premium request each time, which the field says. Where Apple Intelligence can't run, or is
+turned off, it says so, and offers the Copilot models (`GrammarFixer`): what it can't do never goes to Copilot by
+itself. The demo makes its corrections up (`GrammarFix.madeUp`), and runs no model.
 
 `--render` draws, in the demo, Reply open, with Fix Grammar's suggestion, once used, with Apple Intelligence turned off
 and with a Copilot model chosen; a reply and a status that couldn't be made; a pull request's threads read-only, as for
@@ -1631,7 +1684,8 @@ new tag, last. The best match is chosen as you type, and with something typed on
 that shows, but for a tag the pull request has already, when none is and the field says so; as the tags are read again
 while the field is open, the same row stays chosen, where it's still offered, or else the best match, and none once the
 pull request has the tag typed, as when someone else added it (`TagChoices.chosen`). VoiceOver hears which, and how many
-there are, as it changes, and when the pull request has the tag typed. ↑ and ↓ choose another; Tab completes the one
+there are, as ↑ and ↓ choose one, as another suggestion is chosen, or what you typed is, as a new tag, or back, and when
+the pull request has the tag typed; not again at each key as a new tag grows (`TagChoices.Choice`). ↑ and ↓ choose another; Tab completes the one
 chosen in the field, sending nothing, and moves on, as it does anywhere, when there's nothing to complete; Return adds
 it; and Esc closes the field (`InlineComposerOpen`). BriefBar remembers the tags you add, by their names, up to 20 for
 each project, by its organization and ID, for the 20 projects you added tags in last (`UsedTags`, `ado.usedTags`), until
@@ -1879,10 +1933,17 @@ It stops waiting on you when:
   beyond the 30 it lists at most or deleted before you sent it, nor one in a thread reopened meanwhile.
   Since there's one cutoff, it then stops before the first comment that waits on you when the task
   starts, as BriefBar last read the pull request, and wasn't handed off: one in a thread answered or
-  resolved meanwhile doesn't hold it back. If BriefBar doesn't have the pull request then, it goes by
-  the prompt as it was written. They leave the Needs You of the account signed in to the Azure CLI when
-  the prompt was written, even if another has signed in since: that account's seen state keeps it for
-  when it signs in again. What comes after needs you again, as new;
+  resolved meanwhile doesn't hold it back, nor one in a thread its account has marked as read, as the
+  marks are then. If BriefBar doesn't have the pull request then, it goes by the prompt as it was
+  written, with the marks as they are then. They leave the Needs You of the account signed in to the
+  Azure CLI when the prompt was written, even if another has signed in since: that account's seen state
+  keeps it for when it signs in again. What comes after needs you again, as new;
+- you mark its thread as read in the pull request's details: up to the thread's latest comment as they show it,
+  whatever its status, seen or not (`SeenState.readThreads`, by pull request and thread, which `PRClassifier.snapshot`
+  takes as `read`), so a comment after it needs you again, as new. It's kept for the account signed in now, whose list
+  it's in, as a task's hand-off is (`AppSettings.markRead(_:of:upTo:for:sentInChat:)`): another account's Needs You
+  keeps it. It's BriefBar's own, as what you've seen is: nothing goes to Azure DevOps. The command line and agents
+  leave out what you marked too;
 - the pull request has had no activity for as long as **Idle After No Activity For** says (two weeks
   by default): it's idle, as it would be otherwise. Something new still needs you.
 
@@ -1890,10 +1951,10 @@ The rest don't wait like that once you've seen them: a review request is in **To
 and a vote that wants changes leave the pull request in its usual group, and a link someone sent you
 stops needing you. So **Mark as Seen** sees everything in Needs You, but keeps the comments that wait on
 you there. A comment from before the three days before BriefBar first ran never needs you. What you
-take off Needs You is kept as what you've seen is: in the preferences, with each account, except for
-pull requests listed only because someone sent them to you, kept in memory only. It's forgotten with
-when you last looked at the pull request, never before (`SeenState.pruned`): once it's no longer listed
-and you last looked at it two months ago or more.
+take off Needs You, and the threads you mark as read, are kept as what you've seen is: in the preferences, with each
+account, except for pull requests listed only because someone sent them to you, kept in memory only. They're forgotten
+with when you last looked at the pull request, never before (`SeenState.pruned`): once it's no longer listed and you
+last looked at it two months ago or more.
 
 ### Answered
 
@@ -1957,7 +2018,7 @@ announced. The Pipelines page lists them under **After Your Merges**, above the 
 When you turn on **Pull Requests Sent in Chats**, BriefBar reads Notification Center's database,
 `~/Library/Group Containers/group.com.apple.usernoted/db2/db`, which keeps the notifications every app
 has posted (about the latest hundred per app; for Teams, a couple of days). It's off by default, and
-from a menu, turning it on opens its Settings page, which says what it reads.
+from a menu, turning it on opens Settings › Pull Requests, which says what it reads.
 
 - It reads through `NotificationCenterDB`, the reader Teams uses, asking for every app's
   notifications rather than one app's. It opens the database with a read-only SQLite connection, for
@@ -1976,9 +2037,10 @@ from a menu, turning it on opens its Settings page, which says what it reads.
 - It keeps only the link, the app, the sender, the time and, for Teams, the chat and message IDs (to
   open the message). Never the message itself. Links are kept in memory only, for at most two weeks,
   and forgotten when you turn the setting off, or Azure DevOps. So is what you've seen of the pull
-  requests listed only because of a link, and what you've taken off Needs You there. None of it goes to
+  requests listed only because of a link, what you've taken off Needs You there, and the threads you
+  marked as read there. None of it goes to
   BriefBar's preferences or to disk, where any program running as you could read it: only what you've
-  seen of your own pull requests, and taken off Needs You, is in the preferences. Builds from before the
+  seen of your own pull requests, taken off Needs You and marked as read there, is in the preferences. Builds from before the
   first release did keep the links there (`ado.chatLinks`), so at
   launch BriefBar removes them. What those builds saved of which of those pull requests you'd seen
   leaves the preferences once they're listed again, and otherwise two months after you last saw
@@ -2863,7 +2925,9 @@ it applies. A few more details:
   (Starting…) and while Copilot works, with its current step; then **Done** or **Stopped**, highlighted as
   long as a session would be, until Clear or retention expiry, with optional dismissal on opening
   while **Move Viewed Sessions to Idle** is on. One you stopped yourself is idle at once.
-  Clicking one opens its pull request, or its work item, and its menu is the task's own: go on in
+  Clicking one shows its pull request as the pull request's own row does, in BriefBar's window from a page of it, and
+  from the menu bar or a widget with Open Pull Requests in BriefBar on, or else opens it, or its work item, in Azure
+  DevOps (`SentTask.click(inWindow:)`); its menu has the other way to it, then the task's own: go on in
   Terminal, or in the Copilot app for one of its sessions, show the worktree or what Copilot printed,
   stop it, remove its worktree or clear it.
 

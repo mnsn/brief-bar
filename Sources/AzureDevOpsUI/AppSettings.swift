@@ -196,6 +196,14 @@ final class AppSettings: ObservableObject {
     @Published private(set) var seenSentInChats: [String: Date] = [:]
     /// When you last removed each of those from Needs You, in memory only too.
     @Published private(set) var dismissedSentInChats: [String: Date] = [:]
+    /// The comment threads you marked as read in each of those, and up to when (`SeenState.readThreads`), in memory only
+    /// too.
+    @Published private(set) var readSentInChats: [String: [Int: Date]] = [:]
+    /// Which comment threads a pull request's details show: all of them, or only the active ones. The same for every pull
+    /// request, and kept: All until you choose.
+    @Published var commentFilter: PullRequestPanel.CommentFilter {
+        didSet { defaults.set(commentFilter.rawValue, forKey: Key.commentFilter) }
+    }
     /// What the other accounts you've signed in with have seen.
     private var otherSeen: [String: SeenState]
 
@@ -244,6 +252,7 @@ final class AppSettings: ObservableObject {
         chatLinks = ChatLinkState()
         // Where earlier builds kept the links, which any program running as you could read: gone, whatever the setting.
         defaults.removeObject(forKey: Key.chatLinks)
+        commentFilter = defaults.string(forKey: Key.commentFilter).flatMap(PullRequestPanel.CommentFilter.init(rawValue:)) ?? .all
 
         otherSeen = defaults.data(forKey: Key.otherSeen).flatMap { try? JSONDecoder().decode([String: SeenState].self, from: $0) } ?? [:]
         if let data = defaults.data(forKey: Key.seen), let stored = try? JSONDecoder().decode(SeenState.self, from: data) {
@@ -411,13 +420,89 @@ final class AppSettings: ObservableObject {
         max(seen.dismissedCutoff(for: key), dismissedSentInChats[SeenState.name(of: key)] ?? .distantPast)
     }
 
+    /// The comment threads of a pull request you marked as read, by their IDs, and up to when, as far as BriefBar remembers:
+    /// in the preferences, or in memory.
+    func readThreads(of key: PRKey) -> [Int: Date] {
+        seen.readThreads(of: key).merging(readSentInChats[SeenState.name(of: key)] ?? [:]) { max($0, $1) }
+    }
+
+    /// Marks one of a pull request's comment threads as read, up to `date`, the latest comment in it as you did, for
+    /// `account`: the one signed in now, or another you've signed in with, whose state keeps it for when it signs in again,
+    /// as `dismiss(_:for:)` does. One account's mark never takes a thread off another's Needs You, and nothing changes for
+    /// an account BriefBar doesn't remember. For a pull request listed only because someone sent it to you
+    /// (`sentInChat`), it's kept in memory only, as what you've seen of it, and only for the account signed in now.
+    func markRead(_ thread: Int, of key: PRKey, upTo date: Date, for account: String?, sentInChat: Bool = false) {
+        changeRead(of: key, for: account, sentInChat: sentInChat) { $0.markRead(thread, of: key, upTo: date) }
+    }
+
+    /// Puts a thread back as it was read before you marked it, as Mark as Unread does: up to `date`, or, for nil, not
+    /// marked as read; for `account`, where `markRead` keeps it now (`sentInChat`). A pull request can move between the
+    /// two since, as one you stop watching that someone also sent you does, into memory: the mark it had in the other
+    /// goes too.
+    func setRead(_ thread: Int, of key: PRKey, to date: Date?, for account: String?, sentInChat: Bool = false) {
+        if account == seen.account {
+            let name = SeenState.name(of: key)
+            if !sentInChat, readSentInChats[name]?[thread] != nil {
+                var inMemory = SeenState(baseline: seen.baseline, readThreads: readSentInChats.filter { $0.key == name })
+                inMemory.setRead(thread, of: key, to: nil)
+                readSentInChats[name] = inMemory.readThreads[name]
+            }
+            if sentInChat, seen.readThreads[name]?[thread] != nil {
+                var updated = seen
+                updated.setRead(thread, of: key, to: nil)
+                seen = updated
+                persistSeen()
+            }
+        }
+        changeRead(of: key, for: account, sentInChat: sentInChat) { $0.setRead(thread, of: key, to: date) }
+    }
+
+    /// The comment threads of a pull request that `account` marked as read: the one signed in now, as `readThreads(of:)`
+    /// has them, or another you've signed in with; nil for one BriefBar doesn't remember.
+    func readThreads(of key: PRKey, for account: String?) -> [Int: Date]? {
+        guard account != seen.account else { return readThreads(of: key) }
+        return account.flatMap { otherSeen[$0] }?.readThreads(of: key)
+    }
+
+    private func changeRead(of key: PRKey, for account: String?, sentInChat: Bool, _ change: (inout SeenState) -> Void) {
+        let name = SeenState.name(of: key)
+        if sentInChat {
+            guard account == seen.account else { return }
+            // What an earlier build kept of it in the preferences, in memory first.
+            keepSeenInMemory([key])
+            var state = SeenState(baseline: seen.baseline, readThreads: readSentInChats.filter { $0.key == name })
+            change(&state)
+            var inMemory = readSentInChats
+            inMemory[name] = state.readThreads[name]
+            if inMemory != readSentInChats { readSentInChats = inMemory }
+            return
+        }
+        guard account != seen.account else {
+            var updated = seen
+            change(&updated)
+            guard updated != seen else { return }
+            seen = updated
+            persistSeen()
+            return
+        }
+        guard let account, var other = otherSeen[account] else { return }
+        change(&other)
+        guard other != otherSeen[account] else { return }
+        otherSeen[account] = other
+        persistOtherSeen()
+    }
+
     /// Moves what the preferences say you've seen of these pull requests, listed only because someone sent them to
-    /// you, into memory: and when you removed them from Needs You. Earlier builds kept that in the preferences.
+    /// you, into memory: and when you removed them from Needs You, and the threads you marked as read there. Earlier builds
+    /// kept that in the preferences.
     func keepSeenInMemory(_ keys: Set<PRKey>) {
-        let names = keys.map { SeenState.name(of: $0) }.filter { seen.seenAt[$0] != nil || seen.dismissedAt[$0] != nil }
+        let names = keys.map { SeenState.name(of: $0) }.filter {
+            seen.seenAt[$0] != nil || seen.dismissedAt[$0] != nil || seen.readThreads[$0] != nil
+        }
         guard !names.isEmpty else { return }
         var seenInMemory = seenSentInChats
         var dismissedInMemory = dismissedSentInChats
+        var readInMemory = readSentInChats
         var updated = seen
         for name in names {
             if let date = updated.seenAt.removeValue(forKey: name) {
@@ -426,20 +511,28 @@ final class AppSettings: ObservableObject {
             if let date = updated.dismissedAt.removeValue(forKey: name) {
                 dismissedInMemory[name] = max(date, dismissedInMemory[name] ?? .distantPast)
             }
+            if let threads = updated.readThreads.removeValue(forKey: name) {
+                readInMemory[name, default: [:]].merge(threads) { max($0, $1) }
+            }
         }
         if seenInMemory != seenSentInChats { seenSentInChats = seenInMemory }
         if dismissedInMemory != dismissedSentInChats { dismissedSentInChats = dismissedInMemory }
+        if readInMemory != readSentInChats { readSentInChats = readInMemory }
         seen = updated
         persistSeen()
     }
 
     /// Forgets pull requests that are no longer listed and were last seen over two months ago. When you took one off Needs
-    /// You is forgotten with when you last looked at it, in the preferences and in memory alike (`SeenState.pruned`).
+    /// You, and the threads you marked as read there, are forgotten with when you last looked at it, in the preferences and
+    /// in memory alike (`SeenState.pruned`).
     func pruneSeen(keeping keys: Set<PRKey>, now: Date = Date()) {
         let cutoff = now.addingTimeInterval(-60 * 86_400)
-        let inMemory = SeenState.pruned(seenAt: seenSentInChats, dismissedAt: dismissedSentInChats, keeping: keys, olderThan: cutoff)
+        let inMemory = SeenState.pruned(
+            seenAt: seenSentInChats, dismissedAt: dismissedSentInChats, readThreads: readSentInChats, keeping: keys, olderThan: cutoff
+        )
         if inMemory.seenAt != seenSentInChats { seenSentInChats = inMemory.seenAt }
         if inMemory.dismissedAt != dismissedSentInChats { dismissedSentInChats = inMemory.dismissedAt }
+        if inMemory.readThreads != readSentInChats { readSentInChats = inMemory.readThreads }
         var updated = seen
         updated.prune(keeping: keys, olderThan: cutoff)
         guard updated != seen else { return }
@@ -464,6 +557,7 @@ final class AppSettings: ObservableObject {
         if !chatLinks.links.isEmpty { chatLinks = ChatLinkState() }
         if !seenSentInChats.isEmpty { seenSentInChats = [:] }
         if !dismissedSentInChats.isEmpty { dismissedSentInChats = [:] }
+        if !readSentInChats.isEmpty { readSentInChats = [:] }
     }
 
     /// Replaces the seen state, for the demo and for pictures.
@@ -480,6 +574,7 @@ final class AppSettings: ObservableObject {
         // What the last account saw of pull requests sent in chats was its own, and is kept in memory only.
         if switched, !seenSentInChats.isEmpty { seenSentInChats = [:] }
         if switched, !dismissedSentInChats.isEmpty { dismissedSentInChats = [:] }
+        if switched, !readSentInChats.isEmpty { readSentInChats = [:] }
         guard book.current != seen else { return switched }
         otherSeen = book.others
         seen = book.current
@@ -571,6 +666,8 @@ enum SettingsKey {
     static let sprintJustMine = "ado.sprintJustMine"
     static let sprintDetailsWidth = "ado.sprintDetailsWidth"
     static let pullRequestDetailsWidth = "ado.pullRequestDetailsWidth"
+    /// Which comment threads a pull request's details show: `active` or `all`.
+    static let commentFilter = "ado.commentFilter"
     static let pinnedPipelines = "ado.pinnedPipelines"
     static let copilotEnabled = "ado.copilot.enabled"
     static let makesChanges = "ado.makeChanges"

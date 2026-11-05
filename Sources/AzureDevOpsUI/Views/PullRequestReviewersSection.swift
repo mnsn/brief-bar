@@ -10,6 +10,7 @@ struct PullRequestReviewersSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             PageSectionHeader(title: "Reviewers", count: panel.reviewers.isEmpty ? nil : panel.reviewers.count)
+                .takesFocusOnArrival(at: .section(.reviewers))
             if panel.reviewers.isEmpty {
                 Text("No reviewers yet")
                     .font(size: 12.5)

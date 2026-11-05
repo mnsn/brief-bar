@@ -26,13 +26,16 @@ struct PullRequestDetailsContent: View {
     @EnvironmentObject private var files: PullRequestFilesStore
     @EnvironmentObject private var changes: ThreadChanges
     @EnvironmentObject private var tagChanges: TagChanges
+    /// Which comment threads show, Active or All, which its comments and its files' pages follow.
+    @EnvironmentObject private var settings: AppSettings
     @Environment(\.itemNavigation) private var navigation
     /// The window's page it's on, which its Copilot session is read only while the window shows on screen.
     @Environment(\.shownSection) private var section
     @Environment(\.shownWindow) private var window
 
-    /// The thread, the build or the check it just went to, pointed out for a moment.
-    @LocalState private var highlighted: PullRequestDetailsStore.Anchor?
+    /// Where it went last, for VoiceOver to follow, and the thread, the file's row, the build or the check it points out
+    /// there for a moment (`DetailsArrival`).
+    @LocalState private var arrival = DetailsArrival()
     /// The composer in place that's open in its comments, builds or conflicts: one at a time in all of them, so Esc, Return,
     /// the keyboard's focus and the scroll that shows it as it opens are its own; and what each sends, until it's done. It
     /// closes as a file's page shows in their place, so that back from it, the details go to where they're asked to, not to
@@ -52,9 +55,27 @@ struct PullRequestDetailsContent: View {
     /// A file's page shows in place of its parts.
     private var showsFile: Bool { isShown && details.file != nil }
 
+    /// Where it went last, and whether it's on its way somewhere, for VoiceOver to follow.
+    private var arrivalNow: DetailsArrival {
+        var now = arrival
+        now.isGoing = isShown && details.place != nil
+        return now
+    }
+
     /// What the list read of it: as `details` keeps it, once it shows it; as the list has it until then.
     private var record: PRRecord? {
         isShown ? details.record : store.record(for: item.key)
+    }
+
+    /// Where the threads you marked as read while `details` shows it were then, which they stay at, as those you changed
+    /// do (`DetailsDrafts.held`); kept apart from those, so that Mark as Unread lets go of them alone.
+    private var readHolds: [Int: PullRequestPanel.Thread.Held] {
+        isShown ? details.readHolds : [:]
+    }
+
+    /// Mark as Read and Mark as Unread on its threads, once `details` shows it.
+    private var reading: ThreadReading? {
+        isShown ? ThreadReading(details) : nil
     }
 
     /// What shows under it, from the work item or the pull request it opened from, as a page; nothing beside the list.
@@ -73,7 +94,8 @@ struct PullRequestDetailsContent: View {
             if let file = isShown ? details.file : nil {
                 PullRequestFilePage(
                     details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, me: record?.me, open: file,
-                    scroll: scroll
+                    scroll: scroll, readHolds: readHolds, filter: settings.commentFilter, showAll: { settings.commentFilter = .all },
+                    reading: reading
                 )
             } else {
                 PullRequestPanelHeading(
@@ -98,7 +120,8 @@ struct PullRequestDetailsContent: View {
                 }
                 PullRequestCommentsSection(
                     item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place,
-                    highlighted: highlighted, composing: $composing, drafts: drafts
+                    highlighted: arrival.pointedOut, composing: $composing, drafts: drafts, readHolds: readHolds,
+                    filter: $settings.commentFilter, reading: reading
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.comments))
                     // A thread's file opens here, at the thread, in all of the change, which has it whatever the Files show.
@@ -108,12 +131,13 @@ struct PullRequestDetailsContent: View {
                         }
                     })
                 PullRequestFilesSection(
-                    details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, highlighted: highlighted
+                    details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads,
+                    highlighted: arrival.pointedOut
                 )
                     .id(PullRequestDetailsStore.Anchor.files)
                 PullRequestChecksSection(
-                    item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted,
-                    composing: $composing, drafts: drafts
+                    item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place,
+                    highlighted: arrival.pointedOut, composing: $composing, drafts: drafts
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.checks))
                 PullRequestReviewersSection(panel: panel)
@@ -125,6 +149,8 @@ struct PullRequestDetailsContent: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // VoiceOver follows it where it goes: its title doesn't take VoiceOver's focus as it shows while it's on its way.
+        .environment(\.detailsArrival, arrivalNow)
         .onChange(of: details.place, initial: true) { go(in: panel) }
         // What a composer sends is called off as it closes, with ✕ or Esc, or another opens, in any of its parts; and all of
         // it as they go: for a file's page, which shows in their place, or with the details, or for another pull request or
@@ -195,7 +221,8 @@ struct PullRequestDetailsContent: View {
     }
 
     /// To where they were asked to go, once it shows, pointing out a thread, a file's row, a build or a check for a moment:
-    /// to their comments, or their builds and checks, for one they don't have.
+    /// to their comments, or their builds and checks, for one they don't have. VoiceOver goes there too, each time: to what's
+    /// pointed out, or else to the header of the part they went to, or to their title (`DetailsArrival`).
     private func go(in panel: PullRequestPanel) {
         guard let place = details.place, details.pages.isEmpty, details.file == nil, isShown else { return }
         let listed: ChangedFiles? = if case .read(let changes)? = files.list(of: item.key, details.scope) { changes } else { nil }
@@ -207,13 +234,14 @@ struct PullRequestDetailsContent: View {
             // A file's row, which they come back to from its page, in the middle, with the files around it.
             let position: UnitPoint = if case .file = anchor { .center } else { .top }
             withAnimation(isRendering ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(anchor, anchor: position) }
-            if case .section = anchor { return }
-            if anchor == .top || anchor == .files { return }
-            withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { highlighted = anchor }
+            // VoiceOver goes there; a thread, a file's row, a build or a check is pointed out for a moment, and what was a
+            // moment ago elsewhere isn't anymore.
+            withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { arrival.arrive(at: anchor) }
+            guard arrival.pointedOut != nil else { return }
+            let arrived = arrival.count
             try? await Task.sleep(for: .seconds(1.6))
-            if highlighted == anchor {
-                withAnimation(.easeOut(duration: 0.4)) { highlighted = nil }
-            }
+            // Unless they went somewhere since, there again too, which has a moment of its own.
+            withAnimation(.easeOut(duration: 0.4)) { arrival.endMoment(of: arrived) }
         }
     }
 }
