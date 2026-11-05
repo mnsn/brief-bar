@@ -146,6 +146,9 @@ private struct SpellCheckingProbe: NSViewRepresentable {
             find()
         }
 
+        /// It's behind the editor, and takes no click.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
         /// The editor's text view, once SwiftUI has laid it out, and this view, behind it.
         func find() {
             guard textView == nil, window != nil else { return }

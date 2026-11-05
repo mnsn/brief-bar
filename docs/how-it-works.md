@@ -1671,7 +1671,8 @@ ask. The editor, its focus, its size, its shortcuts and what you wrote are as th
 `--render` draws, in the demo, your comment on the first thread that waits on you with its **⋯** menu open (a picture
 of it, `MenuPicture`, since `--render` can't draw a menu, which macOS draws in a window of its own), as you edit it, as
 you delete it, and when it couldn't be deleted; then, from a list of its own with it made as the demo makes it, the
-comment edited (`threadChangeRenderings`).
+comment edited (`threadChangeRenderings`). The underlines spelling draws don't show in its pictures, whose windows are
+offscreen.
 
 #### A pull request's tags
 
