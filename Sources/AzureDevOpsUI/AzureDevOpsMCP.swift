@@ -1142,17 +1142,7 @@ enum AgentText {
     /// command may hold them where it names them, as the rest of `pull_request` does (`QuotedText.commandWord`): where its
     /// conflicts are, what failed to merge, or what it merged into. The lists themselves show them as they are.
     static func statusDetail(_ detail: String, of pr: PullRequest) -> String {
-        let named = { (naming: (String) -> String) -> [String?] in
-            [
-                "\(naming(pr.sourceBranch)) into \(naming(pr.targetBranch))",
-                pr.mergeProblem(naming: naming)?.detail,
-                "Merged into \(naming(pr.targetBranch))",
-            ]
-        }
-        for case let (raw?, quoted?) in zip(named { $0 }, named(QuotedText.commandWord)) where detail.hasPrefix(raw) {
-            return quoted + QuotedText.inLine(String(detail.dropFirst(raw.count)))
-        }
-        return QuotedText.oneLine(detail)
+        QuotedText.oneLine(pr.detail(detail, naming: QuotedText.commandWord))
     }
 
     /// A pull request's Copilot session, for `pull_request`, as its details show it (`PullRequestSession`): the session
@@ -1525,7 +1515,9 @@ enum AgentText {
                 : "BriefBar didn't read it: Azure DevOps asked it to slow down. Ask again in a minute."]
         }
         let me = record?.me ?? me
-        let story = snapshot.map { PullRequestStory.mine($0, record: record) } ?? PullRequestStory.others(pullRequest, me: me)
+        // What it says of its branches, as a command may hold them, as everywhere they're named here.
+        let story = snapshot.map { PullRequestStory.mine($0, record: record, naming: QuotedText.commandWord) }
+            ?? PullRequestStory.others(pullRequest, me: me, naming: QuotedText.commandWord)
         var lines = ["", "### !\(key.number) “\(QuotedText.oneLine(pullRequest.title))”", pullRequest.webURL.absoluteString]
         // Its branches as a command may hold them (`QuotedText.commandWord`), as `pull_request` writes them.
         var branch = QuotedText.commandWord(pullRequest.sourceBranch)

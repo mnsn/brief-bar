@@ -315,12 +315,16 @@ public enum PullRequestPrompt {
     /// The lines of a prompt outside its fences, where its own lines are: what it quotes in a fence (`fenced`), whatever
     /// that says, isn't, and neither is what you put in one of your own as you edit it. A fence opens with a line of three
     /// backticks or tildes or more, and closes with one of as many or more of the same and nothing else, as CommonMark has
-    /// it; the prompt's fences are longer than any run of backticks in what they quote. A line that would close one is
-    /// still inside it when it's indented four columns or more past it, as code is in a fence, a tab to the next multiple
-    /// of four: the prompt's own fences close where they open, under a thread's entry or a build's, and what you write in
-    /// a fence of yours as you edit it can't close it early. Read by their scalars: a character that's only the same as a
-    /// backtick once normalized, such as a Greek varia, isn't one here, as the prompt's own fences never are, and what's
-    /// quoted that a model may read as one opens none and closes none (`QuotedText`).
+    /// it; the prompt's fences are longer than any run of backticks in what they quote, and close where they open, under a
+    /// thread's entry or a build's. Where it's closed is read so that no line CommonMark keeps in a fence is taken for one
+    /// outside, whatever list the fence is in, whose indentation a line alone doesn't say: a closing line counts only at the
+    /// fence's own indentation, a tab to the next multiple of four. Indented further, as it may be in a fence you add as you
+    /// edit the prompt, it's in the fence, as CommonMark keeps it at least four columns past the list it's in. Indented
+    /// less, it may end that list, and open a fence of its own then: it's taken to, so what follows is in a fence until
+    /// that one closes. The worst a fence you indent otherwise does is keep the threads after it on Needs You. Read by
+    /// their scalars: a character that's only the same as a backtick once normalized, such as a Greek varia, isn't one
+    /// here, as the prompt's own fences never are, and what's quoted that a model may read as one opens none and closes
+    /// none (`QuotedText`).
     static func unfencedLines(_ prompt: String) -> [Substring] {
         var lines: [Substring] = []
         var open: (mark: Unicode.Scalar, length: Int, indent: Int)?
@@ -335,9 +339,10 @@ public enum PullRequestPrompt {
             let run = mark.map { mark in trimmed.prefix { $0 == mark }.count } ?? 0
             let rest = trimmed.dropFirst(run)
             if let fence = open {
-                if mark == fence.mark, run >= fence.length, indent <= fence.indent + 3, rest.allSatisfy({ $0 == " " || $0 == "\t" }) {
-                    open = nil
-                }
+                guard mark == fence.mark, run >= fence.length, indent <= fence.indent, rest.allSatisfy({ $0 == " " || $0 == "\t" }),
+                      let mark
+                else { continue }
+                open = indent == fence.indent ? nil : (mark, run, indent)
             } else if run >= 3, let mark, mark == "~" || !rest.contains("`") {
                 open = (mark, run, indent)
             } else {

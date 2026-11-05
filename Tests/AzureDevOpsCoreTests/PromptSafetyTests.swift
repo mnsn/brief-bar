@@ -347,26 +347,32 @@ import Testing
         }
     }
 
-    /// A line that would close a fence, indented four columns or more past its opening, a tab to the next multiple of four,
-    /// is still in it, as CommonMark keeps code in a fence: an entry after it, in a fence you added as you edited the prompt,
-    /// isn't one, and what waits on you in its thread isn't handed off. Within three columns, it closes; and the prompts'
-    /// own fences, indented under an entry or a build's, close where they open.
-    @Test func aFenceClosesOnlyWithinThreeColumnsOfItsOpening() {
+    /// A line that would close a fence counts only at the fence's own indentation, a tab to the next multiple of four, so no
+    /// line CommonMark keeps in a fence is taken for one outside it, whatever list the fence is in: indented further, as in
+    /// a fence you add as you edit the prompt, top-level or indented, it's in the fence, and an entry after it isn't one, nor
+    /// is what waits on you in its thread handed off. Indented less, it may end the list and open a fence of its own: what
+    /// follows is in that one until it closes. The prompts' own fences, indented under an entry or a build's, close where
+    /// they open.
+    @Test func aFenceClosesOnlyAtItsOwnIndentation() {
         let entry = "1. General comment (thread 7)"
-        for closer in ["    ```", "\t```", "  \t```", "       ````"] {
-            #expect(PullRequestPrompt.threadsListed(in: "Fix them.\n```\n\(closer)\n\(entry)\n```", among: [7]).isEmpty, "\(closer.debugDescription)")
+        for (opening, closer) in [
+            ("```", "    ```"), ("```", "\t```"), ("```", "  \t```"), ("```", " ```"), ("```", "   ````"),
+            ("   ```", "    ```"), ("   ```", "      ```"), ("     ```", "        ```"),
+        ] {
+            let prompt = "Fix them.\n\(opening)\n\(closer)\n\(entry)\n\(opening)"
+            #expect(PullRequestPrompt.threadsListed(in: prompt, among: [7]).isEmpty, "\(opening.debugDescription) \(closer.debugDescription)")
         }
-        for closer in ["```", " ```", "   ```", "   ````  "] {
-            #expect(PullRequestPrompt.threadsListed(in: "```\n\(closer)\n\(entry)", among: [7]) == [7], "\(closer.debugDescription)")
+        for (opening, closer) in [("```", "```"), ("   ```", "   ````  "), ("\t```", "    ```"), ("     ```", "     ```")] {
+            #expect(PullRequestPrompt.threadsListed(in: "\(opening)\nx\n\(closer)\n\(entry)", among: [7]) == [7], "\(opening.debugDescription)")
         }
-        #expect(PullRequestPrompt.threadsListed(in: "     ```\n     x\n     ```\n\(entry)", among: [7]) == [7])
-        #expect(PullRequestPrompt.threadsListed(in: "     ```\n        ```\n\(entry)", among: [7]) == [7])
-        #expect(PullRequestPrompt.threadsListed(in: "     ```\n         ```\n\(entry)\n     ```", among: [7]).isEmpty)
+        let other = "2. General comment (thread 8)"
+        #expect(PullRequestPrompt.threadsListed(in: "   ```\n```\n\(entry)\n```\n\(other)", among: [7, 8]) == [8])
         let thread = ReviewThread(id: 7, comments: [comment(1, People.sam, "Cap it?", at: t(-hour))])
         let pr = makePR(4071)
         let record = PRRecord(pullRequest: pr, role: .author, details: makeDetails(for: pr, threads: [thread]), me: People.me.id)
         let handOff = CommentHandOff(record, thread: 7, dismissedCutoff: t(-day), account: nil)
         #expect(handOff.handedOff(in: "```\n    ```\n\(entry)\n```") == nil)
+        #expect(handOff.handedOff(in: "   ```\n    ```\n\(entry)\n   ```") == nil)
         #expect(handOff.handedOff(in: "```\n```\n\(entry)") == t(-hour))
         // The prompts' own: Fix on the thread lists it, its comment fenced under its author's name when it's longer.
         let fix = PullRequestPrompt.fixThread(record, thread: thread, code: nil, how: nil)

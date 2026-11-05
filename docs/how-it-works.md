@@ -1851,9 +1851,11 @@ It stops waiting on you when:
   is, such as `1. src/Cart.cs, line 12 (thread 11)`: the prompt quotes comments word for word, each on
   an indented line, so one that names another thread doesn't count, and neither does a line in a fence,
   such as one of a suggested change or of an earlier answer, or one of backticks or tildes you add as you edit the
-  prompt, read by their scalars, so that what's a backtick only once normalized opens and closes none, and
-  closed only by a line indented at most three columns past the fence's own, as CommonMark has it
-  (`PullRequestPrompt.unfencedLines`). A comment that came after, while you
+  prompt, read by their scalars, so that what's a backtick only once normalized opens and closes none. A
+  fence closes only at its own indentation, so that no line CommonMark keeps in one, whatever list it's in,
+  is taken for one outside it: a closing line indented further stays in it, and one indented less is taken
+  to open a fence of its own; the worst a fence you indent otherwise does is keep the threads after it on
+  Needs You (`PullRequestPrompt.unfencedLines`). A comment that came after, while you
   checked the prompt, say, isn't handed off, and neither is one in a thread whose entry isn't there,
   beyond the 30 it lists at most or deleted before you sent it, nor one in a thread reopened meanwhile.
   Since there's one cutoff, it then stops before the first comment that waits on you when the task

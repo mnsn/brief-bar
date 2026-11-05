@@ -219,6 +219,19 @@ public struct PullRequest: Sendable, Codable, Equatable, Identifiable {
         }
     }
 
+    /// What the lists say of it after its headline (`PRSnapshot.detail`), with the branches it names written as `naming`
+    /// writes them: where its conflicts are, "fix-total into main", what failed to merge (`mergeProblem`), or what it merged
+    /// into, "Merged into main", as `PRClassifier` says them. Any other detail as it is.
+    public func detail(_ detail: String, naming: (String) -> String) -> String {
+        let said = { (naming: (String) -> String) -> [String?] in
+            ["\(naming(sourceBranch)) into \(naming(targetBranch))", mergeProblem(naming: naming)?.detail, "Merged into \(naming(targetBranch))"]
+        }
+        for case let (raw?, named?) in zip(said { $0 }, said(naming)) where detail.hasPrefix(raw) {
+            return named + detail.dropFirst(raw.count)
+        }
+        return detail
+    }
+
     public var webURL: URL {
         ADOEndpoint.pullRequestPage(organization: key.organization, project: projectName, repository: repositoryName, id: key.number)
     }
