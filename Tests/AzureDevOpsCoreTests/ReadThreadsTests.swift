@@ -296,4 +296,18 @@ import Testing
         #expect(Held.holding(waiting, changed: [1: first], read: [1: Held(waiting)]) == first)
         #expect(Held.holding(waiting, changed: [:], read: [:]) == Held(waiting))
     }
+
+    /// Going to a thread unfolds the resolved ones only while the details list it among them, the threads you marked as
+    /// read where they were too: a closed one you marked as read stays with those that waited on you, so it doesn't.
+    @Test func goingToAClosedThreadYouMarkedAsReadDoesntUnfoldTheResolvedOnes() {
+        typealias Held = PullRequestPanel.Thread.Held
+        let waiting = thread(4, "closed", waits: true)
+        // Marked as read: it doesn't wait on you anymore, and it's closed.
+        let read = PullRequestPanel.Threads(open: [thread(2, "active")], resolved: [thread(4, "closed"), thread(5, "fixed")])
+        #expect(read.listsResolved(4))
+        let holding = Held.kept(changed: [:], read: [4: Held(waiting)])
+        #expect(!read.listsResolved(4, holding: holding))
+        #expect(read.listed(.all, holding: holding).open.flatMap(\.threads).map(\.id) == [4, 2])
+        #expect(read.listsResolved(5, holding: holding))
+    }
 }

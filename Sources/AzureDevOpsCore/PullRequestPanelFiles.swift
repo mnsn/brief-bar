@@ -102,6 +102,12 @@ extension PullRequestPanel.Threads {
         )
     }
 
+    /// Whether the details list a thread with the resolved ones, as `arranged(holding:)` does while you change some of
+    /// them: one that's resolved, but for one you resolved there, and one you reactivated there. Going to it unfolds them.
+    public func listsResolved(_ id: Int, holding held: [Int: PullRequestPanel.Thread.Held] = [:]) -> Bool {
+        arranged(holding: held).resolved.contains { $0.threads.contains { $0.id == id } }
+    }
+
     /// By file as Git tells files apart, by their paths' bytes, rather than as Swift's strings compare them; in each, those
     /// that `waitsFirst` first, then by line, then the latest first, by `date`.
     static func byFile(

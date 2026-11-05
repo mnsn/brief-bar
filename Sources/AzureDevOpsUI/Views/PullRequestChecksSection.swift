@@ -28,6 +28,7 @@ struct PullRequestChecksSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             PageSectionHeader(title: "Builds and Checks", count: panel.checks.isEmpty ? nil : panel.checks.count)
+                .takesFocusOnArrival(at: .section(.checks))
             if panel.checksUnknown {
                 Label("Its project doesn't let you read its policies, so BriefBar can't tell how its builds and checks stand.",
                       systemImage: "lock")
@@ -98,6 +99,9 @@ private struct CheckRow: View {
 
     @EnvironmentObject private var investigations: BuildInvestigationStore
     @LocalState private var isHovered = false
+    /// VoiceOver goes to it each time the details go to it, as a failing pull request opened from the menu bar or the
+    /// Pipelines page does, though it's still pointed out from the time before.
+    @AccessibilityFocusState private var isFocused: Bool
 
     private var run: ItemStory.Run { line.run }
 
@@ -185,6 +189,11 @@ private struct CheckRow: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(run.name): \(status)" + (line.isRequired || line.check == nil ? "" : ", optional")
             + (run.detail.map { ". \($0)" } ?? ""))
+        .accessibilityFocused($isFocused)
+        // Also as it's made, once the details scrolled to it.
+        .onAppear { if isHighlighted { isFocused = true } }
+        // Each time the details go to it, though it's still pointed out, as when it's asked for again within that moment.
+        .focusesOnArrival(at: .check(line.id), $isFocused)
     }
 
     /// Its symbol, name and status, and, when it opens, a chevron that says whether it's open.

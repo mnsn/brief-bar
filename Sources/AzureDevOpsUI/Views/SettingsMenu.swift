@@ -17,64 +17,211 @@ struct SourceMenuContent: View {
     @EnvironmentObject private var store: PRStore
 
     var body: some View {
-        AzureDevOpsSettings()
+        AzureDevOpsSettings(place: .menu)
         Divider()
         Button("Open Azure DevOps") { store.openPullRequestsPage() }
     }
 }
 
-/// Azure DevOps' own settings: in its menus, and on its page in Settings.
+/// One of Azure DevOps' settings. Its menus have all of them, and the Settings window each in one place: its page, or, for
+/// those about its pull requests, the Pull Requests page (`AzureDevOpsSettings.Place`). They're kept in its settings
+/// either way, so a menu and the window show the same.
+enum AzureDevOpsSetting: CaseIterable, Sendable {
+    case notifications
+    case summaries
+    case showToReview
+    case followMerges
+    case opensPullRequestsInBriefBar
+    case chatLinks
+    case refresh
+    case keepDone
+    case idle
+    case organizations
+    case watchedPullRequests
+    case makesChanges
+    case copilot
+
+    /// Its name, as it shows.
+    var title: String {
+        switch self {
+        case .notifications: "Notifications"
+        case .summaries: "Summaries by Apple Intelligence"
+        case .showToReview: "Show To Review in the Menu Bar"
+        case .followMerges: "Follow Pipelines After You Merge"
+        case .opensPullRequestsInBriefBar: OpenInBriefBarSetting.title
+        case .chatLinks: ChatLinksSetting.title
+        case .refresh: "Refresh"
+        case .keepDone: "Keep Done For"
+        case .idle: "Idle After No Activity For"
+        case .organizations: "Organizations"
+        case .watchedPullRequests: WatchedPullRequestsSetting.title
+        case .makesChanges: MakeChangesSetting.title
+        case .copilot: CopilotSetting.title
+        }
+    }
+
+    /// On the Pull Requests page in Settings rather than Azure DevOps' own: which of its pull requests it lists and counts,
+    /// and for how long, where one opens, and what you change on them. The rest are about all it reads, its sprint and
+    /// pipelines too: its notifications, which tasks sent to Copilot post too, the brief it words with Apple Intelligence,
+    /// how often it reads and from which organizations, and Send Work to Copilot, which sends the sprint's work items as
+    /// well as pull requests' work, and whose prompt is the work items'.
+    var isAboutPullRequests: Bool {
+        switch self {
+        case .showToReview, .followMerges, .opensPullRequestsInBriefBar, .chatLinks, .keepDone, .idle, .watchedPullRequests,
+             .makesChanges:
+            true
+        case .notifications, .summaries, .refresh, .organizations, .copilot:
+            false
+        }
+    }
+}
+
+/// Azure DevOps' settings, where they show.
 struct AzureDevOpsSettings: View {
+    /// Where they show, and so which of them.
+    enum Place: Sendable {
+        /// Its gear menu and its widgets' menus: all of them.
+        case menu
+        /// Its page in Settings: all but those about pull requests.
+        case ownPage
+        /// The Pull Requests page in Settings: those about pull requests, whether Azure DevOps is on or not, so without its
+        /// store while it's off (`\.prStore`).
+        case pullRequestsPage
+
+        /// Those it shows, in a group for each part of a menu, in the order they show.
+        var groups: [[AzureDevOpsSetting]] {
+            let all: [[AzureDevOpsSetting]] = [
+                [.notifications, .summaries, .showToReview, .followMerges, .opensPullRequestsInBriefBar, .chatLinks],
+                [.refresh, .keepDone, .idle, .organizations, .watchedPullRequests],
+                [.makesChanges, .copilot],
+            ]
+            return all.map { group in group.filter(shows) }.filter { !$0.isEmpty }
+        }
+
+        /// Those it shows, in order.
+        var settings: [AzureDevOpsSetting] {
+            groups.flatMap { $0 }
+        }
+
+        private func shows(_ setting: AzureDevOpsSetting) -> Bool {
+            switch self {
+            case .menu: true
+            case .ownPage: !setting.isAboutPullRequests
+            case .pullRequestsPage: setting.isAboutPullRequests
+            }
+        }
+    }
+
+    let place: Place
+
+    var body: some View {
+        let groups = place.groups
+        ForEach(groups.indices, id: \.self) { index in
+            if index > 0 {
+                SettingsDivider()
+            }
+            ForEach(groups[index], id: \.self) { setting in
+                AzureDevOpsSettingView(setting: setting)
+            }
+        }
+    }
+}
+
+/// One of Azure DevOps' settings, in a menu or a form.
+private struct AzureDevOpsSettingView: View {
+    let setting: AzureDevOpsSetting
+
+    @EnvironmentObject private var settings: AppSettings
+
+    var body: some View {
+        switch setting {
+        case .notifications:
+            NotificationsSetting()
+        case .summaries:
+            SummariesSetting()
+        case .showToReview:
+            Toggle(setting.title, isOn: $settings.showToReview)
+        case .followMerges:
+            Toggle(setting.title, isOn: $settings.followMerges)
+        case .opensPullRequestsInBriefBar:
+            OpenInBriefBarSetting()
+        case .chatLinks:
+            ChatLinksSetting()
+        case .refresh:
+            Picker(setting.title, selection: $settings.refreshSeconds) {
+                ForEach(AppSettings.refreshChoices, id: \.seconds) { Text($0.title).tag($0.seconds) }
+            }
+            .pickerStyle(.menu)
+        case .keepDone:
+            Picker(setting.title, selection: $settings.keepDoneHours) {
+                ForEach(AppSettings.keepDoneChoices, id: \.hours) { Text($0.title).tag($0.hours) }
+            }
+            .pickerStyle(.menu)
+        case .idle:
+            Picker(setting.title, selection: $settings.idleDays) {
+                ForEach(AppSettings.idleChoices, id: \.days) { Text($0.title).tag($0.days) }
+            }
+            .pickerStyle(.menu)
+        case .organizations:
+            Menu(setting.title) {
+                OrganizationsMenuContent()
+            }
+        case .watchedPullRequests:
+            WatchedPullRequestsSetting()
+        case .makesChanges:
+            MakeChangesSetting()
+        case .copilot:
+            CopilotSetting()
+        }
+    }
+}
+
+/// Notifications, and a way to allow them while macOS doesn't: on Azure DevOps' page and in its menus, while it's on.
+private struct NotificationsSetting: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: PRStore
 
     var body: some View {
-        Toggle("Notifications", isOn: $settings.notifications)
+        Toggle(AzureDevOpsSetting.notifications.title, isOn: $settings.notifications)
         if settings.notifications && store.notificationsBlocked {
             Button("Allow Notifications in System Settings…") { Notifier.openSystemSettings() }
         }
-        Toggle("Summaries by Apple Intelligence", isOn: $settings.summaries)
+    }
+}
+
+/// Summaries by Apple Intelligence, while this Mac has it: on Azure DevOps' page and in its menus, while it's on.
+private struct SummariesSetting: View {
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var store: PRStore
+
+    var body: some View {
+        Toggle(AzureDevOpsSetting.summaries.title, isOn: $settings.summaries)
             .disabled(!store.summarizer.isAvailable)
-        Toggle("Show To Review in the Menu Bar", isOn: $settings.showToReview)
-        Toggle("Follow Pipelines After You Merge", isOn: $settings.followMerges)
-        OpenInBriefBarSetting()
-        ChatLinksSetting()
+    }
+}
 
-        SettingsDivider()
+private struct PRStoreKey: EnvironmentKey {
+    static var defaultValue: PRStore? { nil }
+}
 
-        Picker("Refresh", selection: $settings.refreshSeconds) {
-            ForEach(AppSettings.refreshChoices, id: \.seconds) { Text($0.title).tag($0.seconds) }
-        }
-        .pickerStyle(.menu)
-        Picker("Keep Done For", selection: $settings.keepDoneHours) {
-            ForEach(AppSettings.keepDoneChoices, id: \.hours) { Text($0.title).tag($0.hours) }
-        }
-        .pickerStyle(.menu)
-        Picker("Idle After No Activity For", selection: $settings.idleDays) {
-            ForEach(AppSettings.idleChoices, id: \.days) { Text($0.title).tag($0.days) }
-        }
-        .pickerStyle(.menu)
-        Menu("Organizations") {
-            OrganizationsMenuContent()
-        }
-        WatchedPullRequestsSetting()
-
-        SettingsDivider()
-
-        MakeChangesSetting()
-        CopilotSetting()
+extension EnvironmentValues {
+    /// Azure DevOps' pull requests, for the settings that use them: nil on the Pull Requests page in Settings while Azure
+    /// DevOps is off, where those show without them.
+    var prStore: PRStore? {
+        get { self[PRStoreKey.self] }
+        set { self[PRStoreKey.self] = newValue }
     }
 }
 
 /// Make Changes in Azure DevOps, off by default: your replies in pull requests' comment threads, their statuses, and pull
-/// requests' tags, from their details, each when you click it; and nothing else. On its page in Settings, it says what it writes; in a menu,
-/// turning it on opens that page instead.
+/// requests' tags, from their details, each when you click it; and nothing else. On the Pull Requests page in Settings, it
+/// says what it writes; in a menu, turning it on opens that page instead.
 struct MakeChangesSetting: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var services: AppServices
     @Environment(\.inSettingsForm) private var inSettingsForm
 
-    static let title = "Make Changes in Azure DevOps"
+    nonisolated static let title = "Make Changes in Azure DevOps"
     static let explanation = """
         Adds Reply and a status menu to each comment thread in a pull request's details in BriefBar's window, and Add Tag \
         and ✕ to its tags. BriefBar then writes these to Azure DevOps, as you, with your Azure CLI sign-in, and only when you \
@@ -94,18 +241,18 @@ struct MakeChangesSetting: View {
                 }
             }
         } else {
-            Button(Self.title + "…") { services.openSettings(.source(.azureDevOps)) }
+            Button(Self.title + "…") { services.openSettings(.pullRequests) }
         }
     }
 }
 
 /// Open Pull Requests in BriefBar, off by default: where a pull request clicked in the menu bar's list, a widget or a
-/// notification opens. On its page in Settings, it says what it does.
+/// notification opens. On the Pull Requests page in Settings, it says what it does.
 struct OpenInBriefBarSetting: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.inSettingsForm) private var inSettingsForm
 
-    static let title = "Open Pull Requests in BriefBar"
+    nonisolated static let title = "Open Pull Requests in BriefBar"
     static let explanation = """
         Clicking a pull request in the menu bar's list or a widget, or one of its notifications, shows its details on the \
         Pull Requests page of BriefBar's window, at the comment or the run it's about, rather than opening it in Azure \
@@ -122,15 +269,15 @@ struct OpenInBriefBarSetting: View {
     }
 }
 
-/// Pull requests sent in chats, off by default: it reads every app's notifications. On its page in Settings, it
-/// says what it reads; in a menu, turning it on opens that page instead.
+/// Pull requests sent in chats, off by default: it reads every app's notifications. On the Pull Requests page in Settings,
+/// it says what it reads; in a menu, turning it on opens that page instead.
 struct ChatLinksSetting: View {
     @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var services: AppServices
     @Environment(\.inSettingsForm) private var inSettingsForm
+    @Environment(\.prStore) private var store
 
-    static let title = "Pull Requests Sent in Chats"
+    nonisolated static let title = "Pull Requests Sent in Chats"
     static let explanation = """
         Lists a pull request as needing you when someone sends you a link to it. BriefBar looks for links in the \
         notifications that every app posts to Notification Center, such as Teams, Slack, Outlook and Mail, and keeps \
@@ -140,6 +287,8 @@ struct ChatLinksSetting: View {
         """
 
     var body: some View {
+        // The demo reads no notifications.
+        let isDemo = store?.mode == .demo
         if inSettingsForm || settings.chatLinksEnabled {
             Toggle(isOn: $settings.chatLinksEnabled) {
                 Text(Self.title)
@@ -147,41 +296,59 @@ struct ChatLinksSetting: View {
                     Text(Self.explanation)
                 }
             }
-            .disabled(store.mode == .demo)
+            .disabled(isDemo)
         } else {
-            Button(Self.title + "…") { services.openSettings(.source(.azureDevOps)) }
-                .disabled(store.mode == .demo)
+            Button(Self.title + "…") { services.openSettings(.pullRequests) }
+                .disabled(isDemo)
         }
-        if settings.chatLinksEnabled && store.chatAccess == .denied {
-            Button("Allow Full Disk Access…") { store.showChatAccessSetup?() }
+        if settings.chatLinksEnabled, let store {
+            Observing(store) {
+                if store.chatAccess == .denied {
+                    Button("Allow Full Disk Access…") { store.showChatAccessSetup?() }
+                }
+            }
         }
     }
 }
 
-/// Pull requests you watch by their links: a way to add one, and, for each you watch, to stop.
+/// Pull requests you watch by their links: a way to add one, and, for each you watch, to stop. While Azure DevOps is off,
+/// on the Pull Requests page in Settings, it lists them by their numbers, and adds none.
 struct WatchedPullRequestsSetting: View {
     @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var store: PRStore
+    @Environment(\.prStore) private var store
+
+    nonisolated static let title = "Watched Pull Requests"
 
     var body: some View {
-        if settings.watchedPullRequests.isEmpty {
-            Button("Watch a Pull Request…") { WatchPrompt.ask(store: store) }
-                .disabled(store.mode == .demo)
+        if let store {
+            Observing(store) { items(store) }
         } else {
-            Menu("Watched Pull Requests") {
+            items(nil)
+        }
+    }
+
+    @ViewBuilder
+    private func items(_ store: PRStore?) -> some View {
+        // The demo watches nothing new.
+        let canWatch = store.map { $0.mode != .demo } ?? false
+        if settings.watchedPullRequests.isEmpty {
+            Button("Watch a Pull Request…") { if let store { WatchPrompt.ask(store: store) } }
+                .disabled(!canWatch)
+        } else {
+            Menu(Self.title) {
                 ForEach(settings.watchedPullRequests, id: \.self) { link in
-                    Button("Stop Watching \(title(link))") { settings.unwatch([link.key]) }
+                    Button("Stop Watching \(title(link, in: store))") { settings.unwatch([link.key]) }
                 }
                 Divider()
-                Button("Watch a Pull Request…") { WatchPrompt.ask(store: store) }
-                    .disabled(store.mode == .demo)
+                Button("Watch a Pull Request…") { if let store { WatchPrompt.ask(store: store) } }
+                    .disabled(!canWatch)
             }
         }
     }
 
     /// Its title once it's been read, else its number and repository.
-    private func title(_ link: PullRequestLink) -> String {
-        store.items.first { $0.key == link.key }.map { "“\($0.title)”" } ?? "!\(link.number) in \(link.repository)"
+    private func title(_ link: PullRequestLink, in store: PRStore?) -> String {
+        store?.items.first { $0.key == link.key }.map { "“\($0.title)”" } ?? "!\(link.number) in \(link.repository)"
     }
 }
 

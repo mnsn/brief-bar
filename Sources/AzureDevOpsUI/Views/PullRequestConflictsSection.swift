@@ -82,6 +82,7 @@ struct PullRequestConflictsSection: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             let count: Int? = if case .read(let read)? = state, !read.files.isEmpty { read.files.count } else { nil }
             PageSectionHeader(title: "Merge Conflicts", count: count)
+                .takesFocusOnArrival(at: .section(.conflicts))
             Spacer(minLength: 8)
             Button {
                 AzureDevOps.open(item.pageURL())

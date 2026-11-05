@@ -28,7 +28,8 @@ struct PullRequestCommentsSection: View {
     @EnvironmentObject private var code: PullRequestCodeStore
     /// The threads you changed in the details, with your reply or their statuses, where each was as you first did: they
     /// stay there, however they stand now, while the details show the pull request, which keep them as a file's page or
-    /// another page shows over them (`DetailsDrafts.held`).
+    /// another page shows over them (`DetailsDrafts.held`); and whether the resolved ones show, kept with them
+    /// (`DetailsDrafts.showsResolved`).
     @EnvironmentObject private var kept: DetailsDrafts
     /// Where the threads you marked as read there were then, which they stay at too, unless you changed them first.
     var readHolds: [Int: PullRequestPanel.Thread.Held] = [:]
@@ -36,15 +37,16 @@ struct PullRequestCommentsSection: View {
     var filter: Binding<PullRequestPanel.CommentFilter> = .constant(.all)
     /// Mark as Read and Mark as Unread on the threads, the details'; nil where they can't be.
     var reading: ThreadReading? = nil
-    @LocalState private var showsResolved = false
     /// The threads the details were taken to, which show with Active too, whatever their status.
     @LocalState private var revealed: Set<Int> = []
 
     var body: some View {
         let threads = panel.threads
+        // Those you changed here, and those you marked as read here, each where it was as you first did.
         let holding = PullRequestPanel.Thread.Held.kept(changed: kept.held(in: item.key), read: readHolds)
         let listing = threads.listed(filter.wrappedValue, holding: holding, revealing: revealed)
         let resolvedCount = listing.resolved.reduce(0) { $0 + $1.threads.count }
+        let showsResolved = kept.showsResolved(in: item.key)
         VStack(alignment: .leading, spacing: 8) {
             // With Fix All, while comments wait on you on your pull request; and Active | All, once there are threads.
             CommentsHeader(
@@ -72,7 +74,7 @@ struct PullRequestCommentsSection: View {
                 }
                 if resolvedCount > 0 {
                     Button {
-                        withAnimation(.easeOut(duration: 0.15)) { showsResolved.toggle() }
+                        withAnimation(.easeOut(duration: 0.15)) { kept.setShowsResolved(!showsResolved, in: item.key) }
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "chevron.right")
@@ -93,10 +95,11 @@ struct PullRequestCommentsSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Asked to go to a thread that's resolved: it shows; and with Active, it shows too, whatever its status.
+        // Asked to go to a thread among the resolved ones, as they show it, such as one you reactivated here: they unfold;
+        // and with Active, it shows too, whatever its status.
         .onChange(of: place, initial: true) {
-            if case .thread(let id)? = place, panel.threads.resolved.contains(where: { $0.id == id }) {
-                showsResolved = true
+            if case .thread(let id)? = place, threads.listsResolved(id, holding: holding) {
+                kept.setShowsResolved(true, in: item.key)
             }
             if case .thread(let id)? = place, panel.threads.contains(id) {
                 revealed.insert(id)
@@ -304,7 +307,7 @@ struct ThreadCard: View {
     /// open: with ✕ or Esc, or sent while you're still in it (`ThreadReplyArea`). Not once another composer opened
     /// meanwhile, nor anywhere but in this card.
     @LocalState private var refocusesReply = false
-    /// VoiceOver goes to it as the details point it out, going to it or coming back to it.
+    /// VoiceOver goes to it each time the details go to it, or come back to it, and as its file's page points it out.
     @AccessibilityFocusState private var isFocused: Bool
     /// How much wider its code's longest line is than the room it has.
     @LocalState private var codeOverflow: CGFloat = 0
@@ -393,11 +396,13 @@ struct ThreadCard: View {
             }
         }
         .accessibilityFocused($isFocused)
-        // Also as it's made, once the details scrolled to it.
+        // Also as it's made, once the details scrolled to it; and as its file's page points it out, going on to it.
         .onAppear { if isHighlighted { isFocused = true } }
         .onChange(of: isHighlighted) {
             if isHighlighted { isFocused = true }
         }
+        // And each time the details go to it, though it's still pointed out, as when it's asked for again within that moment.
+        .focusesOnArrival(at: .thread(thread.id), $isFocused)
         // Another composer opened, or its own reply again: Reply doesn't take the keyboard's focus as its buttons show later.
         .onChange(of: composing) { _, open in
             if open != nil { refocusesReply = false }

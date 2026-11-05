@@ -116,6 +116,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var tagChanges: TagChanges?
     /// What you wrote in pull requests' details' Copilot composers, and where the threads you changed there were.
     private(set) var detailsDrafts: DetailsDrafts?
+    /// For `--render`: each picture has drafts of its own, as if it were the only one shown, rather than what an earlier
+    /// picture of the same pull request left there, such as its resolved threads unfolded.
+    private var picturesHaveTheirOwnDrafts = false
     /// Tells Pull Request Order what Azure DevOps shows, while it's on.
     private var orderFacts: PullRequestOrderFacts?
     /// Reads again sooner what Copilot sessions say they changed, with Updates from Copilot Sessions on.
@@ -165,6 +168,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         return AnyView(view
             .interfaceOptions(from: services)
             .environmentObject(store)
+            .environment(\.prStore, store)
             .environmentObject(sprint)
             .environmentObject(details)
             .environmentObject(pullRequestDetails)
@@ -176,7 +180,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             .environmentObject(copilotQuestions)
             .environmentObject(threadChanges)
             .environmentObject(tagChanges)
-            .environmentObject(detailsDrafts)
+            .environmentObject(picturesHaveTheirOwnDrafts ? DetailsDrafts() : detailsDrafts)
             .environmentObject(pipelines)
             .environmentObject(copilot)
             .environmentObject(settings)
@@ -291,13 +295,14 @@ package final class AzureDevOpsSource: BriefBarSource {
                 }
             }
             .store(in: &cancellables)
-        // A pull request that a task or a link names shows in its details, on the window's page, while the list has it.
+        // A pull request that a task or a link names shows in its details, on the window's page, while the list has it, at
+        // what its row is about.
         copilot.canShowPullRequest = { [weak store, weak pullRequestDetails] key in
             guard let store, let pullRequestDetails else { return false }
             return pullRequestDetails.hasPage() && store.items.contains { $0.key == key }
         }
-        copilot.showPullRequest = { [weak pullRequestDetails] key in pullRequestDetails?.reveal(key) ?? false }
-        workLinks?.showPullRequest = { [weak pullRequestDetails] key in pullRequestDetails?.reveal(key) ?? false }
+        copilot.showPullRequest = { [weak pullRequestDetails] key in pullRequestDetails?.revealAtWhatItsAbout(key) ?? false }
+        workLinks?.showPullRequest = { [weak pullRequestDetails] key in pullRequestDetails?.revealAtWhatItsAbout(key) ?? false }
         return store
     }
 
@@ -761,7 +766,25 @@ package final class AzureDevOpsSource: BriefBarSource {
     // MARK: Settings
 
     package func settingsView() -> AnyView {
-        environment(AzureDevOpsSettings())
+        environment(AzureDevOpsSettings(place: .ownPage))
+    }
+
+    /// Those about its pull requests, on the Pull Requests page in Settings: with its store while it's on, and, while it's
+    /// off or paused, from its settings alone, disabled, as they do nothing then.
+    package func pullRequestSettingsView(state: SourceState) -> AnyView? {
+        let settings = AzureDevOpsSettings(place: .pullRequestsPage)
+        if state == .on, store != nil {
+            return environment(settings)
+        }
+        return AnyView(settings
+            .disabled(true)
+            .interfaceOptions(from: services)
+            .environmentObject(self.settings)
+            .environmentObject(services))
+    }
+
+    package var pullRequestSettings: [String] {
+        AzureDevOpsSettings.Place.pullRequestsPage.settings.map(\.title)
     }
 
     package func statusView() -> AnyView? {
@@ -772,6 +795,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     // MARK: Rendering
 
     package func loadForRendering() async {
+        picturesHaveTheirOwnDrafts = true
         let store = makeStores(notifier: nil)
         await store.loadOnce()
         await sprint?.loadOnce()
@@ -945,9 +969,10 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     /// The Pull Requests page with a pull request's details: the first of yours that needs you, beside the list as in a big
     /// window and in BriefBar's window as it opens, over it in a narrow one, all of it in a tall one, and with the page of
-    /// the first work item linked to it over them; the first that's failing; and, for the line of its Copilot session, the
+    /// the first work item linked to it over them; the first that's failing; for the line of its Copilot session, the
     /// first of yours with merge conflicts, whose two sessions ask which is its, and the one whose session waits for your
-    /// answer. Each in a store of its own, so the window's own picture of the page shows none.
+    /// answer; and the first review you're asked for, at its reviewers, as it opens from anywhere but beside the list. Each
+    /// in a store of its own, so the window's own picture of the page shows none.
     private func pullRequestDetailsRenderings() -> [(name: String, view: AnyView)] {
         guard let store else { return [] }
         // The sessions as Show Links has them now that every source told it.
@@ -962,31 +987,31 @@ package final class AzureDevOpsSource: BriefBarSource {
             guard let choice = pullRequestSessions?.session(for: item.key)?.session, let ref = ItemRef.session(choice.id) else { return false }
             return services.links.describe(ref).state == .needsYou
         }
+        let reviewing = store.items.first { $0.reason == .reviewRequested } ?? store.items.first(where: \.isAboutYourReview)
         let wide = CGSize(width: 1_000, height: 720)
-        let shown: [(name: String, item: PRSnapshot?, sizes: [(suffix: String, size: CGSize)], page: ItemRef.Kind?)] = [
+        let shown: [(name: String, item: PRSnapshot?, sizes: [(suffix: String, size: CGSize)], page: ItemRef.Kind?, about: Bool)] = [
             ("pull-requests-details", yours, [
                 ("", wide), ("-medium", CGSize(width: 820, height: 680)), ("-narrow", CGSize(width: 560, height: 720)),
                 ("-tall", CGSize(width: 1_000, height: 1_500)),
-            ], nil),
-            ("pull-requests-details-page", yours, [("", wide)], .workItem),
-            ("pull-requests-failing-details", failing, [("", wide), ("-tall", CGSize(width: 1_000, height: 1_100))], nil),
-            ("pull-requests-session-question", asking, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil),
-            ("pull-requests-session-waiting", waiting, [("", wide)], nil),
+            ], nil, false),
+            ("pull-requests-details-page", yours, [("", wide)], .workItem, false),
+            ("pull-requests-failing-details", failing, [("", wide), ("-tall", CGSize(width: 1_000, height: 1_100))], nil, false),
+            ("pull-requests-session-question", asking, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil, false),
+            ("pull-requests-session-waiting", waiting, [("", wide)], nil, false),
+            ("pull-requests-review-details", reviewing, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil, true),
         ]
         var renderings: [(name: String, view: AnyView)] = []
-        for (name, item, sizes, page) in shown {
+        for (name, item, sizes, page, about) in shown {
             guard let item else { continue }
-            let details = PullRequestDetailsStore()
-            details.readRecord = { [weak store] key in store?.record(for: key) }
-            details.itemsChanged(store.items)
-            details.show(item)
-            if let page {
-                guard let linked = services.links.connections(of: item.key.linkRef).first(where: { $0.item.ref.kind == page }) else {
-                    continue
-                }
-                details.open(page: linked.item.ref)
-            }
+            let linked = page.flatMap { page in services.links.connections(of: item.key.linkRef).first { $0.item.ref.kind == page } }
+            if page != nil, linked == nil { continue }
             for (suffix, size) in sizes {
+                // A store for each picture: each goes where it's asked to once.
+                let details = PullRequestDetailsStore()
+                details.readRecord = { [weak store] key in store?.record(for: key) }
+                details.itemsChanged(store.items)
+                details.show(item, at: about ? details.about(item) : nil)
+                if let linked { details.open(page: linked.item.ref) }
                 let view = PullRequestsPage()
                     .environmentObject(details)
                     .environment(\.panelStyle, .page)

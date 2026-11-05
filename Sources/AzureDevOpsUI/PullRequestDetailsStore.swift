@@ -78,11 +78,14 @@ final class PullRequestDetailsStore: ObservableObject {
         }
 
         /// What a pull request's row is about, for its details to show there when it's opened from anywhere but beside the
-        /// list: the comment that needs you or that you answered, or the run after its merge, where its link leads; else,
-        /// for one that's failing, the first of its builds and checks that failed. Nil for their top, which starts with
-        /// what's left.
+        /// list: the comment that needs you or that you answered, or the run after its merge, where its link leads; for a
+        /// review you're asked for, or one that waits on its author for the changes you asked for, its reviewers, where your
+        /// vote is; else, for one that's failing, the first of its builds and checks that failed. Nil for their top, which
+        /// starts with what's left.
         static func about(_ item: PRSnapshot, record: PRRecord?) -> Place? {
             if let place = item.place { return Place(place) }
+            // Once the list read who reviews it, and you're among them: not for one you only watch.
+            if item.isAboutYourReview, let record, record.pullRequest.reviewer(record.me) != nil { return .section(.reviewers) }
             guard item.group == .failing else { return nil }
             return PullRequestPanel(item, record: record).checks.first { $0.run.state == .failing }.map(Place.of)
         }
@@ -243,11 +246,14 @@ final class PullRequestDetailsStore: ObservableObject {
             if !markedRead.isEmpty { markedRead = [:] }
         }
         pages = []
+        // From a file's page, their top, rather than where its diff was scrolled to: they keep their scroll while they show
+        // the same pull request.
+        let leavesFile = file != nil
         file = nil
         selected = item
         record = keeping(readRecord(item.key))
         isListed = listed.contains { $0.key == item.key }
-        self.place = place
+        self.place = place ?? (leavesFile ? .top : nil)
         trailThread = place?.thread
         markSeen(item)
     }
@@ -273,6 +279,14 @@ final class PullRequestDetailsStore: ObservableObject {
     func reveal(_ key: PRKey, at place: Place? = nil) -> Bool {
         guard let item = listed.first(where: { $0.key == key }) else { return false }
         return reveal(item, at: place)
+    }
+
+    /// The same, at what its row is about (`about`), as it shows from anywhere else: for a link to it, or a task sent to
+    /// Copilot that works on it or opened it.
+    @discardableResult
+    func revealAtWhatItsAbout(_ key: PRKey) -> Bool {
+        guard let item = listed.first(where: { $0.key == key }) else { return false }
+        return reveal(item, at: about(item))
     }
 
     /// Where in its details a pull request's row is about (`Place.about`), from what the list read of it.

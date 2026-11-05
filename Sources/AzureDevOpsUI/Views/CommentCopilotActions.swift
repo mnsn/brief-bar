@@ -542,6 +542,7 @@ struct CommentsHeader: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 PageSectionHeader(title: "Comments", count: count)
+                    .takesFocusOnArrival(at: .section(.comments))
                 if let filter {
                     Picker("Comments Shown", selection: filter) {
                         Text("Active").tag(PullRequestPanel.CommentFilter.active)

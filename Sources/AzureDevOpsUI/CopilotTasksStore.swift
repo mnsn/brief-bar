@@ -44,6 +44,18 @@ struct CopilotTaskEntry: Identifiable, Equatable {
         else { return nil }
         return PRKey(ref.scope, number)
     }
+
+    /// Where its pull request opens, as its menus say it (`ItemRef.Kind.whereItOpens`): "on GitHub" for one there, as a work
+    /// item's task opens one where its repository lives; else "in Azure DevOps".
+    var whereItsPullRequestOpens: String {
+        let kind = pullRequest.flatMap { ItemRef.from(link: $0.absoluteString)?.kind }
+        return (kind == .gitHubPullRequest ? ItemRef.Kind.gitHubPullRequest : .pullRequest).whereItOpens
+    }
+
+    /// "Open Pull Request in Azure DevOps", or "Open Pull Request on GitHub" for one there, for its menus.
+    var openPullRequestTitle: String {
+        "Open Pull Request \(whereItsPullRequestOpens)"
+    }
 }
 
 extension CopilotTaskEntry {
