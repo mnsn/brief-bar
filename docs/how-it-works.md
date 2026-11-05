@@ -1646,8 +1646,9 @@ when nothing goes; Azure DevOps answers with the comment as it keeps it, which s
 doesn't say (`ReviewComment.editedAt`). **Delete…** asks first, under what the comment says, that Azure DevOps deletes
 it, as you, and that it can't be undone (`CommentDeleteConfirmation`, `CopilotComposing.deleting(_:in:)`), with
 **Cancel**, which Esc presses, and **Delete**, which waits while another change to the thread is on its way, as a status
-set from its menu or in another window, since a thread takes one at a time. Deleting is a `DELETE` of the comment, with no body
-(`ADOWrite.deleteComment`), whose answer, 200 with nothing, as Azure DevOps' REST reference has it, says it's done.
+set from its menu or in another window, since a thread takes one at a time. Deleting is a `DELETE` of the comment, with
+no body (`ADOWrite.deleteComment`), whose answer, 200 with nothing, as Azure DevOps' REST reference has it, says it's
+done.
 Azure DevOps keeps a deleted comment, marked `isDeleted`, and deletes its thread once none of its comments is left (the
 thread's `isDeleted`), as the reference says, and its own pages show neither: nor does BriefBar, which never read them,
 so the comment leaves its thread at once, and the thread leaves the details once it has none left (`PRDetails.apply`).
