@@ -386,9 +386,11 @@ struct ThreadCard: View {
         // And each time the details go to it, though it's still pointed out, as when it's asked for again within that moment.
         .focusesOnArrival(at: .thread(thread.id), $isFocused)
         // Another composer opened, or its own reply again: Reply doesn't take the keyboard's focus as its buttons show later,
-        // nor a comment's ⋯.
+        // nor a comment's ⋯. A comment of yours opened, from its menu, VoiceOver or Edit… on what went wrong: the comments stay
+        // unfolded, so that it stays in sight once it closes, where its ⋯ takes the keyboard's focus back.
         .onChange(of: composing) { _, open in
             if open != nil { refocus.opened() }
+            if open?.comment(on: thread.id) != nil { isUnfolded = true }
         }
         // Your comment, open to edit or delete, left the thread, as one deleted elsewhere: what was open on it closes, and
         // what went wrong with it shows on the thread.
@@ -601,14 +603,12 @@ struct ThreadCard: View {
         guard preview?.readOnly == nil, changes.canChange(comment, of: pullRequest), let pullRequest else { return nil }
         let id = PreviewComment(thread: thread.id, comment: comment.id)
         let edit = CopilotComposing.edit(comment.id, in: thread.id), deleting = CopilotComposing.deleting(comment.id, in: thread.id)
-        // Each open, the comments stay unfolded, so that it stays in sight, and once it closes, where it was.
+        // Each open, the comments stay unfolded (`folded`, and `isUnfolded` as it opens).
         var yours = CommentLine.Yours(isSending: isSending, showsMenu: preview?.menu == id, refocuses: refocus.comment == comment.id) {
             hold(thread)
-            isUnfolded = true
             composing = edit
         } delete: {
             hold(thread)
-            isUnfolded = true
             composing = deleting
         } refocused: {
             if refocus.comment == comment.id { refocus.comment = nil }

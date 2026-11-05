@@ -463,6 +463,11 @@ final class ThreadChanges: ObservableObject {
                 SpokenText.announce("Your edit is saved already")
                 return true
             }
+            // Its pull request may have closed, or left your lists, while its thread was read.
+            if let problem = refusal(pullRequest, in: store) {
+                fail(key, problem, .edit(comment: comment.id), pullRequest: pullRequest)
+                return false
+            }
         }
         states[key] = .sending(.edit(comment: comment.id))
         let write = ADOWrite.editComment(ThreadAddress(record.pullRequest, thread: thread.id), comment: comment.id, markdown: markdown)
@@ -542,6 +547,11 @@ final class ThreadChanges: ObservableObject {
                 edits[CommentKey(thread: key, comment: comment.id)] = nil
                 SpokenText.announce("Your comment is deleted already")
                 return true
+            }
+            // Its pull request may have closed, or left your lists, while its thread was read.
+            if let problem = refusal(pullRequest, in: store) {
+                fail(key, problem, .delete(comment: comment.id), pullRequest: pullRequest)
+                return false
             }
         }
         states[key] = .sending(.delete(comment: comment.id))

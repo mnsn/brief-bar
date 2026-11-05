@@ -456,6 +456,33 @@ import Testing
         #expect(try thread(store).comments.contains { $0.id == reply.id } == false)
     }
 
+    /// An edit or a deletion that may have gone, checked by reading its thread again, sends nothing once its pull request left
+    /// your lists, or closed, while the thread was read, though the thread says it didn't go.
+    @Test func aChangeCheckedAfterItsPullRequestLeftYourListsSendsNothing() async throws {
+        let (store, changes, azure, _) = live()
+        let (mine, _) = try comments(store)
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.edit("Capped it.", of: mine, in: try thread(store), of: key) == false)
+        #expect(await changes.delete(mine, in: try thread(store), of: key) == false)
+        azure.fails = nil
+        let original = try thread(store)
+        var snapshot = DemoData.snapshot(now: store.now)
+        snapshot.records.removeAll { $0.id == key }
+        let without = snapshot
+        changes.readThreads = { [weak store] _ in
+            // It leaves your lists as its thread is read, which hasn't either.
+            store?.receive(without)
+            return [original]
+        }
+        #expect(await changes.edit("Capped it.", of: mine, in: original, of: key) == false)
+        #expect(changes.state(of: threadKey) == .failed(.notListed, .edit(comment: mine.id)))
+        store.receive(DemoData.snapshot(now: store.now))
+        #expect(await changes.delete(mine, in: original, of: key) == false)
+        #expect(changes.state(of: threadKey) == .failed(.notListed, .delete(comment: mine.id)))
+        #expect(azure.sent.map(\.kind) == [.editComment, .deleteComment])
+    }
+
     /// Read, a comment that doesn't say the edit that may have gone gets it, once.
     @Test func anEditThatDidntGoIsSentOnceItsThreadSaysSo() async throws {
         let (store, changes, azure, _) = live()
