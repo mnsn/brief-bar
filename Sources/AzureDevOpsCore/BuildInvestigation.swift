@@ -812,13 +812,17 @@ public enum BuildHint: Sendable, Equatable {
     case targetPasses(branch: String, run: PipelineRun)
 
     /// It, in a sentence: “main's latest run failed too: it may not be this change.”
-    public var sentence: String {
+    public var sentence: String { sentence(naming: { $0 }) }
+
+    /// The same, with the target branch named as `naming` writes it: as a prompt does, say, in single quotes when a shell
+    /// would read something in it (`PullRequestPrompt.branch`), while the details show it as it is.
+    public func sentence(naming: (String) -> String) -> String {
         switch self {
         case .olderCommit: "It built an older commit than the pull request's latest."
         case .passedBefore(let run): "It passed on the same commit in \(run.number): it may be flaky."
-        case .passedBeforeTargetChanged(let branch, let run): "It passed on this commit in \(run.number), before \(branch) changed."
-        case .targetFails(let branch, _): "\(branch)'s latest run failed too: it may not be this change."
-        case .targetPasses(let branch, _): "\(branch)'s latest run passed."
+        case .passedBeforeTargetChanged(let branch, let run): "It passed on this commit in \(run.number), before \(naming(branch)) changed."
+        case .targetFails(let branch, _): "\(naming(branch))'s latest run failed too: it may not be this change."
+        case .targetPasses(let branch, _): "\(naming(branch))'s latest run passed."
         }
     }
 }

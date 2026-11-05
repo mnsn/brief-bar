@@ -19,7 +19,8 @@ extension FailedBuildReport {
 
     /// What was read of a build that failed, as its details showed it: its run, where it failed, its errors, each with
     /// where it is, the first of its tests that failed, the end of the failed step's log, and whether it's the change's
-    /// doing. The errors are its check's when the run's steps don't say.
+    /// doing, with the target branch named as the prompt names branches (`PullRequestPrompt.branch`). The errors are its
+    /// check's when the run's steps don't say.
     /// - Parameter name: its check's, as the pull request's builds and checks name it.
     public init(_ investigation: BuildInvestigation, name: String) {
         var errors = investigation.errors.prefix(PullRequestPrompt.errorLimit).map { error in
@@ -33,7 +34,7 @@ extension FailedBuildReport {
             place: investigation.failurePlace, tests: Array((tests?.failures ?? []).prefix(Self.testLimit)),
             testsSummary: tests.map { $0.summary.prefix(1).lowercased() + $0.summary.dropFirst() },
             moreTests: max(0, (tests?.failed ?? 0) - min(tests?.failures.count ?? 0, Self.testLimit)),
-            log: log, logStep: investigation.logStep?.name, hints: investigation.hints.map(\.sentence)
+            log: log, logStep: investigation.logStep?.name, hints: investigation.hints.map { $0.sentence(naming: PullRequestPrompt.branch) }
         )
     }
 

@@ -199,7 +199,7 @@ extension PRReadiness {
             add(.conflicts, .failing, "Merge conflicts", "\(pr.sourceBranch) into \(pr.targetBranch)")
         }
         if let problem = pr.mergeProblem {
-            add(.mergeFailed, .failing, problem.headline, problem.detail)
+            add(.mergeFailed, .failing, problem.headline, problem.detail.text())
         }
         if !details.checksKnown {
             add(.unreadablePolicies, nil, "Can't read its policies",
