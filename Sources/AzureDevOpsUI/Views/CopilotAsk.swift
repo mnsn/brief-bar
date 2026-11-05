@@ -134,29 +134,6 @@ struct CopilotWorkLine<Trailing: View>: View {
     }
 }
 
-/// Text as VoiceOver says it.
-enum SpokenText {
-    /// Without the quotes around the names it quotes, "‘Retry backoff’", which it would read out: an apostrophe in a name,
-    /// "‘Sam’s fix’", stays.
-    static func unquoted(_ text: String) -> String {
-        let characters = Array(text)
-        var result = ""
-        var isQuoting = false
-        for (index, character) in characters.enumerated() {
-            if character == "‘" {
-                isQuoting = true
-                continue
-            }
-            if character == "’", isQuoting, index + 1 == characters.count || !characters[index + 1].isLetter {
-                isQuoting = false
-                continue
-            }
-            result.append(character)
-        }
-        return result
-    }
-}
-
 extension CopilotWorkLine where Trailing == EmptyView {
     init(
         symbol: String, text: String, state: ItemState?, since: Date?, now: Date, subtitle: String? = nil, detail: String? = nil,
