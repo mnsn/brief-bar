@@ -398,7 +398,11 @@ import Testing
     /// list or a quote, after a space, or once normalized, opens none, so the entries of the threads after it are still
     /// read as entries, and what waits on you in them is handed off with them.
     @Test func aNameThatWouldOpenAFenceKeepsTheEntriesAfterIt() {
-        for name in ["```", "- ```", "> ~~~", "1. ```", "2) ~~~", "* ```", "+\u{A0}```", "\u{200D}~~~", "\u{1FEF}\u{1FEF}\u{1FEF}", "\u{FF5E}\u{FF5E}\u{FF5E}"] {
+        for (name, written) in [
+            ("```", "\\u{60}``"), ("- ```", "- \\u{60}``"), ("> ~~~", "> \\u{7E}~~"), ("1. ```", "1. \\u{60}``"), ("2) ~~~", "2) \\u{7E}~~"),
+            ("* ```", "* \\u{60}``"), ("+\u{A0}```", "+\u{A0}\\u{60}``"), ("\u{FF1E} ```", "\u{FF1E} \\u{60}``"), ("\u{200D}~~~", "\u{200D}\\u{7E}~~"),
+            ("\u{1FEF}\u{1FEF}\u{1FEF}", "\\u{1FEF}\u{1FEF}\u{1FEF}"), ("\u{FF5E}\u{FF5E}\u{FF5E}", "\\u{FF5E}\u{FF5E}\u{FF5E}"),
+        ] {
             let fence = Person(id: "88888888-8888-8888-8888-888888888888", name: name)
             let threads = [7, 8, 9].map { id in
                 ReviewThread(id: id, comments: [ReviewComment(id: 1, author: id == 7 ? fence : People.sam, text: "Thread \(id)", publishedAt: t(-hour))])
@@ -407,6 +411,7 @@ import Testing
             let record = PRRecord(pullRequest: pr, role: .author, details: makeDetails(for: pr, threads: threads), me: People.me.id)
             let fix = PullRequestPrompt.fixComments(record)
             for prompt in [fix, PullRequestPrompt.pushAndReply(record)] {
+                #expect(prompt.contains("\n   \(written): Thread 7\n"), "\(name.debugDescription)")
                 #expect(PullRequestPrompt.threadsListed(in: prompt, among: [7, 8, 9]) == [7, 8, 9], "\(name.debugDescription)")
                 let opening = prompt.split(separator: "\n").filter(QuotedText.mayOpenFence)
                 #expect(opening.isEmpty, "\(name.debugDescription): \(opening)")
