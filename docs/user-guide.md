@@ -490,11 +490,14 @@ its thread's, and so do VoiceOver's actions on it: not someone else's, nor a com
 change. **Edit** opens what it says in place of it, in a field like Reply's, its @mentions as the names they show, which
 go back as mentions: **Save**, or ⌘Return, saves it in Azure DevOps, as you, and it shows as soon as Azure DevOps
 answers, with **· Edited** after when you wrote it; **Cancel**, or Esc, keeps it as it was, and forgets what you
-changed. **Fix Grammar** is there too, as in a reply. **Delete…** asks first, under the comment, saying that Azure
-DevOps deletes it, as you, and that it can't be undone: **Delete** deletes it, and **Cancel**, or Esc, keeps it. Azure
-DevOps keeps a deleted comment, marked deleted, and doesn't show it, and deletes its thread once none of its comments is
-left, so the comment leaves its thread at once, and the thread leaves the details then. After each, BriefBar reads the
-pull request again, as after a reply. When it can't, the thread says why, as for a reply, such as **Azure DevOps says
+changed. What you change stays while BriefBar runs, if you open something else before you save it, until the comment
+changes in Azure DevOps, when Edit starts again from what it says now. **Fix Grammar** is there too, as in a reply.
+**Delete…** asks first, under the comment, saying that Azure DevOps deletes it, as you, and that it can't be undone:
+**Delete** deletes it, and **Cancel**, or Esc, keeps it. Azure DevOps keeps a deleted comment, marked deleted, and
+doesn't show it, and deletes its thread once none of its comments is left, so the comment leaves its thread at once, and
+the thread leaves the details then. After each, BriefBar reads the pull request again, as after a reply. While a comment
+is open to edit or delete, its thread's comments don't fold, and once it closes, the keyboard's focus goes back to its
+**⋯**, or to **Reply** once it's deleted. When it can't, the thread says why, as for a reply, such as **Azure DevOps says
 you may not edit this comment**, **You're offline**, or until when Azure DevOps asked BriefBar to slow down, with
 **Edit…**, **Try Again** or **Sign In…**; an edit that didn't go keeps what you wrote, and one that Azure DevOps didn't
 answer in time is read again before you save or delete it twice. The demo changes only its own made-up pull requests.
