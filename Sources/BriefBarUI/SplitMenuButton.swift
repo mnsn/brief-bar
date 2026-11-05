@@ -3,7 +3,8 @@ import SwiftUI
 
 /// A button with a menu one ▾ away, as a menu with a primary action is, but in AppKit's own control for it, whose title
 /// follows the text size on windows' pages: SwiftUI's draws its title at the control's size whatever its label says.
-/// `.controlSize`, `.disabled` and the text size around it apply; its tooltip and VoiceOver's hint are its own.
+/// `.controlSize`, `.disabled` and the text size around it apply. VoiceOver hears its two parts, each named with its
+/// title, the button with `help` and the menu with `hint`, which their tooltips say too.
 package struct SplitMenuButton: NSViewRepresentable {
     /// What its menu has.
     package enum Entry {
@@ -16,7 +17,9 @@ package struct SplitMenuButton: NSViewRepresentable {
 
     let title: String
     let systemImage: String
+    /// What the button does.
     let help: String
+    /// What its menu does; `help` for nil.
     var hint: String?
     let entries: [Entry]
     let action: () -> Void
@@ -95,6 +98,12 @@ package struct SplitMenuButton: NSViewRepresentable {
         button.isEnabled = environment.isEnabled
         button.toolTip = help
         button.setAccessibilityHelp(hint ?? help)
+        // Its parts are the segments of a control of its own, which VoiceOver reads, and the pointer rests on: each says
+        // what it does.
+        for case let parts as NSSegmentedControl in button.subviews where parts.segmentCount == 2 {
+            parts.setToolTip(help, forSegment: 0)
+            parts.setToolTip(hint ?? help, forSegment: 1)
+        }
     }
 
     private static func image(_ systemImage: String) -> NSImage {

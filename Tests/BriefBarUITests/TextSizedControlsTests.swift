@@ -25,6 +25,85 @@ import Testing
         return try #require(find(host))
     }
 
+    /// Lays `view` out in a window, which stays while `body` runs with the first AppKit view of `type` in it.
+    private func inWindow<V: View, T: NSView>(_ view: V, find type: T.Type, _ body: (T) throws -> Void) throws {
+        let host = NSHostingView(rootView: view.fixedSize())
+        let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 400, height: 200), styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+        host.layoutSubtreeIfNeeded()
+        func find(_ view: NSView) -> T? {
+            if let found = view as? T { return found }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        try body(try #require(find(host)))
+    }
+
+    /// What VoiceOver finds in an AppKit view: it, and its accessibility children, all the way down.
+    private func elements(of view: NSView) -> [NSAccessibilityProtocol & NSObject] {
+        func all(_ element: Any) -> [NSAccessibilityProtocol & NSObject] {
+            guard let element = element as? NSAccessibilityProtocol & NSObject else { return [] }
+            return [element] + (element.accessibilityChildren() ?? []).flatMap(all)
+        }
+        return all(view)
+    }
+
+    /// Lets AppKit send what a press sent.
+    private func settle() {
+        for _ in 0..<20 { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    }
+
+    /// VoiceOver hears a split button's two parts, each named with its title and saying what it does, presses its button and
+    /// can open its menu; and it takes the keyboard's focus, as AppKit's controls do with keyboard navigation on.
+    @Test func voiceOverHearsAndPressesEachPartOfASplitButton() throws {
+        let pressed = Choice(0)
+        try inWindow(
+            SplitMenuButton("Resolve", systemImage: "checkmark", help: "Resolve it", hint: "Its menu sets another status",
+                            entries: [.item("Won't Fix") {}]) { pressed.value += 1 },
+            find: NSComboButton.self
+        ) { button in
+            let parts = elements(of: button)
+            let primary = try #require(parts.first { $0.accessibilityRole() == .button })
+            let menu = try #require(parts.first { $0.accessibilityRole() == .menuButton })
+            #expect(primary.accessibilityLabel() == "Resolve")
+            #expect(primary.accessibilityHelp() == "Resolve it")
+            #expect(menu.accessibilityLabel() == "Resolve")
+            #expect(menu.accessibilityHelp() == "Its menu sets another status")
+            #expect(menu.responds(to: #selector(NSAccessibilityProtocol.accessibilityPerformShowMenu)))
+            _ = primary.accessibilityPerformPress()
+            settle()
+            #expect(pressed.value == 1)
+            let takesFocus = button.subviews.contains { $0.acceptsFirstResponder }
+            #expect(takesFocus)
+        }
+    }
+
+    /// VoiceOver hears a segmented picker's segments by their titles, symbols alone too, and chooses among them; and it takes
+    /// the keyboard's focus, as AppKit's controls do with keyboard navigation on.
+    @Test func voiceOverHearsAndChoosesASegmentedPickersSegments() throws {
+        let chosen = Choice(0)
+        try inWindow(
+            SegmentedPicker("View", selection: Binding(get: { chosen.value }, set: { chosen.value = $0 }), segments: [
+                .init(0, title: "List", systemImage: "list.bullet"), .init(1, title: "Map", systemImage: "map"),
+            ])
+            .environment(\.showsSymbolsAlone, true),
+            find: NSSegmentedControl.self
+        ) { picker in
+            let segments = elements(of: picker).filter { $0.accessibilityRole() == .radioButton }
+            #expect(segments.map { $0.accessibilityLabel() } == ["List", "Map"])
+            #expect(segments.map { $0.accessibilityHelp() } == ["List", "Map"])
+            _ = segments.last?.accessibilityPerformPress()
+            settle()
+            #expect(chosen.value == 1)
+            #expect(picker.acceptsFirstResponder)
+        }
+    }
+
     @Test func aSplitButtonsTitleIsAsBigAsTheTextAndItsBezelHoldsIt() throws {
         func button(scale: CGFloat) throws -> NSComboButton {
             try laidOut(
