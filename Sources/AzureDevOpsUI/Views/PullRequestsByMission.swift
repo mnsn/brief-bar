@@ -129,7 +129,7 @@ struct PullRequestBoardCard: View {
                 .help("‘\(worker.label)’ told BriefBar it works on it")
             }
             FlowLayout(spacing: 6, lineSpacing: 4) {
-                BriefBarUI.StagePill(ref: card.ref, reading: reading, order: ordering, now: now)
+                PullRequestStagePill(ref: card.ref, reading: reading, order: ordering, now: now)
                 if let who = BoardText.setter(reading, now: now, name: name) {
                     Text(who)
                         .font(size: 11)

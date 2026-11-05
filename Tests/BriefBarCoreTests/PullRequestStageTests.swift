@@ -193,14 +193,14 @@ import Testing
         #expect(later?.mark == cart)
         #expect(later?.replaced == yours)
         #expect(Self.why(later) == "Waiting on Priya")
-        #expect(StageText.who(later!, now: t(500), name: Self.name) == "‘Cart’ set it · 5m, after you")
+        #expect(StageText.who(later!, now: t(500), name: Self.name) == "‘Cart’ set it 5m ago, after you")
 
         // Put Yours Back makes yours the latest again.
         let back = StageMark(stage: .yourReview, at: t(300), votes: "0,10")
         let yoursAgain = Self.reading(facts, marks: [yours, cart, back].filter { $0 != yours })
         #expect(yoursAgain?.stage == .yourReview)
         #expect(yoursAgain?.replaced == nil)
-        #expect(StageText.who(yoursAgain!, now: t(7_500), name: Self.name) == "You set it · 2h")
+        #expect(StageText.who(yoursAgain!, now: t(7_500), name: Self.name) == "You set it 2h ago")
 
         // A session's change to the same stage replaces nothing to put back.
         let same = StageMark(stage: .yourReview, at: t(200), by: Self.cart)
@@ -316,6 +316,26 @@ import Testing
         #expect(StageOrder.of(Self.pr(4105), in: missions) == .waits([Self.pr(4101)], words: "After !4101 · stacked"))
     }
 
+    /// An order that puts nothing before one stacked on another of its own still waits for that one, ready to complete or
+    /// not, until BriefBar sees it merge: completing it first would merge it into the other's branch.
+    @Test func oneStackedOnAnotherOfItsOrderWaitsForItWhateverTheOrderSays() throws {
+        let pullRequests = [
+            OrderBoardTests.ado(4101, from: "robin/rounding"), OrderBoardTests.ado(4102, from: "robin/cart", into: "robin/rounding"),
+        ]
+        let missions = Self.missions(pullRequests, plan: [.init(ref: Self.pr(4101)), .init(ref: Self.pr(4102))])
+        let step = try #require(missions.first?.steps.first { $0.ref == Self.pr(4102) })
+        #expect(step.notes.contains(.orderDisagrees(Self.pr(4101), .branch)))
+        #expect(StageOrder.of(Self.pr(4102), in: missions) == .waits([Self.pr(4101)], words: "After !4101 · stacked"))
+        let order = StageOrder.of(Self.pr(4102), in: missions)
+        #expect(Self.reading(StageFacts(role: .author, isReady: true), order: order)?.stage == .waits)
+
+        let merged = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/rounding", state: .merged), pullRequests[1]],
+            plan: [.init(ref: Self.pr(4101)), .init(ref: Self.pr(4102))]
+        )
+        #expect(StageOrder.of(Self.pr(4102), in: merged) == .free)
+    }
+
     @Test func anOrderToCheckHoldsIt() {
         let missions = Self.missions(
             [OrderBoardTests.ado(4101, from: "robin/rounding", state: .closed), OrderBoardTests.ado(4102, from: "robin/cart")],
@@ -353,5 +373,23 @@ import Testing
         #expect(PullRequestStage.teammateReview.previousSettable == .yourReview)
         #expect(PullRequestStage.canMerge.nextSettable == nil)
         #expect(PullRequestStage.allCases.map(\.step) == [0, 1, 2, 3, 3, 4])
+    }
+
+    /// A mission's progress bar counts its pull requests in each stage, in the stages' order.
+    @Test func theProgressBarCountsEachStage() {
+        #expect(StageText.counts([]) == nil)
+        #expect(StageText.counts([.merged, .waits, .inProgress, .yourReview, .inProgress]) ==
+            "2 in progress · 1 for your review · 1 waits for another PR · 1 merged")
+        #expect(StageText.counts([.teammateReview, .canMerge, .waits, .waits]) ==
+            "1 for a teammate's review · 1 can merge · 2 wait for other PRs")
+    }
+
+    /// When it happened is said only where it's when what the stage says happened: not a pull request's last change.
+    @Test func itSaysWhenOnlyForWhatHappenedThen() {
+        let finished = Self.reading(StageFacts(role: .author), sessions: [Self.session(.finished, at: 10)])!
+        #expect(finished.why.saysWhen && finished.since == t(10))
+        let waiting = Self.reading(StageFacts(role: .author, waitingFor: "Waiting on Sam", since: t(20)))!
+        #expect(!waiting.why.saysWhen)
+        #expect(StageWhy.merged.saysWhen && !StageWhy.findReviewer.saysWhen && !StageWhy.set.saysWhen)
     }
 }

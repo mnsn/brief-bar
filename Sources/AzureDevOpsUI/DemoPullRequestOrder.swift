@@ -11,6 +11,9 @@ import Foundation
 /// - "Roll out dark mode": the account page's (!4093, ready to complete), then the checkout page's on GitHub (Priya's #412,
 ///   which GitHub's demo lists), to be reviewed after it, and the emails' (!4118, which the demo doesn't list, so BriefBar
 ///   can't see whether it merged).
+///
+/// And the stage you set on the one-click checkout's prototype (!4105), a draft nobody reviews yet: Teammate's review, two
+/// hours ago, so it says to find a reviewer.
 enum DemoPullRequestOrder {
     static let paymentsID = UUID(uuidString: "b81f4e27-6a3c-4d95-8e10-3c7a9d2f4b66")!
     static let id = UUID(uuidString: "d4a7c2e9-5b1f-4c83-9e60-2f8b7d1a3c55")!
@@ -26,6 +29,7 @@ enum DemoPullRequestOrder {
     static let accountPage = pullRequest(4093)
     static let checkoutPage = ItemRef.gitHubPullRequest(repository: "contoso/shop-web", number: 412)
     static let emails = pullRequest(4118)
+    static let oneClickCheckout = pullRequest(4105)
 
     static func pullRequest(_ number: Int) -> ItemRef {
         .pullRequest(organization: DemoData.organization, number: number)
@@ -65,4 +69,9 @@ enum DemoPullRequestOrder {
 
     /// The mission you focus on.
     static let focus = MissionKey.plan(paymentsID)
+
+    /// The stages you set: the one-click checkout's prototype, for a teammate's review, two hours ago.
+    static func stages(now: Date) -> [ItemRef: StageMark] {
+        [oneClickCheckout: StageMark(stage: .teammateReview, at: now.addingTimeInterval(-2 * 3_600))]
+    }
 }

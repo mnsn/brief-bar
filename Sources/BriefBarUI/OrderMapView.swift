@@ -113,7 +113,9 @@ struct OrderMapGrid: View {
                     OrderMapNode(
                         step: step, item: order.describe(node.ref), isSelected: isSelected(node.ref),
                         isDimmed: lit.map { !$0.contains(node.ref) } ?? false, width: metrics.nodeWidth, height: metrics.nodeHeight,
-                        workers: order.sessionsWorking(on: node.ref).compactMap(order.describe)
+                        workers: order.sessionsWorking(on: node.ref).compactMap(order.describe),
+                        stage: order.drawnStage(of: step),
+                        stageWords: order.stage(of: node.ref).map(stageWords)
                     ) {
                         select(node.ref)
                     }
@@ -131,6 +133,15 @@ struct OrderMapGrid: View {
         }
         .frame(width: width, height: height, alignment: .topLeading)
         .accessibilityElement(children: .contain)
+    }
+
+    /// What a node says of its stage: aloud, "Stage: Your review, Cart finished, worked out by BriefBar", and in its
+    /// tooltip, "Your review: ‘Cart’ finished. Worked out by BriefBar."
+    private func stageWords(_ reading: StageReading) -> OrderMapNode.StageDescription {
+        OrderMapNode.StageDescription(
+            spoken: "Stage: " + StageWords.spoken(reading, order: order, now: order.currentDate),
+            shown: StageText.sentence(reading, now: order.currentDate, name: order.name(of:))
+        )
     }
 
     /// The sessions' lanes: each one's name on the left, with what it told BriefBar it's working on now, a quiet line
@@ -235,8 +246,8 @@ struct OrderMapGrid: View {
     }
 }
 
-/// A pull request's node in the Map: its mark, its number and a short title, in its status's color. A click does what
-/// clicking its row does.
+/// A pull request's node in the Map: its mark, its number and a short title, in its stage's color, or its status's without
+/// one. A click does what clicking its row does.
 struct OrderMapNode: View {
     let step: OrderStep
     /// How its source shows it, when one that's on lists it.
@@ -247,13 +258,22 @@ struct OrderMapNode: View {
     let height: CGFloat
     /// The sessions that told BriefBar they're working on it now (`SessionUpdates`).
     var workers: [LinkedItem] = []
+    /// Its stage, whose color it takes; nil for one with none.
+    var stage: PullRequestStage?
+    /// Its stage, why and who set it, as VoiceOver says it and its tooltip shows it.
+    var stageWords: StageDescription?
     let action: () -> Void
 
+    struct StageDescription {
+        let spoken: String
+        let shown: String
+    }
+
     var body: some View {
-        let color = item?.color ?? .secondary
+        let color = stage?.color ?? item?.color ?? .secondary
         Button(action: action) {
             HStack(spacing: 7) {
-                OrderNodeMark(step.standing.marker)
+                OrderNodeMark(step.standing.marker, stage: stage)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(step.ref.shortOrderLabel)
                         .font(size: 11, weight: .semibold)
@@ -285,7 +305,7 @@ struct OrderMapNode: View {
         .opacity(isDimmed ? 0.45 : 1)
         .help(help)
         .accessibilityLabel([step.ref.shortOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "))
-        .accessibilityValue(([item?.status, OrderText.sentence(of: step)].compactMap { $0 } + workerLines).joined(separator: ", "))
+        .accessibilityValue(([item?.status, stageWords?.spoken, OrderText.sentence(of: step)].compactMap { $0 } + workerLines).joined(separator: ", "))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -296,7 +316,7 @@ struct OrderMapNode: View {
     }
 
     private var help: String {
-        ([[step.ref.fullOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "), item?.status, OrderText.sentence(of: step)]
+        ([[step.ref.fullOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "), item?.status, stageWords?.shown, OrderText.sentence(of: step)]
             .compactMap { $0 } + workerLines)
             .joined(separator: "\n")
     }

@@ -4,8 +4,8 @@ import BriefBarUI
 import SwiftUI
 
 /// What a pull request's menus have after opening it, in its row's and in its details: summarizing it, the message it was
-/// sent in, taking it off Needs You, its stage while Pull Request Order shows one, what Copilot can do with it while Send
-/// Work to Copilot is on, its links, and no longer watching it.
+/// sent in, taking it off Needs You, what Copilot can do with it while Send Work to Copilot is on, its stage while Pull
+/// Request Order shows one, its links, and no longer watching it.
 struct PullRequestMenuItems: View {
     let item: PRSnapshot
     /// Opens the message it was sent in; nil when it wasn't.
@@ -26,12 +26,14 @@ struct PullRequestMenuItems: View {
         if let dismiss {
             Button("Remove from Needs You", action: dismiss)
         }
+        PullRequestCopilotMenuItems(item: item)
+        // A group of its own, as its order's is: what Pull Request Order says of it.
         if let ordering, ordering.stage(of: item.key.linkRef) != nil {
+            Divider()
             Menu("Stage") {
                 StageMenuItems(ref: item.key.linkRef, order: ordering)
             }
         }
-        PullRequestCopilotMenuItems(item: item)
         LinkMenuItems(item.key.linkRef)
         if item.isWatched, let stopWatching {
             Divider()

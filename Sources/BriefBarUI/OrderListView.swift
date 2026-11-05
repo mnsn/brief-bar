@@ -6,8 +6,8 @@ import SwiftUI
 // Sapling's smartlog, Graphite's `gt log` and VS Code's Source Control Graph draw one.
 
 /// A mission's card in List: its header, the line its merged pull requests fold into, its rows with the graph beside them,
-/// a quiet row for each one the page's source doesn't list, how many another page lists, and the pull requests stacked
-/// with its own that its order doesn't name.
+/// a quiet row for each one the page's source doesn't list, how many another page lists, the pull requests stacked with
+/// its own that its order doesn't name, and, after you changed one's stage, what you did, with Undo.
 package struct MissionCard: View {
     let mission: OrderMission
     /// The kinds of pull request the page lists.
@@ -74,6 +74,10 @@ package struct MissionCard: View {
                 if !attached.isEmpty {
                     attachedRows(attached, width: width)
                 }
+                StageUndoLine(refs: Set((mission.steps + mission.attached).map(\.ref)), order: order)
+                    .padding(.leading, max(width, 6) + 8)
+                    .padding(.trailing, 12)
+                    .padding(.vertical, 6)
             }
             .padding(.vertical, 4)
             .background(GlassCard(cornerRadius: 18))
@@ -96,7 +100,8 @@ package struct MissionCard: View {
         .background(alignment: .topLeading) {
             if let gutterRow {
                 OrderGutterRowView(
-                    row: gutterRow, marker: step.standing.marker, nodeY: (divided ? 1 : 0) + 3 + 6 + 10 * textScale, lit: lit
+                    row: gutterRow, marker: step.standing.marker, stage: order.drawnStage(of: step),
+                    nodeY: (divided ? 1 : 0) + 3 + 6 + 10 * textScale, lit: lit
                 )
                 .frame(width: width)
             }
@@ -116,7 +121,7 @@ package struct MissionCard: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(folded.contains { order.drawnStage(of: $0) == .merged } ? PullRequestStage.merged.color : .green)
                 Text(OrderText.folded(folded))
                 Image(systemName: "chevron.right")
                     .font(size: 9, weight: .bold)
@@ -246,6 +251,8 @@ struct OrderPlaceholderRow: View {
 struct OrderGutterRowView: View {
     let row: OrderGutter.Row
     let marker: OrderMarker
+    /// Its stage, whose color its node takes; nil for one with none.
+    var stage: PullRequestStage?
     /// Where its node is, from the row's top: beside its title.
     let nodeY: CGFloat
     /// What hovering a row lights up; nil while none is hovered.
@@ -269,7 +276,7 @@ struct OrderGutterRowView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            OrderNodeMark(marker, isDimmed: lit.map { !$0.contains(row.ref) } ?? false)
+            OrderNodeMark(marker, isDimmed: lit.map { !$0.contains(row.ref) } ?? false, stage: stage)
                 .offset(x: x(row.lane, scale) - node / 2, y: nodeY - node / 2)
         }
         .accessibilityHidden(true)

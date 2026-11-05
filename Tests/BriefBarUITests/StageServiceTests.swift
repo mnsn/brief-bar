@@ -262,4 +262,61 @@ private final class Clock {
         #expect(kept.mark(of: Self.ref(4093), for: Self.account) == nil)
         #expect(kept.mark(of: Self.ref(4094), for: Self.account) != nil)
     }
+
+    /// Missions draw each pull request in its stage's color, and one BriefBar saw merge in Merged's where its source tells
+    /// stages, listed or not; GitHub's, which tells none, as they were.
+    @Test func theGraphTakesStagesColorsAndMergedsWhereTheSourceTellsStages() {
+        let order = Self.service(Self.defaults())
+        let merged = OrderStep(ref: Self.ref(4074), status: .merged, standing: .merged)
+        let onGitHub = OrderStep(ref: .gitHubPullRequest(repository: "contoso/shop-web", number: 412), status: .merged, standing: .merged)
+        #expect(order.drawnStage(of: merged) == nil)
+
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        #expect(order.drawnStage(of: OrderStep(ref: Self.ref(4093), status: .open, standing: .next)) == .teammateReview)
+        #expect(order.drawnStage(of: merged) == .merged)
+        #expect(order.drawnStage(of: onGitHub) == nil)
+        #expect(order.drawnStage(of: OrderStep(ref: Self.ref(4120), status: .open, standing: .anyTime)) == nil)
+
+        order.setOn(false)
+        #expect(order.drawnStage(of: merged) == nil)
+    }
+
+    /// One you watch keeps the stage you set in the preferences, as what you've seen of it is kept; one only sent to you
+    /// keeps it in memory.
+    @Test func oneYouWatchKeepsItsStageInThePreferences() {
+        let defaults = Self.defaults()
+        let order = Self.service(defaults)
+        Self.tell(order, [4113: StageFacts(role: .watching), 4114: StageFacts(role: .sentToYou)])
+
+        #expect(order.setStage(.yourReview, of: Self.ref(4113)) == .done)
+        #expect(order.setStage(.yourReview, of: Self.ref(4114)) == .done)
+        let kept = StageMarks.load(from: defaults)
+        #expect(kept.mark(of: Self.ref(4113), for: Self.account)?.stage == .yourReview)
+        #expect(kept.mark(of: Self.ref(4114), for: Self.account) == nil)
+        #expect(order.stage(of: Self.ref(4114))?.stage == .yourReview)
+    }
+
+    /// The demo sets its stages as you would have, once their pull requests are listed, holding as they are now; never
+    /// outside the demo, and not over one you set.
+    @Test func theDemoSetsItsStagesOnceTheirPullRequestsAreListed() {
+        let clock = Clock()
+        let demo = PullRequestOrder(defaults: Self.defaults(), isDemo: true, now: { clock.now })
+        let earlier = clock.now.addingTimeInterval(-2 * 3_600)
+        let stages = [Self.ref(4105): StageMark(stage: .teammateReview, at: earlier), Self.ref(4106): StageMark(stage: .yourReview, at: earlier)]
+        demo.tellDemo(stages: stages)
+        #expect(demo.stages.isEmpty)
+
+        Self.tell(demo, [4105: StageFacts(role: .author, votes: "0", commit: "c4105"), 4106: StageFacts(role: .author)])
+        demo.setStage(.inProgress, of: Self.ref(4106))
+        demo.tellDemo(stages: stages)
+        let reading = demo.stage(of: Self.ref(4105))
+        #expect(reading?.stage == .teammateReview && reading?.why == .findReviewer)
+        #expect(reading?.mark?.at == earlier && reading?.mark?.votes == "0" && reading?.mark?.commit == "c4105")
+        #expect(demo.stage(of: Self.ref(4106))?.stage == .inProgress)
+
+        let real = Self.service(Self.defaults())
+        Self.tell(real, [4105: StageFacts(role: .author)])
+        real.tellDemo(stages: stages)
+        #expect(real.stage(of: Self.ref(4105))?.mark == nil)
+    }
 }

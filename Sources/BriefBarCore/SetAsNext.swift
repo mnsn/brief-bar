@@ -5,15 +5,6 @@ import Foundation
 // nor while it still targets the branch of one that merged. One answer for Mission ▸ Set as Next to Merge and for the
 // Board's Waits onto Can merge, so they agree, and say the same.
 
-extension OrderOrigin {
-    /// It targets the other's branch, or comes right after it in a GitHub stack: what its source shows, rather than what an
-    /// order says.
-    var isStacked: Bool {
-        if case .declared = self { return false }
-        return true
-    }
-}
-
 extension OrderMission {
     /// The pull requests one of its own is stacked on that BriefBar hasn't seen merge, the nearest first: by what goes
     /// before it in its order, whatever its order names first; by how it's stacked with the order's pull requests when the
