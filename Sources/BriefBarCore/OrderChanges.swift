@@ -729,9 +729,9 @@ extension OrderChanges {
         throw OrderChangeError.notInAMission
     }
 
-    /// What a pull request is stacked on that hasn't merged, or that BriefBar can't see merge: it can't merge first.
+    /// What a pull request is stacked on that BriefBar hasn't seen merge, open, closed or out of sight: it can't merge first.
     static func openStacked(under step: OrderStep) -> ItemRef? {
-        step.prerequisites.first { $0.origins.contains(where: \.isStacked) && !$0.status.hasEnded }?.ref
+        step.prerequisites.first { $0.origins.contains(where: \.isStacked) && $0.status != .merged }?.ref
     }
 
     /// Whether one waits for another, directly or through others, by a stacked branch or a change of yours: what a menu
@@ -800,7 +800,8 @@ public struct MissionChoices: Equatable, Sendable {
     public var mission: MissionKey?
     /// Nil in no mission.
     public var next: Next?
-    /// Merge After: the mission's other pull requests that haven't merged or closed, in its order.
+    /// Merge After: the mission's other pull requests that haven't merged or closed, in its order, then those stacked with
+    /// them that its order doesn't name, then what it merges after elsewhere, by your change or a stacked branch.
     public var prerequisites: [Prerequisite]
     /// Move to Mission: the missions it can go to, as By Mission lists them, its own among them.
     public var targets: [MissionKey]
@@ -856,18 +857,22 @@ public struct MissionChoices: Equatable, Sendable {
         } else {
             .offered
         }
-        let prerequisites = shown.steps.filter { $0.ref != ref && !$0.status.hasEnded }.map { other in
-            let origins = step.prerequisites.first { $0.ref == other.ref }?.origins
+        var others = (shown.steps + shown.attached).filter { $0.ref != ref && !$0.status.hasEnded }.map(\.ref)
+        for prerequisite in step.prerequisites where !prerequisite.status.hasEnded && !others.contains(prerequisite.ref) {
+            others.append(prerequisite.ref)
+        }
+        let prerequisites = others.map { other in
+            let origins = step.prerequisites.first { $0.ref == other }?.origins
             let state: Prerequisite.State = if origins?.contains(where: \.isStacked) == true {
                 .stacked
             } else if origins != nil {
                 .checked
-            } else if OrderChanges.waits(other.ref, for: ref, in: missions) {
+            } else if OrderChanges.waits(other, for: ref, in: missions) {
                 .waitsForIt
             } else {
                 .unchecked
             }
-            return Prerequisite(ref: other.ref, state: state)
+            return Prerequisite(ref: other, state: state)
         }
         return MissionChoices(
             ref: ref, mission: shown.key, next: next, prerequisites: prerequisites, targets: targets, canUndo: change != nil,

@@ -407,9 +407,17 @@ package final class PullRequestOrder: ObservableObject {
         lastChange = nil
     }
 
-    /// The mission whose card shows what an edit did: where its pull request is now, else where it was.
+    /// The mission whose card shows what an edit did: the one you changed it in, else where its pull request is now, else
+    /// where it was.
     private func cardMission(for edit: OrderEdit) -> MissionKey? {
-        if case .undoMission(let key) = edit { return missions.contains { $0.key == key } ? key : nil }
+        switch edit {
+        case .undoMission(let key):
+            return missions.contains { $0.key == key } ? key : nil
+        case .setNext(_, let key, _), .mergeAfter(_, _, let key, _):
+            if missions.contains(where: { $0.key == key }) { return key }
+        case .move, .undo, .putBack:
+            break
+        }
         if let ref = edit.refs.first, let mission = OrderBoard.mission(of: ref, in: missions) { return mission.key }
         if case .move(_, _, let from?) = edit, missions.contains(where: { $0.key == from }) { return from }
         return nil
@@ -422,6 +430,19 @@ package final class PullRequestOrder: ObservableObject {
         if saved != OrderChanges.load(from: defaults) { saved.save(to: defaults) }
         changesInMemory = inMemory
         if all != changes { changes = all }
+        keepEvidence()
+    }
+
+    /// Keeps what BriefBar saw become of pull requests: in the preferences, but what only your changes kept in memory name,
+    /// which stays in memory with them, wherever they go.
+    private func keepEvidence() {
+        let focused = focus.flatMap(OrderFocus.ref(of:)).map { [$0] } ?? []
+        var saved = evidence
+        saved.keep(only: orders.refs.union(changes.split { changesInMemory[$0.ref] != nil }.rest.subjects).union(focused))
+        var inMemory = evidence
+        inMemory.keep(only: Set(evidence.records.keys).subtracting(saved.records.keys))
+        evidenceInMemory = inMemory
+        if saved != OrderEvidence.load(from: defaults) { saved.save(to: defaults) }
     }
 
     // MARK: Missions
@@ -483,13 +504,7 @@ package final class PullRequestOrder: ObservableObject {
         evidence.keep(only: orders.refs.union(self.changes.subjects).union(focusedRefs))
         if evidence != self.evidence {
             self.evidence = evidence
-            // What only changes kept in memory name stays in memory too.
-            var saved = evidence
-            saved.keep(only: orders.refs.union(self.changes.split { changesInMemory[$0.ref] != nil }.rest.subjects).union(focusedRefs))
-            var inMemory = evidence
-            inMemory.keep(only: Set(evidence.records.keys).subtracting(saved.records.keys))
-            evidenceInMemory = inMemory
-            if saved != OrderEvidence.load(from: defaults) { saved.save(to: defaults) }
+            keepEvidence()
         }
         var missions = OrderBoard.missions(
             facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date

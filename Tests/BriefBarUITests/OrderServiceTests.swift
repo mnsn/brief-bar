@@ -566,4 +566,45 @@ private final class Clock {
         order.publish(.azureDevOps, pullRequests: yours)
         #expect(order.missions.first { $0.contains(Self.ref(4130)) }?.steps.first?.status == .merged)
     }
+
+    /// What you did shows in the card you did it from, for a pull request in two missions.
+    @Test func theUndoLineIsInTheCardYouChangedItFrom() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4101)), .init(link: Self.link(4102))])
+        let otherID = UUID(uuidString: "22222222-3333-4444-8555-666666666666")!
+        var orders = DeclaredOrders.load(from: defaults)
+        try orders.apply(
+            OrderRequest(entries: [.init(link: Self.link(4102)), .init(link: Self.link(4103))]),
+            now: Date(timeIntervalSince1970: 1_791_900_100), newID: otherID
+        )
+        orders.save(to: defaults)
+        let order = Self.service(defaults)
+        order.publish(.azureDevOps, pullRequests: [4101, 4102, 4103].map { Self.ado($0, from: "robin/part-\($0)") })
+        let first = try #require(OrderBoard.mission(of: Self.ref(4102), in: order.missions)?.key)
+        let other: MissionKey = first == .plan(Self.planID) ? .plan(otherID) : .plan(Self.planID)
+
+        order.change(.setNext(Self.ref(4102), in: other, true))
+
+        #expect(order.lastChange?.mission == other && order.lastChange?.canUndo == true)
+    }
+
+    /// What BriefBar saw become of a pull request goes with the changes it's kept for: to memory once it's listed only
+    /// because someone sent it in a chat, and back to the preferences once it's listed otherwise.
+    @Test func whatMergedGoesWithTheChangesItsKeptFor() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let yours = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")]
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search")])
+        order.change(.move([Self.ref(4130)], to: .into(.mine(UUID())), from: nil))
+        let merged = yours + [Self.ado(4130, from: "sam/search", state: .merged)]
+        order.publish(.azureDevOps, pullRequests: merged)
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] != nil)
+
+        order.publish(.azureDevOps, pullRequests: merged, inMemory: [Self.ref(4130)])
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] == nil)
+        #expect(OrderChanges.load(from: defaults)[Self.ref(4130)] == nil && order.changes[Self.ref(4130)] != nil)
+
+        order.publish(.azureDevOps, pullRequests: merged)
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] != nil)
+        #expect(OrderChanges.load(from: defaults)[Self.ref(4130)] != nil)
+    }
 }

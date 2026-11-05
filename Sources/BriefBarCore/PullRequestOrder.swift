@@ -1225,8 +1225,8 @@ extension Board {
     /// A mission, from its pull requests: what goes before each, their order, where each stands, and what each says. Nil
     /// when you moved all its pull requests elsewhere.
     ///
-    /// What goes before a pull request: the pull requests it's stacked on among the mission's, and anywhere when you moved
-    /// one of them; what you put it after, wherever that is; its order's, but what you took away and what you moved
+    /// What goes before a pull request: the pull requests it's stacked on, wherever they are; what you put it after,
+    /// wherever that is; its order's, but what you took away and what you moved
     /// elsewhere. Of its order's, what goes round in a circle with stacked branches or yours is set aside, with a note. The
     /// one you set as next goes first, and what waits for nothing that hasn't merged waits for it. An order's pull request
     /// with nothing before or after it merges any time, as its order says; one BriefBar or you put with others has no order
@@ -1276,17 +1276,15 @@ extension Board {
                 add(earlier, before: ref, [.yours])
             }
         }
-        let stackedWith = members.union(group.attached)
         for ref in refs {
-            for earlier in self.before[ref, default: []].sorted(by: isEarlier)
-            where stackedWith.contains(earlier) || layer.placed[ref] != nil || layer.placed[earlier] != nil {
+            for earlier in self.before[ref, default: []].sorted(by: isEarlier) {
                 add(earlier, before: ref, origins(earlier, ref))
             }
         }
         var chosen: ItemRef?
         if let next {
             let stacked = prerequisites[next, default: []].first { earlier in
-                why[OrderEdge(earlier, next)]?.contains(where: \.isStacked) == true && !status(earlier).hasEnded
+                why[OrderEdge(earlier, next)]?.contains(where: \.isStacked) == true && status(earlier) != .merged
             }
             if let stacked {
                 added[next, default: []].append(.nextDoesntHold(stacked))

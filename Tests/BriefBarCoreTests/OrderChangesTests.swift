@@ -627,4 +627,80 @@ import Testing
         step = try Self.step(4111, in: Self.mission(mine, in: Self.missions(facts, DeclaredOrders(), changes)))
         #expect(step.standing == .next && step.number == 1)
     }
+
+    /// One stacked on a pull request that closed without merging can't be set as next, and one set as next before doesn't
+    /// hold: nothing waits for it.
+    @Test func oneStackedOnAPullRequestThatClosedIsntNext() throws {
+        let orders = try tell([(4101, []), (4102, []), (4103, [])])
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a", state: .closed), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            Self.ado(4103),
+        ])
+        var fresh = OrderChanges()
+        let before = Self.missions(facts, orders, fresh)
+        #expect(MissionChoices.of(Self.pr(4102), missions: before, changes: fresh, orders: orders).next == .stacked(on: Self.pr(4101)))
+        #expect(throws: OrderChangeError.stacked(on: Self.pr(4101))) {
+            try fresh.apply(.setNext(Self.pr(4102), in: .plan(planID), true), missions: before, orders: orders)
+        }
+
+        let changes = OrderChanges([
+            OrderChange(ref: Self.pr(4102), first: .plan(planID), changedAt: t(60), replaced: OrderPlace(of: Self.pr(4102), in: orders)),
+        ])
+        let mission = try Self.mission(.plan(planID), in: Self.missions(facts, orders, changes))
+        let next = try Self.step(4102, in: mission)
+        #expect(next.standing == .prerequisiteClosed(Self.pr(4101)) && next.notes.contains(.nextDoesntHold(Self.pr(4101))))
+        #expect(try Self.step(4103, in: mission).standing == .anyTime)
+    }
+
+    /// Merge After lists the pull requests stacked with the mission's that its order doesn't name, and what it merges after
+    /// in another mission, there to take away.
+    @Test func mergeAfterListsWhatItMergesAfterWhereverItIs() throws {
+        var orders = try tell([(4102, []), (4103, [])])
+        var facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a"), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            Self.ado(4103),
+        ])
+        var changes = OrderChanges()
+        var missions = Self.missions(facts, orders, changes)
+        #expect(MissionChoices.of(Self.pr(4102), missions: missions, changes: changes, orders: orders).prerequisites == [
+            MissionChoices.Prerequisite(ref: Self.pr(4103), state: .unchecked), MissionChoices.Prerequisite(ref: Self.pr(4101), state: .stacked),
+        ])
+
+        orders = try tell([(4101, []), (4102, []), (4103, [])])
+        facts = Self.facts([4101, 4102, 4103])
+        missions = Self.missions(facts, orders, changes)
+        try changes.apply(.mergeAfter(Self.pr(4101), Self.pr(4102), in: .plan(planID), true), missions: missions, orders: orders, now: t(60))
+        let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
+        try changes.apply(.move([Self.pr(4102)], to: .into(mine), from: .plan(planID)), missions: Self.missions(facts, orders, changes), orders: orders, now: t(70))
+        missions = Self.missions(facts, orders, changes)
+        #expect(try Self.step(4101, in: Self.mission(.plan(planID), in: missions)).standing == .waiting(open: [Self.pr(4102)], unknown: []))
+        #expect(MissionChoices.of(Self.pr(4101), missions: missions, changes: changes, orders: orders).prerequisites == [
+            MissionChoices.Prerequisite(ref: Self.pr(4103), state: .unchecked), MissionChoices.Prerequisite(ref: Self.pr(4102), state: .checked),
+        ])
+        try changes.apply(.mergeAfter(Self.pr(4101), Self.pr(4102), in: .plan(planID), false), missions: missions, orders: orders, now: t(80))
+        #expect(changes[Self.pr(4101)] == nil)
+        #expect(try Self.step(4101, in: Self.mission(.plan(planID), in: Self.missions(facts, orders, changes))).prerequisites.isEmpty)
+    }
+
+    /// One stacked on a pull request of another order waits for it, as one stacked within its own order does, and can't be
+    /// set as next while that one's open.
+    @Test func oneStackedOnAPullRequestOfAnotherOrderWaitsForIt() throws {
+        var orders = try tell([(4101, [])])
+        orders = try tell([(4102, []), (4103, [])], replacing: orders, id: otherID, at: 10)
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a"), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            Self.ado(4103),
+        ])
+        var changes = OrderChanges()
+        let missions = Self.missions(facts, orders, changes)
+        let step = try Self.step(4102, in: Self.mission(.plan(otherID), in: missions))
+        #expect(step.standing == .waiting(open: [Self.pr(4101)], unknown: []) && OrderText.capsule(step) == "After !4101 · stacked")
+        let choices = MissionChoices.of(Self.pr(4102), missions: missions, changes: changes, orders: orders)
+        #expect(choices.next == .stacked(on: Self.pr(4101)))
+        #expect(choices.prerequisites.last == MissionChoices.Prerequisite(ref: Self.pr(4101), state: .stacked))
+        #expect(throws: OrderChangeError.stacked(on: Self.pr(4101))) {
+            try changes.apply(.setNext(Self.pr(4102), in: .plan(otherID), true), missions: missions, orders: orders)
+        }
+        #expect(try Self.step(4103, in: Self.mission(.plan(otherID), in: missions)).standing == .anyTime)
+    }
 }
