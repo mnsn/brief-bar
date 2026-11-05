@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "briefbar-updates",
+  "description": "Lets Copilot sessions tell BriefBar the work items and pull requests they're working on, and what they just changed in Azure DevOps, so that it shows each session on its work and reads what changed again at once. A skill, which uses BriefBar's MCP server. It comes with BriefBar.app, which installs it when you turn on Updates from Copilot Sessions in its Settings, and updates it with itself.",
+  "author": {
+    "name": "BriefBar"
+  },
+  "homepage": "https://github.com/mnsn/brief-bar",
+  "repository": "https://github.com/mnsn/brief-bar",
+  "license": "GPL-3.0-or-later",
+  "keywords": ["briefbar", "azure-devops", "work-items", "pull-requests"]
+}

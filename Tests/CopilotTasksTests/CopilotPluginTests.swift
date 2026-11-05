@@ -16,6 +16,8 @@ import Testing
     static let sessions = folder.appendingPathComponent("briefbar-sessions", isDirectory: true)
     static let order = folder.appendingPathComponent("briefbar-pr-order", isDirectory: true)
     static let orderSkill = order.appendingPathComponent("skills/briefbar-pr-order/SKILL.md")
+    static let updates = folder.appendingPathComponent("briefbar-updates", isDirectory: true)
+    static let updatesSkill = updates.appendingPathComponent("skills/briefbar-updates/SKILL.md")
     /// The fields of a plugin's manifest that the CLI reads: it ignores anything else.
     static let manifestFields: Set<String> = [
         "$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords", "extensions",
@@ -37,6 +39,14 @@ import Testing
     /// What Pull Request Order's skill may name besides its tools, their arguments and values: the todos with dependencies
     /// that a session keeps.
     static let orderVocabulary: Set<String> = ["briefbar", "todo_deps", "todo_id", "depends_on"]
+
+    /// Updates from Copilot Sessions' tools, which `--demo --mcp` lists, as it's on there. Its own skill tells agents about
+    /// them, not `/briefbar`, which leaves them out.
+    static let updateTools: Set<String> = ["working_on", "changed_in_azure_devops"]
+
+    /// What Updates from Copilot Sessions' skill may name besides its tools, their arguments and values: Pull Request
+    /// Order's tool, which it doesn't replace.
+    static let updatesVocabulary: Set<String> = ["briefbar", "order_pull_requests"]
 
     static func object(_ url: URL) throws -> [String: Any] {
         try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any], "\(url.path) isn't a JSON object")
@@ -61,7 +71,9 @@ import Testing
             #expect(!((plugin["description"] as? String) ?? "").isEmpty, "\(name)")
         }
         #expect(Self.folder.lastPathComponent == CopilotPluginRegistration.folderName)
-        #expect(try Self.contents(Self.folder) == ["briefbar", "briefbar-pr-order", "briefbar-sessions", "marketplace.json"])
+        #expect(try Self.contents(Self.folder) == [
+            "briefbar", "briefbar-pr-order", "briefbar-sessions", "briefbar-updates", "marketplace.json",
+        ])
     }
 
     @Test func pluginFollowsAgentPlugins() throws {
@@ -97,7 +109,7 @@ import Testing
     }
 
     @Test func skillsAreNamedForTheirCommands() throws {
-        for (skill, name) in [(Self.skill, "briefbar"), (Self.orderSkill, "briefbar-pr-order")] {
+        for (skill, name) in [(Self.skill, "briefbar"), (Self.orderSkill, "briefbar-pr-order"), (Self.updatesSkill, "briefbar-updates")] {
             let text = try String(contentsOf: skill, encoding: .utf8)
             let lines = text.components(separatedBy: "\n")
             #expect(lines.first == "---")
@@ -141,6 +153,39 @@ import Testing
         #expect(refused.contains("stop there"))
         let told = try #require(points.first { $0.contains("best effort") })
         #expect(told.contains("only once `order_pull_requests` answered"))
+    }
+
+    /// Updates from Copilot Sessions' plugin holds only its skill, which BriefBar installs only once you turn it on: until
+    /// then, no session sees it.
+    @Test func updatesPluginHoldsOnlyItsSkill() throws {
+        let manifest = try Self.object(Self.updates.appendingPathComponent("plugin.json"))
+        #expect(manifest["$schema"] as? String == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json")
+        #expect(manifest["name"] as? String == CopilotPluginRegistration.Plugin.updates.rawValue)
+        #expect(manifest["version"] == nil)
+        #expect(((manifest["description"] as? String) ?? "").contains("when you turn on Updates from Copilot Sessions"))
+        #expect(Set(manifest.keys).isSubset(of: Self.manifestFields), "\(Set(manifest.keys).subtracting(Self.manifestFields))")
+        #expect(try Self.contents(Self.updates) == ["plugin.json", "skills"])
+        #expect(try Self.contents(Self.updates.appendingPathComponent("skills")) == ["briefbar-updates"])
+    }
+
+    /// Without its tools, the skill does nothing and never asks the user to turn them on; when they refuse, it stops; only
+    /// the session doing the work tells it, never a coordinator its sessions'; and it changes Azure DevOps with the
+    /// session's own tools, never through BriefBar.
+    @Test func updatesSkillDoesNothingWithoutItsToolsAndTellsOnlyItsOwnWork() throws {
+        let text = try String(contentsOf: Self.updatesSkill, encoding: .utf8)
+        let points = Self.points(in: text).map { $0.lowercased() }
+        let absent = try #require(points.first { $0.contains("`changed_in_azure_devops` aren't there") })
+        #expect(absent.contains("do nothing more") && absent.contains("never ask them to"))
+        #expect(absent.contains("never change briefbar's settings or files"))
+        let refused = try #require(points.first { $0.contains("updates from copilot sessions is off in briefbar") })
+        #expect(refused.contains("stop there"))
+        let effort = try #require(points.first { $0.contains("best effort") })
+        #expect(effort.contains("briefbar changes nothing in azure devops"))
+        let who = try #require(points.first { $0.contains("only the session doing the work") })
+        #expect(who.contains("doesn't claim their"))
+        let session = try #require(points.first { $0.contains("leave `session` out") })
+        #expect(session.contains("only your own session's id"))
+        #expect(points.contains { $0.hasPrefix("`opened`: only the pull requests you opened yourself") })
     }
 
     /// The skill's points, each a line starting with "- " and the indented lines right after it.
@@ -312,8 +357,8 @@ import Testing
         let named = Set(text.matches(of: /`([a-z][a-z0-9_]*)`/).map { String($0.output.1) })
         let unknown = named.subtracting(names).subtracting(arguments).subtracting(Self.appVocabulary)
         #expect(unknown.isEmpty, "The skill names what neither BriefBar nor the app has: \(unknown.sorted())")
-        // And it tells agents about every tool but Pull Request Order's.
-        let missing = names.subtracting(Self.orderTools).filter { !text.contains("`\($0)`") }
+        // And it tells agents about every tool but Pull Request Order's and Updates from Copilot Sessions'.
+        let missing = names.subtracting(Self.orderTools).subtracting(Self.updateTools).filter { !text.contains("`\($0)`") }
         #expect(missing.isEmpty, "The skill doesn't mention \(missing.sorted())")
     }
 
@@ -330,6 +375,21 @@ import Testing
         #expect(unknown.isEmpty, "Pull Request Order's skill names what its tools don't have: \(unknown.sorted())")
         let missing = Self.orderTools.filter { !text.contains("`\($0)`") }
         #expect(missing.isEmpty, "Pull Request Order's skill doesn't mention \(missing.sorted())")
+    }
+
+    /// Updates from Copilot Sessions' skill names only its tools, what they take, and Pull Request Order's tool, and tells
+    /// agents about every one of its tools.
+    @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    func updatesSkillNamesOnlyItsTools() async throws {
+        let tools = try await Self.listedTools().filter { Self.updateTools.contains($0["name"] as? String ?? "") }
+        #expect(Set(tools.compactMap { $0["name"] as? String }) == Self.updateTools)
+        let arguments = tools.reduce(into: Set<String>()) { $0.formUnion(Self.vocabulary(of: $1["inputSchema"])) }
+        let text = try String(contentsOf: Self.updatesSkill, encoding: .utf8)
+        let named = Set(text.matches(of: /`([a-z][a-z0-9_]*)`/).map { String($0.output.1) })
+        let unknown = named.subtracting(Self.updateTools).subtracting(arguments).subtracting(Self.updatesVocabulary)
+        #expect(unknown.isEmpty, "Updates from Copilot Sessions' skill names what its tools don't have: \(unknown.sorted())")
+        let missing = Self.updateTools.filter { !text.contains("`\($0)`") }
+        #expect(missing.isEmpty, "Updates from Copilot Sessions' skill doesn't mention \(missing.sorted())")
     }
 
     /// The names of a tool's arguments, at any depth, and the values they take.
