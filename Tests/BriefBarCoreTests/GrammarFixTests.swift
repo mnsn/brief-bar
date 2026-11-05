@@ -189,7 +189,7 @@ import Testing
 
     /// However long a reply, checking an answer takes bounded work: within 2,000 changes, with typos looked for only in a
     /// short one; and it stops as it's called off.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(1)), .onTestThreads)
     func boundsTheWorkForALongReply() async {
         // 100 characters, half of which is 50, within a bound of 20 for the test: more changes than that are more than a
         // correction, though fewer than half.

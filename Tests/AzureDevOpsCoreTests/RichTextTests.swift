@@ -118,7 +118,7 @@ private func processorTime(_ body: () -> Void) -> Duration {
         #expect(RichText(html: "<ol start=\"-3\"><li>A</li></ol>").blocks == [.listItem(.number(-3), depth: 0, [Run("A")])])
     }
 
-    @Test func readsATagThatNeverEndsOnce() {
+    @Test(.onTestThreads) func readsATagThatNeverEndsOnce() {
         // Every "<a " would otherwise be read to the end again: a long description would take minutes.
         let html = "Start " + String(repeating: "<a ", count: 50_000) + "end"
         var text = RichText()
@@ -130,7 +130,7 @@ private func processorTime(_ body: () -> Void) -> Duration {
         #expect(RichText(html: "<b>Bold</b> <i").blocks == [.paragraph([Run("Bold", style: .bold), Run(" <i")])])
     }
 
-    @Test func readsDeeplyNestedInlineElementsInLinearTime() {
+    @Test(.onTestThreads) func readsDeeplyNestedInlineElementsInLinearTime() {
         // Every piece of text, and every closing tag, would otherwise look through all the elements open.
         let html = String(repeating: "<span>x", count: 20_000) + String(repeating: "</b>", count: 20_000)
         var text = RichText()

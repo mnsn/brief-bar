@@ -480,7 +480,7 @@ import Testing
 
     /// Only the client makes requests in AzureDevOpsCore, and it sets a method only twice: GET for every read, and a change's
     /// own, one of `ADOWrite`'s, for `send(_:as:)`.
-    @Test func onlyTheClientMakesRequestsAndOnlyGETsOrTheChangesItLists() throws {
+    @Test(.onTestThreads) func onlyTheClientMakesRequestsAndOnlyGETsOrTheChangesItLists() throws {
         let sources = try coreSources()
         #expect(sources.filter { $0.text.contains("URLRequest(") }.map(\.name) == ["ADOClient.swift"])
         let methods = sources.flatMap { file in file.text.matches(of: /\.httpMethod\s*=\s*([^\n]+)/).map { (file.name, String($0.output.1)) } }
