@@ -71,10 +71,17 @@ struct PullRequestsPage: View {
                         view: view ?? ordering.view, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
                         isSelected: isSelected, select: select, rest: { AnyView(groups($0, showsBrief: false)) }
                     )
-                } else if shownOrder.isByDate {
-                    byDate
                 } else {
-                    groups(store.items)
+                    // What you changed last of a mission, from a row's Mission menu: By Status has no mission's card to say it.
+                    if ordering.isOn, ordering.lastChange != nil {
+                        OrderUndoLine(order: ordering)
+                            .padding(.horizontal, 4)
+                    }
+                    if shownOrder.isByDate {
+                        byDate
+                    } else {
+                        groups(store.items)
+                    }
                 }
                 idle
             }
@@ -98,10 +105,16 @@ struct PullRequestsPage: View {
     private func rowOrder(_ item: PRSnapshot) -> OrderRowContext? {
         guard ordering.isOn else { return nil }
         let byMission = shownOrder == .byMission
-        return OrderRowContext.of(item.key.linkRef, in: ordering.missions, isReady: item.group == .ready, open: byMission ? nil : { key in
+        let open: ((MissionKey) -> Void)? = byMission ? nil : { key in
             settings.pullRequestOrder = .byMission
             ordering.reveal(key)
-        })
+        }
+        return OrderRowContext.of(item.key.linkRef, in: ordering.missions, isReady: item.group == .ready, open: open, names: ordering.names)
+    }
+
+    /// A row's Mission menu, while Pull Request Order is on: from the mission whose card it's in, By Mission.
+    private func missionMenu(_ item: PRSnapshot, in mission: MissionKey? = nil) -> MissionMenuContext? {
+        MissionMenuContext.of(item.key.linkRef, order: ordering, mission: mission, undo: shownOrder == .byMission ? .byMission : .top)
     }
 
     /// Shows a pull request's details, which sees it, as opening it does.
@@ -225,7 +238,7 @@ struct PullRequestsPage: View {
         PRRowView(
             item: item, now: store.now, showsActions: true, showsCreated: showsCreated, isSelected: isSelected(item),
             openSource: source(item), stopWatching: watching(item), dismiss: dismissing(item), showDetails: { select(item) },
-            order: order ?? rowOrder(item)
+            order: order ?? rowOrder(item), mission: missionMenu(item, in: order?.mission)
         ) { store.open(item) }
     }
 
@@ -258,7 +271,7 @@ struct PullRequestsPage: View {
                         ForEach(idle) { item in
                             PRRowView(item: item, now: store.now, compact: true, showsActions: true, showsCreated: shownOrder.isByDate,
                                       isSelected: isSelected(item), openSource: source(item), stopWatching: watching(item),
-                                      showDetails: { select(item) }, order: rowOrder(item)) { store.open(item) }
+                                      showDetails: { select(item) }, order: rowOrder(item), mission: missionMenu(item)) { store.open(item) }
                                 .padding(.horizontal, 6)
                         }
                     }

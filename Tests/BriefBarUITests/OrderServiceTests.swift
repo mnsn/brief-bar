@@ -391,4 +391,312 @@ private final class Clock {
         #expect(mission.steps.map(\.status) == [.merged, .open])
         #expect(mission.steps.last?.standing == .next)
     }
+
+    // MARK: Your changes
+
+    /// A change from a Mission menu is saved, says what it did, and Undo puts back exactly what it touched.
+    @Test func aChangeIsSavedSaysWhatItDidAndUndoPutsItBack() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")])
+
+        let done = try #require(order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true)))
+
+        #expect(done.said == "You set !4102 as next to merge" && done.canUndo && done.mission == .plan(Self.planID))
+        #expect(order.lastChange == done)
+        #expect(OrderChanges.load(from: defaults)[Self.ref(4102)]?.isFirst == true)
+        let mission = try #require(order.missions.first { $0.key == .plan(Self.planID) })
+        #expect(mission.steps.map(\.ref) == [Self.ref(4102), Self.ref(4101)] && mission.steps[0].isYours)
+        #expect(order.changes(in: mission) == 1)
+
+        #expect(order.undoLastChange())
+        #expect(order.changes.isEmpty && order.lastChange == nil)
+        #expect(defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(order.missions.first { $0.key == .plan(Self.planID) }?.steps.map(\.ref) == [Self.ref(4101), Self.ref(4102)])
+        #expect(!order.undoLastChange())
+    }
+
+    /// What the menu doesn't offer is refused, with why, and changes nothing.
+    @Test func aRefusedChangeSaysWhyAndChangesNothing() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart", into: "robin/rounding")])
+
+        let refused = try #require(order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true)))
+
+        #expect(!refused.canUndo && refused.said == "Stacked on !4101: it can't merge before it unless you retarget it.")
+        #expect(order.changes.isEmpty && defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(!order.undoLastChange())
+        order.dismissLastChange()
+        #expect(order.lastChange == nil)
+    }
+
+    /// What you change of a pull request listed only because someone sent it in a chat stays in memory, until it's listed
+    /// otherwise.
+    @Test func changesAboutAPullRequestSentInAChatStayInMemory() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let pullRequests = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart"), Self.ado(4130, from: "sam/search")]
+        order.publish(.azureDevOps, pullRequests: pullRequests, inMemory: [Self.ref(4130)])
+
+        order.change(.move([Self.ref(4130)], to: .into(.plan(Self.planID)), from: nil))
+        order.change(.mergeAfter(Self.ref(4101), Self.ref(4130), in: .plan(Self.planID), true))
+
+        #expect(order.changes.count == 2)
+        #expect(defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(order.missions.first { $0.key == .plan(Self.planID) }?.contains(Self.ref(4130)) == true)
+        // Off and on again, they're still there: only quitting BriefBar forgets them.
+        order.setOn(false)
+        order.setOn(true)
+        #expect(order.changes.count == 2)
+        // Watched now, or yours: they go to the preferences.
+        order.publish(.azureDevOps, pullRequests: pullRequests)
+        #expect(OrderChanges.load(from: defaults).count == 2)
+        // Sent in a chat again only: back to memory.
+        order.publish(.azureDevOps, pullRequests: pullRequests, inMemory: [Self.ref(4130)])
+        #expect(defaults.object(forKey: OrderChanges.defaultsKey) == nil && order.changes.count == 2)
+    }
+
+    /// Off keeps your changes, unused; Forget All Orders forgets them, and says so in its words.
+    @Test func turnedOffItKeepsYourChangesAndForgetAllOrdersForgetsThem() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")])
+        order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true))
+
+        order.setOn(false)
+        #expect(order.changes.isEmpty && order.lastChange == nil && OrderChanges.load(from: defaults).count == 1)
+        #expect(order.keepsAnything)
+        order.setOn(true)
+        #expect(order.changes.count == 1)
+
+        order.forgetAll()
+        #expect(order.changes.isEmpty && defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(PullRequestOrderSettingView.explanation.contains("change a mission yourself"))
+    }
+
+    /// Turning a source off forgets your changes to its pull requests, though Pull Request Order is off.
+    @Test func turningASourceOffForgetsYourChangesToItsPullRequests() throws {
+        let defaults = try Self.defaults(on: false)
+        OrderChanges([
+            OrderChange(ref: Self.ref(4102), first: .plan(Self.planID), changedAt: Date()),
+            OrderChange(ref: .gitHubPullRequest(repository: "octo/storefront", number: 7), placement: .outside, changedAt: Date()),
+        ]).save(to: defaults)
+        let order = Self.service(defaults)
+
+        order.forget(.azureDevOps)
+
+        #expect(OrderChanges.load(from: defaults).all.map(\.ref) == [.gitHubPullRequest(repository: "octo/storefront", number: 7)])
+    }
+
+    /// A change goes two weeks after BriefBar saw its pull requests end, though no order names them; and Focus on a mission
+    /// of yours goes with it.
+    @Test func aChangeGoesTwoWeeksAfterItsPullRequestsEndAndFocusOnItsMissionWithIt() throws {
+        let clock = Clock()
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults, clock: clock)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4140, from: "robin/estimates"), Self.ado(4141, from: "robin/one-click")])
+        let mine = MissionKey.mine(UUID(uuidString: "33333333-4444-4555-8666-777777777777")!)
+        order.change(.move([Self.ref(4140), Self.ref(4141)], to: .into(mine), from: nil))
+        #expect(order.lastChange?.said == "You made a mission of !4140 and !4141")
+        order.setFocus(mine)
+        #expect(order.missions.first?.key == mine && order.missions.first?.isFocused == true)
+
+        order.publish(.azureDevOps, pullRequests: [
+            Self.ado(4140, from: "robin/estimates", state: .merged), Self.ado(4141, from: "robin/one-click", state: .closed),
+        ])
+        order.withdraw(.azureDevOps)
+        clock.advance(days: 13)
+        order.timePassed()
+        #expect(order.changes.count == 2)
+        clock.advance(days: 2)
+        order.timePassed()
+        #expect(order.changes.isEmpty && defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(order.focus == nil && OrderFocus.load(from: defaults) == nil)
+    }
+
+    /// The demo's changes, once, in its own memory.
+    @Test func theDemoTellsYourChangesOnce() throws {
+        let order = Self.service(MemoryDefaults(), isDemo: true)
+        var demo = DeclaredOrders()
+        try demo.apply(OrderRequest(entries: [.init(link: Self.link(4101)), .init(link: Self.link(4102), after: ["4101"])]), newID: Self.planID)
+        let changes = OrderChanges([
+            OrderChange(ref: Self.ref(4102), first: .plan(Self.planID), changedAt: Date(), replaced: OrderPlace(of: Self.ref(4102), in: demo)),
+        ])
+
+        order.tellDemo(demo, changes: changes)
+        order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), false))
+        order.tellDemo(demo, changes: changes)
+
+        #expect(order.changes.isEmpty)
+    }
+
+    /// One sent in a chat that's left the lists, merged say, is still one that was: a change that names it later, or Undo
+    /// putting one back, stays in memory.
+    @Test func oneSentInAChatThatLeftTheListsStillKeepsItsChangesInMemory() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let yours = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")]
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search")], inMemory: [Self.ref(4130)])
+        order.change(.move([Self.ref(4130)], to: .into(.plan(Self.planID)), from: nil))
+        order.change(.undo(Self.ref(4130)))
+
+        order.publish(.azureDevOps, pullRequests: yours)
+        #expect(order.undoLastChange())
+        order.change(.mergeAfter(Self.ref(4101), Self.ref(4130), in: .plan(Self.planID), true))
+
+        #expect(order.changes.count == 2)
+        #expect(defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+    }
+
+    /// What BriefBar sees become of one sent in a chat that only a change kept in memory names stays in memory too.
+    @Test func whatMergedOfOneSentInAChatIsKeptInMemoryOnly() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let yours = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")]
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search")], inMemory: [Self.ref(4130)])
+        order.change(.move([Self.ref(4130)], to: .into(.mine(UUID())), from: nil))
+
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search", state: .merged)], inMemory: [Self.ref(4130)])
+
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] == nil)
+        // Off and on again, BriefBar still knows it merged.
+        order.setOn(false)
+        order.setOn(true)
+        order.publish(.azureDevOps, pullRequests: yours)
+        #expect(order.missions.first { $0.contains(Self.ref(4130)) }?.steps.first?.status == .merged)
+    }
+
+    /// What you did shows in the card you did it from, for a pull request in two missions.
+    @Test func theUndoLineIsInTheCardYouChangedItFrom() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4101)), .init(link: Self.link(4102))])
+        let otherID = UUID(uuidString: "22222222-3333-4444-8555-666666666666")!
+        var orders = DeclaredOrders.load(from: defaults)
+        try orders.apply(
+            OrderRequest(entries: [.init(link: Self.link(4102)), .init(link: Self.link(4103))]),
+            now: Date(timeIntervalSince1970: 1_791_900_100), newID: otherID
+        )
+        orders.save(to: defaults)
+        let order = Self.service(defaults)
+        order.publish(.azureDevOps, pullRequests: [4101, 4102, 4103].map { Self.ado($0, from: "robin/part-\($0)") })
+        let first = try #require(OrderBoard.mission(of: Self.ref(4102), in: order.missions)?.key)
+        let other: MissionKey = first == .plan(Self.planID) ? .plan(otherID) : .plan(Self.planID)
+
+        order.change(.setNext(Self.ref(4102), in: other, true))
+
+        #expect(order.lastChange?.mission == other && order.lastChange?.canUndo == true)
+    }
+
+    /// What BriefBar saw become of a pull request goes with the changes it's kept for: to memory once it's listed only
+    /// because someone sent it in a chat, and back to the preferences once it's listed otherwise.
+    @Test func whatMergedGoesWithTheChangesItsKeptFor() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let yours = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")]
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search")])
+        order.change(.move([Self.ref(4130)], to: .into(.mine(UUID())), from: nil))
+        let merged = yours + [Self.ado(4130, from: "sam/search", state: .merged)]
+        order.publish(.azureDevOps, pullRequests: merged)
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] != nil)
+
+        order.publish(.azureDevOps, pullRequests: merged, inMemory: [Self.ref(4130)])
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] == nil)
+        #expect(OrderChanges.load(from: defaults)[Self.ref(4130)] == nil && order.changes[Self.ref(4130)] != nil)
+
+        order.publish(.azureDevOps, pullRequests: merged)
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] != nil)
+        #expect(OrderChanges.load(from: defaults)[Self.ref(4130)] != nil)
+    }
+
+    /// Undo after a chain's anchor moved on puts back what you changed as the chain is named now: the pull request you put
+    /// in it stays with the chain's others.
+    @Test func undoFollowsAChainNamedByAnotherOfItsPullRequests() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4200))])
+        let order = Self.service(defaults)
+        let (first, second) = (Self.ado(4101, from: "robin/a"), Self.ado(4102, from: "robin/b", into: "robin/a"))
+        let search = Self.ado(4130, from: "sam/search")
+        order.publish(.azureDevOps, pullRequests: [first, second, search])
+        let chain = MissionKey.chain(Self.ref(4101))
+        order.change(.move([Self.ref(4130)], to: .into(chain), from: nil))
+        order.change(.setNext(Self.ref(4130), in: chain, true))
+
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/a", state: .merged), second, search])
+        #expect(order.lastChange?.touched[Self.ref(4130)]??.placement == .into(.chain(Self.ref(4102))))
+        order.publish(.azureDevOps, pullRequests: [second, search])
+        #expect(order.undoLastChange())
+
+        #expect(order.changes[Self.ref(4130)]?.placement == .into(.chain(Self.ref(4102))) && order.changes[Self.ref(4130)]?.first == nil)
+        #expect(OrderBoard.mission(of: Self.ref(4130), in: order.missions)?.contains(Self.ref(4102)) == true)
+    }
+
+    /// Undo puts back what BriefBar saw become of the pull requests your change was about, with it: one that merged and left
+    /// the lists is still merged.
+    @Test func undoPutsBackWhatBriefBarSawBecomeOfItsPullRequests() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let yours = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")]
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search")])
+        let mine = MissionKey.mine(UUID())
+        order.change(.move([Self.ref(4130)], to: .into(mine), from: nil))
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search", state: .merged)])
+        order.publish(.azureDevOps, pullRequests: yours)
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] != nil)
+
+        order.change(.undoMission(mine))
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] == nil)
+        #expect(order.undoLastChange())
+
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] != nil)
+        let step = OrderBoard.mission(of: Self.ref(4130), in: order.missions)?.steps.first { $0.ref == Self.ref(4130) }
+        #expect(step?.status == .merged)
+    }
+
+    /// Undo follows a chain named by another of its pull requests though no change of yours names it anymore, only what Undo
+    /// would put back.
+    @Test func undoFollowsAChainOnlyItNames() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4200))])
+        let order = Self.service(defaults)
+        let second = Self.ado(4102, from: "robin/b", into: "robin/a")
+        let search = Self.ado(4130, from: "sam/search")
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/a"), second, search])
+        order.change(.move([Self.ref(4130)], to: .into(.chain(Self.ref(4101))), from: nil))
+        order.change(.undo(Self.ref(4130)))
+        #expect(order.changes.isEmpty)
+
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/a", state: .merged), second, search])
+        #expect(order.lastChange?.touched[Self.ref(4130)]??.placement == .into(.chain(Self.ref(4102))))
+        order.publish(.azureDevOps, pullRequests: [second, search])
+        #expect(order.undoLastChange())
+
+        #expect(order.changes[Self.ref(4130)]?.placement == .into(.chain(Self.ref(4102))))
+        #expect(OrderBoard.mission(of: Self.ref(4130), in: order.missions)?.contains(Self.ref(4102)) == true)
+    }
+
+    /// Turning a source off forgets your changes to its pull requests, and what BriefBar saw become of them, for good: the
+    /// rebuild that follows, though one of those changes finished meanwhile, saves none of them back.
+    @Test func aSourceTurnedOffForgetsItsChangesForGoodThoughOneFinishesMeanwhile() throws {
+        let defaults = try Self.defaults(on: true)
+        let clock = Clock()
+        let order = Self.service(defaults, clock: clock)
+        let gitHub = OrderPullRequest(
+            ref: .gitHubPullRequest(repository: "octo/storefront", number: 7), repository: "octo/storefront", sourceBranch: "robin/shelf",
+            targetBranch: "main", author: "robin", state: .open, createdAt: Date(timeIntervalSince1970: 1_791_000_007)
+        )
+        order.publish(.azureDevOps, pullRequests: [
+            Self.ado(4101, from: "robin/rounding", state: .merged), Self.ado(4102, from: "robin/cart"),
+            Self.ado(4130, from: "sam/search", state: .merged),
+        ])
+        order.publish(.github, pullRequests: [gitHub])
+        order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true))
+        order.change(.move([Self.ref(4130)], to: .into(.mine(UUID())), from: nil))
+        order.change(.move([gitHub.ref], to: .into(.mine(UUID())), from: nil))
+        #expect(OrderChanges.load(from: defaults).all.count == 3 && OrderEvidence.load(from: defaults).records.count == 2)
+
+        clock.advance(days: 15)
+        order.forget(.azureDevOps)
+
+        #expect(OrderChanges.load(from: defaults).all.map(\.ref) == [gitHub.ref])
+        #expect(OrderEvidence.load(from: defaults).records.isEmpty)
+        #expect(order.changes.all.map(\.ref) == [gitHub.ref])
+    }
 }

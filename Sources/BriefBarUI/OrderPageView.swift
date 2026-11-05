@@ -67,6 +67,11 @@ package struct MissionsBody: View {
         let rest = listed.filter { !Self.isIn(missions, $0) }
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 18) {
+                // What you changed last, when no mission's card here shows it, such as one you moved out of missions.
+                if let last = ordering.lastChange, !missions.contains(where: { $0.key == last.mission }) {
+                    OrderUndoLine(order: ordering)
+                        .padding(.horizontal, 4)
+                }
                 if missions.isEmpty {
                     noMissions
                 }

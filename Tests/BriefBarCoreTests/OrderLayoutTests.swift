@@ -136,6 +136,14 @@ import Testing
         #expect(map.crossings == 0)
     }
 
+    /// One that waits only for a pull request the Map doesn't show, in another mission, goes a wave on, with no line there.
+    @Test func oneThatWaitsForAPullRequestInAnotherMissionGoesAWaveOn() throws {
+        let map = try #require(OrderMap(Self.mission([Self.step(1), Self.step(2, after: [9], stacked: [9])])))
+        #expect(map.columns == [.wave(0), .wave(1)])
+        #expect(map.nodes.first { $0.ref == Self.pr(2) }?.column == 1)
+        #expect(map.lines.isEmpty)
+    }
+
     @Test func lanesAreSwappedWhileThatCrossesFewerLines() throws {
         let steps = [
             Self.step(1, session: Self.session(1)), Self.step(2, session: Self.session(2)),

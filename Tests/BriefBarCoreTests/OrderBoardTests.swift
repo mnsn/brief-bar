@@ -253,7 +253,8 @@ import Testing
         #expect(step.standing.marker == .check && step.standing.needsChecking && !step.standing.waitsForOthers)
     }
 
-    @Test func whereBriefBarSeesAnOrderTheSessionsOrderDoesntItSaysSoAndTheOrderDecides() throws {
+    /// A stacked branch is a fact an order can't undo: it counts though the order doesn't say it, which a note says.
+    @Test func whereBriefBarSeesAStackTheSessionsOrderDoesntItCountsAndSaysSo() throws {
         var orders = DeclaredOrders()
         try orders.apply(OrderRequest(entries: [
             .init(link: OrderPlansTests.link(4101)), .init(link: OrderPlansTests.link(4102)),
@@ -262,10 +263,15 @@ import Testing
             Self.ado(4101, from: "users/robin/rounding"), Self.ado(4102, from: "users/robin/cart", into: "users/robin/rounding"),
         ])
         var mission = try #require(OrderBoard.missions(facts: facts, orders: orders, evidence: OrderEvidence(), now: t(60)).first)
-        #expect(Self.summary(mission.steps) == ["– !4101 Any time", "– !4102 Any time"])
+        #expect(Self.summary(mission.steps) == ["1 !4101 Next to merge", "2 !4102 Merge after !4101"])
+        #expect(mission.steps[1].prerequisites[0].origins == [.branch])
+        #expect(OrderText.capsule(mission.steps[1]) == "After !4101 · stacked")
         #expect(mission.steps[1].notes.map { OrderText.note($0, of: Self.pr(4102)) } == [
             "Its changes show against !4101's branch, which may still change",
-            "It targets !4101's branch; its order doesn't put it after !4101",
+            """
+            It targets !4101's branch, so it merges after !4101, though its order doesn't say so. If they don't go together, \
+            Move to Mission ▸ Not in a Mission takes it out
+            """,
         ])
         try orders.apply(OrderRequest(plan: planID.uuidString, revision: 1, entries: [
             .init(link: OrderPlansTests.link(4101)), .init(link: OrderPlansTests.link(4102), after: ["4101"]),
@@ -274,6 +280,23 @@ import Testing
         #expect(Self.summary(mission.steps) == ["1 !4101 Next to merge", "2 !4102 Merge after !4101"])
         #expect(mission.steps[1].notes == [.showsAgainst(Self.pr(4101))])
         #expect(mission.steps[1].prerequisites[0].origins == [.declared(revision: 2), .branch])
+    }
+
+    /// An order that puts a pull request before one stacked under it can't hold: BriefBar sets that aside, and says so.
+    @Test func anOrderThatGoesAgainstAStackedBranchIsSetAside() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [
+            .init(link: OrderPlansTests.link(4102)), .init(link: OrderPlansTests.link(4101), after: ["4102"]),
+        ]), now: t(0), newID: planID)
+        let facts = OrderFacts(pullRequests: [
+            Self.ado(4101, from: "users/robin/rounding"), Self.ado(4102, from: "users/robin/cart", into: "users/robin/rounding"),
+        ])
+        let mission = try #require(OrderBoard.missions(facts: facts, orders: orders, evidence: OrderEvidence(), now: t(60)).first)
+        #expect(Self.summary(mission.steps) == ["1 !4101 Next to merge", "2 !4102 Merge after !4101"])
+        #expect(mission.cycles.isEmpty)
+        let first = try #require(mission.steps.first)
+        #expect(first.notes == [.setAside(Self.pr(4102), by: nil, stacked: true)])
+        #expect(OrderText.note(first.notes[0], of: first.ref) == "Its order puts it after !4102, but !4102 is stacked on it")
     }
 
     @Test func pullRequestsTheOrderDoesntNameShowApartWithItWhenStackedOnlyWithItsOwn() throws {

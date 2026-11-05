@@ -32,7 +32,9 @@ struct PullRequestsByMission: View {
             openElsewhere: services.hasPage(.githubPullRequests) ? { services.openWindow(.githubPullRequests) } : nil,
             listed: listed, apart: apart,
             row: { step, mission in
-                byRef[step.ref].map { item in row(item, OrderRowContext(step: step, mission: mission, isReady: item.group == .ready)) }
+                byRef[step.ref].map { item in
+                    row(item, OrderRowContext(step: step, mission: mission, isReady: item.group == .ready, names: ordering.names))
+                }
             },
             place: { byRef[$0]?.repository },
             isSelected: { ref in byRef[ref].map(isSelected) ?? false },
@@ -57,8 +59,8 @@ struct PullRequestsByMission: View {
 
 extension PullRequestsByMission {
     /// For `--render`, with Pull Request Order on and a mission to show: the page By Mission, in List and on the Map, also
-    /// with text at 150%, and in a narrow window, its header's controls their symbols alone; and By Status, with the order's
-    /// capsules on the rows.
+    /// with text at 150%, and in a narrow window, its header's controls their symbols alone, also all the way down to a
+    /// mission of your own; and By Status, with the order's capsules on the rows.
     @MainActor
     static func renderings(
         store: PRStore, services: AppServices, environment: (AnyView) -> AnyView
@@ -67,6 +69,7 @@ extension PullRequestsByMission {
         guard ordering.isOn, !missions(ordering.missions).isEmpty else { return [] }
         let shown: [(name: String, order: PROrder, view: OrderView, scale: CGFloat?, size: CGSize)] = [
             ("pull-requests-by-mission", .byMission, .list, nil, CGSize(width: 1_000, height: 1_000)),
+            ("pull-requests-by-mission-narrow-tall", .byMission, .list, nil, CGSize(width: 560, height: 1_400)),
             ("pull-requests-by-mission-map", .byMission, .map, nil, CGSize(width: 1_000, height: 720)),
             ("pull-requests-by-mission-150", .byMission, .list, 1.5, CGSize(width: 1_000, height: 1_000)),
             ("pull-requests-by-mission-narrow", .byMission, .list, nil, CGSize(width: 560, height: 720)),
