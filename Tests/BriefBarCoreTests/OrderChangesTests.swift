@@ -648,7 +648,7 @@ import Testing
         ])
         let mission = try Self.mission(.plan(planID), in: Self.missions(facts, orders, changes))
         let next = try Self.step(4102, in: mission)
-        #expect(next.standing == .prerequisiteClosed(Self.pr(4101)) && next.notes.contains(.nextDoesntHold(Self.pr(4101))))
+        #expect(next.standing == .prerequisiteClosed(Self.pr(4101)) && next.notes.contains(.nextDoesntHold(Self.pr(4101), retarget: false)))
         #expect(try Self.step(4103, in: mission).standing == .anyTime)
     }
 
@@ -729,6 +729,24 @@ import Testing
         #expect(MissionChoices.of(Self.pr(4105), missions: missions, changes: changes, orders: orders).next
             == .retarget(after: Self.pr(4103), to: nil))
         #expect(changes.isEmpty)
+
+        // One set as next before stays set, but doesn't hold until you retarget it: nothing waits for it.
+        let more = try tell([(4101, []), (4102, []), (4104, [])])
+        let moreFacts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a", state: .merged), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            Self.ado(4104),
+        ])
+        let saved = OrderChanges([
+            OrderChange(ref: Self.pr(4102), first: .plan(planID), changedAt: t(60), replaced: OrderPlace(of: Self.pr(4102), in: more)),
+        ])
+        let withNext = Self.missions(moreFacts, more, saved)
+        let next = try Self.step(4102, in: Self.mission(.plan(planID), in: withNext))
+        #expect(next.standing == .retarget(after: Self.pr(4101), to: "main"))
+        #expect(next.notes.contains(.nextDoesntHold(Self.pr(4101), retarget: true)))
+        #expect(OrderText.note(.nextDoesntHold(Self.pr(4101), retarget: true), of: Self.pr(4102))
+            == "!4101 merged: your ‘next to merge’ holds once you retarget it")
+        #expect(MissionChoices.of(Self.pr(4102), missions: withNext, changes: saved, orders: more).next == .isSet)
+        #expect(try Self.step(4104, in: Self.mission(.plan(planID), in: withNext)).standing == .anyTime)
     }
 
     /// An order's line that goes round with stacked branches through another mission is set aside, as within one; yours is

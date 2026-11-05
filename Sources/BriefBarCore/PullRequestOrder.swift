@@ -607,8 +607,9 @@ public enum OrderNote: Equatable, Sendable {
     case setAside(ItemRef, by: ItemRef?, stacked: Bool)
     /// This one is stacked on it, or waits for it, now: your "after" it doesn't hold.
     case yoursDoesntHold(ItemRef, stacked: Bool)
-    /// It's stacked on this one now, which hasn't merged: your "next to merge" doesn't hold.
-    case nextDoesntHold(ItemRef)
+    /// It's stacked on this one now, which hasn't merged, or which merged while it still targets its branch: your "next to
+    /// merge" doesn't hold, until that one merges or you retarget it.
+    case nextDoesntHold(ItemRef, retarget: Bool)
     /// An order changed its place after you had: it shows the order's, until you put yours back.
     case orderChangedIt(OrderOverride)
 }
@@ -1293,11 +1294,13 @@ extension Board {
         }
         var chosen: ItemRef?
         if let next {
+            // What it's stacked on that hasn't merged, or that merged while it still targets that one's branch.
             let stacked = prerequisites[next, default: []].first { earlier in
-                why[OrderEdge(earlier, next)]?.contains(where: \.isStacked) == true && status(earlier) != .merged
+                why[OrderEdge(earlier, next)]?.contains(where: \.isStacked) == true
+                    && (status(earlier) != .merged || stillTargets(next, branchOf: earlier))
             }
             if let stacked {
-                added[next, default: []].append(.nextDoesntHold(stacked))
+                added[next, default: []].append(.nextDoesntHold(stacked, retarget: status(stacked) == .merged))
             } else {
                 chosen = next
                 added[next, default: []].append(.yourNext(layer.changedAt(next)))
@@ -1625,8 +1628,10 @@ public enum OrderText {
         case .yoursDoesntHold(let earlier, let stacked):
             let label = earlier.orderLabel(near: ref)
             return "\(label) \(stacked ? "is stacked on it" : "waits for it") now, so your ‘after \(label)’ doesn't hold"
-        case .nextDoesntHold(let earlier):
+        case .nextDoesntHold(let earlier, false):
             return "Stacked on \(earlier.orderLabel(near: ref)) now, so your ‘next to merge’ doesn't hold"
+        case .nextDoesntHold(let earlier, true):
+            return "\(earlier.orderLabel(near: ref)) merged: your ‘next to merge’ holds once you retarget it"
         case .orderChangedIt(let override):
             return overridden(override, of: ref, names: names)
         }
