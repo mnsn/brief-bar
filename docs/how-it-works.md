@@ -1508,9 +1508,10 @@ VoiceOver (`ThreadReadOnlyMark`), and a change that finds it so says so on the t
 `Sources/AzureDevOpsCore`): your reply in a thread, a `POST` of a comment, in reply to the thread's first, with the body
 Azure DevOps' samples send (`content`, `parentCommentId` and `commentType` 1, text), and a thread's status, a `PATCH` of
 only that (`status`, by the number the API takes for it); and a comment of yours, edited or deleted
-([below](#editing-and-deleting-your-comments)), and a pull request's tags ([below](#a-pull-requests-tags)). `ADOClient.send(_:as:)` alone sends them, with a GET's
-sign-in, headers and redirect guard, from the same request path, once: it sends one again only when Azure DevOps
-rejected the sign-in, which it never acts on, so a change that fails otherwise, or times out, isn't made twice. Once it
+([below](#editing-and-deleting-your-comments)), and a pull request's tags ([below](#a-pull-requests-tags)).
+`ADOClient.send(_:as:)` alone sends them, with a GET's sign-in, headers and redirect guard, from the same request path,
+once: it sends one again only when Azure DevOps rejected the sign-in, which it never acts on, so a change that fails
+otherwise, or times out, isn't made twice. Once it
 has gone, nothing calls it off, as turning the setting off would, since that wouldn't take it back, only lose what Azure
 DevOps answers: it settles with that, or with why it failed. When Azure DevOps refuses one, the error says why, as it
 said it (`ADOError.refused`, TF401181 for a pull request that's completed or abandoned), which shows on the thread but
@@ -3635,7 +3636,8 @@ when BriefBar does.
 - `WriteTests` checks that the only changes BriefBar can make in Azure DevOps are those `ADOWrite` lists, each as it's
   sent, and that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET
   ([Replying and setting a thread's status](#replying-and-setting-a-threads-status),
-  [Editing and deleting your comments](#editing-and-deleting-your-comments), [A pull request's tags](#a-pull-requests-tags)).
+  [Editing and deleting your comments](#editing-and-deleting-your-comments),
+  [A pull request's tags](#a-pull-requests-tags)).
 - `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar has
   no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the updater
   has its own identity, the one entitlement, the same signature as BriefBar, and Sparkle in its own
