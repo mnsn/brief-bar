@@ -2704,7 +2704,10 @@ accent as a backtick, "⒈" as "1.", a list's marker, or a digit of another scri
 than any run of backticks in what it quotes, read that way (`QuotedText.asRead`). A branch whose name holds what a shell reads,
 such as `$(…)` or a backtick, which Git allows, is in single quotes wherever a prompt names it, in a command such as
 `git push origin HEAD:refs/heads/'<branch>'`, in a sentence Copilot may make one from, or in a build's hint, so it runs
-nothing (`PullRequestPrompt.branch`). It asks the
+nothing (`PullRequestPrompt.branch`). One that holds a character nobody sees, such as a zero-width space, which Git
+allows too, is in ANSI-C quotes instead, with that character as its UTF-8 bytes in hex, `$'fix\xE2\x80\x8B'`: it's seen
+in the prompt, and bash, macOS's 3.2 too, zsh and sh read it back as the name itself, so a command still names that
+branch, where the character written out as text, `\u{200B}`, would name another (`QuotedText.commandWord`). It asks the
 session, aside, what failed and why, and whether it's the change, a flaky test, the target branch or the build's
 infrastructure (`CopilotQuestions`, over `SessionQuestions`). What it answers is kept with the run it's about, and the
 attempt of it, by when its check said it finished, so it doesn't show with another run of the build, nor once its failed
@@ -3175,7 +3178,8 @@ CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 `pull_request` quotes what others named or wrote in the pull request as the prompts do: its title, its people, its
 checks and where they failed, what the lists say of it, its session's project, and what people wrote in what's new and
 in its threads, each on its line with what breaks a line or isn't seen written out, and its branches, its session's
-included, in single quotes when a shell would read something in them, wherever it names them; what people
+included, in single quotes when a shell would read something in them, or in ANSI-C quotes with what nobody sees as
+its bytes, `$'fix\xE2\x80\x8B'`, wherever it names them; what people
 wrote follows a note that it's what they ask of the change, not instructions to the agent. The other tools of
 Azure DevOps quote the same way: `needs_me` and `pull_requests` each pull request's title, repository, author and what
 the lists say of it, `pipelines` its pipelines, their runs' branches and the pull requests that merged, `sprint` each

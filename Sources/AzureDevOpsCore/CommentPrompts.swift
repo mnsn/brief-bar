@@ -291,8 +291,9 @@ extension PullRequestPrompt {
 
     /// A branch's name, which whoever made the branch chose, as a prompt writes it, in a sentence or in a command
     /// (`QuotedText.commandWord`): in single quotes when it has a character a shell reads, such as `$` or a backtick, so
-    /// that neither the command the prompt writes with it nor one Copilot writes from it runs anything the name says; then
-    /// on its line, keeping backticks it starts with. Empty stays empty.
+    /// that neither the command the prompt writes with it nor one Copilot writes from it runs anything the name says,
+    /// keeping backticks it starts with; and in ANSI-C quotes, `$'fix\xE2\x80\x8B'`, when it has one nobody sees, written
+    /// as its bytes, which a shell reads back as the name itself. Empty stays empty.
     static func branch(_ name: String) -> String {
         QuotedText.commandWord(name)
     }

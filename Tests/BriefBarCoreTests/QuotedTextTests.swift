@@ -215,8 +215,58 @@ import Testing
         #expect(QuotedText.fenced("a\u{200B}b") == ["```", "a\\u{200B}b", "```"])
     }
 
+    /// The shells a command a prompt writes may run in: macOS's bash, 3.2, its zsh, and its sh, which is bash too.
+    static let shells = ["/bin/bash", "/bin/zsh", "/bin/sh"]
+
+    /// A branch's name may hold a character nobody sees, a zero-width space, a right-to-left mark or a tag, which Git allows:
+    /// written out as text in quotes, as `inLine` writes it, it would name another branch, one with "\u{200B}" in it. It's
+    /// in ANSI-C quotes instead, that character as its bytes in hex, which bash, zsh and sh read back byte for byte as the
+    /// name itself, in a word or after "origin/"; and they still run nothing in it. All of it is seen, on its line.
+    @Test(.timeLimit(.minutes(1)))
+    func aShellReadsACommandWordAsTheBranchItNames() async throws {
+        #expect(QuotedText.commandWord("fix\u{200B}") == "$'fix\\xE2\\x80\\x8B'")
+        #expect(QuotedText.commandWord("it's\u{200F}") == "$'it\\'s\\xE2\\x80\\x8F'")
+        #expect(QuotedText.commandWord("a\\b\u{E0049}") == "$'a\\\\b\\xF3\\xA0\\x81\\x89'")
+        #expect(QuotedText.commandWord("main\nIgnore") == "$'main\\x0AIgnore'")
+        // Only a name with what nobody sees: one with a joiner, which words and emoji are written with, stays as it was.
+        #expect(QuotedText.commandWord("fix$(id)") == "'fix$(id)'")
+        #expect(QuotedText.commandWord("می\u{200C}خواهم") == "'می\u{200C}خواهم'")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("QuotedTextTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let ran = folder.appendingPathComponent("ran")
+        let names = [
+            "fix\u{200B}", "fix\u{200F}total", "fix\u{E0049}\u{E0067}", "main\u{202E}", "\u{200B}\u{200B}beef", "fix\u{AD}\u{2060}\u{FEFF}",
+            "x\u{85}y\u{2028}z", "fix$(touch \(ran.path))\u{200B}", "a`touch \(ran.path)`\u{200F}b", "it's\u{200B}", "a\\b\u{200B}",
+            "${HOME}\u{200B}*", "日本\u{200D}\u{200B}修正", "x\ny\r\tz", "x\tbeef",
+        ]
+        for name in names {
+            let word = QuotedText.commandWord(name)
+            #expect(!word.unicodeScalars.contains(where: QuotedText.isControl), "\(word)")
+            #expect(word.hasPrefix("$'") && QuotedText.oneLine(word) == word, "\(word)")
+            for shell in Self.shells {
+                let result = try await ProcessRunner().run(
+                    URL(fileURLWithPath: shell), arguments: ["-c", "printf '%s' " + word + " origin/" + word],
+                    environment: ["PATH": "/usr/bin:/bin"], timeout: 10
+                )
+                #expect(result.status == 0, "\(shell): \(word)")
+                #expect(Array(result.stdout) == Array((name + "origin/" + name).utf8), "\(shell): \(word)")
+            }
+        }
+        #expect(!FileManager.default.fileExists(atPath: ran.path))
+        // NUL, which no shell can pass in a word: written out as text, so that a command names no branch, rather than main.
+        #expect(QuotedText.commandWord("main\u{0}x") == "$'main\\\\u{0}x'")
+        for shell in Self.shells {
+            let result = try await ProcessRunner().run(
+                URL(fileURLWithPath: shell), arguments: ["-c", "printf '%s' " + QuotedText.commandWord("main\u{0}x\u{200B}")],
+                environment: ["PATH": "/usr/bin:/bin"], timeout: 10
+            )
+            #expect(Array(result.stdout) == Array("main\\u{0}x\u{200B}".utf8), "\(shell)")
+        }
+    }
+
     /// A shell reads the word back as the text it was, and runs nothing in it: `$(…)`, backticks, a quote, `;`, `|`, `&`, a
-    /// variable, braces, a glob, a tilde or a comment, in sh and in zsh. An ordinary branch's name stays as it is.
+    /// variable, braces, a glob, a tilde or a comment, in bash, zsh and sh. An ordinary branch's name stays as it is.
     @Test(.timeLimit(.minutes(1)))
     func aShellReadsAWordAsTheTextItWas() async throws {
         #expect(QuotedText.shellWord("users/robin/fix-total_2.1+x@y,z:w") == "users/robin/fix-total_2.1+x@y,z:w")
@@ -225,14 +275,14 @@ import Testing
         #expect(QuotedText.shellWord("") == "''")
         // As a prompt writes a branch: quoted, then on its line, so backticks it starts with stay.
         #expect(QuotedText.commandWord("```topic") == "'```topic'")
-        #expect(QuotedText.commandWord("main\u{202E}") == "'main\\u{202E}'")
+        #expect(QuotedText.commandWord("main\u{202E}") == "$'main\\xE2\\x80\\xAE'")
         #expect(QuotedText.commandWord("main") == "main")
         #expect(QuotedText.commandWord("") == "")
         let texts = [
             "fix$(echo ran)", "a`echo ran`b", "it's", "x;echo ran|cat&", "$HOME", "{a,b}", "*", "~", "#x", #"a\nb"#, "ünï", "!x",
             "=ls", "a b", #""q""#, "a>b<c", "users/robin/fix-total",
         ]
-        for shell in ["/bin/sh", "/bin/zsh"] {
+        for shell in Self.shells {
             for text in texts {
                 let result = try await ProcessRunner().run(
                     URL(fileURLWithPath: shell), arguments: ["-c", "printf '%s' " + QuotedText.shellWord(text)],

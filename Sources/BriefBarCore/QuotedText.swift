@@ -160,11 +160,39 @@ public enum QuotedText {
     }
 
     /// A word a prompt writes in a sentence or in a command, such as a branch's name, which whoever made the branch chose:
-    /// in single quotes when a shell would read something in it (`shellWord`), then on its line (`inLine`). Quoted, it
-    /// starts with its quote, which no fence starts with, so a name that starts with backticks, as Git allows, keeps them,
-    /// and a command names that branch. Empty stays empty.
+    /// in single quotes when a shell would read something in it (`shellWord`). Quoted, it starts with its quote, which no
+    /// fence starts with, so a name that starts with backticks, as Git allows, keeps them, and a command names that branch.
+    /// One with a character that `inLine` writes out, one nobody sees or that breaks a line, such as a zero-width space,
+    /// which Git allows in a branch's name too, is in ANSI-C quotes instead, with that character as its bytes in hex,
+    /// `$'fix\xE2\x80\x8B'` (`ansiCWord`): all of it is seen, on its line, and a shell reads it back as the name itself,
+    /// so a command names that branch all the same. Empty stays empty.
     public static func commandWord(_ text: String) -> String {
-        text.isEmpty ? text : inLine(shellWord(text))
+        guard !text.isEmpty else { return text }
+        return text.unicodeScalars.contains(where: isControl) ? ansiCWord(text) : shellWord(text)
+    }
+
+    /// A word in ANSI-C quotes, `$'…'`, as `commandWord` writes one with a character nobody sees: that character as its
+    /// UTF-8 bytes in hex, `\xE2\x80\x8B`, which bash, macOS's 3.2 too (it has no `\u` there), zsh and sh read back byte
+    /// for byte; a backslash and a quote escaped, `\\` and `\'`; anything else as it is, which nothing in these quotes
+    /// runs, `$(…)` and backticks included. But NUL, which no shell can pass in a word, so that it would cut the name short
+    /// there, "main\0x" naming main: it's written out as text, `\u{0}`, as `inLine` writes it, which no branch's name can
+    /// hold, so a command made with it names no branch at all.
+    private static func ansiCWord(_ text: String) -> String {
+        var word = "$'"
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "\\": word += "\\\\"
+            case "'": word += "\\'"
+            case "\0": word += "\\\\u{0}"
+            default:
+                if isControl(scalar) {
+                    word += String(scalar).utf8.map { String(format: "\\x%02X", $0) }.joined()
+                } else {
+                    word.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        return word + "'"
     }
 
     /// A line that may open a fence (`fenceStart`) or a block of HTML (`htmlStart`), with the character that would open it

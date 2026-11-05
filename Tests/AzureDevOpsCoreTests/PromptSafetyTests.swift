@@ -209,21 +209,31 @@ import Testing
         #expect(PullRequestPrompt.branch("") == "")
         // One that starts with backticks, which Git allows, keeps them in its quotes, which no fence starts with.
         #expect(PullRequestPrompt.branch("```topic") == "'```topic'")
+        // One with a character nobody sees, which Git allows too, has it as its bytes, in quotes a shell reads them in.
+        record.pullRequest.sourceBranch = "fix$(id)\u{200B}"
+        #expect(PullRequestPrompt.pushAndReply(record).contains("git push origin HEAD:refs/heads/$'fix$(id)\\xE2\\x80\\x8B'."))
         record.pullRequest.sourceBranch = "users/robin/fix-total"
         #expect(PullRequestPrompt.pushAndReply(record).contains("git push origin HEAD:refs/heads/users/robin/fix-total."))
     }
 
-    /// A command a prompt writes with a branch's name names that branch: a shell reads its word back as the name, whatever
-    /// a shell would otherwise run in it, and backticks at its start stay. (What controls how text reads is written out,
-    /// as everywhere a prompt quotes it, and Git allows no line break in a name.)
+    /// A command a prompt writes with a branch's name names that branch: bash, zsh and sh read its word back as the name,
+    /// byte for byte, whatever a shell would otherwise run in it; backticks at its start stay, and so does a character
+    /// nobody sees, a zero-width space, a right-to-left mark or a tag, which Git allows, written out as its bytes in the
+    /// prompt, where it's seen. (Git allows no line break in a name.)
     @Test(.timeLimit(.minutes(1)))
     func aCommandNamesTheBranchItsWrittenWith() async throws {
-        for name in ["```topic", "fix$(echo ran)", "main`id`;rm", "it's", "users/robin/fix-total", "{a,b}*", "日本/修正"] {
-            let result = try await ProcessRunner().run(
-                URL(fileURLWithPath: "/bin/zsh"), arguments: ["-c", "printf '%s' origin/" + PullRequestPrompt.branch(name)],
-                environment: ["PATH": "/usr/bin:/bin"], timeout: 10
-            )
-            #expect(String(decoding: result.stdout, as: UTF8.self) == "origin/" + name, "\(name)")
+        let names = [
+            "```topic", "fix$(echo ran)", "main`id`;rm", "it's", "users/robin/fix-total", "{a,b}*", "日本/修正", "fix\u{200B}",
+            "main\u{200F}", "fix\u{E0049}\u{E0067}nore", "fix$(echo ran)\u{202E}", "it's\u{2060}",
+        ]
+        for name in names {
+            for shell in ["/bin/bash", "/bin/zsh", "/bin/sh"] {
+                let result = try await ProcessRunner().run(
+                    URL(fileURLWithPath: shell), arguments: ["-c", "printf '%s' origin/" + PullRequestPrompt.branch(name)],
+                    environment: ["PATH": "/usr/bin:/bin"], timeout: 10
+                )
+                #expect(Array(result.stdout) == Array(("origin/" + name).utf8), "\(shell): \(name)")
+            }
         }
     }
 
