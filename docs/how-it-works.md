@@ -238,7 +238,9 @@ then: a click on a menu-bar item first makes the app the menu bar belongs to act
 Settings, or whose Space macOS would switch to, each time you clicked an item to see what you arranged. An
 app only takes the menu bar as it becomes active, so when BriefBar already is, as when you open Settings
 from a list, it hands over to the Dock, which has no windows to bring forward, and comes straight back
-(`AppModel.showInDock`).
+(`AppModel.showInDock`). In the Dock, macOS 26 opens its menus on the Space of its windows, not on every Space as for
+a menu-bar app, so a menu opened from a list over an app in full screen would open out of sight: while a menu is
+open, BriefBar puts each of its menu windows on every Space (`MenusOverFullScreen`).
 
 ### Optional presentation
 
