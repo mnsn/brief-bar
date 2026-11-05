@@ -16,6 +16,7 @@
 - **Azure DevOps' description says when it reads again.** It now says that a pull request's updates and Files are read
   again as its branch or its target moves, a build you opened as Azure DevOps merges it again, and tags whose read
   failed half a minute later, and asks you once to look at what it reads.
+
 ## 0.15.0 - 2026-11-04
 
 - **Copilot sessions keep BriefBar up to date.** Turn on **Updates from Copilot Sessions** in Settings › Agents, and
