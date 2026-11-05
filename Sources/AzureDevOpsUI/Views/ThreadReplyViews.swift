@@ -56,13 +56,18 @@ struct ThreadReplyButtons: View {
                 }
             }
             // Back from your reply, once it's sent or closed: the keyboard's focus is where it was, once Reply is there
-            // again, not what says it's being sent.
-            .onAppear {
-                guard refocuses else { return }
-                refocuses = false
-                Task { @MainActor in isReplyFocused = true }
-            }
+            // again, not what says it's being sent; or, as you deleted a comment of yours, which takes its ⋯ with it, though
+            // Reply never went.
+            .onAppear(perform: refocus)
+            .onChange(of: refocuses) { refocus() }
         }
+    }
+
+    /// The keyboard's focus to Reply, when it takes it back.
+    private func refocus() {
+        guard refocuses else { return }
+        refocuses = false
+        Task { @MainActor in isReplyFocused = true }
     }
 
     /// "Replying…", "Resolving…", "Setting to Won't Fix…", "Saving…", "Deleting…".
@@ -171,7 +176,8 @@ struct ThreadReplyArea: View {
         let canChange = preview?.readOnly == nil && changes.canChange(pullRequest)
         let isReplying = canChange && composing == .reply(to: thread.id)
         VStack(alignment: .leading, spacing: 8) {
-            if case .failed(let problem, let sending)? = state, !showsInItsComposer(sending, canChange: canChange) {
+            if case .failed(let problem, let sending)? = state,
+               !Self.showsInItsComposer(sending, composing: composing, thread: thread, canChange: canChange) {
                 // A status that didn't change says so above your reply too, while it's open, as one set from the card's
                 // menu: a reply's own says so in its field. Also once it can't be changed, as the pull request left your
                 // lists as you sent: but nothing to try again.
@@ -217,17 +223,21 @@ struct ThreadReplyArea: View {
     private var showsSomething: Bool {
         let canChange = preview?.readOnly == nil && changes.canChange(pullRequest)
         if canChange, composing == .reply(to: thread.id) { return true }
-        if case .failed(_, let sending)? = state { return !showsInItsComposer(sending, canChange: canChange) }
+        if case .failed(_, let sending)? = state {
+            return !Self.showsInItsComposer(sending, composing: composing, thread: thread, canChange: canChange)
+        }
         return false
     }
 
-    /// Whether what went wrong with a change shows in its own composer, open, rather than here: your reply's in your reply,
-    /// and your edit's in your edit.
-    private func showsInItsComposer(_ sending: ThreadChanges.Sending, canChange: Bool) -> Bool {
+    /// Whether what went wrong with a change shows in its own composer, open, rather than on the thread: your reply's in your
+    /// reply, and your edit's in your edit, while the thread still has the comment it's in.
+    static func showsInItsComposer(
+        _ sending: ThreadChanges.Sending, composing: CopilotComposing?, thread: PullRequestPanel.Thread, canChange: Bool
+    ) -> Bool {
         guard canChange else { return false }
         switch sending {
         case .reply: return composing == .reply(to: thread.id)
-        case .edit(let comment): return composing == .edit(comment, in: thread.id)
+        case .edit(let comment): return composing == .edit(comment, in: thread.id) && thread.comments.contains { $0.id == comment }
         case .status, .delete: return false
         }
     }
@@ -334,10 +344,10 @@ struct ThreadReplyComposer: View {
     /// focus back then, unless another composer opened meanwhile, as while your reply was on its way (`ThreadReplyArea`).
     let close: () -> Void
 
-    /// A comment of yours you edit, and what you edit of it (`ThreadChanges.editing`).
+    /// A comment of yours you edit, on its pull request, whose people name its mentions as you do (`ThreadChanges.startEditing`).
     struct Editing {
         var comment: ReviewComment
-        var text: String
+        var pullRequest: PullRequest
     }
 
     @EnvironmentObject private var changes: ThreadChanges
@@ -351,6 +361,9 @@ struct ThreadReplyComposer: View {
 
     @LocalState private var text = ""
     @LocalState private var hasAppeared = false
+    /// Editing a comment, what it said as you began, whose names go back as the mentions they showed as you save it, though
+    /// it changes elsewhere meanwhile.
+    @LocalState private var editBase: CommentEditing?
     /// Fix Grammar, while it runs.
     @LocalState private var fixing: Task<Void, Never>?
     /// What Fix Grammar suggests, to use or not.
@@ -436,7 +449,11 @@ struct ThreadReplyComposer: View {
         .id(Self.scrollID)
         .onChange(of: text) {
             if preview == nil {
-                if let commentKey { changes.keepEdit(text, for: commentKey) } else { changes.keep(text, for: key) }
+                if let commentKey {
+                    if let editBase { changes.keepEdit(text, for: commentKey, from: editBase) }
+                } else {
+                    changes.keep(text, for: key)
+                }
             }
             // Changed after you used a suggestion: Undo would take what you wrote since too.
             if let undo, text != undo.corrected { self.undo = nil }
@@ -466,8 +483,13 @@ struct ThreadReplyComposer: View {
             suggestion = preview.suggestion
             undo = preview.undo
             grammarProblem = preview.grammarProblem
+        } else if let editing {
+            let started = changes.startEditing(editing.comment, in: thread.thread, of: editing.pullRequest)
+            editBase = started.base
+            text = started.text
+            isFocused = !isRendering
         } else {
-            text = editing?.text ?? changes.draft(key)
+            text = changes.draft(key)
             guard !isRendering else { return }
             isFocused = true
         }
@@ -566,14 +588,11 @@ struct ThreadReplyComposer: View {
                 .font(size: 12, weight: .medium)
                 .foregroundStyle(.secondary)
             } else {
-                Button("Cancel", action: cancel)
-                    .font(size: 12, weight: .medium)
+                Button(action: cancel) { ControlLabel("Cancel") }
                     .buttonStyle(.bordered)
                     .keyboardShortcut(.cancelAction)
                     .help("Keep your comment as it was (Esc)")
-                Button("Save", action: save)
-                    // As big as the text on windows' pages, which a control's own font isn't.
-                    .font(size: 12, weight: .semibold)
+                Button(action: save) { ControlLabel("Save") }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: .command)
                     .help("Save your comment as you edited it, in Azure DevOps, as you (⌘Return)")
@@ -675,9 +694,9 @@ struct ThreadReplyComposer: View {
         }
     }
 
-    /// Saves your comment as you edited it.
+    /// Saves your comment as you edited it, its names as the mentions they showed as you began.
     private func save() {
-        guard canSend, let editing else {
+        guard canSend, let editing, let editBase else {
             NSSound.beep()
             return
         }
@@ -685,7 +704,7 @@ struct ThreadReplyComposer: View {
         hold(thread)
         changes.dismiss(key)
         Task {
-            guard await changes.edit(markdown, of: editing.comment, in: thread.thread, of: item.key) else { return }
+            guard await changes.edit(markdown, from: editBase, of: editing.comment, in: thread.thread, of: item.key) else { return }
             close()
         }
     }

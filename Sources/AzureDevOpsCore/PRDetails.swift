@@ -333,7 +333,7 @@ public struct ReviewComment: Sendable, Codable, Equatable {
 
     /// What it says, as Azure DevOps keeps it, or, for one made up, as it shows: two that say the same are the same comment
     /// as edited.
-    var kept: String { content ?? markdown }
+    public var kept: String { content ?? markdown }
 
     /// Whether you may edit or delete it from BriefBar: it's yours, as `me`, the identity the list was read as, says, and what
     /// someone wrote, rather than a code change's comment. Neither a deleted comment nor a system one is ever read.

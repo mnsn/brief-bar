@@ -267,6 +267,13 @@ struct CopilotComposing: Hashable {
     /// Whether it's yours, on a thread: your reply, a comment you edit, or one you delete.
     func isYours(on thread: Int) -> Bool { ask == nil && part == .thread(thread) }
 
+    /// The comment of yours it edits, or confirms you delete, on `thread`; nil for anything else.
+    func comment(on thread: Int) -> Int? {
+        guard isYours(on: thread), let row else { return nil }
+        for prefix in ["edit-", "delete-"] where row.hasPrefix(prefix) { return Int(row.dropFirst(prefix.count)) }
+        return nil
+    }
+
     /// The field that adds a tag to the pull request, under its heading (`PullRequestTagsRow`), which BriefBar sends Azure
     /// DevOps (`TagChanges`).
     static let tags = CopilotComposing(part: nil, ask: nil, row: "tags")

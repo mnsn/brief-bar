@@ -303,10 +303,11 @@ struct ThreadCard: View {
     @Environment(\.changedFileOpener) private var opener
     /// The comments folded between the first and the latest show.
     @LocalState private var isUnfolded = false
-    /// Its Reply takes the keyboard's focus back as its buttons show again, once your reply on it closes as the composer
-    /// open: with ✕ or Esc, or sent while you're still in it (`ThreadReplyArea`). Not once another composer opened
-    /// meanwhile, nor anywhere but in this card.
-    @LocalState private var refocusesReply = false
+    /// What of yours takes the keyboard's focus back as it shows again, or as it's still there, once a composer of yours on
+    /// it closes as the one open (`ThreadRefocus`): its Reply, once your reply closes with ✕ or Esc, or is sent while you're
+    /// still in it (`ThreadReplyArea`), or once you deleted a comment; a comment's ⋯, once your edit of it closes, or you
+    /// kept it rather than delete it. Not once another composer opened meanwhile, nor anywhere but in this card.
+    @LocalState private var refocus = ThreadRefocus()
     /// VoiceOver goes to it each time the details go to it, or come back to it, and as its file's page points it out.
     @AccessibilityFocusState private var isFocused: Bool
     /// How much wider its code's longest line is than the room it has.
@@ -325,7 +326,7 @@ struct ThreadCard: View {
             return AnyView(ThreadReadOnlyMark(reason: reason))
         }
         guard changes.canChange(pullRequest) else { return nil }
-        return AnyView(ThreadReplyButtons(thread: thread, item: item, composing: $composing, refocuses: $refocusesReply, hold: hold))
+        return AnyView(ThreadReplyButtons(thread: thread, item: item, composing: $composing, refocuses: $refocus.reply, hold: hold))
     }
 
     /// The lines it's on, which its code shows.
@@ -348,7 +349,7 @@ struct ThreadCard: View {
             // Reply and its status in their row, your reply open under it, or what went wrong with a change.
             ThreadCopilotActions(thread: thread, item: item, now: now, composing: $composing, drafts: drafts, yours: yours)
             ThreadReplyArea(
-                thread: thread, item: item, pullRequest: pullRequest, composing: $composing, refocuses: $refocusesReply, hold: hold
+                thread: thread, item: item, pullRequest: pullRequest, composing: $composing, refocuses: $refocus.reply, hold: hold
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -384,9 +385,15 @@ struct ThreadCard: View {
         }
         // And each time the details go to it, though it's still pointed out, as when it's asked for again within that moment.
         .focusesOnArrival(at: .thread(thread.id), $isFocused)
-        // Another composer opened, or its own reply again: Reply doesn't take the keyboard's focus as its buttons show later.
+        // Another composer opened, or its own reply again: Reply doesn't take the keyboard's focus as its buttons show later,
+        // nor a comment's ⋯.
         .onChange(of: composing) { _, open in
-            if open != nil { refocusesReply = false }
+            if open != nil { refocus.opened() }
+        }
+        // Your comment, open to edit or delete, left the thread, as one deleted elsewhere: what was open on it closes, and
+        // what went wrong with it shows on the thread.
+        .onChange(of: thread.comments.map(\.id)) { _, ids in
+            if let comment = composing?.comment(on: thread.id), !ids.contains(comment) { composing = nil }
         }
     }
 
@@ -546,7 +553,7 @@ struct ThreadCard: View {
 
     private var comments: some View {
         let all = thread.comments
-        let folded = isUnfolded ? 0 : thread.foldedComments
+        let folded = Self.folded(thread, isUnfolded: isUnfolded, composing: composing)
         return VStack(alignment: .leading, spacing: 10) {
             if folded > 0, let first = all.first, let latest = all.last {
                 line(first)
@@ -573,6 +580,13 @@ struct ThreadCard: View {
         }
     }
 
+    /// How many of its comments fold between the first and the latest: none once you unfolded them, nor while a comment of
+    /// yours there is open to edit or delete, wherever it is now, as when a reply that came meanwhile made it one of those
+    /// between them.
+    static func folded(_ thread: PullRequestPanel.Thread, isUnfolded: Bool, composing: CopilotComposing?) -> Int {
+        isUnfolded || composing?.comment(on: thread.id) != nil ? 0 : thread.foldedComments
+    }
+
     private func line(_ comment: ReviewComment) -> some View {
         CommentLine(
             comment: comment, now: now, isMine: me.map { comment.author.id == $0.lowercased() } ?? false, isQuiet: isQuiet,
@@ -587,21 +601,26 @@ struct ThreadCard: View {
         guard preview?.readOnly == nil, changes.canChange(comment, of: pullRequest), let pullRequest else { return nil }
         let id = PreviewComment(thread: thread.id, comment: comment.id)
         let edit = CopilotComposing.edit(comment.id, in: thread.id), deleting = CopilotComposing.deleting(comment.id, in: thread.id)
-        var yours = CommentLine.Yours(isSending: isSending, showsMenu: preview?.menu == id) {
+        // Each open, the comments stay unfolded, so that it stays in sight, and once it closes, where it was.
+        var yours = CommentLine.Yours(isSending: isSending, showsMenu: preview?.menu == id, refocuses: refocus.comment == comment.id) {
             hold(thread)
+            isUnfolded = true
             composing = edit
         } delete: {
             hold(thread)
+            isUnfolded = true
             composing = deleting
+        } refocused: {
+            if refocus.comment == comment.id { refocus.comment = nil }
         }
         if composing == edit {
             yours.editor = AnyView(
-                ThreadReplyComposer(
-                    thread: thread, item: item, hold: hold,
-                    editing: .init(comment: comment, text: changes.editing(comment, in: thread.thread, of: pullRequest))
-                ) {
-                    // Saved, or canceled: unless another composer opened meanwhile.
-                    if composing == edit { composing = nil }
+                ThreadReplyComposer(thread: thread, item: item, hold: hold, editing: .init(comment: comment, pullRequest: pullRequest)) {
+                    // Saved or canceled, as the composer open, unless another opened meanwhile: its ⋯ takes the keyboard's
+                    // focus back.
+                    guard composing == edit else { return }
+                    composing = nil
+                    refocus.closed(edit, on: thread.id)
                 }
                 // A new one for each comment, with its own words.
                 .id(edit)
@@ -609,11 +628,19 @@ struct ThreadCard: View {
         } else if composing == deleting {
             yours.confirmation = AnyView(
                 CommentDeleteConfirmation {
-                    if composing == deleting { composing = nil }
+                    // Kept: its ⋯ takes the keyboard's focus back.
+                    guard composing == deleting else { return }
+                    composing = nil
+                    refocus.closed(deleting, on: thread.id)
                 } delete: {
-                    if composing == deleting { composing = nil }
+                    guard composing == deleting else { return }
+                    composing = nil
                     hold(thread)
-                    Task { await changes.delete(comment, in: thread.thread, of: item.key) }
+                    Task {
+                        await changes.delete(comment, in: thread.thread, of: item.key)
+                        // Done with, its ⋯ gone with it: Reply takes the keyboard's focus back, as it shows again.
+                        refocus.deleted(composing: composing)
+                    }
                 }
             )
         }
@@ -850,6 +877,8 @@ private struct CommentLine: View {
     var menuItems: AnyView?
 
     @Environment(\.textScale) private var textScale
+    /// Its ⋯, for the keyboard's focus to go back to once your edit of it closes.
+    @FocusState private var isMenuFocused: Bool
 
     /// What you can do with a comment of yours, and what shows of it.
     struct Yours {
@@ -857,8 +886,12 @@ private struct CommentLine: View {
         var isSending: Bool
         /// For --render: its ⋯ menu, open.
         var showsMenu = false
+        /// Its ⋯ takes the keyboard's focus back, once your edit of it closed, or you kept it rather than delete it.
+        var refocuses = false
         var edit: () -> Void
         var delete: () -> Void
+        /// Its ⋯ took the keyboard's focus back.
+        var refocused: () -> Void
         /// Your edit, open in place of what it says.
         var editor: AnyView?
         /// What confirms you delete it, under what it says.
@@ -891,6 +924,9 @@ private struct CommentLine: View {
                     if let yours, yours.editor == nil {
                         Spacer(minLength: 4)
                         menuButton(yours)
+                            // Back from your edit, saved or canceled, once ⋯ is there again; or from deleting it, kept.
+                            .onAppear { refocus(yours) }
+                            .onChange(of: yours.refocuses) { refocus(yours) }
                     }
                 }
                 if let editor = yours?.editor {
@@ -938,6 +974,13 @@ private struct CommentLine: View {
         }
     }
 
+    /// The keyboard's focus to ⋯, when it takes it back.
+    private func refocus(_ yours: Yours) {
+        guard yours.refocuses else { return }
+        yours.refocused()
+        Task { @MainActor in isMenuFocused = true }
+    }
+
     /// ⋯, with Edit and Delete…, at the end of who and when.
     private func menuButton(_ yours: Yours) -> some View {
         Menu {
@@ -948,9 +991,9 @@ private struct CommentLine: View {
                 .frame(width: 18 * textScale, height: 14 * textScale)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .labelMenuStyle()
         .fixedSize()
+        .focused($isMenuFocused)
         .foregroundStyle(.secondary)
         .help("Edit or delete your comment in Azure DevOps, as you")
         .accessibilityLabel("Your Comment's Actions")

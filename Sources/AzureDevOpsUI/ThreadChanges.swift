@@ -61,9 +61,9 @@ final class ThreadChanges: ObservableObject {
     @Published private(set) var states: [Key: State] = [:]
     /// The replies you're writing, by thread. Not published: what you type redraws its own field only.
     private var drafts: [Key: String] = [:]
-    /// What you write in place of your comments, by comment, while you edit them, until you save it or cancel. Not published
-    /// either.
-    private var edits: [CommentKey: String] = [:]
+    /// What you wrote in place of your comments, by comment, once it says something else than what each said as you began
+    /// (`EditDraft`), until you save it or cancel. Not published either.
+    private var edits: [CommentKey: EditDraft] = [:]
     /// When you resolved each thread you did here: what waited on you in it until then doesn't anymore, though its details
     /// show what was new as it was when they showed it (`waiting(_:of:)`).
     private var resolved: [Key: Date] = [:]
@@ -99,6 +99,13 @@ final class ThreadChanges: ObservableObject {
     struct Attempt: Equatable {
         var digest: SHA256.Digest
         var before: Set<Int>
+    }
+
+    /// What you wrote in place of a comment of yours, and what the comment said as you began (`CommentEditing`), whose names
+    /// go back as the mentions they showed then.
+    struct EditDraft: Equatable {
+        var text: String
+        var base: CommentEditing
     }
 
     /// An edit that may have been saved: its comment, and a fingerprint of what it said, as it went (`digest`). The comment,
@@ -201,10 +208,12 @@ final class ThreadChanges: ObservableObject {
     }
 
     /// What you wrote in place of a comment of yours, not saved yet: nil until you change it.
-    func edit(_ key: CommentKey) -> String? { edits[key] }
+    func edit(_ key: CommentKey) -> String? { edits[key]?.text }
 
-    func keepEdit(_ text: String, for key: CommentKey) {
-        edits[key] = text
+    /// Keeps what you wrote in place of a comment of yours, with what it said as you began (`base`): nothing while it says
+    /// what you began with.
+    func keepEdit(_ text: String, for key: CommentKey, from base: CommentEditing) {
+        edits[key] = text == base.text ? nil : EditDraft(text: text, base: base)
     }
 
     /// Forgets what you wrote in place of a comment, as you cancel: it stays as it is.
@@ -212,11 +221,15 @@ final class ThreadChanges: ObservableObject {
         edits[key] = nil
     }
 
-    /// What you'd edit of a comment of yours: what it says, its mentions as the names the details show
-    /// (`CommentEditing`), or, while you're editing it, what you wrote.
-    func editing(_ comment: ReviewComment, in thread: ReviewThread, of pullRequest: PullRequest) -> String {
-        edits[CommentKey(thread: Key(pullRequest: pullRequest.key, thread: thread.id), comment: comment.id)]
-            ?? CommentEditing(comment, in: thread, of: pullRequest).text
+    /// What you edit of a comment of yours as you open it: what you wrote in place of it, with what it said as you began,
+    /// while it still says that; or else what it says now, its mentions as the names the details show (`CommentEditing`).
+    /// What you wrote before it changed elsewhere goes: saved, it would put back what it said.
+    func startEditing(_ comment: ReviewComment, in thread: ReviewThread, of pullRequest: PullRequest) -> EditDraft {
+        let key = CommentKey(thread: Key(pullRequest: pullRequest.key, thread: thread.id), comment: comment.id)
+        if let draft = edits[key], draft.base.content == comment.kept { return draft }
+        edits[key] = nil
+        let now = CommentEditing(comment, in: thread, of: pullRequest)
+        return EditDraft(text: now.text, base: now)
     }
 
     /// Dismisses what a thread says went wrong.
@@ -395,13 +408,17 @@ final class ThreadChanges: ObservableObject {
         SpokenText.announce(afterReply ? "Replied, and set to \(status.title)" : "Set to \(status.title)")
     }
 
-    /// Saves your comment as you edited it (`posted(_:)`), each name a mention showed as its mention again (`CommentEditing`),
-    /// in place of what it says, as you, and returns whether it was saved, and was still yours to finish: then what you wrote
-    /// is forgotten; otherwise it's kept, and your edit says why. One that says what the comment says already goes nowhere.
-    /// After one that may have gone, as one Azure DevOps didn't answer in time, the same edit goes only once the thread, read
-    /// again first, says the comment doesn't say it. Called off, it settles as a reply does (`reply(_:then:to:of:)`).
+    /// Saves your comment as you edited it (`posted(_:)`), in place of what it says, as you, each name a mention showed as you
+    /// began (`base`, or else what it says now) as that mention again (`CommentEditing`), and returns whether it was saved,
+    /// or there was nothing to save, and was still yours to finish: then what you wrote is forgotten; otherwise it's kept,
+    /// and your edit says why. One that says what you began with, or what the comment says now, goes nowhere: it would only
+    /// put back what it said before it changed elsewhere. After one that may have gone, as one Azure DevOps didn't answer
+    /// in time, the same edit goes only once the thread, read again first, says the comment doesn't say it. Called off, it
+    /// settles as a reply does (`reply(_:then:to:of:)`).
     @discardableResult
-    func edit(_ text: String, of comment: ReviewComment, in thread: ReviewThread, of pullRequest: PRKey) async -> Bool {
+    func edit(
+        _ text: String, from base: CommentEditing? = nil, of comment: ReviewComment, in thread: ReviewThread, of pullRequest: PRKey
+    ) async -> Bool {
         let key = Key(pullRequest: pullRequest, thread: thread.id)
         let draft = CommentKey(thread: key, comment: comment.id)
         guard !Self.posted(text).isEmpty, !isSending(key), let store, settings.makesChanges else { return false }
@@ -411,13 +428,13 @@ final class ThreadChanges: ObservableObject {
         }
         guard let record = store.record(for: pullRequest), let (current, known) = yours(comment, in: thread, of: record, as: .edit(comment: comment.id))
         else { return false }
-        let editing = CommentEditing(known, in: current, of: record.pullRequest)
-        let markdown = editing.content(of: Self.posted(text))
+        let base = base ?? CommentEditing(known, in: current, of: record.pullRequest)
+        let markdown = base.content(of: Self.posted(text))
         let digest = Self.digest(markdown)
-        // It says that already.
-        guard digest != Self.digest(editing.content) else {
+        // Nothing you changed, or what it says already.
+        guard digest != Self.digest(base.content), digest != Self.digest(known.kept) else {
             edits[draft] = nil
-            SpokenText.announce("Your comment says that already")
+            SpokenText.announce(digest == Self.digest(known.kept) ? "Your comment says that already" : "Nothing to save")
             return true
         }
         let generation = generation, lifetime = lifetime, account = account

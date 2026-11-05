@@ -43,14 +43,11 @@ struct CommentDeleteConfirmation: View {
             }
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
-                Button("Cancel", action: cancel)
-                    .font(size: 12, weight: .medium)
+                Button(action: cancel) { ControlLabel("Cancel") }
                     .buttonStyle(.bordered)
                     .keyboardShortcut(.cancelAction)
                     .help("Keep your comment (Esc)")
-                Button("Delete", role: .destructive, action: delete)
-                    // As big as the text on windows' pages, which a control's own font isn't.
-                    .font(size: 12, weight: .semibold)
+                Button(role: .destructive, action: delete) { ControlLabel("Delete") }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
                     .help("Delete your comment in Azure DevOps, as you: it can't be undone")
@@ -195,5 +192,38 @@ private struct SpellCheckingProbe: NSViewRepresentable {
             for subview in view.subviews { found += textViews(in: subview) }
             return found
         }
+    }
+}
+
+// MARK: - The keyboard's focus
+
+/// What of yours on a thread takes the keyboard's focus back once a composer of yours on it closes as the one open, as its
+/// control shows again or is still there: Reply after your reply, sent or closed (`ThreadReplyArea`), and once a comment you
+/// deleted is done with, its ⋯ gone with it; a comment's ⋯ after your edit of it, saved or canceled, and after you kept it
+/// rather than delete it. Nothing once another composer opened meanwhile, which has the keyboard's focus then. In the
+/// thread's card alone (`ThreadCard`).
+struct ThreadRefocus: Equatable {
+    /// Reply takes it back (`ThreadReplyButtons`).
+    var reply = false
+    /// The comment whose ⋯ takes it back.
+    var comment: Int?
+
+    /// `composer`, your edit of a comment on `thread`, or what confirms you delete it, closed as the one open: the comment's
+    /// ⋯ takes it back. Nothing for another composer.
+    mutating func closed(_ composer: CopilotComposing, on thread: Int) {
+        guard let id = composer.comment(on: thread) else { return }
+        self = ThreadRefocus(comment: id)
+    }
+
+    /// A comment of yours you deleted, deleted or not, is done with, while `composing` is open: Reply takes it back, once Reply
+    /// is there again after it was being deleted, unless another composer opened meanwhile.
+    mutating func deleted(composing: CopilotComposing?) {
+        guard composing == nil else { return }
+        self = ThreadRefocus(reply: true)
+    }
+
+    /// A composer opened: what closed before doesn't take the keyboard's focus back as its control shows again.
+    mutating func opened() {
+        self = ThreadRefocus()
     }
 }
