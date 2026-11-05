@@ -11,6 +11,11 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
     case sharedCheckout
     /// The Copilot CLI didn't fork the session (`CopilotLauncher.Request.forking`): why, in a sentence.
     case cantFork(String)
+    /// Push & Reply would push a merge of commits the branch the pull request merges into doesn't have
+    /// (`Git.checkPush(in:source:target:)`): that branch.
+    case foreignMerge(target: String)
+    /// BriefBar couldn't check what Push & Reply would push: what git said.
+    case cantCheckPush(String)
 
     public var description: String {
         switch self {
@@ -22,6 +27,10 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
         case .sharedCheckout:
             return "Another Copilot session is working in the same checkout now, so Copilot didn't start there on its own. Send it again once that's done, or open the session in Copilot."
         case .cantFork(let reason): return reason
+        case .foreignMerge(let target):
+            return "This session holds a merge that \(target) doesn't have, so Copilot didn't push from it. Fix the pull request in a new session."
+        case .cantCheckPush(let message):
+            return "BriefBar couldn't check what this session would push, so Copilot didn't push from it: \(message)"
         }
     }
 }
@@ -210,6 +219,24 @@ public struct CopilotLauncher: Sendable {
             if let fork { await forker.discard(fork) }
             if let error = error as? GitError { throw LaunchError.git(error) }
             throw error
+        }
+        // Push & Reply pushes what the session's checkout holds: never a merge of commits the branch the pull request merges
+        // into doesn't have, as when it was retargeted after its conflicts were resolved there. A new session's worktree
+        // starts at the branch's latest commit, with nothing to push yet.
+        if case .pullRequest(let pullRequest, .pushAndReply) = request.subject, request.continuing != nil || request.forking != nil {
+            var refusal: LaunchError?
+            do {
+                if try await git.checkPush(in: worktree, source: pullRequest.sourceBranch, target: pullRequest.targetBranch) == .foreignMerge {
+                    refusal = .foreignMerge(target: pullRequest.targetBranch)
+                }
+            } catch {
+                refusal = .cantCheckPush((error as? GitError)?.description ?? String(describing: error))
+            }
+            if let refusal {
+                if made { try? await git.removeWorktree(at: worktree, of: repository.root, force: true) }
+                if let fork { await forker.discard(fork) }
+                throw refusal
+            }
         }
         // Again, after the git commands above, right before it starts: the app may have opened the session meanwhile, or
         // another of its sessions started a turn in the same checkout.

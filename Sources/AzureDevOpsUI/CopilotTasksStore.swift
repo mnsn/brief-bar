@@ -132,6 +132,16 @@ final class CopilotTasksStore: ObservableObject {
     /// there: whether it could. The source's.
     var canShowPullRequest: (PRKey) -> Bool = { _ in false }
     var showPullRequest: (PRKey) -> Bool = { _ in false }
+    /// The branch a pull request merges into now, as the list last read it: what Push & Reply checks a session's merges
+    /// against (`Git.checkPush(in:source:target:)`), however long its window was open. Nil when the list doesn't have it.
+    /// The source's.
+    var currentTarget: (PRKey) -> String? = { _ in nil }
+
+    /// The branch a pull request merges into now (`currentTarget`), or, when the list doesn't have it, the one it merged
+    /// into as you sent it.
+    func targetNow(of pullRequest: TaskPullRequest) -> String {
+        currentTarget(PRKey(pullRequest.organization, pullRequest.id)).flatMap { $0.isEmpty ? nil : $0 } ?? pullRequest.targetBranch
+    }
     /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
     var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
     /// Stands in for copying a prompt and opening a session in the Copilot app, in tests: whether it opened.
@@ -453,6 +463,13 @@ final class CopilotTasksStore: ObservableObject {
     ) -> Date? {
         // Not once Azure DevOps stopped, as it may have while an inline Fix looked for where to send it.
         guard canSend, isOn, !hasStopped, continuing == nil || forking == nil else { return nil }
+        // Push & Reply checks what it would push against the branch the pull request merges into now, which may not be the
+        // one it did as its window opened.
+        var subject = subject
+        if case .pullRequest(var pullRequest, .pushAndReply) = subject {
+            pullRequest.targetBranch = targetNow(of: pullRequest)
+            subject = .pullRequest(pullRequest, .pushAndReply)
+        }
         // A second run in a session Copilot still works in would fork its history; one in a checkout it works in, for another
         // session, would mix their work up, as when two of the Copilot app's sessions share one. A fork works in a worktree
         // of its own, so the session it forks may be busy.
@@ -653,6 +670,8 @@ final class CopilotTasksStore: ObservableObject {
         case .openInApp?: return "the Copilot app has the session open"
         case .sharedCheckout?: return "another session works in the checkout"
         case .cantFork?: return "the Copilot CLI didn't fork the session"
+        case .foreignMerge?: return "the session holds a merge its target doesn't have"
+        case .cantCheckPush?: return "couldn't check what it would push"
         case nil: return "unexpected error"
         }
     }

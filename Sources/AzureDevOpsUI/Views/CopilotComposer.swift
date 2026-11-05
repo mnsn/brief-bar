@@ -1227,8 +1227,10 @@ struct CopilotComposerView: View {
         let saidItWouldCopy = reach?.sends(forking: forking) == false
         // A fork is a session of its own, whose fixes aren't the session's.
         let about = aboutParts(to: forking ? nil : target.id)
+        // Push & Reply goes only once what the session's folder would push is checked.
+        let pushing: TaskPullRequest? = if case .pullRequest(let pullRequest, .pushAndReply) = subject { pullRequest } else { nil }
         sending(Task {
-            let result = await store.deliver(text, to: target, forking: forking, handOff: handOff, about: about)
+            let result = await store.deliver(text, to: target, forking: forking, handOff: handOff, about: about, checkingPush: pushing)
             // The window closed, or shows another task: it was stopped.
             guard !Task.isCancelled else { return }
             isDelivering = false

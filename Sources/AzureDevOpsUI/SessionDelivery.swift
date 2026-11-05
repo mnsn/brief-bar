@@ -232,21 +232,26 @@ extension CopilotTasksStore {
     ///   - sentAt: as delivering it starts, which its sender may tell, as the time it took on what it's about: what the
     ///     session does from then on is its turn, even one over before BriefBar heard it went. It's free then, or nothing
     ///     goes.
+    ///   - checkingPush: the pull request a Push & Reply pushes to: nothing goes, not even copied, while the folder the
+    ///     session works in holds a merge of commits the branch it merges into now doesn't have, or that can't be checked
+    ///     (`pushProblem`).
     /// - Returns: sent; forked and sent, with the fork; why it fell back; or why nothing went.
     func deliver(
         _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil,
-        at sentAt: Date = Date()
+        at sentAt: Date = Date(), checkingPush: TaskPullRequest? = nil
     ) async -> SessionDelivery {
         // Until it's known whether it went, the turns of the prompts sent the session before aren't followed: it may reach
         // the session, and its turn end, before BriefBar hears it went (`pauseFollowing`). A fork's goes to the fork.
         if !forking { pauseFollowing(choice.id) }
         defer { if !forking { resumeFollowing(choice.id) } }
-        let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff)
+        let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff, checkingPush: checkingPush)
         keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt, copying: prompt, handOff: handOff)
         return outcome
     }
 
-    private func deliverPrompt(_ prompt: String, to choice: SessionChoice, forking: Bool, handOff: CommentHandOff?) async -> SessionDelivery {
+    private func deliverPrompt(
+        _ prompt: String, to choice: SessionChoice, forking: Bool, handOff: CommentHandOff?, checkingPush: TaskPullRequest?
+    ) async -> SessionDelivery {
         guard canSend, isOn, !hasStopped, ItemRef.session(choice.id) != nil else { return .notSent(Self.cantSendNow) }
         let id = choice.id
         if forking, !choice.canFork { return .notSent("The Copilot app can't fork this session.") }
@@ -269,6 +274,12 @@ extension CopilotTasksStore {
         if let busy = busyReason(for: choice, in: checkout) { return .notSent(busy) }
         if let checkout { deliveringFolders[id] = checkout }
         defer { deliveringFolders[id] = nil }
+        // While the checkout is BriefBar's to send to, so no task of its own changes it meanwhile.
+        if let pullRequest = checkingPush {
+            if let problem = await pushProblem(pullRequest, in: checkout, of: choice) { return .notSent(problem) }
+            // Again, after git's wait, as after the one above.
+            guard canSend, isOn, !hasStopped, sessionPromptsAreOn || !promptsWereOn else { return .notSent(Self.cantSendNow) }
+        }
         if let why = reach.whyNot(forking: forking) {
             return await fallBack(prompt, in: id, forking: forking, reason: why, foreseen: true, promptsWereOn: promptsWereOn)
         }
@@ -357,6 +368,28 @@ extension CopilotTasksStore {
             return await fallBack(
                 prompt, in: fork, forking: forking, fork: fork, reason: why.description, mayHaveSent: why.mayHaveGone
             )
+        }
+    }
+
+    /// Why a Push & Reply mustn't go to a session: the folder it works in holds a merge of commits that the branch the pull
+    /// request merges into now, as the list last read it, doesn't have (`Git.checkPush(in:source:target:)`), as when it was
+    /// retargeted after its conflicts were resolved there; or BriefBar couldn't check, as when the folder isn't a clone of
+    /// the pull request's repository. Nil when it may go.
+    private func pushProblem(_ pullRequest: TaskPullRequest, in folder: URL?, of choice: SessionChoice) async -> String? {
+        let name = CopilotWork.quoted(choice.name, isTask: choice.run != nil)
+        guard let folder else { return "BriefBar can't tell which folder \(name) works in, so it couldn't check what it would push, and nothing went." }
+        let target = targetNow(of: pullRequest)
+        let git = await git()
+        do {
+            _ = try await git.repository(at: folder, for: pullRequest)
+            switch try await git.checkPush(in: folder, source: pullRequest.sourceBranch, target: target) {
+            case .clean: return nil
+            case .foreignMerge: return "\(name) holds a merge that \(target) doesn't have, so nothing went. Fix the pull request in a new session."
+            }
+        } catch {
+            Log.app.error("Couldn't check what a session would push: \(String(describing: type(of: error)), privacy: .public)")
+            let why = (error as? GitError)?.description ?? String(describing: error)
+            return "BriefBar couldn't check what \(name) would push, so nothing went: \(why)"
         }
     }
 

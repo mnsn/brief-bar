@@ -2260,6 +2260,22 @@ last one's session, if its worktree is still there: `--session-id` is that sessi
 `--name`, in that worktree, and the run keeps its place in the list. **Push & Reply** always does, and is
 offered once a task that changed files is done.
 
+**What Push & Reply pushes.** It pushes the session's checkout as it is, and a merge in it would go too: say Copilot
+resolved the pull request's conflicts against main, without pushing, and the pull request was then retargeted to
+release/x; pushing would bring main's work into it, and only a force push, which the prompts forbid, could take it back.
+So right before a Push & Reply goes, BriefBar checks, in the folder the session works in
+(`Git.checkPush(in:source:target:)`): it fetches the pull request's branch and the one it merges into now, as the list
+last read it, lists the merges in what `origin/<branch>` doesn't have yet, and a merge still in progress
+(`MERGE_HEAD`), and requires that what each merged in is in `origin/<target>` (as `git merge-base --is-ancestor`
+would). Otherwise nothing goes, and it says why. A merge of the pull request's own branch, as `git pull` makes,
+doesn't pass either: from history alone it can't be told from a merge of the branch into another, and BriefBar's prompts
+rebase rather than merge. For BriefBar's own tasks the launcher checks the session's worktree, or its fork's, before
+Copilot starts (`LaunchError.foreignMerge`), and the task fails with why; for the Copilot app's sessions the window
+checks the folder the session works in before the prompt is sent or copied, and says why it didn't send it
+(`CopilotTasksStore.deliver(_:to:forking:handOff:about:at:checkingPush:)`). When BriefBar can't check, as in a folder
+that isn't a clone of the pull request's repository, nothing goes either. The prompt names the branch it merges into,
+and has Copilot check the same and stop if it finds a merge of any other branch.
+
 **A session that's already there.** The composer's session menu, under **Where It Goes**, also lists the sessions a task can
 go to instead of a new one (`SessionChoice`), read as it opens, and only while **Send Work to Copilot**
 is on. First BriefBar's own: its tasks on the work item or pull request whose worktrees are still there,
@@ -3249,8 +3265,8 @@ It's a command-line mode like `--json`, with the same rules:
 [Send work to Copilot](#send-work-to-copilot)), told to work in the agent's checkout rather than a
 worktree: fetch the branch and check it out, or ask where to work if that isn't a clone of the
 repository or has changes of its own. Push & Reply, for one of yours, first checks that HEAD contains
-the pull request's branch and that everything it would push was made for it, stops and asks if not,
-and never rebases. For a failed build, it reads each run's timeline first, with a GET, rather than what the details read
+the pull request's branch and that everything it would push was made for it, and that each merge it would push merged
+in only what the branch it merges into has, stops and asks if not, and never rebases. For a failed build, it reads each run's timeline first, with a GET, rather than what the details read
 of it. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 

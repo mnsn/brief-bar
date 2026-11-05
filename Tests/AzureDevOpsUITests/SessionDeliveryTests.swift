@@ -239,6 +239,90 @@ private final class TakenAt: Sendable {
         #expect(store.settings.copilotRuns.isEmpty)
     }
 
+    /// A clone of the pull request's repository, as Azure DevOps names it, that fetches from one on disk: release/x and the
+    /// pull request's branch started from main's first commit, and main went a commit further. The clone is detached at the
+    /// branch, with main merged in, as resolving its conflicts against main left it.
+    private func resolvedAgainstMain(in home: URL) async throws -> URL {
+        struct GitFailed: Error { let message: String }
+        let environment = ["PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"]
+        func git(_ arguments: [String]) async throws {
+            let result = try await ProcessRunner().run(URL(fileURLWithPath: "/usr/bin/git"), arguments: arguments, environment: environment, timeout: 60)
+            guard result.status == 0 else { throw GitFailed(message: String(decoding: result.stderr, as: UTF8.self)) }
+        }
+        let identity = ["-c", "user.name=Robin Diaz", "-c", "user.email=robin@example.com"]
+        let seed = home.appendingPathComponent("seed")
+        let origin = home.appendingPathComponent("origin.git")
+        let checkout = home.appendingPathComponent("checkout")
+        func commit(_ text: String, to file: String) async throws {
+            try "\(text)\n".write(to: seed.appendingPathComponent(file), atomically: true, encoding: .utf8)
+            try await git(["-C", seed.path, "add", file])
+            try await git(["-C", seed.path] + identity + ["commit", "--quiet", "-m", text])
+        }
+        try await git(["init", "--quiet", "--initial-branch=main", seed.path])
+        try await commit("Storefront", to: "README.md")
+        try await git(["-C", seed.path, "branch", "release/x"])
+        try await git(["-C", seed.path, "checkout", "--quiet", "-b", pullRequest.sourceBranch])
+        try await commit("Totals", to: "totals.txt")
+        try await git(["-C", seed.path, "checkout", "--quiet", "main"])
+        try await commit("Main's work", to: "main.txt")
+        try await git(["clone", "--quiet", "--bare", seed.path, origin.path])
+        try await git(["clone", "--quiet", origin.path, checkout.path])
+        let remote = "https://dev.azure.com/contoso/Storefront/_git/shop-web"
+        try await git(["-C", checkout.path, "remote", "set-url", "origin", remote])
+        try await git(["-C", checkout.path, "config", "url.\(origin.path).insteadOf", remote])
+        try await git(["-C", checkout.path, "checkout", "--quiet", "--detach", "origin/\(pullRequest.sourceBranch)"])
+        try await git(["-C", checkout.path] + identity + ["merge", "--quiet", "--no-edit", "origin/main"])
+        return checkout
+    }
+
+    /// Push & Reply goes once what the folder the session works in would push is checked, against the branch the pull
+    /// request merges into now. While it holds a merge of what that branch doesn't have, as when the pull request was
+    /// retargeted after its conflicts were resolved there, nothing's sent, copied or shown; nor while BriefBar can't
+    /// check, as in a folder that isn't a clone of its repository. Against the branch it merged, it goes.
+    @Test(.timeLimit(.minutes(1)))
+    func sendsNoPushOfAMergeTheTargetDoesntHave() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        var shown: [String] = []
+        var copied: [String] = []
+        store.showForTests = { id in shown.append(id); return true }
+        store.openForTests = { _, text in copied.append(text); return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        ext.start()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        try work(session, in: try await resolvedAgainstMain(in: home), home: home)
+        // The window opened as the pull request merged into main; the list has read since that it merges into release/x.
+        var target: String? = "release/x"
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        store.currentTarget = { $0 == key ? target : nil }
+
+        let refused = await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest)
+        #expect(refused == .notSent("‘Fix the totals’ holds a merge that release/x doesn't have, so nothing went. Fix the pull request in a new session."))
+        #expect(ext.received.isEmpty)
+        #expect(requests(home).isEmpty)
+        #expect(shown.isEmpty && copied.isEmpty)
+        #expect(store.deliveringFolders.isEmpty && store.delivering.isEmpty)
+
+        let elsewhere = home.appendingPathComponent("elsewhere", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try work(session, in: elsewhere, home: home)
+        guard case .notSent(let why) = await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) else {
+            Issue.record("BriefBar sent a push it couldn't check")
+            return
+        }
+        #expect(why.hasPrefix("BriefBar couldn't check what ‘Fix the totals’ would push, so nothing went: "))
+        #expect(ext.received.isEmpty && copied.isEmpty)
+
+        target = nil
+        try work(session, in: home.appendingPathComponent("checkout", isDirectory: true), home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        #expect(ext.received == ["Push and reply"])
+        #expect(copied.isEmpty)
+    }
+
     /// A prompt about comments is kept as sent from when delivering it started, before the session's extension took it:
     /// whatever the session does from then on is its turn, even one that's over before BriefBar hears it went.
     @Test func keepsAPromptAboutCommentsAsSentFromWhenDeliveringItStarted() async throws {

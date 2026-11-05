@@ -190,6 +190,17 @@ public enum PullRequestPrompt {
                 """)
             ifRejected = "If that's rejected, stop and tell me: don't rebase, merge or force."
         }
+        // A merge of another branch, such as one it targeted before, would bring that branch's work into the pull request
+        // with a push nothing stops, and only a force push could take it back.
+        if !pr.targetBranch.isEmpty {
+            let target = branch(pr.targetBranch)
+            steps.append("""
+                This pull request merges into \(target). Fetch origin/\(target) and origin/\(source), and check what you'd \
+                push: whatever a merge in git log --merges origin/\(source)..HEAD merged in, or a merge still in progress \
+                merges in, must be in origin/\(target) (git merge-base --is-ancestor <commit> origin/\(target)). If you find \
+                a merge of any other branch, stop and tell me, and don't commit or push.
+                """)
+        }
         steps += [
             "Make sure it builds and the tests you ran pass, then commit your changes with a clear message.",
             "Push them to \(source), without force: git push origin HEAD:refs/heads/\(source). \(ifRejected)",

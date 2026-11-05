@@ -17,6 +17,11 @@
 - **A resolution of conflicts that are gone goes too.** Copilot's resolution of a pull request's merge conflicts ends
   once the pull request merges cleanly, or targets another branch, rather than coming back, ready to push, as it
   conflicts again.
+- **Push & Reply won't push another branch's work.** Right before a Push & Reply goes, BriefBar fetches the pull
+  request's branch and the one it merges into, in the folder its session works in, and checks each merge it would push:
+  when one merged in what that branch doesn't have, as when Copilot resolved the conflicts against main and the pull
+  request was then retargeted to release/x, nothing goes, and BriefBar says why, so you can fix it in a new session.
+  Push & Reply's prompt names the branch it merges into too, and has Copilot stop if it finds a merge of any other.
 - **Comments you'll paste to Copilot stay on Needs You until you do.** When BriefBar copies a prompt for you to paste in
   a Copilot app session, the comments it quotes leave Needs You once BriefBar sees you pasted it there, not as it's
   copied, nor when you send the session something else. A prompt whose session waits overnight for your answer says to
@@ -28,7 +33,8 @@
 - **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** Stopping a
   prompt's turn goes through BriefBar's extension in the session; to tell that you pasted a prompt BriefBar copied, it
   reads the messages sent the session since; and BriefBar keeps the branch a pull request's conflicts were with, for
-  those Copilot took on, and when each Push & Reply in a task's session ran, and how it ended.
+  those Copilot took on, and when each Push & Reply in a task's session ran, and how it ended. Right before a Push & Reply
+  goes, git fetches the pull request's branch and the one it merges into, into the clone its session works in.
 
 ## 0.16.2 - 2026-11-05
 
