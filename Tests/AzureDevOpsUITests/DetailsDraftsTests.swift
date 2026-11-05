@@ -484,17 +484,15 @@ import Testing
         return view.subviews.lazy.compactMap(textField(in:)).first
     }
 
-    /// Lets SwiftUI lay the window out and run what its views start, until `done`.
+    /// Lets SwiftUI lay the window out and run what its views start, until `done`, for as long as a busy machine could
+    /// need (`waitLimit`). It awaits between looks, so that the main run loop does that meanwhile, and the main actor goes
+    /// on with other tests' work: a test that ran that run loop itself would hold the main actor until it returned.
     private func settle(until done: () -> Bool) async throws {
-        for _ in 0..<300 where !done() {
-            Self.runLoop()
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !done() {
+            guard ContinuousClock.now < deadline else { throw Timeout(description: "Timed out waiting for the window") }
             try await Task.sleep(for: .milliseconds(10))
         }
-    }
-
-    /// The main run loop, for a moment, where SwiftUI lays windows out and starts their views' tasks.
-    private static func runLoop() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
     }
 
     /// The text of each field the window shows.
@@ -543,4 +541,8 @@ import Testing
         // Long after, it's forgotten.
         #expect(outcomes.isNew(fixed, at: ended.addingTimeInterval(SpokenOutcomes.remembered + 1)))
     }
+}
+
+private struct Timeout: Error, CustomStringConvertible {
+    var description: String
 }

@@ -210,7 +210,7 @@ import BriefBarCore
     ) -> PRSnapshot {
         PRSnapshot(
             key: PRKey("contoso", number), title: "Pull request \(number)", repository: "shop-web", project: "Shop", author: "Sam Rivera",
-            role: role, isDraft: false, group: group, reason: reason, headline: headline, detail: detail, since: since,
+            role: role, isDraft: false, group: group, reason: reason, headline: headline, detailText: detail.map(BranchText.init(_:)), since: since,
             url: URL(string: "https://dev.azure.com/contoso/Shop/_git/shop-web/pullrequest/\(number)")!, events: events,
             approvals: [], checkState: nil, hasDetails: hasDetails
         )

@@ -181,7 +181,7 @@ import BriefBarCore
     private func snapshot(_ merge: MergeSummary?, group: PRGroup = .done, reason: PRReason = .completed) -> PRSnapshot {
         var snapshot = PRSnapshot(
             key: PRKey(Fixture.org, 7), title: "Fix the checkout total", repository: "shop-web", project: "Shop", author: "Robin Diaz",
-            role: .author, isDraft: false, group: group, reason: reason, headline: "Completed", detail: nil, since: t(-hour),
+            role: .author, isDraft: false, group: group, reason: reason, headline: "Completed", detailText: nil, since: t(-hour),
             url: URL(string: "https://dev.azure.com/contoso/Shop/_git/shop-web/pullrequest/7")!, events: [], approvals: [],
             checkState: nil, hasDetails: false
         )
