@@ -15,6 +15,8 @@
 - **A file's diff folds only runs of four or more unchanged lines**: fewer show, where a fold saved no room.
 - **What's Left says a pull request set to complete automatically completes by itself**, as its heading does, rather
   than that you can complete it.
+- **A reviewer whose vote goes under their name lines up with the others**, at a bigger text size, rather than moving
+  to the right.
 - **`--render` draws Settings with its chosen page highlighted in the sidebar**, where it drew a black capsule.
 
 ## 0.15.0 - 2026-11-04
