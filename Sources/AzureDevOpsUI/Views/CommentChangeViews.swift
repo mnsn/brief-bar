@@ -200,13 +200,16 @@ private struct SpellCheckingProbe: NSViewRepresentable {
 /// What of yours on a thread takes the keyboard's focus back once a composer of yours on it closes as the one open, as its
 /// control shows again or is still there: Reply after your reply, sent or closed (`ThreadReplyArea`), and once a comment you
 /// deleted is done with, its ⋯ gone with it; a comment's ⋯ after your edit of it, saved or canceled, and after you kept it
-/// rather than delete it. Nothing once another composer opened meanwhile, which has the keyboard's focus then. In the
-/// thread's card alone (`ThreadCard`).
+/// rather than delete it. Nothing once another composer opened meanwhile, though it closed since: the keyboard's focus is
+/// where you took it. In the thread's card alone (`ThreadCard`).
 struct ThreadRefocus: Equatable {
     /// Reply takes it back (`ThreadReplyButtons`).
     var reply = false
     /// The comment whose ⋯ takes it back.
     var comment: Int?
+    /// The comment of yours being deleted, since you confirmed it, while no composer opened: Reply takes it back once it's
+    /// done with.
+    var deleting: Int?
 
     /// `composer`, your edit of a comment on `thread`, or what confirms you delete it, closed as the one open: the comment's
     /// ⋯ takes it back. Nothing for another composer.
@@ -215,10 +218,15 @@ struct ThreadRefocus: Equatable {
         self = ThreadRefocus(comment: id)
     }
 
-    /// A comment of yours you deleted, deleted or not, is done with, while `composing` is open: Reply takes it back, once Reply
-    /// is there again after it was being deleted, unless another composer opened meanwhile.
-    mutating func deleted(composing: CopilotComposing?) {
-        guard composing == nil else { return }
+    /// You confirmed you delete a comment of yours: it's being deleted.
+    mutating func deleting(_ comment: Int) {
+        self = ThreadRefocus(deleting: comment)
+    }
+
+    /// A comment of yours you deleted, deleted or not, is done with: Reply takes it back, once Reply is there again after it
+    /// was being deleted, unless a composer opened since you confirmed it, which forgot it (`opened()`).
+    mutating func deleted(_ comment: Int) {
+        guard deleting == comment else { return }
         self = ThreadRefocus(reply: true)
     }
 

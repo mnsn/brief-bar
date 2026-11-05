@@ -272,11 +272,15 @@ public struct ThreadChange: Sendable, Equatable {
     /// From Azure DevOps' answer to a change, its comments' mentions named as the pull request's other comments are; nil
     /// for one it can't read, or that isn't about the thread, or the comment, the change was.
     /// - Parameters:
-    ///   - known: the thread as BriefBar read it, whose comments' authors name mentions too.
+    ///   - known: the thread as BriefBar read it, whose comments' authors, and the names its comments' mentions showed as,
+    ///     name mentions too.
     ///   - date: when it answered: when a comment you edited was, if the answer doesn't say.
     public init?(_ answer: ADOWrite.Answer, to write: ADOWrite, pullRequest: PullRequest, known: ReviewThread?, at date: Date = Date()) {
         var names = PRDetails.names(of: pullRequest)
-        for comment in known?.comments ?? [] { names[comment.author.id] = comment.author.name }
+        for comment in known?.comments ?? [] {
+            names[comment.author.id] = comment.author.name
+            names.merge(comment.mentionNames) { named, _ in named }
+        }
         guard let address = write.thread else { return nil }
         switch (answer, write) {
         case (.comment(let comment), .editComment(_, let id, _)):

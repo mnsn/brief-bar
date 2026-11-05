@@ -290,11 +290,15 @@ public struct ReviewComment: Sendable, Codable, Equatable {
     /// What kind of comment Azure DevOps says it is, `text`, what someone wrote, or `codeChange`; nil when it doesn't say,
     /// as for the demo's. System comments are never read.
     public var commentType: String?
+    /// The names its mentions show as (`markdown`), by their lowercased IDs, as BriefBar named them as it read it: from the
+    /// pull request's people, and its thread's identities and comments' authors, those it leaves out too; for your edit of
+    /// it to name them the same (`CommentEditing`). Empty for one made up, as the demo's, whose mentions are names already.
+    public var mentionNames: [String: String]
 
     /// `markdown` is `text` unless it's given.
     public init(
         id: Int, author: Person, text: String, markdown: String? = nil, mentions: [String] = [], publishedAt: Date, content: String? = nil,
-        editedAt: Date? = nil, commentType: String? = nil
+        editedAt: Date? = nil, commentType: String? = nil, mentionNames: [String: String] = [:]
     ) {
         self.id = id
         self.author = author
@@ -305,6 +309,7 @@ public struct ReviewComment: Sendable, Codable, Equatable {
         self.content = content
         self.editedAt = editedAt
         self.commentType = commentType
+        self.mentionNames = mentionNames
     }
 
     /// Nil for a deleted or system comment, or one without an author or anything to say.
@@ -316,18 +321,20 @@ public struct ReviewComment: Sendable, Codable, Equatable {
               let content = comment.content, !content.isEmpty
         else { return nil }
         let publishedAt = comment.publishedDate ?? published ?? .distantPast
+        let mentions = CommentText.mentionedIds(content)
         self.init(
             id: comment.id,
             author: Person(author),
             text: CommentText.plain(content, names: names),
             markdown: CommentText.naming(content, names: names),
-            mentions: CommentText.mentionedIds(content),
+            mentions: mentions,
             publishedAt: publishedAt,
             content: content,
             // Azure DevOps dates what it says as it publishes it, then each time its author edits it: a second after, and it
             // was edited.
             editedAt: comment.lastContentUpdatedDate.flatMap { $0.timeIntervalSince(publishedAt) > 1 ? $0 : nil },
-            commentType: comment.commentType
+            commentType: comment.commentType,
+            mentionNames: names.filter { mentions.contains($0.key) }
         )
     }
 

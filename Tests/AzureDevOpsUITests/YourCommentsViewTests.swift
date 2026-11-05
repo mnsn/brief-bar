@@ -230,9 +230,8 @@ import Testing
     // MARK: The keyboard's focus
 
     /// Your edit of a comment, saved or canceled, and what confirms you delete it, as you keep the comment, give the
-    /// keyboard's focus back to the comment's ⋯; once a comment you deleted is done with, Reply takes it back, but not once
-    /// another composer opened meanwhile, which has it. Opening a composer forgets what closed before; and another thread's,
-    /// your reply's, or Copilot's composers aren't the comment's.
+    /// keyboard's focus back to the comment's ⋯; once a comment you deleted is done with, Reply takes it back. Opening a
+    /// composer forgets what closed before; and another thread's, your reply's, or Copilot's composers aren't the comment's.
     @Test func theKeyboardsFocusGoesBackToWhatOpenedYourEdit() {
         var refocus = ThreadRefocus()
         refocus.closed(.edit(2, in: 70), on: 70)
@@ -242,16 +241,31 @@ import Testing
         refocus.closed(.deleting(4, in: 70), on: 70)
         #expect(refocus == ThreadRefocus(comment: 4))
 
-        refocus.deleted(composing: nil)
+        refocus.deleting(4)
+        #expect(refocus == ThreadRefocus(deleting: 4))
+        refocus.deleted(4)
         #expect(refocus == ThreadRefocus(reply: true))
-        var elsewhere = ThreadRefocus()
-        elsewhere.deleted(composing: .reply(to: 71))
-        #expect(elsewhere == ThreadRefocus())
+        // Another comment's deletion done with isn't this one's.
+        var other = ThreadRefocus()
+        other.deleting(4)
+        other.deleted(5)
+        #expect(other == ThreadRefocus(deleting: 4))
 
         var unchanged = ThreadRefocus(reply: true)
         unchanged.closed(.edit(2, in: 71), on: 70)
         unchanged.closed(.reply(to: 70), on: 70)
         unchanged.closed(CopilotComposing(part: .thread(70), ask: .explain), on: 70)
         #expect(unchanged == ThreadRefocus(reply: true))
+    }
+
+    /// A composer that opened while your comment was being deleted has the keyboard's focus, though it closed again before
+    /// the deletion was done with, as another thread's reply you opened and closed meanwhile: Reply doesn't take it back.
+    @Test func aComposerOpenedWhileYourCommentIsDeletedKeepsTheFocus() {
+        var refocus = ThreadRefocus()
+        refocus.deleting(4)
+        // Another thread's reply opens, then closes: nothing's open as the deletion is done with.
+        refocus.opened()
+        refocus.deleted(4)
+        #expect(refocus == ThreadRefocus())
     }
 }

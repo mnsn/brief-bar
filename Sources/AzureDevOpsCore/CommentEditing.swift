@@ -95,11 +95,12 @@ public struct CommentEditing: Sendable, Equatable {
 }
 
 extension CommentEditing {
-    /// A comment of yours in a pull request's thread, as you'd edit it, its mentions named as the details name them: by the
-    /// pull request's people and the thread's.
+    /// A comment of yours in a pull request's thread, as you'd edit it, its mentions named as the details name them: as they
+    /// were named as it was read (`ReviewComment.mentionNames`), or else by the pull request's people and the thread's.
     public init(_ comment: ReviewComment, in thread: ReviewThread, of pullRequest: PullRequest) {
         var names = PRDetails.names(of: pullRequest)
         for other in thread.comments { names[other.author.id] = other.author.name }
+        names.merge(comment.mentionNames) { _, shown in shown }
         self.init(content: comment.kept, names: names)
     }
 }

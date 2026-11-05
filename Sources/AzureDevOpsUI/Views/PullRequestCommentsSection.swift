@@ -635,11 +635,13 @@ struct ThreadCard: View {
                 } delete: {
                     guard composing == deleting else { return }
                     composing = nil
+                    refocus.deleting(comment.id)
                     hold(thread)
                     Task {
                         await changes.delete(comment, in: thread.thread, of: item.key)
-                        // Done with, its ⋯ gone with it: Reply takes the keyboard's focus back, as it shows again.
-                        refocus.deleted(composing: composing)
+                        // Done with, its ⋯ gone with it: Reply takes the keyboard's focus back, as it shows again, unless a
+                        // composer opened meanwhile.
+                        refocus.deleted(comment.id)
                     }
                 }
             )
