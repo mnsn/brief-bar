@@ -1628,7 +1628,9 @@ and that someone wrote, of type `text` or of none, not a code change's (`ReviewC
 deleted ones are never read. **Edit** opens your reply's composer in place of what the comment says
 (`ThreadReplyComposer.editing`), the details' one composer in place (`CopilotComposing.edit(_:in:)`), with Fix Grammar,
 **Cancel**, which Esc presses, and **Save**, which ⌘Return presses. It holds what the comment says as Azure DevOps keeps
-it, each mention as the name it shows, and saves those names as mentions again (`CommentEditing`): a mention whose name
+it, each mention as the name it shows, as the details named it as they read the thread, by its identities and the authors
+of comments they leave out too (`ReviewComment.mentionNames`), and saves those names as mentions again (`CommentEditing`):
+a mention whose name
 isn't known, that two of them share, that the comment says as text too, or that wouldn't come back as it was, stays as
 Azure DevOps keeps it, `@<…>`, so that what you leave as it was goes as it was. What you write is kept as you type
 (`ThreadChanges.keepEdit`), in memory only, once it says something else than what you began with, with what the comment
@@ -1654,8 +1656,8 @@ reply that comes meanwhile would make it one of those between the first and the 
 stay unfolded once it closes; once the comment leaves its thread, as deleted elsewhere, what was open on it closes, and
 what went wrong with it shows on the thread (`ThreadReplyArea.showsInItsComposer`). Saved or canceled, as the composer
 open, your edit gives the keyboard's focus back to the comment's ⋯, and so does what confirms you delete it, as you keep
-the comment; once a comment you deleted is done with, the thread's Reply takes it, unless another composer opened
-meanwhile (`ThreadRefocus`), as Reply does after your reply.
+the comment; once a comment you deleted is done with, the thread's Reply takes it, unless a composer opened meanwhile,
+though it closed since (`ThreadRefocus`), as Reply does after your reply.
 
 Both go as a reply does: each only when you click, as whom the list was read as when you did, and once while a change
 to the thread is on its way (`ThreadChanges.isSending`), which the same pull request's details in two windows share;
