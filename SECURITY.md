@@ -111,10 +111,11 @@ it, and the app isn't notarized.
   home folder, your temporary folders or SQLite's files, keeps the key to Teams' saved chats in your
   login keychain whatever they say, and sends its output to `/dev/null`
   ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
-- `scripts/check-app.sh` checks each build for these settings, and CI runs it.
+- `scripts/check-app.sh` checks each package for these settings, and CI runs it on every push to `main` and on the
+  pull requests that change packaging or the updater, as the release workflow does.
   `scripts/test-updater-isolation.sh` shows, on a copy of a build that macOS opens, that the updater
   is responsible for itself, and that an ad-hoc library put in place of Sparkle never runs as
-  BriefBar; CI runs it too.
+  BriefBar; CI runs it on each package too.
 - Anything that can sign with the certificate's key can sign itself as BriefBar and inherit its Full
   Disk Access. So the release certificate, **BriefBar Release**, is on no Mac: it's made in memory,
   once, and kept only in the `release` environment's secrets and the maintainer's password manager.

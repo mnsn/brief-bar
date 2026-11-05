@@ -3687,8 +3687,9 @@ when BriefBar does.
   on their demos.
 - `scripts/check-boundaries.sh` reads each module's object files and fails unless only
   `AzureDevOpsCore` and `GitHubCore` use networking APIs, and only `BriefBarCore` starts programs. It
-  also fails if those stop using them, since the check could no longer tell. It reads BriefBar's own
-  modules, the updater's included, not Sparkle, whose requests are only for updates.
+  also fails if those stop using them, since the check could no longer tell, and if a module in `Sources` has no
+  object files, as when a build stopped partway. It reads BriefBar's own modules, the updater's included, not
+  Sparkle, whose requests are only for updates.
 - `WriteTests` checks that the only changes BriefBar can make in Azure DevOps are those `ADOWrite` lists, each as it's
   sent, and that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET
   ([Replying and setting a thread's status](#replying-and-setting-a-threads-status),
