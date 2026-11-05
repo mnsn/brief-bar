@@ -222,10 +222,11 @@ struct PullRequestsPage: View {
     /// - Parameter order: where it stands in the mission whose card it's in; nil elsewhere, for the one its capsule speaks
     ///   for.
     private func row(_ item: PRSnapshot, showsCreated: Bool = false, order: OrderRowContext? = nil) -> PRRowView {
-        PRRowView(
+        let stage = ordering.isOn ? ordering.stage(of: item.key.linkRef) : nil
+        return PRRowView(
             item: item, now: store.now, showsActions: true, showsCreated: showsCreated, isSelected: isSelected(item),
             openSource: source(item), stopWatching: watching(item), dismiss: dismissing(item), showDetails: { select(item) },
-            order: order ?? rowOrder(item)
+            order: order ?? rowOrder(item), stage: stage, ordering: stage == nil ? nil : ordering
         ) { store.open(item) }
     }
 

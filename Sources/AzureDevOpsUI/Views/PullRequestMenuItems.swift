@@ -4,8 +4,8 @@ import BriefBarUI
 import SwiftUI
 
 /// What a pull request's menus have after opening it, in its row's and in its details: summarizing it, the message it was
-/// sent in, taking it off Needs You, what Copilot can do with it while Send Work to Copilot is on, its links, and no
-/// longer watching it.
+/// sent in, taking it off Needs You, its stage while Pull Request Order shows one, what Copilot can do with it while Send
+/// Work to Copilot is on, its links, and no longer watching it.
 struct PullRequestMenuItems: View {
     let item: PRSnapshot
     /// Opens the message it was sent in; nil when it wasn't.
@@ -14,6 +14,8 @@ struct PullRequestMenuItems: View {
     var dismiss: (() -> Void)?
     /// Stops watching it; nil when you don't watch it.
     var stopWatching: (() -> Void)?
+    /// Pull Request Order, for Stage ▸, while it shows the pull request's stage; nil otherwise.
+    var ordering: PullRequestOrder? = nil
 
     var body: some View {
         // Right after opening it, a group of its own.
@@ -23,6 +25,11 @@ struct PullRequestMenuItems: View {
         }
         if let dismiss {
             Button("Remove from Needs You", action: dismiss)
+        }
+        if let ordering, ordering.stage(of: item.key.linkRef) != nil {
+            Menu("Stage") {
+                StageMenuItems(ref: item.key.linkRef, order: ordering)
+            }
         }
         PullRequestCopilotMenuItems(item: item)
         LinkMenuItems(item.key.linkRef)
@@ -42,6 +49,7 @@ struct PullRequestDetailsMenuItems: View {
     let isListed: Bool
 
     @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var ordering: PullRequestOrder
 
     var body: some View {
         Button("Open in Azure DevOps") { store.open(item) }
@@ -53,7 +61,8 @@ struct PullRequestDetailsMenuItems: View {
                 item: item,
                 openSource: item.chatSource == nil ? nil : { store.openSource(item) },
                 dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil,
-                stopWatching: item.isWatched ? { store.stopWatching(item) } : nil
+                stopWatching: item.isWatched ? { store.stopWatching(item) } : nil,
+                ordering: ordering.isOn ? ordering : nil
             )
         } else {
             LinkMenuItems(item.key.linkRef)
