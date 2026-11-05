@@ -108,12 +108,16 @@ public struct StageSession: Equatable, Sendable {
     public var since: Date?
     /// What to call it, when it isn't one the sources name, such as "Copilot" for a task BriefBar sent.
     public var name: String?
+    /// It reads the pull request to review it, and writes nothing, such as Copilot's pre-review of someone else's: it keeps
+    /// it yours to review while it runs, never puts it in progress, and its end ends nothing you set.
+    public var isReview: Bool
 
-    public init(ref: ItemRef, activity: Activity, since: Date?, name: String? = nil) {
+    public init(ref: ItemRef, activity: Activity, since: Date?, name: String? = nil, isReview: Bool = false) {
         self.ref = ref
         self.activity = activity
         self.since = since
         self.name = name
+        self.isReview = isReview
     }
 }
 
@@ -153,7 +157,9 @@ public struct StageFacts: Equatable, Sendable {
     public var othersVoted: Bool
     /// Someone else's that you asked for changes, or rejected: "Waiting for Sam's changes".
     public var youWantChanges: String?
-    /// The others' votes, as a digest of the votes alone, never who cast them: a set Teammate's review ends as it changes.
+    /// The votes a set Teammate's review ends with, as they change: on yours, the votes others cast, as a digest of the
+    /// votes alone, never who cast them, so asking someone else to review it changes nothing; on someone else's, your own
+    /// vote, so voting in Azure DevOps after Finished My Review ends it, and co-reviewers' votes don't.
     public var votes: String
     /// Its latest commit, when its source says: a set In progress ends as it changes.
     public var commit: String?
@@ -329,6 +335,8 @@ public enum StageWhy: Equatable, Sendable {
     case asked(String)
     /// "‘Cart’ finished".
     case finished(StageSession)
+    /// Someone else's that a review, such as Copilot's pre-review, reads now: "Copilot is pre-reviewing it".
+    case preReviewing(StageSession)
     case draft
     /// "Complete it", "Completing automatically".
     case ready(autoComplete: Bool)
@@ -350,7 +358,7 @@ public enum StageWhy: Equatable, Sendable {
     /// saying: "‘Cart’ finished · 10m". Otherwise it's only when its pull request last changed.
     public var saysWhen: Bool {
         switch self {
-        case .merged, .working, .asksYou, .finished: true
+        case .merged, .working, .asksYou, .finished, .preReviewing: true
         default: false
         }
     }
@@ -368,14 +376,21 @@ public enum StageRules {
         guard facts.state.isOpen else { return nil }
         let (mark, replaced) = standingMark(marks, facts: facts, sessions: sessions)
 
-        // A session at work on it now, since after what was set: one that waits for you first, else the latest to start. One
-        // whose start BriefBar doesn't know leaves what was set as it is.
+        // A session at work on it now, since after what was set. On yours, one writing it puts it in progress: one that
+        // waits for you first, else the latest to start. Never on someone else's: there, only a review, such as Copilot's
+        // pre-review, shows, keeping it yours to review while it runs. One whose start BriefBar doesn't know leaves what was
+        // set as it is.
         let busy = sessions.filter { session in
             session.activity.isBusy && mark.map { (session.since ?? .distantPast) > $0.at } ?? true
         }
-        if let session = busy.first(where: { $0.activity == .waitsForYou }) ?? latest(busy) {
-            let why: StageWhy = session.activity == .waitsForYou ? .asksYou(session) : .working(session)
-            return StageReading(stage: .inProgress, why: why, since: session.since)
+        if facts.isYours {
+            let writing = busy.filter { !$0.isReview }
+            if let session = writing.first(where: { $0.activity == .waitsForYou }) ?? latest(writing) {
+                let why: StageWhy = session.activity == .waitsForYou ? .asksYou(session) : .working(session)
+                return StageReading(stage: .inProgress, why: why, since: session.since)
+            }
+        } else if let review = latest(busy.filter(\.isReview)) {
+            return StageReading(stage: .yourReview, why: .preReviewing(review), since: review.since)
         }
 
         if let mark {
@@ -402,7 +417,7 @@ public enum StageRules {
         }
         if let failure = facts.failure { return StageReading(stage: .inProgress, why: .failing(failure), since: since) }
         if let changes = facts.changesWanted { return StageReading(stage: .inProgress, why: .changesWanted(changes), since: since) }
-        if !facts.othersVoted, let session = latest(sessions.filter { $0.activity == .finished }) {
+        if !facts.othersVoted, let session = latest(sessions.filter { $0.activity == .finished && !$0.isReview }) {
             return StageReading(stage: .yourReview, why: .finished(session), since: session.since)
         }
         if facts.state == .draft { return StageReading(stage: .inProgress, why: .draft, since: since) }
@@ -428,14 +443,16 @@ public enum StageRules {
 
     /// Whether a stage set still stands, as the pull request moved on since (plan §2.4). A later change replaces it, which
     /// `standingMark` sees to, and merging or closing it ends it, which comes first anyway. A set In progress ends when a
-    /// session working on it finishes, or new commits come, after it was set; a set Teammate's review, when others' votes
-    /// change, and, on someone else's that you finished reviewing, when new commits come. A set Your review stands until
-    /// it's changed: BriefBar can't tell you reviewed it.
+    /// session writing it finishes, or new commits come, after it was set: a review's end ends nothing. A set Teammate's
+    /// review ends when its votes change (`StageFacts.votes`): on yours, the votes others cast; on someone else's that you
+    /// finished reviewing, your own vote, and new commits. A set Your review stands until it's changed: BriefBar can't tell
+    /// you reviewed it.
     public static func stands(_ mark: StageMark, facts: StageFacts, sessions: [StageSession]) -> Bool {
         let newCommits = mark.commit != nil && facts.commit != nil && mark.commit != facts.commit
         switch mark.stage {
         case .inProgress:
-            return !newCommits && !sessions.contains { $0.activity == .finished && ($0.since ?? .distantPast) > mark.at }
+            return !newCommits
+                && !sessions.contains { !$0.isReview && $0.activity == .finished && ($0.since ?? .distantPast) > mark.at }
         case .teammateReview:
             if let votes = mark.votes, votes != facts.votes { return false }
             return facts.isYours || !newCommits
@@ -518,6 +535,7 @@ public enum StageText {
              .authorChanges(let words), .orderHolds(let words):
             return words
         case .finished(let session): return "\(called(session, name: name)) finished"
+        case .preReviewing(let session): return "\(called(session, name: name)) is pre-reviewing it"
         case .draft: return "Draft"
         case .ready(let autoComplete): return autoComplete ? "Completing automatically" : "Complete it"
         case .waitsFor(_, let words): return words

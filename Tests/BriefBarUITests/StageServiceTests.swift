@@ -432,22 +432,23 @@ private final class Clock {
         #expect(!order.offersStageMenu(for: Self.ref(4086)))
     }
 
-    /// Once your change leaves someone else's without a stage, such as after you approved it and let BriefBar decide, Undo
-    /// stays, and its row's Stage menu with it, so you can undo it where you did it.
+    /// Once your change leaves someone else's without a stage, Undo stays, and its row's Stage menu with it, so you can undo
+    /// it where you did it: say you set In progress on one you help with, then approved it in Azure DevOps, so it asks
+    /// nothing of you, and let BriefBar decide.
     @Test func undoStaysOnceYourChangeLeavesItWithoutAStage() {
         let order = Self.service(Self.defaults())
-        Self.tell(order, [4110: StageFacts(role: .reviewer, asksYou: "Jordan asked you")])
-        order.finishedReview(Self.ref(4110))
-        #expect(order.stage(of: Self.ref(4110))?.isOnBoard == false)
-        // You approved it in Azure DevOps: it asks nothing of you now.
-        Self.tell(order, [4110: StageFacts(role: .reviewer)])
+        Self.tell(order, [4110: StageFacts(role: .reviewer, asksYou: "Jordan asked you", votes: "0")])
+        order.setStage(.inProgress, of: Self.ref(4110))
+        // Your vote ends no In progress you set.
+        Self.tell(order, [4110: StageFacts(role: .reviewer, votes: "10")])
+        #expect(order.stage(of: Self.ref(4110))?.isSetByYou == true)
         #expect(order.letBriefBarDecide(Self.ref(4110)) == .done)
         #expect(order.stage(of: Self.ref(4110)) == nil)
         #expect(order.offersStageMenu(for: Self.ref(4110)))
         #expect(StageAction.offered(for: order.stage(of: Self.ref(4110)), canUndo: order.lastChange?.ref == Self.ref(4110)) == [.undo])
 
         order.undo()
-        #expect(order.stage(of: Self.ref(4110))?.stage == .teammateReview)
+        #expect(order.stage(of: Self.ref(4110))?.stage == .inProgress)
         #expect(order.offersStageMenu(for: Self.ref(4110)))
         order.dismissLastChange()
         Self.tell(order, [4111: StageFacts(role: .reviewer)])

@@ -254,11 +254,15 @@ import Testing
         }
         let asked = try facts(.none)
         #expect(asked.asksYou == "Sam asked you")
-        #expect(asked.role == .reviewer && asked.othersVoted && asked.votes == "10")
+        // Its votes are your own: Priya's approval isn't among them.
+        #expect(asked.role == .reviewer && asked.othersVoted && asked.votes == "0")
         #expect(try facts(.approved).asksYou == nil)
+        #expect(try facts(.approved).votes == "10")
         #expect(try facts(.none, declined: true).asksYou == nil)
+        #expect(try facts(.none, declined: true).votes == "0d")
         let wanting = try facts(.waitingForAuthor)
         #expect(wanting.asksYou == nil && wanting.youWantChanges == "Waiting for Sam's changes")
+        #expect(wanting.votes == "-5")
     }
 
     /// Yours says what holds it up as What's Left does: what failed, who wants changes, the reviewer it requires before how
@@ -282,7 +286,8 @@ import Testing
             checks: [build, approvals]
         ))
         #expect(waiting.waitingFor == "Waiting on Sam" && !waiting.isReady)
-        #expect(waiting.votes == "0,10" && waiting.commit == "c4102")
+        // Only the votes cast: Sam, asked but not voting yet, isn't among them.
+        #expect(waiting.votes == "10" && waiting.commit == "c4102")
 
         let ready = try #require(Self.stageFacts(
             4091, reviewers: [Reviewer(person: Self.priya, vote: .approved), Reviewer(person: Self.sam, vote: .approved)],
@@ -428,5 +433,113 @@ import Testing
         let facts = PullRequestOrderFacts.stages([shown, read], items: [row], tasks: [])
         #expect(facts[shown.id.linkRef]?.isListed == true)
         #expect(facts[read.id.linkRef]?.isListed == false)
+    }
+
+    // MARK: From the coordinator's review
+
+    /// A pull request as the lists read it, with its details' checks when given.
+    private static func record(
+        _ number: Int, role: PRRole = .author, author: Person = me, reviewers: [Reviewer] = [], checks: [Check]? = [Check(
+            name: "shop-web CI", kind: .build, state: .passed
+        )]
+    ) -> PRRecord {
+        let pr = PullRequest(
+            key: PRKey("Contoso", number), title: "Pull request \(number)", author: author,
+            createdAt: Date(timeIntervalSince1970: 1_791_000_000), projectId: "7A0C4E1D", projectName: "Storefront",
+            repositoryId: "Repository-Shop", repositoryName: "shop-web", reviewers: reviewers, sourceCommit: "c\(number)"
+        )
+        let details = checks.map { PRDetails(fetchedAt: Date(timeIntervalSince1970: 1_791_000_100), fingerprint: pr.fingerprint, checks: $0) }
+        return PRRecord(pullRequest: pr, role: role, details: details, me: me.id)
+    }
+
+    /// Tells Pull Request Order what the lists read of these, each one listed, as the app does.
+    private static func tell(_ order: PullRequestOrder, _ records: [PRRecord], tasks: [CopilotTaskEntry] = []) {
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let rows = records.compactMap { PRClassifier.snapshot(for: $0, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now) }
+        #expect(rows.count == records.count)
+        order.publish(.azureDevOps, stages: PullRequestOrderFacts.stages(records, items: rows, tasks: tasks), account: "robin@contoso.com")
+    }
+
+    private static func onOrder() -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        return PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_791_100_000) })
+    }
+
+    private static func task(on number: Int, _ action: PullRequestAction, _ phase: RunPhase) -> CopilotTaskEntry {
+        let started = Date(timeIntervalSince1970: 1_791_050_000)
+        return CopilotTaskEntry(
+            id: "4e3d2c1b-0a9f-4e8d-9c7b-6a5f4e3d2c1\(number % 10)", workItem: nil,
+            onPullRequest: PullRequestReference(
+                organization: "Contoso", project: "Storefront", repository: "shop-web", id: number, sourceBranch: "feature"
+            ),
+            action: action, options: CopilotModel.standard, startedAt: started, status: RunStatus(phase: phase, since: started),
+            pullRequest: nil, run: nil
+        )
+    }
+
+    /// Asking someone to review yours after Finished My Review keeps it: only a vote they cast ends it.
+    @Test func askingSomeoneToReviewYoursKeepsFinishedMyReview() throws {
+        let order = Self.onOrder()
+        let ref = PRKey("Contoso", 4093).linkRef
+        let done = [Self.task(on: 4093, .fixBuild, .finished)]
+        Self.tell(order, [Self.record(4093)], tasks: done)
+        #expect(order.stage(of: ref).map { StageText.why($0, name: { _ in nil }) } == "Copilot finished")
+        #expect(order.finishedReview(ref) == .done)
+        #expect(order.stage(of: ref)?.why == .findReviewer)
+
+        // You add Priya, as Add Reviewers in Azure DevOps lets you: she hasn't voted.
+        Self.tell(order, [Self.record(4093, reviewers: [Reviewer(person: Self.priya, vote: .none, isRequired: true)])], tasks: done)
+        let asked = try #require(order.stage(of: ref))
+        #expect(asked.stage == .teammateReview && asked.isSetByYou)
+        #expect(StageText.why(asked, name: { _ in nil }) == "Waiting on Priya")
+
+        // Her vote ends it.
+        Self.tell(order, [Self.record(4093, reviewers: [Reviewer(person: Self.priya, vote: .approved, isRequired: true)])], tasks: done)
+        #expect(order.stage(of: ref)?.isSetByYou == false)
+    }
+
+    /// On someone else's, your own vote ends Finished My Review, and co-reviewers' votes don't.
+    @Test func yourOwnVoteEndsFinishedMyReviewOnSomeoneElses() throws {
+        let order = Self.onOrder()
+        let ref = PRKey("Contoso", 4088).linkRef
+        func reviewers(_ yours: Vote, sam: Vote) -> [Reviewer] {
+            [Reviewer(person: Self.me, vote: yours), Reviewer(person: Self.sam, vote: sam)]
+        }
+        Self.tell(order, [Self.record(4088, role: .reviewer, author: Self.priya, reviewers: reviewers(.none, sam: .none))])
+        #expect(order.stage(of: ref)?.stage == .yourReview)
+        #expect(order.finishedReview(ref) == .done)
+        #expect(order.stage(of: ref)?.isOnBoard == false)
+
+        // Sam votes: it's still off your board.
+        Self.tell(order, [Self.record(4088, role: .reviewer, author: Self.priya, reviewers: reviewers(.none, sam: .approved))])
+        #expect(order.stage(of: ref)?.isOnBoard == false)
+        #expect(order.stage(of: ref)?.isSetByYou == true)
+
+        // You vote Wait for Author: it waits for Priya's changes.
+        Self.tell(order, [Self.record(4088, role: .reviewer, author: Self.priya, reviewers: reviewers(.waitingForAuthor, sam: .approved))])
+        let waiting = try #require(order.stage(of: ref))
+        #expect(waiting.stage == .inProgress && !waiting.isSetByYou)
+        #expect(StageText.why(waiting, name: { _ in nil }) == "Waiting for Priya's changes")
+
+        // Approving instead leaves nothing for you on it.
+        let other = PRKey("Contoso", 4089).linkRef
+        Self.tell(order, [Self.record(4089, role: .reviewer, author: Self.priya, reviewers: reviewers(.none, sam: .none))])
+        order.finishedReview(other)
+        Self.tell(order, [Self.record(4089, role: .reviewer, author: Self.priya, reviewers: reviewers(.approved, sam: .none))])
+        #expect(order.stage(of: other) == nil)
+    }
+
+    /// Pre-review is a review: it writes nothing.
+    @Test func aPreReviewTaskIsAReview() throws {
+        #expect(try #require(PullRequestOrderFacts.session(Self.task(on: 4088, .review, .working))).isReview)
+        #expect(try #require(PullRequestOrderFacts.session(Self.task(on: 4088, .fixBuild, .working))).isReview == false)
+        // While it runs, someone else's stays yours to review.
+        let order = Self.onOrder()
+        let record = Self.record(4088, role: .reviewer, author: Self.priya, reviewers: [Reviewer(person: Self.me, vote: .none)])
+        Self.tell(order, [record], tasks: [Self.task(on: 4088, .review, .working)])
+        let reading = try #require(order.stage(of: record.id.linkRef))
+        #expect(reading.stage == .yourReview)
+        #expect(StageText.why(reading, name: { _ in nil }) == "Copilot is pre-reviewing it")
     }
 }

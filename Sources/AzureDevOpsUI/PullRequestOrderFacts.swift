@@ -191,9 +191,11 @@ final class PullRequestOrderFacts {
         case .reviewer: .reviewer
         case .linked: .sentToYou
         }
+        let cast = others.filter { $0.vote != .none }
         var facts = StageFacts(
-            role: role, state: state, autoComplete: pr.autoComplete, othersVoted: others.contains { $0.vote != .none },
-            votes: StageFacts.digest(votes: others.map(\.vote.rawValue)), commit: pr.sourceCommit,
+            role: role, state: state, autoComplete: pr.autoComplete, othersVoted: !cast.isEmpty,
+            votes: record.role == .author ? StageFacts.digest(votes: cast.map(\.vote.rawValue)) : Self.yourVote(pr.reviewer(me)),
+            commit: pr.sourceCommit,
             sessions: tasks.compactMap(session),
             since: state.isOpen ? item?.since ?? pr.createdAt : pr.closedAt ?? item?.since
         )
@@ -240,6 +242,13 @@ final class PullRequestOrderFacts {
         return facts
     }
 
+    /// Your own vote on someone else's pull request, as a set Teammate's review keeps it (`StageFacts.votes`): "10" once you
+    /// approved it, "0d" once you declined; none while you're not one of its reviewers.
+    static func yourVote(_ reviewer: Reviewer?) -> String {
+        guard let reviewer else { return "" }
+        return String(reviewer.vote.rawValue) + (reviewer.hasDeclined ? "d" : "")
+    }
+
     /// "Priya wants changes", "Sam rejected it", "Changes requested", from the votes alone, for one whose details aren't
     /// read yet, as What's Left would say it.
     static func changesWanted(by reviewers: [Reviewer]) -> String? {
@@ -256,7 +265,8 @@ final class PullRequestOrderFacts {
     }
 
     /// A task sent to Copilot, as its pull request's stage needs it: at work while it gets ready or works, done once Copilot
-    /// called it done, stopped otherwise; called "Copilot", as its row does.
+    /// called it done, stopped otherwise; called "Copilot", as its row does. A review, Pre-review, writes nothing: it keeps
+    /// someone else's yours to review while it runs.
     static func session(_ entry: CopilotTaskEntry) -> StageSession? {
         guard let ref = ItemRef.session(entry.id) else { return nil }
         let activity: StageSession.Activity = switch entry.status.phase {
@@ -264,7 +274,9 @@ final class PullRequestOrderFacts {
         case .finished: .finished
         case .failed, .stopped: .stopped
         }
-        return StageSession(ref: ref, activity: activity, since: entry.status.since ?? entry.startedAt, name: "Copilot")
+        return StageSession(
+            ref: ref, activity: activity, since: entry.status.since ?? entry.startedAt, name: "Copilot", isReview: entry.action == .review
+        )
     }
 
     /// How a pull request looks, as its row says it, and what showing and opening it do: its details on the window's Pull

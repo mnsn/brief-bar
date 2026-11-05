@@ -1326,7 +1326,8 @@ it), what you set, and its order. The first rule that applies decides:
 | When | Stage | Says |
 |---|---|---|
 | BriefBar saw it merge | Merged | **Merged** |
-| A session works on it, or waits for you, since what you set | In progress | **‘Cart’ is writing it**, **‘Cart’ asks you** |
+| Yours: a session writes it, or waits for you, since what you set | In progress | **‘Cart’ is writing it**, **‘Cart’ asks you** |
+| Someone else's: Copilot's pre-review runs, since what you set | Your review | **Copilot is pre-reviewing it** |
 | You set one, and it still holds | What you set | **Find a reviewer**, **Waiting on Sam**, **You set it 2h ago** |
 | Someone else's: you're asked, or someone sent it to you | Your review | **Sam asked you**, **Priya sent it in Teams** |
 | Someone else's: you want changes | In progress | **Waiting for Sam's changes** |
@@ -1340,11 +1341,13 @@ it), what you set, and its order. The first rule that applies decides:
 
 Someone else's pull request that asks nothing of you has no stage. You can set In progress, Your review or Teammate's
 review; Can merge, Waits and Merged come only from what Azure DevOps and the order show. What you set holds until the
-pull request moves on (`StageRules.stands`): In progress until new commits come, or a session on it finishes; Teammate's
-review until others' votes change (a digest of them, never who cast them), and, on someone else's, new commits; Your
-review until you change it; merging or closing ends any. **Finished My Review** sets Teammate's review: on someone
-else's, it takes it off your board until something new needs you there. BriefBar never votes or changes anything in
-Azure DevOps for a stage.
+pull request moves on (`StageRules.stands`): In progress until new commits come, or a session writing it finishes (a
+review, such as Copilot's pre-review, ends nothing); Teammate's review, on yours, until the votes others cast change (a
+digest of the votes, never who cast them), so asking someone else to review it keeps it, and, on someone else's, until
+your own vote changes or new commits come; Your review until you change it; merging or closing ends any. **Finished My
+Review** sets Teammate's review: on someone else's, it takes it off your board until you vote in Azure DevOps, or
+something new needs you there. Sessions never put someone else's pull request in progress. BriefBar never votes or
+changes anything in Azure DevOps for a stage.
 
 What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one
 entry for each pull request: its number, the stage, when, the votes' digest and its commit, up to 500 for each account;

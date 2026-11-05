@@ -242,9 +242,10 @@ import Testing
         #expect(Self.reading(wanted, marks: [mark])?.stage == .inProgress)
     }
 
-    @Test func finishedReviewingSomeoneElsesTakesItOffYourBoardUntilNewCommits() {
-        let mark = StageMark(stage: .teammateReview, at: t(100), votes: "", commit: "a1b2c3d")
-        let facts = StageFacts(role: .reviewer, asksYou: "Sam asked you", commit: "a1b2c3d")
+    /// On someone else's, its votes are your own (`StageFacts.votes`): voting ends it, as new commits do.
+    @Test func finishedReviewingSomeoneElsesTakesItOffYourBoardUntilYouVoteOrNewCommitsCome() {
+        let mark = StageMark(stage: .teammateReview, at: t(100), votes: "0", commit: "a1b2c3d")
+        let facts = StageFacts(role: .reviewer, asksYou: "Sam asked you", votes: "0", commit: "a1b2c3d")
         let finished = Self.reading(facts, marks: [mark])
         #expect(finished?.stage == .teammateReview)
         #expect(finished?.isOnBoard == false)
@@ -254,6 +255,11 @@ import Testing
         pushed.commit = "e4f5a6b"
         #expect(!StageRules.stands(mark, facts: pushed, sessions: []))
         #expect(Self.reading(pushed, marks: [mark])?.stage == .yourReview)
+
+        let waiting = StageFacts(role: .reviewer, youWantChanges: "Waiting for Sam's changes", votes: "-5", commit: "a1b2c3d")
+        #expect(!StageRules.stands(mark, facts: waiting, sessions: []))
+        #expect(Self.why(Self.reading(waiting, marks: [mark])) == "Waiting for Sam's changes")
+        #expect(Self.reading(StageFacts(role: .reviewer, votes: "10", commit: "a1b2c3d"), marks: [mark]) == nil)
     }
 
     @Test func aSetYourReviewStandsUntilItsChanged() {
@@ -485,5 +491,37 @@ import Testing
         #expect(StageAction.offered(for: nil, canUndo: false).isEmpty)
         #expect(StageAction.undo.title == "Undo")
         #expect(StageText.changed(Self.pr(4110), to: nil) == "!4110 is off your board now. Undo is in its stage's menu.")
+    }
+
+    /// Copilot's pre-review of someone else's keeps it yours to review while it runs, saying so. No session puts someone
+    /// else's in progress, and a review's end ends no In progress you set. On yours, a review neither puts it in progress
+    /// nor counts as finished.
+    @Test func aPreReviewKeepsSomeoneElsesYoursToReview() {
+        let review = StageSession(ref: Self.cart, activity: .working, since: t(10), name: "Copilot", isReview: true)
+        let asked = StageFacts(role: .reviewer, asksYou: "Priya asked you")
+        let running = Self.reading(asked, sessions: [review])
+        #expect(running?.stage == .yourReview)
+        #expect(Self.why(running) == "Copilot is pre-reviewing it")
+        #expect(running?.why.saysWhen == true && running?.since == t(10))
+        var done = review
+        done.activity = .finished
+        done.since = t(20)
+        #expect(Self.why(Self.reading(asked, sessions: [done])) == "Priya asked you")
+
+        // A session writing someone else's, or asking you something about it, doesn't put it in progress.
+        #expect(Self.why(Self.reading(asked, sessions: [Self.session(.working, at: 10)])) == "Priya asked you")
+        #expect(Self.why(Self.reading(asked, sessions: [Self.session(.waitsForYou, at: 10)])) == "Priya asked you")
+        #expect(Self.reading(StageFacts(role: .reviewer), sessions: [Self.session(.working, at: 10)]) == nil)
+
+        // A review's end ends no In progress you set; while it runs, after you set it, it shows.
+        let mark = StageMark(stage: .inProgress, at: t(5))
+        #expect(StageRules.stands(mark, facts: asked, sessions: [done]))
+        #expect(Self.reading(asked, sessions: [done], marks: [mark])?.stage == .inProgress)
+        #expect(Self.reading(asked, sessions: [review], marks: [mark])?.stage == .yourReview)
+
+        // On yours, a review neither puts it in progress nor counts as finished.
+        let yours = StageFacts(role: .author)
+        #expect(Self.reading(yours, sessions: [review])?.stage == .teammateReview)
+        #expect(Self.reading(yours, sessions: [done])?.stage == .teammateReview)
     }
 }
