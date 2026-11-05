@@ -7,11 +7,13 @@ import Foundation
 public enum QuotedText {
     /// Text quoted on one of a prompt's lines: its line breaks, and characters that control how text reads or hide text,
     /// written out as escapes (`inLine`), so that all of it stays on that line, nothing in it starts a line of the prompt's
-    /// own, and nothing in it is unseen. Nor does it start with a fence, three backticks or tildes or more, which would open
-    /// one where it starts a line, as a name does before what its author said, after a space or a joiner or not, or after
-    /// a list's or a quote's marker, "- ```": the first is written out, "\u{60}" (`withoutFenceAtStart`).
+    /// own, and nothing in it is unseen. Nor does it start what would take the lines after it in where it starts a line, as
+    /// a name does before what its author said: a fence, three backticks or tildes or more, or a block of HTML, such as a
+    /// comment, "<!--", or a tag, "<div", which CommonMark reads until the comment closes or a blank line, a fence's line
+    /// too; after a space or a joiner or not, or after a list's or a quote's marker, "- ```". The character that would
+    /// start it is written out, "\u{60}" or "\u{3C}" (`withoutBlockAtStart`).
     public static func oneLine(_ text: String) -> String {
-        withoutFenceAtStart(inLine(text))
+        withoutBlockAtStart(inLine(text))
     }
 
     /// Text quoted inside one of a prompt's lines, after what the prompt says first, such as a branch's name in a sentence:
@@ -165,11 +167,11 @@ public enum QuotedText {
         text.isEmpty ? text : inLine(shellWord(text))
     }
 
-    /// A line that may open a fence (`fenceStart`), with the first of its fence's backticks or tildes written out, so it
-    /// opens none. Any other line as it is.
-    private static func withoutFenceAtStart(_ line: String) -> String {
+    /// A line that may open a fence (`fenceStart`) or a block of HTML (`htmlStart`), with the character that would open it
+    /// written out, so it opens none. Any other line as it is.
+    private static func withoutBlockAtStart(_ line: String) -> String {
         let scalars = line.unicodeScalars
-        guard let start = fenceStart(in: scalars) else { return line }
+        guard let start = fenceStart(in: scalars) ?? htmlStart(in: scalars) else { return line }
         var kept = String.UnicodeScalarView(scalars[..<start])
         kept.append(contentsOf: escaped(scalars[start]).unicodeScalars)
         kept.append(contentsOf: scalars[scalars.index(after: start)...])
@@ -183,25 +185,38 @@ public enum QuotedText {
     }
 
     /// Where the fence a line may open starts: the character that starts three backticks or tildes or more, with what has
-    /// no width between them too, as a model may read them (`asRead`), a Greek varia as a backtick, say. Before them may
-    /// be anything that reads as space or isn't seen, a no-break space or a joiner, say, and what a list's or a quote's
-    /// marker is made of, `>`, `-`, `+`, `*`, digits, `.` and `)`, as in "- ```" or "> 1. ~~~", which CommonMark reads as a
-    /// fence in a list or a quote, read the same way: "＞ ```", "⒈ ~~~" ("1. ~~~") or "⑩) ```". Nil when it may open none.
+    /// no width between them too, as a model may read them (`reading`), a Greek varia as a backtick, say. Nil when it may
+    /// open none.
     private static func fenceStart<Line: BidirectionalCollection>(in line: Line) -> Line.Index? where Line.Element == Unicode.Scalar {
-        var fence: (start: Line.Index, mark: Unicode.Scalar, count: Int)?
-        for index in line.indices where !hasNoWidth(line[index]) {
-            for read in asRead(line[index]) {
-                if let open = fence {
-                    guard read == open.mark else { return open.count >= 3 ? open.start : nil }
-                    fence = (open.start, open.mark, open.count + 1)
-                } else if read == "`" || read == "~" {
-                    fence = (index, read, 1)
-                } else if !read.properties.isWhitespace && !">-+*.)0123456789".unicodeScalars.contains(read) {
-                    return nil
-                }
-            }
-        }
-        return fence.flatMap { $0.count >= 3 ? $0.start : nil }
+        var characters = reading(line).makeIterator()
+        guard let first = characters.next(), first.read == "`" || first.read == "~" else { return nil }
+        var count = 1
+        while let next = characters.next(), next.read == first.read { count += 1 }
+        return count >= 3 ? first.index : nil
+    }
+
+    /// Where the block of HTML a line may open starts: a `<` before `!`, `?`, `/` or a letter, as a comment, "<!--", a
+    /// declaration, "<!DOCTYPE", CDATA, a processing instruction, "<?", or a tag, "<div" or "</p", starts one, which
+    /// CommonMark reads until the comment closes or a blank line, a fence's line in it too, as a model may read it
+    /// (`reading`): "＜!--" too. Any other `<` stays, as in "<3" or "<= 5". Nil when it may open none.
+    private static func htmlStart<Line: BidirectionalCollection>(in line: Line) -> Line.Index? where Line.Element == Unicode.Scalar {
+        var characters = reading(line).makeIterator()
+        guard let first = characters.next(), first.read == "<", let next = characters.next() else { return nil }
+        let opens = "!?/".unicodeScalars.contains(next.read) || ("a"..."z").contains(next.read) || ("A"..."Z").contains(next.read)
+        return opens ? first.index : nil
+    }
+
+    /// A line as a model may read it (`asRead`), from where a fence or a block of HTML may start: past what reads as space
+    /// or isn't seen, a no-break space or a joiner, say, and what a list's or a quote's marker is made of, `>`, `-`, `+`,
+    /// `*`, digits, `.` and `)`, as in "- ```" or "> 1. <!--", where CommonMark reads either in a list or a quote, read the
+    /// same way: "＞ ```", "⒈ ~~~" ("1. ~~~") or "⑩) ```". Each character it reads, with where it is in the line; what has
+    /// no width is left out, so that what's on either side of it reads as one.
+    private static func reading<Line: BidirectionalCollection>(_ line: Line) -> some Sequence<(index: Line.Index, read: Unicode.Scalar)>
+    where Line.Element == Unicode.Scalar {
+        line.indices.lazy
+            .filter { !hasNoWidth(line[$0]) }
+            .flatMap { index in asRead(line[index]).lazy.map { (index: index, read: $0) } }
+            .drop { $0.read.properties.isWhitespace || ">-+*.)0123456789".unicodeScalars.contains($0.read) }
     }
 
     /// A character as a model may read it: what it becomes once text is normalized, when that's ASCII, a character or

@@ -193,6 +193,14 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
 
     public var id: String { key.description }
 
+    /// What `--json` writes of it: each of its fields under its name, and its detail as a line, as it always was, under
+    /// `detail`, with its branches as they are (`BranchText`). Every stored field has one.
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case key, title, repository, project, author, role, isDraft, group, reason, headline
+        case detailText = "detail"
+        case since, url, events, approvals, checkState, hasDetails, chatSource, failure, merge, isWatched, createdAt, readiness
+    }
+
     /// Its detail, as the lists show it (`detailText`).
     public var detail: String? {
         get { detailText?.text() }

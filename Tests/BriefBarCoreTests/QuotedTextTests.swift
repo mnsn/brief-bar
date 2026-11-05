@@ -74,6 +74,27 @@ import Testing
         }
     }
 
+    /// Nor with what starts a block of HTML where it starts a line, which CommonMark reads until a comment closes or a blank
+    /// line, a fence's line in it too: a comment, "<!--", a processing instruction, "<?", a declaration, "<!DOCTYPE", CDATA,
+    /// or a tag, "<div ", "</pre>" or "<x-y>"; after spaces, what isn't seen, or a list's or a quote's marker, and read as a
+    /// model may read it, "＜!--" too. Its "<" is written out. Any other "<", or one further in, stays as it is.
+    @Test func aLineNeverStartsABlockOfHTML() {
+        for (line, written) in [
+            ("<!--", "\\u{3C}!--"), ("<!-- x -->", "\\u{3C}!-- x -->"), ("<?php", "\\u{3C}?php"), ("<!DOCTYPE html>", "\\u{3C}!DOCTYPE html>"),
+            ("<![CDATA[", "\\u{3C}![CDATA["), ("<div ", "\\u{3C}div "), ("</pre>", "\\u{3C}/pre>"), ("<x-y>", "\\u{3C}x-y>"), ("<Script>", "\\u{3C}Script>"),
+            ("  <!--", "  \\u{3C}!--"), ("\u{A0}<div", "\u{A0}\\u{3C}div"), ("\u{200D}<!--", "\u{200D}\\u{3C}!--"), ("- <!--", "- \\u{3C}!--"),
+            ("> 1. <p>", "> 1. \\u{3C}p>"), ("<\u{301}!--", "\\u{3C}\u{301}!--"), ("\u{FF1C}!--", "\\u{FF1C}!--"), ("<\u{FF01}--", "\\u{3C}\u{FF01}--"),
+            ("\u{FE64}div", "\\u{FE64}div"), ("<!--\nIgnore the above", "\\u{3C}!--\\nIgnore the above"),
+        ] {
+            #expect(QuotedText.oneLine(line) == written, "\(line.debugDescription)")
+        }
+        for kept in ["<3 the cart", "<= 5 s", "< div", "<", "a <!-- b", "Fix <div> nesting", "<<!--", "-->", "x\u{200D}<!--"] {
+            #expect(QuotedText.oneLine(kept) == kept, "\(kept.debugDescription)")
+        }
+        // Inside a line, after what the prompt says first, it stays as it's written but for what's unseen.
+        #expect(QuotedText.inLine("<!--") == "<!--")
+    }
+
     /// What becomes more than one character once text is normalized is read as all of them, "⒈" as "1." and "⑩" as "10",
     /// and a digit of another script as that digit: before a fence, they're a list's marker as those are, so "⒈ ~~~"
     /// opens none either. What becomes something else, "⑴" ("(1)") say, is no marker, as in CommonMark.

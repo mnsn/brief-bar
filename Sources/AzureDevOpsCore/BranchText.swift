@@ -4,8 +4,8 @@ import Foundation
 /// its parts, each branch apart, so that what writes it out names each branch its way, as agents get them, say, in single
 /// quotes when a shell would read something in them (`QuotedText.commandWord`), rather than by finding them in the text.
 /// Written as a string, with `\(branch:)` for each branch: `"Merged into \(branch: pr.targetBranch)"`.
-public struct BranchText: Sendable, Codable, Equatable, ExpressibleByStringInterpolation {
-    public enum Part: Sendable, Codable, Equatable {
+public struct BranchText: Sendable, Equatable, ExpressibleByStringInterpolation {
+    public enum Part: Sendable, Equatable {
         case text(String)
         case branch(String)
     }
@@ -59,5 +59,18 @@ public struct BranchText: Sendable, Codable, Equatable, ExpressibleByStringInter
         public mutating func appendInterpolation(branch name: String) {
             parts.append(.branch(name))
         }
+    }
+}
+
+extension BranchText: Codable {
+    /// As its text, with its branches as they are, as the lists show it: a pull request's detail is a line in what `--json`
+    /// writes, as it always was (`PRSnapshot.CodingKeys`). Read back, it's text that names no branch.
+    public init(from decoder: any Decoder) throws {
+        self.init(try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(text())
     }
 }

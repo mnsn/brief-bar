@@ -2696,6 +2696,9 @@ branches, which whoever opened it named, stay on their lines the same way in eve
 and so do names, paths and comments of one line, none of them starting with three backticks or tildes, which would open
 a fence where it starts a line, as a name does before what its author said, not even after what reads as space or isn't
 seen, a no-break space or a joiner, or after a list's or a quote's marker, "- ```" (the first is written out, `\u{60}`).
+Nor do they start a block of HTML, a comment, `<!--`, or a tag such as `<div `, which CommonMark reads until the comment
+closes or a blank line, a fence's line in it too, so that a name over a comment of more lines would take the comment's
+fence in (its `<` is written out, `\u{3C}`; a `<` before anything else, as in "<3", stays).
 What text becomes once normalized, as a model may read it, counts as that there: a Greek varia or a fullwidth grave
 accent as a backtick, "⒈" as "1.", a list's marker, or a digit of another script as that digit; and a fence is longer
 than any run of backticks in what it quotes, read that way (`QuotedText.asRead`). A branch whose name holds what a shell reads,
@@ -3182,7 +3185,8 @@ named or wrote starts a line or a list's item, as a pipeline's name, a task's ti
 opens no fence, three backticks or tildes, which CommonMark reads in a list or a quote too (`QuotedText.oneLine`).
 What the lists say of a pull request keeps the branches it names apart (`PRSnapshot.detailText`, a `BranchText`): what
 it merged into, where its conflicts are, or what failed to merge. So the tools name them in quotes when they're
-written, rather than by finding them in the text, whatever a branch's name ends in.
+written, rather than by finding them in the text, whatever a branch's name ends in. `--json` still writes it as a
+line, under `detail`, with its branches as they are (`PRSnapshot.CodingKeys`).
 
 While **Send Work to Copilot** is on, `pull_request` also names an open pull request's session: the
 Copilot session BriefBar sends its work to, as its details show it (see [A pull request's
