@@ -42,6 +42,8 @@ final class PullRequestOrderFacts {
         store.$items.map { _ in () }
             .merge(with: store.refreshed)
             .merge(with: settings.$showToReview.removeDuplicates().map { _ in () })
+            // Watching one sent in a chat keeps what you change of its mission in the preferences.
+            .merge(with: settings.$watchedPullRequests.map { _ in () })
             .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.publish() } }
             .store(in: &cancellables)
@@ -69,7 +71,8 @@ final class PullRequestOrderFacts {
         guard store.mode == .demo else { return }
         let now = store.now
         order.tellDemo(
-            DemoPullRequestOrder.orders(now: now), evidence: DemoPullRequestOrder.evidence(now: now), focus: DemoPullRequestOrder.focus
+            DemoPullRequestOrder.orders(now: now), evidence: DemoPullRequestOrder.evidence(now: now), focus: DemoPullRequestOrder.focus,
+            changes: DemoPullRequestOrder.changes(now: now)
         )
     }
 
@@ -82,8 +85,15 @@ final class PullRequestOrderFacts {
         let showToReview = settings.showToReview
         order.publish(
             .azureDevOps, pullRequests: Self.pullRequests(store.records, items: store.items, showToReview: showToReview),
-            items: store.items.map { describe($0, showToReview: showToReview) }
+            items: store.items.map { describe($0, showToReview: showToReview) },
+            inMemory: Self.sentInChats(store.records, watched: settings.watchedKeys)
         )
+    }
+
+    /// The pull requests listed only because someone sent them in a chat, not yours or ones you watch: what you change of
+    /// their missions stays in memory, as what you've seen of them does (`AppSettings.seenSentInChats`).
+    static func sentInChats(_ records: [PRRecord], watched: Set<PRKey>) -> Set<ItemRef> {
+        Set(records.filter { $0.role == .linked && !watched.contains($0.id) }.map(\.id.linkRef))
     }
 
     // MARK: What an order sees

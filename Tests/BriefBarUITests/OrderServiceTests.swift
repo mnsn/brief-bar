@@ -391,4 +391,143 @@ private final class Clock {
         #expect(mission.steps.map(\.status) == [.merged, .open])
         #expect(mission.steps.last?.standing == .next)
     }
+
+    // MARK: Your changes
+
+    /// A change from a Mission menu is saved, says what it did, and Undo puts back exactly what it touched.
+    @Test func aChangeIsSavedSaysWhatItDidAndUndoPutsItBack() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")])
+
+        let done = try #require(order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true)))
+
+        #expect(done.said == "You set !4102 as next to merge" && done.canUndo && done.mission == .plan(Self.planID))
+        #expect(order.lastChange == done)
+        #expect(OrderChanges.load(from: defaults)[Self.ref(4102)]?.isFirst == true)
+        let mission = try #require(order.missions.first { $0.key == .plan(Self.planID) })
+        #expect(mission.steps.map(\.ref) == [Self.ref(4102), Self.ref(4101)] && mission.steps[0].isYours)
+        #expect(order.changes(in: mission) == 1)
+
+        #expect(order.undoLastChange())
+        #expect(order.changes.isEmpty && order.lastChange == nil)
+        #expect(defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(order.missions.first { $0.key == .plan(Self.planID) }?.steps.map(\.ref) == [Self.ref(4101), Self.ref(4102)])
+        #expect(!order.undoLastChange())
+    }
+
+    /// What the menu doesn't offer is refused, with why, and changes nothing.
+    @Test func aRefusedChangeSaysWhyAndChangesNothing() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart", into: "robin/rounding")])
+
+        let refused = try #require(order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true)))
+
+        #expect(!refused.canUndo && refused.said == "Stacked on !4101: it can't merge before it unless you retarget it.")
+        #expect(order.changes.isEmpty && defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(!order.undoLastChange())
+        order.dismissLastChange()
+        #expect(order.lastChange == nil)
+    }
+
+    /// What you change of a pull request listed only because someone sent it in a chat stays in memory, until it's listed
+    /// otherwise.
+    @Test func changesAboutAPullRequestSentInAChatStayInMemory() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let pullRequests = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart"), Self.ado(4130, from: "sam/search")]
+        order.publish(.azureDevOps, pullRequests: pullRequests, inMemory: [Self.ref(4130)])
+
+        order.change(.move([Self.ref(4130)], to: .into(.plan(Self.planID)), from: nil))
+        order.change(.mergeAfter(Self.ref(4101), Self.ref(4130), in: .plan(Self.planID), true))
+
+        #expect(order.changes.count == 2)
+        #expect(defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(order.missions.first { $0.key == .plan(Self.planID) }?.contains(Self.ref(4130)) == true)
+        // Off and on again, they're still there: only quitting BriefBar forgets them.
+        order.setOn(false)
+        order.setOn(true)
+        #expect(order.changes.count == 2)
+        // Watched now, or yours: they go to the preferences.
+        order.publish(.azureDevOps, pullRequests: pullRequests)
+        #expect(OrderChanges.load(from: defaults).count == 2)
+        // Sent in a chat again only: back to memory.
+        order.publish(.azureDevOps, pullRequests: pullRequests, inMemory: [Self.ref(4130)])
+        #expect(defaults.object(forKey: OrderChanges.defaultsKey) == nil && order.changes.count == 2)
+    }
+
+    /// Off keeps your changes, unused; Forget All Orders forgets them, and says so in its words.
+    @Test func turnedOffItKeepsYourChangesAndForgetAllOrdersForgetsThem() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")])
+        order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true))
+
+        order.setOn(false)
+        #expect(order.changes.isEmpty && order.lastChange == nil && OrderChanges.load(from: defaults).count == 1)
+        #expect(order.keepsAnything)
+        order.setOn(true)
+        #expect(order.changes.count == 1)
+
+        order.forgetAll()
+        #expect(order.changes.isEmpty && defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(PullRequestOrderSettingView.explanation.contains("change a mission yourself"))
+    }
+
+    /// Turning a source off forgets your changes to its pull requests, though Pull Request Order is off.
+    @Test func turningASourceOffForgetsYourChangesToItsPullRequests() throws {
+        let defaults = try Self.defaults(on: false)
+        OrderChanges([
+            OrderChange(ref: Self.ref(4102), isFirst: true, changedAt: Date()),
+            OrderChange(ref: .gitHubPullRequest(repository: "octo/storefront", number: 7), placement: .outside, changedAt: Date()),
+        ]).save(to: defaults)
+        let order = Self.service(defaults)
+
+        order.forget(.azureDevOps)
+
+        #expect(OrderChanges.load(from: defaults).all.map(\.ref) == [.gitHubPullRequest(repository: "octo/storefront", number: 7)])
+    }
+
+    /// A change goes two weeks after BriefBar saw its pull requests end, though no order names them; and Focus on a mission
+    /// of yours goes with it.
+    @Test func aChangeGoesTwoWeeksAfterItsPullRequestsEndAndFocusOnItsMissionWithIt() throws {
+        let clock = Clock()
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults, clock: clock)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4140, from: "robin/estimates"), Self.ado(4141, from: "robin/one-click")])
+        let mine = MissionKey.mine(UUID(uuidString: "33333333-4444-4555-8666-777777777777")!)
+        order.change(.move([Self.ref(4140), Self.ref(4141)], to: .into(mine), from: nil))
+        #expect(order.lastChange?.said == "You made a mission of !4140 and !4141")
+        order.setFocus(mine)
+        #expect(order.missions.first?.key == mine && order.missions.first?.isFocused == true)
+
+        order.publish(.azureDevOps, pullRequests: [
+            Self.ado(4140, from: "robin/estimates", state: .merged), Self.ado(4141, from: "robin/one-click", state: .closed),
+        ])
+        order.withdraw(.azureDevOps)
+        clock.advance(days: 13)
+        order.timePassed()
+        #expect(order.changes.count == 2)
+        clock.advance(days: 2)
+        order.timePassed()
+        #expect(order.changes.isEmpty && defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(order.focus == nil && OrderFocus.load(from: defaults) == nil)
+    }
+
+    /// The demo's changes, once, in its own memory.
+    @Test func theDemoTellsYourChangesOnce() throws {
+        let order = Self.service(MemoryDefaults(), isDemo: true)
+        var demo = DeclaredOrders()
+        try demo.apply(OrderRequest(entries: [.init(link: Self.link(4101)), .init(link: Self.link(4102), after: ["4101"])]), newID: Self.planID)
+        let changes = OrderChanges([
+            OrderChange(ref: Self.ref(4102), isFirst: true, changedAt: Date(), replaced: OrderPlace(of: Self.ref(4102), in: demo)),
+        ])
+
+        order.tellDemo(demo, changes: changes)
+        order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), false))
+        order.tellDemo(demo, changes: changes)
+
+        #expect(order.changes.isEmpty)
+    }
 }

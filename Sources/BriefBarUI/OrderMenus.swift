@@ -1,0 +1,242 @@
+import BriefBarCore
+import SwiftUI
+
+// Changing a mission yourself (`OrderChanges`): a pull request's Mission menu, in its row's menu, its details' and a Map
+// node's, with the same as VoiceOver's actions; and the line that says what you did, with Undo. Azure DevOps' pull requests
+// only for now: GitHub's show as they always have.
+
+/// Where a pull request's Mission menu speaks from: the order, the mission whose card it's in, and where the Undo line
+/// shows once you changed something, for VoiceOver to say.
+package struct MissionMenuContext {
+    /// Where the Undo line shows.
+    package enum UndoPlace {
+        /// By Mission: in the mission's card, or at the top of the list when no card has it.
+        case byMission
+        /// At the top of the list, as By Status shows it.
+        case top
+        /// In the pull request's details, beside its mission.
+        case details
+    }
+
+    package let order: PullRequestOrder
+    /// The mission whose card it's in, where it's in two; nil for the first that has it.
+    package let mission: MissionKey?
+    package let undo: UndoPlace
+
+    package init(order: PullRequestOrder, mission: MissionKey? = nil, undo: UndoPlace = .byMission) {
+        self.order = order
+        self.mission = mission
+        self.undo = undo
+    }
+
+    /// Only for a pull request of Azure DevOps, while Pull Request Order is on.
+    @MainActor
+    package static func of(_ ref: ItemRef, order: PullRequestOrder, mission: MissionKey? = nil, undo: UndoPlace = .byMission)
+        -> MissionMenuContext? {
+        guard order.isOn, ref.kind == .pullRequest else { return nil }
+        return MissionMenuContext(order: order, mission: mission, undo: undo)
+    }
+
+    /// Makes a change, and says it to VoiceOver, with where its Undo is.
+    @MainActor
+    package func change(_ edit: OrderEdit) {
+        guard let done = order.change(edit) else { return }
+        let place = switch undo {
+        case .byMission: done.mission == nil ? "at the top of the list" : "in its mission"
+        case .top: "at the top of the list"
+        case .details: "beside it"
+        }
+        AccessibilityNotification.Announcement(OrderText.spoken(done.said, undo: done.canUndo ? place : nil)).post()
+    }
+}
+
+/// Mission ▸ in a pull request's menu: Set as Next to Merge, Merge After ▸, Move to Mission ▸, Put Yours Back and Undo Your
+/// Changes to It. In no mission, only Move to Mission.
+package struct MissionMenu: View {
+    private let ref: ItemRef
+    private let context: MissionMenuContext
+
+    package init(_ ref: ItemRef, context: MissionMenuContext) {
+        self.ref = ref
+        self.context = context
+    }
+
+    package var body: some View {
+        Menu("Mission") {
+            MissionMenuItems(ref, context: context, order: context.order)
+        }
+    }
+}
+
+/// The Mission menu's items, as it opens: what it offers is read then.
+struct MissionMenuItems: View {
+    let ref: ItemRef
+    let context: MissionMenuContext
+    @ObservedObject var order: PullRequestOrder
+
+    init(_ ref: ItemRef, context: MissionMenuContext, order: PullRequestOrder) {
+        self.ref = ref
+        self.context = context
+        self.order = order
+    }
+
+    var body: some View {
+        let choices = order.choices(for: ref, in: context.mission)
+        if let mission = choices.mission, let next = choices.next {
+            switch next {
+            case .offered, .isSet:
+                Toggle("Set as Next to Merge", isOn: Binding(get: { next == .isSet }, set: { on in
+                    context.change(.setNext(ref, in: mission, on))
+                }))
+            case .stacked(let other):
+                Button("Set as Next to Merge: Stacked on \(other.shortOrderLabel)") {}
+                    .disabled(true)
+            case .ended:
+                EmptyView()
+            }
+            if !choices.prerequisites.isEmpty {
+                Menu("Merge After") {
+                    ForEach(choices.prerequisites, id: \.ref) { prerequisite in
+                        prerequisiteItem(prerequisite, in: mission)
+                    }
+                }
+            }
+        }
+        Menu("Move to Mission") {
+            // Those with Azure DevOps' pull requests, which this page lists.
+            let targets = choices.targets.filter { key in
+                key == choices.mission || order.missions.first { $0.key == key }?.shows([.pullRequest]) == true
+            }
+            ForEach(targets, id: \.self) { key in
+                Toggle(targetTitle(key), isOn: Binding(get: { choices.mission == key }, set: { on in
+                    guard on else { return }
+                    context.change(.move([ref], to: .into(key), from: choices.mission))
+                }))
+            }
+            if !targets.isEmpty {
+                Divider()
+            }
+            Button("New Mission") {
+                context.change(.move([ref], to: .into(.mine(UUID())), from: choices.mission))
+            }
+            Toggle("Not in a Mission", isOn: Binding(get: { choices.mission == nil }, set: { on in
+                guard on else { return }
+                context.change(.move([ref], to: .outside, from: choices.mission))
+            }))
+        }
+        if choices.canPutBack || choices.canUndo {
+            Divider()
+        }
+        if choices.canPutBack {
+            Button("Put Yours Back") { context.change(.putBack(ref)) }
+        }
+        if choices.canUndo {
+            Button("Undo Your Changes to It") { context.change(.undo(ref)) }
+        }
+    }
+
+    @ViewBuilder
+    private func prerequisiteItem(_ prerequisite: MissionChoices.Prerequisite, in mission: MissionKey) -> some View {
+        let label = [prerequisite.ref.orderLabel(near: ref), order.name(of: prerequisite.ref)].compactMap { $0 }.joined(separator: " ")
+        switch prerequisite.state {
+        case .unchecked, .checked:
+            Toggle(label, isOn: Binding(get: { prerequisite.state == .checked }, set: { on in
+                context.change(.mergeAfter(ref, prerequisite.ref, in: mission, on))
+            }))
+        case .stacked:
+            Toggle("\(label): Stacked, Retarget It to Change That", isOn: .constant(true))
+                .disabled(true)
+        case .waitsForIt:
+            Button("\(label): Waits for It") {}
+                .disabled(true)
+        }
+    }
+
+    /// A mission as Move to Mission names it: by its title, with its kind but for a session's order.
+    private func targetTitle(_ key: MissionKey) -> String {
+        guard let mission = order.missions.first(where: { $0.key == key }) else { return key.description }
+        let title = OrderText.title(of: mission, name: order.name(of:))
+        let kind: String? = switch mission.kind {
+        case .declared: nil
+        default: OrderText.kind(of: mission)
+        }
+        return [title, kind].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+extension View {
+    /// A pull request's Mission menu's main items as VoiceOver's actions: Set as Next to Merge, Put Yours Back and Undo
+    /// Your Changes to It. The rest is in its menu.
+    @MainActor
+    package func missionActions(_ ref: ItemRef, context: MissionMenuContext?) -> some View {
+        accessibilityActions {
+            if let context {
+                let choices = context.order.choices(for: ref, in: context.mission)
+                if let mission = choices.mission, let next = choices.next, next == .offered || next == .isSet {
+                    Button(next == .isSet ? "Not Next to Merge" : "Set as Next to Merge") {
+                        context.change(.setNext(ref, in: mission, next != .isSet))
+                    }
+                }
+                if choices.canPutBack {
+                    Button("Put Yours Back") { context.change(.putBack(ref)) }
+                }
+                if choices.canUndo {
+                    Button("Undo Your Changes to It") { context.change(.undo(ref)) }
+                }
+            }
+        }
+    }
+}
+
+/// What you did last, with Undo and ×: "You set !4079 as next to merge.  Undo  ×"; or why BriefBar didn't. Until your next
+/// change, or until you dismiss it.
+package struct OrderUndoLine: View {
+    @ObservedObject var order: PullRequestOrder
+    /// Only the last change about these, such as a pull request's in its details; nil for any.
+    let refs: Set<ItemRef>?
+    /// Only the last change shown in this mission's card; nil for any.
+    let mission: MissionKey?
+
+    package init(order: PullRequestOrder, about refs: Set<ItemRef>? = nil, in mission: MissionKey? = nil) {
+        self.order = order
+        self.refs = refs
+        self.mission = mission
+    }
+
+    package var body: some View {
+        if let last = order.lastChange, refs.map({ !$0.isDisjoint(with: last.refs) }) ?? true, mission.map({ $0 == last.mission }) ?? true {
+            HStack(spacing: 8) {
+                Image(systemName: last.canUndo ? "pencil" : "exclamationmark.circle")
+                    .foregroundStyle(last.canUndo ? Color.secondary : Color.orange)
+                    .accessibilityHidden(true)
+                Text(last.said + ".")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if last.canUndo {
+                    Button("Undo") { undo() }
+                        .buttonStyle(.borderless)
+                        .help("Put back what this change did")
+                }
+                Spacer(minLength: 4)
+                Button {
+                    order.dismissLastChange()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(size: 9, weight: .bold)
+                        .foregroundStyle(.secondary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(last.canUndo ? "Hide this: your change stays" : "Hide this")
+                .accessibilityLabel(last.canUndo ? "Hide, keeping the change" : "Hide")
+            }
+            .font(size: 11.5)
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func undo() {
+        guard order.undoLastChange() else { return }
+        AccessibilityNotification.Announcement("Undone").post()
+    }
+}
