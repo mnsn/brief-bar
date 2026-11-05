@@ -180,4 +180,42 @@ import Testing
         #expect(picker.image(forSegment: 1) == nil)
         #expect(picker.accessibilityLabel() == "View")
     }
+
+    private func picker(_ title: String, symbol: String, alone: Bool) -> some View {
+        SegmentedPicker("View", selection: .constant(0), segments: [.init(0, title: title, systemImage: symbol)])
+            .environment(\.showsSymbolsAlone, alone)
+            .fixedSize()
+    }
+
+    /// A segment shown as its symbol alone that changes its symbol or its title shows the new one, and VoiceOver hears its
+    /// new title; and once the header has room for titles again, it shows its title, without the symbol.
+    @Test func aSegmentsSymbolAloneFollowsWhatItsMadeOf() throws {
+        let host = NSHostingView(rootView: picker("List", symbol: "list.bullet", alone: true))
+        let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 400, height: 200), styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+        host.layoutSubtreeIfNeeded()
+        func find(_ view: NSView) -> NSSegmentedControl? {
+            view as? NSSegmentedControl ?? view.subviews.lazy.compactMap(find).first
+        }
+        let control = try #require(find(host))
+        #expect(control.image(forSegment: 0)?.accessibilityDescription == "List")
+
+        host.rootView = picker("Map", symbol: "map", alone: true)
+        host.layoutSubtreeIfNeeded()
+        #expect(control.image(forSegment: 0)?.accessibilityDescription == "Map")
+        #expect(control.toolTip(forSegment: 0) == "Map")
+        #expect(elements(of: control).contains { $0.accessibilityRole() == .radioButton && $0.accessibilityLabel() == "Map" })
+
+        host.rootView = picker("Map", symbol: "map", alone: false)
+        host.layoutSubtreeIfNeeded()
+        #expect(control.image(forSegment: 0) == nil)
+        #expect(control.label(forSegment: 0) == "Map")
+        #expect(control.toolTip(forSegment: 0) == nil)
+    }
 }

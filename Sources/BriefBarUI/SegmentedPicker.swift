@@ -31,8 +31,16 @@ package struct SegmentedPicker<Value: Hashable>: NSViewRepresentable {
 
     package final class Coordinator: NSObject {
         var choose: (Int) -> Void = { _ in }
+        /// Each segment's symbol, and the title VoiceOver hears it as, as its image shows them; nil for none.
+        var images: [ShownSymbol?] = []
 
         @objc func changed(_ control: NSSegmentedControl) { choose(control.selectedSegment) }
+    }
+
+    /// A segment's symbol, shown alone, and its title, which VoiceOver hears it as.
+    package struct ShownSymbol: Equatable {
+        let name: String
+        let title: String
     }
 
     package func makeCoordinator() -> Coordinator { Coordinator() }
@@ -68,6 +76,7 @@ package struct SegmentedPicker<Value: Hashable>: NSViewRepresentable {
         control.segmentCount = segments.count
         control.font = font
         control.controlSize = size
+        var images: [ShownSymbol?] = []
         for (index, segment) in segments.enumerated() {
             let symbol = environment.showsSymbolsAlone ? segment.systemImage : nil
             let title = symbol == nil ? segment.title : ""
@@ -75,13 +84,18 @@ package struct SegmentedPicker<Value: Hashable>: NSViewRepresentable {
                 control.setLabel(title, forSegment: index)
                 changed = true
             }
-            let image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: segment.title) }
-            if (control.image(forSegment: index) == nil) != (image == nil) {
-                control.setImage(image, forSegment: index)
+            // Made again whenever its symbol or its title changes, so neither what it shows nor what VoiceOver hears is
+            // left as it was.
+            let shown = symbol.map { ShownSymbol(name: $0, title: segment.title) }
+            let before = context.coordinator.images.indices.contains(index) ? context.coordinator.images[index] : nil
+            if shown != before {
+                control.setImage(shown.flatMap { NSImage(systemSymbolName: $0.name, accessibilityDescription: $0.title) }, forSegment: index)
                 changed = true
             }
+            images.append(shown)
             control.setToolTip(symbol == nil ? nil : segment.title, forSegment: index)
         }
+        context.coordinator.images = images
         control.selectedSegment = segments.firstIndex { $0.value == selection } ?? -1
         control.isEnabled = environment.isEnabled
         control.setAccessibilityLabel(label)
