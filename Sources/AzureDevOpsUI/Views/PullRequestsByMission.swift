@@ -118,6 +118,16 @@ struct PullRequestBoardCard: View {
                 }
             }
             PullRequestCopilotStatus(key: item.key)
+            if let worker = Self.worker(on: card.ref, besides: reading, ordering: ordering) {
+                HStack(spacing: 3) {
+                    Image(systemName: "waveform.path.ecg")
+                    Text("‘\(worker.label)’ works on it")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(size: 11, weight: .semibold)
+                .foregroundStyle(worker.color)
+                .help("‘\(worker.label)’ told BriefBar it works on it")
+            }
             FlowLayout(spacing: 6, lineSpacing: 4) {
                 BriefBarUI.StagePill(ref: card.ref, reading: reading, order: ordering, now: now)
                 if let who = BoardText.setter(reading, now: now, name: name) {
@@ -157,12 +167,27 @@ struct PullRequestBoardCard: View {
         return flags
     }
 
-    /// What VoiceOver says of its flags, after its stage.
-    static func details(_ item: PRSnapshot, reading: StageReading, order: OrderRowContext?) -> [String] {
+    /// What VoiceOver says of it, after its stage: its flags, where it stands in its order, who works on it, and where it is.
+    @MainActor
+    static func details(_ item: PRSnapshot, reading: StageReading, order: OrderRowContext?, ordering: PullRequestOrder) -> [String] {
         var details = flags(item, reading: reading).map(\.text)
         if let sentence = order?.sentence, reading.stage != .canMerge, reading.stage != .waits { details.append(sentence) }
+        if let worker = worker(on: item.key.linkRef, besides: reading, ordering: ordering) {
+            details.append(SpokenText.unquoted("‘\(worker.label)’ works on it"))
+        }
         details.append(item.repository)
         return details
+    }
+
+    /// The first Copilot session that told BriefBar it works on it (`SessionUpdates`), unless its stage names it already,
+    /// as "‘Cart’ is writing it" does.
+    @MainActor
+    static func worker(on ref: ItemRef, besides reading: StageReading, ordering: PullRequestOrder) -> LinkedItem? {
+        let named: ItemRef? = switch reading.why {
+        case .working(let session), .asksYou(let session), .finished(let session): session.ref
+        default: nil
+        }
+        return ordering.sessionsWorking(on: ref).filter { $0 != named }.lazy.compactMap(ordering.describe).first
     }
 }
 

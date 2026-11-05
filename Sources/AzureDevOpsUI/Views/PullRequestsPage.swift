@@ -134,7 +134,7 @@ struct PullRequestsPage: View {
                 )
             }),
             label: "!\(item.key.number) \(item.title)",
-            details: PullRequestBoardCard.details(item, reading: card.reading, order: order)
+            details: PullRequestBoardCard.details(item, reading: card.reading, order: order, ordering: ordering)
         )
     }
 

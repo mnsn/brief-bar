@@ -380,6 +380,26 @@ import Testing
             == .refused("Stacked on !4101: retarget it in Azure DevOps first"))
     }
 
+    /// Its order puts it after one that comes after its base, so it names neither the base nor the branch: what its changes
+    /// show against still does.
+    @Test func aBaseItsOrderPutsBeforeItOnlyThroughAnotherStillRefusesIt() {
+        let missions = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/base"),
+             OrderBoardTests.ado(4102, from: "robin/docs"),
+             OrderBoardTests.ado(4103, from: "robin/top", into: "robin/base")],
+            plan: [
+                .init(ref: Self.pr(4101)), .init(ref: Self.pr(4102), after: [Self.pr(4101)]),
+                .init(ref: Self.pr(4103), after: [Self.pr(4102)]),
+            ]
+        )
+        let step = missions[0].steps.first { $0.ref == Self.pr(4103) }
+        #expect(step?.prerequisites.map(\.ref) == [Self.pr(4102)])
+        #expect(step?.notes.contains { if case .orderDisagrees = $0 { true } else { false } } == false)
+        #expect(missions[0].stackedBases(of: Self.pr(4103)) == [Self.pr(4101)])
+        #expect(BoardRules.move(Self.waiting(4103, in: missions), to: .canMerge, isYours: true, missionChanges: true, missions: missions)
+            == .refused("Stacked on !4101: retarget it in Azure DevOps first"))
+    }
+
     @Test func oneStackedOnAnOrdersPullRequestThatItDoesntNameIsRefused() {
         let missions = Self.missions(
             [OrderBoardTests.ado(4101, from: "robin/rounding"),
