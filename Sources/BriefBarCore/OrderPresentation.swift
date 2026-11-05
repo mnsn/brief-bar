@@ -44,6 +44,23 @@ public enum OrderCapsuleTone: Equatable, Sendable {
 }
 
 extension OrderText {
+    /// What a step waits for that its mission's Map doesn't show, as its capsule names it, and where that is: "After !4101 ·
+    /// stacked, in ‘Cart’". Nil when it waits for none.
+    /// - Parameter missions: as By Mission shows them, to say where each is.
+    public static func elsewhere(_ step: OrderStep, in mission: OrderMission, missions: [OrderMission], names: OrderNames = .none) -> String? {
+        let shown = Set(mission.steps.map(\.ref))
+        let waits = step.prerequisites.filter { !$0.status.hasEnded && !shown.contains($0.ref) }
+        guard !waits.isEmpty else { return nil }
+        return waits.map { prerequisite in
+            let stacked = prerequisite.origins.contains(where: \.isStacked) ? " · stacked" : ""
+            let place = OrderBoard.mission(of: prerequisite.ref, in: missions).flatMap { other -> String? in
+                guard other.key != mission.key else { return nil }
+                return names.title(other.key) ?? title(of: other, name: names.name)
+            }
+            return "After \(prerequisite.ref.orderLabel(near: step.ref))\(stacked)\(place.map { ", in ‘\($0)’" } ?? "")"
+        }.joined(separator: ". ")
+    }
+
     /// A row's capsule's tone. One that waits for others turns orange when its source says it's ready to complete, so it
     /// isn't completed out of order.
     /// - Parameter isReady: its source says it's ready to complete.

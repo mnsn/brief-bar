@@ -91,6 +91,9 @@ struct MissionMenuItems: View {
             case .stacked(let other):
                 Button("Set as Next to Merge: Stacked on \(other.shortOrderLabel)") {}
                     .disabled(true)
+            case .retarget(let merged, _):
+                Button("Set as Next to Merge: \(merged.shortOrderLabel) Merged, Retarget It First") {}
+                    .disabled(true)
             case .ended:
                 EmptyView()
             }

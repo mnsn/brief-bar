@@ -188,6 +188,8 @@ public enum OrderChangeError: Error, Equatable, CustomStringConvertible {
     case waitsForIt(ItemRef)
     /// It's stacked on one that hasn't merged, so it can't merge before it.
     case stacked(on: ItemRef)
+    /// What it was stacked on merged, and it still targets that one's branch: retarget it first, to this branch when known.
+    case retarget(after: ItemRef, to: String?)
     /// It isn't in a mission, or not in that one.
     case notInAMission
     /// It merged or closed.
@@ -201,6 +203,9 @@ public enum OrderChangeError: Error, Equatable, CustomStringConvertible {
             return "\(other.shortOrderLabel) waits for it, so it can't merge after \(other.shortOrderLabel)."
         case .stacked(let other):
             return "Stacked on \(other.shortOrderLabel): it can't merge before it unless you retarget it."
+        case .retarget(let merged, let branch):
+            let label = merged.shortOrderLabel
+            return "\(label) merged: retarget it to \(branch ?? "the branch \(label) merged into") first."
         case .notInAMission:
             return "It isn't in a mission: move it to one first."
         case .ended:
@@ -576,14 +581,17 @@ public enum OrderEdit: Equatable, Sendable {
 extension OrderChanges {
     /// Makes a change, as you asked for it from a menu, and says what each change it touched was before, for Undo. It
     /// refuses what the menu doesn't offer: a cycle with a stacked branch or your own changes, Set as Next on one stacked on a
-    /// pull request that hasn't merged, and one more change than `mostChanges`; refused, nothing changes.
+    /// pull request that hasn't merged or that still targets one that merged, and one more change than `mostChanges`;
+    /// refused, nothing changes.
     /// - Parameters:
     ///   - missions: as By Mission shows them now.
     ///   - orders: the orders sessions told.
+    ///   - stacked: what BriefBar sees each pull request stacked on (`OrderBoard.stacked`), those in no mission included.
     /// - Returns: each change it touched, by pull request, as it was: nil where there was none.
     @discardableResult
     public mutating func apply(
-        _ edit: OrderEdit, missions: [OrderMission], orders: DeclaredOrders, now: Date = Date()
+        _ edit: OrderEdit, missions: [OrderMission], orders: DeclaredOrders, stacked: [ItemRef: Set<ItemRef>] = [:],
+        now: Date = Date()
     ) throws -> [ItemRef: OrderChange?] {
         var edited = self
         var touched: [ItemRef: OrderChange?] = [:]
@@ -624,6 +632,7 @@ extension OrderChanges {
             if on {
                 guard !step.status.hasEnded else { throw OrderChangeError.ended }
                 if let stacked = Self.openStacked(under: step) { throw OrderChangeError.stacked(on: stacked) }
+                if let (merged, branch) = Self.retarget(of: step) { throw OrderChangeError.retarget(after: merged, to: branch) }
                 change.first = key
                 change.after = []
                 change.notAfter = []
@@ -639,7 +648,7 @@ extension OrderChanges {
             guard other != ref else { throw OrderChangeError.waitsForIt(other) }
             var change = current(ref)
             if on {
-                if Self.waits(other, for: ref, in: missions) { throw OrderChangeError.waitsForIt(other) }
+                if Self.waits(other, for: ref, in: missions, stacked: stacked) { throw OrderChangeError.waitsForIt(other) }
                 change.first = nil
                 if !change.after.contains(other) { change.after.append(other) }
                 change.notAfter.removeAll { $0 == other }
@@ -697,8 +706,10 @@ extension OrderChanges {
             }
 
         case .putBack(let ref):
-            guard let change = edited.changes[ref] else { break }
+            guard var change = edited.changes[ref] else { break }
             if let key = change.first, let mission = missions.first(where: { Self.names($0, key) }) {
+                // Back in the mission you set it as next in, where its order no longer has it.
+                if !mission.steps.contains(where: { $0.ref == ref }) { change.placement = .into(key) }
                 try clearOtherFirsts(in: mission, besides: ref)
             }
             try keep(change)
@@ -734,10 +745,23 @@ extension OrderChanges {
         step.prerequisites.first { $0.origins.contains(where: \.isStacked) && $0.status != .merged }?.ref
     }
 
+    /// What a pull request was stacked on that merged, while it still targets that one's branch: retarget it first. Its
+    /// standing says so; one its order doesn't name has none, and a branch it targets that merged says so.
+    static func retarget(of step: OrderStep) -> (after: ItemRef, to: String?)? {
+        if case .retarget(let merged, let branch) = step.standing { return (merged, branch) }
+        guard step.standing == .notInOrder,
+              let merged = step.prerequisites.first(where: { $0.status == .merged && $0.origins.contains(.branch) })
+        else { return nil }
+        return (merged.ref, nil)
+    }
+
     /// Whether one waits for another, directly or through others, by a stacked branch or a change of yours: what a menu
     /// can't undo by putting the other after it.
-    static func waits(_ later: ItemRef, for earlier: ItemRef, in missions: [OrderMission]) -> Bool {
-        var before: [ItemRef: Set<ItemRef>] = [:]
+    /// - Parameter stacked: what BriefBar sees each pull request stacked on, through those in no mission too.
+    static func waits(
+        _ later: ItemRef, for earlier: ItemRef, in missions: [OrderMission], stacked: [ItemRef: Set<ItemRef>] = [:]
+    ) -> Bool {
+        var before = stacked
         for mission in missions {
             for step in mission.steps + mission.attached {
                 for prerequisite in step.prerequisites where prerequisite.origins.contains(where: { $0.isStacked || $0 == .yours }) {
@@ -767,6 +791,8 @@ public struct MissionChoices: Equatable, Sendable {
         case isSet
         /// It's stacked on one that hasn't merged.
         case stacked(on: ItemRef)
+        /// What it was stacked on merged, and it still targets that one's branch: retarget it first.
+        case retarget(after: ItemRef, to: String?)
         /// It merged or closed.
         case ended
     }
@@ -800,8 +826,9 @@ public struct MissionChoices: Equatable, Sendable {
     public var mission: MissionKey?
     /// Nil in no mission.
     public var next: Next?
-    /// Merge After: the mission's other pull requests that haven't merged or closed, in its order, then those stacked with
-    /// them that its order doesn't name, then what it merges after elsewhere, by your change or a stacked branch.
+    /// Merge After: the mission's other pull requests that haven't merged or closed, and what it merges after that has, in
+    /// its order, then those stacked with them that its order doesn't name, then what it merges after elsewhere, by your
+    /// change or a stacked branch.
     public var prerequisites: [Prerequisite]
     /// Move to Mission: the missions it can go to, as By Mission lists them, its own among them.
     public var targets: [MissionKey]
@@ -827,8 +854,10 @@ public struct MissionChoices: Equatable, Sendable {
     /// - Parameters:
     ///   - mission: the mission whose card it's in, where it's in two; nil for the first that has it.
     ///   - missions: as By Mission shows them now.
+    ///   - stacked: what BriefBar sees each pull request stacked on (`OrderBoard.stacked`), those in no mission included.
     public static func of(
-        _ ref: ItemRef, in mission: MissionKey? = nil, missions: [OrderMission], changes: OrderChanges, orders: DeclaredOrders
+        _ ref: ItemRef, in mission: MissionKey? = nil, missions: [OrderMission], changes: OrderChanges, orders: DeclaredOrders,
+        stacked: [ItemRef: Set<ItemRef>] = [:]
     ) -> MissionChoices {
         let shown = mission.flatMap { key in missions.first { $0.key == key && $0.contains(ref) } }
             ?? missions.first { $0.contains(ref) }
@@ -852,13 +881,19 @@ public struct MissionChoices: Equatable, Sendable {
             .ended
         } else if isSet {
             .isSet
-        } else if let stacked = OrderChanges.openStacked(under: step) {
-            .stacked(on: stacked)
+        } else if let open = OrderChanges.openStacked(under: step) {
+            .stacked(on: open)
+        } else if let (merged, branch) = OrderChanges.retarget(of: step) {
+            .retarget(after: merged, to: branch)
         } else {
             .offered
         }
-        var others = (shown.steps + shown.attached).filter { $0.ref != ref && !$0.status.hasEnded }.map(\.ref)
-        for prerequisite in step.prerequisites where !prerequisite.status.hasEnded && !others.contains(prerequisite.ref) {
+        // What it can go after, and what it goes after now, whatever became of that, for you to take it away.
+        let current = Set(step.prerequisites.map(\.ref))
+        var others = (shown.steps + shown.attached).filter { other in
+            other.ref != ref && (current.contains(other.ref) || !other.status.hasEnded)
+        }.map(\.ref)
+        for prerequisite in step.prerequisites where !others.contains(prerequisite.ref) {
             others.append(prerequisite.ref)
         }
         let prerequisites = others.map { other in
@@ -867,7 +902,7 @@ public struct MissionChoices: Equatable, Sendable {
                 .stacked
             } else if origins != nil {
                 .checked
-            } else if OrderChanges.waits(other, for: ref, in: missions) {
+            } else if OrderChanges.waits(other, for: ref, in: missions, stacked: stacked) {
                 .waitsForIt
             } else {
                 .unchecked

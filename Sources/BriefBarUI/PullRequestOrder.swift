@@ -46,6 +46,8 @@ package final class PullRequestOrder: ObservableObject {
     }
     /// `names`, until the sources or the missions change.
     private var cachedNames: OrderNames?
+    /// What BriefBar sees each pull request stacked on, as the missions were last made: what your changes can't go against.
+    private var stacked: [ItemRef: Set<ItemRef>] = [:]
     /// Hears about the orders an agent tells or forgets through `--mcp`, while it's on.
     private var agentChanges: AnyObject?
     /// Looks at the time every hour, while it's on (`timePassed`).
@@ -334,7 +336,7 @@ package final class PullRequestOrder: ObservableObject {
     /// What a pull request's Mission menu offers now.
     /// - Parameter mission: the mission whose card it's in, where it's in two.
     package func choices(for ref: ItemRef, in mission: MissionKey? = nil) -> MissionChoices {
-        MissionChoices.of(ref, in: mission, missions: missions, changes: changes, orders: orders)
+        MissionChoices.of(ref, in: mission, missions: missions, changes: changes, orders: orders, stacked: stacked)
     }
 
     /// How many of your changes Undo Your Changes to This Mission takes back: to its pull requests, those you put in it and
@@ -374,7 +376,7 @@ package final class PullRequestOrder: ObservableObject {
         var changed = changes
         let touched: [ItemRef: OrderChange?]
         do {
-            touched = try changed.apply(edit, missions: missions, orders: orders, now: now())
+            touched = try changed.apply(edit, missions: missions, orders: orders, stacked: stacked, now: now())
         } catch {
             let refusal = OrderLastChange(said: "\(error)", refs: edit.refs, mission: cardMission(for: edit), touched: [:])
             lastChange = refusal
@@ -464,10 +466,12 @@ package final class PullRequestOrder: ObservableObject {
     private func rebuild() {
         guard isOn else {
             if !missions.isEmpty { missions = [] }
+            stacked = [:]
             return
         }
         let date = now()
         let facts = facts
+        stacked = OrderBoard.stacked(facts)
         let focused = focus.flatMap(OrderFocus.ref(of:))
         // What an order changed since one of your changes, as BriefBar sees it: that change doesn't hold anymore, though the
         // order changes back, until you put yours back.

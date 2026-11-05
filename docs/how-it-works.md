@@ -1318,8 +1318,9 @@ row's menu, its details and a Map node's right-click, changes where it goes By M
 to Merge**, which what waits for nothing there then waits for, one for each mission; **Merge After ▸**, to check or
 uncheck what it merges after; and **Move to Mission ▸**, into another mission, named by what lasts (an order by its ID, a
 chain of branches by one of its pull requests, the pull requests opened under a session by that session), a **New
-Mission** of your own, or **Not in a Mission**. A stacked branch is a fact: it counts, in a session's order too, and only
-retargeting changes it. Your changes are a layer, kept by pull request and never written into an order, so sessions go on
+Mission** of your own, or **Not in a Mission**. A stacked branch is a fact: it counts wherever it leads, in a session's
+order and from one mission to another, where the Map puts the pull request a wave on and says where the other is; only
+retargeting changes it, and Set as Next waits for the one it's stacked on to merge and for the retarget. Your changes are a layer, kept by pull request and never written into an order, so sessions go on
 telling theirs. Each keeps the place the orders gave the pull request when you made it: the latest change wins, so a
 revision that changes what that pull request merges after, or whether the order names it, shows instead, says so, and
 **Put Yours Back** makes yours hold again; telling the same order again changes nothing. **Undo** takes back your last

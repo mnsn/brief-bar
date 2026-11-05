@@ -112,6 +112,7 @@ struct OrderMapGrid: View {
                         step: step, item: order.describe(node.ref), isSelected: isSelected(node.ref),
                         isDimmed: lit.map { !$0.contains(node.ref) } ?? false, width: metrics.nodeWidth, height: metrics.nodeHeight,
                         workers: order.sessionsWorking(on: node.ref).compactMap(order.describe), names: names,
+                        elsewhere: OrderText.elsewhere(step, in: mission, missions: order.missions, names: names),
                         menu: MissionMenuContext.of(node.ref, order: order, mission: mission.key)
                     ) {
                         select(node.ref)
@@ -248,6 +249,8 @@ struct OrderMapNode: View {
     var workers: [LinkedItem] = []
     /// What names sessions and missions in what it says.
     var names: OrderNames = .none
+    /// What it waits for that the Map doesn't show, with no line there, and where that is (`OrderText.elsewhere`).
+    var elsewhere: String? = nil
     /// Its Mission menu, on its right-click and as VoiceOver's actions; nil for one you can't change, such as GitHub's.
     var menu: MissionMenuContext? = nil
     let action: () -> Void
@@ -299,7 +302,7 @@ struct OrderMapNode: View {
             if let menu { MissionMenu(step.ref, context: menu) }
         }
         .accessibilityLabel([step.ref.shortOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "))
-        .accessibilityValue(([item?.status, OrderText.sentence(of: step, names: names)].compactMap { $0 } + workerLines).joined(separator: ", "))
+        .accessibilityValue(([item?.status, OrderText.sentence(of: step, names: names), elsewhere].compactMap { $0 } + workerLines).joined(separator: ", "))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .missionActions(step.ref, context: menu)
     }
@@ -311,7 +314,7 @@ struct OrderMapNode: View {
     }
 
     private var help: String {
-        ([[step.ref.fullOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "), item?.status, OrderText.sentence(of: step, names: names)]
+        ([[step.ref.fullOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "), item?.status, OrderText.sentence(of: step, names: names), elsewhere]
             .compactMap { $0 } + workerLines)
             .joined(separator: "\n")
     }

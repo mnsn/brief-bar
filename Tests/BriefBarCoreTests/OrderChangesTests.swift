@@ -702,5 +702,113 @@ import Testing
             try changes.apply(.setNext(Self.pr(4102), in: .plan(otherID), true), missions: missions, orders: orders)
         }
         #expect(try Self.step(4103, in: Self.mission(.plan(otherID), in: missions)).standing == .anyTime)
+        let names = OrderNames(title: { [planID] key in key == .plan(planID) ? "Cart" : nil })
+        #expect(OrderText.elsewhere(step, in: try Self.mission(.plan(otherID), in: missions), missions: missions, names: names)
+            == "After !4101 · stacked, in ‘Cart’")
+    }
+
+    /// One whose stacked pull request merged, while it still targets that one's branch, is retargeted before it can be set
+    /// as next: one its order names, as its standing says, and one it doesn't, by its branch.
+    @Test func oneThatStillTargetsAMergedBranchIsRetargetedBeforeItsNext() throws {
+        let orders = try tell([(4101, []), (4102, []), (4103, [])])
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a", state: .merged), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            Self.ado(4103, state: .merged), OrderBoardTests.ado(4105, from: "users/robin/e", into: "users/robin/part-4103"),
+        ])
+        var changes = OrderChanges()
+        let missions = Self.missions(facts, orders, changes)
+        let mission = try Self.mission(.plan(planID), in: missions)
+        #expect(try Self.step(4102, in: mission).standing == .retarget(after: Self.pr(4101), to: "main"))
+        #expect(MissionChoices.of(Self.pr(4102), missions: missions, changes: changes, orders: orders).next
+            == .retarget(after: Self.pr(4101), to: "main"))
+        #expect(throws: OrderChangeError.retarget(after: Self.pr(4101), to: "main")) {
+            try changes.apply(.setNext(Self.pr(4102), in: .plan(planID), true), missions: missions, orders: orders)
+        }
+        #expect(OrderChangeError.retarget(after: Self.pr(4101), to: "main").description == "!4101 merged: retarget it to main first.")
+        #expect(mission.attached.map(\.ref) == [Self.pr(4105)])
+        #expect(MissionChoices.of(Self.pr(4105), missions: missions, changes: changes, orders: orders).next
+            == .retarget(after: Self.pr(4103), to: nil))
+        #expect(changes.isEmpty)
+    }
+
+    /// An order's line that goes round with stacked branches through another mission is set aside, as within one; yours is
+    /// refused, the menu saying why.
+    @Test func anOrdersLineAgainstStackedBranchesThroughAnotherMissionIsSetAside() throws {
+        var orders = try tell([(4101, [4103]), (4103, [])])
+        orders = try tell([(4102, [])], replacing: orders, id: otherID, at: 10)
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a"), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            OrderBoardTests.ado(4103, from: "users/robin/c", into: "users/robin/b"),
+        ])
+        var changes = OrderChanges()
+        let missions = Self.missions(facts, orders, changes)
+        let mission = try Self.mission(.plan(planID), in: missions)
+        let first = try Self.step(4101, in: mission)
+        #expect(first.prerequisites.isEmpty && first.notes.contains(.setAside(Self.pr(4103), by: Self.session, stacked: true)))
+        #expect(try Self.step(4103, in: mission).standing == .waiting(open: [Self.pr(4102)], unknown: []))
+        #expect(try Self.step(4102, in: Self.mission(.plan(otherID), in: missions)).standing == .waiting(open: [Self.pr(4101)], unknown: []))
+        #expect(MissionChoices.of(Self.pr(4101), missions: missions, changes: changes, orders: orders).prerequisites
+            == [MissionChoices.Prerequisite(ref: Self.pr(4103), state: .waitsForIt)])
+        #expect(throws: OrderChangeError.waitsForIt(Self.pr(4103))) {
+            try changes.apply(.mergeAfter(Self.pr(4101), Self.pr(4103), in: .plan(planID), true), missions: missions, orders: orders)
+        }
+    }
+
+    /// Moving the middle one of a stacked chain out of every mission doesn't let you put the chain's first after its last:
+    /// BriefBar still sees them stacked through it.
+    @Test func aChainStillCountsThroughOneYouMovedOutOfEveryMission() throws {
+        let orders = try tell([(4101, []), (4103, [])])
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a"), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            OrderBoardTests.ado(4103, from: "users/robin/c", into: "users/robin/b"),
+        ])
+        var changes = OrderChanges()
+        try changes.apply(.move([Self.pr(4102)], to: .outside, from: nil), missions: Self.missions(facts, orders, changes), orders: orders, now: t(60))
+        let missions = Self.missions(facts, orders, changes)
+        #expect(OrderBoard.mission(of: Self.pr(4102), in: missions) == nil)
+        let stacked = OrderBoard.stacked(facts)
+        #expect(MissionChoices.of(Self.pr(4101), missions: missions, changes: changes, orders: orders, stacked: stacked).prerequisites
+            == [MissionChoices.Prerequisite(ref: Self.pr(4103), state: .waitsForIt)])
+        #expect(throws: OrderChangeError.waitsForIt(Self.pr(4103))) {
+            try changes.apply(
+                .mergeAfter(Self.pr(4101), Self.pr(4103), in: .plan(planID), true), missions: missions, orders: orders, stacked: stacked
+            )
+        }
+    }
+
+    /// Put Yours Back puts the one you set as next back in the mission you set it in, though its order no longer has it.
+    @Test func puttingBackOneSetAsNextPutsItBackInItsMission() throws {
+        var orders = try tell([(4101, []), (4102, [4101]), (4103, [4102])])
+        let facts = Self.facts([4101, 4102, 4103])
+        var changes = OrderChanges()
+        try changes.apply(.setNext(Self.pr(4103), in: .plan(planID), true), missions: Self.missions(facts, orders, changes), orders: orders, now: t(60))
+        orders = try tell([(4101, []), (4102, [4101])], replacing: orders, at: 70)
+        changes.noteOverrides(in: orders, now: t(70))
+        var missions = Self.missions(facts, orders, changes)
+        #expect(OrderBoard.mission(of: Self.pr(4103), in: missions) == nil)
+        #expect(MissionChoices.of(Self.pr(4103), missions: missions, changes: changes, orders: orders).canPutBack)
+
+        try changes.apply(.putBack(Self.pr(4103)), missions: missions, orders: orders, now: t(80))
+        #expect(changes[Self.pr(4103)]?.placement == .into(.plan(planID)))
+        missions = Self.missions(facts, orders, changes)
+        #expect(try Self.step(4103, in: Self.mission(.plan(planID), in: missions)).standing == .next)
+        #expect(!MissionChoices.of(Self.pr(4103), missions: missions, changes: changes, orders: orders).canPutBack)
+    }
+
+    /// What it merges after that closed stays in Merge After, for you to take it away.
+    @Test func oneThatClosedStaysInMergeAfterToTakeAway() throws {
+        let orders = try tell([(4101, []), (4102, []), (4103, [])])
+        var changes = OrderChanges()
+        try changes.apply(
+            .mergeAfter(Self.pr(4101), Self.pr(4102), in: .plan(planID), true), missions: Self.missions(Self.facts([4101, 4102, 4103]), orders, changes),
+            orders: orders, now: t(60)
+        )
+        let facts = OrderFacts(pullRequests: [Self.ado(4101), Self.ado(4102, state: .closed), Self.ado(4103)])
+        let missions = Self.missions(facts, orders, changes)
+        #expect(try Self.step(4101, in: Self.mission(.plan(planID), in: missions)).standing == .prerequisiteClosed(Self.pr(4102)))
+        #expect(MissionChoices.of(Self.pr(4101), missions: missions, changes: changes, orders: orders).prerequisites
+            .contains(MissionChoices.Prerequisite(ref: Self.pr(4102), state: .checked)))
+        try changes.apply(.mergeAfter(Self.pr(4101), Self.pr(4102), in: .plan(planID), false), missions: missions, orders: orders, now: t(70))
+        #expect(changes.isEmpty)
     }
 }

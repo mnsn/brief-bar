@@ -785,6 +785,16 @@ public enum OrderBoard {
     /// put in a mission of your own, or in one that's gone, together; then what you set as next, put after another or took
     /// away. What decides what a pull request merges after: stacked branches, which nobody changes but by retargeting;
     /// then yours; then its order's. What goes round in a circle with those before it is set aside, with a note.
+    /// What BriefBar sees each pull request stacked on, by its branch or a GitHub stack, those in no mission included: for
+    /// what a change can't go against (`OrderChanges.apply`, `MissionChoices.of`).
+    public static func stacked(_ facts: OrderFacts) -> [ItemRef: Set<ItemRef>] {
+        var before: [ItemRef: Set<ItemRef>] = [:]
+        for edge in OrderInference.edges(facts).keys {
+            before[edge.after, default: []].insert(edge.before)
+        }
+        return before
+    }
+
     /// - Parameter focus: the mission you keep on top.
     public static func missions(
         facts: OrderFacts, orders: DeclaredOrders, evidence: OrderEvidence, focus: MissionKey? = nil,
