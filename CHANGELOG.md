@@ -5,6 +5,12 @@
 - **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
   and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
   over an app in full screen, so clicking the gear seemed to do nothing.
+- **Settings has a Pull Requests page.** The settings about pull requests are together there, each under the sources
+  it works with: **Pull Request Order**, from General, with Azure DevOps' and GitHub's pull requests, then Azure DevOps'
+  own, from its page: **Show To Review in the Menu Bar**, **Follow Pipelines After You Merge**, **Open Pull Requests in
+  BriefBar**, **Pull Requests Sent in Chats**, **Keep Done For**, **Idle After No Activity For**, **Watch a Pull
+  Request…** and **Make Changes in Azure DevOps**. While Azure DevOps is off, or paused, its settings show all the same,
+  disabled, and say so. Each keeps what you chose, and Azure DevOps' gear menu still has its own.
 
 ## 0.15.0 - 2026-11-04
 

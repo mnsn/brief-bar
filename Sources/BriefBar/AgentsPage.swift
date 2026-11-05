@@ -252,7 +252,7 @@ final class AgentsModel: ObservableObject {
 
     // MARK: Skills that come with a setting
 
-    /// Pull Request Order is on, in Settings › General.
+    /// Pull Request Order is on, in Settings › Pull Requests.
     var isOrderOn: Bool { PullRequestOrderSetting.isOn(in: defaults) }
 
     /// Updates from Copilot Sessions is on, on this page.
@@ -291,7 +291,7 @@ final class AgentsModel: ObservableObject {
 
     var showsOrderSkill: Bool { showsSkill(.order) }
 
-    /// Pull Request Order turned on or off, in Settings › General (`settingChanged`).
+    /// Pull Request Order turned on or off, in Settings › Pull Requests (`settingChanged`).
     func pullRequestOrderChanged(_ isOn: Bool) {
         settingChanged(.order, isOn: isOn)
     }
@@ -1101,7 +1101,8 @@ private struct SessionPromptsRow: View {
     }
 }
 
-/// Pull Request Order's skill in the Copilot CLI, which comes and goes with Pull Request Order, in Settings › General.
+/// Pull Request Order's skill in the Copilot CLI, which comes and goes with Pull Request Order, in Settings › Pull
+/// Requests.
 private struct OrderSkillRow: View {
     @ObservedObject var agents: AgentsModel
 
@@ -1242,10 +1243,10 @@ enum SettingSkill: CaseIterable {
         }
     }
 
-    /// Where the setting is, from the Agents page: ", in Settings › General", or nothing for one on it.
+    /// Where the setting is, from the Agents page: ", in Settings › Pull Requests", or nothing for one on it.
     var place: String {
         switch self {
-        case .order: return ", in Settings › General"
+        case .order: return ", in Settings › Pull Requests"
         case .updates: return ""
         }
     }

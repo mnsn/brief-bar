@@ -394,7 +394,7 @@ struct CopilotSetting: View {
     @EnvironmentObject private var services: AppServices
     @Environment(\.inSettingsForm) private var inSettingsForm
 
-    static let title = "Send Work to Copilot"
+    nonisolated static let title = "Send Work to Copilot"
     static let explanation = """
         Adds a button to the sprint's work items that sends one to the Copilot CLI on this Mac, with a prompt you can \
         change and the model you choose. Copilot works on its own, in a new worktree of the repository you pick, with \

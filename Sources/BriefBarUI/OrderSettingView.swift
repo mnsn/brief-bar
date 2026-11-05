@@ -1,9 +1,9 @@
 import BriefBarCore
 import SwiftUI
 
-/// Pull Request Order, in Settings › General: off until you turn it on, what it does and reads, and Forget All Orders…,
-/// which forgets, on or off, every order sessions told BriefBar, what it saw become of their pull requests, and the mission
-/// you focus on.
+/// Pull Request Order, on the Pull Requests page in Settings, as rows of its form: off until you turn it on, what it does and
+/// reads, and Forget All Orders…, which forgets, on or off, every order sessions told BriefBar, what it saw become of their
+/// pull requests, and the mission you focus on.
 package struct PullRequestOrderSettingView: View {
     @ObservedObject private var order: PullRequestOrder
     /// Tells the rest of the app, such as Agents, which adds Pull Request Order's skill to Copilot while both are on.
@@ -16,7 +16,7 @@ package struct PullRequestOrderSettingView: View {
         self.changed = changed
     }
 
-    package static let title = "Pull Request Order"
+    nonisolated package static let title = "Pull Request Order"
     package static let explanation = """
         Lists your pull requests By Mission, on the Pull Requests pages of BriefBar's window: the ones that go together, in \
         the order they should merge, as a graph and on a map, with the order on each row. The order comes from stacks \
@@ -29,26 +29,22 @@ package struct PullRequestOrderSettingView: View {
         """
 
     package var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Toggle(Self.title, isOn: Binding(get: { order.isOn }, set: { on in
-                order.setOn(on)
-                changed(on)
-            }))
+        Toggle(isOn: Binding(get: { order.isOn }, set: { on in
+            order.setOn(on)
+            changed(on)
+        })) {
+            Text(Self.title)
             Text(Self.explanation)
-                .font(style: .callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Forget All Orders…") { confirmsForget = true }
-                .disabled(!order.keepsAnything)
-                .padding(.top, 4)
-                .confirmationDialog("Forget all orders?", isPresented: $confirmsForget) {
-                    Button("Forget All Orders", role: .destructive) { order.forgetAll() }
-                } message: {
-                    Text("""
-                        BriefBar forgets every order sessions told it, what it saw become of their pull requests, and the \
-                        mission you focus on. Sessions that name an order are told it's forgotten.
-                        """)
-                }
         }
+        Button("Forget All Orders…") { confirmsForget = true }
+            .disabled(!order.keepsAnything)
+            .confirmationDialog("Forget all orders?", isPresented: $confirmsForget) {
+                Button("Forget All Orders", role: .destructive) { order.forgetAll() }
+            } message: {
+                Text("""
+                    BriefBar forgets every order sessions told it, what it saw become of their pull requests, and the \
+                    mission you focus on. Sessions that name an order are told it's forgotten.
+                    """)
+            }
     }
 }
