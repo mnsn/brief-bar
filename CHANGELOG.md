@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.17.0 - 2026-11-05
 
 - **Edit and delete your comments.** With **Make Changes in Azure DevOps** on, a comment you wrote in a pull request's
   details has **Edit** and **Delete…**, in its **⋯** and right-click menus. Edit opens it in place, as Reply does, with
