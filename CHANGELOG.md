@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
+  and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
+  over an app in full screen, so clicking the gear seemed to do nothing.
 - **Your reply on a pull request someone sent you shows.** Once you'd seen a pull request sent to you in a chat, which
   leaves your lists, its details stopped following it: a reply, or a status you set there, went to Azure DevOps but
   didn't show, and replying again posted it twice. Its details now follow it while BriefBar still reads it, and its
