@@ -560,7 +560,8 @@ package struct OrderBoardView: View {
         switch move {
         case .setStage(let stage):
             notice = nil
-            StageCommand.set(stage, of: card.ref, order: order)
+            // As the row's menu and VoiceOver's action move it.
+            StageCommand.perform(.move(stage), on: card.ref, order: order)
             keepFocus(on: card, in: lane)
             return true
         case .setAsNext:
