@@ -42,8 +42,8 @@ consent.
   **Sign In…**, which opens Terminal to run it. An organization in another directory (tenant) than your
   sign-in's says so, and its **Sign In…** runs `az login --tenant` for that directory; your other
   organizations stay listed meanwhile. macOS asks whether BriefBar may post notifications.
-  **Pull Requests Sent in Chats**, off until you turn it on in its settings, also needs Full Disk
-  Access, the same window as Teams'.
+  **Pull Requests Sent in Chats**, off until you turn it on in **Settings › Pull Requests**, also needs
+  Full Disk Access, the same window as Teams'.
 - **Copilot** needs nothing.
 - **GitHub** signs in with the GitHub CLI: `brew install gh`, then `gh auth login`, or click
   **Sign In…**, which opens Terminal to run it. BriefBar asks `gh` for its token and keeps it in memory
@@ -340,7 +340,7 @@ Your Merges** the run that failed or waits; from a link to it, or a task you sen
 the same details for each of your pull requests, the way there in their header, such as **Bug 5110 ›
 !4091**. Opening it in BriefBar sees it, as opening it in Azure DevOps does. In the menu bar's list, widgets
 and notifications, a click opens a pull request in Azure DevOps, unless you turn on **Open Pull Requests in
-BriefBar** in Azure DevOps' settings: then those show its details in BriefBar's window too, at what it's
+BriefBar** in **Settings › Pull Requests**: then those show its details in BriefBar's window too, at what it's
 about, while a window shows the Pull Requests page. Either way, its menu has both: **Show in BriefBar**, or
 **Show Details** in the window, and **Open in Azure DevOps**, which opens it where its row does, at the comment
 that needs you or the run after its merge, from the Pipelines page's cards too. With VoiceOver, the details
@@ -436,7 +436,7 @@ your answer in the app. **Esc** closes a composer, then the details; closing a c
 off, unless the session has it already. VoiceOver hears what becomes of each, once, though it shows in two windows, or on
 two rows of a build that two policies run.
 
-**Reply and set a thread's status.** With **Make Changes in Azure DevOps** on, in Azure DevOps' settings (off by
+**Reply and set a thread's status.** With **Make Changes in Azure DevOps** on, in **Settings › Pull Requests** (off by
 default), each thread on an open pull request ends with **Reply** and its status, in the row with Explain and Fix, in the
 comments and on its file's page. On a pull request that's completed or abandoned, or that's no longer in your lists, a
 lock takes their place: point at it, or ask VoiceOver, to hear why. **Reply** opens a field under the thread, in place, as Explain and Fix do, one at a time
@@ -583,18 +583,18 @@ comment, or the run, it's about: in Azure DevOps, or in the pull request's detai
 with **Open Pull Requests in BriefBar** on. The first time, BriefBar finds the organizations where you have pull
 requests; **Organizations** in its settings changes them.
 
-**Watch a Pull Request…**, in its settings, follows a pull request you're not on, such as one your team
-was asked to review, by its link: it's listed as if you reviewed it, under **To Review** as
-**Watching**, with replies and mentions needing you there as on any review, until it closes or you stop
-watching it (right-click it, or **Watched Pull Requests** in its settings). Once you vote on it, you're
-its reviewer.
+**Watch a Pull Request…**, in **Settings › Pull Requests** and Azure DevOps' gear menu, follows a pull
+request you're not on, such as one your team was asked to review, by its link: it's listed as if you
+reviewed it, under **To Review** as **Watching**, with replies and mentions needing you there as on any
+review, until it closes or you stop watching it (right-click it, or **Watched Pull Requests** in either
+place). Once you vote on it, you're its reviewer.
 
 **Pipelines after your merges.** When a pull request of yours completes, BriefBar follows the pipelines
 that run on its merge commit, and the ones those start, such as a deployment, for as long as Done keeps
 it. Its row says how they're going ("Merged into main · 2 pipelines running"), moves to **Failing** if
 one fails, saying where, and to **Waiting for approval** while a stage waits for one; the Pipelines page
-lists them under **After Your Merges**. **Follow Pipelines After You Merge**, in its settings, turns it
-off.
+lists them under **After Your Merges**. **Follow Pipelines After You Merge**, in **Settings › Pull
+Requests**, turns it off.
 
 **Pull Requests Sent in Chats**, off by default, lists a pull request as needing you when someone
 sends you a link to it, in Teams, Slack, an email or any other app, as "Dana sent this in Teams",
@@ -1060,7 +1060,8 @@ has the details.
 
 Each source has its settings on its page in **Settings**, and in the gear menu of its list (or the
 right-click menu of its widget), next to **Launch BriefBar at Login**, **Check for Updates…**,
-**BriefBar Settings…** and **Quit BriefBar**. **Settings › General** also has
+**BriefBar Settings…** and **Quit BriefBar**. Those about pull requests are on **Settings › Pull
+Requests** rather than its page (below). **Settings › General** also has
 **Check for Updates Automatically**, **Show Links**, off by default (see [Links](#links)),
 **Summaries**, off by default (see [Azure DevOps](#azure-devops)), and
 **Notifications Page**, off by default, with how long it keeps what it lists: 4 hours, 1 day (default)
@@ -1073,18 +1074,11 @@ or 3 days (see [Notifications](#notifications)).
 | | Summarize with Apple Intelligence | on/off: the ✨ button on each chat, and chats worded in [the brief](#the-brief), while previews are shown |
 | | Mark Chats Read When You Read Them in Teams | on by default: reads how far you've read each chat from Teams' own data, read-only, and keeps only that, in memory |
 | | Mark All Read When Teams' Badge Clears | on by default |
-| Azure DevOps | Notifications, Summaries by Apple Intelligence, Show To Review in the Menu Bar | on/off |
-| | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
-| | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
-| | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links, in memory. Needs Full Disk Access |
+| Azure DevOps | Notifications, Summaries by Apple Intelligence | on/off |
 | | Refresh | every 1, 2 or 5 minutes |
-| | Keep Done For | 4 hours, 1 day, 3 days |
-| | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
 | | Organizations | which to watch; **Add Organization…** takes a name or any link from it, and checks that your sign-in can read it: it says why when it can't, such as an organization in another directory, which **Sign In…** fixes, or a project's name, whose organization is the first part of its link |
-| | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
 | | Sprint | on its page: **Everyone** or **Just Mine**, which team's sprint, and how wide you drag a work item's details |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
-| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **Add Tag** and **✕** on its tags, which add a tag or remove one; and **Fix Grammar** in a reply, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies you haven't sent and the tags you added, which adding one suggests, and stops a change that hasn't gone yet |
 | | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Move Viewed Sessions to Idle | off by default: when on, opening or viewing a finished or stopped session moves it to Idle |
@@ -1092,6 +1086,24 @@ or 3 days (see [Notifications](#notifications)).
 | | Nest Sessions Under Their Parents | off by default: a session that another session started shows under it, as in the Copilot app's sidebar, or with a ↳ tag when it's in another group (see [GitHub Copilot](#github-copilot)) |
 | | Show Context Usage | off by default: how full each session's context window is |
 | GitHub | Refresh Every | 1, 2 (default), 5 or 15 minutes: one request each time |
+
+**Settings › Pull Requests** has the settings about pull requests, each under the sources whose pull
+requests it works with: first those that work with Azure DevOps' and GitHub's, then those that work with
+Azure DevOps' only. A source's settings work only while it's on: while it's off, or paused until you look
+at what it reads now, they show all the same, disabled, saying so, with **Turn On…** or **Review…**. Azure
+DevOps' gear menu has its own too: they're the same settings.
+
+| Works with | Setting | Options |
+|---|---|---|
+| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it. **Forget All Orders…** forgets the orders sessions told it |
+| Azure DevOps only | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
+| | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
+| | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
+| | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links, in memory. Needs Full Disk Access |
+| | Keep Done For | 4 hours, 1 day, 3 days |
+| | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
+| | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
+| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **Add Tag** and **✕** on its tags, which add a tag or remove one; and **Fix Grammar** in a reply, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies you haven't sent and the tags you added, which adding one suggests, and stops a change that hasn't gone yet |
 
 **Settings › Agents** lets agents use BriefBar, off by default, and installs its Copilot plugin, and
 its extension for the Copilot app's sessions, only when you ask (see [Agents](#agents)).
@@ -1280,7 +1292,7 @@ run.
 
 Azure DevOps' search for "pull requests I review" only matches you, not the groups you're in. Pull
 requests where you were added yourself, including by a policy, are shown. To follow one of your team's
-anyway, watch it: **Watch a Pull Request…** in Azure DevOps' settings takes its link. GitHub's source
+anyway, watch it: **Watch a Pull Request…** in **Settings › Pull Requests** takes its link. GitHub's source
 lists only the review requests made to you by name too, and can't watch a team's.
 
 ### Why does a failed build show only its first error?

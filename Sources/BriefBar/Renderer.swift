@@ -329,10 +329,34 @@ enum Renderer {
             let pages: [(String, SettingsDestination)] = [("general", .general), ("appearance", .appearance)]
                 + Surface.allCases.map { ($0.title.lowercased().replacingOccurrences(of: " ", with: "-"), .layout($0)) }
                 + model.sources.map { ($0.id.rawValue, .source($0.id)) }
-                + [("agents", .agents)]
+                + [("pull-requests", .pullRequests), ("agents", .agents)]
             for (name, destination) in pages {
                 page(destination, name: name)
             }
+            /// A page whole, without the sidebar, as tall as it is: what scrolls below the window's picture of it too.
+            func wholePage(_ content: some View, name: String) {
+                let view = content
+                    .padding(24)
+                    .frame(width: SettingsView.pageWidth, alignment: .topLeading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .interfaceOptions(from: model.services)
+                    .environmentObject(model.services)
+                    .environmentObject(model.services.loginItem)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                write(Snapshot.render(view, appearance: appearance), "settings-\(name)-whole-\(suffix)")
+            }
+            // General, the sources' pages and the settings about pull requests, whole.
+            let wholePages: [(String, SettingsDestination)] = [("general", .general)]
+                + model.sources.map { ($0.id.rawValue, .source($0.id)) }
+                + [("pull-requests", .pullRequests)]
+            for (name, destination) in wholePages {
+                wholePage(SettingsPage(model: model, destination: destination) { _ in }, name: name)
+            }
+            // And the settings about pull requests while Azure DevOps and GitHub are off, with Pull Request Order off: Azure
+            // DevOps' disabled, each group saying why. Neither is changed.
+            let orderOff = PullRequestOrder(defaults: MemoryDefaults(), isDemo: false)
+            let sourcesOff = PullRequestsSettingsPage(model: model, order: orderOff, state: { _ in .off }) { _ in }
+            wholePage(sourcesOff, name: "pull-requests-off")
             // The Notifications page's setting, below what the picture of General shows.
             let notificationsSetting = NotificationsSetting(recent: model.services.recentNotifications)
                 .padding(24)
@@ -348,14 +372,6 @@ enum Renderer {
             .frame(width: 600, alignment: .leading)
             .background(Color(nsColor: .windowBackgroundColor))
             write(Snapshot.render(linksSettings, appearance: appearance), "settings-links-\(suffix)")
-            // Pull Request Order, below them, on and off.
-            for (name, isOn) in [("on", true), ("off", false)] {
-                let setting = PullRequestOrderSettingView(order: PullRequestOrder(defaults: MemoryDefaults(), isDemo: isOn))
-                    .padding(24)
-                    .frame(width: 600, alignment: .leading)
-                    .background(Color(nsColor: .windowBackgroundColor))
-                write(Snapshot.render(setting, appearance: appearance), "settings-pull-request-order-\(name)-\(suffix)")
-            }
             if demo {
                 let cloudSummaries = StorySummaries(
                     defaults: MemoryDefaults(), links: model.services.links, stories: model.services.stories, isDemo: true
