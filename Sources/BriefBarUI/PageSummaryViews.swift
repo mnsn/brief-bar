@@ -33,7 +33,7 @@ package struct PageSummarizeButton: View {
                 Button {
                     summaries.show(ref)
                 } label: {
-                    Label("Show Summary", systemImage: "sparkles")
+                    ControlLabel("Show Summary", systemImage: "sparkles")
                 }
                 .glassButtonStyle()
                 .help("Shows the summary you closed, as it was written")
@@ -54,7 +54,7 @@ package struct PageSummarizeButton: View {
             Button {
                 summaries.summarize(ref)
             } label: {
-                Label(title, systemImage: "sparkles")
+                ControlLabel(title, systemImage: "sparkles")
                     .fixedSize()
             }
             .glassButtonStyle()

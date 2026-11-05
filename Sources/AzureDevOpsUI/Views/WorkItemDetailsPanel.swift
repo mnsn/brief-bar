@@ -175,6 +175,7 @@ struct WorkItemDetailsPanel: View {
                     details.reload()
                 } label: {
                     Image(systemName: "arrow.clockwise")
+                        .font(size: 13)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
@@ -192,9 +193,11 @@ struct WorkItemDetailsPanel: View {
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
+                    .font(size: 13)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .labelMenuStyle()
             .fixedSize()
             .help("More")
             Button {
@@ -356,7 +359,7 @@ struct WorkItemDetailsPanel: View {
             Button {
                 details.openInAzureDevOps()
             } label: {
-                Label("Open in Azure DevOps", systemImage: "arrow.up.forward.app")
+                ControlLabel("Open in Azure DevOps", systemImage: "arrow.up.forward.app")
             }
             .glassButtonStyle()
             .help("Open it in Azure DevOps, to change it there")
@@ -371,9 +374,9 @@ struct WorkItemDetailsPanel: View {
                         copilot.compose(item)
                     } label: {
                         if compact {
-                            Image(systemName: "paperplane")
+                            ControlLabel(nil, systemImage: "paperplane")
                         } else {
-                            Label("Send to Copilot…", systemImage: "paperplane")
+                            ControlLabel("Send to Copilot…", systemImage: "paperplane")
                         }
                     }
                     .glassButtonStyle()
@@ -712,10 +715,12 @@ private struct FailureView: View {
             .font(size: 12)
             HStack(spacing: 8) {
                 if problem.offersSignIn {
-                    Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: problem) }
-                        .buttonStyle(.borderedProminent)
+                    Button { store.signIn(for: problem) } label: {
+                        ControlLabel(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…")
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                Button("Try Again") { details.reload() }
+                Button { details.reload() } label: { ControlLabel("Try Again") }
             }
             .controlSize(.small)
         }
@@ -868,7 +873,11 @@ struct FlowLayout: Layout {
         var widest: CGFloat = 0
         for subview in subviews {
             var size = subview.sizeThatFits(.unspecified)
-            size.width = min(size.width, width)
+            // Narrowed to the line, it's as tall as it wraps there, which bigger text makes more lines.
+            if size.width > width {
+                size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+                size.width = min(size.width, width)
+            }
             if x > 0, x + size.width > width {
                 x = 0
                 y += lineHeight + (lineSpacing ?? spacing)
