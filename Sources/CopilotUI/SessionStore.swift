@@ -161,16 +161,32 @@ final class SessionStore: ObservableObject {
         if orderSessions != self.orderSessions { self.orderSessions = orderSessions }
     }
 
-    /// Opens the session or task: a session in the Copilot app, or without it, in a terminal. Only the opt-in setting
-    /// dismisses its recent completion. A session whose question another session asks you for opens that one, where you
-    /// answer it.
-    func open(_ session: SessionSnapshot) {
+    /// Opens the session or task: a session in the Copilot app, or without it, in a terminal; a task, what it's for, as a
+    /// click does from where it shows (`inWindow`: a page of BriefBar's window), in BriefBar's window or where it lives
+    /// (`SentTask.click`). Only the opt-in setting dismisses its recent completion. A session whose question another
+    /// session asks you for opens that one, where you answer it.
+    func open(_ session: SessionSnapshot, inWindow: Bool = false) {
         markViewedIfEnded(session)
         if let task = tasks[session.id] {
-            task.open()
+            task.click(inWindow: inWindow)
         } else {
             open(sessionId: session.answerIn?.id ?? session.id)
         }
+    }
+
+    /// Shows what a task is for in BriefBar's window, from one of its pages, such as the Overview's brief: false when it's
+    /// not a task, or what it's for can't show there.
+    func show(_ session: SessionSnapshot) -> Bool {
+        guard let task = tasks[session.id], task.canShow() else { return false }
+        markViewedIfEnded(session)
+        return task.show()
+    }
+
+    /// Opens what a task is for the other way, as its menu's item after the one a click does chose it (`SentTask.otherOpening`),
+    /// where it lives or in BriefBar's window: as a click does, the opt-in setting dismisses its recent completion.
+    func open(_ session: SessionSnapshot, theOtherWay opening: () -> Void) {
+        markViewedIfEnded(session)
+        opening()
     }
 
     /// Opens a session itself, even when its question is asked in another session.

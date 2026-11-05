@@ -76,8 +76,8 @@ Only the latest release, and the latest commit on `main`, are supported.
   default keychain and the search list, which any program running as you can change. The links it
   finds in other apps' notifications, and which of those pull requests you've seen, stay in memory.
   Its preferences, which any program running as you can read and change, hold its settings, which of
-  your own pull requests you've seen, which Copilot sessions you've cleared and which work items you
-  sent to Copilot, but nothing from Notification Center.
+  your own pull requests you've seen and which of their comment threads you marked as read, which Copilot
+  sessions you've cleared and which work items you sent to Copilot, but nothing from Notification Center.
 
 ## How the app is signed
 

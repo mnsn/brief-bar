@@ -132,13 +132,17 @@ public struct ADOClient: Sendable {
     /// can't be read, the answer says so (`Answer.unreadable`), rather than that it failed; and a 503, which Azure Front Door
     /// answers once Azure DevOps takes too long, as no answer in time, since it may have been made. Taking a tag off says
     /// nothing more than that it's done, whatever it answers. Called off before it goes, as when its setting is turned off
-    /// while a token comes, it never goes. And it goes only as whom it was asked for as, `account` (`AccessToken.account`, as
+    /// while a token comes, it never goes, and says so (`CancellationError`); once it's gone, it isn't called off, since
+    /// Azure DevOps may make it all the same: its answer, or why it failed, says what happened. And it goes only as whom it
+    /// was asked for as, `account` (`AccessToken.account`, as
     /// the list was read), when that's known: when someone else signed in to the Azure CLI since, nothing goes
     /// (`ADOError.otherAccount`).
     public func send(_ write: ADOWrite, as account: String?) async throws -> ADOWrite.Answer {
+        let session = session
         let data = try await answer(write.url, request: { Self.request(write, token: $0) }, isAnswer: { _ in true }, isChange: true,
                                     account: account, refusal: Self.refusal) { request, redirects in
-            let (data, response) = try await session.data(for: request, delegate: redirects)
+            // Gone, it isn't called off with its caller: that wouldn't take it back, only lose what Azure DevOps answers.
+            let (data, response) = try await Task { try await session.data(for: request, delegate: redirects) }.value
             return (data, response, true)
         }.data
         do {

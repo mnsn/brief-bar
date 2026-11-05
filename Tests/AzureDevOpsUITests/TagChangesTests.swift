@@ -286,9 +286,8 @@ import Testing
         #expect(ADOWriteProblem.otherAccount.sentence(.removeTag).hasPrefix("Someone else is signed in to the Azure CLI now"))
     }
 
-    /// A change on its way, as one waiting for a token, is called off as the setting goes off, or someone else signs in: it
-    /// never goes, and says nothing. One called off as the setting goes off may have gone all the same, once its request
-    /// had: its tags are read again, to show how they stand.
+    /// A change on its way that hasn't gone yet, as one waiting for a token, is called off as the setting goes off, or
+    /// someone else signs in: it never goes, says nothing, and nothing's read for it, since nothing went.
     @Test func aChangeOnItsWayIsCalledOffAsItGoesOff() async throws {
         let (store, changes, azure) = live()
         changes.send = { write, _ in
@@ -308,7 +307,6 @@ import Testing
         #expect(azure.sent.isEmpty)
         #expect(changes.state(of: key) == nil)
         #expect(tags(store) == ["deploy-eu", "needs-qa"])
-        try await waitUntil { reads == [key] }
 
         changes.settings.makesChanges = true
         changes.accountChanged("robin@contoso.example")
@@ -319,9 +317,137 @@ import Testing
         #expect(azure.sent.isEmpty)
         #expect(changes.state(of: key) == nil)
         #expect(tags(store) == ["deploy-eu", "needs-qa"])
-        // Someone else signed in: their details close, and nothing's read for the change called off.
         try await Task.sleep(for: .milliseconds(50))
+        #expect(reads.isEmpty)
+    }
+
+    /// A change under way as the setting goes off, gone already, which the client doesn't call off then, settles all the
+    /// same: the tags show what Azure DevOps answered, and are read again after it, not as the setting goes off, which may be
+    /// before Azure DevOps made it, and would leave them as they were. One that may have been made without saying so, as one
+    /// Azure DevOps didn't answer in time, has them read again once it settled.
+    @Test(.timeLimit(.minutes(1)))
+    func aChangeUnderWayAsItGoesOffShowsOnceItSettles() async throws {
+        let (store, changes, azure) = live()
+        var waiting: CheckedContinuation<Void, Never>?
+        // Gone: it answers, called off or not.
+        changes.send = { write, _ in
+            await withCheckedContinuation { waiting = $0 }
+            return try azure.send(write)
+        }
+        var reads: [PRKey] = []
+        changes.readTags = { key in
+            reads.append(key)
+            // As Azure DevOps had them before it made the change.
+            return .success([PullRequestTag("deploy-eu"), PullRequestTag("needs-qa")])
+        }
+        var readAfter: [[String]] = []
+        changes.readAfterChange = { _, tags in
+            readAfter.append(tags.map(\.name))
+            return .success(tags)
+        }
+        let adding = Task { await changes.add("hotfix", to: key) }
+        try await waitUntil { waiting != nil }
+        changes.settings.makesChanges = false
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(reads.isEmpty)
+        try #require(waiting).resume()
+        #expect(await adding.value == false)
+        #expect(tags(store) == ["deploy-eu", "hotfix", "needs-qa"])
+        try await waitUntil { readAfter.count == 1 }
+        #expect(readAfter == [["deploy-eu", "hotfix", "needs-qa"]])
+        #expect(reads.isEmpty)
+        #expect(changes.state(of: key) == nil)
+        #expect(changes.settings.usedTags.isEmpty)
+
+        changes.settings.makesChanges = true
+        waiting = nil
+        let removing = Task { await changes.remove(PullRequestTag("needs-qa", tagId: "demo-tag-needs-qa"), from: key) }
+        try await waitUntil { waiting != nil }
+        changes.settings.makesChanges = false
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(reads.isEmpty)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        try #require(waiting).resume()
+        await removing.value
         #expect(reads == [key])
+        #expect(changes.state(of: key) == nil)
+        #expect(azure.sent.map(\.kind) == [.addTag, .removeTag])
+    }
+
+    /// On again before a change under way as it went off has settled, the tags show it on its way and take no other change
+    /// until it has, so that its answer, coming late, can't undo a later one.
+    @Test(.timeLimit(.minutes(1)))
+    func onAgainBeforeATagChangeSettlesTheTagsWaitForIt() async throws {
+        let (store, changes, azure) = live()
+        var waiting: CheckedContinuation<Void, Never>?
+        // Only the first is held: another would go at once.
+        var held = false
+        changes.send = { write, _ in
+            if !held {
+                held = true
+                await withCheckedContinuation { waiting = $0 }
+            }
+            return try azure.send(write)
+        }
+        let adding = Task { await changes.add("hotfix", to: key) }
+        try await waitUntil { waiting != nil }
+        changes.settings.makesChanges = false
+        changes.settings.makesChanges = true
+        #expect(changes.state(of: key) == .sending(.add("hotfix")))
+        #expect(await changes.add("deploy-us", to: key) == false)
+        await changes.remove(PullRequestTag("needs-qa", tagId: "demo-tag-needs-qa"), from: key)
+        #expect(azure.sent.isEmpty)
+
+        try #require(waiting).resume()
+        #expect(await adding.value == false)
+        #expect(changes.state(of: key) == nil)
+        #expect(tags(store) == ["deploy-eu", "hotfix", "needs-qa"])
+        await changes.remove(PullRequestTag("hotfix", tagId: "id-hotfix"), from: key)
+        #expect(tags(store) == ["deploy-eu", "needs-qa"])
+        #expect(azure.sent.map(\.kind) == [.addTag, .removeTag])
+    }
+
+    /// A change that settles after someone else signed in, or Azure DevOps stopped, was the last one's: what Azure DevOps
+    /// answers does nothing, so it can't undo the tags the next one reads, nor change a list that stopped.
+    @Test(.timeLimit(.minutes(1)))
+    func aChangeThatSettlesAfterSomeoneElseSignsInDoesNothing() async throws {
+        let (store, changes, azure) = live()
+        changes.accountChanged("robin@contoso.example")
+        var waiting: CheckedContinuation<Void, Never>?
+        changes.send = { write, _ in
+            await withCheckedContinuation { waiting = $0 }
+            return try azure.send(write)
+        }
+        var reads = 0
+        changes.readTags = { _ in
+            reads += 1
+            return nil
+        }
+        var readsAfter = 0
+        changes.readAfterChange = { _, _ in
+            readsAfter += 1
+            return nil
+        }
+        let adding = Task { await changes.add("hotfix", to: key) }
+        try await waitUntil { waiting != nil }
+        changes.accountChanged("sam@contoso.example")
+        #expect(changes.state(of: key) == nil)
+        try #require(waiting).resume()
+        #expect(await adding.value == false)
+        #expect(tags(store) == ["deploy-eu", "needs-qa"])
+        #expect(changes.state(of: key) == nil)
+
+        waiting = nil
+        let removing = Task { await changes.remove(PullRequestTag("needs-qa", tagId: "demo-tag-needs-qa"), from: key) }
+        try await waitUntil { waiting != nil }
+        changes.stop()
+        try #require(waiting).resume()
+        await removing.value
+        #expect(tags(store) == ["deploy-eu", "needs-qa"])
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(reads == 0)
+        #expect(readsAfter == 0)
+        #expect(azure.sent.map(\.kind) == [.addTag, .removeTag])
     }
 
     /// What adding a tag offers: the tags you added in the project, then those on its pull requests, but the pull request's

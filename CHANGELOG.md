@@ -2,15 +2,6 @@
 
 ## Unreleased
 
-- **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
-  and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
-  over an app in full screen, so clicking the gear seemed to do nothing.
-- **Settings has a Pull Requests page.** The settings about pull requests are together there, each under the sources
-  it works with: **Pull Request Order**, from General, with Azure DevOps' and GitHub's pull requests, then Azure DevOps'
-  own, from its page: **Show To Review in the Menu Bar**, **Follow Pipelines After You Merge**, **Open Pull Requests in
-  BriefBar**, **Pull Requests Sent in Chats**, **Keep Done For**, **Idle After No Activity For**, **Watch a Pull
-  Request…** and **Make Changes in Azure DevOps**. While Azure DevOps is off, or paused, its settings show all the same,
-  disabled, and say so. Each keeps what you chose, and Azure DevOps' gear menu still has its own.
 - **Buttons and menus grow with Text Size in Windows.** At a bigger text size, in Settings › Appearance, the controls on
   windows' pages grow with their text: the pages' headers, such as By Status, List | Map and Open in Azure DevOps on the
   Pull Requests pages, rows' Actions, a pull request's Explain, Fix, Reply, Resolve, Fix Grammar and Push & Reply…, and
@@ -27,6 +18,65 @@
 - **A reviewer whose vote goes under their name lines up with the others**, at a bigger text size, rather than moving
   to the right.
 - **`--render` draws Settings with its chosen page highlighted in the sidebar**, where it drew a black capsule.
+
+## 0.16.0 - 2026-11-05
+
+- **Mark a comment thread as read, and show only the active ones.** In a pull request's details, **✓** beside a
+  thread's **Waits on you**, or **Mark as Read** in its right-click menu, stops it waiting on you, and the pull request
+  leaves Needs You once nothing else there does, until someone comments in the thread again. It's BriefBar's own:
+  nothing goes to Azure DevOps, and **Mark as Unread** puts it back while the details are open. That ends a bot's note in
+  a closed thread, say, as soon as you've read it. **Active | All**, beside **Comments**, shows only the threads that are
+  active or pending, in every pull request's details and their files' pages, and says how many it hides; BriefBar
+  remembers which you chose.
+- **Your reply on a pull request someone sent you shows.** Once you'd seen a pull request sent to you in a chat, which
+  leaves your lists, its details stopped following it: a reply, or a status you set there, went to Azure DevOps but
+  didn't show, and replying again posted it twice. Its details now follow it while BriefBar still reads it, and its
+  heading says whether what it shows is how it is now.
+- **"Slow down" says until when.** When Azure DevOps asks BriefBar to slow down, a reply, a status or a tag it held back
+  says until when, rather than "try again in a minute".
+- **Nothing goes twice when you turn Make Changes off.** Turning off **Make Changes in Azure DevOps** stops a reply, a
+  status or a tag that hasn't gone yet. One that has finishes and shows, and, turned back on, its thread or tags wait for
+  it. A reply that may have gone is checked before it's sent again, though you sent another that may have gone since.
+- **A build stops being read when you're done with it.** A build you opened in a pull request's details stops being read
+  as you close them or show another pull request, or as someone else signs in to the Azure CLI.
+- **Azure DevOps' description says when it reads again.** It now says that a pull request's updates and Files are read
+  again as its branch or its target moves, a build you opened as Azure DevOps merges it again, and tags whose read
+  failed half a minute later, and asks you once to look at what it reads.
+- **After this update, Azure DevOps asks you once to look at what it reads and keeps, and waits until you have.** It
+  now keeps the comment threads you mark as read, with what you'd seen of them, and only in memory for a pull request
+  sent to you in a chat. It also says when it reads a pull request's details again: its updates and Files whenever its
+  branch or target moves, a build as it finishes or runs again, and its tags half a minute after a read of them failed.
+
+## 0.15.1 - 2026-11-05
+
+- **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
+  and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
+  over an app in full screen, so clicking the gear seemed to do nothing.
+- **Settings has a Pull Requests page.** The settings about pull requests are together there, each under the sources
+  it works with: **Pull Request Order**, from General, with Azure DevOps' and GitHub's pull requests, then Azure DevOps'
+  own, from its page: **Show To Review in the Menu Bar**, **Follow Pipelines After You Merge**, **Open Pull Requests in
+  BriefBar**, **Pull Requests Sent in Chats**, **Keep Done For**, **Idle After No Activity For**, **Watch a Pull
+  Request…** and **Make Changes in Azure DevOps**. While Azure DevOps is off, or paused, its settings show all the same,
+  disabled, and say so. Each keeps what you chose, and Azure DevOps' gear menu still has its own.
+- **A task you sent to Copilot shows its pull request in BriefBar.** In Copilot's list, clicking a task about one of
+  your pull requests shows its details in BriefBar's window, as the pull request's own row does: always from the window,
+  and from the menu bar and widgets with **Open Pull Requests in BriefBar** on. Its menu has **Open Pull Request in Azure
+  DevOps** too, or **Open Pull Request on GitHub** for one Copilot opened there, and a linked pull request's row under
+  **Where It Stands** or **Also Linked** has **Show in BriefBar**
+  beside **Open in Azure DevOps**. Shown from a link or a task, a pull request's details open at what its row is about.
+- **A review you're asked for opens at its reviewers.** From anywhere but beside the list, a review request, or a pull
+  request that waits on its author for the changes you asked for, opens its details at **Reviewers**, where your vote
+  is, rather than at the top.
+- **VoiceOver goes where the details go.** Opening a failing pull request at its build, choosing **Comments** or **Merge
+  conflicts** in What's Left, or coming back from a conflict's file, takes VoiceOver to that build, or to that part's
+  heading, rather than leaving it on the row you chose or taking it to the title.
+- **Going back to a thread you reactivated finds it.** With the resolved threads showing, a thread you reactivate stays
+  among them as you go to its file's changes and back, or as a notification takes you to it; the details unfold them
+  for it, and keep them unfolded.
+- **Showing a pull request again from its file's changes starts at the top** of its details, rather than where the
+  file's diff was scrolled to.
+- **The tag field speaks less as you type a new tag.** VoiceOver says which tag is chosen as that changes, not again at
+  each key as a new tag's name grows.
 
 ## 0.15.0 - 2026-11-04
 

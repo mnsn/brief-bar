@@ -341,17 +341,19 @@ extension CommentHandOff {
     /// What a prompt on one thread, Fix's, hands to Copilot: that thread's comments that wait on you, as `record` has them,
     /// under the entry its prompt lists it with (`PullRequestPrompt.fixThread`). The other threads' that wait on you are
     /// kept with no entry, as Fix Comments' are when its prompt leaves them out: with the pull request unread as the prompt
-    /// goes, they still hold back what leaves Needs You. Nothing leaves when none of its own waits on you.
-    public init(_ record: PRRecord, thread id: Int, dismissedCutoff: Date, account: String?) {
+    /// goes, they still hold back what leaves Needs You, but for what's marked as read in them then (`read`, `unanswered`).
+    /// Nothing leaves when none of its own waits on you.
+    public init(_ record: PRRecord, thread id: Int, dismissedCutoff: Date, read: [Int: Date] = [:], account: String?) {
         let threads = (record.details?.threads ?? []).filter { !$0.isResolved }
         self.init(key: record.id, waiting: threads.compactMap { thread in
-            let comments = PRClassifier.waitingComments(in: thread, me: record.me, dismissedCutoff: dismissedCutoff)
+            let comments = PRClassifier.waitingComments(in: thread, me: record.me, dismissedCutoff: dismissedCutoff, read: read[thread.id])
             let times = comments.map(\.publishedAt)
             guard let first = times.min(), let last = times.max() else { return nil }
             return Waiting(
                 thread: thread.id, entry: thread.id == id ? PullRequestPrompt.entry(0, thread) : nil, comments: comments.map(\.id),
                 first: first, last: last
             )
-        }, account: account, me: record.me, dismissedCutoff: dismissedCutoff)
+        }, account: account, me: record.me, dismissedCutoff: dismissedCutoff, read: read,
+        unanswered: Self.unanswered(in: record, dismissedCutoff: dismissedCutoff))
     }
 }

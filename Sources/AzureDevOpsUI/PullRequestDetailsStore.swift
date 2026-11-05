@@ -78,11 +78,14 @@ final class PullRequestDetailsStore: ObservableObject {
         }
 
         /// What a pull request's row is about, for its details to show there when it's opened from anywhere but beside the
-        /// list: the comment that needs you or that you answered, or the run after its merge, where its link leads; else,
-        /// for one that's failing, the first of its builds and checks that failed. Nil for their top, which starts with
-        /// what's left.
+        /// list: the comment that needs you or that you answered, or the run after its merge, where its link leads; for a
+        /// review you're asked for, or one that waits on its author for the changes you asked for, its reviewers, where your
+        /// vote is; else, for one that's failing, the first of its builds and checks that failed. Nil for their top, which
+        /// starts with what's left.
         static func about(_ item: PRSnapshot, record: PRRecord?) -> Place? {
             if let place = item.place { return Place(place) }
+            // Once the list read who reviews it, and you're among them: not for one you only watch.
+            if item.isAboutYourReview, let record, record.pullRequest.reviewer(record.me) != nil { return .section(.reviewers) }
             guard item.group == .failing else { return nil }
             return PullRequestPanel(item, record: record).checks.first { $0.run.state == .failing }.map(Place.of)
         }
@@ -145,11 +148,15 @@ final class PullRequestDetailsStore: ObservableObject {
 
     /// The pull request that shows, as the list has it now, or had it last once it's not listed; nil while none does.
     @Published private(set) var selected: PRSnapshot?
-    /// What the list read of it, its threads, policies and reviewers, as it is now, or was last once it's not listed. The
-    /// list doesn't read a closed one's threads and policies: one that closes while it shows keeps those it read last.
+    /// What the list read of it, its threads, policies and reviewers, as it is now, while the list has it or still reads it
+    /// open, or as it was last read open. The list doesn't read a closed one's threads and policies: one that closes while it
+    /// shows keeps those it read last.
     @Published private(set) var record: PRRecord?
     /// Whether the list still has it.
     @Published private(set) var isListed = false
+    /// Whether the list still reads it open though it doesn't have it anymore, as one sent to you in a chat that you've
+    /// seen: its details follow what's read of it, as while it's listed, so that your reply, or a status you set, shows.
+    @Published private(set) var isStillRead = false
     /// The pages of work items, pull requests and Copilot sessions opened over its details from what's linked to it, the
     /// latest last: ‹ goes back through them.
     @Published private(set) var pages: [ItemRef] = []
@@ -165,6 +172,18 @@ final class PullRequestDetailsStore: ObservableObject {
     @Published var scope: ChangeScope = .whole
     /// Whether a file's page fills the page, over the list, rather than sharing it with the list. Until they close.
     @Published var fillsPage = false
+    /// The threads you marked as read while they show the pull request: where each was then, which it stays at while they
+    /// show it, rather than folding away, and what Mark as Unread puts back. Until another pull request shows, or they
+    /// close.
+    @Published private(set) var markedRead: [Int: MarkedRead] = [:]
+
+    /// A thread you marked as read in the details.
+    struct MarkedRead: Equatable {
+        /// What it was read up to before, for whom.
+        var mark: PRStore.ReadMark
+        /// Where it was in the details as you did.
+        var held: PullRequestPanel.Thread.Held
+    }
 
     /// Sees a pull request, as opening it from the list does: the source's.
     var markSeen: (PRSnapshot) -> Void = { _ in }
@@ -178,6 +197,10 @@ final class PullRequestDetailsStore: ObservableObject {
     /// A pull request's cutoffs, and how the list would have one had you last looked at it at a time: the source's.
     var cutoffs: (PRKey) -> Cutoffs? = { _ in nil }
     var classify: (PRRecord, Date) -> PRSnapshot? = { _, _ in nil }
+    /// Marks one of a pull request's threads as read, up to a time, with what puts it back as it was, and puts it back:
+    /// the source's (`PRStore.markRead`, `markUnread`).
+    var markThreadRead: (PRKey, Int, Date) -> PRStore.ReadMark? = { _, _, _ in nil }
+    var markThreadUnread: (PRKey, Int, PRStore.ReadMark) -> Void = { _, _, _ in }
     /// What the list read of a pull request it has: the source's.
     var readRecord: (PRKey) -> PRRecord? = { _ in nil }
     /// Whether a window shows the Pull Requests page, and opening it there: the source's.
@@ -205,6 +228,8 @@ final class PullRequestDetailsStore: ObservableObject {
             list.map { Cutoffs(seen: $0.seenCutoff(for: key), dismissed: $0.dismissedCutoff(for: key), looked: $0.lastLooked(at: key)) }
         }
         classify = { [weak list] record, seen in list?.snapshot(of: record, seenAt: seen) }
+        markThreadRead = { [weak list] key, thread, date in list?.markRead(thread, of: key, upTo: date) }
+        markThreadUnread = { [weak list] key, thread, mark in list?.markUnread(thread, of: key, as: mark) }
         subscriptions = []
         list.$items
             .sink { [weak self] items in MainActor.assumeIsolated { self?.itemsChanged(items) } }
@@ -222,13 +247,18 @@ final class PullRequestDetailsStore: ObservableObject {
         if item.key != selected?.key {
             before = cutoffs(item.key)
             scope = .whole
+            if !markedRead.isEmpty { markedRead = [:] }
         }
         pages = []
+        // From a file's page, their top, rather than where its diff was scrolled to: they keep their scroll while they show
+        // the same pull request.
+        let leavesFile = file != nil
         file = nil
         selected = item
         record = keeping(readRecord(item.key))
         isListed = listed.contains { $0.key == item.key }
-        self.place = place
+        isStillRead = !isListed && Self.isOpen(readRecord(item.key))
+        self.place = place ?? (leavesFile ? .top : nil)
         trailThread = place?.thread
         markSeen(item)
     }
@@ -254,6 +284,14 @@ final class PullRequestDetailsStore: ObservableObject {
     func reveal(_ key: PRKey, at place: Place? = nil) -> Bool {
         guard let item = listed.first(where: { $0.key == key }) else { return false }
         return reveal(item, at: place)
+    }
+
+    /// The same, at what its row is about (`about`), as it shows from anywhere else: for a link to it, or a task sent to
+    /// Copilot that works on it or opened it.
+    @discardableResult
+    func revealAtWhatItsAbout(_ key: PRKey) -> Bool {
+        guard let item = listed.first(where: { $0.key == key }) else { return false }
+        return reveal(item, at: about(item))
     }
 
     /// Where in its details a pull request's row is about (`Place.about`), from what the list read of it.
@@ -306,14 +344,37 @@ final class PullRequestDetailsStore: ObservableObject {
 
     /// What needs you on the pull request that shows, as when its details showed it, the rest as it is now: seeing it
     /// there doesn't fold a resolved thread whose comment was new then, or make what was new old, while they show it.
-    /// Answering it does, and once you've removed it from Needs You or sent it to Copilot, what you've seen is seen, as in
-    /// the list. Any other's, as its row has it.
+    /// Answering it does, and so does marking its thread as read, at once; and once you've removed it from Needs You or
+    /// sent it to Copilot, what you've seen is seen, as in the list. Any other's, as its row has it.
     func pendingEvents(of item: PRSnapshot, record: PRRecord?) -> [PREvent] {
         guard item.key == selected?.key, let before, let record, let current = cutoffs(item.key) else { return item.pendingEvents }
         let seen = current.dismissed == before.dismissed ? before.seen : current.seen
         // One the list wouldn't have even so has nothing that needs you, such as one sent in a chat once you've removed it
         // from Needs You: its row, kept as it was last, still says what did.
         return classify(record, seen)?.pendingEvents ?? []
+    }
+
+    /// Marks a thread of the pull request that shows as read, up to its latest comment as they show it: what waited on you
+    /// there doesn't anymore, in them at once, and in the list (`PRStore.markRead`). It stays where it is while they show
+    /// the pull request, and Mark as Unread puts it back.
+    func markRead(_ thread: PullRequestPanel.Thread) {
+        guard let selected, let latest = thread.date, let mark = markThreadRead(selected.key, thread.id, latest) else { return }
+        // Marked again, after a newer comment, Mark as Unread still puts back what it was before the first time, where it was.
+        let first = markedRead[thread.id]
+        markedRead[thread.id] = MarkedRead(mark: first?.mark ?? mark, held: first?.held ?? PullRequestPanel.Thread.Held(thread))
+    }
+
+    /// Puts a thread you marked as read while they show the pull request back as it was before: what waited on you there
+    /// does again.
+    func markUnread(_ thread: Int) {
+        guard let selected, let marked = markedRead.removeValue(forKey: thread) else { return }
+        markThreadUnread(selected.key, thread, marked.mark)
+    }
+
+    /// Where each thread you marked as read while they show the pull request was then, which it stays at
+    /// (`PullRequestPanel.Thread.Held.kept`).
+    var readHolds: [Int: PullRequestPanel.Thread.Held] {
+        markedRead.mapValues(\.held)
     }
 
     /// Takes the details to a place in them, from the pages over them, and from a file's page, too.
@@ -428,42 +489,53 @@ final class PullRequestDetailsStore: ObservableObject {
         before = nil
         record = nil
         isListed = false
+        isStillRead = false
         pages = []
         place = nil
         trailThread = nil
         file = nil
         scope = .whole
         fillsPage = false
+        markedRead = [:]
     }
 
-    /// The list refreshed: the details follow the pull request as it is now. One the list doesn't have anymore, such as
-    /// one done a while ago, stays as it was last, until you close it.
+    /// The list refreshed: the details follow the pull request as it is now. One the list doesn't have anymore keeps its
+    /// last row, and what was read of it follows while the list still reads it open (`recordsChanged`), until you close it.
     func itemsChanged(_ items: [PRSnapshot]) {
         listed = items
         guard let selected else { return }
         let fresh = items.first { $0.key == selected.key }
         if (fresh != nil) != isListed { isListed = fresh != nil }
-        guard let fresh else { return }
-        if fresh != selected { self.selected = fresh }
+        if let fresh, fresh != selected { self.selected = fresh }
         recordsChanged()
     }
 
-    /// The list read its pull requests again, which may change what it read of the one that shows without changing its
-    /// row, such as an optional build: what's kept of it follows, while the list has it, for once it doesn't anymore.
-    /// Then it stays as it was, even while the list still reads it, as one sent in a chat that you've seen: but for its
-    /// tags, which its details read while they show it (`TagChanges`), and when they were (`followTags`).
+    /// The list read its pull requests again, or a change was made to one, which may change what it read of the one that
+    /// shows without changing its row, such as an optional build, or your reply: what's kept of it follows, while the list
+    /// has it, and once it doesn't, while the list still reads it open, as one sent in a chat that you've seen. Then it
+    /// stays as it was last read open, as one that merged: but for its tags, which its details read while they show it
+    /// (`TagChanges`), and when they were (`followTags`).
     func recordsChanged() {
-        guard isListed else {
+        guard let selected else { return }
+        let read = readRecord(selected.key)
+        let stillRead = !isListed && Self.isOpen(read)
+        if stillRead != isStillRead { isStillRead = stillRead }
+        guard isListed || stillRead else {
             followTags()
             return
         }
-        guard let selected, let read = keeping(readRecord(selected.key)), read != record else { return }
+        guard let read = keeping(read), read != record else { return }
         record = read
     }
 
+    /// Whether the list reads a pull request open: it reads its threads and policies.
+    private static func isOpen(_ record: PRRecord?) -> Bool {
+        record?.pullRequest.status == .active
+    }
+
     /// The tags of the pull request that shows, and when they were read, as the list has them, which it may still read
-    /// once the pull request isn't in your lists, as one sent to you in a chat that you've seen, or one in Done you cleared:
-    /// its details read them while they show it (`TagChanges`), and show them. The rest stays as it was when it left them.
+    /// once the pull request isn't in your lists or open, as one in Done you cleared: its details read them while they show
+    /// it (`TagChanges`), and show them. The rest stays as it was last read open.
     private func followTags() {
         guard let selected, var kept = record, kept.id == selected.key, let read = readRecord(selected.key),
               read.tags != kept.tags || read.tagsReadAt != kept.tagsReadAt
