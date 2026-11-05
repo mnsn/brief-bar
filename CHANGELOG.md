@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
+  and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
+  over an app in full screen, so clicking the gear seemed to do nothing.
 - **A task you sent to Copilot shows its pull request in BriefBar.** In Copilot's list, clicking a task about one of
   your pull requests shows its details in BriefBar's window, as the pull request's own row does: always from the window,
   and from the menu bar and widgets with **Open Pull Requests in BriefBar** on. Its menu has **Open Pull Request in Azure
