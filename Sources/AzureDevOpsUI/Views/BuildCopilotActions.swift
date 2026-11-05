@@ -369,7 +369,7 @@ struct BuildCopilotActions<Trailing: View>: View {
             Button {
                 open(.explain)
             } label: {
-                Label(explainTitle, systemImage: CopilotAsk.explain.symbol)
+                ControlLabel(explainTitle, systemImage: CopilotAsk.explain.symbol)
             }
             .glassButtonStyle()
             .focused($focused, equals: .explain)
@@ -379,7 +379,7 @@ struct BuildCopilotActions<Trailing: View>: View {
                 Button {
                     open(.fix)
                 } label: {
-                    Label("Fix", systemImage: CopilotAsk.fix.symbol)
+                    ControlLabel("Fix", systemImage: CopilotAsk.fix.symbol)
                 }
                 .glassButtonStyle()
                 .focused($focused, equals: .fix)

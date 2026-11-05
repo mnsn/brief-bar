@@ -60,30 +60,34 @@ struct SettingsView: View {
     /// How wide a page is, beside the sidebar and its divider.
     static let pageWidth = size.width - sidebarWidth - 1
 
+    @Environment(\.isRendering) private var isRendering
+
     var body: some View {
         HStack(spacing: 0) {
-            List(selection: $navigation.destination) {
+            // Offscreen, the list's own selection draws as a black capsule, which hides the page's name: the page's row has
+            // the window's sidebar's highlight instead.
+            List(selection: isRendering ? .constant(nil) : $navigation.destination) {
                 Label("General", systemImage: "gearshape")
-                    .tag(SettingsDestination.general)
+                    .sidebarRow(.general, selected: shownSelection)
                 Label("Appearance", systemImage: "paintbrush")
-                    .tag(SettingsDestination.appearance)
+                    .sidebarRow(.appearance, selected: shownSelection)
                 ForEach(Surface.allCases, id: \.self) { surface in
                     Label(surface.title, systemImage: surface.symbol)
-                        .tag(SettingsDestination.layout(surface))
+                        .sidebarRow(.layout(surface), selected: shownSelection)
                 }
                 Section("Sources") {
                     ForEach(model.sources.map(\.id), id: \.self) { id in
                         if let source = model.source(id) {
                             SidebarSourceRow(name: source.name, symbol: source.symbol, state: model.state(of: id))
-                                .tag(SettingsDestination.source(id))
+                                .sidebarRow(.source(id), selected: shownSelection)
                         }
                     }
                 }
                 Section {
                     Label(PullRequestsSettingsPage.title, systemImage: PullRequestsSettingsPage.symbol)
-                        .tag(SettingsDestination.pullRequests)
+                        .sidebarRow(.pullRequests, selected: shownSelection)
                     AgentsSidebarRow(agents: model.agents)
-                        .tag(SettingsDestination.agents)
+                        .sidebarRow(.agents, selected: shownSelection)
                 }
             }
             .listStyle(.sidebar)
@@ -99,6 +103,11 @@ struct SettingsView: View {
         }
         .frame(width: Self.size.width, height: Self.size.height)
         .interfaceOptions(from: model.services)
+    }
+
+    /// The page a picture shows as chosen, offscreen; nil on screen, where the list draws its own selection.
+    private var shownSelection: SettingsDestination? {
+        isRendering ? navigation.destination ?? .general : nil
     }
 }
 
@@ -128,6 +137,16 @@ struct SettingsPage: View {
         case .agents:
             AgentsPage(agents: model.agents)
         }
+    }
+}
+
+private extension View {
+    /// A row of Settings' sidebar, for `destination`, with the window's sidebar's highlight while it's `selected`.
+    func sidebarRow(_ destination: SettingsDestination, selected: SettingsDestination?) -> some View {
+        tag(destination)
+            .listRowBackground(selected == destination
+                ? RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.10)).padding(.horizontal, 10)
+                : nil)
     }
 }
 

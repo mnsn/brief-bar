@@ -57,7 +57,8 @@ struct PullRequestsByMission: View {
 
 extension PullRequestsByMission {
     /// For `--render`, with Pull Request Order on and a mission to show: the page By Mission, in List and on the Map, also
-    /// with text at 150%; and By Status, with the order's capsules on the rows.
+    /// with text at 150%, and in a narrow window, its header's controls their symbols alone; and By Status, with the order's
+    /// capsules on the rows.
     @MainActor
     static func renderings(
         store: PRStore, services: AppServices, environment: (AnyView) -> AnyView
@@ -68,6 +69,7 @@ extension PullRequestsByMission {
             ("pull-requests-by-mission", .byMission, .list, nil, CGSize(width: 1_000, height: 1_000)),
             ("pull-requests-by-mission-map", .byMission, .map, nil, CGSize(width: 1_000, height: 720)),
             ("pull-requests-by-mission-150", .byMission, .list, 1.5, CGSize(width: 1_000, height: 1_000)),
+            ("pull-requests-by-mission-narrow", .byMission, .list, nil, CGSize(width: 560, height: 720)),
             ("pull-requests-by-status-order", .status, .list, nil, CGSize(width: 1_000, height: 2_400)),
         ]
         return shown.map { name, order, view, scale, size in

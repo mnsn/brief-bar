@@ -296,14 +296,12 @@ struct CopilotAskComposer<Destinations: View, Options: View>: View {
             if isSending {
                 HStack(spacing: 5) {
                     ProgressView().controlSize(.mini)
-                    Text("Sending…")
+                    ControlLabel("Sending…")
                 }
             } else {
-                Text(sendTitle)
+                ControlLabel(sendTitle)
             }
         }
-        // As big as the text on windows' pages, which a control's own font isn't.
-        .font(size: 12, weight: .semibold)
         .buttonStyle(.borderedProminent)
         .controlSize(.small)
         .fixedSize()

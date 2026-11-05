@@ -314,7 +314,7 @@ struct PullRequestOrderMenu: View {
             .labelsHidden()
         } label: {
             if showsTitle {
-                Label(order.title, systemImage: "arrow.up.arrow.down")
+                ControlLabel(order.title, systemImage: "arrow.up.arrow.down")
             } else {
                 Image(systemName: "arrow.up.arrow.down")
             }

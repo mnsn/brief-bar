@@ -1,3 +1,4 @@
+import AppKit
 import BriefBarCore
 import SwiftUI
 
@@ -64,7 +65,108 @@ private struct TextSizeEnvironment: ViewModifier {
     }
 }
 
+// MARK: - Controls
+
+// AppKit draws a bordered, prominent or glass button's title, and a menu's, in the control's own font, whatever font is
+// around it, so it would keep its designed size at any text size. Once its label sets its own font, as `ControlLabel`
+// does, it's drawn in that font: the control's, as much bigger as the text on windows' pages is. A segmented control and
+// a menu with a primary action draw their titles in their own fonts whatever their labels say: AppKit's own controls,
+// given the font, take their place (`SegmentedPicker`, `SplitMenuButton`).
+
+extension View {
+    /// A menu drawn as its label alone, as `.borderlessButton` draws one, but by SwiftUI, so its label's fonts follow the
+    /// text size on windows' pages, which AppKit's never would: its label shows its own ▾ where it should have one
+    /// (`MenuChevron`).
+    package func labelMenuStyle() -> some View {
+        menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+    }
+}
+
+/// A menu's ▾ after its title, for one drawn as its label alone (`labelMenuStyle()`), as AppKit draws it.
+package struct MenuChevron: View {
+    package init() {}
+
+    package var body: some View {
+        Image(systemName: "chevron.down")
+            .font(size: 9, weight: .bold)
+            .accessibilityHidden(true)
+    }
+}
+
+/// A menu's symbol and title, as AppKit spaces them in a borderless menu, for one drawn as its label alone
+/// (`labelMenuStyle()`).
+package struct MenuLabelStyle: LabelStyle {
+    package init() {}
+
+    package func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon
+            configuration.title
+        }
+    }
+}
+
+/// A bordered, prominent or glass button's title, or a menu's, its symbol before it, in the control's font as big as the
+/// text on windows' pages, which AppKit draws once the label sets it. Its symbol alone with `labelStyle(.iconOnly)`, as in
+/// a page's header too narrow for titles.
+package struct ControlLabel: View {
+    let title: String?
+    let systemImage: String?
+
+    @Environment(\.controlSize) private var controlSize
+    @Environment(\.textScale) private var scale
+
+    /// - Parameter title: nil for the symbol alone.
+    package init(_ title: String?, systemImage: String? = nil) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    package var body: some View {
+        let font = Font.control(controlSize, by: scale)
+        if let systemImage, let title {
+            Label {
+                Text(title).font(font)
+            } icon: {
+                Image(systemName: systemImage).font(font)
+            }
+        } else if let systemImage {
+            Image(systemName: systemImage).font(font)
+        } else {
+            Text(title ?? "").font(font)
+        }
+    }
+}
+
+extension ControlSize {
+    /// This size, or the next one up from 120%, for a bezel that holds a title as big as the text, which AppKit sizes by
+    /// its control's size alone: a size up holds the title at 150% as a bordered button grows to, within a few points.
+    package func followingText(_ scale: CGFloat) -> ControlSize {
+        let sizes: [ControlSize] = [.mini, .small, .regular, .large, .extraLarge]
+        guard scale >= 1.2, let index = sizes.firstIndex(of: self) else { return self }
+        return sizes[min(index + 1, sizes.count - 1)]
+    }
+
+    var appKit: NSControl.ControlSize {
+        switch self {
+        case .mini: .mini
+        case .small: .small
+        case .large: .large
+        case .extraLarge: .extraLarge
+        default: .regular
+        }
+    }
+}
+
 extension Font {
+    /// The system font AppKit gives a control of `size`, `scale` times as big: 13 points for a regular one, 11 for a small
+    /// one.
+    package static func control(_ size: ControlSize, weight: Weight? = nil, by scale: CGFloat) -> Font {
+        .system(size: NSFont.systemFontSize(for: size.appKit) * scale, weight: weight)
+    }
+
     /// At 1, the text style's own font; otherwise the system font at the style's size, times `scale`.
     package static func scaled(_ style: TextStyle, weight: Weight? = nil, by scale: CGFloat) -> Font {
         guard scale != 1 else {
