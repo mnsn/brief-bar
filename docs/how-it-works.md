@@ -3606,7 +3606,9 @@ when BriefBar does.
 
 - `make test` runs every module's tests, with made-up data, and with a single thread in Swift's
   cooperative pool (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), so that code that blocks a thread of it
-  while waiting for async work hangs on any Mac, not only on one with few cores.
+  while waiting for async work hangs on any Mac, not only on one with few cores. It fails when a test
+  process ends before its tests are done, as one does with status 0 once something stops the main
+  run loop: Swift Testing's events show whether each ran to its end (`scripts/check-test-events.sh`).
 - `make plugin-test` runs the tests of BriefBar's extension for the Copilot app's sessions
   (`Tests/CopilotPlugin`), with Node's test runner and a stand-in for the Copilot SDK
   ([Its extension for the app's sessions](#its-extension-for-the-apps-sessions)). CI runs it too.
