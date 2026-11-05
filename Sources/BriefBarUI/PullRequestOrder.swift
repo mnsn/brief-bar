@@ -216,8 +216,9 @@ package final class PullRequestOrder: ObservableObject {
         let focus = OrderFocus.load(from: defaults)
         let kept = OrderFocus.kept(focus, in: orders, forgetting: kinds)
         if kept != focus { OrderFocus.save(kept, to: defaults) }
+        let plans = Set(orders.plans.map(\.id))
         var names = MissionNames.load(from: defaults)
-        if names.forget(kinds, keepingPlans: Set(orders.plans.map(\.id))) { names.save(to: defaults) }
+        if names.forget(kinds, keepingPlans: plans) { names.save(to: defaults) }
         if isOn {
             // Before the source goes, whose rebuild would otherwise save what was forgotten again, such as a name.
             objectWillChange.send()
@@ -225,8 +226,9 @@ package final class PullRequestOrder: ObservableObject {
             self.evidence = evidence
             self.focus = kept
             self.names = names
-            modelNames = modelNames.filter { $0.key.kinds.isDisjoint(with: kinds) }
-            namer?.forget { !$0.kinds.isDisjoint(with: kinds) }
+            let forgets = { (key: MissionKey) in MissionNames.forgets(key, kinds: kinds, keepingPlans: plans) }
+            modelNames = modelNames.filter { !forgets($0.key) }
+            namer?.forget(where: forgets)
         }
         withdraw(source)
         guard isOn else { return }
@@ -365,7 +367,7 @@ package final class PullRequestOrder: ObservableObject {
 
     /// The name Apple Intelligence gave it, while it has an Azure DevOps pull request.
     private func modelName(of mission: OrderMission) -> String? {
-        guard mission.steps.contains(where: { $0.ref.kind == .pullRequest }) else { return nil }
+        guard !MissionNaming.pullRequests(of: mission).isEmpty else { return nil }
         return modelNames[mission.key]
     }
 
@@ -419,6 +421,15 @@ package final class PullRequestOrder: ObservableObject {
         askNames()
     }
 
+    /// The missions By Mission shows on screen now, in all its views, the first first: those Apple Intelligence names.
+    package var onScreen: [MissionKey] {
+        var keys: [MissionKey] = []
+        for view in shown where view.viewer.object != nil {
+            for key in view.keys where !keys.contains(key) { keys.append(key) }
+        }
+        return keys
+    }
+
     /// Asks Apple Intelligence to name the missions on screen that you didn't name, from what they're made of now.
     private func askNames() {
         guard let namer else { return }
@@ -427,12 +438,8 @@ package final class PullRequestOrder: ObservableObject {
             namer.stop()
             return
         }
-        var keys: [MissionKey] = []
-        for view in shown {
-            for key in view.keys where !keys.contains(key) { keys.append(key) }
-        }
         let facts = facts
-        let requests = keys.compactMap { key -> MissionNamer.Request? in
+        let requests = onScreen.compactMap { key -> MissionNamer.Request? in
             guard names.name(for: key) == nil, let mission = missions.first(where: { $0.key == key }),
                   let inputs = MissionNaming.inputs(
                       for: mission, stories: { facts.pullRequests[$0]?.stories ?? [] },
@@ -508,8 +515,17 @@ package final class PullRequestOrder: ObservableObject {
             missions = OrderBoard.missions(facts: facts, orders: orders, evidence: evidence, focus: next, now: date)
         }
         keepNames(following: missions, facts: facts, at: date)
+        forgetModelNames(keepingPlans: Set(orders.plans.map(\.id)))
         if missions != self.missions { self.missions = missions }
         askNames()
+    }
+
+    /// Apple Intelligence's names of orders BriefBar no longer keeps go, with what it was asked of them, as yours do,
+    /// however the orders went: forgotten, finished, or left with no pull request as a source was turned off.
+    private func forgetModelNames(keepingPlans plans: Set<UUID>) {
+        let forgets = { (key: MissionKey) in MissionNames.forgets(key, kinds: [], keepingPlans: plans) }
+        if modelNames.keys.contains(where: forgets) { modelNames = modelNames.filter { !forgets($0.key) } }
+        namer?.forget(where: forgets)
     }
 
     /// The names you gave missions, as the missions change: each follows its mission as Focus does, those of orders BriefBar

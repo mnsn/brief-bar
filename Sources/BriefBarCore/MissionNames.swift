@@ -129,11 +129,16 @@ public struct MissionNames: Equatable, Sendable {
     @discardableResult
     public mutating func forget(_ kinds: Set<ItemRef.Kind>, keepingPlans plans: Set<UUID>? = nil) -> Bool {
         let before = entries.count
-        entries = entries.filter { key, _ in
-            if case .plan(let id) = key { return plans?.contains(id) ?? true }
-            return key.kinds.isDisjoint(with: kinds)
-        }
+        entries = entries.filter { key, _ in !Self.forgets(key, kinds: kinds, keepingPlans: plans) }
         return entries.count != before
+    }
+
+    /// Whether a mission's name goes, as its things' source is turned off, or as BriefBar no longer keeps its order: what
+    /// Apple Intelligence named it, kept in memory only, goes the same way.
+    /// - Parameter plans: the orders BriefBar keeps; nil for all of them.
+    public static func forgets(_ key: MissionKey, kinds: Set<ItemRef.Kind>, keepingPlans plans: Set<UUID>?) -> Bool {
+        if case .plan(let id) = key { return !(plans?.contains(id) ?? true) }
+        return !key.kinds.isDisjoint(with: kinds)
     }
 
     // MARK: Saving
@@ -250,7 +255,7 @@ public enum MissionNaming {
     public static func inputs(
         for mission: OrderMission, stories: (ItemRef) -> [OrderStory], workItems: (ItemRef) -> [ItemRef], name: (ItemRef) -> String?
     ) -> MissionNameInputs? {
-        let pullRequests = mission.steps.map(\.ref).filter { $0.kind == .pullRequest }
+        let pullRequests = pullRequests(of: mission)
         guard !pullRequests.isEmpty else { return nil }
         var items: [ItemRef] = []
         for ref in pullRequests {
@@ -317,8 +322,17 @@ public enum MissionNaming {
     /// of each of its Azure DevOps pull requests.
     public static func isSettled(_ mission: OrderMission, facts: OrderFacts) -> Bool {
         guard facts.readsStories else { return true }
-        return mission.steps.allSatisfy { step in
-            step.ref.kind != .pullRequest || facts.pullRequests[step.ref].map { $0.stories != nil } ?? true
+        return pullRequests(of: mission).allSatisfy { facts.pullRequests[$0].map { $0.stories != nil } ?? true }
+    }
+
+    /// Its Azure DevOps pull requests, each once, as it shows them: its own, then those stacked with them that its order
+    /// doesn't name, then those for its story apart from it. Apple Intelligence names a mission only with one.
+    public static func pullRequests(of mission: OrderMission) -> [ItemRef] {
+        var refs: [ItemRef] = []
+        for step in mission.steps + mission.attached + mission.sameStory
+        where step.ref.kind == .pullRequest && !refs.contains(step.ref) {
+            refs.append(step.ref)
         }
+        return refs
     }
 }

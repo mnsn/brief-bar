@@ -1,3 +1,4 @@
+import AppKit
 import BriefBarCore
 import BriefBarUI
 import Foundation
@@ -508,6 +509,108 @@ fileprivate final class Viewer {}
         #expect((kept.entries[gitHub]?.unseen ?? 0) > 3_600)
         // After a restart too.
         #expect(Self.service(defaults, clock: clock).names.name(for: mission.key) == nil)
+    }
+
+    static let planID = UUID(uuidString: "11111111-2222-4333-8444-555555555555")!
+    static let otherPlanID = UUID(uuidString: "11111111-2222-4333-8444-666666666666")!
+
+    /// The preferences, with an order a session told of Azure DevOps' !4113, then !4105.
+    static func ordered(_ defaults: MemoryDefaults = MemoryDefaults(), id: UUID = planID) throws -> MemoryDefaults {
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        var orders = DeclaredOrders.load(from: defaults)
+        try orders.apply(
+            OrderRequest(entries: [.init(link: link(4113)), .init(link: link(4105), after: ["4113"])]),
+            now: Date(timeIntervalSince1970: 1_791_900_000), newID: id
+        )
+        orders.save(to: defaults)
+        return defaults
+    }
+
+    /// Apple Intelligence's name for an order's mission goes with the order, however it goes: forgotten, or left with no
+    /// pull request as Azure DevOps is turned off; and an answer under way for it then doesn't bring it back.
+    @Test func anOrdersNameFromAppleIntelligenceGoesWithTheOrder() async throws {
+        let clock = Clock()
+        let model = Model()
+        let defaults = try Self.ordered()
+        let order = Self.service(defaults, clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let key = MissionKey.plan(Self.planID)
+        #expect(order.missions.map(\.key) == [key])
+        let viewer = Viewer()
+        order.showing([key], in: viewer)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { order.modelNames[key] == "Faster checkout" })
+
+        // Forget This Order.
+        order.forget(order: Self.planID)
+        #expect(order.modelNames[key] == nil)
+
+        // Another order of them, named as Azure DevOps is turned off.
+        _ = try Self.ordered(defaults, id: Self.otherPlanID)
+        order.reloadOrders()
+        let other = MissionKey.plan(Self.otherPlanID)
+        #expect(order.missions.map(\.key) == [other])
+        model.holds = true
+        order.showing([other], in: viewer)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { model.prompts.count == 2 })
+        order.forget(.azureDevOps)
+        #expect(DeclaredOrders.load(from: defaults).plan(Self.otherPlanID) == nil)
+        model.release()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(order.modelNames[other] == nil)
+        order.stopShowing(in: viewer)
+    }
+
+    /// By Mission says only the missions in its scroll view's sight are on screen: one out of sight isn't named until it
+    /// comes into it.
+    @Test func onlyTheMissionsInSightAreOnScreen() async throws {
+        _ = NSApplication.shared
+        let order = Self.service(clock: Clock())
+        // Three stacks of two pull requests, each a mission.
+        var pullRequests: [OrderPullRequest] = []
+        for stack in 0..<3 {
+            for (index, number) in [4100 + 10 * stack, 4101 + 10 * stack].enumerated() {
+                pullRequests.append(OrderPullRequest(
+                    ref: Self.pr(number), repository: "contoso/p/shop-web", sourceBranch: "robin/\(stack)-\(index)",
+                    targetBranch: index == 0 ? "main" : "robin/\(stack)-0", author: "robin",
+                    createdAt: Date(timeIntervalSince1970: 1_791_000_000 + Double(number))
+                ))
+            }
+        }
+        order.publish(.azureDevOps, pullRequests: pullRequests)
+        let missions = order.missions
+        #expect(missions.count == 3)
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        // By Mission in a scroll view this high, each of its pull requests' rows a third of it at least.
+        func page(height: CGFloat) -> AnyView {
+            AnyView(
+                ScrollView {
+                    MissionsBody(
+                        view: .list, ordering: order, kinds: [.pullRequest], elsewhere: "GitHub", openElsewhere: nil,
+                        listed: pullRequests.map(\.ref), row: { step, _ in AnyView(Text(step.ref.id).frame(height: 240)) },
+                        place: { _ in nil }, isSelected: { _ in false }, select: { _ in false }, rest: { _ in AnyView(EmptyView()) }
+                    )
+                }
+                .environmentObject(services)
+                .frame(width: 600, height: height)
+            )
+        }
+        let host = NSHostingView(rootView: page(height: 300))
+        let window = NSWindow(
+            contentRect: CGRect(x: -20_000, y: -20_000, width: 600, height: 300), styleMask: .borderless, backing: .buffered,
+            defer: false
+        )
+        window.contentView = host
+        defer { window.contentView = nil }
+        try await until("the first mission is on screen") { order.onScreen == [missions[0].key] }
+
+        // A scroll view tall enough for them all.
+        host.rootView = page(height: 2_400)
+        try await until("every mission is on screen") { Set(order.onScreen) == Set(missions.map(\.key)) }
     }
 
     @Test func theDemosNamesAreMadeUpAndItNeverAsksTheModel() throws {

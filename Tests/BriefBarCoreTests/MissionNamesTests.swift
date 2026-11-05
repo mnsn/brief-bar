@@ -249,6 +249,49 @@ import Testing
         #expect(!MissionNaming.prompt(inputs).contains("Secret"))
     }
 
+    /// An order's mission is named from all the pull requests it shows: its own, those stacked with them, and those for its
+    /// story apart from it, with their work items; and it waits until theirs are read too.
+    @Test func itsNamedFromItsAttachedAndSameStoryPullRequestsTooOnceTheirsAreRead() throws {
+        func pr(_ number: Int) -> ItemRef { .pullRequest(organization: "contoso", number: number) }
+        func item(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
+        let gitHub = ItemRef.gitHubPullRequest(repository: "octo/storefront", number: 212)
+        var mission = OrderPresentationTests.mission(
+            [OrderPresentationTests.step(gitHub, .next)],
+            attached: [OrderPresentationTests.step(pr(4103), .notInOrder)], key: .plan(Self.planID)
+        )
+        mission.sameStory = [OrderPresentationTests.step(pr(4105), .unordered), OrderPresentationTests.step(pr(4103), .unordered)]
+        #expect(MissionNaming.pullRequests(of: mission) == [pr(4103), pr(4105)])
+        let titles: [ItemRef: String] = [
+            pr(4103): "Round coupon totals", pr(4105): "Test the coupon flow", item(5103): "Rounding", item(5105): "Coupon tests",
+        ]
+        let workItems: [ItemRef: [ItemRef]] = [pr(4103): [item(5103)], pr(4105): [item(5105)]]
+        let inputs = try #require(MissionNaming.inputs(
+            for: mission, stories: { _ in [] }, workItems: { workItems[$0] ?? [] }, name: { titles[$0] }
+        ))
+        #expect(inputs.pullRequests == ["Round coupon totals", "Test the coupon flow"])
+        #expect(inputs.workItems == ["Rounding", "Coupon tests"])
+
+        func facts(_ storiesOf4105: [OrderStory]?) -> OrderFacts {
+            OrderFacts(pullRequests: [
+                OrderPullRequest(ref: pr(4103), repository: "r", sourceBranch: "a", targetBranch: "main", stories: []),
+                OrderPullRequest(ref: pr(4105), repository: "r", sourceBranch: "b", targetBranch: "main", stories: storiesOf4105),
+            ], readsStories: true)
+        }
+        #expect(!MissionNaming.isSettled(mission, facts: facts(nil)))
+        #expect(MissionNaming.isSettled(mission, facts: facts([])))
+    }
+
+    /// One rule forgets a name, yours or Apple Intelligence's: as its things' source is turned off, or its order goes.
+    @Test func aNameGoesWithItsThingsSourceOrItsOrder() {
+        let adoKinds: Set<ItemRef.Kind> = [.workItem, .pullRequest]
+        let story = MissionKey.story(.workItem(organization: "contoso", id: 5101))
+        #expect(MissionNames.forgets(story, kinds: adoKinds, keepingPlans: nil))
+        #expect(!MissionNames.forgets(story, kinds: [.gitHubPullRequest], keepingPlans: []))
+        #expect(!MissionNames.forgets(.plan(Self.planID), kinds: adoKinds, keepingPlans: [Self.planID]))
+        #expect(!MissionNames.forgets(.plan(Self.planID), kinds: adoKinds, keepingPlans: nil))
+        #expect(MissionNames.forgets(.plan(Self.planID), kinds: [], keepingPlans: []))
+    }
+
     @Test func theQuestionsTitlesAreCutAndTheSameInputsAskTheSameQuestion() {
         let long = String(repeating: "word ", count: 60)
         let inputs = MissionNameInputs(
