@@ -477,6 +477,22 @@ final class TagChanges: ObservableObject {
         }
     }
 
+    /// Copilot sessions say they just changed these pull requests in Azure DevOps (`AgentRereads`): the tags their lists
+    /// don't carry, known or not yet, are read again, once, as their details show on screen, though they were read less
+    /// than ten minutes ago; and a read that started before doesn't count (`unsure`), their first included. Those their
+    /// lists carry, the refresh the sessions asked for reads.
+    func changedElsewhere(_ keys: Set<PRKey>) {
+        guard !isStopped, let store else { return }
+        let date = now()
+        for key in keys {
+            guard let record = store.record(for: key), record.tags == nil || record.tagsReadAt != nil else { continue }
+            unsure[key] = date
+        }
+        for follower in followers.values where keys.contains(follower.key) {
+            readIfNeeded(follower.key, on: follower.page)
+        }
+    }
+
     /// Whether a pull request's tags are due to be read on their own (`PulseEngine.readTags`), as the list has it: they're
     /// unknown, or the latest refresh's lists didn't carry them and they were read ten minutes ago or more
     /// (`PRRecord.tagsReadAt`), however long ago its details showed, or Make Changes in Azure DevOps went off and on.

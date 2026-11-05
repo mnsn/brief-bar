@@ -9,6 +9,8 @@ public protocol SettingsStorage: AnyObject {
     func bool(forKey defaultName: String) -> Bool
     func set(_ value: Any?, forKey defaultName: String)
     func removeObject(forKey defaultName: String)
+    /// Everything it holds, such as to find the keys that start alike (`SessionReports`).
+    func dictionaryRepresentation() -> [String: Any]
 }
 
 extension UserDefaults: SettingsStorage {}

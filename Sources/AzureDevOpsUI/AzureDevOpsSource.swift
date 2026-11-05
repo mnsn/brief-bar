@@ -41,7 +41,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// 20: what's read again, as it was all along: a pull request's updates and Files while its details show, whenever its
     /// branch or its target moves; a build you opened, when Azure DevOps merges its pull request again as its target moves;
     /// and tags whose read failed, half a minute later, while they show.
-    nonisolated package static let descriptionVersion = 20
+    /// 21: with Updates from Copilot Sessions on, what a Copilot session says it changed in Azure DevOps, read again sooner
+    /// than the next refresh. (20 is "PR detail view design"'s part 14, which sets the final number as they merge.)
+    nonisolated package static let descriptionVersion = 21
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
@@ -117,6 +119,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private(set) var detailsDrafts: DetailsDrafts?
     /// Tells Pull Request Order what Azure DevOps shows, while it's on.
     private var orderFacts: PullRequestOrderFacts?
+    /// Reads again sooner what Copilot sessions say they changed, with Updates from Copilot Sessions on.
+    private var agentRereads: AgentRereads?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     /// For `--render`: a pull request's details with a build open, one that failed and one still going.
@@ -366,6 +370,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         orderFacts = PullRequestOrderFacts(
             order: services.pullRequestOrder, store: store, settings: settings, details: pullRequestDetails
         ).started()
+        agentRereads = AgentRereads(
+            updates: services.sessionUpdates, store: store, sprint: sprint, workLinks: workLinks, details: details, tags: tagChanges
+        ).started()
         // Your name, as your pull requests have it, for a summary to call you "you".
         services.summaries.setYourName(.azureDevOps) { [weak store] in store?.reader }
         // The tasks sent to Copilot, for its list to show with your sessions: as they go, and with the titles the lists
@@ -423,6 +430,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilot?.stop()
         workLinks?.stop()
         orderFacts?.stop()
+        agentRereads?.stop()
         details?.stop()
         pullRequestDetails?.stop()
         buildInvestigations?.stop()
@@ -441,6 +449,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilot = nil
         workLinks = nil
         orderFacts = nil
+        agentRereads = nil
         details = nil
         pullRequestDetails = nil
         buildInvestigations = nil

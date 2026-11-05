@@ -444,6 +444,12 @@ final class PRStore: ObservableObject {
         }
     }
 
+    /// Refreshes now, reading these pull requests' details too, as a Copilot session said it changed them (`AgentRereads`).
+    func reread(_ keys: Set<PRKey>) {
+        guard let engine else { return }
+        Task { await engine.reread(keys) }
+    }
+
     /// When the panel opens: refresh unless that just happened.
     func refreshIfStale() {
         chatMonitor?.refresh()

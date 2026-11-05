@@ -121,6 +121,27 @@ import Testing
             == .newSession(chosenByYou: false))
     }
 
+    /// A session that told BriefBar it's working on it is one more likely reason, with no ranking of its own: alone, it's
+    /// its; told and on its branch beats either; two as likely ask; and it never goes ahead of what you chose, its last
+    /// task or the task that opened it.
+    @Test func aSessionThatToldBriefBarItsWorkingOnItIsOneMoreLikelyReason() {
+        let told = app(linked, [.toldBriefBar], active: -60)
+        let branch = app(onBranch, [.onItsBranch], active: -3_600)
+        let toldOnBranch = app(other, [.toldBriefBar, .onItsBranch], active: -9_999)
+        #expect(PullRequestSession.pick([told], chosen: nil, lastTask: nil) == .session(told, .toldBriefBar))
+        #expect(PullRequestSession.Basis.toldBriefBar.phrase == "told BriefBar it's working on it")
+        #expect(PullRequestSession.pick([told, branch, toldOnBranch], chosen: nil, lastTask: nil) == .session(toldOnBranch, .toldBriefBar))
+        #expect(PullRequestSession.pick([told, branch], chosen: nil, lastTask: nil) == .ask([told, branch]))
+        let record = app(recorded, [.recordedByCopilot], active: -30)
+        #expect(PullRequestSession.pick([told, record], chosen: nil, lastTask: nil) == .ask([record, told]))
+
+        let fix = task(fixing, startedAgo: 600)
+        let opened = task(opener, startedAgo: 86_400, reason: .openedIt)
+        #expect(PullRequestSession.pick([fix, opened, toldOnBranch], chosen: nil, lastTask: last(fix)) == .session(fix, .lastTask))
+        #expect(PullRequestSession.pick([opened, toldOnBranch], chosen: nil, lastTask: nil) == .session(opened, .openedIt))
+        #expect(PullRequestSession.pick([branch, toldOnBranch], chosen: chosen(onBranch, ago: 60), lastTask: nil) == .session(branch, .chosenByYou))
+    }
+
     /// A session whose log only mentions it is a guess: offered, never picked, the oldest that was there before it was
     /// created.
     @Test func neverPicksOneThatOnlyMentionsIt() {
