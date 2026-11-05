@@ -688,6 +688,11 @@ public struct OrderEvidence: Equatable, Sendable {
         return records.count != count
     }
 
+    /// Both, this one's record wherever both have one.
+    public func merging(_ other: OrderEvidence) -> OrderEvidence {
+        OrderEvidence(records: records.merging(other.records) { mine, _ in mine })
+    }
+
     /// Forgets what it saw of the pull requests of the sources you turned off. True when that forgot something.
     @discardableResult
     public mutating func forget(_ kinds: Set<ItemRef.Kind>) -> Bool {

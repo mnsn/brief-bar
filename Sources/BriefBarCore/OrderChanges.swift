@@ -63,9 +63,20 @@ public struct OrderPlace: Equatable, Sendable {
 /// Your change to one pull request's place: set as next to merge, what it merges after or no longer does, and the mission
 /// you moved it to. It holds while its orders put it where they did when you changed it (`holds(in:)`).
 public struct OrderChange: Equatable, Sendable {
+    /// An order that changed the pull request's place after you had, as BriefBar saw it: which, and when.
+    public struct Overridden: Equatable, Sendable {
+        public var by: UUID
+        public var at: Date
+
+        public init(by: UUID, at: Date) {
+            self.by = by
+            self.at = at
+        }
+    }
+
     public var ref: ItemRef
-    /// Set as Next to Merge: it merges first in its mission, and what waits for nothing there waits for it.
-    public var isFirst: Bool
+    /// Set as Next to Merge, in this mission: it merges first there, and what waits for nothing there waits for it.
+    public var first: MissionKey?
     /// What you put it after, in the order you checked them.
     public var after: [ItemRef]
     /// What an order, or the one you set as next, put it after that you took away.
@@ -78,37 +89,43 @@ public struct OrderChange: Equatable, Sendable {
     public var changedAt: Date
     /// Where its orders put it then: what your change replaced.
     public var replaced: OrderPlace
+    /// The order that changed its place since, as BriefBar saw it: yours doesn't hold from then on, though that order puts
+    /// it back where it was, until you put yours back.
+    public var overridden: Overridden?
 
     public init(
-        ref: ItemRef, isFirst: Bool = false, after: [ItemRef] = [], notAfter: [ItemRef] = [], placement: OrderPlacement? = nil,
-        from: MissionKey? = nil, changedAt: Date, replaced: OrderPlace = OrderPlace()
+        ref: ItemRef, first: MissionKey? = nil, after: [ItemRef] = [], notAfter: [ItemRef] = [], placement: OrderPlacement? = nil,
+        from: MissionKey? = nil, changedAt: Date, replaced: OrderPlace = OrderPlace(), overridden: Overridden? = nil
     ) {
         self.ref = ref
-        self.isFirst = isFirst
+        self.first = first
         self.after = after
         self.notAfter = notAfter
         self.placement = placement
         self.from = from
         self.changedAt = changedAt
         self.replaced = replaced
+        self.overridden = overridden
     }
+
+    /// Set as Next to Merge, in some mission.
+    public var isFirst: Bool { first != nil }
 
     /// Nothing's left of it.
     public var isEmpty: Bool {
         !isFirst && after.isEmpty && notAfter.isEmpty && placement == nil
     }
 
-    /// Whether it holds: every order that named the pull request when you changed it, and that BriefBar still keeps, names
-    /// it with what it merged after then, and no other order names it. An order that changed that since, revision after
-    /// revision, or started or stopped naming it, changed its place after you did: it shows instead, until you put yours
-    /// back. Telling the same order again changes nothing, and an order forgotten since is no change.
+    /// Whether it holds: no order changed its place since, as BriefBar saw it; and every order that named the pull request
+    /// when you changed it, and that BriefBar still keeps, names it with what it merged after then, as a set, and no other
+    /// order names it. An order that changed that since, revision after revision, or started or stopped naming it, changed
+    /// its place after you did: it shows instead, until you put yours back. Telling the same order again, in another
+    /// sequence or with other review advice, changes nothing, and an order forgotten since is no change.
     public func holds(in orders: DeclaredOrders) -> Bool {
-        orders.plans.allSatisfy { plan in
-            replaced.orders[plan.id] == plan.entry(for: ref).map { Set($0.after) }
-        }
+        overridden == nil && changedBy(in: orders).isEmpty
     }
 
-    /// The orders that changed its place since you did, the latest first.
+    /// The orders that put it elsewhere than when you changed it, the latest first.
     public func changedBy(in orders: DeclaredOrders) -> [OrderPlan] {
         orders.plans.filter { plan in replaced.orders[plan.id] != plan.entry(for: ref).map { Set($0.after) } }
             .sorted { $0.updatedAt > $1.updatedAt }
@@ -123,10 +140,11 @@ public struct OrderChange: Equatable, Sendable {
         }
     }
 
-    /// The latest order that changed its place after you did, and how, while that would change anything (`changesAnything`);
-    /// nil while it holds.
+    /// The order that changed its place after you did, and how, while that would change anything (`changesAnything`); nil
+    /// while it holds, or that order's gone.
     public func overridden(in orders: DeclaredOrders) -> OrderOverride? {
-        guard changesAnything(in: orders), let plan = changedBy(in: orders).first else { return nil }
+        guard changesAnything(in: orders) else { return nil }
+        guard let plan = overridden.flatMap({ orders.plan($0.by) }) ?? changedBy(in: orders).first else { return nil }
         let now: OrderOverride.Now = if let entry = plan.entry(for: ref) {
             entry.after.isEmpty ? .anyTime : .after(entry.after)
         } else {
@@ -141,7 +159,7 @@ public struct OrderChange: Equatable, Sendable {
         } else {
             .tookAway(notAfter)
         }
-        return OrderOverride(by: plan.declaredBy, at: plan.updatedAt, now: now, yours: yours)
+        return OrderOverride(by: plan.declaredBy, at: overridden?.at ?? plan.updatedAt, now: now, yours: yours)
     }
 
     /// The pull requests it's about: it, and what it merges after or no longer does. It goes once every one of them ended
@@ -154,7 +172,7 @@ public struct OrderChange: Equatable, Sendable {
     /// you in a chat.
     public var named: Set<ItemRef> {
         var refs = subjects
-        for key in [placement?.mission, from].compactMap({ $0 }) {
+        for key in [placement?.mission, from, first].compactMap({ $0 }) {
             if case .chain(let anchor) = key { refs.insert(anchor) }
         }
         for after in replaced.orders.values { refs.formUnion(after) }
@@ -308,6 +326,7 @@ public struct OrderChanges: Equatable, Sendable {
             change.notAfter.removeAll { kinds.contains($0.kind) }
             if isForgotten(change.placement?.mission) { change.placement = nil }
             if isForgotten(change.from) { change.from = nil }
+            if isForgotten(change.first) { change.first = nil }
             change.replaced.orders = change.replaced.orders.mapValues { $0.filter { !kinds.contains($0.kind) } }
             if !change.isEmpty { kept[ref] = change }
         }
@@ -339,37 +358,64 @@ public struct OrderChanges: Equatable, Sendable {
 
     // MARK: Chains
 
-    /// Moves a chain's mission on to another of its open pull requests as the one it's named by merges or closes, for the
-    /// changes that put pull requests in it or moved them out of it, while BriefBar still sees the chain: so that it's
-    /// still that chain once the one it was named by is gone. True when that moved something.
+    /// Moves a chain's mission on to another of its own open pull requests as the one it's named by merges or closes, for
+    /// the changes that put pull requests in it, moved them out of it or set one as next in it, while BriefBar still sees
+    /// the chain: so that it's still that chain once the one it was named by is gone. Never to one you put in it, which the
+    /// chain doesn't have of its own. True when that moved something.
     /// - Parameter missions: as By Mission shows them now.
     @discardableResult
     public mutating func moveAnchors(in missions: [OrderMission]) -> Bool {
         var moved: [ItemRef: ItemRef] = [:]
+        let placed = changes
         func anchor(after ended: ItemRef) -> ItemRef? {
             if let known = moved[ended] { return known }
             guard let mission = missions.first(where: { $0.kind == .stack && $0.steps.contains { $0.ref == ended } }),
                   mission.steps.first(where: { $0.ref == ended })?.status.hasEnded == true,
-                  let next = mission.steps.first(where: { $0.ref != ended && $0.status.isOpen })?.ref
+                  let next = Self.ownOpen(of: mission, besides: [ended], placed: placed)
             else { return nil }
             moved[ended] = next
             return next
         }
-        var changed = false
+        let before = changes
+        rename { anchor(after: $0) }
+        return changes != before
+    }
+
+    /// The first open pull request a stack has of its own, but these: not one you put in it.
+    static func ownOpen(of mission: OrderMission, besides refs: Set<ItemRef>, placed changes: [ItemRef: OrderChange]) -> ItemRef? {
+        mission.steps.first { step in
+            !refs.contains(step.ref) && step.status.isOpen && changes[step.ref]?.placement == nil
+        }?.ref
+    }
+
+    /// Names the chains that changes name by another of their pull requests, where `anchor` gives one.
+    mutating func rename(_ anchor: (ItemRef) -> ItemRef?) {
+        func renamed(_ key: MissionKey?) -> MissionKey? {
+            guard case .chain(let old)? = key, let new = anchor(old) else { return key }
+            return .chain(new)
+        }
         for (ref, change) in changes {
             var change = change
-            if case .into(.chain(let ended))? = change.placement, let next = anchor(after: ended) {
-                change.placement = .into(.chain(next))
-            }
-            if case .chain(let ended)? = change.from, let next = anchor(after: ended) {
-                change.from = .chain(next)
-            }
-            if change != changes[ref] {
-                changes[ref] = change
-                changed = true
-            }
+            if let placement = change.placement?.mission { change.placement = renamed(placement).map(OrderPlacement.into) }
+            change.from = renamed(change.from)
+            change.first = renamed(change.first)
+            if change != changes[ref] { changes[ref] = change }
         }
-        return changed
+    }
+
+    /// Notes, for each change that holds by what its orders say, whether one of them changed its place since: from then on,
+    /// it doesn't hold, though that order puts it back where it was, until you put yours back (`OrderChange.overridden`).
+    /// Telling the same order again notes nothing. True when that noted something.
+    /// - Parameter now: when BriefBar saw it, for an order whose last change it can't tell.
+    @discardableResult
+    public mutating func noteOverrides(in orders: DeclaredOrders, now: Date = Date()) -> Bool {
+        var noted = false
+        for (ref, change) in changes where change.overridden == nil {
+            guard let plan = change.changedBy(in: orders).first else { continue }
+            changes[ref]?.overridden = OrderChange.Overridden(by: plan.id, at: min(plan.updatedAt, now))
+            noted = true
+        }
+        return noted
     }
 
     // MARK: Saving
@@ -404,21 +450,23 @@ private struct ChangeRecord: Codable {
     }
 
     var pullRequest: ItemRef
-    var first: Bool?
+    var first: String?
     var after: [ItemRef]?
     var notAfter: [ItemRef]?
     var placed: String?
     var from: String?
     var changedAt: Date
     var replaced: [Replaced]?
+    var overriddenBy: UUID?
+    var overriddenAt: Date?
 
     private enum CodingKeys: String, CodingKey {
-        case pullRequest, first, after, notAfter, placed, from, changedAt, replaced
+        case pullRequest, first, after, notAfter, placed, from, changedAt, replaced, overriddenBy, overriddenAt
     }
 
     init(_ change: OrderChange) {
         pullRequest = change.ref
-        first = change.isFirst ? true : nil
+        first = change.first?.description
         after = change.after.isEmpty ? nil : change.after
         notAfter = change.notAfter.isEmpty ? nil : change.notAfter
         placed = change.placement?.description
@@ -426,18 +474,22 @@ private struct ChangeRecord: Codable {
         changedAt = change.changedAt
         let orders = change.replaced.orders.sorted { $0.key.uuidString < $1.key.uuidString }
         replaced = orders.isEmpty ? nil : orders.map { Replaced(order: $0.key, after: $0.value.sorted()) }
+        overriddenBy = change.overridden?.by
+        overriddenAt = change.overridden?.at
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         pullRequest = try container.decode(ItemRef.self, forKey: .pullRequest)
         changedAt = try container.decode(Date.self, forKey: .changedAt)
-        first = try? container.decodeIfPresent(Bool.self, forKey: .first)
+        first = try? container.decodeIfPresent(String.self, forKey: .first)
         after = Self.refs(container, .after)
         notAfter = Self.refs(container, .notAfter)
         placed = try? container.decodeIfPresent(String.self, forKey: .placed)
         from = try? container.decodeIfPresent(String.self, forKey: .from)
         replaced = (try? container.decodeIfPresent([ReplacedLossy].self, forKey: .replaced))?.compactMap(\.value)
+        overriddenBy = try? container.decodeIfPresent(UUID.self, forKey: .overriddenBy)
+        overriddenAt = try? container.decodeIfPresent(Date.self, forKey: .overriddenAt)
     }
 
     private static func refs(_ container: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> [ItemRef]? {
@@ -460,10 +512,11 @@ private struct ChangeRecord: Codable {
         for record in replaced ?? [] where orders[record.order] == nil {
             orders[record.order] = Set(record.after.filter { $0.kind.isPullRequest && $0 != pullRequest })
         }
+        let overridden = overriddenBy.map { OrderChange.Overridden(by: $0, at: overriddenAt ?? changedAt) }
         let change = OrderChange(
-            ref: pullRequest, isFirst: first == true, after: after, notAfter: refs(notAfter).filter { !after.contains($0) },
-            placement: placed.flatMap(OrderPlacement.init), from: from.flatMap(MissionKey.init), changedAt: changedAt,
-            replaced: OrderPlace(orders: orders)
+            ref: pullRequest, first: first.flatMap(MissionKey.init), after: after,
+            notAfter: refs(notAfter).filter { !after.contains($0) }, placement: placed.flatMap(OrderPlacement.init),
+            from: from.flatMap(MissionKey.init), changedAt: changedAt, replaced: OrderPlace(orders: orders), overridden: overridden
         )
         return change.isEmpty ? nil : change
     }
@@ -545,6 +598,7 @@ extension OrderChanges {
             if stamped {
                 change.changedAt = now
                 change.replaced = OrderPlace(of: change.ref, in: orders)
+                change.overridden = nil
             }
             try edited.set(change)
         }
@@ -552,6 +606,15 @@ extension OrderChanges {
             guard let change = edited.changes[ref] else { return }
             if touched[ref] == nil { touched[ref] = .some(change) }
             edited.remove(ref)
+        }
+        // One for each mission: the others set as next there aren't anymore.
+        func clearOtherFirsts(in mission: OrderMission, besides ref: ItemRef) throws {
+            for other in edited.all where other.ref != ref {
+                guard let key = other.first, Self.names(mission, key), other.holds(in: orders) else { continue }
+                var cleared = other
+                cleared.first = nil
+                try keep(cleared)
+            }
         }
 
         switch edit {
@@ -561,18 +624,13 @@ extension OrderChanges {
             if on {
                 guard !step.status.hasEnded else { throw OrderChangeError.ended }
                 if let stacked = Self.openStacked(under: step) { throw OrderChangeError.stacked(on: stacked) }
-                change.isFirst = true
+                change.first = key
                 change.after = []
                 change.notAfter = []
                 if isAttached { change.placement = .into(key) }
-                // One for each mission.
-                for other in mission.steps where other.ref != ref {
-                    guard var first = edited.changes[other.ref], first.isFirst, first.holds(in: orders) else { continue }
-                    first.isFirst = false
-                    try keep(first)
-                }
+                try clearOtherFirsts(in: mission, besides: ref)
             } else {
-                change.isFirst = false
+                change.first = nil
             }
             try keep(change)
 
@@ -582,32 +640,46 @@ extension OrderChanges {
             var change = current(ref)
             if on {
                 if Self.waits(other, for: ref, in: missions) { throw OrderChangeError.waitsForIt(other) }
-                change.isFirst = false
+                change.first = nil
                 if !change.after.contains(other) { change.after.append(other) }
                 change.notAfter.removeAll { $0 == other }
                 if isAttached { change.placement = .into(key) }
             } else {
                 let prerequisite = step.prerequisites.first { $0.ref == other }
                 if prerequisite?.origins.contains(where: \.isStacked) == true { throw OrderChangeError.stacked(on: other) }
-                if change.after.contains(other) {
-                    change.after.removeAll { $0 == other }
-                } else if prerequisite != nil, !change.notAfter.contains(other) {
-                    change.notAfter.append(other)
-                }
+                change.after.removeAll { $0 == other }
+                // What its order, or the one set as next, puts it after too: taken away.
+                let byOthers = prerequisite?.origins.contains { origin in
+                    if case .declared = origin { return true }
+                    return origin == .yourNext
+                } ?? false
+                if byOthers, !change.notAfter.contains(other) { change.notAfter.append(other) }
             }
             try keep(change)
 
         case .move(let refs, let placement, let from):
+            let moving = Set(refs)
             for ref in refs {
                 let source = from ?? missions.first { $0.contains(ref) }?.key
                 if let source, placement == .into(source) { continue }
                 var change = current(ref)
-                change.isFirst = false
+                change.first = nil
                 change.after = []
                 change.notAfter = []
                 change.placement = placement
                 change.from = source
                 try keep(change)
+            }
+            // A chain named by one of these goes on by another of its own pull requests, as when that one ends.
+            for ref in refs {
+                guard let chain = missions.first(where: { $0.kind == .stack && $0.steps.contains { $0.ref == ref } }),
+                      let next = Self.ownOpen(of: chain, besides: moving, placed: edited.changes)
+                else { continue }
+                let before = edited.changes
+                edited.rename { $0 == ref ? next : nil }
+                for (other, change) in before where edited.changes[other] != change && touched[other] == nil {
+                    touched[other] = .some(changes[other])
+                }
             }
 
         case .undo(let ref):
@@ -616,16 +688,30 @@ extension OrderChanges {
         case .undoMission(let key):
             let mission = missions.first { $0.key == key }
             let refs = Set((mission?.steps ?? []).map(\.ref) + (mission?.attached ?? []).map(\.ref))
-            for change in edited.all where refs.contains(change.ref) || change.placement == .into(key) || change.from == key {
+            func isThis(_ named: MissionKey?) -> Bool {
+                guard let named else { return false }
+                return mission.map { Self.names($0, named) } ?? (named == key)
+            }
+            for change in edited.all where refs.contains(change.ref) || isThis(change.placement?.mission) || isThis(change.from) {
                 remove(change.ref)
             }
 
         case .putBack(let ref):
             guard let change = edited.changes[ref] else { break }
+            if let key = change.first, let mission = missions.first(where: { Self.names($0, key) }) {
+                try clearOtherFirsts(in: mission, besides: ref)
+            }
             try keep(change)
         }
         self = edited
         return touched
+    }
+
+    /// Whether a mission is the one a key names: by its own key, or a chain by one of its own pull requests.
+    static func names(_ mission: OrderMission, _ key: MissionKey) -> Bool {
+        if mission.key == key { return true }
+        guard case .chain(let anchor) = key, mission.kind == .stack else { return false }
+        return mission.steps.contains { $0.ref == anchor }
     }
 
     /// Puts back the changes an edit touched, as `apply` said they were.
@@ -754,7 +840,13 @@ public struct MissionChoices: Equatable, Sendable {
                 ref: ref, mission: nil, next: nil, prerequisites: [], targets: targets, canUndo: change != nil, canPutBack: canPutBack
             )
         }
-        let isSet = change.map { $0.isFirst && $0.holds(in: orders) } ?? false
+        // The one set as next there: what it says, whether or not a stacked branch lets it be.
+        let isSet = step.notes.contains { note in
+            switch note {
+            case .yourNext, .nextDoesntHold: return true
+            default: return false
+            }
+        }
         let next: Next = if step.status.hasEnded {
             .ended
         } else if isSet {

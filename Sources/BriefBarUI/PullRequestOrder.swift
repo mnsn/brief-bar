@@ -35,6 +35,11 @@ package final class PullRequestOrder: ObservableObject {
     /// Your changes about pull requests listed only because someone sent them in a chat, which never go to the
     /// preferences: kept while BriefBar runs, Pull Request Order off or on.
     private var changesInMemory = OrderChanges()
+    /// What BriefBar saw become of the pull requests that only those changes name, kept in memory as they are.
+    private var evidenceInMemory = OrderEvidence()
+    /// The pull requests a source said it lists only because someone sent them in a chat, while BriefBar runs, until one
+    /// lists them otherwise, as yours or one you watch: one that leaves the lists, merged or closed, stays here.
+    private var sentInChats: Set<ItemRef> = []
     /// What each source told it last.
     private var told: [SourceID: Told] = [:] {
         didSet { cachedNames = nil }
@@ -88,7 +93,7 @@ package final class PullRequestOrder: ObservableObject {
     /// Whether BriefBar keeps anything for Pull Request Order, on or off: an order, what it saw become of their pull
     /// requests, the mission you focus on, or a change of yours.
     package var keepsAnything: Bool {
-        !changesInMemory.isEmpty || [DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, OrderChanges.defaultsKey]
+        !changesInMemory.isEmpty || !evidenceInMemory.records.isEmpty || [DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, OrderChanges.defaultsKey]
             .contains { defaults.object(forKey: $0) != nil }
     }
 
@@ -117,7 +122,7 @@ package final class PullRequestOrder: ObservableObject {
 
     private func load() {
         orders = DeclaredOrders.load(from: defaults)
-        evidence = OrderEvidence.load(from: defaults)
+        evidence = OrderEvidence.load(from: defaults).merging(evidenceInMemory)
         focus = OrderFocus.load(from: defaults)
         changes = OrderChanges.load(from: defaults).merging(changesInMemory)
         // The demo's agents keep their orders in their own memory.
@@ -173,6 +178,8 @@ package final class PullRequestOrder: ObservableObject {
         guard !sameFacts || old?.items != new.items || old?.working != new.working || old?.inMemory != new.inMemory else { return }
         objectWillChange.send()
         told[source] = new
+        sentInChats.formUnion(inMemory)
+        sentInChats.subtract(Set(pullRequests.map(\.ref)).subtracting(inMemory))
         if old?.inMemory != new.inMemory || !sameFacts { keep(changes) }
         if !sameFacts { rebuild() }
     }
@@ -198,6 +205,9 @@ package final class PullRequestOrder: ObservableObject {
         if orders != before { orders.save(to: defaults) }
         var evidence = OrderEvidence.load(from: defaults)
         if evidence.forget(kinds) { evidence.save(to: defaults) }
+        evidenceInMemory.forget(kinds)
+        evidence = evidence.merging(evidenceInMemory)
+        sentInChats = sentInChats.filter { !kinds.contains($0.kind) }
         var saved = OrderChanges.load(from: defaults)
         if saved.forget(kinds) { saved.save(to: defaults) }
         changesInMemory.forget(kinds)
@@ -276,6 +286,7 @@ package final class PullRequestOrder: ObservableObject {
         DeclaredOrders.forgetAll(in: defaults)
         orders = DeclaredOrders()
         evidence = OrderEvidence()
+        evidenceInMemory = OrderEvidence()
         focus = nil
         changes = OrderChanges()
         changesInMemory = OrderChanges()
@@ -407,14 +418,7 @@ package final class PullRequestOrder: ObservableObject {
     /// Keeps your changes: in the preferences, but those about a pull request listed only because someone sent it in a
     /// chat, which stay in memory, as what you saw of it does, until BriefBar lists each of its pull requests otherwise.
     private func keep(_ all: OrderChanges) {
-        let sentInChats = Set(told.values.flatMap(\.inMemory))
-        let listed = Set(told.values.flatMap { $0.pullRequests.map(\.ref) }).subtracting(sentInChats)
-        let (inMemory, saved) = all.split { change in
-            let named = change.named
-            if !named.isDisjoint(with: sentInChats) { return true }
-            guard changesInMemory[change.ref] != nil else { return false }
-            return !named.filter { $0.kind == .pullRequest }.allSatisfy(listed.contains)
-        }
+        let (inMemory, saved) = all.split { !$0.named.isDisjoint(with: sentInChats) }
         if saved != OrderChanges.load(from: defaults) { saved.save(to: defaults) }
         changesInMemory = inMemory
         if all != changes { changes = all }
@@ -444,6 +448,10 @@ package final class PullRequestOrder: ObservableObject {
         let date = now()
         let facts = facts
         let focused = focus.flatMap(OrderFocus.ref(of:))
+        // What an order changed since one of your changes, as BriefBar sees it: that change doesn't hold anymore, though the
+        // order changes back, until you put yours back.
+        var noted = changes
+        if noted.noteOverrides(in: orders, now: date) { keep(noted) }
         let subjects = changes.subjects
         var evidence = evidence
         for observation in facts.observations
@@ -471,10 +479,17 @@ package final class PullRequestOrder: ObservableObject {
                 OrderFocus.save(kept, to: defaults)
             }
         }
-        evidence.keep(only: orders.refs.union(self.changes.subjects).union(focus.flatMap(OrderFocus.ref(of:)).map { [$0] } ?? []))
+        let focusedRefs = focus.flatMap(OrderFocus.ref(of:)).map { [$0] } ?? []
+        evidence.keep(only: orders.refs.union(self.changes.subjects).union(focusedRefs))
         if evidence != self.evidence {
             self.evidence = evidence
-            evidence.save(to: defaults)
+            // What only changes kept in memory name stays in memory too.
+            var saved = evidence
+            saved.keep(only: orders.refs.union(self.changes.split { changesInMemory[$0.ref] != nil }.rest.subjects).union(focusedRefs))
+            var inMemory = evidence
+            inMemory.keep(only: Set(evidence.records.keys).subtracting(saved.records.keys))
+            evidenceInMemory = inMemory
+            if saved != OrderEvidence.load(from: defaults) { saved.save(to: defaults) }
         }
         var missions = OrderBoard.missions(
             facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date

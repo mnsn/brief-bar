@@ -479,7 +479,7 @@ private final class Clock {
     @Test func turningASourceOffForgetsYourChangesToItsPullRequests() throws {
         let defaults = try Self.defaults(on: false)
         OrderChanges([
-            OrderChange(ref: Self.ref(4102), isFirst: true, changedAt: Date()),
+            OrderChange(ref: Self.ref(4102), first: .plan(Self.planID), changedAt: Date()),
             OrderChange(ref: .gitHubPullRequest(repository: "octo/storefront", number: 7), placement: .outside, changedAt: Date()),
         ]).save(to: defaults)
         let order = Self.service(defaults)
@@ -521,7 +521,7 @@ private final class Clock {
         var demo = DeclaredOrders()
         try demo.apply(OrderRequest(entries: [.init(link: Self.link(4101)), .init(link: Self.link(4102), after: ["4101"])]), newID: Self.planID)
         let changes = OrderChanges([
-            OrderChange(ref: Self.ref(4102), isFirst: true, changedAt: Date(), replaced: OrderPlace(of: Self.ref(4102), in: demo)),
+            OrderChange(ref: Self.ref(4102), first: .plan(Self.planID), changedAt: Date(), replaced: OrderPlace(of: Self.ref(4102), in: demo)),
         ])
 
         order.tellDemo(demo, changes: changes)
@@ -529,5 +529,41 @@ private final class Clock {
         order.tellDemo(demo, changes: changes)
 
         #expect(order.changes.isEmpty)
+    }
+
+    /// One sent in a chat that's left the lists, merged say, is still one that was: a change that names it later, or Undo
+    /// putting one back, stays in memory.
+    @Test func oneSentInAChatThatLeftTheListsStillKeepsItsChangesInMemory() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let yours = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")]
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search")], inMemory: [Self.ref(4130)])
+        order.change(.move([Self.ref(4130)], to: .into(.plan(Self.planID)), from: nil))
+        order.change(.undo(Self.ref(4130)))
+
+        order.publish(.azureDevOps, pullRequests: yours)
+        #expect(order.undoLastChange())
+        order.change(.mergeAfter(Self.ref(4101), Self.ref(4130), in: .plan(Self.planID), true))
+
+        #expect(order.changes.count == 2)
+        #expect(defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+    }
+
+    /// What BriefBar sees become of one sent in a chat that only a change kept in memory names stays in memory too.
+    @Test func whatMergedOfOneSentInAChatIsKeptInMemoryOnly() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let yours = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")]
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search")], inMemory: [Self.ref(4130)])
+        order.change(.move([Self.ref(4130)], to: .into(.mine(UUID())), from: nil))
+
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search", state: .merged)], inMemory: [Self.ref(4130)])
+
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] == nil)
+        // Off and on again, BriefBar still knows it merged.
+        order.setOn(false)
+        order.setOn(true)
+        order.publish(.azureDevOps, pullRequests: yours)
+        #expect(order.missions.first { $0.contains(Self.ref(4130)) }?.steps.first?.status == .merged)
     }
 }

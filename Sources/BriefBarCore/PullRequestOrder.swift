@@ -1111,6 +1111,11 @@ extension Board {
             if case .chain(let anchor) = target { return members.contains(anchor) }
             return false
         }
+
+        /// Whether a change names it: by its key, or a chain by one of its own pull requests.
+        func names(_ target: MissionKey) -> Bool {
+            key == target || isStack(target)
+        }
     }
 
     /// Whether one goes before the other, directly or through others, by `before`.
@@ -1144,6 +1149,11 @@ extension Board {
             for ref in members + added { plansByRef[ref, default: []].append(plan.id) }
             groups.append(Group(key: key, kind: .plan(plan), members: members, placed: added))
         }
+        // A chain you put pull requests in, by one of its own, stays a chain while that one's left.
+        let anchors = Set(placed.values.compactMap { placement -> ItemRef? in
+            if case .into(.chain(let anchor)) = placement { return anchor }
+            return nil
+        })
         var attached: [UUID: [ItemRef]] = [:]
         var stacks: [[ItemRef]] = []
         var alone: [ItemRef] = []
@@ -1154,7 +1164,7 @@ extension Board {
             }
             if touched.count == 1, let plan = touched.first {
                 attached[plan, default: []] += component
-            } else if component.count > 1 {
+            } else if component.count > 1 || anchors.contains(component[0]) {
                 stacks.append(component)
             } else {
                 alone += component
@@ -1240,8 +1250,15 @@ extension Board {
             }
             before[ref, default: []].insert(earlier)
         }
+        // Set as Next, in this mission: the latest you set that holds.
+        let next = refs.filter { ref in
+            layer.holding[ref]?.first.map(group.names) == true && status(ref).isOpen
+        }.max { lhs, rhs in
+            let (left, right) = (layer.changedAt(lhs), layer.changedAt(rhs))
+            return left != right ? left < right : lhs > rhs
+        }
         if let plan {
-            for ref in group.members where layer.holding[ref]?.isFirst != true {
+            for ref in group.members where ref != next {
                 guard let entry = plan.entry(for: ref) else { continue }
                 let tookAway = layer.holding[ref]?.notAfter ?? []
                 for earlier in entry.after where members.contains(earlier) && !tookAway.contains(earlier) {
@@ -1259,17 +1276,14 @@ extension Board {
                 add(earlier, before: ref, [.yours])
             }
         }
+        let stackedWith = members.union(group.attached)
         for ref in refs {
             for earlier in self.before[ref, default: []].sorted(by: isEarlier)
-            where members.contains(earlier) || layer.placed[ref] != nil || layer.placed[earlier] != nil {
+            where stackedWith.contains(earlier) || layer.placed[ref] != nil || layer.placed[earlier] != nil {
                 add(earlier, before: ref, origins(earlier, ref))
             }
         }
-        // Set as Next: the latest you set that holds.
-        let next = refs.filter { layer.holding[$0]?.isFirst == true && status($0).isOpen }.max { lhs, rhs in
-            let (left, right) = (layer.changedAt(lhs), layer.changedAt(rhs))
-            return left != right ? left < right : lhs > rhs
-        }
+        var chosen: ItemRef?
         if let next {
             let stacked = prerequisites[next, default: []].first { earlier in
                 why[OrderEdge(earlier, next)]?.contains(where: \.isStacked) == true && !status(earlier).hasEnded
@@ -1277,6 +1291,7 @@ extension Board {
             if let stacked {
                 added[next, default: []].append(.nextDoesntHold(stacked))
             } else {
+                chosen = next
                 added[next, default: []].append(.yourNext(layer.changedAt(next)))
                 for ref in refs where ref != next && status(ref).isOpen && layer.holding[ref]?.notAfter.contains(next) != true {
                     guard prerequisites[ref, default: []].allSatisfy({ status($0).hasEnded }), !Self.isBefore(ref, next, in: before)
@@ -1289,7 +1304,8 @@ extension Board {
 
         let within = prerequisites.mapValues { $0.filter(members.contains) }
         let dependents = Set(within.values.flatMap { $0 })
-        let loose = refs.filter { prerequisites[$0, default: []].isEmpty && !dependents.contains($0) }
+        // The one you set as next is next, though nothing else waits for it.
+        let loose = refs.filter { prerequisites[$0, default: []].isEmpty && !dependents.contains($0) && $0 != chosen }
         let anyTime = plan == nil ? [] : Set(loose.filter(own.contains))
         let unordered = Set(loose.filter { !anyTime.contains($0) && !(group.isStack && own.contains($0)) })
         let place = Dictionary(refs.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
@@ -1300,12 +1316,17 @@ extension Board {
         let (order, cycles) = OrderGraph.ordered(refs, before: within, isEarlier: goesFirst)
         let inCycle = cycleMembers(cycles)
         let ancestry = Self.ancestry(prerequisites)
+        // Whether your change to a pull request does something here: not one set as next in another mission only.
+        func changesHere(_ ref: ItemRef) -> Bool {
+            guard let change = layer.holding[ref] else { return false }
+            return !change.after.isEmpty || !change.notAfter.isEmpty || change.placement != nil || change.first.map(group.names) == true
+        }
         func step(_ ref: ItemRef, number: Int?) -> OrderStep {
             let earlier = prerequisites[ref, default: []]
             let entry = own.contains(ref) ? plan?.entry(for: ref) : nil
             let stands: OrderStanding = unordered.contains(ref) ? .unordered : standing(
-                of: ref, prerequisites: earlier, hasDependents: dependents.contains(ref), declared: !(group.isStack && own.contains(ref)),
-                cycle: inCycle[ref], earlier: ancestry
+                of: ref, prerequisites: earlier, hasDependents: dependents.contains(ref) || ref == chosen,
+                declared: !(group.isStack && own.contains(ref)), cycle: inCycle[ref], earlier: ancestry
             )
             let origins = earlier.map { OrderOrigin.ordered(why[OrderEdge($0, ref)] ?? []) }
             return OrderStep(
@@ -1315,8 +1336,8 @@ extension Board {
                 notes: notes(of: ref, in: group, entry: entry, orders: orders, layer: layer) + (added[ref] ?? [])
                     + yourNotes(of: ref, in: group, entry: entry, orders: orders, layer: layer),
                 session: openers[ref]?.first,
-                isYours: layer.holding[ref] != nil || origins.contains { $0.contains(.yours) || $0.contains(.yourNext) },
-                isChangedByYou: layer.holding[ref] != nil
+                isYours: changesHere(ref) || origins.contains { $0.contains(.yours) || $0.contains(.yourNext) },
+                isChangedByYou: changesHere(ref)
             )
         }
         var steps: [OrderStep] = []
@@ -1409,16 +1430,21 @@ extension Board {
         return false
     }
 
-    /// A pull request the order doesn't name, with how it's stacked with the others.
+    /// A pull request the order doesn't name, with how it's stacked with the others, and what it's stacked on among them,
+    /// for what its Mission menu offers.
     func attachedStep(_ ref: ItemRef, among group: Set<ItemRef>) -> OrderStep {
         var notes: [OrderNote] = []
+        var prerequisites: [OrderPrerequisite] = []
         for earlier in before[ref, default: []].sorted() where group.contains(earlier) {
             if let origin = origins(earlier, ref).first { notes.append(.stackedWith(earlier, comesAfter: true, origin)) }
+            prerequisites.append(OrderPrerequisite(ref: earlier, origins: origins(earlier, ref), status: status(earlier)))
         }
         for later in after[ref, default: []].sorted() where group.contains(later) {
             if let origin = origins(ref, later).first { notes.append(.stackedWith(later, comesAfter: false, origin)) }
         }
-        return OrderStep(ref: ref, status: status(ref), standing: .notInOrder, notes: notes, session: openers[ref]?.first)
+        return OrderStep(
+            ref: ref, status: status(ref), standing: .notInOrder, prerequisites: prerequisites, notes: notes, session: openers[ref]?.first
+        )
     }
 }
 

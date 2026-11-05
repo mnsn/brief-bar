@@ -80,7 +80,7 @@ enum DemoPullRequestOrder {
         let mine = OrderPlacement.into(.mine(mineID))
         return OrderChanges([
             OrderChange(
-                ref: statusRename, isFirst: true, changedAt: now.addingTimeInterval(-2 * 3_600),
+                ref: statusRename, first: .plan(paymentsID), changedAt: now.addingTimeInterval(-2 * 3_600),
                 replaced: OrderPlace(of: statusRename, in: orders)
             ),
             OrderChange(ref: deliveryEstimates, placement: mine, changedAt: now.addingTimeInterval(-50 * 60)),
