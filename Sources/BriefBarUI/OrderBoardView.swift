@@ -117,7 +117,9 @@ package struct OrderBoardView: View {
     @LocalState private var scrollX: CGFloat = 0
     @LocalState private var width: CGFloat = 0
     @LocalState private var flashing: PullRequestStage?
-    @LocalState private var isHeaderPinned = false
+    /// Where the board's top and its column titles are, on screen: the titles stay at the page's top once they're below it.
+    @LocalState private var sectionTop: CGFloat = 0
+    @LocalState private var titlesTop: CGFloat = 0
     @FocusState private var focused: CardSpot?
     @Environment(\.textScale) private var textScale
 
@@ -162,6 +164,7 @@ package struct OrderBoardView: View {
                         columnTitles(metrics)
                     }
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { sectionTop = $0 }
             }
             notOnBoardLine
         }
@@ -192,18 +195,15 @@ package struct OrderBoardView: View {
         .clipped()
         .padding(.vertical, 6)
         .background {
-            // Once it stays at the top, over the cards that scroll under it.
-            if isHeaderPinned {
+            // Once it stays at the top, over the cards that scroll under it: below where the board starts.
+            if titlesTop - sectionTop > 1 {
                 Rectangle()
                     .fill(Color(nsColor: .windowBackgroundColor))
                     .overlay(alignment: .bottom) { Divider().opacity(0.6) }
                     .padding(.horizontal, -18)
             }
         }
-        .onGeometryChange(for: Bool.self) { proxy in
-            // At the page's top, where it stays as the cards scroll under it.
-            (proxy.bounds(of: .scrollView)?.minY).map { $0 <= 0.5 } ?? false
-        } action: { isHeaderPinned = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { titlesTop = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Stages")
     }
