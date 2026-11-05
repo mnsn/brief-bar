@@ -29,6 +29,9 @@
   prompt's turn goes through BriefBar's extension in the session; to tell that you pasted a prompt BriefBar copied, it
   reads the messages sent the session since; and BriefBar keeps the branch a pull request's conflicts were with, for
   those Copilot took on, and when each Push & Reply in a task's session ran, and how it ended.
+- **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
+  and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
+  over an app in full screen, so clicking the gear seemed to do nothing.
 
 ## 0.15.0 - 2026-11-04
 
