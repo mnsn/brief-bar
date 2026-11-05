@@ -146,7 +146,7 @@ make_repo() {
 # is prepared on it, as its version commit is.
 make_repo
 prepare --check || fail "--check refused no notes: $(cat "$WORK/err")"
-grep -qF "No release notes in changes/. The descriptions' versions are v1.0.0's." "$WORK/out" ||
+grep -qF "No release notes in changes/. The descriptions' versions, and CHANGELOG.md, are v1.0.0's." "$WORK/out" ||
     fail "--check said, of no notes: $(cat "$WORK/out")"
 notes stages 2026-01-10T10:00:00 "- **See each pull request's stage.** With Pull Request Order on, each pull request shows where it is in its
   flow, and a click changes it.
@@ -178,7 +178,7 @@ in_repo checkout --quiet edits
 merge main 2026-01-11T11:00:00
 
 prepare --check || fail "--check refused good notes: $(cat "$WORK/err")"
-grep -qF "The release notes in changes/ are fine: 3 pull requests'." "$WORK/out" || fail "--check said: $(cat "$WORK/out")"
+grep -qF "The release notes in changes/ are fine, from 3 pull requests." "$WORK/out" || fail "--check said: $(cat "$WORK/out")"
 
 refuses "the version, 1.1, isn't like 1.2.3." --main main 1.1 2026-02-01
 refuses "the date, 2026-02-30, isn't a day like 2026-11-30." --main main 1.1.0 2026-02-30
@@ -237,6 +237,18 @@ in_repo tag v1.1.0
 prepare --check || fail "--check refused a release: $(cat "$WORK/err")"
 refuses "1.1.0 already: it's prepared." --main main 1.1.0 2026-02-01
 refuses "there are no release notes in changes/." --main edits 1.2.0 2026-02-02
+# A pull request that merged after the release was prepared, before the release did, isn't in it: as the release
+# workflow's make test checks a tag, the release's own commit is fine, and so is main after it, but not a tag on the
+# commit that merged the release, which has that pull request's change and notes.
+notes late 2026-01-12T10:00:00 "- **Late.** Merged after the release was prepared."
+merge late 2026-01-12T11:00:00
+merge edits 2026-01-12T12:00:00
+in_repo checkout --quiet v1.1.0
+prepare --check || fail "--check refused the release's tag: $(cat "$WORK/err")"
+in_repo checkout --quiet main
+prepare --check || fail "--check refused, on main after a release, the notes of the next: $(cat "$WORK/err")"
+in_repo tag --force v1.1.0 main > /dev/null
+check_refuses "v1.1.0 is tagged on a commit with notes that its section of CHANGELOG.md doesn't have: changes/late.md."
 
 # The sentence that starts After this update names the sources in the app's order, and agents last.
 # release <notes>: a release 1.1.0 of one pull request with those notes, merged.
@@ -330,6 +342,8 @@ refuses_notes "1: has a heading other than ## Descriptions" "# Edit your comment
 
 - **Edit.** Them."
 refuses_notes "1: has a bullet without a bold lead" "- Edit your comments."
+refuses_notes "1: has a bullet whose bold lead doesn't close" "- **Edit your comments. And more,
+  on another line."
 refuses_notes "3: continues no bullet" "- **Edit.** Them.
 
   And more."
@@ -341,6 +355,12 @@ refuses_notes "3: doesn't start with \"Teams:\", \"Azure DevOps:\", \"Copilot:\"
 GitHub Copilot: sessions.
 
 After this update: more."
+refuses_notes "4: starts \"Teams:\" with no blank line before it" "## Descriptions
+
+Azure DevOps: what it reads from
+Teams: its notifications.
+
+After this update: Azure DevOps reads more."
 refuses_notes "1: needs an After this update" "## Descriptions
 
 Copilot: sessions."
@@ -390,6 +410,35 @@ refuses "Sources/CopilotUI/CopilotSource.swift's descriptionVersion is 3, but 2 
 check_refuses "Sources/CopilotUI/CopilotSource.swift's descriptionVersion is 3, but 2 in v1.0.0"
 in_repo checkout --quiet main
 
+in_repo checkout --quiet -b documented main
+write Sources/CopilotUI/CopilotSource.swift "${COPILOT/    nonisolated/    /// 3: sessions.
+    nonisolated}"
+commit "Add a doc line for a version" 2026-01-12T10:00:00
+refuses "Sources/CopilotUI/CopilotSource.swift has a doc line for descriptionVersion 3, past its version, 2" \
+    --main main 1.1.0 2026-02-01
+check_refuses "Sources/CopilotUI/CopilotSource.swift has a doc line for descriptionVersion 3, past its version, 2"
+in_repo checkout --quiet main
+
+in_repo checkout --quiet -b edited main
+write CHANGELOG.md "$CHANGELOG_1_0_0
+- **Added later.** To a release that's out."
+commit "Write in a released section" 2026-01-12T10:00:00
+refuses "CHANGELOG.md isn't as v1.0.0 left it: only a release changes it." --main main 1.1.0 2026-02-01
+check_refuses "CHANGELOG.md isn't as v1.0.0 left it: only a release changes it."
+in_repo checkout --quiet main
+
+in_repo checkout --quiet -b described main
+write changes/described.md "## Descriptions
+
+Copilot: sessions.
+
+After this update: Copilot reads sessions."
+commit "Add described" 2026-01-12T10:00:00
+chmod a-w "$REPO/Sources/CopilotUI/CopilotSource.swift"
+refuses "can't write Sources/CopilotUI/CopilotSource.swift." --main main 1.1.0 2026-02-01
+chmod u+w "$REPO/Sources/CopilotUI/CopilotSource.swift"
+in_repo checkout --quiet main
+
 in_repo checkout --quiet -b unreleased main
 write CHANGELOG.md "# Changelog
 
@@ -412,9 +461,9 @@ in_repo checkout --quiet main
 write changes/untracked.md "- **Untracked.** Not committed."
 refuses "?? changes/untracked.md" --main main 1.1.0 2026-02-01
 rm "$REPO/changes/untracked.md"
-printf '\n' >> "$REPO/CHANGELOG.md"
-refuses " M CHANGELOG.md" --main main 1.1.0 2026-02-01
-in_repo checkout --quiet -- CHANGELOG.md
+printf '<!-- Not committed. -->\n' >> "$REPO/Resources/Info.plist"
+refuses " M Resources/Info.plist" --main main 1.1.0 2026-02-01
+in_repo checkout --quiet -- Resources/Info.plist
 in_repo tag -d v1.0.0 > /dev/null
 refuses "there's no tag v1.0.0" --main main 1.1.0 2026-02-01
 prepare --check || fail "--check refused, without the tag: $(cat "$WORK/err")"
@@ -432,7 +481,7 @@ shallow_clone() {
 }
 shallow_clone main
 "$CLONE/scripts/prepare-release.sh" --check --fetch > "$WORK/out" || fail "--check --fetch refused: $(cat "$WORK/out")"
-grep -qF "fine: 1 pull requests'. The descriptions' versions are v1.0.0's." "$WORK/out" ||
+grep -qF "fine, from 1 pull request. The descriptions' versions, and CHANGELOG.md, are v1.0.0's." "$WORK/out" ||
     fail "--check --fetch said: $(cat "$WORK/out")"
 in_repo checkout --quiet -b raised main
 write Sources/GitHubUI/GitHubSource.swift "${GITHUB/descriptionVersion = 1/descriptionVersion = 2}"

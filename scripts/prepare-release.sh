@@ -9,8 +9,9 @@
 #       HEAD to have all of <ref>, the branch the pull requests merged into, whose history orders their notes
 #       (origin/main by default).
 #   scripts/prepare-release.sh --check [--fetch]
-#       checks the notes in changes/, and that no pull request changed a description's version, against the last
-#       release's tag, which --fetch fetches from origin when it isn't here, as in CI. It changes nothing.
+#       checks the notes in changes/, and that no pull request changed a description's version or CHANGELOG.md,
+#       against the last release's tag, which --fetch fetches from origin when it isn't here, as in CI; and, on that
+#       tag's own commit, that no notes are left. It changes nothing. make test runs it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Bytes, so that sorting and awk work the same everywhere; awk counts a line's characters by their UTF-8 lead bytes.
@@ -113,10 +114,19 @@ function flush(    key) {
     paragraph = ""
 }
 function end_file() {
+    end_bullet()
     flush()
     if (descriptions && !sources) report(descriptions, "has a ## Descriptions that names no source.")
     if (sources && !after) report(descriptions, "needs an After this update: under ## Descriptions, saying what changed.")
     if (!bullets && !sources) report(last_line, "has no notes.")
+}
+# The bullet that ends here, whose bold lead must close.
+function end_bullet() {
+    if (bullet != "" && bullet !~ /^- \*\*([^*]|\*[^*])+\*\*/) {
+        report(bullet_line, "has a bullet whose bold lead doesn't close, as in \"- **What changed.** And how.\"")
+    }
+    bullet = ""
+    rejected = 0
 }
 BEGIN {
     count = split(labels, label_list, "|")
@@ -128,7 +138,7 @@ BEGIN {
 FNR == 1 {
     if (file != "") end_file()
     file = FILENAME
-    descriptions = 0; bullets = 0; open = 0; sources = 0; after = 0; label = ""; paragraph = ""
+    descriptions = 0; bullets = 0; bullet = ""; rejected = 0; sources = 0; after = 0; label = ""; paragraph = ""
     split("", named)
 }
 {
@@ -141,6 +151,7 @@ FNR == 1 {
     next
 }
 /^#/ {
+    end_bullet()
     if ($0 == "## Descriptions" && !descriptions) { descriptions = FNR; next }
     if ($0 == "## Descriptions") report(FNR, "has a second ## Descriptions.")
     else report(FNR, "has a heading other than ## Descriptions: the release writes the version's.")
@@ -148,33 +159,46 @@ FNR == 1 {
 }
 # The notes: bullets, each with a bold lead, and the lines that continue them, indented by two spaces.
 !descriptions {
-    if ($0 == "") { open = 0; next }
-    if ($0 ~ /^- \*\*/) {
-        if ($0 ~ /^- \*\*After this update/) {
-            report(FNR, "has an After this update bullet, which the release writes: say what changed under Descriptions.")
-            next
-        }
+    if ($0 ~ /^  / && (bullet != "" || rejected)) {
+        if (rejected) next
         print >> (out "/bullets")
-        bullets++
-        open = 1
+        line = $0
+        sub(/^ +/, "", line)
+        bullet = bullet " " line
         next
     }
-    if ($0 ~ /^  / && open) { print >> (out "/bullets"); next }
-    if ($0 ~ /^[-*+] /) report(FNR, "has a bullet without a bold lead, such as \"- **What changed.** And how.\"")
+    end_bullet()
+    if ($0 == "") next
+    if ($0 ~ /^- \*\*After this update/) {
+        report(FNR, "has an After this update bullet, which the release writes: say what changed under Descriptions.")
+        rejected = 1
+        next
+    }
+    if ($0 ~ /^- \*\*/) {
+        print >> (out "/bullets")
+        bullets++
+        bullet = $0
+        bullet_line = FNR
+        next
+    }
+    if ($0 ~ /^[-*+] /) report(FNR, "has a bullet without a bold lead, as in \"- **What changed.** And how.\"")
     else if ($0 ~ /^  /) report(FNR, "continues no bullet: a bullet has no blank lines.")
     else report(FNR, "isn't a bullet, or a line that continues one, indented by two spaces.")
     next
 }
-# ## Descriptions: a paragraph for each source whose description changed, which starts with its name, and one that
-# starts with "After this update:". A line that starts with one of them starts a paragraph.
+# ## Descriptions: paragraphs, with a blank line between them: one for each source whose description changed, which
+# starts with its name, and one that starts with "After this update:".
 {
     if ($0 == "") { flush(); next }
-    if ($0 ~ /^ *[-*+] /) { report(FNR, "has a bullet under ## Descriptions: bullets go above it."); next }
     starts = ""
     for (i = 1; i <= count; i++) if (index($0, label_list[i] ":") == 1) starts = label_list[i]
     if (index($0, "After this update:") == 1) starts = "After this update"
-    if (starts == "" && label != "") { paragraph = paragraph " " trim($0); next }
-    flush()
+    if (label != "") {
+        if (starts != "") report(FNR, "starts \"" starts ":\" with no blank line before it, as each paragraph needs.")
+        else paragraph = paragraph " " trim($0)
+        next
+    }
+    if ($0 ~ /^ *[-*+] /) { report(FNR, "has a bullet under ## Descriptions: bullets go above it."); next }
     if (starts == "") {
         report(FNR, "doesn't start with " named_labels " or \"After this update:\".")
         next
@@ -232,8 +256,35 @@ declaration() { # <file> <variable>: prints its one declaration, or fails
     printf '%s\n' "$lines"
 }
 
-# Fails unless each version is the one in the release that tag names: only a release changes them.
-same_versions_as() { # <tag>
+# Fails unless each version is declared once, with no doc line above it numbered past it, as a pull request that
+# raised it would write one: only a release adds them.
+check_declarations() {
+    local key file variable line top
+    for key in $SOURCES; do
+        file="$(file_of "$key")"
+        variable="$(variable_of "$key")"
+        line="$(declaration "$file" "$variable")"
+        top="$(awk -v variable="$variable" "$DECLARATION"' { print top + 0; exit }
+            /^ *\/\/\// {
+                if (match($0, /^ *\/\/\/ [0-9]+:/)) {
+                    number = substr($0, RSTART, RLENGTH)
+                    gsub(/[^0-9]/, "", number)
+                    if (number + 0 > top) top = number + 0
+                }
+                next
+            }
+            { top = 0 }' "$file")"
+        if [[ "$top" -gt "${line##* = }" ]]; then
+            fail "$file has a doc line for $variable $top, past its version, ${line##* = }: only a release adds them." \
+                "Take it out, and put what it says under ## Descriptions in the pull request's notes" \
+                "(\"Release notes\" in CONTRIBUTING.md)."
+        fi
+    done
+}
+
+# Fails unless each version is the one in the release that tag names, and CHANGELOG.md is as it left it: only a
+# release changes them.
+same_as_released() { # <tag>
     local key file variable line released files=()
     for key in $SOURCES; do files+=("$(file_of "$key")"); done
     git grep -E -e "^ +([a-z]+ )*static let [A-Za-z]+ = [0-9]+\$" "$1" -- "${files[@]}" > "$WORK/released" || true
@@ -252,6 +303,10 @@ same_versions_as() { # <tag>
                 "under ## Descriptions (\"Release notes\" in CONTRIBUTING.md)."
         fi
     done
+    if ! git diff --quiet "$1" -- "$CHANGELOG"; then
+        fail "$CHANGELOG isn't as $1 left it: only a release changes it. A pull request writes its notes in $NOTES/" \
+            "(\"Release notes\" in CONTRIBUTING.md); git checkout $1 -- $CHANGELOG puts it back."
+    fi
 }
 
 # The last release's version, from CHANGELOG.md's first section, which is dated: pull requests never add a section.
@@ -289,6 +344,10 @@ notes_files() {
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/prepare-release.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
+plural() { # <number> <word>: such as "1 bullet" or "2 bullets"
+    if [[ "$1" == 1 ]]; then echo "1 $2"; else echo "$1 ${2}s"; fi
+}
+
 parse() { # <files...>: into $WORK, or fails
     awk -v out="$WORK" -v labels="$LABELS" -v keys="$KEYS" "$PARSE" "$@" ||
         fail "fix the notes above, as \"Release notes\" in CONTRIBUTING.md says."
@@ -314,9 +373,7 @@ if [[ "$CHECK" == 1 ]]; then
     [[ ${#ARGS[@]} -eq 0 ]] || usage
     LAST="$(last_release)"
     TAG="v$LAST"
-    for key in $SOURCES; do
-        declaration "$(file_of "$key")" "$(variable_of "$key")" > /dev/null
-    done
+    check_declarations
     if [[ "$FETCH" == 1 ]] && ! git rev-parse --verify --quiet "refs/tags/$TAG^{commit}" > /dev/null; then
         # 2: origin has no such tag, as while a release's own pull request is checked.
         status=0
@@ -328,14 +385,22 @@ if [[ "$CHECK" == 1 ]]; then
         fi
     fi
     if git rev-parse --verify --quiet "refs/tags/$TAG^{commit}" > /dev/null; then
-        same_versions_as "$TAG"
-        VERSIONS="The descriptions' versions are $TAG's."
+        same_as_released "$TAG"
+        VERSIONS="The descriptions' versions, and $CHANGELOG, are $TAG's."
     elif [[ "$FETCH" == 1 ]]; then
-        VERSIONS="$TAG isn't tagged yet, so the descriptions' versions are its own."
+        VERSIONS="$TAG isn't tagged yet, so the descriptions' versions, and $CHANGELOG, are its own."
     else
-        VERSIONS="The descriptions' versions aren't compared with $TAG's, which isn't here: git fetch --tags."
+        VERSIONS="The descriptions' versions, and $CHANGELOG, aren't compared with $TAG's, which isn't here: git fetch --tags."
     fi
     FILES="$(notes_files)"
+    # A release's tag on a commit with notes that the release didn't gather, as when a pull request merged after the
+    # release was prepared and the tag went on the commit that merged it: it would ship that change without its notes,
+    # and without raising the versions of the descriptions it changed. The release workflow's make test runs this.
+    if [[ -n "$FILES" ]] && [[ "$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)" == \
+        "$(git rev-parse --verify --quiet "refs/tags/$TAG^{commit}" 2>/dev/null || echo none)" ]]; then
+        fail "$TAG is tagged on a commit with notes that its section of $CHANGELOG doesn't have: ${FILES//$'\n'/, }." \
+            "Tag the commit that merged the release instead, or prepare the release again."
+    fi
     if [[ -z "$FILES" ]]; then
         echo "No release notes in $NOTES/. $VERSIONS"
         exit 0
@@ -343,7 +408,7 @@ if [[ "$CHECK" == 1 ]]; then
     LIST=()
     while IFS= read -r path; do LIST+=("$path"); done <<< "$FILES"
     parse "${LIST[@]}"
-    echo "The release notes in $NOTES/ are fine: ${#LIST[@]} pull requests'. $VERSIONS"
+    echo "The release notes in $NOTES/ are fine, from $(plural ${#LIST[@]} "pull request"). $VERSIONS"
     exit 0
 fi
 
@@ -380,7 +445,8 @@ git merge-base --is-ancestor "$MAIN_REF" HEAD ||
     fail "HEAD doesn't have all of $MAIN_REF: merge it first, for every pull request's notes."
 git rev-parse --verify --quiet "refs/tags/v$LAST^{commit}" > /dev/null ||
     fail "there's no tag v$LAST, for the last release in $CHANGELOG: fetch the tags (git fetch --tags)."
-same_versions_as "v$LAST"
+check_declarations
+same_as_released "v$LAST"
 EDITS=("$CHANGELOG" "$PLIST" "$NOTES")
 for key in $SOURCES; do EDITS+=("$(file_of "$key")"); done
 DIRTY="$(git status --porcelain --untracked-files=all -- "${EDITS[@]}")"
@@ -487,21 +553,39 @@ if [[ "$CURRENT" != "$VERSION" ]]; then
     fi
 fi
 
-# Everything's ready: only now does anything here change.
-cat "$WORK/CHANGELOG.md" > "$CHANGELOG"
-if [[ -f "$WORK/Info.plist" ]]; then cat "$WORK/Info.plist" > "$PLIST"; fi
-for key in ${CHANGED[@]+"${CHANGED[@]}"}; do
-    cat "$WORK/new-$key" > "$(file_of "$key")"
+# Everything's ready, and nothing here has changed yet. If writing any of it fails, what was written is put back.
+TARGETS=("$CHANGELOG")
+if [[ -f "$WORK/Info.plist" ]]; then TARGETS+=("$PLIST"); fi
+for key in ${CHANGED[@]+"${CHANGED[@]}"}; do TARGETS+=("$(file_of "$key")"); done
+for path in "${TARGETS[@]}"; do [[ -w "$path" ]] || fail "can't write $path."; done
+[[ -w "$NOTES" ]] || fail "can't delete the notes in $NOTES/."
+for path in "${TARGETS[@]}" "${LIST[@]}"; do
+    mkdir -p "$WORK/backup/$(dirname "$path")"
+    cp -p "$path" "$WORK/backup/$path"
 done
-rm -f -- "${LIST[@]}"
+apply() {
+    local key
+    cat "$WORK/CHANGELOG.md" > "$CHANGELOG" || return 1
+    if [[ -f "$WORK/Info.plist" ]]; then cat "$WORK/Info.plist" > "$PLIST" || return 1; fi
+    for key in ${CHANGED[@]+"${CHANGED[@]}"}; do
+        cat "$WORK/new-$key" > "$(file_of "$key")" || return 1
+    done
+    rm -f -- "${LIST[@]}" || return 1
+}
+if ! apply; then
+    for path in "${TARGETS[@]}" "${LIST[@]}"; do
+        cp -p "$WORK/backup/$path" "$path" || echo "prepare-release: couldn't put back $path." >&2
+    done
+    fail "couldn't write all of it, so it put back what it had written."
+fi
 
 BULLETS="$(grep -c '^- ' "$WORK/bullets" 2>/dev/null || true)"
-echo "Prepared BriefBar $VERSION, of $DATE, from the notes of ${#LIST[@]} pull requests, in the order they merged:"
+echo "Prepared BriefBar $VERSION, of $DATE, from the notes of $(plural ${#LIST[@]} "pull request"), in the order they merged:"
 printf '  %s\n' "${LIST[@]}"
 if [[ ${#CHANGED[@]} -gt 0 ]]; then
-    echo "$CHANGELOG: a section for $VERSION, with ${BULLETS:-0} bullets and After this update."
+    echo "$CHANGELOG: a section for $VERSION, with $(plural "${BULLETS:-0}" bullet) and After this update."
 else
-    echo "$CHANGELOG: a section for $VERSION, with ${BULLETS:-0} bullets."
+    echo "$CHANGELOG: a section for $VERSION, with $(plural "${BULLETS:-0}" bullet)."
 fi
 echo "$PLIST: version $VERSION."
 if [[ ${#RAISED[@]} -gt 0 ]]; then printf '%s\n' "${RAISED[@]}"; fi

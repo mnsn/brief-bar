@@ -347,8 +347,9 @@ changed once, with a doc line of what each pull request said, and ends its secti
 what they said after `After this update:`. So between releases, a description on `main` can say more than its version
 did: users install releases, which raise it, so they're asked all the same, but a build from `main` doesn't ask again.
 
-`scripts/prepare-release.sh --check` checks the notes and that no version changed, in a second, and
-`make release-notes-check`, which CI runs, tests the script too. A new source goes in that script's lists.
+`make test` checks the notes first, and that neither a version nor `CHANGELOG.md` changed since the last release, in a
+second (`scripts/prepare-release.sh --check`); `make release-notes-check`, which CI runs, tests that script too. A new
+source goes in its lists.
 
 A pull request that wrote its notes under `## Unreleased` in `CHANGELOG.md`, or raised a version, moves them as it
 merges `main`:
@@ -412,7 +413,8 @@ pull requests, and when started by hand. A new run cancels the one in progress o
   the Mac: `scripts/ci-changes.sh` says what changed, and the build job still runs, on Linux, skipping
   every step, so its required check passes.
 - Before it builds, it checks the release notes in `changes/`, and that no pull request changed a description's
-  version, against the last release's tag, and tests the script that gathers the notes (`make release-notes-check`).
+  version or `CHANGELOG.md`, against the last release's tag, and tests the script that gathers the notes
+  (`make release-notes-check`).
 - Intel builds and checks aren't supported.
 - Every run builds from scratch. A cached build folder would save a minute or two on a typical pull request, but
   Swift's incremental builds can miss a change: from a cache, a correct change failed its test, because a file that
@@ -446,7 +448,11 @@ Releases are built and signed by GitHub Actions, not on a maintainer's Mac.
    whether a release is newer, so a release fails unless its version is higher than every earlier tag.
 2. Merge the changes into `main` through a pull request. If no runner picks a CI job up, start the
    workflow again from **Actions** with **Run workflow**.
-3. Tag the commit and push the tag:
+3. Tag the commit that merged the release, and push the tag. If a pull request with notes merged into `main` after the
+   release was prepared, its change and its notes aren't in the release: tag the release's merge if that pull request
+   merged after it, or the release's own commit, "Prepare BriefBar 0.2.0", if it merged before. The release workflow's
+   `make test` refuses a tag whose commit still has notes in `changes/`, which would ship a change without them, and
+   without raising the versions of the descriptions it changed.
 
    ```sh
    git tag v0.2.0

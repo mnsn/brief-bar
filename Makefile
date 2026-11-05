@@ -28,11 +28,14 @@ WINDOW_SHOTS := window-overview-light window-overview-dark \
 build:
 	swift build --arch arm64
 
+# First, in a second, the release notes in changes/ (scripts/prepare-release.sh --check): on a release's tag, as the
+# release workflow runs it, that also refuses notes the release didn't gather. Then the tests.
 # With a single thread in Swift's cooperative pool, rather than one per core, code that blocks a thread of it while
 # waiting for async work hangs here too, as it would on a runner with few cores. Swift Testing's events then show that
 # every test process ran to its end: one that ends early, with status 0, would otherwise pass without the tests it
 # hadn't run (scripts/check-test-events.sh).
 test:
+	@./scripts/prepare-release.sh --check
 	@rm -f "$(TEST_EVENTS)"
 	LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test --arch arm64 $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS)) \
 		--event-stream-output-path "$(TEST_EVENTS)" --event-stream-version 0
