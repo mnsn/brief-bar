@@ -99,6 +99,21 @@ private enum FailedRun {
     }
 }
 
+private extension StubServer {
+    /// Answers for the run itself from now on, but leaves what's under it, such as its timeline and logs, to their own
+    /// routes (`FailedRun.serve`): a route for the run's path alone would answer for them too, as routes go by what a path
+    /// contains, and a read under way may ask for them before they're set up again.
+    func onRun(_ id: Int = FailedRun.id, reply: @escaping @Sendable (URLRequest) -> Reply) {
+        let path = "/_apis/build/builds/\(id)"
+        on(path) { request in request.url?.path.hasSuffix(path) == true ? reply(request) : nil }
+    }
+
+    func onRun(_ id: Int = FailedRun.id, json object: Any) {
+        let reply = Reply.json(object)
+        onRun(id) { _ in reply }
+    }
+}
+
 /// A clock that tests move.
 private final class TestClock: Sendable {
     private let date: Mutex<Date>
@@ -605,27 +620,20 @@ private actor GatedTokens: AccessTokenProvider {
         let investigator = BuildInvestigator(client: server.client())
         let pr = FailedRun.pullRequest
         func reads() -> Int { requests(server, to: "/timeline").count }
-        /// The run as Azure DevOps says it now, and what's under it, which the run's route would answer for otherwise.
-        func serveRun(_ build: [String: Any]) {
-            server.on("/_apis/build/builds/77", json: build)
-            server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
-            server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
-            server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
-        }
         #expect(try await investigator.investigation(buildId: 77, of: pr).run.finishedAt == t(-hour + 330))
         // Its failed jobs ran again, under the same ID, and failed again: the run says so before what's kept shows.
         var again = FailedRun.build()
         again["finishTime"] = iso(t(-minute))
-        serveRun(again)
+        server.onRun(json: again)
         let rerun = try await investigator.investigation(buildId: 77, of: pr)
         #expect(rerun.run.finishedAt == t(-minute))
         #expect(reads() == 2)
         // When the run can't be read to tell, what's kept shows.
-        server.on("/_apis/build/builds/77") { _ in .failure(.notConnectedToInternet) }
+        server.onRun { _ in .failure(.notConnectedToInternet) }
         #expect(try await investigator.investigation(buildId: 77, of: pr) == rerun)
         #expect(reads() == 2)
         // Run again, it's running.
-        serveRun(FailedRun.build(status: "inProgress", result: nil))
+        server.onRun(json: FailedRun.build(status: "inProgress", result: nil))
         #expect(try await investigator.investigation(buildId: 77, of: pr).run.status == .running)
         #expect(reads() == 3)
     }
@@ -640,7 +648,7 @@ private actor GatedTokens: AccessTokenProvider {
         // Run again, it passed, but its steps can't be read now: that isn't kept, and the failure kept before goes.
         var passed = FailedRun.build(result: "succeeded")
         passed["finishTime"] = iso(t(-minute))
-        server.on("/_apis/build/builds/77", json: passed)
+        server.onRun(json: passed)
         server.on("/_apis/build/builds/77/timeline") { _ in .status(500) }
         server.on("/_apis/build/builds/77/logs", json: Fixture.list([]))
         let rerun = try await investigator.investigation(buildId: 77, of: pr)
@@ -648,7 +656,7 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(rerun.unread[.steps] == .http(500))
         #expect(await investigator.keptBuilds.isEmpty)
         // So when the run can't be read, the failure doesn't show.
-        server.on("/_apis/build/builds/77") { _ in .failure(.notConnectedToInternet) }
+        server.onRun { _ in .failure(.notConnectedToInternet) }
         await #expect(throws: ADOError.offline) { try await investigator.investigation(buildId: 77, of: pr) }
 
         // Read again when it's the same run, what couldn't be read leaves what's kept.
@@ -670,7 +678,7 @@ private actor GatedTokens: AccessTokenProvider {
         let runReads = Locked(0)
         let runAgain = StubServer.Reply.json(passed)
         // Only the run is asked for from here: each read stops when it can't be read.
-        lost.on("/_apis/build/builds/77") { _ in runReads.increment() == 1 ? runAgain : .failure(.notConnectedToInternet) }
+        lost.onRun { _ in runReads.increment() == 1 ? runAgain : .failure(.notConnectedToInternet) }
         await #expect(throws: BuildInvestigator.RunReplaced(error: .offline)) { try await losing.investigation(buildId: 77, of: pr) }
         #expect(await losing.keptBuilds.isEmpty)
         await #expect(throws: ADOError.offline) { try await losing.investigation(buildId: 77, of: pr) }
@@ -795,7 +803,7 @@ private actor GatedTokens: AccessTokenProvider {
         again["finishTime"] = iso(t(-minute))
         let runAgain = StubServer.Reply.json(again)
         let runReads = Locked(0)
-        server.on("/_apis/build/builds/77") { _ in runReads.increment() == 1 ? runAgain : .failure(.notConnectedToInternet) }
+        server.onRun { _ in runReads.increment() == 1 ? runAgain : .failure(.notConnectedToInternet) }
         let looking = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
         let held = (try? await waitUntil("the look at the run") { await tokens.isHolding(9) }) != nil
         let refreshing = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true) }
@@ -829,10 +837,7 @@ private actor GatedTokens: AccessTokenProvider {
         again["finishTime"] = iso(t(-minute))
         let answers: [StubServer.Reply] = [.json(again), .json(FailedRun.build()), .json(again)]
         let runReads = Locked(0)
-        server.on("/_apis/build/builds/77") { _ in answers[min(runReads.increment(), answers.count) - 1] }
-        server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
-        server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
-        server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
+        server.onRun { _ in answers[min(runReads.increment(), answers.count) - 1] }
         let refreshed = Locked<BuildInvestigation?>(nil)
         let refreshing = Task { refreshed.set(try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true)) }
         let refreshDone = (try? await waitUntil("the refresh") { refreshed.value != nil }) != nil
@@ -865,10 +870,7 @@ private actor GatedTokens: AccessTokenProvider {
         let (now, before) = (StubServer.Reply.json(again), StubServer.Reply.json(FailedRun.build()))
         let runReads = Locked(0)
         let stale = Locked(0)
-        server.on("/_apis/build/builds/77") { _ in runReads.increment() == stale.value ? before : now }
-        server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
-        server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
-        server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
+        server.onRun { _ in runReads.increment() == stale.value ? before : now }
         let refreshed = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true)
         // Asked for now, what the refresh kept gets a look of its own, rather than the look under way, which is older.
         let asked = Locked<BuildInvestigation?>(nil)
@@ -892,7 +894,7 @@ private actor GatedTokens: AccessTokenProvider {
             let investigator = BuildInvestigator(client: server.client())
             _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
             // Deleted, or no longer yours to read: what's kept goes, and reading the run again says why.
-            server.on("/_apis/build/builds/77") { _ in .status(status) }
+            server.onRun { _ in .status(status) }
             await #expect(throws: error) { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
             #expect(await investigator.keptBuilds.isEmpty)
             #expect(requests(server, to: "/_apis/build/builds/77").count == 3)
@@ -914,13 +916,10 @@ private actor GatedTokens: AccessTokenProvider {
         passed["finishTime"] = iso(t(-minute))
         let answers: [StubServer.Reply] = [.json(FailedRun.build()), .json(passed)]
         let runReads = Locked(0)
-        server.on("/_apis/build/builds/77") { _ in
+        server.onRun { _ in
             let read = runReads.increment()
             return read <= answers.count ? answers[read - 1] : .failure(.notConnectedToInternet)
         }
-        server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
-        server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
-        server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
         server.on("/_apis/build/builds", query: ["branchName": "refs/heads/release"]) { _ in .status(500) }
         let refreshing = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true) }
         let refreshHeld = (try? await waitUntil("the refresh's requests") {
@@ -952,14 +951,14 @@ private actor GatedTokens: AccessTokenProvider {
                 let investigator = BuildInvestigator(client: server.client())
                 _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
                 #expect(await investigator.keptBuilds == [77])
-                server.on("/_apis/build/builds/77") { _ in .status(status) }
+                server.onRun { _ in .status(status) }
                 await #expect(throws: error) {
                     try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true)
                 }
                 #expect(await investigator.keptBuilds.isEmpty)
                 // Neither a run still going, kept a while without a look, nor one that finished, when it can't be looked at,
                 // shows.
-                server.on("/_apis/build/builds/77") { _ in .failure(.notConnectedToInternet) }
+                server.onRun { _ in .failure(.notConnectedToInternet) }
                 await #expect(throws: ADOError.offline) { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
             }
         }
@@ -981,7 +980,7 @@ private actor GatedTokens: AccessTokenProvider {
         let reading = Task { newer.set(try await investigator.investigation(buildId: 77, of: retargeted)) }
         let newerDone = (try? await waitUntil("the read for release") { newer.value != nil }) != nil
         // Then the refresh, which started before it, finds the run gone: that's older than what the read for release kept.
-        server.on("/_apis/build/builds/77") { _ in .status(404) }
+        server.onRun { _ in .status(404) }
         await tokens.releaseAll()
         _ = try? await reading.value
         #expect(held && newerDone)
@@ -1142,7 +1141,7 @@ private actor GatedTokens: AccessTokenProvider {
         // It ran again since, as the look finds.
         var again = FailedRun.build()
         again["finishTime"] = iso(t(-minute))
-        server.on("/_apis/build/builds/77", json: again)
+        server.onRun(json: again)
         let looking = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
         try await waitUntilHeld(tokens)
         looking.cancel()
@@ -1164,7 +1163,7 @@ private actor GatedTokens: AccessTokenProvider {
         clock.advance(10)
         // The look at the run it kept, unchanged: answered only once it's let go, as a slow answer.
         let letGo = Mutex(false)
-        server.on("/_apis/build/builds/77") { _ in
+        server.onRun { _ in
             var reply = StubServer.Reply.json(FailedRun.build())
             reply.waitsFor = { letGo.withLock { $0 } }
             return reply
@@ -1197,7 +1196,7 @@ private actor GatedTokens: AccessTokenProvider {
         let runGETs = requests(server, to: "/_apis/build/builds/77").count
         clock.advance(10)
         let letGo = Mutex(false)
-        server.on("/_apis/build/builds/77") { _ in
+        server.onRun { _ in
             var reply = StubServer.Reply.json(FailedRun.build())
             reply.waitsFor = { letGo.withLock { $0 } }
             return reply
@@ -1282,11 +1281,7 @@ private actor GatedTokens: AccessTokenProvider {
         // The run's first read says it's still going; the next, that it failed.
         let (going, failed) = (StubServer.Reply.json(FailedRun.build(status: "inProgress", result: nil)), StubServer.Reply.json(FailedRun.build()))
         let runReads = Locked(0)
-        server.on("/_apis/build/builds/77") { _ in runReads.increment() == 1 ? going : failed }
-        // What's under the run, which its route would answer for otherwise.
-        server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
-        server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
-        server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
+        server.onRun { _ in runReads.increment() == 1 ? going : failed }
         let tokens = HeldTokens(server.id, holdAt: 1)
         let investigator = BuildInvestigator(client: server.client(tokens: tokens))
         let first = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, phase: .running) }
@@ -1317,11 +1312,7 @@ private actor GatedTokens: AccessTokenProvider {
             let (ranAgain, offline) = (StubServer.Reply.json(again), StubServer.Reply.failure(.notConnectedToInternet))
             let answers = readAgainFails ? [ranAgain, offline] : [ranAgain, ranAgain]
             let runReads = Locked(0)
-            server.on("/_apis/build/builds/77") { _ in answers[min(runReads.increment(), answers.count) - 1] }
-            // What's under the run, which its route would answer for otherwise.
-            server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
-            server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
-            server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
+            server.onRun { _ in answers[min(runReads.increment(), answers.count) - 1] }
             let reopened = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, phase: .finished) }
             let bothWait = (try? await waitUntil("both to wait for the read") { await investigator.waiting == 2 }) != nil
             await tokens.release()

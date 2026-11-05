@@ -327,8 +327,10 @@ final class StubServer: Sendable {
         directories.withLock { $0[organization.lowercased()] = tenant }
     }
 
-    /// Answers requests whose path contains `path` (and whose query has every given item).
-    func on(_ path: String, query: [String: String] = [:], reply: @escaping @Sendable (URLRequest) -> Reply) {
+    /// Answers requests whose path contains `path` (and whose query has every given item), newest routes first: but for
+    /// those `reply` declines (nil), which go on to the routes set up before it, as one for a run that leaves what's under
+    /// it, such as its timeline, to theirs.
+    func on(_ path: String, query: [String: String] = [:], reply: @escaping @Sendable (URLRequest) -> Reply?) {
         routes.withLock {
             $0.insert({ request in
                 guard let url = request.url, url.path.contains(path) else { return nil }
