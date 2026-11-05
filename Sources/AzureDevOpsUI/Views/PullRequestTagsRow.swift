@@ -143,7 +143,7 @@ struct PullRequestTagsRow: View {
         }
         if listed == nil { return "This pull request is no longer in your lists, so its tags can't be changed here." }
         if !changes.settings.makesChanges {
-            return "Turn on Make Changes in Azure DevOps, in Settings › Azure DevOps, to add and remove them here."
+            return "Turn on Make Changes in Azure DevOps, in Settings › Pull Requests, to add and remove them here."
         }
         return nil
     }

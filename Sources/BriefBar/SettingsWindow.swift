@@ -3,7 +3,8 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// BriefBar's Settings window: General, where sections show, a page for each source, then agents.
+/// BriefBar's Settings window: General, where sections show, a page for each source, then the settings about pull requests
+/// and agents.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private unowned let model: AppModel
@@ -54,6 +55,11 @@ struct SettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var navigation: SettingsNavigation
 
+    static let size = CGSize(width: 740, height: 560)
+    static let sidebarWidth: CGFloat = 200
+    /// How wide a page is, beside the sidebar and its divider.
+    static let pageWidth = size.width - sidebarWidth - 1
+
     @Environment(\.isRendering) private var isRendering
 
     var body: some View {
@@ -78,22 +84,24 @@ struct SettingsView: View {
                     }
                 }
                 Section {
+                    Label(PullRequestsSettingsPage.title, systemImage: PullRequestsSettingsPage.symbol)
+                        .sidebarRow(.pullRequests, selected: shownSelection)
                     AgentsSidebarRow(agents: model.agents)
                         .sidebarRow(.agents, selected: shownSelection)
                 }
             }
             .listStyle(.sidebar)
-            .frame(width: 200)
+            .frame(width: Self.sidebarWidth)
 
             Divider()
 
             ScrollView {
-                detail
+                SettingsPage(model: model, destination: navigation.destination ?? .general) { navigation.destination = $0 }
                     .padding(24)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
-        .frame(width: 740, height: 560)
+        .frame(width: Self.size.width, height: Self.size.height)
         .interfaceOptions(from: model.services)
     }
 
@@ -101,22 +109,31 @@ struct SettingsView: View {
     private var shownSelection: SettingsDestination? {
         isRendering ? navigation.destination ?? .general : nil
     }
+}
 
-    @ViewBuilder
-    private var detail: some View {
-        switch navigation.destination ?? .general {
+/// A page of the Settings window, beside its sidebar.
+struct SettingsPage: View {
+    @ObservedObject var model: AppModel
+    let destination: SettingsDestination
+    /// Goes to another page.
+    var go: (SettingsDestination) -> Void
+
+    var body: some View {
+        switch destination {
         case .general:
-            GeneralPage(model: model) { navigation.destination = $0 }
+            GeneralPage(model: model, go: go)
         case .appearance:
             AppearancePage(services: model.services)
         case .source(let id):
             if let source = model.source(id) {
-                SourcePage(model: model, source: source)
+                SourcePage(model: model, source: source, go: go)
                     .id(id)
             }
         case .layout(let surface):
             LayoutPage(model: model, surface: surface)
                 .id(surface)
+        case .pullRequests:
+            PullRequestsSettingsPage(model: model, go: go)
         case .agents:
             AgentsPage(agents: model.agents)
         }
@@ -197,7 +214,6 @@ struct GeneralPage: View {
 
             LinksSetting(links: model.services.links)
             StorySummariesSetting(summaries: model.services.summaries, links: model.services.links)
-            PullRequestOrderSettingView(order: model.services.pullRequestOrder) { model.agents.pullRequestOrderChanged($0) }
 
             NotificationsSetting(recent: model.services.recentNotifications)
 
@@ -317,6 +333,8 @@ struct SourceSummaryRow: View {
 struct SourcePage: View {
     @ObservedObject var model: AppModel
     let source: any BriefBarSource
+    /// Goes to another page.
+    var go: (SettingsDestination) -> Void
 
     @LocalState private var confirmingTurnOff = false
     @LocalState private var offeringToRemoveAccess = false
@@ -356,6 +374,15 @@ struct SourcePage: View {
             case .on:
                 if let status = source.statusView() {
                     status
+                }
+                if PullRequestSettings.has(source.id, ownSettings: source.pullRequestSettings) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text("Its settings about pull requests are on the Pull Requests page.")
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("Pull Requests Settings…") { go(.pullRequests) }
+                    }
                 }
                 Form {
                     source.settingsView()
