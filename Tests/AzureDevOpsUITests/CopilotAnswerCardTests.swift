@@ -13,9 +13,9 @@ import Testing
         + (1...60).map { "let delay\($0) = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, MaxDelay.Ticks))" }.joined(separator: "\n")
         + "\n```"
 
-    @Test func whatALongAnswerHidesTakesNoClicks() throws {
+    @Test func whatALongAnswerHidesTakesNoClicks() async throws {
         _ = NSApplication.shared
-        let (window, host) = host(answer)
+        let (window, host) = try await host(answer)
         defer { window.contentView = nil }
         let code = try #require(scrollView(in: host))
         let frame = code.convert(code.bounds, to: host)
@@ -28,8 +28,9 @@ import Testing
         #expect(!isIn(code, hit(host, at: CGPoint(x: frame.midX, y: frame.maxY - 20))))
     }
 
-    /// The card, in a window off screen, once it measured its answer and cut it.
-    private func host(_ answer: String) -> (NSWindow, NSHostingView<AnyView>) {
+    /// The card, in a window off screen, once it measured its answer and cut it: the main run loop lays it out while the
+    /// test waits, and the main actor goes on with other tests' work, as it wouldn't if the test ran that run loop itself.
+    private func host(_ answer: String) async throws -> (NSWindow, NSHostingView<AnyView>) {
         let now = Date()
         let card = VStack(spacing: 0) {
             CopilotAnswerCard(answer: answer, asked: nil, place: "‘Retry backoff’", answeredAt: now, now: now, open: nil) {}
@@ -41,7 +42,7 @@ import Testing
                               backing: .buffered, defer: false)
         window.contentView = host
         for _ in 0..<8 {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            try await Task.sleep(for: .milliseconds(50))
             host.layoutSubtreeIfNeeded()
         }
         return (window, host)
@@ -50,16 +51,16 @@ import Testing
     /// A long answer's blocks that start below what shows aren't there at all, for the keyboard's focus or VoiceOver to
     /// reach, as an image's link there would be: here, a code block, whose scroll view isn't there, as all of the answer,
     /// which measures it unseen, has none either. A short answer has all of its blocks.
-    @Test func whatALongAnswerHidesIsntThere() throws {
+    @Test func whatALongAnswerHidesIsntThere() async throws {
         _ = NSApplication.shared
         let first = "Cap it where it doubles."
         let points = (1...20).map { "Point \($0): each wait doubles until one outlasts the load balancer's 60 seconds." }
         let code = "```swift\nlet delay = TimeSpan.FromSeconds(30)\n```"
-        let (window, host) = host(([first] + points + [code]).joined(separator: "\n\n"))
+        let (window, host) = try await host(([first] + points + [code]).joined(separator: "\n\n"))
         defer { window.contentView = nil }
         #expect(scrollView(in: host) == nil)
 
-        let (shortWindow, short) = self.host([first, code].joined(separator: "\n\n"))
+        let (shortWindow, short) = try await self.host([first, code].joined(separator: "\n\n"))
         defer { shortWindow.contentView = nil }
         #expect(scrollView(in: short) != nil)
     }

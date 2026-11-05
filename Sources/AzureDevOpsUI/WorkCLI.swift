@@ -202,19 +202,21 @@ enum WorkCLI {
     }
 
     /// A pipeline as `--pipelines` prints it, and the `pipelines` tool of `--mcp` gives agents.
-    static func pipelineLines(_ status: PipelineStatus, now: Date) -> [String] {
+    /// - Parameter naming: writes the branch its latest run built, and the one it's pinned to, as `--mcp` quotes branches;
+    ///   as they are by default.
+    static func pipelineLines(_ status: PipelineStatus, now: Date, naming: (String) -> String = { $0 }) -> [String] {
         var lines: [String] = []
         let folder = status.pipeline.folder.isEmpty ? "" : " (\(status.pipeline.folder.replacingOccurrences(of: "\\", with: " › ")))"
         var line = "\(status.pipeline.name)\(folder)  \(status.headline)"
         if let run = status.latest {
             var parts = [run.number]
-            if !run.branch.isEmpty { parts.append(run.branch) }
+            if !run.branch.isEmpty { parts.append(naming(run.branch)) }
             if let who = run.requestedFor { parts.append(who) }
             if let at = run.changedAt { parts.append("\(Elapsed.short(since: at, now: now)) ago") }
             if let duration = run.duration(now: now) { parts.append(RunDuration.short(duration)) }
             line += " · " + parts.joined(separator: " · ")
         }
-        if let branch = status.pipeline.branch { line += "  [runs of \(branch) only]" }
+        if let branch = status.pipeline.branch { line += "  [runs of \(naming(branch)) only]" }
         lines.append(line)
         if !status.stages.isEmpty {
             lines.append("  stages: " + status.stages.map { stage in

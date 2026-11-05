@@ -80,18 +80,15 @@ import Testing
         return (window, host)
     }
 
-    /// Lets SwiftUI lay the window out and run what its views start, until `done`: its run loop runs for a moment, then
-    /// what waits on the main actor.
+    /// Lets SwiftUI lay the window out and run what its views start, until `done`, for as long as a busy machine could
+    /// need (`waitLimit`). It awaits between looks, so that the main run loop does that meanwhile, and the main actor goes
+    /// on with other tests' work: a test that ran that run loop itself would hold the main actor until it returned.
     private func settle(until done: () -> Bool) async throws {
-        for _ in 0..<300 where !done() {
-            Self.runLoop()
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !done() {
+            guard ContinuousClock.now < deadline else { throw Timeout(description: "Timed out waiting for the window") }
             try await Task.sleep(for: .milliseconds(10))
         }
-    }
-
-    /// The main run loop, for a moment, where SwiftUI lays windows out and starts their views' tasks.
-    private static func runLoop() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
     }
 
     /// The text of each piece of code the window shows.
@@ -154,10 +151,7 @@ import Testing
         try await settle { code.shows(pageRecord.id) }
         #expect(code.shows(pageRecord.id))
         // Long enough for a thread on screen to ask for its code.
-        for _ in 0..<30 {
-            Self.runLoop()
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await Task.sleep(for: .milliseconds(600))
         #expect(code.state(of: 11, in: pageRecord.id) == nil)
         #expect(self.code(in: host).isEmpty)
 
@@ -167,4 +161,8 @@ import Testing
         #expect(Set(self.code(in: host)) == ["// the code of !4999"])
         window.contentView = nil
     }
+}
+
+private struct Timeout: Error, CustomStringConvertible {
+    var description: String
 }

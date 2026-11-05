@@ -4,8 +4,9 @@ import Testing
 @testable import BriefBarUI
 
 /// AppKit's own controls, given the font, where SwiftUI's draw their titles at their control's size whatever the text size.
+/// VoiceOver's presses make AppKit wait for events, which then stop the main run loop.
 @MainActor
-@Suite struct TextSizedControlsTests {
+@Suite(.keepsTheMainRunLoopRunning) struct TextSizedControlsTests {
     private final class Choice<Value>: @unchecked Sendable {
         var value: Value
         init(_ value: Value) { self.value = value }
@@ -26,7 +27,7 @@ import Testing
     }
 
     /// Lays `view` out in a window, which stays while `body` runs with the first AppKit view of `type` in it.
-    private func inWindow<V: View, T: NSView>(_ view: V, find type: T.Type, _ body: (T) throws -> Void) throws {
+    private func inWindow<V: View, T: NSView>(_ view: V, find type: T.Type, _ body: (T) async throws -> Void) async throws {
         let host = NSHostingView(rootView: view.fixedSize())
         let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 400, height: 200), styleMask: .borderless,
                               backing: .buffered, defer: false)
@@ -41,7 +42,7 @@ import Testing
             if let found = view as? T { return found }
             return view.subviews.lazy.compactMap(find).first
         }
-        try body(try #require(find(host)))
+        try await body(try #require(find(host)))
     }
 
     /// What VoiceOver finds in an AppKit view: it, and its accessibility children, all the way down.
@@ -51,11 +52,6 @@ import Testing
             return [element] + (element.accessibilityChildren() ?? []).flatMap(all)
         }
         return all(view)
-    }
-
-    /// Lets AppKit send what a press sent.
-    private func settle() {
-        for _ in 0..<20 { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
     }
 
     /// The actions AppKit offers VoiceOver on an element, such as Show Menu: what VoiceOver can do with it. Every element
@@ -68,9 +64,9 @@ import Testing
     /// VoiceOver hears a split button's two parts, each named with its title and saying what it does, presses its button,
     /// and can open the menu from the menu's part alone. Whether Tab reaches either part, keyboard navigation decides, for
     /// every app on the Mac, so that isn't tested here.
-    @Test func voiceOverHearsAndPressesEachPartOfASplitButton() throws {
+    @Test func voiceOverHearsAndPressesEachPartOfASplitButton() async throws {
         let pressed = Choice(0)
-        try inWindow(
+        try await inWindow(
             SplitMenuButton("Resolve", systemImage: "checkmark", help: "Resolve it", hint: "Its menu sets another status",
                             entries: [.item("Won't Fix") {}]) { pressed.value += 1 },
             find: NSComboButton.self
@@ -87,15 +83,15 @@ import Testing
             #expect(!actions(of: primary).contains(showMenu))
             #expect(actions(of: primary).contains(NSAccessibility.Action.press.rawValue))
             _ = primary.accessibilityPerformPress()
-            settle()
+            try await until("the press") { pressed.value != 0 }
             #expect(pressed.value == 1)
         }
     }
 
     /// VoiceOver hears a segmented picker's segments by their titles, symbols alone too, and chooses among them.
-    @Test func voiceOverHearsAndChoosesASegmentedPickersSegments() throws {
+    @Test func voiceOverHearsAndChoosesASegmentedPickersSegments() async throws {
         let chosen = Choice(0)
-        try inWindow(
+        try await inWindow(
             SegmentedPicker("View", selection: Binding(get: { chosen.value }, set: { chosen.value = $0 }), segments: [
                 .init(0, title: "List", systemImage: "list.bullet"), .init(1, title: "Map", systemImage: "map"),
             ])
@@ -106,7 +102,7 @@ import Testing
             #expect(segments.map { $0.accessibilityLabel() } == ["List", "Map"])
             #expect(segments.map { $0.accessibilityHelp() } == ["List", "Map"])
             _ = segments.last?.accessibilityPerformPress()
-            settle()
+            try await until("the choice") { chosen.value != 0 }
             #expect(chosen.value == 1)
         }
     }

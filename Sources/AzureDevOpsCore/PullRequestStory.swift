@@ -8,7 +8,9 @@ public enum PullRequestStory {
     /// where it stands; what was read for it, when it's there, says the rest: who reviews it, you among them, how its
     /// comments and its merge stand, and the builds and checks that ran on it. Who wrote it and its branch say less. When
     /// its row says who sent it to you in a chat, what's shared outside this Mac says where it stands by its votes instead.
-    public static func mine(_ snapshot: PRSnapshot, record: PRRecord?) -> ItemStory {
+    /// - Parameter naming: writes the branches it names, as agents get them quoted (`QuotedText.commandWord`); as they are
+    ///   by default.
+    public static func mine(_ snapshot: PRSnapshot, record: PRRecord?, naming: (String) -> String = { $0 }) -> ItemStory {
         let pullRequest = record?.pullRequest
         var facts: [ItemStory.Fact] = []
         if let pullRequest {
@@ -23,8 +25,8 @@ public enum PullRequestStory {
         var more: [ItemStory.Fact] = []
         if snapshot.role != .author { more.append(ItemStory.Fact("Author", snapshot.author)) }
         if let pullRequest {
-            if let merge = merge(pullRequest) { facts.append(ItemStory.Fact("Merge", merge)) }
-            if let branch = branch(pullRequest) { more.append(ItemStory.Fact("Branch", branch)) }
+            if let merge = merge(pullRequest, naming: naming) { facts.append(ItemStory.Fact("Merge", merge)) }
+            if let branch = branch(pullRequest, naming: naming) { more.append(ItemStory.Fact("Branch", branch)) }
         }
 
         var runs = (record?.details?.checks ?? []).compactMap { check in
@@ -32,8 +34,8 @@ public enum PullRequestStory {
         }
         if let merge = snapshot.merge { runs.append(run(merge)) }
         // Who sent it to you in a chat, and in which app, stays on this Mac: what's shared says what the pull request says.
-        let shared = snapshot.isFromChat ? pullRequest.map { standing($0, me: record?.me) } ?? sharedStatus(snapshot) : nil
-        let sentence = sentence(of: snapshot)
+        let shared = snapshot.isFromChat ? pullRequest.map { standing($0, me: record?.me, naming: naming) } ?? sharedStatus(snapshot) : nil
+        let sentence = sentence(of: snapshot, naming: naming)
         return ItemStory(
             sentence: sentence, sharedSentence: shared, date: snapshot.since, facts: withoutApprovals(facts, saidIn: sentence),
             more: more, runs: runs.sorted(by: ItemStory.Run.showsFirst),
@@ -61,16 +63,19 @@ public enum PullRequestStory {
     /// A pull request that's linked but not in your lists, such as a teammate's on a sprint's work item. BriefBar reads only
     /// the pull request itself for these, not its comments or its checks, so where it stands is what its votes say. Who
     /// wrote it is one of its facts, unless it's you.
-    /// - Parameter me: your identity in its organization, to say "you" rather than your name.
-    public static func others(_ pullRequest: PullRequest, me: String? = nil) -> ItemStory {
+    /// - Parameters:
+    ///   - me: your identity in its organization, to say "you" rather than your name.
+    ///   - naming: writes the branches it names, as agents get them quoted (`QuotedText.commandWord`); as they are by
+    ///     default.
+    public static func others(_ pullRequest: PullRequest, me: String? = nil, naming: (String) -> String = { $0 }) -> ItemStory {
         let yours = isMe(pullRequest.author, me)
         var facts = yours ? [] : [ItemStory.Fact("Author", pullRequest.author.name)]
         if let reviewers = reviewers(pullRequest.reviewers, me: me) { facts.append(ItemStory.Fact("Reviewers", reviewers)) }
-        if let merge = merge(pullRequest) { facts.append(ItemStory.Fact("Merge", merge)) }
+        if let merge = merge(pullRequest, naming: naming) { facts.append(ItemStory.Fact("Merge", merge)) }
         var more = yours ? [ItemStory.Fact("Author", "You")] : []
-        if let branch = branch(pullRequest) { more.append(ItemStory.Fact("Branch", branch)) }
+        if let branch = branch(pullRequest, naming: naming) { more.append(ItemStory.Fact("Branch", branch)) }
         return ItemStory(
-            sentence: standing(pullRequest, me: me), date: pullRequest.closedAt ?? pullRequest.createdAt, facts: facts, more: more,
+            sentence: standing(pullRequest, me: me, naming: naming), date: pullRequest.closedAt ?? pullRequest.createdAt, facts: facts, more: more,
             footnote: pullRequest.status == .active ? "BriefBar reads builds and comments only on your pull requests." : nil,
             waits: [PullRequestWait.waiting(on: pullRequest, me: me)].compactMap { $0 }
         )
@@ -80,8 +85,10 @@ public enum PullRequestStory {
 
     /// Where one of your pull requests stands, as its row says it, without how long it's been so, which its date says:
     /// "No activity for 15 days" says a day more each day.
-    static func sentence(of snapshot: PRSnapshot) -> String {
-        snapshot.reason == .inactive ? "No recent activity" : sentence(snapshot.headline, snapshot.detail)
+    /// The branches its detail names are written as `naming` writes them, before the line is cut to its length
+    /// (`PRSnapshot.detail(naming:)`).
+    static func sentence(of snapshot: PRSnapshot, naming: (String) -> String = { $0 }) -> String {
+        snapshot.reason == .inactive ? "No recent activity" : sentence(snapshot.headline, snapshot.detail(naming: naming))
     }
 
     /// "Sam Rivera replied: Could we cap it?": a row's headline and its detail, in a line.
@@ -91,9 +98,9 @@ public enum PullRequestStory {
 
     /// Where a pull request stands from what it says itself: whether it's closed or a draft, and its votes. "Sam Rivera
     /// wants changes", "Approved by you and Priya Shah", "Waiting for your review", "Waiting for reviewers: Alex Kim".
-    static func standing(_ pullRequest: PullRequest, me: String? = nil) -> String {
+    static func standing(_ pullRequest: PullRequest, me: String? = nil, naming: (String) -> String = { $0 }) -> String {
         switch pullRequest.status {
-        case .completed: return "Merged into \(pullRequest.targetBranch)"
+        case .completed: return "Merged into \(naming(pullRequest.targetBranch))"
         case .abandoned: return "Abandoned"
         case .other: return "Closed"
         case .active: break
@@ -181,10 +188,10 @@ public enum PullRequestStory {
 
     /// "Conflicts with main · Completes by itself once it can", "Merge failed": how an active pull request's merge stands;
     /// nil for one that's closed, or when there's nothing to say.
-    static func merge(_ pullRequest: PullRequest) -> String? {
+    static func merge(_ pullRequest: PullRequest, naming: (String) -> String = { $0 }) -> String? {
         guard pullRequest.status == .active else { return nil }
         let said = [
-            pullRequest.hasConflicts ? "Conflicts with \(pullRequest.targetBranch)" : nil,
+            pullRequest.hasConflicts ? "Conflicts with \(naming(pullRequest.targetBranch))" : nil,
             pullRequest.mergeProblem?.headline,
             pullRequest.isDraft ? "Draft" : nil,
             pullRequest.autoComplete ? "Completes by itself once it can" : nil,
@@ -193,9 +200,10 @@ public enum PullRequestStory {
     }
 
     /// "fix-total → main": the branch it merges, and into which.
-    static func branch(_ pullRequest: PullRequest) -> String? {
+    static func branch(_ pullRequest: PullRequest, naming: (String) -> String = { $0 }) -> String? {
         guard !pullRequest.sourceBranch.isEmpty else { return nil }
-        return pullRequest.targetBranch.isEmpty ? pullRequest.sourceBranch : "\(pullRequest.sourceBranch) → \(pullRequest.targetBranch)"
+        let source = naming(pullRequest.sourceBranch)
+        return pullRequest.targetBranch.isEmpty ? source : "\(source) → \(naming(pullRequest.targetBranch))"
     }
 
     /// "Sam Rivera", "Sam Rivera and Priya Shah", "Sam Rivera, Priya Shah and Alex Kim"; past `limit`, "and 2 more".
