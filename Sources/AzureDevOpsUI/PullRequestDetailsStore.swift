@@ -148,11 +148,15 @@ final class PullRequestDetailsStore: ObservableObject {
 
     /// The pull request that shows, as the list has it now, or had it last once it's not listed; nil while none does.
     @Published private(set) var selected: PRSnapshot?
-    /// What the list read of it, its threads, policies and reviewers, as it is now, or was last once it's not listed. The
-    /// list doesn't read a closed one's threads and policies: one that closes while it shows keeps those it read last.
+    /// What the list read of it, its threads, policies and reviewers, as it is now, while the list has it or still reads it
+    /// open, or as it was last read open. The list doesn't read a closed one's threads and policies: one that closes while it
+    /// shows keeps those it read last.
     @Published private(set) var record: PRRecord?
     /// Whether the list still has it.
     @Published private(set) var isListed = false
+    /// Whether the list still reads it open though it doesn't have it anymore, as one sent to you in a chat that you've
+    /// seen: its details follow what's read of it, as while it's listed, so that your reply, or a status you set, shows.
+    @Published private(set) var isStillRead = false
     /// The pages of work items, pull requests and Copilot sessions opened over its details from what's linked to it, the
     /// latest last: ‹ goes back through them.
     @Published private(set) var pages: [ItemRef] = []
@@ -253,6 +257,7 @@ final class PullRequestDetailsStore: ObservableObject {
         selected = item
         record = keeping(readRecord(item.key))
         isListed = listed.contains { $0.key == item.key }
+        isStillRead = !isListed && Self.isOpen(readRecord(item.key))
         self.place = place ?? (leavesFile ? .top : nil)
         trailThread = place?.thread
         markSeen(item)
@@ -484,6 +489,7 @@ final class PullRequestDetailsStore: ObservableObject {
         before = nil
         record = nil
         isListed = false
+        isStillRead = false
         pages = []
         place = nil
         trailThread = nil
@@ -493,34 +499,43 @@ final class PullRequestDetailsStore: ObservableObject {
         markedRead = [:]
     }
 
-    /// The list refreshed: the details follow the pull request as it is now. One the list doesn't have anymore, such as
-    /// one done a while ago, stays as it was last, until you close it.
+    /// The list refreshed: the details follow the pull request as it is now. One the list doesn't have anymore keeps its
+    /// last row, and what was read of it follows while the list still reads it open (`recordsChanged`), until you close it.
     func itemsChanged(_ items: [PRSnapshot]) {
         listed = items
         guard let selected else { return }
         let fresh = items.first { $0.key == selected.key }
         if (fresh != nil) != isListed { isListed = fresh != nil }
-        guard let fresh else { return }
-        if fresh != selected { self.selected = fresh }
+        if let fresh, fresh != selected { self.selected = fresh }
         recordsChanged()
     }
 
-    /// The list read its pull requests again, which may change what it read of the one that shows without changing its
-    /// row, such as an optional build: what's kept of it follows, while the list has it, for once it doesn't anymore.
-    /// Then it stays as it was, even while the list still reads it, as one sent in a chat that you've seen: but for its
-    /// tags, which its details read while they show it (`TagChanges`), and when they were (`followTags`).
+    /// The list read its pull requests again, or a change was made to one, which may change what it read of the one that
+    /// shows without changing its row, such as an optional build, or your reply: what's kept of it follows, while the list
+    /// has it, and once it doesn't, while the list still reads it open, as one sent in a chat that you've seen. Then it
+    /// stays as it was last read open, as one that merged: but for its tags, which its details read while they show it
+    /// (`TagChanges`), and when they were (`followTags`).
     func recordsChanged() {
-        guard isListed else {
+        guard let selected else { return }
+        let read = readRecord(selected.key)
+        let stillRead = !isListed && Self.isOpen(read)
+        if stillRead != isStillRead { isStillRead = stillRead }
+        guard isListed || stillRead else {
             followTags()
             return
         }
-        guard let selected, let read = keeping(readRecord(selected.key)), read != record else { return }
+        guard let read = keeping(read), read != record else { return }
         record = read
     }
 
+    /// Whether the list reads a pull request open: it reads its threads and policies.
+    private static func isOpen(_ record: PRRecord?) -> Bool {
+        record?.pullRequest.status == .active
+    }
+
     /// The tags of the pull request that shows, and when they were read, as the list has them, which it may still read
-    /// once the pull request isn't in your lists, as one sent to you in a chat that you've seen, or one in Done you cleared:
-    /// its details read them while they show it (`TagChanges`), and show them. The rest stays as it was when it left them.
+    /// once the pull request isn't in your lists or open, as one in Done you cleared: its details read them while they show
+    /// it (`TagChanges`), and show them. The rest stays as it was last read open.
     private func followTags() {
         guard let selected, var kept = record, kept.id == selected.key, let read = readRecord(selected.key),
               read.tags != kept.tags || read.tagsReadAt != kept.tagsReadAt

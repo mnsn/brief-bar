@@ -3,6 +3,7 @@ import BriefBarCore
 import BriefBarUI
 import CopilotTasks
 import Foundation
+import Synchronization
 import Testing
 @testable import AzureDevOpsUI
 
@@ -67,6 +68,38 @@ import Testing
         await changes.setStatus(.fixed, of: try thread(store), in: key)
         #expect(azure.sent.isEmpty)
         #expect(try thread(store).comments.count == 2)
+    }
+
+    /// A pull request sent to you in a chat, which you're not on, leaves your lists as its details show it, which sees it;
+    /// but the list still reads it open, and so do its details: your reply, and a status you set, go once, and show there.
+    @Test func aChangeToALinkedPullRequestYouveSeenShowsInItsDetails() async throws {
+        let (store, changes, azure) = live()
+        let linked = PRKey(DemoData.organization, 4113)
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == linked })
+        #expect(snapshot.records[index].role == .linked)
+        let sam = try #require(thread(store).comments.first { $0.author != DemoData.me }?.author)
+        snapshot.records[index].details?.threads = [ReviewThread(id: 70, comments: [
+            ReviewComment(id: 1, author: sam, text: "Is the cache cleared on deploy?", publishedAt: store.now.addingTimeInterval(-600)),
+        ])]
+        store.receive(snapshot)
+        let details = PullRequestDetailsStore()
+        details.use(store)
+        details.show(try #require(store.items.first { $0.key == linked }))
+        // The next refresh, once it's seen.
+        store.receive(snapshot)
+        #expect(!store.items.contains { $0.key == linked })
+        #expect(!details.isListed && details.isStillRead)
+        #expect(changes.canChange(details.record?.pullRequest))
+
+        let shown = try #require(details.record?.details?.threads.first { $0.id == 70 })
+        #expect(await changes.reply("Yes, by the deploy script.", to: shown, of: linked))
+        #expect(details.record?.details?.threads.first { $0.id == 70 }?.comments.last?.markdown == "Yes, by the deploy script.")
+        await changes.setStatus(.fixed, of: shown, in: linked)
+        #expect(details.record?.details?.threads.first { $0.id == 70 }?.status == "fixed")
+        #expect(details.record?.details?.threads.first { $0.id == 70 }?.comments.count == 2)
+        #expect(azure.sent.map(\.kind) == [.reply, .setStatus])
+        #expect(details.isStillRead)
     }
 
     /// Nothing goes for a pull request your lists don't have anymore, though its details still show it as it was when it
@@ -369,10 +402,12 @@ import Testing
     }
 
     /// Turned off while a reply waits to go, as for a token, it never goes, and nor does the status after it; nothing says
-    /// it failed.
+    /// it failed, and nothing is read, since nothing went.
     @Test func turnedOffWhileAReplyWaitsNothingGoes() async throws {
         let (store, changes, azure) = live()
         let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        var readAgain: [PRKey] = []
+        changes.readAgain = { readAgain.append($0) }
         var waiting: CheckedContinuation<Void, Never>?
         changes.send = { write, _ in
             await withCheckedContinuation { waiting = $0 }
@@ -391,6 +426,7 @@ import Testing
         #expect(changes.state(of: threadKey) == nil)
         #expect(try thread(store).comments.count == 2)
         #expect(try thread(store).status == original.status)
+        #expect(readAgain.isEmpty)
     }
 
     /// A reply answered 503, which the client says as no answer in time (`WriteTests.aChangeAnswered503MayHaveBeenMade`),
@@ -425,6 +461,231 @@ import Testing
         #expect(azure.sent.count == 1)
     }
 
+    /// Asked to slow down, as when Azure DevOps asked a build's reads to wait five minutes, which holds every request, a
+    /// change says until when, rather than in a minute; and nothing is read again, since nothing went.
+    @Test func aChangeAskedToSlowDownSaysUntilWhen() async throws {
+        let (store, changes, azure) = live()
+        let at = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        changes.now = { at }
+        var readAgain: [PRKey] = []
+        changes.readAgain = { readAgain.append($0) }
+        azure.fails = .throttled(retryAfter: 300)
+        await changes.setStatus(.fixed, of: try thread(store), in: key)
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        #expect(changes.state(of: threadKey) == .failed(.slowedDown(until: at.addingTimeInterval(300)), .status(.fixed)))
+        #expect(readAgain.isEmpty)
+    }
+
+    /// A reply under way as the setting goes off, gone already, which the client doesn't call off then, settles all the
+    /// same: what Azure DevOps answered shows, nothing more happens, and nothing says it failed.
+    @Test func turnedOffAsAReplyGoesItShowsWhatAzureDevOpsAnswered() async throws {
+        let (store, changes, azure) = live()
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        var readAgain: [PRKey] = []
+        changes.readAgain = { readAgain.append($0) }
+        var waiting: CheckedContinuation<Void, Never>?
+        // Gone: it answers, called off or not.
+        changes.send = { write, _ in
+            await withCheckedContinuation { waiting = $0 }
+            return try azure.send(write)
+        }
+        let original = try thread(store)
+        let replying = Task { await changes.reply("Capped it.", then: .fixed, to: original, of: key) }
+        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        changes.settings.makesChanges = false
+        try #require(waiting).resume()
+        #expect(await replying.value == false)
+        #expect(try thread(store).comments.last?.markdown == "Capped it.")
+        // The status after it doesn't go: the setting's off.
+        #expect(azure.sent.map(\.kind) == [.reply])
+        #expect(changes.state(of: threadKey) == nil)
+        #expect(readAgain.isEmpty)
+    }
+
+    /// One that may have gone though it didn't say so, as one Azure DevOps didn't answer in time, is read again once it has
+    /// settled, not as the setting goes off, which may be before Azure DevOps made it; and on again, the same reply is checked
+    /// before it goes, though what you wrote went with the setting: it isn't sent twice.
+    @Test func turnedOffAsAReplyGoesThatMayHaveGoneItsCheckedOnceItSettles() async throws {
+        let (store, changes, azure) = live()
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        var readAgain: [PRKey] = []
+        changes.readAgain = { readAgain.append($0) }
+        var waiting: CheckedContinuation<Void, Never>?
+        changes.send = { write, _ in
+            await withCheckedContinuation { waiting = $0 }
+            return try azure.send(write)
+        }
+        changes.keep("Capped it.", for: threadKey)
+        let original = try thread(store)
+        let replying = Task { await changes.reply("Capped it.", to: original, of: key) }
+        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        changes.settings.makesChanges = false
+        #expect(readAgain.isEmpty)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        try #require(waiting).resume()
+        #expect(await replying.value == false)
+        #expect(readAgain == [key])
+        #expect(changes.state(of: threadKey) == nil)
+        #expect(changes.draft(threadKey).isEmpty)
+
+        // On again: Azure DevOps made it after all, as its thread, read again first, says.
+        azure.fails = nil
+        changes.send = { write, _ in try azure.send(write) }
+        changes.settings.makesChanges = true
+        var read = try thread(store)
+        read.comments.append(ReviewComment(id: 3, author: DemoData.me, text: "Capped it.", publishedAt: store.now, content: "Capped it."))
+        let threads = [read]
+        var reads = 0
+        changes.readThreads = { _ in
+            reads += 1
+            return threads
+        }
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
+        #expect(reads == 1)
+        #expect(azure.sent.count == 1)
+        // Another reply goes without reading it first: it can't be the one that may have gone.
+        #expect(await changes.reply("And tested it.", to: try thread(store), of: key))
+        #expect(reads == 1)
+        #expect(azure.sent.count == 2)
+    }
+
+    /// On again before a change under way as it went off has settled, its thread shows it on its way, without the status
+    /// after a reply, which doesn't go, and takes no other change, the same reply included, until it has: then one that may
+    /// have gone is checked before the same goes again, rather than read while Azure DevOps may still be making it.
+    @Test(.timeLimit(.minutes(1)))
+    func onAgainBeforeAReplySettlesItsThreadWaitsForIt() async throws {
+        let (store, changes, azure) = live()
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        var readAgain: [PRKey] = []
+        changes.readAgain = { readAgain.append($0) }
+        var waiting: CheckedContinuation<Void, Never>?
+        // Only the first is held: another would go at once.
+        var held = false
+        changes.send = { write, _ in
+            if !held {
+                held = true
+                await withCheckedContinuation { waiting = $0 }
+            }
+            return try azure.send(write)
+        }
+        let original = try thread(store)
+        let replying = Task { await changes.reply("Capped it.", then: .fixed, to: original, of: key) }
+        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        changes.settings.makesChanges = false
+        changes.settings.makesChanges = true
+        #expect(changes.state(of: threadKey) == .sending(.reply(then: nil)))
+        var reads = 0
+        changes.readThreads = { _ in
+            reads += 1
+            return nil
+        }
+        #expect(await changes.reply("Capped it.", to: original, of: key) == false)
+        await changes.setStatus(.fixed, of: original, in: key)
+        #expect(azure.sent.isEmpty)
+        #expect(reads == 0)
+
+        azure.fails = .network(ADOClient.unansweredMessage)
+        try #require(waiting).resume()
+        #expect(await replying.value == false)
+        #expect(changes.state(of: threadKey) == nil)
+        #expect(readAgain == [key])
+        #expect(azure.sent.map(\.kind) == [.reply])
+
+        // Azure DevOps made it after all, as its thread, read again first, says.
+        azure.fails = nil
+        changes.send = { write, _ in try azure.send(write) }
+        var read = try thread(store)
+        read.comments.append(ReviewComment(id: 3, author: DemoData.me, text: "Capped it.", publishedAt: store.now, content: "Capped it."))
+        let threads = [read]
+        changes.readThreads = { _ in
+            reads += 1
+            return threads
+        }
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
+        #expect(reads == 1)
+        #expect(azure.sent.count == 1)
+    }
+
+    /// Someone else signing in while a change under way as the setting went off settles doesn't wait for it: it was the last
+    /// one's, and what Azure DevOps answers for it doesn't show over what the next one reads.
+    @Test(.timeLimit(.minutes(1)))
+    func someoneElseSigningInDoesntWaitForTheLastOnesChange() async throws {
+        let (store, changes, azure) = live()
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        var readAgain: [PRKey] = []
+        changes.readAgain = { readAgain.append($0) }
+        changes.accountChanged("home/robin")
+        var waiting: CheckedContinuation<Void, Never>?
+        changes.send = { write, _ in
+            await withCheckedContinuation { waiting = $0 }
+            return try azure.send(write)
+        }
+        let original = try thread(store)
+        let replying = Task { await changes.reply("Capped it.", to: original, of: key) }
+        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        changes.settings.makesChanges = false
+        changes.settings.makesChanges = true
+        #expect(changes.isSending(threadKey))
+        changes.accountChanged("home/sam")
+        #expect(changes.state(of: threadKey) == nil)
+        try #require(waiting).resume()
+        #expect(await replying.value == false)
+        #expect(changes.state(of: threadKey) == nil)
+        #expect(azure.sent.map(\.kind) == [.reply])
+        #expect(try thread(store).comments.count == original.comments.count)
+        #expect(readAgain.isEmpty)
+    }
+
+    /// Someone else signing in forgets a reply that may have gone: what they write is theirs, and isn't checked against it.
+    @Test func someoneElseSigningInForgetsWhatMayHaveGone() async throws {
+        let (store, changes, azure) = live()
+        changes.accountChanged("home/robin")
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key) == false)
+        azure.fails = nil
+        changes.accountChanged("home/sam")
+        var reads = 0
+        changes.readThreads = { _ in
+            reads += 1
+            return nil
+        }
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
+        #expect(reads == 0)
+        #expect(azure.sent.count == 2)
+    }
+
+    /// The reads of a pull request after a change to its threads stop as Azure DevOps does: as it's turned off, or BriefBar
+    /// quits.
+    @Test(.timeLimit(.minutes(1)))
+    func stoppingCallsOffTheReadsAfterAChange() async throws {
+        let (store, _, _) = live()
+        let (started, startedOne) = AsyncStream<Void>.makeStream()
+        let calledOff = Mutex(0)
+        store.readAfterChange = { _, _ in
+            startedOne.yield()
+            while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+            calledOff.withLock { $0 += 1 }
+            return nil
+        }
+        store.changed(key, by: ThreadChange(thread: 11, status: "fixed"))
+        store.mayHaveChanged(key)
+        let read = Task { await store.threadsReadAgain(key) }
+        var count = 0
+        for await _ in started {
+            count += 1
+            if count == 3 { break }
+        }
+        #expect(store.changeReadsUnderWay == 3)
+        store.stop()
+        #expect(store.changeReadsUnderWay == 0)
+        #expect(await read.value == nil)
+        for _ in 0..<1_000 where calledOff.withLock({ $0 }) < 3 { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(calledOff.withLock { $0 } == 3)
+        // Stopped, nothing more is read.
+        store.mayHaveChanged(key)
+        #expect(store.changeReadsUnderWay == 0)
+    }
+
     /// Read, a thread that hasn't the reply that may have gone gets it, once; and the next reply goes without reading it.
     @Test func aReplyThatDidntGoIsSentOnceItsThreadSaysSo() async throws {
         let (store, changes, azure) = live()
@@ -443,6 +704,57 @@ import Testing
         #expect(await changes.reply("And tested it.", to: try thread(store), of: key))
         #expect(reads == 1)
         #expect(azure.sent.count == 3)
+    }
+
+    /// Two replies on a thread that may have gone, each saying something else, are each checked before the same goes again:
+    /// the second doesn't take the first's place, so the first, which went, isn't sent twice.
+    @Test func twoRepliesThatMayHaveGoneAreEachChecked() async throws {
+        let (store, changes, azure) = live()
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key) == false)
+        #expect(await changes.reply("And tested it.", to: try thread(store), of: key) == false)
+        #expect(azure.sent.count == 2)
+        azure.fails = nil
+
+        // The first went, as its thread, read again first, says.
+        var read = try thread(store)
+        read.comments.append(ReviewComment(id: 3, author: DemoData.me, text: "Capped it.", publishedAt: store.now, content: "Capped it."))
+        let threads = [read]
+        var reads = 0
+        changes.readThreads = { _ in
+            reads += 1
+            return threads
+        }
+        #expect(await changes.reply("Capped it.", to: try thread(store), of: key))
+        #expect(reads == 1)
+        #expect(azure.sent.count == 2)
+        // The second didn't: it goes once its thread, read again for it too, says so.
+        #expect(await changes.reply("And tested it.", to: try thread(store), of: key))
+        #expect(reads == 2)
+        #expect(azure.sent.count == 3)
+    }
+
+    /// A reply that may have gone is the same in either Unicode form, as Swift compares text: sent again with its é typed as
+    /// an e and its accent, it's checked first, and found, though its thread has it in that form too, so it isn't sent twice.
+    @Test func aReplyInEitherUnicodeFormIsTheSame() async throws {
+        let (store, changes, azure) = live()
+        let composed = "Corrig\u{E9}.", decomposed = "Corrige\u{301}."
+        #expect(Array(composed.utf8) != Array(decomposed.utf8))
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.reply(composed, to: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        var read = try thread(store)
+        read.comments.append(ReviewComment(id: 3, author: DemoData.me, text: decomposed, publishedAt: store.now, content: decomposed))
+        let threads = [read]
+        var reads = 0
+        changes.readThreads = { _ in
+            reads += 1
+            return threads
+        }
+        #expect(await changes.reply(decomposed, to: try thread(store), of: key))
+        #expect(reads == 1)
+        #expect(azure.sent.count == 1)
     }
 
     /// A status goes as you chose it, and shows at once; it can be set back the same way.
