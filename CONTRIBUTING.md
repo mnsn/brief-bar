@@ -403,11 +403,11 @@ pull requests, and when started by hand. A new run cancels the one in progress o
   update through it (`scripts/update-rehearsal.sh`), and uploads the package as the `BriefBar` artifact.
 - A pull request does that only when it changes what packaging uses beyond what the tests build and check:
   anything but the Swift code in `Sources`, the tests, the docs, the Markdown at the top and the pull request's
-  own notes in `CHANGELOG.md`. The updater's code counts, and so does the code that starts it and talks to it,
+  own release notes, in `changes/`. The updater's code counts, and so does the code that starts it and talks to it,
   which the package's checks run; `scripts/ci-changes.sh` lists them. So a pull request that changes
   `scripts/`, `Resources/`, the `Makefile`, `Package.swift` or a workflow packages the app, and one that changes
-  only the app's code, its tests and its docs doesn't, and says so in the run's summary: its optimized build
-  happens on `main`, which packages every change.
+  only the app's code, its tests, its docs and its release notes doesn't, and says so in the run's summary: its
+  optimized build happens on `main`, which packages every change.
 - A pull request that changes only BriefBar for Windows (`windows/` and its workflow) builds nothing for
   the Mac: `scripts/ci-changes.sh` says what changed, and the build job still runs, on Linux, skipping
   every step, so its required check passes.
