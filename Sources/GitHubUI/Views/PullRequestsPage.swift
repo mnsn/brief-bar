@@ -37,10 +37,10 @@ struct PullRequestsPage: View {
                 Button {
                     store.openPullRequestsPage()
                 } label: {
-                    Label("Open on GitHub", systemImage: "arrow.up.forward.app")
-                        .font(size: 13)
+                    ControlLabel("Open on GitHub", systemImage: "arrow.up.forward.app")
                 }
                 .glassButtonStyle()
+                .help("Open on GitHub")
             }
             PageScroll {
                 VStack(alignment: .leading, spacing: 18) {
@@ -72,8 +72,7 @@ struct PullRequestsPage: View {
             .pickerStyle(.inline)
             .labelsHidden()
         } label: {
-            Label(listsByMission ? "By Mission" : "By Status", systemImage: "arrow.up.arrow.down")
-                .font(size: 13)
+            ControlLabel(listsByMission ? "By Mission" : "By Status", systemImage: "arrow.up.arrow.down")
         }
         .menuStyle(.button)
         .glassButtonStyle()

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Where an item's details go on a page this wide: beside the page's list or board, taking room from it, or over it.
 struct DetailsLayout: Equatable {
-    /// The narrowest page that has room for the list or board beside the details.
+    /// The narrowest page that has room for the list or board beside the details, at the usual text size.
     static let besideWidth: CGFloat = 700
     /// The narrowest the details get beside it.
     static let narrowestPanel: CGFloat = 330
@@ -18,10 +18,14 @@ struct DetailsLayout: Equatable {
     /// the details beside it.
     var panelWidths: ClosedRange<CGFloat>
 
-    init(width: CGFloat, showsDetails: Bool, preferredWidth: CGFloat? = nil) {
-        isBeside = width >= Self.besideWidth
+    /// At a bigger text size, `textScale` times the usual, the list or board keeps as much more room as its text takes:
+    /// in a window too narrow for that beside the details, they go over it, as in a narrow one, rather than past the
+    /// window's edge.
+    init(width: CGFloat, showsDetails: Bool, preferredWidth: CGFloat? = nil, textScale: CGFloat = 1) {
+        let listRoom = (Self.besideWidth - Self.narrowestPanel) * max(textScale, 1)
+        isBeside = width >= Self.narrowestPanel + listRoom
         coversContent = showsDetails && !isBeside
-        let widths = Self.narrowestPanel...max(Self.narrowestPanel, width - (Self.besideWidth - Self.narrowestPanel))
+        let widths = Self.narrowestPanel...max(Self.narrowestPanel, width - listRoom)
         panelWidths = widths
         let usual = min(max(width * 0.4, Self.narrowestPanel), 480)
         panelWidth = Self.width(nearest: preferredWidth.flatMap { $0.isFinite ? $0 : nil } ?? usual, in: widths)
@@ -43,14 +47,19 @@ struct DetailsLayout: Equatable {
 }
 
 /// A page's list or board, and the details of what you clicked in it, in a floating panel: beside it, taking room from
-/// it, as wide as you drag them, or over it when the page is narrower than `DetailsLayout.besideWidth`, or while what they
-/// show asks for the whole page (`DetailsFillsPageKey`), as a file's diff can. The Sprint page's work items and the Pull
-/// Requests page's pull requests show their details this way, each page keeping its own width.
+/// it, as wide as you drag them, or over it when the page is narrower than `DetailsLayout.besideWidth`, or, for a list
+/// whose room grows with its text, than that much more at a bigger text size, or while what they show asks for the whole
+/// page (`DetailsFillsPageKey`), as a file's diff can. The Sprint page's work items and the Pull Requests page's pull
+/// requests show their details this way, each page keeping its own width.
 struct DetailsSplit<Content: View, Details: View>: View {
     /// Whether details show.
     let showsDetails: Bool
     /// How wide you made the details beside the list or board, in points; nil for their usual width.
     @Binding var preferredWidth: Double?
+    /// At a bigger text size, the list keeps as much more room beside the details as its text takes, for a list whose
+    /// rows don't narrow past their badges, times and buttons, as the pull requests' don't: where the window has less, the
+    /// details go over it. A board, whose cards narrow and wrap, keeps the room it has at the usual size.
+    var listRoomGrowsWithText = false
     @ViewBuilder var content: () -> Content
     @ViewBuilder var details: () -> Details
 
@@ -59,12 +68,14 @@ struct DetailsSplit<Content: View, Details: View>: View {
     /// What shows in the details asks for the whole page, while the page shows them beside the list or board.
     @LocalState private var fillsPage = false
     @Environment(\.isRendering) private var isRendering
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         // The width the window offers, whatever the list needs: what it needs depends on where the details go.
         GeometryReader { proxy in
             split(DetailsLayout(
-                width: proxy.size.width, showsDetails: showsDetails, preferredWidth: preferredWidth.map { CGFloat($0) }
+                width: proxy.size.width, showsDetails: showsDetails, preferredWidth: preferredWidth.map { CGFloat($0) },
+                textScale: listRoomGrowsWithText ? textScale : 1
             ))
         }
     }

@@ -1143,49 +1143,45 @@ struct ReadyFixesBar: View {
         let ready = ready
         if let first = ready.first {
             let names = CopilotSessionNames(session: sessions.session(for: item.key), copilot: copilot, links: sessions.links)
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(size: 13, weight: .semibold)
-                    .foregroundStyle(ItemState.done.color)
-                    .accessibilityHidden(true)
-                // To the first thing they fixed, pointed out for a moment.
-                Button {
-                    show(first)
-                } label: {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(sentence(first, names: names))
-                            .font(size: 12.5, weight: .semibold)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(Self.subtitle(more: ready.count - 1))
-                            .font(size: 11)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(Self.showHelp(first.parts))
-                .accessibilityElement(children: .combine)
-                .accessibilityHint("Shows" + Self.showHelp(first.parts).dropFirst("Show".count))
-                if ready.count > 1 {
-                    Menu("Push & Reply") {
-                        ForEach(ready) { group in
-                            Button(sentence(group, names: names) + "…") { pushAndReply(group, names: names) }
+            let sentence = sentence(first, names: names)
+            let subtitle = Self.subtitle(more: ready.count - 1)
+            // Its sentence and the button on one line while they fit; else the button under the sentence, beside what's left
+            // to say, and the sentence cut short, the session's name first, so the bar takes two lines at most at any text
+            // size, and covers little of the details.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 8) {
+                    mark
+                    showButton(first) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(sentence)
+                                .font(size: 12.5, weight: .semibold)
+                                .lineLimit(1)
+                            Text(subtitle)
+                                .font(size: 11)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
-                    .menuStyle(.button)
-                    .font(size: 12, weight: .semibold)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .fixedSize()
-                    .help("Push the fixes of one session, and reply on the threads they addressed")
-                } else {
-                    Button("Push & Reply…") { pushAndReply(first, names: names) }
-                        .font(size: 12, weight: .semibold)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .fixedSize()
-                        .help(Self.pushHelp(first, from: names.place(of: first)))
+                    push(ready, names: names)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    mark
+                    VStack(alignment: .leading, spacing: 3) {
+                        showButton(first) {
+                            Text(sentence)
+                                .font(size: 12.5, weight: .semibold)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        HStack(spacing: 8) {
+                            Text(subtitle)
+                                .font(size: 11)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            push(ready, names: names)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 14)
@@ -1193,6 +1189,53 @@ struct ReadyFixesBar: View {
             .background(ItemState.done.color.opacity(0.08))
             .overlay(alignment: .top) { Divider().opacity(0.6) }
             .accessibilityElement(children: .contain)
+        }
+    }
+
+    private var mark: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .font(size: 13, weight: .semibold)
+            .foregroundStyle(ItemState.done.color)
+            .accessibilityHidden(true)
+    }
+
+    /// To the first thing they fixed, pointed out for a moment.
+    private func showButton(_ first: ReadyFixes, @ViewBuilder label: () -> some View) -> some View {
+        Button {
+            show(first)
+        } label: {
+            label()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(Self.showHelp(first.parts))
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Shows" + Self.showHelp(first.parts).dropFirst("Show".count))
+    }
+
+    /// Push & Reply…, or, with fixes in more than one session, a menu of them.
+    @ViewBuilder
+    private func push(_ ready: [ReadyFixes], names: CopilotSessionNames) -> some View {
+        if ready.count > 1 {
+            Menu {
+                ForEach(ready) { group in
+                    Button(sentence(group, names: names) + "…") { pushAndReply(group, names: names) }
+                }
+            } label: {
+                ControlLabel("Push & Reply")
+            }
+            .menuStyle(.button)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .fixedSize()
+            .help("Push the fixes of one session, and reply on the threads they addressed")
+        } else if let first = ready.first {
+            Button { pushAndReply(first, names: names) } label: { ControlLabel("Push & Reply…") }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .fixedSize()
+                .help(Self.pushHelp(first, from: names.place(of: first)))
         }
     }
 

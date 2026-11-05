@@ -17,11 +17,11 @@ struct NotificationsPage: View {
                 Button {
                     recent.clear()
                 } label: {
-                    Label("Clear All", systemImage: "xmark.circle")
+                    ControlLabel("Clear All", systemImage: "xmark.circle")
                 }
                 .glassButtonStyle()
                 .disabled(recent.history.isEmpty)
-                .help("Take every notification off this page, which then hides until a new one comes")
+                .help("Clear All: take every notification off this page, which then hides until a new one comes")
             }
             PageScroll {
                 VStack(alignment: .leading, spacing: 18) {
