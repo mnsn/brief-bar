@@ -160,6 +160,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         return AnyView(view
             .interfaceOptions(from: services)
             .environmentObject(store)
+            .environment(\.prStore, store)
             .environmentObject(sprint)
             .environmentObject(details)
             .environmentObject(pullRequestDetails)
@@ -756,7 +757,25 @@ package final class AzureDevOpsSource: BriefBarSource {
     // MARK: Settings
 
     package func settingsView() -> AnyView {
-        environment(AzureDevOpsSettings())
+        environment(AzureDevOpsSettings(place: .ownPage))
+    }
+
+    /// Those about its pull requests, on the Pull Requests page in Settings: with its store while it's on, and, while it's
+    /// off or paused, from its settings alone, disabled, as they do nothing then.
+    package func pullRequestSettingsView(state: SourceState) -> AnyView? {
+        let settings = AzureDevOpsSettings(place: .pullRequestsPage)
+        if state == .on, store != nil {
+            return environment(settings)
+        }
+        return AnyView(settings
+            .disabled(true)
+            .interfaceOptions(from: services)
+            .environmentObject(self.settings)
+            .environmentObject(services))
+    }
+
+    package var pullRequestSettings: [String] {
+        AzureDevOpsSettings.Place.pullRequestsPage.settings.map(\.title)
     }
 
     package func statusView() -> AnyView? {

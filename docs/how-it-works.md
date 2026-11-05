@@ -27,6 +27,14 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
   stay. The links
   to pull requests people sent you are kept in memory only, and forgotten with it.
 
+Settings has a page for each source, with its settings while it's on, and one for the settings about pull
+requests, **Settings › Pull Requests** (`PullRequestsSettingsPage`), from every source that has some. Each shows
+there and nowhere else in the window, under the sources whose pull requests it works with (`PullRequestSettings`):
+Pull Request Order, with Azure DevOps' and GitHub's, then Azure DevOps' own, which its page leaves out
+(`AzureDevOpsSettings.Place`), and which its gear menu has too. They're kept where they always were, under the
+same keys. A source's settings work only while it's on: while it's off or paused, they show all the same,
+disabled, saying so, drawn from its settings alone, as a source that's off reads nothing for them.
+
 ## Permissions that macOS grants once
 
 macOS gives some permissions to the whole app, and asks for them only once. That's why BriefBar's own
@@ -1938,7 +1946,7 @@ announced. The Pipelines page lists them under **After Your Merges**, above the 
 When you turn on **Pull Requests Sent in Chats**, BriefBar reads Notification Center's database,
 `~/Library/Group Containers/group.com.apple.usernoted/db2/db`, which keeps the notifications every app
 has posted (about the latest hundred per app; for Teams, a couple of days). It's off by default, and
-from a menu, turning it on opens its Settings page, which says what it reads.
+from a menu, turning it on opens Settings › Pull Requests, which says what it reads.
 
 - It reads through `NotificationCenterDB`, the reader Teams uses, asking for every app's
   notifications rather than one app's. It opens the database with a read-only SQLite connection, for
