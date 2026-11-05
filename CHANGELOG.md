@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.16.0 - 2026-11-05
 
 - **Mark a comment thread as read, and show only the active ones.** In a pull request's details, **✓** beside a
   thread's **Waits on you**, or **Mark as Read** in its right-click menu, stops it waiting on you, and the pull request
@@ -23,6 +23,10 @@
 - **Azure DevOps' description says when it reads again.** It now says that a pull request's updates and Files are read
   again as its branch or its target moves, a build you opened as Azure DevOps merges it again, and tags whose read
   failed half a minute later, and asks you once to look at what it reads.
+- **After this update, Azure DevOps asks you once to look at what it reads and keeps, and waits until you have.** It
+  now keeps the comment threads you mark as read, with what you'd seen of them, and only in memory for a pull request
+  sent to you in a chat. It also says when it reads a pull request's details again: its updates and Files whenever its
+  branch or target moves, a build as it finishes or runs again, and its tags half a minute after a read of them failed.
 
 ## 0.15.1 - 2026-11-05
 
