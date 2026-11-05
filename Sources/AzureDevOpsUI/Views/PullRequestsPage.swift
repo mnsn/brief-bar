@@ -283,7 +283,7 @@ struct PullRequestsPage: View {
         return PRRowView(
             item: item, now: store.now, showsActions: true, showsCreated: showsCreated, isSelected: isSelected(item),
             openSource: source(item), stopWatching: watching(item), dismiss: dismissing(item), showDetails: { select(item) },
-            order: order ?? rowOrder(item), stage: stage, ordering: stage == nil ? nil : ordering
+            order: order ?? rowOrder(item), stage: stage, ordering: ordering.isOn ? ordering : nil
         ) { store.open(item) }
     }
 

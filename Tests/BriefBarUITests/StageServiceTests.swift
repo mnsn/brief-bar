@@ -53,11 +53,15 @@ private final class Clock {
         )
     }
 
-    /// What the Copilot app tells: one session, on these pull requests, in this state since then.
-    private static func tellSession(_ order: PullRequestOrder, on numbers: [Int], state: ItemState?, since: Date) {
+    /// What the Copilot app tells: one session, on these pull requests, in this state since then, and what it does or how
+    /// it ended, when the source says.
+    private static func tellSession(
+        _ order: PullRequestOrder, on numbers: [Int], state: ItemState?, since: Date, activity: StageSession.Activity? = nil
+    ) {
         order.publish(
             .copilot, sessions: [OrderSession(ref: cart, pullRequests: numbers.map(ref))],
-            items: [LinkedItem(ref: cart, label: "Cart", title: "Cart", symbol: "bolt.fill", color: .blue, state: state, date: since)]
+            items: [LinkedItem(ref: cart, label: "Cart", title: "Cart", symbol: "bolt.fill", color: .blue, state: state, date: since)],
+            sessionActivities: activity.map { [cart: $0] } ?? [:]
         )
     }
 
@@ -335,5 +339,140 @@ private final class Clock {
         Self.tell(real, [4105: StageFacts(role: .author)])
         real.tellDemo(stages: stages)
         #expect(real.stage(of: Self.ref(4105))?.mark == nil)
+    }
+
+    // MARK: From Copilot's review
+
+    /// A session that ended, then went idle, counts as finished only when its source says its last turn finished: one that
+    /// was interrupted or failed, or whose end BriefBar can't tell, says nothing of its pull request, and ends no In progress
+    /// you set.
+    @Test func anIdleSessionCountsAsFinishedOnlyWhenItsSourceSaysSo() {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        Self.tellSession(order, on: [4093], state: nil, since: clock.now, activity: .stopped)
+        #expect(Self.why(order, 4093) == "Find a reviewer")
+        Self.tellSession(order, on: [4093], state: nil, since: clock.now)
+        #expect(Self.why(order, 4093) == "Find a reviewer")
+        Self.tellSession(order, on: [4093], state: nil, since: clock.now, activity: .finished)
+        #expect(Self.why(order, 4093) == "‘Cart’ finished")
+
+        // A set In progress ends only once a session finishes after it.
+        clock.advance(seconds: 60)
+        order.setStage(.inProgress, of: Self.ref(4093))
+        clock.advance(seconds: 60)
+        Self.tellSession(order, on: [4093], state: nil, since: clock.now, activity: .stopped)
+        #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
+        Self.tellSession(order, on: [4093], state: nil, since: clock.now, activity: .finished)
+        #expect(order.stage(of: Self.ref(4093))?.isSetByYou == false)
+    }
+
+    /// The stages you set that BriefBar keeps in memory, and Undo, are the account's that set them: once another account
+    /// signs in, they go, rather than show or be saved as that account's. Before BriefBar knew any account, they stay, and
+    /// are saved with the first it learns.
+    @Test func anotherAccountForgetsTheStagesInMemoryAndUndo() {
+        let defaults = Self.defaults()
+        let order = Self.service(defaults)
+        Self.tell(order, [4113: StageFacts(role: .sentToYou), 4093: StageFacts(role: .author)])
+        #expect(order.setStage(.yourReview, of: Self.ref(4113)) == .done)
+        #expect(order.lastChange?.ref == Self.ref(4113))
+
+        Self.tell(order, [4113: StageFacts(role: .sentToYou), 4093: StageFacts(role: .author)], account: "robin@fabrikam.com")
+        #expect(order.stage(of: Self.ref(4113))?.mark == nil)
+        #expect(order.lastChange == nil)
+        Self.tell(order, [4113: StageFacts(role: .sentToYou), 4093: StageFacts(role: .author)])
+        #expect(order.stage(of: Self.ref(4113))?.mark == nil)
+
+        // Signed out between them is the same as another.
+        #expect(order.setStage(.yourReview, of: Self.ref(4113)) == .done)
+        Self.tell(order, [4113: StageFacts(role: .sentToYou)], account: nil)
+        Self.tell(order, [4113: StageFacts(role: .sentToYou)], account: "robin@fabrikam.com")
+        #expect(order.stage(of: Self.ref(4113))?.mark == nil)
+
+        // Undo of a stage saved with one account doesn't touch another's.
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        order.setStage(.inProgress, of: Self.ref(4093))
+        Self.tell(order, [4093: StageFacts(role: .author)], account: "robin@fabrikam.com")
+        order.setStage(.yourReview, of: Self.ref(4093))
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        #expect(order.lastChange == nil)
+        order.undo()
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: "robin@fabrikam.com")?.stage == .yourReview)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .inProgress)
+    }
+
+    /// Once you stop watching one that was also sent to you in a chat, the stage you set stays, in memory, and leaves the
+    /// preferences, as what you've seen of it does.
+    @Test func oneYouStopWatchingKeepsItsStageInMemoryOnly() {
+        let defaults = Self.defaults()
+        let order = Self.service(defaults)
+        Self.tell(order, [4113: StageFacts(role: .watching)])
+        order.setStage(.yourReview, of: Self.ref(4113))
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4113), for: Self.account) != nil)
+
+        Self.tell(order, [4113: StageFacts(role: .sentToYou)])
+        #expect(order.stage(of: Self.ref(4113))?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(4113))?.isSetByYou == true)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4113), for: Self.account) == nil)
+
+        // Watched again, it's kept again.
+        Self.tell(order, [4113: StageFacts(role: .watching)])
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4113), for: Self.account)?.stage == .yourReview)
+    }
+
+    /// A merged or closed pull request's stage doesn't change: nothing is kept, and Undo has nothing to undo.
+    @Test func aMergedOrClosedOnesStageCantBeSet() {
+        let order = Self.service(Self.defaults())
+        Self.tell(order, [4085: StageFacts(role: .author, state: .merged), 4086: StageFacts(role: .author, state: .closed)])
+        #expect(order.setStage(.yourReview, of: Self.ref(4085)) == .refused("It merged: its stage doesn't change now"))
+        #expect(order.setStage(.inProgress, of: Self.ref(4086)) == .refused("It's closed: its stage doesn't change now"))
+        #expect(order.lastChange == nil)
+        #expect(order.stage(of: Self.ref(4085))?.stage == .merged)
+        #expect(!order.offersStageMenu(for: Self.ref(4085)))
+        #expect(!order.offersStageMenu(for: Self.ref(4086)))
+    }
+
+    /// Once your change leaves someone else's without a stage, such as after you approved it and let BriefBar decide, Undo
+    /// stays, and its row's Stage menu with it, so you can undo it where you did it.
+    @Test func undoStaysOnceYourChangeLeavesItWithoutAStage() {
+        let order = Self.service(Self.defaults())
+        Self.tell(order, [4110: StageFacts(role: .reviewer, asksYou: "Jordan asked you")])
+        order.finishedReview(Self.ref(4110))
+        #expect(order.stage(of: Self.ref(4110))?.isOnBoard == false)
+        // You approved it in Azure DevOps: it asks nothing of you now.
+        Self.tell(order, [4110: StageFacts(role: .reviewer)])
+        #expect(order.letBriefBarDecide(Self.ref(4110)) == .done)
+        #expect(order.stage(of: Self.ref(4110)) == nil)
+        #expect(order.offersStageMenu(for: Self.ref(4110)))
+        #expect(StageAction.offered(for: order.stage(of: Self.ref(4110)), canUndo: order.lastChange?.ref == Self.ref(4110)) == [.undo])
+
+        order.undo()
+        #expect(order.stage(of: Self.ref(4110))?.stage == .teammateReview)
+        #expect(order.offersStageMenu(for: Self.ref(4110)))
+        order.dismissLastChange()
+        Self.tell(order, [4111: StageFacts(role: .reviewer)])
+        #expect(!order.offersStageMenu(for: Self.ref(4111)))
+    }
+
+    /// One its source still reads but no list has, such as one sent to you in a chat once you answered it, shows no stage,
+    /// on the Board or Up Next either, and can't be set; what you set on it stays, and still ends as it moves on.
+    @Test func oneNoListHasShowsNoStageButWhatYouSetStillEnds() {
+        let order = Self.service(Self.defaults())
+        Self.tell(order, [4113: StageFacts(role: .sentToYou, asksYou: "Dana sent it in Teams", commit: "c1")])
+        order.setStage(.inProgress, of: Self.ref(4113))
+        #expect(order.board(kinds: [.pullRequest]).refs == [Self.ref(4113)])
+
+        Self.tell(order, [4113: StageFacts(role: .sentToYou, commit: "c1", isListed: false)])
+        #expect(order.stage(of: Self.ref(4113)) == nil)
+        #expect(order.board(kinds: [.pullRequest]).refs.isEmpty)
+        #expect(order.setStage(.yourReview, of: Self.ref(4113)) == .refused("BriefBar doesn't list that pull request now"))
+        Self.tell(order, [4113: StageFacts(role: .sentToYou, asksYou: "Dana sent it in Teams", commit: "c1")])
+        #expect(order.stage(of: Self.ref(4113))?.isSetByYou == true)
+
+        // New commits while no list had it end it all the same.
+        Self.tell(order, [4113: StageFacts(role: .sentToYou, commit: "c1", isListed: false)])
+        Self.tell(order, [4113: StageFacts(role: .sentToYou, commit: "c2", isListed: false)])
+        Self.tell(order, [4113: StageFacts(role: .sentToYou, asksYou: "Dana sent it in Teams", commit: "c2")])
+        #expect(order.stage(of: Self.ref(4113))?.isSetByYou == false)
     }
 }

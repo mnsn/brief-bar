@@ -55,10 +55,13 @@ import Testing
                 projectId: "shop", projectName: "Shop", repositoryId: "web", repositoryName: "web"
             ), role: .linked, me: "robin")
         }
-        order.publish(
-            .azureDevOps, stages: PullRequestOrderFacts.stages(records, items: [], tasks: [], watched: [yours]),
-            account: "robin@contoso.com"
-        )
+        // Both listed, as one that needs you and one you watch are.
+        let stages = PullRequestOrderFacts.stages(records, items: [], tasks: [], watched: [yours]).mapValues { facts in
+            var listed = facts
+            listed.isListed = true
+            return listed
+        }
+        order.publish(.azureDevOps, stages: stages, account: "robin@contoso.com")
         let before = readable(defaults)
 
         #expect(order.setStage(.yourReview, of: sentInChat.linkRef) == .done)

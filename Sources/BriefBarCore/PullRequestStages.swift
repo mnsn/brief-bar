@@ -92,9 +92,10 @@ public struct StageSession: Equatable, Sendable {
         case working
         /// It waits for your answer, a plan's approval or a permission.
         case waitsForYou
-        /// It's done with it: it finished, or went idle since.
+        /// Its last turn finished, whether or not it went idle since.
         case finished
-        /// It stopped before it was done: it was interrupted, or failed.
+        /// It stopped before it was done: it was interrupted, failed or stopped responding; or BriefBar can't tell how it
+        /// ended. It says nothing of the pull request.
         case stopped
 
         /// Working, or waiting for you: it isn't done with the pull request.
@@ -160,12 +161,15 @@ public struct StageFacts: Equatable, Sendable {
     public var sessions: [StageSession]
     /// Since when it stands as its source shows it, for a stage that says nothing else of its time.
     public var since: Date?
+    /// Whether one of its source's lists has it now. One it still reads that no list has, such as one sent to you in a chat
+    /// once you answered it, has no stage to show, but what was set on it still ends as it moves on.
+    public var isListed: Bool
 
     public init(
         role: Role, state: PullRequestState = .open, failure: String? = nil, changesWanted: String? = nil, asksYou: String? = nil,
         isReady: Bool = false, autoComplete: Bool = false, leftAfterReviews: String? = nil, waitingFor: String? = nil,
         othersVoted: Bool = false, youWantChanges: String? = nil, votes: String = "", commit: String? = nil,
-        sessions: [StageSession] = [], since: Date? = nil
+        sessions: [StageSession] = [], since: Date? = nil, isListed: Bool = true
     ) {
         self.role = role
         self.state = state
@@ -182,6 +186,7 @@ public struct StageFacts: Equatable, Sendable {
         self.commit = commit
         self.sessions = sessions
         self.since = since
+        self.isListed = isListed
     }
 
     public var isYours: Bool { role == .author }
@@ -456,6 +461,8 @@ public enum StageAction: Hashable, Sendable {
     case move(PullRequestStage)
     case putYoursBack
     case letBriefBarDecide
+    /// Your last change, which was to this pull request.
+    case undo
 
     /// "Move to Teammate's Review".
     public var title: String {
@@ -464,7 +471,14 @@ public enum StageAction: Hashable, Sendable {
         case .move(let stage): "Move to \(stage.menuTitle)"
         case .putYoursBack: "Put Yours Back"
         case .letBriefBarDecide: "Let BriefBar Decide"
+        case .undo: "Undo"
         }
+    }
+
+    /// What's offered for a pull request with this stage, or none, and Undo last while your last change was to it: even
+    /// once it has no stage left to show, so what you did can always be undone where you did it.
+    public static func offered(for reading: StageReading?, canUndo: Bool) -> [StageAction] {
+        (reading.map(offered(for:)) ?? []) + (canUndo ? [.undo] : [])
     }
 
     /// What's offered for a pull request in this stage: Finished My Review in Your review; each stage you can set but the
@@ -544,9 +558,10 @@ public enum StageText {
     }
 
     /// What VoiceOver hears once you changed it: where it is now, and where Undo is. "!4093 is in Teammate's review now.
-    /// Undo is in its stage's menu."
-    public static func changed(_ ref: ItemRef, to reading: StageReading) -> String {
-        let place = reading.isOnBoard ? "is in \(reading.stage.title) now" : "is off your board now"
+    /// Undo is in its stage's menu." With no stage left, such as someone else's that asks nothing of you once BriefBar
+    /// decides, it's off your board.
+    public static func changed(_ ref: ItemRef, to reading: StageReading?) -> String {
+        let place = reading.map { $0.isOnBoard ? "is in \($0.stage.title) now" : "is off your board now" } ?? "is off your board now"
         return "\(ref.shortOrderLabel) \(place). Undo is in its stage's menu."
     }
 

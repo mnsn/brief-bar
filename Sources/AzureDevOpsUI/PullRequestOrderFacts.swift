@@ -163,6 +163,9 @@ final class PullRequestOrderFacts {
         for record in records {
             guard var fact = stageFacts(record, item: rows[record.id], tasks: tasksOn[record.id] ?? []) else { continue }
             if fact.role == .sentToYou, watched.contains(record.id) { fact.role = .watching }
+            // One the lists still read but don't show, such as one sent to you in a chat once you answered it, has no stage
+            // to show, but what you set on it still ends as it moves on.
+            fact.isListed = rows[record.id] != nil
             facts[record.id.linkRef] = fact
         }
         return facts
@@ -191,7 +194,7 @@ final class PullRequestOrderFacts {
         var facts = StageFacts(
             role: role, state: state, autoComplete: pr.autoComplete, othersVoted: others.contains { $0.vote != .none },
             votes: StageFacts.digest(votes: others.map(\.vote.rawValue)), commit: pr.sourceCommit,
-            sessions: tasks.prefix(3).compactMap(session),
+            sessions: tasks.compactMap(session),
             since: state.isOpen ? item?.since ?? pr.createdAt : pr.closedAt ?? item?.since
         )
         let sentInChat = item.flatMap { item in
@@ -201,11 +204,20 @@ final class PullRequestOrderFacts {
         case .author:
             let readiness = item?.readiness ?? PRReadiness(record)
             let left = readiness?.items ?? []
+            // What fails, as What's Left says it; before its details are read, or where they couldn't be, the merge the list
+            // reports on its own.
             facts.failure = left.first { $0.isRequired && $0.state == .failing }?.label
+                ?? (pr.hasConflicts ? "Merge conflicts" : pr.mergeProblem?.headline)
             facts.changesWanted = left.first { $0.kind == .changesRequested }?.label ?? Self.changesWanted(by: others)
             facts.isReady = readiness?.isReady ?? (item?.group == .ready)
-            let reviews = left.filter { $0.kind == .approvals || $0.kind == .requiredReviewers }
-            if !facts.isReady, facts.changesWanted == nil, !reviews.isEmpty, reviews.allSatisfy(\.isDone) {
+            // Its reviews: approvals, the reviewers it requires, and any other reviewer policy, by its name. With none of
+            // them, nobody's review holds it up, and what's left is its own work.
+            let reviewerPolicies = Set((record.details?.checks ?? []).filter { $0.kind == .reviewers }.map(\.name))
+            let reviews = left.filter { item in
+                item.kind == .approvals || item.kind == .requiredReviewers
+                    || (item.kind == .policy && reviewerPolicies.contains(item.label))
+            }
+            if !facts.isReady, facts.changesWanted == nil, reviews.allSatisfy(\.isDone) {
                 facts.leftAfterReviews = readiness?.left.first { $0.isRequired }?.label
             }
             // Someone, or a team, asked to review it besides you: who it waits for, as What's Left says it, the required

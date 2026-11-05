@@ -284,7 +284,7 @@ struct PullRequestRow: View {
             dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil,
             showDetails: details.hasPage() ? { details.showDetails(item) } : nil,
             opensDetails: inWindow || settings.opensPullRequestsInBriefBar, showsInWindow: !inWindow,
-            stage: stage, ordering: stage == nil ? nil : ordering
+            stage: stage, ordering: compact || !ordering.isOn ? nil : ordering
         ) {
             store.open(item)
         }

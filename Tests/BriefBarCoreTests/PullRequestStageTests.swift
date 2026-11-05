@@ -475,4 +475,15 @@ import Testing
         #expect(StageRules.latest([unknown, Self.session(.working, at: 1)])?.ref == Self.cart)
         #expect(StageRules.latest([]) == nil)
     }
+
+    /// Undo comes last among VoiceOver's actions while your last change was to it, even once it has no stage left.
+    @Test func undoIsOfferedEvenWithNoStageLeft() {
+        let set = Self.reading(StageFacts(role: .author), marks: [StageMark(stage: .teammateReview, at: t(10))])!
+        #expect(StageAction.offered(for: set, canUndo: true) == StageAction.offered(for: set) + [.undo])
+        #expect(StageAction.offered(for: set, canUndo: false) == StageAction.offered(for: set))
+        #expect(StageAction.offered(for: nil, canUndo: true) == [.undo])
+        #expect(StageAction.offered(for: nil, canUndo: false).isEmpty)
+        #expect(StageAction.undo.title == "Undo")
+        #expect(StageText.changed(Self.pr(4110), to: nil) == "!4110 is off your board now. Undo is in its stage's menu.")
+    }
 }

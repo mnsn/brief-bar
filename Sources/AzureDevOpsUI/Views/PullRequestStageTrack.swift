@@ -18,23 +18,33 @@ struct PullRequestStageTrack: View {
 
     var body: some View {
         if ordering.isOn, let reading = ordering.stage(of: item.key.linkRef) {
-            VStack(alignment: .leading, spacing: 8) {
-                if reading.isOnBoard {
-                    FlowLayout(spacing: 4, lineSpacing: 5) { steps(reading) }
-                }
-                words(reading)
-                actions(reading)
-                StageUndoLine(refs: [item.key.linkRef], order: ordering)
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(reading.stage.color.opacity(0.06)))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(reading.stage.color.opacity(0.28), lineWidth: 1)
-            )
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Stage")
+            track(reading)
+        } else if ordering.isOn, ordering.lastChange?.ref == item.key.linkRef {
+            // Your last change left it without a stage, such as someone else's that asks nothing of you once BriefBar
+            // decides: Undo stays where you made it.
+            StageUndoLine(refs: [item.key.linkRef], order: ordering)
+                .font(size: 12)
+                .padding(.vertical, 2)
         }
+    }
+
+    private func track(_ reading: StageReading) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if reading.isOnBoard {
+                FlowLayout(spacing: 4, lineSpacing: 5) { steps(reading) }
+            }
+            words(reading)
+            actions(reading)
+            StageUndoLine(refs: [item.key.linkRef], order: ordering)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(reading.stage.color.opacity(0.06)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(reading.stage.color.opacity(0.28), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Stage")
     }
 
     // MARK: Its steps
@@ -84,7 +94,8 @@ struct PullRequestStageTrack: View {
         .fixedSize()
         let spoken = "\(shown == .waits ? "Waits for another PR, " + title : shown.title), "
             + (state == .done ? "done" : state == .current ? "current" : "to come")
-        if stage.isSettable, state != .current {
+        // Merged ticks them all, and nothing moves it on.
+        if stage.isSettable, state != .current, reading.stage != .merged {
             Button {
                 StageCommand.set(stage, of: item.key.linkRef, order: ordering)
             } label: {

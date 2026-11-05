@@ -14,7 +14,7 @@ struct PullRequestMenuItems: View {
     var dismiss: (() -> Void)?
     /// Stops watching it; nil when you don't watch it.
     var stopWatching: (() -> Void)?
-    /// Pull Request Order, for Stage ▸, while it shows the pull request's stage; nil otherwise.
+    /// Pull Request Order, for Stage ▸, while it's on, for a full row; nil otherwise.
     var ordering: PullRequestOrder? = nil
 
     var body: some View {
@@ -28,11 +28,8 @@ struct PullRequestMenuItems: View {
         }
         PullRequestCopilotMenuItems(item: item)
         // A group of its own, as its order's is: what Pull Request Order says of it.
-        if let ordering, ordering.stage(of: item.key.linkRef) != nil {
-            Divider()
-            Menu("Stage") {
-                StageMenuItems(ref: item.key.linkRef, order: ordering)
-            }
+        if let ordering {
+            StageSubmenu(ref: item.key.linkRef, order: ordering)
         }
         LinkMenuItems(item.key.linkRef)
         if item.isWatched, let stopWatching {

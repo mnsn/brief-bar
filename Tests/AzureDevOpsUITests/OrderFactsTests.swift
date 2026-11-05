@@ -362,4 +362,71 @@ import Testing
         #expect(prototype.stage == .teammateReview && prototype.why == .findReviewer)
         #expect(prototype.mark?.at == store.now.addingTimeInterval(-2 * 3_600))
     }
+
+    // MARK: From Copilot's review
+
+    /// Before its details are read, or where they couldn't be, yours fails as the list says its merge does.
+    @Test func yoursFailsAsTheListSaysItsMergeDoesBeforeItsDetailsAreRead() throws {
+        #expect(try #require(Self.stageFacts(4079, merge: "conflicts")).failure == "Merge conflicts")
+        #expect(try #require(Self.stageFacts(4080, merge: "failure")).failure == "Merge failed")
+        #expect(try #require(Self.stageFacts(4081, merge: "rejectedByPolicy")).failure == "Merge rejected")
+        #expect(try #require(Self.stageFacts(4082)).failure == nil)
+    }
+
+    /// With no review that holds it up, what's left of yours is its own work: In progress, with What's Left's first item. A
+    /// reviewer policy of another name counts as a review while it's pending.
+    @Test func withNoReviewHoldingItUpWhatsLeftIsYoursToDo() throws {
+        let running = Check(name: "shop-web CI", kind: .build, state: .running)
+        let sam = [Reviewer(person: Self.sam, vote: .none)]
+
+        let notApplying = try #require(Self.stageFacts(
+            4099, reviewers: sam, checks: [running, Check(name: "Minimum number of reviewers", kind: .reviewers, state: .notApplicable)]
+        ))
+        #expect(notApplying.leftAfterReviews == "Build running")
+
+        let passed = try #require(Self.stageFacts(4100, reviewers: sam, checks: [running, Check(name: "Code owners", kind: .reviewers, state: .passed)]))
+        #expect(passed.leftAfterReviews == "Build running")
+
+        let pending = try #require(Self.stageFacts(4101, reviewers: sam, checks: [running, Check(name: "Code owners", kind: .reviewers, state: .pending)]))
+        #expect(pending.leftAfterReviews == nil)
+        #expect(pending.waitingFor == "Code owners")
+
+        // Before its details are read, nothing's said to be left.
+        #expect(try #require(Self.stageFacts(4102, reviewers: sam)).leftAfterReviews == nil)
+    }
+
+    /// Every task sent to Copilot on it counts, not only the newest: an older one still at work keeps it in progress.
+    @Test func everyTaskOnItCountsNotOnlyTheNewest() throws {
+        let started = Date(timeIntervalSince1970: 1_791_000_000)
+        let record = PRRecord(pullRequest: Self.pullRequest(4088, from: "robin/estimates"), role: .author, me: Self.me.id)
+        let tasks = (0..<4).map { index in
+            CopilotTaskEntry(
+                id: "3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0\(index)", workItem: nil,
+                onPullRequest: PullRequestReference(
+                    organization: "Contoso", project: "Storefront", repository: "shop-web", id: 4088, sourceBranch: "robin/estimates"
+                ),
+                action: .fixBuild, options: CopilotModel.standard, startedAt: started.addingTimeInterval(Double(-index * 60)),
+                status: RunStatus(phase: index == 3 ? .working : .finished, since: started), pullRequest: nil, run: nil
+            )
+        }
+        let facts = try #require(PullRequestOrderFacts.stages([record], items: [], tasks: tasks)[record.id.linkRef])
+        #expect(facts.sessions.count == 4)
+        #expect(facts.sessions.contains { $0.activity == .working })
+        let reading = StageRules.reading(facts: facts, sessions: facts.sessions, marks: [], order: .free)
+        #expect(reading?.stage == .inProgress)
+    }
+
+    /// Only one a list shows is listed: one the lists still read but don't show, such as one sent to you in a chat once you
+    /// answered it, isn't.
+    @Test func onlyOneAListShowsIsListed() throws {
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let shown = PRRecord(pullRequest: Self.pullRequest(4093, from: "robin/dark-mode"), role: .author, me: Self.me.id)
+        let read = PRRecord(pullRequest: Self.pullRequest(4113, from: "jordan/checkout", author: Self.sam), role: .linked, me: Self.me.id)
+        let row = try #require(PRClassifier.snapshot(for: shown, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now))
+        #expect(PRClassifier.snapshot(for: read, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now) == nil)
+
+        let facts = PullRequestOrderFacts.stages([shown, read], items: [row], tasks: [])
+        #expect(facts[shown.id.linkRef]?.isListed == true)
+        #expect(facts[read.id.linkRef]?.isListed == false)
+    }
 }

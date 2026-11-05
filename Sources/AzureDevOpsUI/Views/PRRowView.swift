@@ -37,7 +37,8 @@ struct PRRowView: View {
     /// Its stage, on a line of its own under its title, while Pull Request Order is on: nil on a row of one line, such as a
     /// widget's, which keeps one height. A value, so that the row draws again as it changes.
     var stage: StageReading? = nil
-    /// Pull Request Order, for its stage's menu and VoiceOver's actions, and the names of the sessions its stage names.
+    /// Pull Request Order, while it's on, for a full row: for its stage's menu and VoiceOver's actions, and Undo of your last
+    /// change to it, which stay even once it has no stage left to show; and the names of the sessions its stage names.
     var ordering: PullRequestOrder? = nil
     /// Opens it in Azure DevOps.
     var action: () -> Void
@@ -77,7 +78,7 @@ struct PRRowView: View {
                 .accessibilityActions {
                     SummarizeMenuItems(item.key.linkRef, divided: false)
                     if let open = order?.open { Button("Show Its Mission", action: open) }
-                    if stage != nil, let ordering { StageAccessibilityActions(ref: item.key.linkRef, order: ordering) }
+                    if let ordering { StageAccessibilityActions(ref: item.key.linkRef, order: ordering) }
                 }
                 // Its stage's menu and Finished My Review, over the row's button, which would take their clicks.
                 .stageControls(ref: item.key.linkRef, order: stage == nil ? nil : ordering, now: now)
@@ -199,7 +200,7 @@ struct PRRowView: View {
 
     private var additionalMenuItems: some View {
         PullRequestMenuItems(
-            item: item, openSource: openSource, dismiss: dismiss, stopWatching: stopWatching, ordering: stage == nil ? nil : ordering
+            item: item, openSource: openSource, dismiss: dismiss, stopWatching: stopWatching, ordering: ordering
         )
     }
 
