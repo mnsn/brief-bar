@@ -13,6 +13,19 @@ func makeTemporaryDirectory() throws -> URL {
     return URL(fileURLWithPath: String(cString: real), isDirectory: true)
 }
 
+/// Threads of the tests' own, beside Swift's cooperative pool, which `make test` gives one thread for every test at
+/// once: stand-ins and fixtures, which look at files, write them and make repositories, would hold up every other test
+/// there. Async code under test stays in the pool, where a blocking wait hangs as it would on a runner with few cores.
+final class TestThreads: TaskExecutor {
+    static let shared = TestThreads()
+    private let queue = DispatchQueue(label: "BriefBarTests.TestThreads", attributes: .concurrent)
+
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        queue.async { job.runSynchronously(on: self.asUnownedTaskExecutor()) }
+    }
+}
+
 struct TestError: Error, CustomStringConvertible {
     var description: String
 

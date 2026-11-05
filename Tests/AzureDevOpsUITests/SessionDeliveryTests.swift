@@ -38,9 +38,10 @@ private final class ExtensionStandIn: Sendable {
     }
 
     /// Takes its session's requests until `stop()`: what `answer` returns goes into each one's result, or none when nil.
-    /// Started again, it answers as it's told then, and stops looking as it was told before.
+    /// Started again, it answers as it's told then, and stops looking as it was told before. It looks on `TestThreads`,
+    /// beside the tests, as an extension in another process would.
     func start(after delay: Duration = .zero, answer: @escaping @Sendable (_ kind: String) -> [String: Any]? = { _ in ["ok": true] }) {
-        let task = Task { [self] in
+        let task = Task(executorPreference: TestThreads.shared) { [self] in
             while !Task.isCancelled {
                 let requests = outbox.appendingPathComponent("requests")
                 for name in (try? FileManager.default.contentsOfDirectory(atPath: requests.path)) ?? []

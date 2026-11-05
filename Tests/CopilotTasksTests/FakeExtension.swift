@@ -60,9 +60,10 @@ final class FakeExtension: Sendable {
     }
 
     /// Starts taking its session's requests, looking every `lookEvery`, until `stop()`. Started again, it answers as it's
-    /// told then, and stops looking as it was told before, which would otherwise go on until the tests end.
+    /// told then, and stops looking as it was told before, which would otherwise go on until the tests end. It looks, and
+    /// answers, on `TestThreads`, beside the tests, as an extension in another process would.
     func start(answer: @escaping @Sendable (Received) -> Answer = { _ in .done() }) {
-        let task = Task { [self] in
+        let task = Task(executorPreference: TestThreads.shared) { [self] in
             while !Task.isCancelled {
                 takeRequests(answer: answer)
                 try? await Task.sleep(for: Self.lookEvery)
@@ -97,7 +98,7 @@ final class FakeExtension: Sendable {
             }
             state.withLock { $0.received.append(request) }
             let response = answer(request)
-            Task { [self] in
+            Task(executorPreference: TestThreads.shared) { [self] in
                 await respond(response, to: request, requestId: requestId)
                 try? FileManager.default.removeItem(at: claimed)
             }

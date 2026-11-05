@@ -8,6 +8,19 @@ import Testing
 /// whole run takes. A wait that's answered still returns as soon as it is: only a test that fails takes this long.
 let waitLimit: Duration = .seconds(60)
 
+/// Threads of the tests' own, beside Swift's cooperative pool, which `make test` gives one thread for every test at
+/// once: a stand-in that looks at an outbox every 25 ms would hold up every other test there. Async code under test
+/// stays in the pool, where a blocking wait hangs as it would on a runner with few cores.
+final class TestThreads: TaskExecutor {
+    static let shared = TestThreads()
+    private let queue = DispatchQueue(label: "BriefBarTests.TestThreads", attributes: .concurrent)
+
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        queue.async { job.runSynchronously(on: self.asUnownedTaskExecutor()) }
+    }
+}
+
 extension Summarizer {
     /// A summarizer that never asks Apple Intelligence's on-device model, for every store a test makes, itself or through
     /// a source. Where the model is on, asking it holds a thread of Swift's pool for seconds, and with it every test that
