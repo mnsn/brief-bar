@@ -87,6 +87,55 @@ import Testing
         #expect(QuotedText.fenced("a\\b\u{200B}") == ["```", "a\\b\\u{200B}", "```"])
     }
 
+    /// What a model reads as "\u{", with a character nobody sees in it, such as a combining grapheme joiner after the brace,
+    /// a joiner or a variation selector, or in its fullwidth forms, counts as written: what's unseen is written out the
+    /// other way, so the two still look different.
+    @Test func whatReadsAsAnEscapeCountsAsOne() {
+        for spelled in ["\\u{\u{34F}200B}", "\\\u{34F}u{200B}", "\\u\u{FE0F}{200B}", "\\u{\u{200D}200B}", "＼ｕ｛200B}"] {
+            let text = "let a = \"\(spelled)\"\nlet b = \"\u{200B}\""
+            let scalars = spelled.unicodeScalars.map(\.value)
+            #expect(QuotedText.fenced(text) == ["```", "let a = \"\(spelled)\"", "let b = \"⟦U+200B⟧\"", "```"], "\(scalars)")
+            #expect(QuotedText.writtenOut(in: text) == ["⟦U+200B⟧"], "\(scalars)")
+        }
+        // And so does what reads as one of its openings: the next has a number none of them has.
+        let base = "\\u{41} \u{200B} "
+        for opening in ["⟦U+", "⟦\u{200D}U+", "⟦U\u{34F}+", "⟦Ｕ+"] {
+            #expect(QuotedText.writtenOut(in: base + opening) == ["⟦1U+200B⟧"], "\(opening.unicodeScalars.map(\.value))")
+        }
+        for opening in ["⟦1U+", "⟦１U+", "⟦1\u{FE0F}U+", "⟦\u{34F}1U+"] {
+            #expect(QuotedText.writtenOut(in: base + "⟦U+ " + opening) == ["⟦2U+200B⟧"], "\(opening.unicodeScalars.map(\.value))")
+        }
+    }
+
+    /// However many openings a text spells out, the number a fence writes out with is found in one pass, the first none of
+    /// them has: thousands of them take no longer than a few. (Asking the text whether it has each number in turn took
+    /// seconds a call.)
+    @Test(.timeLimit(.minutes(1)))
+    func findsAFreeNumberInOnePass() {
+        let count = 8_000
+        let text = "\\u{41} " + (1...count).reversed().map { "⟦\($0)U+" }.joined() + "⟦U+\n\u{200B}"
+        let clock = ContinuousClock()
+        let started = clock.now
+        let fenced = QuotedText.fenced(text)
+        let written = QuotedText.writtenOut(in: text)
+        let took = started.duration(to: clock.now)
+        #expect(fenced.dropFirst(2).first == "⟦\(count + 1)U+200B⟧")
+        #expect(written == ["⟦\(count + 1)U+200B⟧"])
+        #expect(took < .seconds(5), "\(took)")
+        // With a number missing, that one, whatever else has digits: a number with a leading zero is no number of its.
+        #expect(QuotedText.writtenOut(in: "\\u{41} ⟦U+ ⟦1U+ ⟦3U+ ⟦01U+ ⟦2x ⟦ \u{200B}") == ["⟦2U+200B⟧"])
+    }
+
+    /// A carriage return on its own, such as one before "\r\n", is written out in its line, and the line break after it is
+    /// one: what a fence writes out is what it says it writes out.
+    @Test func aStrayCarriageReturnIsWrittenOutAndSaidToBe() {
+        let text = "a\r\r\nb\r\n\rc"
+        #expect(QuotedText.fenced(text) == ["```", "a\\u{D}", "b", "\\u{D}c", "```"])
+        #expect(QuotedText.writtenOut(in: text) == ["\\u{D}"])
+        let shown = QuotedText.fenced(text).joined(separator: "\n").matches(of: /\\u\{[0-9A-F]+\}/).map { String($0.output) }
+        #expect(Set(shown) == Set(QuotedText.writtenOut(in: text)))
+    }
+
     /// What `fenced` writes out as escapes, each once, in order: not a tab or a line break, which it keeps.
     @Test func saysWhatAFenceWritesOut() {
         #expect(QuotedText.writtenOut(in: "a\u{200B}b\u{AD}c\u{200B}\td\r\ne\rf") == ["\\u{200B}", "\\u{AD}", "\\u{D}"])

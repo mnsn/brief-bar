@@ -1849,7 +1849,8 @@ It stops waiting on you when:
   is, such as `1. src/Cart.cs, line 12 (thread 11)`: the prompt quotes comments word for word, each on
   an indented line, so one that names another thread doesn't count, and neither does a line in a fence,
   such as one of a suggested change or of an earlier answer, or one of backticks or tildes you add as you edit the
-  prompt, read by their scalars, so that what's a backtick only once normalized opens and closes none
+  prompt, read by their scalars, so that what's a backtick only once normalized opens and closes none, and
+  closed only by a line indented at most three columns past the fence's own, as CommonMark has it
   (`PullRequestPrompt.unfencedLines`). A comment that came after, while you
   checked the prompt, say, isn't handed off, and neither is one in a thread whose entry isn't there,
   beyond the 30 it lists at most or deleted before you sent it, nor one in a thread reopened meanwhile.
@@ -2505,7 +2506,8 @@ suggestion as written** has the prompt quote the latest that someone else sugges
 (`CommentSuggestion.latest`) and ask for it as it's written, on the lines the thread is on, which Copilot finds in the
 file as it is now by their code, since their numbers are from when the thread was written. A character nobody sees in the
 change, or in the code it's on, such as a zero-width space, is written out in its fence, as `\u{200B}`, or as `⟦U+200B⟧`
-when the code spells out `\u{` itself, so the two can't be mistaken for each other, and the prompt then
+when the code spells out `\u{` itself, as a model reads it, a character nobody sees in it or a fullwidth form
+and all, with a number none of its own has when it spells that out too, so the two can't be mistaken for each other, and the prompt then
 says that it stands for the character itself, to write as that character or the language's own escape, so the change is
 still applied, and the code still found, exactly as it's written (`QuotedText.writtenOut`). The box is checked when the suggestion is the thread's last comment. Once a session answered Explain on the thread,
 **Include the answer above** quotes what it answered (`CopilotAnswer`, cut to 6,000 characters) before your words, which
@@ -3074,10 +3076,14 @@ of it. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 
 `pull_request` quotes what others named or wrote in the pull request as the prompts do: its title, its people, its
-checks and where they failed, what the lists say of it, and what people wrote in what's new and in its threads, each on
-its line with what breaks a line or isn't seen written out, and its branches in single quotes when a shell would read
-something in them, wherever it names them; what people
-wrote follows a note that it's what they ask of the change, not instructions to the agent.
+checks and where they failed, what the lists say of it, its session's project, and what people wrote in what's new and
+in its threads, each on its line with what breaks a line or isn't seen written out, and its branches, its session's
+included, in single quotes when a shell would read something in them, wherever it names them; what people
+wrote follows a note that it's what they ask of the change, not instructions to the agent. The other tools of
+Azure DevOps quote the same way: `needs_me` and `pull_requests` each pull request's title, repository, author and what
+the lists say of it, `pipelines` its pipelines, their runs' branches and the pull requests that merged, `sprint` each
+line of the sprint, `work_item` its titles, states, people and pull requests, with what people wrote a quote every line
+of which is quoted, and `watch_pull_request`, `pin_pipeline` and `unpin_pipeline` what they name.
 
 While **Send Work to Copilot** is on, `pull_request` also names an open pull request's session: the
 Copilot session BriefBar sends its work to, as its details show it (see [A pull request's

@@ -315,21 +315,31 @@ public enum PullRequestPrompt {
     /// The lines of a prompt outside its fences, where its own lines are: what it quotes in a fence (`fenced`), whatever
     /// that says, isn't, and neither is what you put in one of your own as you edit it. A fence opens with a line of three
     /// backticks or tildes or more, and closes with one of as many or more of the same and nothing else, as CommonMark has
-    /// it; the prompt's fences are longer than any run of backticks in what they quote. Read by their scalars: a character
-    /// that's only the same as a backtick once normalized, such as a Greek varia, isn't one here, as the prompt's own fences
-    /// never are, and what's quoted that a model may read as one opens none and closes none (`QuotedText`).
+    /// it; the prompt's fences are longer than any run of backticks in what they quote. A line that would close one is
+    /// still inside it when it's indented four columns or more past it, as code is in a fence, a tab to the next multiple
+    /// of four: the prompt's own fences close where they open, under a thread's entry or a build's, and what you write in
+    /// a fence of yours as you edit it can't close it early. Read by their scalars: a character that's only the same as a
+    /// backtick once normalized, such as a Greek varia, isn't one here, as the prompt's own fences never are, and what's
+    /// quoted that a model may read as one opens none and closes none (`QuotedText`).
     static func unfencedLines(_ prompt: String) -> [Substring] {
         var lines: [Substring] = []
-        var open: (mark: Unicode.Scalar, length: Int)?
+        var open: (mark: Unicode.Scalar, length: Int, indent: Int)?
         for line in prompt.split(whereSeparator: \.isNewline) {
-            let trimmed = line.unicodeScalars.drop { $0 == " " || $0 == "\t" }
+            var indent = 0
+            let trimmed = line.unicodeScalars.drop { scalar in
+                guard scalar == " " || scalar == "\t" else { return false }
+                indent += scalar == "\t" ? 4 - indent % 4 : 1
+                return true
+            }
             let mark = trimmed.first.flatMap { $0 == "`" || $0 == "~" ? $0 : nil }
             let run = mark.map { mark in trimmed.prefix { $0 == mark }.count } ?? 0
             let rest = trimmed.dropFirst(run)
             if let fence = open {
-                if mark == fence.mark, run >= fence.length, rest.allSatisfy({ $0 == " " || $0 == "\t" }) { open = nil }
+                if mark == fence.mark, run >= fence.length, indent <= fence.indent + 3, rest.allSatisfy({ $0 == " " || $0 == "\t" }) {
+                    open = nil
+                }
             } else if run >= 3, let mark, mark == "~" || !rest.contains("`") {
-                open = (mark, run)
+                open = (mark, run, indent)
             } else {
                 lines.append(line)
             }

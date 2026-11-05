@@ -41,18 +41,18 @@ public enum QuotedText {
     /// escapes that can be told from what was written (`writingOut`), so that all of it stays what was said, whatever it
     /// says, and can be had back as it was. Tabs stay, which code has.
     public static func fenced(_ text: String, indent: String = "") -> [String] {
-        let text = text.replacingOccurrences(of: "\r\n", with: "\n")
-        let writeOut = writingOut(for: text)
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { (line: Substring) -> String in
-            var kept = ""
-            for scalar in line.unicodeScalars {
+        let scalars = lines(of: text)
+        let writeOut = writingOut(for: scalars)
+        let lines = scalars.map { (line: [Unicode.Scalar]) -> String in
+            var kept = String.UnicodeScalarView()
+            for scalar in line {
                 if scalar != "\t", isControl(scalar) {
-                    kept += writeOut(scalar)
+                    kept.append(contentsOf: writeOut(scalar).unicodeScalars)
                 } else {
-                    kept.unicodeScalars.append(scalar)
+                    kept.append(scalar)
                 }
             }
-            return kept
+            return String(kept)
         }
         let fence = indent + fence(for: lines.joined(separator: "\n"))
         var fenced = [fence]
@@ -81,31 +81,65 @@ public enum QuotedText {
     }
 
     /// The characters `fenced` writes out of `text` as escapes, each once, in the order they first come, as it writes them:
-    /// "\u{200B}", or "⟦U+200B⟧" in text that spells out the first itself (`writingOut`). Empty when it writes none.
+    /// "\u{200B}", or "⟦U+200B⟧" in text that spells out the first itself (`writingOut`). Empty when it writes none. Read
+    /// from the same lines `fenced` writes (`lines(of:)`).
     public static func writtenOut(in text: String) -> [String] {
-        let text = text.replacingOccurrences(of: "\r\n", with: "\n")
-        let writeOut = writingOut(for: text)
+        let lines = lines(of: text)
+        let writeOut = writingOut(for: lines)
         var seen: Set<Unicode.Scalar> = []
         var written: [String] = []
-        for scalar in text.unicodeScalars where scalar != "\t" && scalar != "\n" && isControl(scalar) && seen.insert(scalar).inserted {
+        for scalar in lines.joined() where scalar != "\t" && isControl(scalar) && seen.insert(scalar).inserted {
             written.append(writeOut(scalar))
         }
         return written
     }
 
-    /// How `fenced` writes out a character nobody sees in `text`, so that what it wrote out can always be told from what
-    /// was written, and the text had back from it: "\u{200B}", unless `text` has "\u{" in it itself, as code that writes a
-    /// character that way does; then "⟦U+200B⟧", or, when that's in it too, "⟦1U+200B⟧", "⟦2U+200B⟧" and on, with a
-    /// number nothing in it has.
-    private static func writingOut(for text: String) -> (Unicode.Scalar) -> String {
-        guard text.contains("\\u{") else { return escaped }
-        var opening = "⟦U+"
-        var number = 0
-        while text.contains(opening) {
-            number += 1
-            opening = "⟦\(number)U+"
+    /// A text's lines, as a fence quotes them, by their scalars: split at each line feed, with a carriage return right
+    /// before one taken as part of the break. Any other carriage return, such as a stray one before "\r\n", stays in its
+    /// line, to be written out.
+    private static func lines(of text: String) -> [[Unicode.Scalar]] {
+        var lines: [[Unicode.Scalar]] = [[]]
+        for scalar in text.unicodeScalars {
+            if scalar == "\n" {
+                if lines[lines.count - 1].last == "\r" { lines[lines.count - 1].removeLast() }
+                lines.append([])
+            } else {
+                lines[lines.count - 1].append(scalar)
+            }
         }
+        return lines
+    }
+
+    /// How `fenced` writes out a character nobody sees in its lines, so that what it wrote out can always be told from
+    /// what was written, and the text had back from it: "\u{200B}", unless a line spells out "\u{" itself, as code that
+    /// writes a character that way does; then "⟦U+200B⟧", or, when a line spells that out too, "⟦1U+200B⟧", "⟦2U+200B⟧"
+    /// and on, with the first number none has. What a line spells out is what a model reads of it (`asRead`): without what
+    /// nobody sees, such as a combining grapheme joiner after the brace, and with what becomes a backslash, a digit or a
+    /// brace once normalized, such as their fullwidth forms, as that. The numbers are read in one pass, whatever it says.
+    private static func writingOut(for lines: [[Unicode.Scalar]]) -> (Unicode.Scalar) -> String {
+        let read = lines.map { $0.filter { !hasNoWidth($0) && !isControl($0) }.map(asRead) }
+        guard read.contains(where: { spells(["\\", "u", "{"], in: $0) }) else { return escaped }
+        // The numbers of the openings the lines spell out, each as its digits: "" for none.
+        var taken: Set<String> = []
+        for line in read {
+            for open in line.indices where line[open] == "⟦" {
+                var end = open + 1
+                while end < line.count, ("0"..."9").contains(line[end]) { end += 1 }
+                if line[end...].starts(with: ["U", "+"]) {
+                    taken.insert(String(String.UnicodeScalarView(line[(open + 1)..<end])))
+                }
+            }
+        }
+        var number = 0
+        while taken.contains(number == 0 ? "" : String(number)) { number += 1 }
+        let opening = "⟦" + (number == 0 ? "" : String(number)) + "U+"
         return { opening + String($0.value, radix: 16, uppercase: true) + "⟧" }
+    }
+
+    /// Whether `line` has `word` in it, scalar for scalar.
+    private static func spells(_ word: [Unicode.Scalar], in line: [Unicode.Scalar]) -> Bool {
+        guard line.count >= word.count else { return false }
+        return (0...(line.count - word.count)).contains { line[$0..<($0 + word.count)].elementsEqual(word) }
     }
 
     /// A word for a shell, as a command in a prompt holds it, such as a branch's name: as it is when it's only ASCII
@@ -152,25 +186,22 @@ public enum QuotedText {
         return String(kept)
     }
 
-    /// The fence character a character is, or becomes once text is normalized, as a model may read it: a backtick for a
-    /// backtick, a Greek varia (U+1FEF, which is one canonically) or a fullwidth grave accent (U+FF40); a tilde for a tilde
-    /// or a fullwidth one (U+FF5E). Nil for any other. Only a symbol or punctuation that changes once normalized is looked
-    /// up, so most text costs nothing.
+    /// The fence character a character is, or becomes once text is normalized, as a model may read it (`asRead`): a
+    /// backtick for a backtick, a Greek varia (U+1FEF, which is one canonically) or a fullwidth grave accent (U+FF40); a
+    /// tilde for a tilde or a fullwidth one (U+FF5E). Nil for any other.
     static func fenceMark(_ scalar: Unicode.Scalar) -> Unicode.Scalar? {
-        if scalar == "`" || scalar == "~" { return scalar }
-        guard !scalar.isASCII, scalar.properties.changesWhenNFKCCaseFolded else { return nil }
-        switch scalar.properties.generalCategory {
-        case .modifierSymbol, .mathSymbol, .otherSymbol, .currencySymbol, .otherPunctuation, .dashPunctuation,
-             .connectorPunctuation, .openPunctuation, .closePunctuation, .initialPunctuation, .finalPunctuation:
-            break
-        default:
-            return nil
-        }
-        switch String(scalar).precomposedStringWithCompatibilityMapping {
-        case "`": return "`"
-        case "~": return "~"
-        default: return nil
-        }
+        let read = asRead(scalar)
+        return read == "`" || read == "~" ? read : nil
+    }
+
+    /// A character as a model may read it: one that becomes a single ASCII character once text is normalized, such as a
+    /// fullwidth digit or brace, or a Greek varia, a backtick canonically, as that character; any other as it is. Only a
+    /// character outside ASCII that changes once normalized is looked up, so most text costs nothing.
+    static func asRead(_ scalar: Unicode.Scalar) -> Unicode.Scalar {
+        guard !scalar.isASCII, scalar.properties.changesWhenNFKCCaseFolded else { return scalar }
+        let normalized = String(scalar).precomposedStringWithCompatibilityMapping.unicodeScalars
+        guard normalized.count == 1, let only = normalized.first, only.isASCII else { return scalar }
+        return only
     }
 
     /// A character written out as an escape: "\u{202E}".

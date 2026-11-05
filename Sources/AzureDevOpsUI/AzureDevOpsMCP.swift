@@ -711,7 +711,9 @@ struct AzureDevOpsAgent: Sendable {
         for group in groups {
             let items = read.items.filter { $0.group == group }
             guard !items.isEmpty else { continue }
-            sections.append("\(group.title) (\(items.count)):\n" + items.map { AgentText.line($0, now: now) }.joined(separator: "\n"))
+            sections.append("\(group.title) (\(items.count)):\n" + items.map { item in
+                AgentText.line(item, record: read.records.first { $0.id == item.key }, now: now)
+            }.joined(separator: "\n"))
         }
         let pinned = await reader.pinnedStatuses(now: now)
         if pinned.statuses.isEmpty, let problem = pinned.problem {
@@ -720,7 +722,7 @@ struct AzureDevOpsAgent: Sendable {
         let failed = pinned.statuses.filter { $0.latest?.status == .failed }
         if !failed.isEmpty {
             sections.append("Pinned pipelines that failed (\(failed.count)):\n" + failed.map { status in
-                "- \(status.briefSentence)" + (status.latest.map { "\n  \($0.webURL.absoluteString)" } ?? "")
+                "- \(QuotedText.inLine(status.briefSentence))" + (status.latest.map { "\n  \($0.webURL.absoluteString)" } ?? "")
             }.joined(separator: "\n"))
         }
         // Nil only when nothing needs you and everything could be read.
@@ -745,7 +747,7 @@ struct AzureDevOpsAgent: Sendable {
             let items = read.items.filter { $0.group == group }
             guard !items.isEmpty || only != nil else { continue }
             lines.append("\n## \(group.title) (\(items.count))")
-            lines += items.isEmpty ? ["None."] : items.map { AgentText.line($0, now: now) }
+            lines += items.isEmpty ? ["None."] : items.map { item in AgentText.line(item, record: read.records.first { $0.id == item.key }, now: now) }
         }
         return lines.joined(separator: "\n")
     }
@@ -804,11 +806,7 @@ struct AzureDevOpsAgent: Sendable {
         if !merges.isEmpty {
             lines.append("\n## After your merges (\(merges.count))")
             for merge in merges {
-                lines.append("- !\(merge.pullRequest.number) “\(merge.title)” into \(merge.targetBranch), merged \(AgentText.ago(merge.mergedAt, now: now)):")
-                lines.append("  \(merge.url.absoluteString)")
-                for status in merge.pipelines {
-                    lines += AgentText.pipeline(status, now: now).map { "  \($0)" }
-                }
+                lines += AgentText.merged(merge, now: now)
             }
         }
         lines.append("\n\(AgentText.legend)")
@@ -818,10 +816,7 @@ struct AzureDevOpsAgent: Sendable {
     func sprint(mine: Bool, now: Date = Date()) async throws -> String {
         let (board, problem) = await reader.sprint(now: now)
         guard let board else { throw MCPToolError(problem ?? "None of your teams has a sprint going on today.") }
-        var lines = WorkCLI.boardLines(mine ? board.justMine() : board, whole: board, now: now)
-        if let problem { lines.insert("BriefBar couldn't read everything: \(problem)\n", at: 0) }
-        lines.append("\n✓ done, ◐ in progress, ○ to do. (you) marks your own tasks.")
-        return lines.joined(separator: "\n")
+        return AgentText.sprint(board, mine: mine, problem: problem, now: now)
     }
 
     func workItem(_ reference: JSONValue?, now: Date = Date()) async throws -> String {
@@ -892,7 +887,7 @@ struct AzureDevOpsAgent: Sendable {
         let read = await reader.pullRequests(now: now)
         if let record = read.records.first(where: { $0.id == found.key }) {
             return """
-                BriefBar watches !\(found.number) “\(record.pullRequest.title)” in \(found.organization) now, and lists it until \
+                BriefBar watches !\(found.number) “\(QuotedText.oneLine(record.pullRequest.title))” in \(found.organization) now, and lists it until \
                 it closes or you stop watching it.
                 """
         }
@@ -923,8 +918,8 @@ struct AzureDevOpsAgent: Sendable {
         } catch {
             throw MCPToolError("Couldn't read that pipeline: \(AzureDevOpsReader.describe(error))")
         }
-        guard await reader.pin(pipeline) else { return "“\(pipeline.name)” is pinned already." }
-        return "Pinned “\(pipeline.name)”\(pipeline.branch.map { ", showing runs of \($0)" } ?? "")."
+        guard await reader.pin(pipeline) else { return "“\(QuotedText.oneLine(pipeline.name))” is pinned already." }
+        return "Pinned “\(QuotedText.oneLine(pipeline.name))”\(pipeline.branch.map { ", showing runs of \(AgentText.runBranch($0))" } ?? "")."
     }
 
     func unpin(_ name: JSONValue?) async throws -> String {
@@ -941,7 +936,7 @@ struct AzureDevOpsAgent: Sendable {
         guard let pipeline = matches.first else { throw MCPToolError("No pinned pipeline is “\(text)”.") }
         guard matches.count == 1 else { throw MCPToolError("More than one pinned pipeline is “\(text)”: give its link.") }
         await reader.unpin(pipeline)
-        return "Unpinned “\(pipeline.name)”."
+        return "Unpinned “\(QuotedText.oneLine(pipeline.name))”."
     }
 
     // MARK: Pull requests named
@@ -1036,14 +1031,18 @@ enum AgentText {
     }
 
     /// A pull request in a list: what it is, why it's there and since when, and its link. In Needs You, whether you've
-    /// seen what's there.
-    static func line(_ item: PRSnapshot, now: Date) -> String {
-        var text = "- !\(item.key.number) “\(item.title)” in \(item.repository) "
-            + "(\(whose(role: item.role, author: item.author, isWatched: item.isWatched, isDraft: item.isDraft))): \(item.headline)"
+    /// seen what's there. What others named or wrote in it stays on its line (`QuotedText`), and the branches its detail
+    /// names are written as a command may hold them, given its record (`statusDetail`).
+    static func line(_ item: PRSnapshot, record: PRRecord? = nil, now: Date) -> String {
+        let whose = whose(role: item.role, author: QuotedText.oneLine(item.author), isWatched: item.isWatched, isDraft: item.isDraft)
+        var text = "- !\(item.key.number) “\(QuotedText.oneLine(item.title))” in \(QuotedText.oneLine(item.repository)) "
+            + "(\(whose)): \(QuotedText.inLine(item.headline))"
         if let since = item.since { text += ", \(ago(since, now: now))" }
         if item.group == .needsYou && !item.hasNews { text += " (seen, still waiting on you)" }
         // Its detail says who wrote it, when that's all it says, as whose it is does.
-        if let detail = item.detail, !detail.isEmpty, detail != "By \(item.author)" { text += ". \(detail)" }
+        if let detail = item.detail, !detail.isEmpty, detail != "By \(item.author)" {
+            text += ". " + (record.map { statusDetail(detail, of: $0.pullRequest) } ?? QuotedText.oneLine(detail))
+        }
         return text + "\n  \(item.url.absoluteString)"
     }
 
@@ -1209,9 +1208,20 @@ enum AgentText {
     }
 
     /// Where one of the Copilot app's sessions works, whether it runs a turn now, and when it was last active.
+    /// Its project and branch, as the window has them (`SessionChoices.place(of:)`), are written apart: the project on its line
+    /// (`QuotedText.oneLine`), the branch as a command may hold it (`QuotedText.commandWord`).
     private static func appFacts(_ choice: SessionChoice, now: Date) -> [String] {
         var facts: [String] = []
-        if let place = choice.place { facts.append(QuotedText.inLine(place)) }
+        if let session = choice.appSession {
+            if session.isChat {
+                facts.append("a chat")
+            } else {
+                facts += [session.projectName.map(QuotedText.oneLine), session.branch.map(QuotedText.commandWord)]
+                    .compactMap { $0 }.filter { !$0.isEmpty }
+            }
+        } else if let place = choice.place {
+            facts.append(QuotedText.oneLine(place))
+        }
         if choice.appSession?.isRunning == true { facts.append("working now") }
         let active = ago(choice.lastActive, now: now)
         if !active.isEmpty { facts.append("active \(active)") }
@@ -1262,13 +1272,43 @@ enum AgentText {
     }
 
     /// A pipeline as `--pipelines` prints it, as a list item, with its latest run's link: each of its lines one line, whatever
-    /// its pipeline, stages, branch or errors are named (`QuotedText.inLine`).
+    /// its pipeline, stages, branch or errors are named (`QuotedText.inLine`), and its branches as a command may hold them
+    /// (`runBranch`).
     static func pipeline(_ status: PipelineStatus, now: Date) -> [String] {
-        var lines = WorkCLI.pipelineLines(status, now: now).map(QuotedText.inLine)
+        var lines = WorkCLI.pipelineLines(status, now: now, naming: runBranch).map(QuotedText.inLine)
         guard !lines.isEmpty else { return [] }
         lines[0] = "- " + lines[0]
         if let run = status.latest { lines.append("  \(run.webURL.absoluteString)") }
         return lines
+    }
+
+    /// A pull request that merged, with the pipelines that ran after it, for `pipelines`: its title on its line
+    /// (`QuotedText.oneLine`), and its target branch as a command may hold it (`QuotedText.commandWord`).
+    static func merged(_ merge: MergePipelines, now: Date) -> [String] {
+        var lines = [
+            "- !\(merge.pullRequest.number) “\(QuotedText.oneLine(merge.title))” into \(QuotedText.commandWord(merge.targetBranch)), "
+                + "merged \(ago(merge.mergedAt, now: now)):",
+            "  \(merge.url.absoluteString)",
+        ]
+        for status in merge.pipelines {
+            lines += pipeline(status, now: now).map { "  \($0)" }
+        }
+        return lines
+    }
+
+    /// The sprint, as `--sprint` prints it, for `sprint`: each of its lines one line, whatever its sprint, team, work items
+    /// and people are named, and none starting a fence (`QuotedText.oneLine`).
+    static func sprint(_ board: SprintBoard, mine: Bool, problem: String?, now: Date) -> String {
+        var lines = WorkCLI.boardLines(mine ? board.justMine() : board, whole: board, now: now).map(QuotedText.oneLine)
+        if let problem { lines.insert("BriefBar couldn't read everything: \(problem)\n", at: 0) }
+        lines.append("\n✓ done, ◐ in progress, ○ to do. (you) marks your own tasks.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// A branch a pipeline's run built, or one a pipeline is pinned to, as a command may hold it (`QuotedText.commandWord`);
+    /// what a pull request's run built, "!4071", which is no branch's name, as it is.
+    static func runBranch(_ branch: String) -> String {
+        branch.wholeMatch(of: /![0-9]+/) != nil ? branch : QuotedText.commandWord(branch)
     }
 
     static let legend = "✓ succeeded, ✕ failed, ▶ running, ⏸ waiting for approval, ○ not started, ! succeeded with issues, – canceled or skipped."
@@ -1335,14 +1375,16 @@ enum AgentText {
             return part
         }
 
-        var lines = ["# \(item.type) \(item.id) “\(item.title)”"]
-        lines.append(item.project.isEmpty ? "- In \(item.organization)" : item.webURL.absoluteString)
-        if let parent = read.parent { lines.append("- Under \(parent.type.lowercased()) \(parent.id) “\(parent.title)”") }
+        var lines = ["# \(QuotedText.oneLine(item.type)) \(item.id) “\(QuotedText.oneLine(item.title))”"]
+        lines.append(item.project.isEmpty ? "- In \(QuotedText.oneLine(item.organization))" : item.webURL.absoluteString)
+        if let parent = read.parent {
+            lines.append("- Under \(QuotedText.oneLine(parent.type.lowercased())) \(parent.id) “\(QuotedText.oneLine(parent.title))”")
+        }
         lines.append("- " + standing(item, details: read.details, me: me, now: now))
-        if let progress = progress(read, now: now) { lines.append("- " + progress) }
+        if let progress = progress(read, now: now) { lines.append("- " + QuotedText.inLine(progress)) }
         let waits = Self.waits(read, tasks: tasks, allSent: allSent, related: parts.flatMap(\.items), me: me)
-        if !waits.isEmpty { lines.append("- Waiting on: " + waits.map(\.text).joined(separator: " · ")) }
-        lines.append("- You can: " + youCan(waits, read: read, tasks: tasks, me: me))
+        if !waits.isEmpty { lines.append("- Waiting on: " + waits.map { QuotedText.inLine($0.text) }.joined(separator: " · ")) }
+        lines.append("- You can: " + QuotedText.inLine(youCan(waits, read: read, tasks: tasks, me: me)))
 
         if !read.tasks.isEmpty {
             lines += ["", read.tasksAreInSprint ? "## Tasks" : "## Children"]
@@ -1367,12 +1409,15 @@ enum AgentText {
 
     /// "State: Active (work started), changed 1h ago · assigned to you (Robin Diaz)": its state and why, and who has it.
     static func standing(_ item: WorkItem, details: WorkItemDetails?, me: String?, now: Date) -> String {
-        var state = "State: " + (item.state.isEmpty ? "unknown" : item.state)
+        var state = "State: " + (item.state.isEmpty ? "unknown" : QuotedText.inLine(item.state))
         if let reason = details?.reason, !reason.isEmpty, reason.caseInsensitiveCompare(item.state) != .orderedSame {
-            state += " (\(lowercasingFirst(reason)))"
+            state += " (\(QuotedText.inLine(lowercasingFirst(reason))))"
         }
         if let changed = item.changedAt { state += ", changed \(ago(changed, now: now))" }
-        let who = item.assignedTo.map { isMe($0, me) ? "assigned to you (\($0.name))" : "assigned to \($0.name)" } ?? "unassigned"
+        let who = item.assignedTo.map { person in
+            let name = QuotedText.inLine(person.name)
+            return isMe(person, me) ? "assigned to you (\(name))" : "assigned to \(name)"
+        } ?? "unassigned"
         return "\(state) · \(who)"
     }
 
@@ -1431,7 +1476,7 @@ enum AgentText {
         parts.append(task.assignedTo.map { isMe($0, me) ? "you" : $0.name } ?? "unassigned")
         if let hours = task.remainingWork, hours > 0, !task.isDone { parts.append("\(Hours.text(hours)) left") }
         if let copilot { parts.append("Copilot " + sentStatus(copilot, now: now)) }
-        return "\(task.id) \(task.title): " + parts.joined(separator: " · ")
+        return QuotedText.inLine("\(task.id) \(task.title): " + parts.joined(separator: " · "))
     }
 
     /// How work sent to Copilot is going: "working (started 6m ago): Run the cart tests", "finished 12m ago. Opened pull
@@ -1456,12 +1501,12 @@ enum AgentText {
         if let pullRequest = task.onPullRequest {
             subject = "\(task.action?.title ?? "Work") on !\(pullRequest.id)"
         } else if let workItem = task.workItem, workItem.id == item.id {
-            subject = "This \(item.type.lowercased())"
+            subject = "This \(QuotedText.inLine(item.type.lowercased()))"
         } else {
             subject = task.workItem.map { "Work item \($0.id)" } ?? "A task"
         }
-        var line = "- \(subject): Copilot \(sentStatus(task, now: now))"
-        let facts = task.run.map { ["worktree \($0.worktree.path)", "session \($0.id)"] } ?? ["session \(task.id)"]
+        var line = "- \(subject): Copilot \(QuotedText.inLine(sentStatus(task, now: now)))"
+        let facts = task.run.map { ["worktree \(QuotedText.inLine($0.worktree.path))", "session \($0.id)"] } ?? ["session \(task.id)"]
         line += "\n  " + facts.joined(separator: " · ")
         if let link = task.pullRequest { line += "\n  \(link.absoluteString)" }
         return line
@@ -1481,19 +1526,25 @@ enum AgentText {
         }
         let me = record?.me ?? me
         let story = snapshot.map { PullRequestStory.mine($0, record: record) } ?? PullRequestStory.others(pullRequest, me: me)
-        var lines = ["", "### !\(key.number) “\(pullRequest.title)”", pullRequest.webURL.absoluteString]
-        var branch = pullRequest.sourceBranch
-        if !pullRequest.targetBranch.isEmpty { branch += " → \(pullRequest.targetBranch)" }
-        let place = (branch.isEmpty ? "" : "\(branch), ") + "in \(pullRequest.repositoryName)"
-        let state = story.sentence.isEmpty ? pullRequest.status.rawValue.capitalized : story.sentence
+        var lines = ["", "### !\(key.number) “\(QuotedText.oneLine(pullRequest.title))”", pullRequest.webURL.absoluteString]
+        // Its branches as a command may hold them (`QuotedText.commandWord`), as `pull_request` writes them.
+        var branch = QuotedText.commandWord(pullRequest.sourceBranch)
+        if !pullRequest.targetBranch.isEmpty { branch += " → \(QuotedText.commandWord(pullRequest.targetBranch))" }
+        let place = (branch.isEmpty ? "" : "\(branch), ") + "in \(QuotedText.oneLine(pullRequest.repositoryName))"
+        let state = story.sentence.isEmpty ? pullRequest.status.rawValue.capitalized : QuotedText.inLine(story.sentence)
         lines.append("- \(state) · \(place)")
         // Who wrote it, once, saying "you" for yours.
-        lines += story.facts.filter { $0.label != "Author" }.map { "- \($0.label): \(StoryText.line($0.value, limit: 300))" }
-        lines.append("- Author: " + (record?.role == .author || isMe(pullRequest.author, me) ? "you" : pullRequest.author.name))
+        lines += story.facts.filter { $0.label != "Author" }.map {
+            "- \($0.label): \(QuotedText.inLine(StoryText.line($0.value, limit: 300)))"
+        }
+        lines.append("- Author: " + (record?.role == .author || isMe(pullRequest.author, me) ? "you" : QuotedText.oneLine(pullRequest.author.name)))
         if !story.runs.isEmpty {
             lines.append("- Pipelines:")
             for run in story.runs.prefix(8) {
-                lines.append("  - \(run.name): \(run.status)" + (run.detail.map { " (\(StoryText.line($0, limit: 200)))" } ?? ""))
+                lines.append(
+                    "  - \(QuotedText.oneLine(run.name)): \(QuotedText.inLine(run.status))"
+                        + (run.detail.map { " (\(QuotedText.inLine(StoryText.line($0, limit: 200))))" } ?? "")
+                )
                 if let url = run.url { lines.append("    \(url.absoluteString)") }
             }
         }
@@ -1514,13 +1565,14 @@ enum AgentText {
         var lines = ["", "## \(part.title)"]
         for item in part.items.prefix(relatedShown) {
             let why = item.links.map(\.reason).joined(separator: ", ")
-            lines += ["", "### “\(item.title)”: \(item.status)" + (why.isEmpty ? "" : ", \(why)")]
+            lines += ["", "### “\(QuotedText.oneLine(item.title))”: \(QuotedText.inLine(item.status))" + (why.isEmpty ? "" : ", \(why)")]
             if let url = item.url { lines.append(url.absoluteString) }
-            lines += item.lines.map { "- \($0)" }
+            lines += item.lines.map { "- \(QuotedText.inLine($0))" }
         }
         let rest = part.items.dropFirst(relatedShown)
         if !rest.isEmpty {
-            lines += ["", "And \(rest.count) more: " + rest.map { "“\($0.title)” (\($0.status))" }.joined(separator: ", ") + "."]
+            let named = rest.map { "“\(QuotedText.oneLine($0.title))” (\(QuotedText.inLine($0.status)))" }
+            lines += ["", "And \(rest.count) more: " + named.joined(separator: ", ") + "."]
         }
         return lines
     }
@@ -1535,7 +1587,7 @@ enum AgentText {
         guard !texts.isEmpty else { return [] }
         var lines = ["", "## Description"]
         for text in texts {
-            if text.field != "System.Description" { lines += ["", "### \(text.title)"] }
+            if text.field != "System.Description" { lines += ["", "### \(QuotedText.oneLine(text.title))"] }
             lines += quote(text.text)
         }
         return lines
@@ -1552,7 +1604,7 @@ enum AgentText {
         for comment in details.comments.prefix(limit) {
             let text = StoryText.paragraph(comment.text.plainText, limit: 600)
             guard !text.isEmpty else { continue }
-            let who = comment.author.map { isMe($0, me) ? "You" : $0.name } ?? "Someone"
+            let who = comment.author.map { isMe($0, me) ? "You" : QuotedText.oneLine($0.name) } ?? "Someone"
             lines.append("- \(who)" + (comment.createdAt.map { ", \(ago($0, now: now))" } ?? "") + ":")
             lines += quote(text, indent: "  ")
             shown += 1
@@ -1562,9 +1614,13 @@ enum AgentText {
         return ["", "## Latest comments (newest first\(count))"] + lines
     }
 
-    /// Text as a Markdown quote, a line each.
+    /// Text as a Markdown quote, a line each, at every line break, with what controls how a line reads or hides text
+    /// written out (`QuotedText.inLine`), so that all of it stays quoted.
     static func quote(_ text: String, indent: String = "") -> [String] {
-        text.components(separatedBy: "\n").map { $0.isEmpty ? "\(indent)>" : "\(indent)> \($0)" }
+        text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map { line in
+            let line = QuotedText.inLine(String(line))
+            return line.isEmpty ? "\(indent)>" : "\(indent)> \(line)"
+        }
     }
 
     /// Whether a person is you.
