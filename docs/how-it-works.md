@@ -1642,9 +1642,11 @@ now, and what you wrote goes (`ThreadChanges.startEditing`): saved, it would put
 back as the mentions they showed as you began, though the comment changed meanwhile. Saving is a `PATCH` of what the
 comment says alone, `content` (`ADOWrite.editComment`), unless it says what you began with, or what the comment says now,
 when nothing goes; Azure DevOps answers with the comment as it keeps it, which shows at once in its place
-(`ThreadChange.edited`), with **· Edited** after when it was written, from its
-`lastContentUpdatedDate`, once that's a second or more after its `publishedDate`, or as you saved it when the answer
-doesn't say (`ReviewComment.editedAt`). **Delete…** asks first, under what the comment says, that Azure DevOps deletes
+(`ThreadChange.edited`), but never over a later edit of it, as one made elsewhere that a read had before the answer
+came, as Azure DevOps dates each edit, then or as the list reads it again (`PRDetails.apply`); with **· Edited** after
+when it was written, from its
+`lastContentUpdatedDate`, once that's a second or more after its `publishedDate`, or, when the answer doesn't say, its
+`lastUpdatedDate`, or as you saved it (`ReviewComment.editedAt`). **Delete…** asks first, under what the comment says, that Azure DevOps deletes
 it, as you, and that it can't be undone (`CommentDeleteConfirmation`, `CopilotComposing.deleting(_:in:)`), with
 **Cancel**, which Esc presses, and **Delete**, which waits while another change to the thread is on its way, as a status
 set from its menu or in another window, since a thread takes one at a time. Deleting is a `DELETE` of the comment, with

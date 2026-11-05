@@ -286,8 +286,12 @@ public struct ThreadChange: Sendable, Equatable {
         case (.comment(let comment), .editComment(_, let id, _)):
             let before = known?.comments.first { $0.id == id }
             guard comment.id == id, var edited = ReviewComment(comment, names: names, published: before?.publishedAt) else { return nil }
-            // Edited, as you just did, though Azure DevOps doesn't say when.
-            if edited.editedAt == nil { edited.editedAt = max(date, edited.publishedAt) }
+            // Edited, as you just did, though Azure DevOps doesn't say when what it says changed: when it last changed anything
+            // of it, by its own clock, as the dates edits are compared by (`PRDetails.apply`), or else as it answered.
+            if edited.editedAt == nil {
+                let published = edited.publishedAt
+                edited.editedAt = comment.lastUpdatedDate.flatMap { $0.timeIntervalSince(published) > 1 ? $0 : nil } ?? max(date, published)
+            }
             self.init(thread: address.id, edited: [edited])
         case (.comment(let comment), _):
             guard let added = ReviewComment(comment, names: names, published: nil) else { return nil }

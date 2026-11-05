@@ -692,6 +692,12 @@ import Testing
             .comment(try Fixture.decode(ADOComment.self, json)), to: write, pullRequest: pullRequest, known: thread, at: t(5)
         ))
         #expect(undated.edited.first?.editedAt == t(5))
+        // Or, when it says when anything of it last changed, then, by its own clock.
+        json["lastUpdatedDate"] = iso(t(3))
+        let updated = try #require(ThreadChange(
+            .comment(try Fixture.decode(ADOComment.self, json)), to: write, pullRequest: pullRequest, known: thread, at: t(5)
+        ))
+        #expect(updated.edited.first?.editedAt == t(3))
         // Not another comment's answer, nor a comment the thread doesn't have.
         #expect(ThreadChange(.comment(answer), to: .editComment(address, comment: 4, markdown: "Done"), pullRequest: pullRequest,
                              known: thread) == nil)
