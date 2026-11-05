@@ -143,6 +143,25 @@ fileprivate final class Viewer {}
         order.stopShowing(in: viewer)
     }
 
+    /// Apple Intelligence may keep BriefBar's own name, as it's asked to while that fits: it named it all the same.
+    @Test func aNameAppleIntelligenceKeptIsStillItsOwn() async throws {
+        let clock = Clock()
+        let model = Model()
+        model.answer = .success("Checkout redesign")
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let mission = try #require(order.missions.first)
+        #expect(order.title(of: mission) == "Checkout redesign" && order.naming(of: mission) == .briefBar)
+        let viewer = Viewer()
+        order.showing([mission.key], in: viewer)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { order.modelNames[mission.key] != nil })
+        #expect(order.title(of: mission) == "Checkout redesign" && order.naming(of: mission) == .appleIntelligence)
+        order.stopShowing(in: viewer)
+    }
+
     @Test func itsAskedOnlyWhileOnScreenOnceSettledAndAgainOnlyOnChange() async throws {
         let clock = Clock()
         let model = Model()
@@ -464,6 +483,31 @@ fileprivate final class Viewer {}
         order.rename(try #require(order.missions.first), to: "Coupons and speed")
         order.forgetAll()
         #expect(order.names.entries.isEmpty && defaults.object(forKey: MissionNames.defaultsKey) == nil)
+    }
+
+    /// Turning a source off forgets its missions' names for good, though another's last hour unseen ends as it goes, which
+    /// saves the names again.
+    @Test func aSourceTurnedOffForgetsItsNamesForGoodThoughAnothersHourEndsMeanwhile() throws {
+        let clock = Clock()
+        let defaults = MemoryDefaults()
+        let gitHub = MissionKey.chain(.gitHubPullRequest(repository: "octo/storefront", number: 212))
+        var saved = MissionNames()
+        _ = saved.rename(gitHub, to: "Storefront polish", briefBarsName: "x")
+        saved.save(to: defaults)
+        let order = Self.service(defaults, clock: clock)
+        // GitHub is on, without that mission now: the time it isn't seen counts against its name.
+        order.publish(.github)
+        Self.tell(order)
+        let mission = try #require(order.missions.first)
+        order.rename(mission, to: "Coupons and speed")
+        clock.advance(3_600 + 1)
+        order.forget(.azureDevOps)
+        #expect(order.names.name(for: mission.key) == nil)
+        let kept = MissionNames.load(from: defaults)
+        #expect(kept.name(for: mission.key) == nil && kept.name(for: gitHub) == "Storefront polish")
+        #expect((kept.entries[gitHub]?.unseen ?? 0) > 3_600)
+        // After a restart too.
+        #expect(Self.service(defaults, clock: clock).names.name(for: mission.key) == nil)
     }
 
     @Test func theDemosNamesAreMadeUpAndItNeverAsksTheModel() throws {

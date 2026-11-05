@@ -218,14 +218,18 @@ package final class PullRequestOrder: ObservableObject {
         if kept != focus { OrderFocus.save(kept, to: defaults) }
         var names = MissionNames.load(from: defaults)
         if names.forget(kinds, keepingPlans: Set(orders.plans.map(\.id))) { names.save(to: defaults) }
+        if isOn {
+            // Before the source goes, whose rebuild would otherwise save what was forgotten again, such as a name.
+            objectWillChange.send()
+            self.orders = orders
+            self.evidence = evidence
+            self.focus = kept
+            self.names = names
+            modelNames = modelNames.filter { $0.key.kinds.isDisjoint(with: kinds) }
+            namer?.forget { !$0.kinds.isDisjoint(with: kinds) }
+        }
         withdraw(source)
         guard isOn else { return }
-        self.orders = orders
-        self.evidence = evidence
-        self.focus = kept
-        self.names = names
-        modelNames = modelNames.filter { $0.key.kinds.isDisjoint(with: kinds) }
-        namer?.forget { !$0.kinds.isDisjoint(with: kinds) }
         rebuild()
     }
 
@@ -349,13 +353,20 @@ package final class PullRequestOrder: ObservableObject {
     /// What it's called without your name: Apple Intelligence's, while it has an Azure DevOps pull request, else the name
     /// BriefBar gives it from its sources (`OrderText.title`). Use BriefBar's Name gives it this.
     package func briefBarsName(of mission: OrderMission) -> String {
-        if let named = modelNames[mission.key], mission.steps.contains(where: { $0.ref.kind == .pullRequest }) { return named }
-        return OrderText.title(of: mission, name: name(of:))
+        modelName(of: mission) ?? OrderText.title(of: mission, name: name(of:))
     }
 
+    /// Who named it: you, else Apple Intelligence while its name is the one it has, though it kept BriefBar's own, as it's
+    /// asked to while that fits, else BriefBar.
     package func naming(of mission: OrderMission) -> Naming {
         if names.name(for: mission.key) != nil { return .you }
-        return briefBarsName(of: mission) == OrderText.title(of: mission, name: name(of:)) ? .briefBar : .appleIntelligence
+        return modelName(of: mission) != nil ? .appleIntelligence : .briefBar
+    }
+
+    /// The name Apple Intelligence gave it, while it has an Azure DevOps pull request.
+    private func modelName(of mission: OrderMission) -> String? {
+        guard mission.steps.contains(where: { $0.ref.kind == .pullRequest }) else { return nil }
+        return modelNames[mission.key]
     }
 
     /// Whether Rename… can give it a name: it has one of yours, or BriefBar keeps fewer than it can.
