@@ -336,6 +336,31 @@ import Testing
         #expect(StageOrder.of(Self.pr(4102), in: merged) == .free)
     }
 
+    /// One whose order names only it waits for the pull request whose branch it targets, until BriefBar sees that one
+    /// merge, whether no order names that one or another order does.
+    @Test func oneStackedOnAPullRequestItsOrderDoesntNameWaitsForIt() throws {
+        let parent = OrderBoardTests.ado(4101, from: "robin/rounding")
+        let child = OrderBoardTests.ado(4102, from: "robin/cart", into: "robin/rounding")
+        let alone = Self.missions([parent, child], plan: [.init(ref: Self.pr(4102))])
+        let step = try #require(alone.lazy.flatMap(\.steps).first { $0.ref == Self.pr(4102) })
+        #expect(step.notes.contains(.showsAgainst(Self.pr(4101))))
+        #expect(StageOrder.of(Self.pr(4102), in: alone) == .waits([Self.pr(4101)], words: "After !4101 · stacked"))
+        #expect(Self.reading(StageFacts(role: .author, isReady: true), order: StageOrder.of(Self.pr(4102), in: alone))?.stage == .waits)
+
+        let otherID = UUID(uuidString: "99999999-2222-4333-8444-555555555555")!
+        let orders = DeclaredOrders(plans: [
+            OrderPlan(id: Self.planID, createdAt: t(0), updatedAt: t(0), entries: [.init(ref: Self.pr(4102))]),
+            OrderPlan(id: otherID, createdAt: t(0), updatedAt: t(0), entries: [.init(ref: Self.pr(4101))]),
+        ])
+        let twoOrders = OrderBoard.missions(
+            facts: OrderFacts(pullRequests: [parent, child]), orders: orders, evidence: OrderEvidence(), now: t(1_000)
+        )
+        #expect(StageOrder.of(Self.pr(4102), in: twoOrders) == .waits([Self.pr(4101)], words: "After !4101 · stacked"))
+
+        let merged = Self.missions([OrderBoardTests.ado(4101, from: "robin/rounding", state: .merged), child], plan: [.init(ref: Self.pr(4102))])
+        #expect(StageOrder.of(Self.pr(4102), in: merged) == .free)
+    }
+
     @Test func anOrderToCheckHoldsIt() {
         let missions = Self.missions(
             [OrderBoardTests.ado(4101, from: "robin/rounding", state: .closed), OrderBoardTests.ado(4102, from: "robin/cart")],
@@ -432,5 +457,22 @@ import Testing
         let asked = Self.reading(StageFacts(role: .reviewer, asksYou: "Sam asked you"))!
         #expect(StageText.undone(Self.pr(4110), to: asked) == "Undone: !4110 is in Your review again")
         #expect(StageText.undone(Self.pr(4110), to: nil) == "Undone")
+    }
+
+    /// Of the sessions at work on it, the one that started latest says why; of two that started together, the earliest
+    /// reference, whichever order the sources list them in.
+    @Test func theSessionThatStartedLatestSaysWhyWhateverTheOrder() {
+        let other = ItemRef.session("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d")!
+        let older = StageSession(ref: other, activity: .working, since: t(10))
+        let newer = Self.session(.working, at: 20)
+        #expect(StageRules.latest([older, newer])?.ref == Self.cart)
+        #expect(StageRules.latest([newer, older])?.ref == Self.cart)
+        let together = [Self.session(.working, at: 20), StageSession(ref: other, activity: .working, since: t(20))]
+        let first = min(Self.cart, other)
+        #expect(StageRules.latest(together)?.ref == first)
+        #expect(StageRules.latest(together.reversed())?.ref == first)
+        let unknown = StageSession(ref: other, activity: .working, since: nil)
+        #expect(StageRules.latest([unknown, Self.session(.working, at: 1)])?.ref == Self.cart)
+        #expect(StageRules.latest([]) == nil)
     }
 }

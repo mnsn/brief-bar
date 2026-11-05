@@ -223,8 +223,9 @@ public enum StageOrder: Equatable, Sendable {
     case holds(String)
 
     /// What the missions say of a pull request: the first that holds it, else free. One stacked on another, which targets
-    /// its branch or follows it in a GitHub stack, waits for it until BriefBar sees it merge, whatever its order says:
-    /// completing it before would merge it into that one's branch.
+    /// its branch or follows it in a GitHub stack, waits for it until BriefBar sees it merge, whatever its order says, and
+    /// whether an order names that one, this order or another: completing it before would merge it into that one's
+    /// branch.
     public static func of(_ ref: ItemRef, in missions: [OrderMission]) -> StageOrder {
         var statuses: [ItemRef: OrderStatus] = [:]
         for mission in missions {
@@ -244,12 +245,18 @@ public enum StageOrder: Equatable, Sendable {
                 default:
                     break
                 }
-                // Stacked on one of its order's own that the order doesn't put before it: the order decides where it
-                // shows, but not where it merges.
-                let below = step.notes.compactMap { note -> ItemRef? in
-                    guard case .orderDisagrees(let other, let origin) = note, origin.isStacked, statuses[other] != .merged else { return nil }
-                    return other
+                // Stacked on one its order doesn't put before it, one of its own or one it doesn't name: the order
+                // decides where it shows, but not where it merges.
+                var below: [ItemRef] = []
+                for note in step.notes {
+                    switch note {
+                    case .orderDisagrees(let other, let origin) where origin.isStacked: below.append(other)
+                    case .showsAgainst(let other): below.append(other)
+                    default: break
+                    }
                 }
+                var seen: Set<ItemRef> = []
+                below = below.filter { statuses[$0] != .merged && seen.insert($0).inserted }
                 if !below.isEmpty { return stacked(on: below, ref) }
                 continue
             }
@@ -434,8 +441,12 @@ public enum StageRules {
         }
     }
 
-    private static func latest(_ sessions: [StageSession]) -> StageSession? {
-        sessions.max { ($0.since ?? .distantPast, $1.ref) < ($1.since ?? .distantPast, $0.ref) }
+    /// The one that started latest; of those that started together, the earliest reference, whatever order they come in.
+    static func latest(_ sessions: [StageSession]) -> StageSession? {
+        sessions.max { a, b in
+            let (first, second) = (a.since ?? .distantPast, b.since ?? .distantPast)
+            return first != second ? first < second : a.ref > b.ref
+        }
     }
 }
 
