@@ -24,6 +24,10 @@ struct SessionRowView: View {
     @LocalState private var isHovered = false
     @Environment(\.interfaceOptions) private var options
     @Environment(\.textScale) private var textScale
+    @Environment(\.panelStyle) private var panelStyle
+
+    /// On a page of BriefBar's window, where a task's pull request shows in the window wherever it can.
+    private var inWindow: Bool { panelStyle == .page }
 
     var body: some View {
         let task = store.task(for: session.id)
@@ -43,7 +47,8 @@ struct SessionRowView: View {
         .onHover { isHovered = $0 }
         .contextMenu {
             if let task {
-                Button(task.openTitle, action: action)
+                Button(task.clickTitle(inWindow: inWindow), action: action)
+                otherOpening(task)
                 task.menu()
             } else if session.answerIn != nil {
                 Button(openTitle(task), action: action)
@@ -162,7 +167,7 @@ struct SessionRowView: View {
                 .compactMap { $0 }.joined(separator: ", ")
         )
         .accessibilityHint(
-            task.map { "Opens its \($0.opens.lowercased())" }
+            task.map(hint)
                 ?? session.answerIn.map { "Opens “\($0.name)”, where you answer it" }
                 ?? (store.appInstalled ? "Opens the session in GitHub Copilot" : "Opens the session in Terminal")
         )
@@ -174,6 +179,7 @@ struct SessionRowView: View {
         }
         .rowActions(for: session.displayName, openTitle: openTitle(task), open: action) {
             if let task {
+                otherOpening(task)
                 task.menu()
             } else if session.answerIn != nil {
                 Button("Open This Session") { store.openItself(session) }
@@ -234,11 +240,35 @@ struct SessionRowView: View {
         return parent
     }
 
-    /// What clicking the row does: open the task's page, or the session where you answer what it waits on.
+    /// What clicking the row does: show or open what the task is for, or open the session where you answer what it waits on.
     private func openTitle(_ task: SentTask?) -> String {
-        if let task { return task.openTitle }
+        if let task { return task.clickTitle(inWindow: inWindow) }
         if let answerIn = session.answerIn { return "Answer in “\(answerIn.name)”" }
         return store.appInstalled ? "Open in Copilot" : "Open in Terminal"
+    }
+
+    /// A task's other way to what it's for, after what a click does: where it lives, or in BriefBar's window; as a click
+    /// does, opening it that way dismisses a finished task with the opt-in setting.
+    @ViewBuilder
+    private func otherOpening(_ task: SentTask) -> some View {
+        if let other = task.otherOpening(inWindow: inWindow) {
+            Button(other.title) { store.open(session, theOtherWay: other.action) }
+        }
+    }
+
+    /// "Shows its pull request in BriefBar", "Opens its pull request on GitHub", or "Opens its work item in Azure DevOps", for
+    /// VoiceOver.
+    private func hint(_ task: SentTask) -> String {
+        let click = clickDoes(task)
+        return "\(click.verb.capitalized)s \(click.what)"
+    }
+
+    /// What a click does with a task: ("show", "its pull request in BriefBar"), ("open", "its pull request on GitHub"),
+    /// ("open", "its work item in Azure DevOps").
+    private func clickDoes(_ task: SentTask) -> (verb: String, what: String) {
+        let what = "its " + task.opens.lowercased()
+        if task.clickShows(inWindow: inWindow) { return ("show", what + " in BriefBar") }
+        return ("open", what + (task.whereItOpens.map { " \($0)" } ?? ""))
     }
 
     /// The session's context usage, when the setting is on and the app has measured it.
@@ -261,7 +291,7 @@ struct SessionRowView: View {
         }
         if let task {
             lines.append("Sent from BriefBar: the Copilot CLI works on it on its own, outside the Copilot app")
-            lines.append("Click to open its \(task.opens.lowercased()), or right-click for its menu")
+            lines.append("Click to \(clickDoes(task).verb) \(clickDoes(task).what), or right-click for its menu")
         } else if let answerIn = session.answerIn {
             lines.append("“\(answerIn.name)”, which coordinates it, asks you this for it")
             lines.append("Click to answer in “\(answerIn.name)”, or right-click to open this session")

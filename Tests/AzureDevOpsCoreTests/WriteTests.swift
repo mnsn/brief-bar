@@ -228,7 +228,7 @@ import Testing
                 _ = try await server.client().send(sample(.reply), as: nil)
                 return (nil, server.requests.count)
             } catch {
-                return (ADOWriteProblem(error), server.requests.count)
+                return (ADOWriteProblem(error, now: t(0)), server.requests.count)
             }
         }
         let unavailable = await problem(.status(503))
@@ -236,7 +236,7 @@ import Testing
         #expect(unavailable.0?.mayHaveGone == true)
         #expect(unavailable.requests == 1)
         let throttled = await problem(.status(429))
-        #expect(throttled.0 == .slowedDown)
+        #expect(throttled.0 == .slowedDown(until: t(ADOClient.retryAfterUnsaid)))
         #expect(throttled.0?.mayHaveGone == false)
         // A tag's change too, after which its pull request's tags are read again.
         for kind in [ADOWrite.Kind.addTag, .removeTag] {
@@ -320,6 +320,30 @@ import Testing
         _ = try await client.send(sample(.reply), as: robin)
         #expect(Array(await tokens.handedOut.dropFirst(handed)) == ["\(Tenants.other)/sam-guest", "\(Tenants.other)/robin-guest", robin])
         #expect(server.requests.map(\.tenant) == [Tenants.home, Tenants.other, Tenants.other])
+    }
+
+    /// A change that has gone isn't called off with its caller, which wouldn't take it back: Azure DevOps' answer comes all
+    /// the same, to say it was made.
+    @Test(.timeLimit(.minutes(1)))
+    func aChangeThatWentWhenCalledOffAnswersAllTheSame() async throws {
+        let server = StubServer()
+        let answers = Locked(false)
+        var held = StubServer.Reply.json(Fixture.comment(4, People.me, "Thanks, done", at: t(0)))
+        held.waitsFor = { answers.value }
+        let reply = held
+        server.on("/threads/12/comments") { _ in reply }
+        let client = server.client()
+        let write = sample(.reply)
+        let sending = Task { try await client.send(write, as: nil) }
+        try await waitUntil("the change to go") { server.requests.count == 1 }
+        sending.cancel()
+        answers.set(true)
+        guard case .comment(let comment) = try await sending.value else {
+            Issue.record("Expected Azure DevOps' answer")
+            return
+        }
+        #expect(comment.id == 4)
+        #expect(server.requests.count == 1)
     }
 
     /// A change goes only where it's sent, as a read does.
@@ -528,18 +552,25 @@ import Testing
             (ADOError.offline, .offline),
             (ADOError.unauthorized, .signedOut),
             (ADOError.auth(.signedOut("Run az login")), .signedOut),
-            (ADOError.throttled(retryAfter: 30), .slowedDown),
+            (ADOError.throttled(retryAfter: 30), .slowedDown(until: t(30))),
             (ADOError.network(ADOClient.unansweredMessage), .unanswered),
             (ADOError.otherAccount, .otherAccount),
             (ADOError.http(500), .failed("Azure DevOps answered with HTTP 500.")),
         ]
         for (error, problem) in cases {
-            #expect(ADOWriteProblem(error) == problem, "\(error)")
+            #expect(ADOWriteProblem(error, now: t(0)) == problem, "\(error)")
         }
         #expect(ADOWriteProblem.notAllowed.sentence(.reply) == "Azure DevOps says you may not reply here.")
         #expect(ADOWriteProblem.notAllowed.sentence(.setStatus) == "Azure DevOps says you may not change this thread's status.")
         #expect(ADOWriteProblem.offline.sentence(.reply) == "You're offline. Your reply is kept: send it once you're back.")
         #expect(ADOWriteProblem.refused("Too long").sentence(.reply) == "Azure DevOps refused it: Too long")
+        // Slowed down, until when Azure DevOps asked, to the minute it ends in, never sooner.
+        let until = Date(timeIntervalSinceReferenceDate: 60 * 1_000 + 40)
+        #expect(ADOWriteProblem.time(until) == Date(timeIntervalSinceReferenceDate: 60 * 1_001).formatted(date: .omitted, time: .shortened))
+        #expect(ADOWriteProblem.time(Date(timeIntervalSinceReferenceDate: 60 * 1_000)) == ADOWriteProblem.time(Date(timeIntervalSinceReferenceDate: 60 * 999 + 1)))
+        #expect(ADOWriteProblem.slowedDown(until: until).sentence(.reply)
+            == "Azure DevOps asked BriefBar to slow down, until \(ADOWriteProblem.time(until)): try again then.")
+        #expect(ADOWriteProblem.slowedDown(until: until).sentence(.addTag).hasSuffix("until \(ADOWriteProblem.time(until)): try again then."))
         #expect(ADOWriteProblem.refused(nil).sentence(.setStatus) == "Azure DevOps refused it.")
         // A reply that may have gone isn't sent again until its thread was read again.
         #expect(ADOWriteProblem.unanswered.sentence(.reply).hasSuffix("won't send it twice."))

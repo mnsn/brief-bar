@@ -46,6 +46,7 @@ private struct RowActions<Actions: View>: ViewModifier {
     let open: () -> Void
     @ViewBuilder var actions: () -> Actions
     @Environment(\.interfaceOptions) private var options
+    @Environment(\.textScale) private var textScale
 
     func body(content: Content) -> some View {
         if options.visibleActions {
@@ -57,11 +58,10 @@ private struct RowActions<Actions: View>: ViewModifier {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(size: 13, weight: .semibold)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 28 * textScale, height: 28 * textScale)
                         .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
+                .labelMenuStyle()
                 .fixedSize()
                 .padding(.top, 5)
                 .padding(.trailing, 4)

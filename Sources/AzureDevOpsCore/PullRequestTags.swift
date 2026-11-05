@@ -171,6 +171,19 @@ public struct TagChoices: Sendable, Equatable {
     /// Everything to choose from, in order: the suggestions, then the new tag.
     public var rows: [String] { suggestions + (newTag.map { [$0] } ?? []) }
 
+    /// A row, as VoiceOver hears it chosen: a suggestion, by its name, or what you typed, as a new tag, which it doesn't hear
+    /// again as you type more of it.
+    public enum Choice: Sendable, Hashable {
+        case suggestion(String)
+        case newTag
+    }
+
+    /// The row at an index, as `Choice`: nil for none.
+    public func choice(at row: Int?) -> Choice? {
+        guard let row, rows.indices.contains(row) else { return nil }
+        return row < suggestions.count ? .suggestion(suggestions[row]) : .newTag
+    }
+
     /// - Parameters:
     ///   - typed: what you typed so far.
     ///   - used: the tags you added in the pull request's project, the latest first (`UsedTags`).

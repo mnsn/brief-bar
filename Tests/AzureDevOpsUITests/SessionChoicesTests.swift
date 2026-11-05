@@ -329,7 +329,9 @@ private struct DatabaseError: Error {
         store.openForTests = { opened.append(($0, $1)); return opens }
         var handed: [String] = []
         store.handedOff = { _, prompt in handed.append(prompt) }
-        let handOff = CommentHandOff(key: PRKey("contoso", 4071), waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast)
+        let handOff = CommentHandOff(
+            key: PRKey("contoso", 4071), waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast, read: [:], unanswered: [:]
+        )
         let session = choice(onBranch, reasons: [.onItsBranch], active: 0)
 
         #expect(await store.reach(of: session) == .off)
@@ -372,7 +374,9 @@ private struct DatabaseError: Error {
         store.opensLinksForTests = false
         var handed = 0
         store.handedOff = { _, _ in handed += 1 }
-        let handOff = CommentHandOff(key: PRKey("contoso", 4071), waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast)
+        let handOff = CommentHandOff(
+            key: PRKey("contoso", 4071), waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast, read: [:], unanswered: [:]
+        )
         #expect(!store.canOpenInApp)
         #expect(await store.deliver("Fix it", to: choice(onBranch, reasons: [], active: 0), handOff: handOff) == .notSent(CopilotTasksStore.cantOpenInApp))
         #expect(handed == 0)

@@ -111,6 +111,7 @@ struct PullRequestFilesSection: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             let count: Int? = if case .read(let changes)? = state, !changes.files.isEmpty { changes.files.count } else { nil }
             PageSectionHeader(title: "Files", count: count)
+                .takesFocusOnArrival(at: .files)
             Spacer(minLength: 6)
             if let lastSeen {
                 scopeMenu(since: lastSeen)
@@ -139,10 +140,15 @@ struct PullRequestFilesSection: View {
             .pickerStyle(.inline)
             .labelsHidden()
         } label: {
-            Text(details.scope == .whole ? "All Changes" : "Since You Last Looked")
-                .font(size: 11.5, weight: .medium)
+            HStack(spacing: 3) {
+                Text(details.scope == .whole ? "All Changes" : "Since You Last Looked")
+                MenuChevron()
+            }
+            // As AppKit drew it, as a borderless menu, before it followed the text size.
+            .font(size: 13, weight: .medium)
+            .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .labelMenuStyle()
         .fixedSize()
         .help("Show all of the change, or only what changed since you last looked")
         .accessibilityLabel("Changes Shown")
@@ -366,7 +372,8 @@ private struct ChangedFileRow: View {
 
     @EnvironmentObject private var files: PullRequestFilesStore
     @Environment(\.textScale) private var textScale
-    /// VoiceOver goes to it as the details come back to it from its page.
+    /// VoiceOver goes to it each time the details come back to it from its page, though it's still pointed out from the
+    /// time before.
     @AccessibilityFocusState private var isFocused: Bool
     @EnvironmentObject private var code: PullRequestCodeStore
     @Environment(\.shownSection) private var section
@@ -456,9 +463,8 @@ private struct ChangedFileRow: View {
         .accessibilityFocused($isFocused)
         // Also as it's made, once the details scrolled to it.
         .onAppear { if isHighlighted { isFocused = true } }
-        .onChange(of: isHighlighted) {
-            if isHighlighted { isFocused = true }
-        }
+        // Each time the details go to it, though it's still pointed out, as back from its page again within that moment.
+        .focusesOnArrival(at: .file(file.id), $isFocused)
         .onGeometryChange(for: Bool.self) { proxy in
             proxy.bounds(of: .scrollView).map { $0.intersects(CGRect(origin: .zero, size: proxy.size)) } ?? true
         } action: { isOnScreen = $0 }

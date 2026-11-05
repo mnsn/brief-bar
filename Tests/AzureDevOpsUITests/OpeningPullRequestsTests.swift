@@ -75,6 +75,30 @@ import Testing
         #expect(Place.about(answered, record: record(4102)) == .thread(11))
     }
 
+    /// A review you're asked for, new or seen, and one that waits on its author for the changes you asked for: at its
+    /// reviewers, where your vote is, rather than at the top. Not one you only watch, without a part there.
+    @Test func aReviewIsAboutYourPartAmongItsReviewers() throws {
+        let requested = try item(4110)
+        #expect(requested.reason == .reviewRequested)
+        #expect(Place.about(requested, record: record(4110)) == .section(.reviewers))
+        let toReview = try item(4071)
+        #expect(toReview.reason == .reviewPending)
+        #expect(Place.about(toReview, record: record(4071)) == .section(.reviewers))
+        let changes = try item(4060)
+        #expect(changes.reason == .waitingForAuthor)
+        #expect(Place.about(changes, record: record(4060)) == .section(.reviewers))
+        // Who reviews it isn't known yet: their top.
+        #expect(Place.about(requested, record: nil) == nil)
+
+        var watched = try #require(record(4071))
+        watched.pullRequest.reviewers.removeAll { $0.person.id == watched.me }
+        watched = watched.watched()
+        let now = Date()
+        let watching = try #require(PRClassifier.snapshot(for: watched, seenCutoff: now, dismissedCutoff: now, now: now))
+        #expect(watching.reason == .reviewPending && watching.headline == "Watching")
+        #expect(Place.about(watching, record: watched) == nil)
+    }
+
     /// A thread, a build or a check the details don't have, such as a run that isn't one a policy queued last, takes you to
     /// their comments, or their builds and checks.
     @Test func goesToTheirPartForWhatTheyDontHave() throws {
@@ -132,6 +156,26 @@ import Testing
         pageless.showDetails(try item(4102))
         #expect(pageless.selected == nil)
         #expect(withoutPage.azureDevOps == [4102])
+    }
+
+    /// From a link to one of your pull requests, or a task sent to Copilot that works on it or opened it: its details, at
+    /// what its row is about, as from anywhere else. False, showing nothing, for one the list doesn't have, or without a
+    /// window that has the page, for the caller to open it in Azure DevOps.
+    @Test func aLinkOrATaskShowsItAtWhatItsRowIsAbout() throws {
+        let (store, openings) = makeStore()
+        let organization = DemoData.organization
+        #expect(store.revealAtWhatItsAbout(PRKey(organization, 4088)))
+        #expect(store.selected?.key.number == 4088 && store.place == .run(204_417))
+        #expect(store.revealAtWhatItsAbout(PRKey(organization, 4110)))
+        #expect(store.selected?.key.number == 4110 && store.place == .section(.reviewers))
+        #expect(store.revealAtWhatItsAbout(PRKey(organization, 4091)))
+        #expect(store.selected?.key.number == 4091 && store.place == nil)
+        #expect(!store.revealAtWhatItsAbout(PRKey(organization, 1)))
+        #expect(store.selected?.key.number == 4091)
+        #expect(openings.pages == 3 && openings.seen == [4088, 4110, 4091] && openings.azureDevOps.isEmpty)
+        let (pageless, withoutPage) = makeStore(hasPage: false)
+        #expect(!pageless.revealAtWhatItsAbout(PRKey(organization, 4088)))
+        #expect(pageless.selected == nil && withoutPage.azureDevOps.isEmpty)
     }
 
     /// The Pipelines page names a pull request by its key and its page: one the list has opens in Azure DevOps as its row

@@ -30,6 +30,10 @@ menu-bar items or widgets, change your layout, or enable optional features in th
 Views set fonts with `.font(size:)` and `.font(style:)` from `BriefBarUI`, never `.font(.system(size:))`
 or `.font(.headline)`, so their text follows the text size on windows' pages (`TextSizeTests` checks);
 size anything that must fit that text, such as a label's column, by the `textScale` environment value.
+AppKit draws a bordered, prominent or glass button's title, and a menu's, in the control's own font whatever font is
+around it: give it a `ControlLabel`, whose font follows the text size. Draw a borderless menu with `labelMenuStyle()`,
+and use `SegmentedPicker` and `SplitMenuButton` rather than a segmented `Picker` or a `Menu` with a primary action, whose
+titles AppKit draws at a fixed size whatever their labels say.
 
 Other targets:
 
@@ -281,6 +285,11 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   it. Await the work instead; the command-line modes, which are synchronous, use
   `SourceCommandLine.wait`. `make test` runs with a single thread in the pool
   (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), so such a wait hangs on any Mac.
+- **Don't run the main run loop from a test.** Await what a window or control does instead (`until`),
+  which leaves the main actor to other tests meanwhile. Swift runs that run loop for the whole test
+  process and ends the process, with status 0, as soon as it returns. AppKit makes it return once a
+  test has it wait for an event, as VoiceOver's press does when it clicks a control: give that test's
+  suite `.keepsTheMainRunLoopRunning`. `make test` fails when a test process ends before it's done.
 - **The formats are undocumented.** When you rely on a new field, handle its absence and add a test
   with a small made-up sample.
 

@@ -21,14 +21,17 @@ struct PullRequestTagsRow: View {
     @EnvironmentObject private var store: PRStore
     @Environment(\.tagsPreview) private var preview
     @Environment(\.textScale) private var textScale
+    @Environment(\.detailsScroll) private var scroll
+    @Environment(\.isRendering) private var isRendering
 
     /// What you typed in the field.
     @LocalState private var typed = ""
     /// The row of the suggestions that ↑ and ↓ chose, which Tab completes and Return adds: the best match as you type; nil
     /// while nothing's typed and you chose none.
     @LocalState private var highlighted: Int?
-    /// The row VoiceOver last heard was chosen.
-    @LocalState private var announced: String?
+    /// What VoiceOver last heard was chosen: a suggestion, or what you typed, as a new tag, which it doesn't hear again as it
+    /// grows.
+    @LocalState private var announced: TagChoices.Choice?
     /// Add Tag takes the keyboard's focus back as the field closes, and once the tag whose ✕ had it is taken off.
     @LocalState private var refocusesAdd = false
     @FocusState private var focus: Focus?
@@ -95,12 +98,19 @@ struct PullRequestTagsRow: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel(tags.isEmpty ? "Tags: none" : "Tags")
             .accessibilityHint(readOnlyReason ?? "")
+            // Some room under the suggestions, which scrolling to them keeps above what's at the details' foot.
+            .padding(.bottom, isOpen ? 8 : 0)
+            .id(Self.scrollID)
             .onAppear {
                 guard let preview, let typed = preview.typed else { return }
                 composing = .tags
                 self.typed = typed
                 highlighted = preview.highlighted
             }
+            // The field and its suggestions in view as they show, however far down the details are scrolled, and above
+            // what's at their foot, such as the fixes ready to push: in `--render`'s pictures too.
+            .onChange(of: isOpen, initial: true) { _, open in if open { scrollIntoView() } }
+            .onChange(of: isOpen ? choices.rows.count : nil) { _, count in if count != nil { scrollIntoView() } }
             // Turned off, or the pull request closed, while the field was open: it closes.
             .onChange(of: canChange) { _, can in
                 if !can, composing == .tags { composing = nil }
@@ -110,6 +120,19 @@ struct PullRequestTagsRow: View {
 
     /// As tall as a capsule, at the text size on windows' pages.
     private var chipHeight: CGFloat { 18 * textScale }
+
+    /// The tags, for the details to scroll to as the field opens: one pull request's show at a time.
+    static let scrollID = "pull-request-tags"
+
+    /// All of them in view, the field and its suggestions with them, once they're laid out.
+    private func scrollIntoView() {
+        guard let scroll else { return }
+        let isRendering = isRendering
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(isRendering ? 200 : 80))
+            withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { scroll.scrollTo(Self.scrollID) }
+        }
+    }
 
     /// Why the tags can't be changed here, when they can't: for their glyph's tooltip, and VoiceOver.
     private var readOnlyReason: String? {
@@ -256,6 +279,8 @@ struct PullRequestTagsRow: View {
         // Esc closes it, not the details it's in.
         .preference(key: InlineComposerOpen.self, value: true)
         .onAppear {
+            // Each time it opens, VoiceOver hears what's chosen anew, a new tag too, whatever it heard as it was open last.
+            announced = nil
             guard preview == nil else { return }
             Task { @MainActor in focus = .field }
         }
@@ -268,7 +293,7 @@ struct PullRequestTagsRow: View {
                 announced = nil
                 SpokenText.announce("It has the tag \(already) already")
             } else {
-                announceChosen(new.rows)
+                announceChosen(new)
             }
         }
     }
@@ -399,22 +424,24 @@ struct PullRequestTagsRow: View {
         let lowest = PullRequestTag.name(typed) == nil || choices.alreadyOn != nil ? -1 : 0
         let next = min(max((highlighted ?? -1) + step, lowest), rows.count - 1)
         highlighted = next < 0 ? nil : next
-        announceChosen(rows, always: true)
+        announceChosen(choices, always: true)
     }
 
-    /// Says which row is chosen, and how many there are, as it changes, for VoiceOver: what Return would add.
-    private func announceChosen(_ rows: [String], always: Bool = false) {
+    /// Says which row is chosen, and how many there are, for VoiceOver: what Return would add. As you type, only as another
+    /// suggestion is chosen, or as what's chosen goes from a suggestion to what you typed, as a new tag, or back: not as a
+    /// new tag grows, key by key. ↑ and ↓ say it each time (`always`).
+    private func announceChosen(_ choices: TagChoices, always: Bool = false) {
         guard preview == nil else { return }
-        let chosen = highlighted.flatMap { rows.indices.contains($0) ? rows[$0] : nil }
+        let chosen = choices.choice(at: highlighted)
         guard always || chosen != announced else { return }
         announced = chosen
-        guard let chosen else {
+        guard let chosen, let highlighted else {
             if always { SpokenText.announce("No tag chosen") }
             return
         }
-        let isNew = chosen == choices.newTag
+        let rows = choices.rows
         let count = rows.count == 1 ? "1 choice" : "\(rows.count) choices"
-        SpokenText.announce("\(chosen), \(isNew ? "new tag" : "suggested"). \(count)")
+        SpokenText.announce("\(rows[highlighted]), \(chosen == .newTag ? "new tag" : "suggested"). \(count)")
     }
 
     /// Tab: what you typed, completed to the suggestion chosen, without sending anything. With nothing to complete, Tab

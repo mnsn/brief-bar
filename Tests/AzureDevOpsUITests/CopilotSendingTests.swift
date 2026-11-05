@@ -190,6 +190,24 @@ import Testing
         #expect(CopilotAsk.fixAllTitle(waiting: 3, open: 3) == "Fix All")
         #expect(CopilotAsk.fixAllTitle(waiting: 1, open: 2) == "Fix 1 Comment")
         #expect(CopilotAsk.fixAllTitle(waiting: 2, open: 5) == "Fix 2 Comments")
+        // For a pull request, of all its unresolved threads, whichever its details show: here, one you answered last, which
+        // Active shows, and one without a status that waits on you, which it hides.
+        let me = Person(id: "robin", name: "Robin Diaz"), sam = Person(id: "sam", name: "Sam Rivera")
+        let pullRequest = PullRequest(
+            key: PRKey("contoso", 7), title: "Cap the backoff", author: me, createdAt: Date(), projectId: "p", projectName: "Shop",
+            repositoryId: "r", repositoryName: "shop-web"
+        )
+        let threads = [
+            ReviewThread(id: 1, comments: [ReviewComment(id: 1, author: sam, text: "Cap it?", publishedAt: Date(timeIntervalSince1970: 1)),
+                                           ReviewComment(id: 2, author: me, text: "Done.", publishedAt: Date(timeIntervalSince1970: 2))]),
+            ReviewThread(id: 2, status: nil, comments: [ReviewComment(id: 1, author: sam, text: "And this?", publishedAt: Date(timeIntervalSince1970: 3))]),
+        ]
+        let record = PRRecord(
+            pullRequest: pullRequest, role: .author,
+            details: PRDetails(fetchedAt: Date(), fingerprint: pullRequest.fingerprint, checks: [], threads: threads, activity: []),
+            me: me.id
+        )
+        #expect(CopilotAsk.fixAllTitle(record) == "Fix 1 Comment")
         #expect(CopilotAsk.explain.placeholder() == "What do you want to know? (optional)")
         #expect(CopilotAsk.explain.placeholder(followingUp: true) == "What else do you want to know? (optional)")
     }

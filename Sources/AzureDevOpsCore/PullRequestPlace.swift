@@ -28,6 +28,15 @@ extension PRSnapshot {
     public var place: PullRequestPlace? {
         PullRequestPlace(link: url)
     }
+
+    /// Whether its row is about your review of it: a review you're asked for, or the changes you asked for, or your
+    /// rejection, which wait on its author. Its details show your part among its reviewers, with your vote.
+    public var isAboutYourReview: Bool {
+        switch reason {
+        case .reviewRequested, .reviewPending, .waitingForAuthor: true
+        default: false
+        }
+    }
 }
 
 extension PRKey {

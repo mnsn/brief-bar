@@ -82,6 +82,7 @@ struct PullRequestConflictsSection: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             let count: Int? = if case .read(let read)? = state, !read.files.isEmpty { read.files.count } else { nil }
             PageSectionHeader(title: "Merge Conflicts", count: count)
+                .takesFocusOnArrival(at: .section(.conflicts))
             Spacer(minLength: 8)
             Button {
                 AzureDevOps.open(item.pageURL())
@@ -446,7 +447,7 @@ private struct ConflictsCopilotActions: View {
             Button {
                 open(.explain)
             } label: {
-                Label(hasAnswer ? "Ask More" : "Explain", systemImage: CopilotAsk.explain.symbol)
+                ControlLabel(hasAnswer ? "Ask More" : "Explain", systemImage: CopilotAsk.explain.symbol)
             }
             .focused($focused, equals: .explain)
             .disabled(nobody)
@@ -455,7 +456,7 @@ private struct ConflictsCopilotActions: View {
                 Button {
                     open(.fix)
                 } label: {
-                    Label("Resolve", systemImage: CopilotAsk.fix.symbol)
+                    ControlLabel("Resolve", systemImage: CopilotAsk.fix.symbol)
                 }
                 .focused($focused, equals: .fix)
                 .help("Have Copilot merge \(target) in and resolve the conflicts, as you say"

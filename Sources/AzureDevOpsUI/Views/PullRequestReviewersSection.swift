@@ -7,9 +7,12 @@ import SwiftUI
 struct PullRequestReviewersSection: View {
     let panel: PullRequestPanel
 
+    @Environment(\.textScale) private var textScale
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             PageSectionHeader(title: "Reviewers", count: panel.reviewers.isEmpty ? nil : panel.reviewers.count)
+                .takesFocusOnArrival(at: .section(.reviewers))
             if panel.reviewers.isEmpty {
                 Text("No reviewers yet")
                     .font(size: 12.5)
@@ -18,9 +21,10 @@ struct PullRequestReviewersSection: View {
                 VStack(spacing: 0) {
                     ForEach(Array(panel.reviewers.enumerated()), id: \.element.id) { index, reviewer in
                         if index > 0 {
+                            // From where the names start, past the avatars, which follow the text size.
                             Divider()
                                 .opacity(0.6)
-                                .padding(.leading, 38)
+                                .padding(.leading, 18 + 20 * textScale)
                         }
                         ReviewerRow(reviewer: reviewer)
                     }
@@ -68,6 +72,8 @@ private struct ReviewerRow: View {
                 }
             }
         }
+        // At the card's leading edge, as the others are, with its vote under its name too: the card would center it.
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)

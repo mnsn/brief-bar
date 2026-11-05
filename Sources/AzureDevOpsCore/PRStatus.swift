@@ -4,7 +4,8 @@ import Foundation
 /// The groups the panel shows, in display order.
 public enum PRGroup: String, Sendable, Codable, CaseIterable, Comparable {
     /// Something new for you: a reply, a mention, a comment, a review request, a vote that wants changes. And comments
-    /// you've seen that still wait on you, until you reply, they're resolved, or you remove the pull request from here.
+    /// you've seen that still wait on you, until you reply, they're resolved, you mark their threads as read, or you remove
+    /// the pull request from here.
     case needsYou
     /// Something that needed you that you've since answered yourself in Azure DevOps, until you've seen it
     /// in the panel. Only for pull requests that would otherwise wait or be idle.
@@ -82,7 +83,8 @@ public struct PREvent: Sendable, Codable, Equatable, Hashable, Identifiable {
     /// The app it was sent in, for `sentInChat`: "Teams".
     public var app: String?
     /// You haven't seen it: it came after you last opened the pull request. A comment you've seen is kept while it
-    /// waits on you, until you reply, its thread is resolved, or you remove the pull request from Needs You.
+    /// waits on you, until you reply, its thread is resolved or marked as read, or you remove the pull request from Needs
+    /// You.
     public var isNew: Bool
 
     public init(
@@ -161,8 +163,9 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     public var group: PRGroup
     public var reason: PRReason
     public var headline: String
-    /// A comment, the names of failed checks, who approved...
-    public var detail: String?
+    /// A comment, the names of failed checks, who approved..., with the branches it names, what it merged into or where its
+    /// conflicts are, kept apart (`BranchText`), so that what writes it out names them its way (`detail(naming:)`).
+    public var detailText: BranchText?
     /// When it entered this state, or the latest activity.
     public var since: Date?
     /// The pull request, or the thread of the comment that needs you.
@@ -189,6 +192,26 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     public var readiness: PRReadiness? = nil
 
     public var id: String { key.description }
+
+    /// What `--json` writes of it: each of its fields under its name, and its detail as a line, as it always was, under
+    /// `detail`, with its branches as they are (`BranchText`). Every stored field has one.
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case key, title, repository, project, author, role, isDraft, group, reason, headline
+        case detailText = "detail"
+        case since, url, events, approvals, checkState, hasDetails, chatSource, failure, merge, isWatched, createdAt, readiness
+    }
+
+    /// Its detail, as the lists show it (`detailText`).
+    public var detail: String? {
+        get { detailText?.text() }
+        set { detailText = newValue.map(BranchText.init(_:)) }
+    }
+
+    /// Its detail, with the branches it names written as `naming` writes them: as agents get them, say, in single quotes
+    /// when a shell would read something in them (`QuotedText.commandWord`).
+    public func detail(naming: (String) -> String) -> String? {
+        detailText?.text(naming: naming)
+    }
 
     /// Events that need you, rather than news such as approvals.
     public var pendingEvents: [PREvent] { events.filter(\.kind.needsYou) }
@@ -252,10 +275,12 @@ public struct ClassifierOptions: Sendable, Equatable {
 public enum PRClassifier {
     /// `seenCutoff`: activity up to this time counts as seen. `dismissedCutoff`: comments up to this time that still
     /// wait on you don't need you anymore, since you removed the pull request from Needs You or sent them to Copilot;
-    /// those after it that you've seen still do. Nil when the pull request shouldn't be listed: done a while ago, or
-    /// done and already seen.
+    /// those after it that you've seen still do. `read`: the threads you marked as read, by their IDs, each up to when
+    /// what it said doesn't need you anymore, seen or not, whatever its status; a comment after that does. Nil when the
+    /// pull request shouldn't be listed: done a while ago, or done and already seen.
     public static func snapshot(
-        for record: PRRecord, seenCutoff: Date, dismissedCutoff: Date, now: Date, options: ClassifierOptions = ClassifierOptions()
+        for record: PRRecord, seenCutoff: Date, dismissedCutoff: Date, read: [Int: Date] = [:], now: Date,
+        options: ClassifierOptions = ClassifierOptions()
     ) -> PRSnapshot? {
         // Removing it from Needs You saw it, too.
         let seenCutoff = max(seenCutoff, dismissedCutoff)
@@ -269,17 +294,17 @@ public enum PRClassifier {
         var snapshot = PRSnapshot(
             key: pr.key, title: pr.title.isEmpty ? "Pull request \(pr.key.number)" : pr.title,
             repository: pr.repositoryName, project: pr.projectName, author: pr.author.name, role: record.role,
-            isDraft: pr.isDraft, group: .waiting, reason: .waitingForReviewers, headline: "", detail: nil,
+            isDraft: pr.isDraft, group: .waiting, reason: .waitingForReviewers, headline: "", detailText: nil,
             since: lastActivity, url: pr.webURL, events: [], approvals: approvals.map(\.person.name),
             checkState: details.flatMap { checkState($0.checks) }, hasDetails: details != nil
         )
         snapshot.isWatched = record.isWatched
         snapshot.createdAt = pr.createdAt
-        func set(_ group: PRGroup, _ reason: PRReason, _ headline: String, _ detail: String? = nil, since: Date? = nil) {
+        func set(_ group: PRGroup, _ reason: PRReason, _ headline: String, _ detail: BranchText? = nil, since: Date? = nil) {
             snapshot.group = group
             snapshot.reason = reason
             snapshot.headline = headline
-            snapshot.detail = detail.flatMap { $0.isEmpty ? nil : $0 }
+            snapshot.detailText = detail.flatMap { $0.text().isEmpty ? nil : $0 }
             snapshot.since = since ?? lastActivity
         }
 
@@ -298,20 +323,20 @@ public enum PRClassifier {
                 switch merge.outcome {
                 case .failed:
                     set(.failing, .failedAfterMerge, "Failed after merge",
-                        [merge.pipeline, merge.failure?.summary].compactMap { $0 }.joined(separator: " · "), since: merge.since ?? closed)
+                        BranchText([merge.pipeline, merge.failure?.summary].compactMap { $0 }.joined(separator: " · ")), since: merge.since ?? closed)
                     snapshot.failure = merge.failure
                 case .waiting:
                     set(.done, .waitingForApproval, "Waiting for approval",
-                        [merge.pipeline, merge.stage].compactMap { $0 }.joined(separator: " · "), since: merge.since ?? closed)
+                        BranchText([merge.pipeline, merge.stage].compactMap { $0 }.joined(separator: " · ")), since: merge.since ?? closed)
                 default:
                     let running = merge.running == 1 ? "1 pipeline running" : "\(merge.running) pipelines running"
-                    set(.done, .completed, "Completed", "Merged into \(pr.targetBranch) · \(running)", since: closed)
+                    set(.done, .completed, "Completed", "Merged into \(branch: pr.targetBranch) · \(running)", since: closed)
                 }
                 if merge.outcome != .running, let url = merge.runURL { snapshot.url = url }
                 return snapshot
             }
             guard closed > seenCutoff else { return nil }
-            var detail = completed ? "Merged into \(pr.targetBranch)" : nil
+            var detail: BranchText? = completed ? "Merged into \(branch: pr.targetBranch)" : nil
             if let merge {
                 let ended: String
                 switch (merge.outcome, merge.total) {
@@ -320,7 +345,7 @@ public enum PRClassifier {
                 case (_, 1): ended = "its pipeline passed"
                 default: ended = "\(merge.total) pipelines passed"
                 }
-                detail = (detail ?? "") + " · " + ended
+                detail = (detail ?? "") + " · \(ended)"
             }
             set(.done, completed ? .completed : .abandoned, completed ? "Completed" : "Abandoned", detail, since: closed)
             return snapshot
@@ -334,8 +359,8 @@ public enum PRClassifier {
         var events: [PREvent] = []
         if let details {
             events = record.role == .author
-                ? authorEvents(pr, details, me: me, seenCutoff: seenCutoff, dismissedCutoff: dismissedCutoff)
-                : reviewerEvents(pr, details, me: me, seenCutoff: seenCutoff, dismissedCutoff: dismissedCutoff)
+                ? authorEvents(pr, details, me: me, seenCutoff: seenCutoff, dismissedCutoff: dismissedCutoff, read: read)
+                : reviewerEvents(pr, details, me: me, seenCutoff: seenCutoff, dismissedCutoff: dismissedCutoff, read: read)
         }
         // Comments you've seen wait on you while the pull request is active: once nothing has happened on it for a
         // while, it's idle, as it would be without them.
@@ -354,7 +379,7 @@ public enum PRClassifier {
         let named = fresh.isEmpty ? pending : fresh
         if let top = named.min(by: { ($0.kind.priority, -$0.at.timeIntervalSince1970) < ($1.kind.priority, -$1.at.timeIntervalSince1970) }) {
             let (reason, headline) = describe(top, among: named)
-            set(.needsYou, reason, headline, top.text ?? eventDetail(top, pr, role: record.role), since: pending.map(\.at).max())
+            set(.needsYou, reason, headline, (top.text ?? eventDetail(top, pr, role: record.role)).map(BranchText.init(_:)), since: pending.map(\.at).max())
             if let thread = top.threadId { snapshot.url = pr.threadURL(thread) }
             return snapshot
         }
@@ -367,7 +392,7 @@ public enum PRClassifier {
         func showAnswer() -> Bool {
             let byPriority = { (answer: Answer) in (answer.kind.priority, -answer.at.timeIntervalSince1970) }
             guard let top = yours.min(by: { byPriority($0) < byPriority($1) }) else { return false }
-            set(.answered, .answered, top.headline, top.question, since: yours.map(\.at).max())
+            set(.answered, .answered, top.headline, BranchText(top.question), since: yours.map(\.at).max())
             if let thread = top.threadId { snapshot.url = pr.threadURL(thread) }
             return true
         }
@@ -402,12 +427,15 @@ public enum PRClassifier {
 
     /// On your pull request: comments from others that came after your last word in their thread, and
     /// votes that are still standing. Comments you've seen count while their thread is open, from
-    /// `dismissedCutoff`; everything else only while it's new.
-    static func authorEvents(_ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date, dismissedCutoff: Date) -> [PREvent] {
+    /// `dismissedCutoff`; everything else only while it's new. None from a thread you marked as read, up to then (`read`).
+    static func authorEvents(
+        _ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date, dismissedCutoff: Date, read: [Int: Date] = [:]
+    ) -> [PREvent] {
         var events: [PREvent] = []
         for thread in details.threads {
             let lastMine = thread.comments.last { $0.author.id == me }?.publishedAt
-            for comment in unanswered(thread, me: me, after: max(waitingSince(thread, seenCutoff, dismissedCutoff), lastMine ?? .distantPast)) {
+            let since = max(waitingSince(thread, seenCutoff, dismissedCutoff), lastMine ?? .distantPast, read[thread.id] ?? .distantPast)
+            for comment in unanswered(thread, me: me, after: since) {
                 let kind: PREvent.Kind = comment.mentions.contains(me) ? .mention : lastMine != nil ? .reply : .comment
                 events.append(event(kind, comment, in: thread, seenCutoff: seenCutoff))
             }
@@ -436,12 +464,16 @@ public enum PRClassifier {
     }
 
     /// On a pull request you review: replies and mentions, a review request you haven't seen, and pushes
-    /// since your vote. Replies and mentions you've seen count while their thread is open, from `dismissedCutoff`.
-    static func reviewerEvents(_ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date, dismissedCutoff: Date) -> [PREvent] {
+    /// since your vote. Replies and mentions you've seen count while their thread is open, from `dismissedCutoff`. None
+    /// from a thread you marked as read, up to then (`read`).
+    static func reviewerEvents(
+        _ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date, dismissedCutoff: Date, read: [Int: Date] = [:]
+    ) -> [PREvent] {
         var events: [PREvent] = []
         for thread in details.threads {
             let lastMine = thread.comments.last { $0.author.id == me }?.publishedAt
-            for comment in unanswered(thread, me: me, after: max(waitingSince(thread, seenCutoff, dismissedCutoff), lastMine ?? .distantPast)) {
+            let since = max(waitingSince(thread, seenCutoff, dismissedCutoff), lastMine ?? .distantPast, read[thread.id] ?? .distantPast)
+            for comment in unanswered(thread, me: me, after: since) {
                 if comment.mentions.contains(me) {
                     events.append(event(.mention, comment, in: thread, seenCutoff: seenCutoff))
                 } else if lastMine != nil {
@@ -648,10 +680,11 @@ public enum PRClassifier {
     }
 
     /// The comments in an unresolved thread on your pull request that wait on you: from people other than you, after your
-    /// last word in it and after `dismissedCutoff`, as `authorEvents` finds them.
-    static func waitingComments(in thread: ReviewThread, me: String, dismissedCutoff: Date) -> [ReviewComment] {
+    /// last word in it, after `dismissedCutoff`, and after what you marked as read in it (`read`), as `authorEvents` finds
+    /// them.
+    static func waitingComments(in thread: ReviewThread, me: String, dismissedCutoff: Date, read: Date? = nil) -> [ReviewComment] {
         let lastMine = thread.comments.last { $0.author.id == me }?.publishedAt ?? .distantPast
-        return unanswered(thread, me: me, after: max(dismissedCutoff, lastMine))
+        return unanswered(thread, me: me, after: max(dismissedCutoff, lastMine, read ?? .distantPast))
     }
 
     /// Since when a thread's comments can need you: in an open one, those you've seen wait on you too, back to when you
@@ -700,7 +733,7 @@ public enum PRClassifier {
 
     private static func classifyAuthor(
         _ pr: PullRequest, _ details: PRDetails?, approvals: [Reviewer], lastActivity: Date,
-        set: (PRGroup, PRReason, String, String?, Date?) -> Void
+        set: (PRGroup, PRReason, String, BranchText?, Date?) -> Void
     ) {
         let checks = details?.checks ?? []
         let blocking = checks.filter { $0.isBlocking && $0.kind != .completion && $0.state != .notApplicable }
@@ -720,16 +753,16 @@ public enum PRClassifier {
             // Each build with where it failed, once its timeline has been read: "shop-web CI · Run unit tests: …".
             let builds = failedBuilds.map { build in build.failure.map { "\(build.name) · \($0.summary)" } ?? build.name }
             set(.failing, .buildFailed, failedBuilds.count > 1 ? "\(failedBuilds.count) builds failed" : "Build failed",
-                (builds + failedChecks.map(\.name)).joined(separator: ", ") + conflicts, latestCompletion(failedBuilds))
+                BranchText((builds + failedChecks.map(\.name)).joined(separator: ", ") + conflicts), latestCompletion(failedBuilds))
             return
         }
         if !failedChecks.isEmpty {
             set(.failing, .checkFailed, failedChecks.count > 1 ? "\(failedChecks.count) checks failed" : "Check failed",
-                names(failedChecks) + conflicts, latestCompletion(failedChecks))
+                BranchText(names(failedChecks) + conflicts), latestCompletion(failedChecks))
             return
         }
         if pr.hasConflicts {
-            set(.failing, .conflicts, "Merge conflicts", "\(pr.sourceBranch) into \(pr.targetBranch)", nil)
+            set(.failing, .conflicts, "Merge conflicts", "\(branch: pr.sourceBranch) into \(branch: pr.targetBranch)", nil)
             return
         }
         // Azure DevOps couldn't merge it otherwise, so it can't be completed either, however its policies stand.
@@ -738,7 +771,7 @@ public enum PRClassifier {
             return
         }
         if !expired.isEmpty {
-            set(.failing, .buildExpired, "Build expired", names(expired) + " · queue it again", nil)
+            set(.failing, .buildExpired, "Build expired", "\(names(expired)) · queue it again", nil)
             return
         }
 
@@ -746,7 +779,7 @@ public enum PRClassifier {
         if let first = wantChanges.first(where: { $0.vote == .rejected }) ?? wantChanges.first {
             let who = wantChanges.map(\.person.name).joined(separator: ", ")
             set(.waiting, first.vote == .rejected ? .rejected : .changesRequested,
-                first.vote == .rejected ? "Rejected" : "Changes requested", who, nil)
+                first.vote == .rejected ? "Rejected" : "Changes requested", BranchText(who), nil)
             return
         }
 
@@ -764,7 +797,7 @@ public enum PRClassifier {
            hasReviewerPolicy || !approvals.isEmpty {
             set(.ready, pr.autoComplete ? .autoComplete : .readyToComplete,
                 pr.autoComplete ? "Completing automatically" : "Ready to complete",
-                approvedBy ?? "No approvals required", nil)
+                BranchText(approvedBy ?? "No approvals required"), nil)
             return
         }
 
@@ -785,29 +818,29 @@ public enum PRClassifier {
         }
 
         if !current {
-            set(.waiting, .waitingForReviewers, "Waiting for reviewers", progress.first, nil)
+            set(.waiting, .waitingForReviewers, "Waiting for reviewers", progress.first.map(BranchText.init(_:)), nil)
         } else if details?.checksKnown == false {
-            set(.waiting, .requirementsPending, "Can't read its policies", progress.first, nil)
+            set(.waiting, .requirementsPending, "Can't read its policies", progress.first.map(BranchText.init(_:)), nil)
         } else if !reviewersPending.isEmpty || !requiredWaiting.isEmpty || (!hasReviewerPolicy && approvals.isEmpty) {
-            set(.waiting, .waitingForReviewers, "Waiting for reviewers", progress.joined(separator: " · "), nil)
+            set(.waiting, .waitingForReviewers, "Waiting for reviewers", BranchText(progress.joined(separator: " · ")), nil)
         } else if !running.isEmpty {
             let builds = running.filter { $0.kind == .build }
-            set(.waiting, .checksRunning, builds.isEmpty ? "Checks running" : "Build running", names(running), nil)
+            set(.waiting, .checksRunning, builds.isEmpty ? "Checks running" : "Build running", BranchText(names(running)), nil)
         } else if !notRun.isEmpty {
-            set(.waiting, .requirementsPending, "Build hasn't run", names(notRun) + " · queue it", nil)
+            set(.waiting, .requirementsPending, "Build hasn't run", "\(names(notRun)) · queue it", nil)
         } else {
-            set(.waiting, .requirementsPending, requirementHeadline(requirements), progress.first, nil)
+            set(.waiting, .requirementsPending, requirementHeadline(requirements), progress.first.map(BranchText.init(_:)), nil)
         }
     }
 
     private static func classifyReviewer(
-        _ pr: PullRequest, me: String, approvals: [Reviewer], watched: Bool, set: (PRGroup, PRReason, String, String?, Date?) -> Void
+        _ pr: PullRequest, me: String, approvals: [Reviewer], watched: Bool, set: (PRGroup, PRReason, String, BranchText?, Date?) -> Void
     ) {
         let mine = pr.reviewer(me)
         switch mine?.vote ?? .none {
         case .approved, .approvedWithSuggestions:
             let others = approvals.filter { $0.person.id != me }.map(\.person.name)
-            set(.idle, .youApproved, "You approved", others.isEmpty ? "By \(pr.author.name)" : "Also approved by " + others.joined(separator: ", "), nil)
+            set(.idle, .youApproved, "You approved", BranchText(others.isEmpty ? "By \(pr.author.name)" : "Also approved by " + others.joined(separator: ", ")), nil)
         case .waitingForAuthor:
             set(.waiting, .waitingForAuthor, "Waiting for the author", "You asked \(pr.author.name) for changes", nil)
         case .rejected:

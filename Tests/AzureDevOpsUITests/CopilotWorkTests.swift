@@ -1420,7 +1420,9 @@ import Testing
         let older = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: first.addingTimeInterval(-600), copied: false, ended: .finished))
         let copied = try #require(SentPrompt(about(threads: [11, 13]), session: session, sentAt: now, copied: true))
         settings.copilotSentPrompts = [older, copied]
-        store.copiedPrompts[copied.id] = ("Fix 11", CommentHandOff(key: key, waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast))
+        store.copiedPrompts[copied.id] = (
+            "Fix 11", CommentHandOff(key: key, waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast, read: [:], unanswered: [:])
+        )
         #expect(store.work(on: .thread(11), of: key)?.state == .waiting(copied: true))
         store.clear(.thread(11), of: key)
         #expect(store.work(on: .thread(11), of: key) == nil)
@@ -1707,11 +1709,11 @@ import Testing
     @Test func clearKeepsAClearedThreadOnNeedsYou() throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = store(settings)
-        let early = now.addingTimeInterval(-3_600), middle = now.addingTimeInterval(-1_800), late = now.addingTimeInterval(-60)
+        let early = now.addingTimeInterval(-3_600), late = now.addingTimeInterval(-60)
         let handOff = CommentHandOff(key: key, waiting: [
-            CommentHandOff.Waiting(thread: 11, entry: "1. Thread 11", comments: [1], first: early, last: middle),
-            CommentHandOff.Waiting(thread: 13, entry: "2. Thread 13", comments: [2], first: middle, last: late),
-        ], account: nil, me: "me", dismissedCutoff: .distantPast)
+            CommentHandOff.Waiting(thread: 11, entry: "1. Thread 11", comments: [1], first: early, last: early),
+            CommentHandOff.Waiting(thread: 13, entry: "2. Thread 13", comments: [2], first: late, last: late),
+        ], account: nil, me: "me", dismissedCutoff: .distantPast, read: [:], unanswered: [11: [1: early], 13: [2: late]])
         let text = "Fix these:\n1. Thread 11\n2. Thread 13"
         #expect(handOff.handedOff(in: text) == late)
         let copied = try #require(SentPrompt(about(threads: [11, 13]), session: session, sentAt: now, copied: true))

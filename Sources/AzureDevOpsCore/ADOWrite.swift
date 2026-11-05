@@ -287,8 +287,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
     case offline
     /// The Azure CLI isn't signed in, or Azure DevOps didn't take its sign-in.
     case signedOut
-    /// Azure DevOps asked BriefBar to slow down.
-    case slowedDown
+    /// Azure DevOps asked BriefBar to slow down, until then, for what it reads too: nothing goes before.
+    case slowedDown(until: Date)
     /// No answer came in time: it may have been made.
     case unanswered
     /// A reply that may have gone, as one Azure DevOps didn't answer in time, whose thread couldn't be read again to tell:
@@ -303,7 +303,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
     /// Anything else, as BriefBar says it.
     case failed(String)
 
-    public init(_ error: Error) {
+    /// - Parameter now: when it happened, from which a wait Azure DevOps asked for runs.
+    public init(_ error: Error, now: Date = Date()) {
         guard let error = error as? ADOError else {
             self = .failed(error.localizedDescription)
             return
@@ -313,12 +314,18 @@ public enum ADOWriteProblem: Sendable, Equatable {
         case .notFound: self = .gone
         case .offline: self = .offline
         case .auth, .unauthorized, .otherDirectory: self = .signedOut
-        case .throttled: self = .slowedDown
+        case .throttled(let wait): self = .slowedDown(until: now.addingTimeInterval(wait))
         case .network(ADOClient.unansweredMessage): self = .unanswered
         case .refused(let reason, let message): self = reason == .notEditable ? .closed : .refused(message)
         case .otherAccount: self = .otherAccount
         case .http, .network, .decoding, .redirected: self = .failed(error.description)
         }
+    }
+
+    /// A time to try again at, as a sentence says it, "3:06 PM": the minute it ends in, so that it's never too soon.
+    static func time(_ date: Date) -> String {
+        let minute = (date.timeIntervalSinceReferenceDate / 60).rounded(.up) * 60
+        return Date(timeIntervalSinceReferenceDate: minute).formatted(date: .omitted, time: .shortened)
     }
 
     /// Whether it may have been made after all, so that reading the thread again tells.
@@ -341,8 +348,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
             return kind == .reply ? "You're offline. Your reply is kept: send it once you're back." : "You're offline: try again once you're back."
         case .signedOut:
             return "The Azure CLI isn't signed in, or Azure DevOps didn't take its sign-in: sign in, then try again."
-        case .slowedDown:
-            return "Azure DevOps asked BriefBar to slow down: try again in a minute."
+        case .slowedDown(let until):
+            return "Azure DevOps asked BriefBar to slow down, until \(Self.time(until)): try again then."
         case .unanswered:
             return kind == .reply
                 ? "Azure DevOps didn't answer in time, so your reply may have gone: BriefBar reads the thread again, and won't send it twice."
@@ -382,8 +389,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
             "You're offline: try again once you're back."
         case .signedOut:
             "The Azure CLI isn't signed in, or Azure DevOps didn't take its sign-in: sign in, then try again."
-        case .slowedDown:
-            "Azure DevOps asked BriefBar to slow down: try again in a minute."
+        case .slowedDown(let until):
+            "Azure DevOps asked BriefBar to slow down, until \(Self.time(until)): try again then."
         case .unanswered:
             "Azure DevOps didn't answer in time: BriefBar reads the tags again, to show how they stand."
         case .unconfirmed:

@@ -1,6 +1,7 @@
 import AzureDevOpsCore
 import BriefBarCore
 import Foundation
+import Synchronization
 import Testing
 @testable import AzureDevOpsUI
 
@@ -41,6 +42,81 @@ private final class InvestigationGate {
     func fail(_ error: Error) async throws {
         try await until("a read") { !waiting.isEmpty }
         waiting.removeFirst().continuation.resume(throwing: error)
+    }
+}
+
+/// A stand-in for Azure DevOps, for a store that reads through its own `BuildInvestigator`: a run, as Azure DevOps answers
+/// one, and an empty list for anything else; what's asked is noted by the token each request has.
+private final class StandInAzureDevOps: URLProtocol, @unchecked Sendable {
+    static let asked = Mutex<[String: [String]]>([:])
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url else { return }
+        let token = request.value(forHTTPHeaderField: "Authorization")?.replacingOccurrences(of: "Bearer ", with: "") ?? ""
+        Self.asked.withLock { $0[token, default: []].append(url.path) }
+        let isRun = url.path.range(of: #"/_apis/build/builds/\d+$"#, options: .regularExpression) != nil
+        let json: [String: Any] = isRun
+            ? ["id": 1, "status": "completed", "result": "failed", "definition": ["id": 31], "sourceBranch": "refs/pull/4088/merge"]
+            : ["count": 0, "value": [Any]()]
+        let data = (try? JSONSerialization.data(withJSONObject: json)) ?? Data()
+        guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])
+        else { return }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+/// A sign-in whose first token waits until it's let go, as the Azure CLI's can, saying when it's asked for and when whoever
+/// waits for it is called off (`events`), for a test to wait on rather than for a while: one token for each test, by which
+/// the stand-in tells its requests apart.
+private actor HeldToken: AccessTokenProvider {
+    /// What becomes of the first token.
+    enum Event: Equatable, Sendable {
+        /// It's asked for, and waits.
+        case holding
+        /// Whoever waits for it was called off.
+        case calledOff
+    }
+
+    let value = UUID().uuidString
+    /// What becomes of the first token, as it happens.
+    let events: AsyncStream<Event>
+    private let event: AsyncStream<Event>.Continuation
+    private var calls = 0
+    private var held: CheckedContinuation<Void, Never>?
+
+    init() {
+        let (events, event) = AsyncStream<Event>.makeStream()
+        self.events = events
+        self.event = event
+    }
+
+    func token(tenant: String?) async throws -> AccessToken {
+        calls += 1
+        if calls == 1 {
+            await withTaskCancellationHandler {
+                await withCheckedContinuation {
+                    held = $0
+                    event.yield(.holding)
+                }
+            } onCancel: { [event] in
+                event.yield(.calledOff)
+            }
+        }
+        return AccessToken(value: value, expiresOn: .distantFuture)
+    }
+
+    func invalidate(tenant: String?) {}
+
+    func release() {
+        held?.resume()
+        held = nil
     }
 }
 
@@ -615,6 +691,74 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         store.expand(1, of: delivery)
         store.show(nil)
         #expect(store.pullRequest == nil && store.expanded.isEmpty && store.looks.isEmpty)
+    }
+
+    /// Showing another pull request calls off the store's reads under way: so do closing the details and someone else
+    /// signing in.
+    @Test(.timeLimit(.minutes(1)))
+    func lettingGoCallsOffTheReadsUnderWay() async throws {
+        let (started, startedOne) = AsyncStream<Int>.makeStream()
+        let (calledOff, calledOffOne) = AsyncStream<Int>.makeStream()
+        let store = BuildInvestigationStore(mode: .live, client: ADOClient(tokens: NoTokens()), now: { [now] in now }) { buildId, _, _, _ in
+            startedOne.yield(buildId)
+            do {
+                while true { try await Task.sleep(for: .milliseconds(5)) }
+            } catch {
+                calledOffOne.yield(buildId)
+                throw error
+            }
+        }
+        var startedIterator = started.makeAsyncIterator()
+        var calledOffIterator = calledOff.makeAsyncIterator()
+        store.expand(1, of: delivery)
+        #expect(await startedIterator.next() == 1)
+        store.show(slowQueries.key)
+        #expect(await calledOffIterator.next() == 1)
+        store.expand(3, of: slowQueries)
+        #expect(await startedIterator.next() == 3)
+        store.close(slowQueries.key)
+        #expect(await calledOffIterator.next() == 3)
+        store.accountChanged("home/robin")
+        store.expand(1, of: delivery)
+        #expect(await startedIterator.next() == 1)
+        store.accountChanged("home/sam")
+        #expect(await calledOffIterator.next() == 1)
+    }
+
+    /// How the details let go of a run, for `lettingGoStopsTheInvestigatorsRead`.
+    enum LetGo: String, CaseIterable, Sendable {
+        case anotherPullRequest = "showing another pull request"
+        case someoneElse = "someone else signing in"
+    }
+
+    /// Through its own `BuildInvestigator`, over a stand-in for Azure DevOps: as the details let go of a run, showing another
+    /// pull request, or as someone else signs in, the investigator's read of it, waiting for a token, is called off
+    /// (`BuildInvestigator.giveUp`, `forget`), and nothing more of the run is read, its timeline, logs and tests. It waits on
+    /// what becomes of the token, never for a while: on CI's runners, `make test` can take a minute, all of it at once on
+    /// the one thread it gives the cooperative pool, and a test that starts early can take most of that minute, however
+    /// little it does. Its time limit is above that.
+    @Test(.timeLimit(.minutes(2)), arguments: LetGo.allCases)
+    func lettingGoStopsTheInvestigatorsRead(_ letGo: LetGo) async throws {
+        let tokens = HeldToken()
+        var events = tokens.events.makeAsyncIterator()
+        let client = ADOClient(tokens: tokens, session: ADOClient.makeSession(protocolClasses: [StandInAzureDevOps.self]))
+        let store = BuildInvestigationStore(mode: .live, client: client, now: { [now] in now })
+        store.accountChanged("home/robin")
+        store.expand(1, of: delivery)
+        // Its read asks for its first token, which waits.
+        #expect(await events.next() == .holding)
+        switch letGo {
+        case .anotherPullRequest: store.show(slowQueries.key)
+        case .someoneElse: store.accountChanged("home/sam")
+        }
+        #expect(await events.next() == .calledOff, "\(letGo.rawValue): the read wasn't called off")
+        await tokens.release()
+        // A read that went on once its token came would ask for the run's timeline and logs at once, and one called off asks
+        // for nothing more (`BuildInvestigationReader.readRun`): a while to see that, which a busy machine can only make too
+        // short to catch one that went on, never fail one that didn't.
+        try await Task.sleep(for: .milliseconds(100))
+        let asked = StandInAzureDevOps.asked.withLock { $0[tokens.value] ?? [] }
+        #expect(!asked.contains { $0.hasSuffix("/timeline") || $0.contains("/logs") }, "\(letGo.rawValue): \(asked)")
     }
 
     @Test func someoneElseSigningInLetsGoOfWhatWasRead() async throws {

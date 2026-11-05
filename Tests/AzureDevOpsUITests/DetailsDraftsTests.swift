@@ -181,6 +181,31 @@ import Testing
         #expect(arranged.resolved.isEmpty)
     }
 
+    /// A thread you marked as read in the details, then change, stays where it was as you marked it as read, with those
+    /// that wait on you: there too once you mark it as unread, which lets go of where it was then, as you changed it since.
+    @Test func aThreadYouMarkedAsReadThenChangedStaysWhereItWasThen() throws {
+        let drafts = DetailsDrafts()
+        let waiting = try thread(11, of: 4102)
+        #expect(waiting.placement == .waitingOnYou)
+        // Marked as read, the details hold it where it was (`PullRequestDetailsStore.readHolds`); then you resolve it.
+        let read = [11: PullRequestPanel.Thread.Held(waiting)]
+        var resolved = waiting
+        resolved.waitsOnYou = false
+        resolved.thread.status = "fixed"
+        drafts.hold(resolved, in: key(4102), read: read)
+        #expect(drafts.held(in: key(4102))[11] == PullRequestPanel.Thread.Held(waiting))
+        // Marked as unread: where you changed it still holds it.
+        let threads = PullRequestPanel.Threads(waitingOnYou: [], open: [], resolved: [resolved])
+        let arranged = threads.arranged(holding: PullRequestPanel.Thread.Held.kept(changed: drafts.held(in: key(4102)), read: [:]))
+        #expect(arranged.open.flatMap(\.threads).map(\.id) == [11])
+        #expect(arranged.resolved.isEmpty)
+        // Another pull request's thread 11, which you didn't mark as read there, is held where it is.
+        var other = resolved
+        other.thread.status = "closed"
+        drafts.hold(other, in: key(4088), read: [:])
+        #expect(drafts.held(in: key(4088))[11] == PullRequestPanel.Thread.Held(other))
+    }
+
     /// Beside the list, where the threads you changed were stays while the details show their pull request: as a page opens
     /// over them, such as its Copilot session's, and you come back, and as a file's page shows in their place. Once they show
     /// another pull request, or close, it goes: back to it, a thread you resolved is with the resolved ones.
@@ -216,6 +241,42 @@ import Testing
         panel.close()
         await settled()
         #expect(drafts.held(in: key(4102)).isEmpty)
+    }
+
+    /// The resolved threads, once you show them, or going to one of them did, stay shown with where the threads you changed
+    /// were: as a file's page shows in the details' place and you come back, so that a thread you reactivated, which stays
+    /// with them, is there to go back to. They fold again once the details show the pull request no more, or someone else
+    /// signs in.
+    @Test func theResolvedThreadsStayShownWithWhereThreadsWere() async throws {
+        let drafts = DetailsDrafts()
+        let panel = PullRequestDetailsStore()
+        panel.itemsChanged(items)
+        drafts.follow(panel, pagesOver: workItems())
+        panel.show(try item(4102))
+        #expect(!drafts.showsResolved(in: key(4102)))
+        drafts.setShowsResolved(true, in: key(4102))
+        #expect(drafts.showsResolved(in: key(4102)) && !drafts.showsResolved(in: key(4088)))
+
+        panel.open(file: "/src/Payments/PaymentsClient.cs", at: 11)
+        await settled()
+        panel.closeFile()
+        panel.open(page: session)
+        await settled()
+        panel.back()
+        await settled()
+        #expect(drafts.showsResolved(in: key(4102)))
+
+        drafts.setShowsResolved(false, in: key(4102))
+        #expect(!drafts.showsResolved(in: key(4102)))
+        drafts.setShowsResolved(true, in: key(4102))
+        panel.show(try item(4088))
+        await settled()
+        #expect(!drafts.showsResolved(in: key(4102)))
+
+        drafts.setShowsResolved(true, in: key(4088))
+        drafts.accountChanged("robin@contoso.example")
+        drafts.accountChanged("sam@contoso.example")
+        #expect(!drafts.showsResolved(in: key(4088)))
     }
 
     /// A pull request whose page shows over another's details, chosen in the list, shows beside it instead: where its threads
@@ -423,17 +484,15 @@ import Testing
         return view.subviews.lazy.compactMap(textField(in:)).first
     }
 
-    /// Lets SwiftUI lay the window out and run what its views start, until `done`.
+    /// Lets SwiftUI lay the window out and run what its views start, until `done`, for as long as a busy machine could
+    /// need (`waitLimit`). It awaits between looks, so that the main run loop does that meanwhile, and the main actor goes
+    /// on with other tests' work: a test that ran that run loop itself would hold the main actor until it returned.
     private func settle(until done: () -> Bool) async throws {
-        for _ in 0..<300 where !done() {
-            Self.runLoop()
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !done() {
+            guard ContinuousClock.now < deadline else { throw Timeout(description: "Timed out waiting for the window") }
             try await Task.sleep(for: .milliseconds(10))
         }
-    }
-
-    /// The main run loop, for a moment, where SwiftUI lays windows out and starts their views' tasks.
-    private static func runLoop() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
     }
 
     /// The text of each field the window shows.
@@ -482,4 +541,8 @@ import Testing
         // Long after, it's forgotten.
         #expect(outcomes.isNew(fixed, at: ended.addingTimeInterval(SpokenOutcomes.remembered + 1)))
     }
+}
+
+private struct Timeout: Error, CustomStringConvertible {
+    var description: String
 }

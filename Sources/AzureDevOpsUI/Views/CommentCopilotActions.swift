@@ -149,7 +149,7 @@ struct ThreadCopilotActions: View {
                 Button {
                     open(.explain)
                 } label: {
-                    Label(explainTitle, systemImage: CopilotAsk.explain.symbol)
+                    ControlLabel(explainTitle, systemImage: CopilotAsk.explain.symbol)
                 }
                 .focused($focused, equals: .explain)
                 .disabled(nobody)
@@ -158,7 +158,7 @@ struct ThreadCopilotActions: View {
                     Button {
                         open(.fix)
                     } label: {
-                        Label("Fix", systemImage: CopilotAsk.fix.symbol)
+                        ControlLabel("Fix", systemImage: CopilotAsk.fix.symbol)
                     }
                     .focused($focused, equals: .fix)
                     .help(fixHelp(hasAnswer: hasAnswer))
@@ -448,8 +448,7 @@ struct CommentComposer: View {
     /// Fix All's title, which says what it takes on (`CopilotAsk.fixAllTitle`).
     private var fixAllTitle: String {
         guard let record else { return CopilotAsk.fixAll.title(about: nil) }
-        let open = (record.details?.threads ?? []).filter { !$0.isResolved }.count
-        return CopilotAsk.fixAllTitle(waiting: PullRequestPrompt.waitingThreads(record).count, open: open)
+        return CopilotAsk.fixAllTitle(record)
     }
 
     /// The code its thread is on, once it's read.
@@ -559,10 +558,13 @@ struct CommentComposer: View {
 
 /// The Comments header, with Fix All on your pull request while comments wait on you: Fix Comments, through the same
 /// composer in place as a thread's Fix, under it. It says what it takes on: "Fix 1 Comment" while others wait on someone
-/// else.
+/// else. Active | All, beside its title, chooses which threads show, for every pull request. Fix All goes under them where
+/// the line has no room for it, as at a bigger text size (`ActionBesideOrUnder`).
 struct CommentsHeader: View {
     let item: PRSnapshot
     let count: Int?
+    /// Which threads show: all of them, or only the active ones; nil for none to choose, as before there are any.
+    var filter: Binding<PullRequestPanel.CommentFilter>? = nil
     /// The composer in place that's open in the comments.
     @Binding var composing: CopilotComposing?
     let drafts: CopilotDrafts
@@ -582,23 +584,35 @@ struct CommentsHeader: View {
         return PullRequestTasks.actions(for: record, canShip: false).contains(.fixComments)
     }
 
-    /// "Fix All", or "Fix 1 Comment" while others wait on someone else.
+    /// "Fix All", or "Fix 1 Comment" while others wait on someone else: of all the unresolved threads, as the composer says
+    /// it, not only those the heading counts with Active.
     private var title: String {
         guard let record else { return CopilotAsk.fixAll.title(about: nil) }
-        return CopilotAsk.fixAllTitle(waiting: PullRequestPrompt.waitingThreads(record).count, open: count ?? 0)
+        return CopilotAsk.fixAllTitle(record)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                PageSectionHeader(title: "Comments", count: count)
-                Spacer(minLength: 8)
+            ActionBesideOrUnder {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    PageSectionHeader(title: "Comments", count: count)
+                        .takesFocusOnArrival(at: .section(.comments))
+                    if let filter {
+                        SegmentedPicker("Comments Shown", selection: filter, segments: [
+                            .init(.active, title: "Active"),
+                            .init(.all, title: "All"),
+                        ])
+                        .controlSize(.small)
+                        .fixedSize()
+                        .help("Active: only the comments whose status is active or pending. All: every comment, the resolved ones folded")
+                    }
+                }
                 if canFixAll, !isFixing {
                     Button {
                         copied = nil
                         composing = .fixAll
                     } label: {
-                        Label(title, systemImage: CopilotAsk.fixAll.symbol)
+                        ControlLabel(title, systemImage: CopilotAsk.fixAll.symbol)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -620,5 +634,57 @@ struct CommentsHeader: View {
             }
         }
         .onAppear { if preview?.fixAll != nil { composing = .fixAll } }
+    }
+}
+
+/// A header's title, then its action: at the end of the line while both fit on it at their own widths; otherwise under
+/// the title, at the start of a line of its own, rather than squeezing the title until it breaks or cutting the action's
+/// name short, as at a bigger text size. On one line, they line up on their text, as an `HStack` lines them up by
+/// `firstTextBaseline`. Its title is its first view, and its action the second, if any.
+struct ActionBesideOrUnder: Layout {
+    /// The least room between the title and the action on one line.
+    var gap: CGFloat = 16
+    /// The room between the title and the action under it.
+    var lineSpacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(subviews, in: proposal.width).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, arrange(subviews, in: bounds.width).frames) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    /// Where each goes, in `width`, and the room they take; nil, or no bound, for each at its own width on one line.
+    func arrange(_ subviews: Subviews, in width: CGFloat?) -> (size: CGSize, frames: [CGRect]) {
+        guard let title = subviews.first else { return (.zero, []) }
+        let width = width.flatMap { $0.isFinite ? $0 : nil }
+        let titleIdeal = title.sizeThatFits(.unspecified)
+        guard subviews.count > 1 else {
+            let size = title.sizeThatFits(ProposedViewSize(width: width.map { min($0, titleIdeal.width) }, height: nil))
+            return (CGSize(width: width ?? size.width, height: size.height), [CGRect(origin: .zero, size: size)])
+        }
+        let action = subviews[1]
+        let actionIdeal = action.sizeThatFits(.unspecified)
+        let oneLine = titleIdeal.width + gap + actionIdeal.width
+        guard let width, oneLine > width else {
+            let titleBaseline = title.dimensions(in: .unspecified)[VerticalAlignment.firstTextBaseline]
+            let actionBaseline = action.dimensions(in: .unspecified)[VerticalAlignment.firstTextBaseline]
+            let above = max(titleBaseline, actionBaseline)
+            let below = max(titleIdeal.height - titleBaseline, actionIdeal.height - actionBaseline)
+            let lineWidth = width ?? oneLine
+            return (CGSize(width: lineWidth, height: above + below), [
+                CGRect(origin: CGPoint(x: 0, y: above - titleBaseline), size: titleIdeal),
+                CGRect(origin: CGPoint(x: lineWidth - actionIdeal.width, y: above - actionBaseline), size: actionIdeal),
+            ])
+        }
+        let titleSize = title.sizeThatFits(ProposedViewSize(width: min(width, titleIdeal.width), height: nil))
+        let actionSize = action.sizeThatFits(ProposedViewSize(width: min(width, actionIdeal.width), height: nil))
+        return (CGSize(width: width, height: titleSize.height + lineSpacing + actionSize.height), [
+            CGRect(origin: .zero, size: titleSize),
+            CGRect(origin: CGPoint(x: 0, y: titleSize.height + lineSpacing), size: actionSize),
+        ])
     }
 }
