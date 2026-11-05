@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
+  and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
+  over an app in full screen, so clicking the gear seemed to do nothing.
 - **Buttons and menus grow with Text Size in Windows.** At a bigger text size, in Settings › Appearance, the controls on
   windows' pages grow with their text: the pages' headers, such as By Status, List | Map and Open in Azure DevOps on the
   Pull Requests pages, rows' Actions, a pull request's Explain, Fix, Reply, Resolve, Fix Grammar and Push & Reply…, and
