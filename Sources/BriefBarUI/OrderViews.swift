@@ -388,16 +388,11 @@ package struct OrderViewPicker: View {
     }
 
     package var body: some View {
-        Picker("View", selection: Binding(get: { shown ?? order.view }, set: { order.setView($0) })) {
-            ForEach(OrderView.allCases, id: \.self) { view in
-                Text(view.title).tag(view)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .font(size: 12)
+        SegmentedPicker("By Mission View", selection: Binding(get: { shown ?? order.view }, set: { order.setView($0) }), segments: [
+            .init(.list, title: OrderView.list.title, systemImage: "list.bullet"),
+            .init(.map, title: OrderView.map.title, systemImage: "map"),
+        ])
         .fixedSize()
         .help("List: each mission's pull requests in their order, with the graph beside them. Map: each mission in merge waves")
-        .accessibilityLabel("By Mission View")
     }
 }

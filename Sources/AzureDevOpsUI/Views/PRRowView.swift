@@ -87,10 +87,16 @@ struct PRRowView: View {
                 Menu {
                     menuItems
                 } label: {
-                    Label("Actions", systemImage: "ellipsis.circle")
-                        .font(size: 11.5, weight: .medium)
+                    // As AppKit drew it, as a borderless menu, before it followed the text size.
+                    HStack(spacing: 3) {
+                        Label("Actions", systemImage: "ellipsis.circle")
+                            .labelStyle(MenuLabelStyle())
+                        MenuChevron()
+                    }
+                    .font(size: 13, weight: .medium)
+                    .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
+                .labelMenuStyle()
                 .fixedSize()
                 .help("Actions for this pull request")
                 .accessibilityLabel("Actions for \(item.title)")
