@@ -101,6 +101,23 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071-2").path))
     }
 
+    /// A pull request's prompt has no placeholders, but quotes what others wrote, such as a change suggested in a comment,
+    /// which Copilot applies as it's written: it goes as it is, `{baseBranch}` and all, where a work item's prompt has its
+    /// base branch filled in (`CopilotLauncherTests`).
+    @Test(.timeLimit(.minutes(1)))
+    func aPullRequestsPromptGoesAsItIs() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let (launcher, argumentsFile) = try launcher(fixture)
+        let prompt = #"Apply it as it's written: var reference = $"refs/heads/{baseBranch}";"#
+        _ = try await launch(launcher, CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .fixComments), prompt: prompt, options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil
+        ), id: "8c3f2e4d-5dae-4f1a-8d6b-4a5b6c7d8e9f")
+        let arguments = try String(contentsOf: argumentsFile, encoding: .utf8).split(separator: "\n").map(String.init)
+        #expect(arguments.prefix(2) == ["-p", prompt])
+    }
+
     @Test func goesOnOnlyWhereTheEarlierRunsWorktreeStillIs() async throws {
         let fixture = try await repositoryWithBranch()
         defer { fixture.remove() }

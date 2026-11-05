@@ -285,6 +285,11 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   it. Await the work instead; the command-line modes, which are synchronous, use
   `SourceCommandLine.wait`. `make test` runs with a single thread in the pool
   (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), so such a wait hangs on any Mac.
+- **Don't run the main run loop from a test.** Await what a window or control does instead (`until`),
+  which leaves the main actor to other tests meanwhile. Swift runs that run loop for the whole test
+  process and ends the process, with status 0, as soon as it returns. AppKit makes it return once a
+  test has it wait for an event, as VoiceOver's press does when it clicks a control: give that test's
+  suite `.keepsTheMainRunLoopRunning`. `make test` fails when a test process ends before it's done.
 - **The formats are undocumented.** When you rely on a new field, handle its absence and add a test
   with a small made-up sample.
 
