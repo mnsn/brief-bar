@@ -340,25 +340,149 @@ struct OrderSessionsMenu: View {
     }
 }
 
-// MARK: - List and Map
+// MARK: - A mission's next steps
 
-/// List | Map, in the page's header while it lists By Mission.
+/// A mission's next steps that are yours, under its header in List, on the Map and on the Board: "Next for you:" and a chip
+/// for each, in its stage's color, which shows that pull request: "Review !4093", "Find a reviewer: !4079". With none, what
+/// it waits for, quietly: "Waiting for Priya (!4091)".
+package struct MissionNextStepsLine: View {
+    let lane: BoardLane
+    @ObservedObject var order: PullRequestOrder
+    let select: (ItemRef) -> Void
+
+    @Environment(\.textScale) private var textScale
+
+    package init(lane: BoardLane, order: PullRequestOrder, select: @escaping (ItemRef) -> Void) {
+        self.lane = lane
+        self.order = order
+        self.select = select
+    }
+
+    package var body: some View {
+        let steps = lane.nextSteps
+        if !steps.isEmpty {
+            FlowLayout(spacing: 6, lineSpacing: 4) {
+                Text("Next for you:")
+                    .font(size: 11.5, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 2)
+                ForEach(steps) { step in
+                    chip(step)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Next for you")
+        } else if let waiting = lane.waiting(name: order.name(of:)) {
+            HStack(spacing: 4) {
+                Image(systemName: "hourglass")
+                Text(waiting)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .font(size: 11.5)
+            .foregroundStyle(.secondary)
+            .help(waiting)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func chip(_ step: MissionNextStep) -> some View {
+        let reading = lane.cards.first { $0.ref == step.ref }?.reading
+        let why = reading.map { StageText.why($0, name: order.name(of:)) }
+        return Button {
+            select(step.ref)
+        } label: {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(step.stage.color)
+                    .frame(width: 7 * textScale, height: 7 * textScale)
+                Text(step.title)
+                    .lineLimit(1)
+            }
+            .font(size: 11.5, weight: .medium)
+            .foregroundStyle(step.stage.textColor)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(step.stage.color.opacity(0.14)))
+            .overlay(Capsule().strokeBorder(step.stage.color.opacity(0.5), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help([[step.title, order.name(of: step.ref)].compactMap { $0 }.joined(separator: " "), why, "Click to see its details"]
+            .compactMap { $0 }.joined(separator: "\n"))
+        .accessibilityLabel(step.title)
+        .accessibilityValue(SpokenText.unquoted([order.name(of: step.ref), why].compactMap { $0 }.joined(separator: ", ")))
+        .accessibilityHint("Shows its details")
+    }
+}
+
+// MARK: - List, Map and the Board
+
+/// List | Map | Board, in the page's header while it lists By Mission: the views the page offers, the Board on Azure DevOps'
+/// page only. A page that shows List where you chose a view it doesn't offer saves nothing until you pick one there.
 package struct OrderViewPicker: View {
     @ObservedObject var order: PullRequestOrder
+    /// The views the page offers.
+    let views: [OrderView]
     /// The view a picture shows; nil for the one you chose.
     let shown: OrderView?
 
-    package init(order: PullRequestOrder, shown: OrderView? = nil) {
+    package init(order: PullRequestOrder, views: [OrderView] = [.list, .map], shown: OrderView? = nil) {
+        self.order = order
+        self.views = views
+        self.shown = shown
+    }
+
+    package var body: some View {
+        let current = shown ?? order.view(offering: views)
+        SegmentedPicker("By Mission View", selection: Binding(get: { current }, set: { view in
+            // What the page shows already saves nothing: GitHub's List, where you chose the Board.
+            if view != current { order.setView(view) }
+        }), segments: views.map { view in
+            SegmentedPicker<OrderView>.Segment(view, title: view.title, systemImage: Self.symbol(view))
+        })
+        .fixedSize()
+        .help(views.contains(.board)
+            ? "List: each mission's pull requests in their order, with the graph beside them. Map: each mission in merge waves. Board: a column for each stage, a lane for each mission"
+            : "List: each mission's pull requests in their order, with the graph beside them. Map: each mission in merge waves")
+    }
+
+    static func symbol(_ view: OrderView) -> String {
+        switch view {
+        case .list: "list.bullet"
+        case .map: "map"
+        case .board: "rectangle.split.3x1"
+        }
+    }
+}
+
+/// Lanes: Missions | None, in the page's header while it shows the Board: a lane for each mission, or every card in one.
+package struct BoardLanesPicker: View {
+    @ObservedObject var order: PullRequestOrder
+    /// The lanes a picture shows; nil for those you chose.
+    let shown: BoardLanes?
+
+    @Environment(\.showsSymbolsAlone) private var showsSymbolsAlone
+
+    package init(order: PullRequestOrder, shown: BoardLanes? = nil) {
         self.order = order
         self.shown = shown
     }
 
     package var body: some View {
-        SegmentedPicker("By Mission View", selection: Binding(get: { shown ?? order.view }, set: { order.setView($0) }), segments: [
-            .init(.list, title: OrderView.list.title, systemImage: "list.bullet"),
-            .init(.map, title: OrderView.map.title, systemImage: "map"),
-        ])
-        .fixedSize()
-        .help("List: each mission's pull requests in their order, with the graph beside them. Map: each mission in merge waves")
+        HStack(spacing: 6) {
+            if !showsSymbolsAlone {
+                Text("Lanes")
+                    .font(size: 12)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            SegmentedPicker("Board Lanes", selection: Binding(get: { shown ?? order.lanes }, set: { order.setLanes($0) }), segments: [
+                .init(.missions, title: BoardLanes.missions.title, systemImage: "rectangle.stack"),
+                .init(.none, title: BoardLanes.none.title, systemImage: "rectangle"),
+            ])
+            .fixedSize()
+        }
+        .help("Lanes: one for each mission, or None, every card in one")
     }
 }

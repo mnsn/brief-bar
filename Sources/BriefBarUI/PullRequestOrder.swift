@@ -17,10 +17,17 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var focus: MissionKey?
     /// The orders sessions told BriefBar: none while it's off.
     @Published package private(set) var orders = DeclaredOrders()
-    /// By Mission's view, List or Map, on both Pull Requests pages.
+    /// By Mission's view, List, Map or the Board, on both Pull Requests pages: GitHub's shows List for the Board
+    /// (`view(offering:)`).
     @Published package private(set) var view: OrderView
     /// The mission a row's capsule asked By Mission to show, until it has.
     @Published package var revealed: MissionKey?
+    /// The Board's lanes: one for each mission, or one for every card.
+    @Published package private(set) var lanes: BoardLanes
+    /// Whether you folded Up Next.
+    @Published package private(set) var isUpNextFolded: Bool
+    /// The column Up Next's "2 more ›" asked the Board to show, until it has.
+    @Published package var revealedColumn: PullRequestStage?
     /// Each pull request's stage, where it is in its flow, as BriefBar works it out from what its source shows, or as you or
     /// a session set it: for the pull requests whose source tells their stages, Azure DevOps'; none while it's off.
     @Published package private(set) var stages: [ItemRef: StageReading] = [:]
@@ -69,14 +76,42 @@ package final class PullRequestOrder: ObservableObject {
         self.now = now
         isOn = isDemo || PullRequestOrderSetting.isOn(in: defaults)
         view = OrderView.load(from: defaults)
+        lanes = BoardLanes.load(from: defaults)
+        isUpNextFolded = UpNext.isFolded(in: defaults)
         if isOn { load() }
     }
 
-    /// List or Map, remembered for both pages.
+    /// List, Map or the Board, remembered for both pages.
     package func setView(_ view: OrderView) {
         guard view != self.view else { return }
         self.view = view
         view.save(to: defaults)
+    }
+
+    /// The view a page that offers these shows: the one you chose, or List where it doesn't offer that one, as GitHub's page
+    /// doesn't offer the Board. Showing List there doesn't save it: Azure DevOps' page still shows the Board.
+    package func view(offering views: [OrderView]) -> OrderView {
+        view.shown(offering: views)
+    }
+
+    /// The Board's lanes, remembered.
+    package func setLanes(_ lanes: BoardLanes) {
+        guard lanes != self.lanes else { return }
+        self.lanes = lanes
+        lanes.save(to: defaults)
+    }
+
+    /// Folds or unfolds Up Next, remembered.
+    package func setUpNextFolded(_ folded: Bool) {
+        guard folded != isUpNextFolded else { return }
+        isUpNextFolded = folded
+        UpNext.setFolded(folded, in: defaults)
+    }
+
+    /// Shows the Board at a column, as Up Next's "2 more ›" does: By Mission's Board, remembered, scrolled to it.
+    package func revealColumn(_ stage: PullRequestStage) {
+        setView(.board)
+        revealedColumn = stage
     }
 
     /// Asks By Mission to show a mission, as clicking a row's capsule does.
@@ -367,6 +402,17 @@ package final class PullRequestOrder: ObservableObject {
     /// A pull request's stage, while Pull Request Order is on and its source tells stages.
     package func stage(of ref: ItemRef) -> StageReading? {
         stages[ref]
+    }
+
+    /// Whether you opened a pull request, as its source tells for its stage: only yours go to Teammate's review on the Board.
+    package func isYours(_ ref: ItemRef) -> Bool {
+        stageFacts[ref]?.isYours ?? false
+    }
+
+    /// The Board, Up Next and each mission's next steps, for a page of these kinds, with its lanes as you chose them, or
+    /// these.
+    package func board(kinds: Set<ItemRef.Kind>, lanes: BoardLanes? = nil) -> PullRequestBoard {
+        PullRequestBoard.make(stages: stages, missions: missions, kinds: kinds, lanes: lanes ?? self.lanes)
     }
 
     /// Whether BriefBar keeps a stage you set, on or off: for Forget Stages… in Settings.

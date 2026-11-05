@@ -20,15 +20,18 @@ package struct MissionBand: View {
     /// Its list, for a mission too big to draw.
     let list: () -> AnyView
     @ObservedObject var order: PullRequestOrder
+    /// Its lane on the Board, for its next steps under its header; nil where its pull requests have no stages.
+    let lane: BoardLane?
 
     package init(
-        mission: OrderMission, place: String?, links: Links, order: PullRequestOrder, isSelected: @escaping (ItemRef) -> Bool,
-        select: @escaping (ItemRef) -> Void, list: @escaping () -> AnyView
+        mission: OrderMission, place: String?, links: Links, order: PullRequestOrder, lane: BoardLane? = nil,
+        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, list: @escaping () -> AnyView
     ) {
         self.mission = mission
         self.place = place
         self.links = links
         self.order = order
+        self.lane = lane
         self.isSelected = isSelected
         self.select = select
         self.list = list
@@ -39,6 +42,10 @@ package struct MissionBand: View {
             VStack(alignment: .leading, spacing: 6) {
                 let badge = OrderBadge.workItem(of: mission, links: links)
                 MissionHeader(mission: mission, order: order, place: [place, badge].compactMap { $0 }.joined(separator: " · "))
+                if let lane {
+                    MissionNextStepsLine(lane: lane, order: order, select: select)
+                        .padding(.horizontal, 4)
+                }
                 ScrollView(.horizontal) {
                     OrderMapGrid(map: map, mission: mission, order: order, isSelected: isSelected, select: select)
                         .padding(12)
