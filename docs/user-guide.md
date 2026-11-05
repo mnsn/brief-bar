@@ -199,7 +199,8 @@ Links come from where they already are:
 A work item's sessions include its pull requests' sessions, and a session's work items its pull
 request's. Right-click a row, or click a capsule on a sprint card, to open what it's linked to, link
 more, or unlink: one of your pull requests there has **Show in BriefBar**, for its details on the
-window's Pull Requests page, and **Open in Azure DevOps**. The window that links things suggests what's on the same branch, names the same
+window's Pull Requests page, and **Open in Azure DevOps**, and so does its own row under **Where It
+Stands** or **Also Linked**, when you right-click it. The window that links things suggests what's on the same branch, names the same
 number or shares words with the title, and takes a pasted link to a pull request, a work item or a
 session.
 
@@ -332,16 +333,19 @@ or narrower: BriefBar keeps the width, separately from the Sprint page's details
 edge brings back the usual one. **✕** or **Esc** closes them.
 
 **Open a pull request from anywhere else** and its details show here too, at the comment or the run it's
-about: from the window's **Overview** and its brief, the **Notifications** page, and the **Pipelines**
+about, or, for a review you're asked for or one that waits on its author for the changes you asked for, at
+its **Reviewers**, where your vote is: from the window's **Overview** and its brief, the **Notifications** page, and the **Pipelines**
 page, whose **Your Pull Requests** cards show the run you click, or the first that failed, and **After
-Your Merges** the run that failed or waits; and, as pages over a work item's details on the Sprint page,
+Your Merges** the run that failed or waits; from a link to it, or a task you sent to Copilot about it; and, as pages over a work item's details on the Sprint page,
 the same details for each of your pull requests, the way there in their header, such as **Bug 5110 ›
 !4091**. Opening it in BriefBar sees it, as opening it in Azure DevOps does. In the menu bar's list, widgets
 and notifications, a click opens a pull request in Azure DevOps, unless you turn on **Open Pull Requests in
 BriefBar** in **Settings › Pull Requests**: then those show its details in BriefBar's window too, at what it's
 about, while a window shows the Pull Requests page. Either way, its menu has both: **Show in BriefBar**, or
 **Show Details** in the window, and **Open in Azure DevOps**, which opens it where its row does, at the comment
-that needs you or the run after its merge, from the Pipelines page's cards too.
+that needs you or the run after its merge, from the Pipelines page's cards too. With VoiceOver, the details
+take you there too, every time: to the thread, the build or check they point out, or the heading of the part they go
+to, such as **Comments** from What's Left, rather than their title.
 
 **Its Copilot session.** With Send Work to Copilot on, a line under the heading, in its details and on its
 page over a work item's, names the Copilot session the pull request's work goes to, why it's its, and how it
@@ -470,7 +474,8 @@ open, **✕** on a tag removes it, and **Add Tag**, after them, opens a field. A
 in that project, the latest first, then those on the pull requests BriefBar read there, the most used first, but the
 pull request's own: the tag that's what you typed first, then those whose names start with it, then those with a word
 that does, such as `eu` in `deploy-eu`, then those that have it anywhere, ignoring letter case. What you typed, when
-it's none of them, is a new tag, last; the best match is chosen as you type, and VoiceOver says which, but nothing is
+it's none of them, is a new tag, last; the best match is chosen as you type, and VoiceOver says which as it
+changes, not again at each key as a new tag grows; but nothing is
 when the pull request has that tag already, which the field says; as its tags change while the field is open, as when
 someone else adds one, the same one stays chosen, or nothing, when it's the one they added. **↑** and **↓** choose
 another, **Tab** completes the one chosen in the field, without sending anything, and **Return** adds it, or what you
@@ -706,7 +711,8 @@ it. The task shows Copilot working, then **PR** once it has opened a pull reques
 to the work item, which you'll find under Pull Requests as your own; a notification says when it's
 done, or why it stopped. While **GitHub Copilot** is on, each task you sent is listed with your Copilot
 sessions too, marked ✈︎ ([below](#github-copilot)). The badge's menu, and the task's there, show the pull
-request in BriefBar's window with **Show Pull Request in BriefBar**, or open it in Azure DevOps, go on
+request in BriefBar's window with **Show Pull Request in BriefBar**, or open it with **Open Pull Request in
+Azure DevOps**, or **on GitHub** for one Copilot opened there, go on
 with the session in Terminal, show the worktree, stop Copilot or remove the worktree, and the ✈︎
 menu at the top of the Sprint page lists every task you sent. Copilot keeps going if BriefBar quits.
 
@@ -835,9 +841,13 @@ and shows the tag on each one that another session started.
 The list has the tasks you sent to Copilot from Azure DevOps too, with ✈︎ before their names, such as
 "Fix Comments: !4071 Fix the checkout total": they run in the Copilot CLI, not the Copilot app, so the
 app doesn't list them. Each is in **Running** while it gets ready and works, then in **Done** or
-**Stopped**, as a session is; one you stopped yourself goes straight to **Idle**. Click one to open its
-pull request, or its work item; right-click it for the task's own menu. The same **Move Viewed Sessions
-to Idle** setting controls whether opening a finished task dismisses it.
+**Stopped**, as a session is; one you stopped yourself goes straight to **Idle**. Click one to see its
+pull request, as the pull request's own row shows it: its details in BriefBar's window, from the window,
+and from the menu bar and widgets with **Open Pull Requests in BriefBar** on; otherwise in Azure DevOps, as
+a work item's task opens its work item, or on GitHub, for a pull request Copilot opened there, which the menu
+says too. Right-click it for the other way to its pull request, where there's one, **Show Pull Request in BriefBar**
+or **Open Pull Request in Azure DevOps**, then the task's own menu. The same **Move Viewed
+Sessions to Idle** setting controls whether opening a finished task dismisses it.
 
 ### GitHub
 

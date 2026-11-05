@@ -149,7 +149,7 @@ struct LinksMenuContent: View {
             } else if let show = item.show {
                 // One BriefBar shows in its window too, such as one of your pull requests: there, or where it lives.
                 Menu(title) {
-                    Button("Show in BriefBar") {
+                    Button(StoryDetails.showTitle) {
                         if !show() { item.open?() }
                     }
                     Button(item.ref.kind.openTitle) { item.open?() }

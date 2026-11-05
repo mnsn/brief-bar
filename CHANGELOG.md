@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.1 - 2026-11-05
 
 - **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
   and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
@@ -11,6 +11,25 @@
   BriefBar**, **Pull Requests Sent in Chats**, **Keep Done For**, **Idle After No Activity For**, **Watch a Pull
   Request…** and **Make Changes in Azure DevOps**. While Azure DevOps is off, or paused, its settings show all the same,
   disabled, and say so. Each keeps what you chose, and Azure DevOps' gear menu still has its own.
+- **A task you sent to Copilot shows its pull request in BriefBar.** In Copilot's list, clicking a task about one of
+  your pull requests shows its details in BriefBar's window, as the pull request's own row does: always from the window,
+  and from the menu bar and widgets with **Open Pull Requests in BriefBar** on. Its menu has **Open Pull Request in Azure
+  DevOps** too, or **Open Pull Request on GitHub** for one Copilot opened there, and a linked pull request's row under
+  **Where It Stands** or **Also Linked** has **Show in BriefBar**
+  beside **Open in Azure DevOps**. Shown from a link or a task, a pull request's details open at what its row is about.
+- **A review you're asked for opens at its reviewers.** From anywhere but beside the list, a review request, or a pull
+  request that waits on its author for the changes you asked for, opens its details at **Reviewers**, where your vote
+  is, rather than at the top.
+- **VoiceOver goes where the details go.** Opening a failing pull request at its build, choosing **Comments** or **Merge
+  conflicts** in What's Left, or coming back from a conflict's file, takes VoiceOver to that build, or to that part's
+  heading, rather than leaving it on the row you chose or taking it to the title.
+- **Going back to a thread you reactivated finds it.** With the resolved threads showing, a thread you reactivate stays
+  among them as you go to its file's changes and back, or as a notification takes you to it; the details unfold them
+  for it, and keep them unfolded.
+- **Showing a pull request again from its file's changes starts at the top** of its details, rather than where the
+  file's diff was scrolled to.
+- **The tag field speaks less as you type a new tag.** VoiceOver says which tag is chosen as that changes, not again at
+  each key as a new tag's name grows.
 
 ## 0.15.0 - 2026-11-04
 

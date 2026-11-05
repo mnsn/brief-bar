@@ -7,7 +7,8 @@ import Foundation
 /// go as a page opens over the details, as a file's page shows in place of their parts, and as they show another pull
 /// request: what you wrote in each composer that asks Copilot something (Explain, Fix, Resolve, Fix All), until you send it,
 /// as `ThreadChanges` keeps your replies; and where each thread you changed, with your reply or its status, was as you first
-/// did, for it to stay there while the details show its pull request (`held`). The details' comments and their files' pages
+/// did, for it to stay there while the details show its pull request (`held`), with whether its resolved threads show
+/// (`showsResolved`). The details' comments and their files' pages
 /// share both, beside the list and on a pull request's page over a work item's or another pull request's details. In memory
 /// only: what you wrote goes once you send it, or as Send Work to Copilot or Azure DevOps is turned off, or someone else signs
 /// in to the Azure CLI; where the threads were, once the details show their pull request no more (`showing`).
@@ -18,6 +19,9 @@ final class DetailsDrafts: ObservableObject {
     private var words: [PRKey: [CopilotComposing: String]] = [:]
     /// Where each thread you changed was as you first did, by pull request, then by thread.
     private var held: [PRKey: [Int: PullRequestPanel.Thread.Held]] = [:]
+    /// The pull requests whose details show their resolved threads, as you unfolded them, or as going to one of them did:
+    /// with where threads were, for the same while.
+    private var resolvedShown: Set<PRKey> = []
     /// Who's signed in to the Azure CLI, as the list last told.
     private var account: String?
     private var cancellables: Set<AnyCancellable> = []
@@ -104,14 +108,31 @@ final class DetailsDrafts: ObservableObject {
         held[pullRequest, default: [:]][thread.id] = PullRequestPanel.Thread.Held(thread)
     }
 
+    /// Whether a pull request's details show its resolved threads, which they keep as you go to a file's page and back, or
+    /// a page shows over them, so that a thread you reactivated, still among them, is there to go back to.
+    func showsResolved(in pullRequest: PRKey) -> Bool {
+        resolvedShown.contains(pullRequest)
+    }
+
+    /// Shows or hides a pull request's resolved threads, as Show Resolved and Hide Resolved do, and going to one of them.
+    func setShowsResolved(_ shows: Bool, in pullRequest: PRKey) {
+        guard shows != showsResolved(in: pullRequest) else { return }
+        objectWillChange.send()
+        if shows { resolvedShown.insert(pullRequest) } else { resolvedShown.remove(pullRequest) }
+    }
+
     /// The pull requests the details show now, the pages over them included, by their references: the one beside the list,
     /// and those whose pages show over it or over a work item's details. Where threads were in the others goes, so a thread
-    /// you resolved in one is with the resolved ones once you come back to it, as it is, rather than where it was.
+    /// you resolved in one is with the resolved ones once you come back to it, as it is, rather than where it was; and
+    /// whether their resolved threads showed, which fold again.
     func showing(_ shown: Set<ItemRef>) {
-        let gone = held.keys.filter { !shown.contains($0.linkRef) }
+        let gone = Set(held.keys).union(resolvedShown).filter { !shown.contains($0.linkRef) }
         guard !gone.isEmpty else { return }
         objectWillChange.send()
-        for key in gone { held[key] = nil }
+        for key in gone {
+            held[key] = nil
+            resolvedShown.remove(key)
+        }
     }
 
     /// Follows which pull requests the details show (`showing`): beside the list, with the pages over them (`panel`), and as
@@ -140,6 +161,7 @@ final class DetailsDrafts: ObservableObject {
         objectWillChange.send()
         forgetWords()
         held = [:]
+        resolvedShown = []
     }
 
     /// Stops for good, when Azure DevOps stops: all of it goes, and nothing's followed anymore.

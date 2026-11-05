@@ -538,6 +538,7 @@ struct CommentsHeader: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 PageSectionHeader(title: "Comments", count: count)
+                    .takesFocusOnArrival(at: .section(.comments))
                 Spacer(minLength: 8)
                 if canFixAll, !isFixing {
                     Button {

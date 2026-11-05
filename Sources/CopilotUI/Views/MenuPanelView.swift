@@ -9,6 +9,7 @@ struct MenuPanelView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var loginItem: LoginItem
     @Environment(\.interfaceOptions) private var options
+    @Environment(\.panelStyle) private var panelStyle
 
     @LocalState private var contentHeight: CGFloat = 0
     @LocalState private var showIdle = false
@@ -79,7 +80,9 @@ struct MenuPanelView: View {
                 DisclosureGroup(isExpanded: $showIdle) {
                     VStack(spacing: 0) {
                         ForEach(idle) { session in
-                            SessionRowView(session: session, now: store.now, compact: true) { store.open(session) }
+                            SessionRowView(session: session, now: store.now, compact: true) {
+                                store.open(session, inWindow: panelStyle == .page)
+                            }
                         }
                     }
                 } label: {
@@ -145,16 +148,17 @@ struct MenuPanelView: View {
 }
 
 /// A session in a list: Copilot's own, and a list by state that mixes every source's. It opens the session in the
-/// Copilot app, or what a task BriefBar sent is for.
+/// Copilot app, or what a task BriefBar sent is for, as a click does from where the list shows.
 struct SessionRow: View {
     let session: SessionSnapshot
     /// Whether the list nests sessions under the sessions that started them: not one that mixes sources.
     var nests = true
 
     @EnvironmentObject private var store: SessionStore
+    @Environment(\.panelStyle) private var panelStyle
 
     var body: some View {
-        SessionRowView(session: session, now: store.now, nests: nests) { store.open(session) }
+        SessionRowView(session: session, now: store.now, nests: nests) { store.open(session, inWindow: panelStyle == .page) }
     }
 }
 
