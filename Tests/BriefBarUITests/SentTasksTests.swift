@@ -60,4 +60,67 @@ import Testing
         #expect(pullRequest == task("a"))
         #expect(pullRequest != task("a", stage: .finished))
     }
+
+    /// A click shows what it's for in BriefBar's window where it can: from a page of the window, and from the menu bar or a
+    /// widget as its source says; else, and once showing it fails, where it lives. Its menu has the other way to it.
+    @Test func aClickShowsWhatItsForInBriefBarWhereItCan() {
+        var opened = 0
+        var shown = 0
+        var canShow = true
+        var shows = true
+        var fromMenuBar = false
+        let sent = SentTask(
+            id: "a", name: "Fix Comments: !4071 Fix totals", place: "shop-web", stage: .finished, detail: nil, since: nil,
+            opens: "Pull Request", whereItOpens: "in Azure DevOps", open: { opened += 1 }, canShow: { canShow },
+            show: {
+                shown += 1
+                return shows
+            },
+            showsFromMenuBar: { fromMenuBar }, menu: { AnyView(EmptyView()) }
+        )
+        #expect(sent.openTitle == "Open Pull Request in Azure DevOps")
+        #expect(sent.showTitle == "Show Pull Request in BriefBar")
+
+        sent.click(inWindow: true)
+        #expect(shown == 1 && opened == 0)
+        #expect(sent.clickTitle(inWindow: true) == "Show Pull Request in BriefBar")
+        #expect(sent.otherOpening(inWindow: true)?.title == "Open Pull Request in Azure DevOps")
+        sent.otherOpening(inWindow: true)?.action()
+        #expect(shown == 1 && opened == 1)
+
+        // From the menu bar, where it lives, until its source says otherwise; its details second.
+        sent.click(inWindow: false)
+        #expect(shown == 1 && opened == 2)
+        #expect(sent.clickTitle(inWindow: false) == "Open Pull Request in Azure DevOps")
+        sent.otherOpening(inWindow: false)?.action()
+        #expect(shown == 2 && opened == 2)
+        fromMenuBar = true
+        sent.click(inWindow: false)
+        #expect(shown == 3 && opened == 2)
+
+        // It couldn't show after all, as when no window has the page anymore: where it lives.
+        shows = false
+        sent.click(inWindow: true)
+        #expect(shown == 4 && opened == 3)
+        // It can't show there: where it lives alone.
+        canShow = false
+        sent.click(inWindow: true)
+        #expect(shown == 4 && opened == 4)
+        #expect(sent.clickTitle(inWindow: true) == "Open Pull Request in Azure DevOps")
+        #expect(sent.otherOpening(inWindow: true) == nil && sent.otherOpening(inWindow: false) == nil)
+        // Where it lives is part of what it is.
+        #expect(sent != SentTask(
+            id: "a", name: "Fix Comments: !4071 Fix totals", place: "shop-web", stage: .finished, detail: nil, since: nil,
+            opens: "Pull Request", open: {}, menu: { AnyView(EmptyView()) }
+        ))
+        // A pull request on GitHub, as a work item's task can open, is said to open there; one that says nothing of where,
+        // as before.
+        let onGitHub = SentTask(
+            id: "b", name: "Work Item 4217", place: "shop-web", stage: .finished, detail: nil, since: nil,
+            opens: "Pull Request", whereItOpens: "on GitHub", open: {}, menu: { AnyView(EmptyView()) }
+        )
+        #expect(onGitHub.openTitle == "Open Pull Request on GitHub")
+        #expect(onGitHub.clickTitle(inWindow: true) == "Open Pull Request on GitHub" && onGitHub.otherOpening(inWindow: true) == nil)
+        #expect(task("c").openTitle == "Open Pull Request")
+    }
 }

@@ -218,6 +218,42 @@ import Testing
         #expect(drafts.held(in: key(4102)).isEmpty)
     }
 
+    /// The resolved threads, once you show them, or going to one of them did, stay shown with where the threads you changed
+    /// were: as a file's page shows in the details' place and you come back, so that a thread you reactivated, which stays
+    /// with them, is there to go back to. They fold again once the details show the pull request no more, or someone else
+    /// signs in.
+    @Test func theResolvedThreadsStayShownWithWhereThreadsWere() async throws {
+        let drafts = DetailsDrafts()
+        let panel = PullRequestDetailsStore()
+        panel.itemsChanged(items)
+        drafts.follow(panel, pagesOver: workItems())
+        panel.show(try item(4102))
+        #expect(!drafts.showsResolved(in: key(4102)))
+        drafts.setShowsResolved(true, in: key(4102))
+        #expect(drafts.showsResolved(in: key(4102)) && !drafts.showsResolved(in: key(4088)))
+
+        panel.open(file: "/src/Payments/PaymentsClient.cs", at: 11)
+        await settled()
+        panel.closeFile()
+        panel.open(page: session)
+        await settled()
+        panel.back()
+        await settled()
+        #expect(drafts.showsResolved(in: key(4102)))
+
+        drafts.setShowsResolved(false, in: key(4102))
+        #expect(!drafts.showsResolved(in: key(4102)))
+        drafts.setShowsResolved(true, in: key(4102))
+        panel.show(try item(4088))
+        await settled()
+        #expect(!drafts.showsResolved(in: key(4102)))
+
+        drafts.setShowsResolved(true, in: key(4088))
+        drafts.accountChanged("robin@contoso.example")
+        drafts.accountChanged("sam@contoso.example")
+        #expect(!drafts.showsResolved(in: key(4088)))
+    }
+
     /// A pull request whose page shows over another's details, chosen in the list, shows beside it instead: where its threads
     /// were stays, though its page goes before it shows there; the other's goes.
     @Test func aPullRequestsPageChosenInTheListKeepsWhereItsThreadsWere() async throws {

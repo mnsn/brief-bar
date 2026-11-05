@@ -102,6 +102,17 @@ import BriefBarCore
         #expect(held.open.flatMap(\.threads).last?.isResolved == true)
         #expect(panel.threads.openByFile == standing.open)
         #expect(panel.threads.resolvedByFile == standing.resolved)
+
+        // Going to a thread unfolds the resolved ones for those listed there: 5, which you reactivated, as it was; not 4,
+        // which you resolved, with the open ones.
+        let holding: [Int: PullRequestPanel.Thread.Held] = [
+            2: .init(placement: .waitingOnYou, date: t(-2 * hour)), 4: .init(placement: .open, date: t(-3 * hour)),
+            5: .init(placement: .resolved, date: t(-4 * day)),
+        ]
+        #expect([2, 4, 5, 6].map { panel.threads.listsResolved($0, holding: holding) } == [false, false, true, true])
+        // As they stand, without changes: the resolved ones.
+        #expect([2, 4, 5, 6].map { panel.threads.listsResolved($0) } == [false, true, false, true])
+        #expect(!panel.threads.listsResolved(99))
     }
 
     /// Among the threads on the pull request itself, which have no line, the latest show first: one you reply to stays where
