@@ -1350,7 +1350,8 @@ the window wherever it can (`canShow`), and from the menu bar or a widget with O
 (`showsFromMenuBar`), at what its row is about; otherwise it opens where it is, in Azure DevOps, or on GitHub for a
 pull request a work item's task opened there, which BriefBar's window doesn't show, and a work item's task opens its
 work item in Azure DevOps; its row, its menus and VoiceOver say where (`SentTask.whereItOpens`).
-Its menu says what a click does first, then the other (`SentTask.click(inWindow:)`, `otherOpening`), and its line
+Its menu says what a click does first, then the other (`SentTask.click(inWindow:)`, `otherOpening`), which opens it as a
+click does, dismissing a finished task with Move Viewed Sessions to Idle (`SessionStore.open(_:theOtherWay:)`), and its line
 in the Overview's brief shows it from there (`SessionStore.show`).
 
 On the Sprint page, the page of one of your pull requests over a work item's details, and on the Pull Requests page
@@ -1391,7 +1392,8 @@ a run or a check they don't have, such as a run that isn't the one a policy queu
 checks (`Place.anchor(in:)`). VoiceOver goes there too (`DetailsArrival`): to the thread, the file's row, the build or
 the check they point out (`focusesOnArrival`), or else to the heading of the part they went to, or to their title for
 their top (`takesFocusOnArrival`). It does each time they go there, though they went there a moment ago and still point
-it out, as when a build is asked for again (`arrived(at:since:)`), which is then pointed out for a moment of its own.
+it out, as when a build is asked for again (`arrived(at:since:)`), which is then pointed out for a moment of its own;
+going to a part, their Files or their top ends what was pointed out at once (`DetailsArrival.pointedOut`).
 Their title doesn't take it as they show while they're on their way somewhere, as it does
 otherwise. Shown again while a file's page is open, with no place, they go to their top (`show`), rather than staying
 where its diff was scrolled to. Taken to a thread, the header names it after the pull request, `!4102 ›

@@ -247,11 +247,12 @@ struct SessionRowView: View {
         return store.appInstalled ? "Open in Copilot" : "Open in Terminal"
     }
 
-    /// A task's other way to what it's for, after what a click does: where it lives, or in BriefBar's window.
+    /// A task's other way to what it's for, after what a click does: where it lives, or in BriefBar's window; as a click
+    /// does, opening it that way dismisses a finished task with the opt-in setting.
     @ViewBuilder
     private func otherOpening(_ task: SentTask) -> some View {
         if let other = task.otherOpening(inWindow: inWindow) {
-            Button(other.title, action: other.action)
+            Button(other.title) { store.open(session, theOtherWay: other.action) }
         }
     }
 

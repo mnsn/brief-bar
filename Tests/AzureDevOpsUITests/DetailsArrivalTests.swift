@@ -57,4 +57,65 @@ import Testing
         arrival.arrive(at: .thread(13))
         #expect(arrival.arrived(at: .thread(13), since: before) && !arrival.arrived(at: .thread(11), since: before))
     }
+
+    // MARK: What they point out
+
+    /// A thread, a file's row, a build or a check is pointed out for a moment as they go there; a part, their Files or their
+    /// top isn't. Its moment's end isn't another arrival.
+    @Test func whatTheyGoToIsPointedOutForAMoment() {
+        var arrival = DetailsArrival()
+        let build = Anchor.check("run 204417")
+        arrival.arrive(at: build)
+        #expect(arrival.pointedOut == build)
+        let before = arrival
+        arrival.endMoment(of: before.count)
+        #expect(arrival.pointedOut == nil)
+        #expect(!arrival.arrived(at: build, since: before))
+        for place in [Anchor.thread(11), .file(FileChange.ID(path: "/src/PaymentsClient.cs"))] {
+            arrival.arrive(at: place)
+            #expect(arrival.pointedOut == place)
+        }
+        for place in [Anchor.section(.reviewers), .files, .top] {
+            arrival.arrive(at: place)
+            #expect(arrival.pointedOut == nil, "\(place)")
+        }
+    }
+
+    /// Asked for the same build again within its moment, it's pointed out for a moment of its own: the first moment's end
+    /// doesn't end it, its own does.
+    @Test func goingThereAgainHasAMomentOfItsOwn() {
+        var arrival = DetailsArrival()
+        let build = Anchor.check("run 204417")
+        arrival.arrive(at: build)
+        let first = arrival.count
+        arrival.arrive(at: build)
+        let second = arrival.count
+        arrival.endMoment(of: first)
+        #expect(arrival.pointedOut == build)
+        arrival.endMoment(of: second)
+        #expect(arrival.pointedOut == nil)
+    }
+
+    /// Going within a build's moment to a part, their Files or their top ends it at once, and to another build points that
+    /// one out instead, for its own moment: nothing stays pointed out once the last moment is over.
+    @Test func goingElsewhereEndsWhatWasPointedOut() {
+        for elsewhere in [Anchor.section(.checks), .files, .top] {
+            var arrival = DetailsArrival()
+            arrival.arrive(at: .check("run 204417"))
+            let first = arrival.count
+            arrival.arrive(at: elsewhere)
+            #expect(arrival.pointedOut == nil, "\(elsewhere)")
+            arrival.endMoment(of: first)
+            #expect(arrival.pointedOut == nil, "\(elsewhere)")
+        }
+        var arrival = DetailsArrival()
+        arrival.arrive(at: .check("run 204417"))
+        let first = arrival.count
+        arrival.arrive(at: .check("check Code coverage"))
+        let second = arrival.count
+        arrival.endMoment(of: first)
+        #expect(arrival.pointedOut == .check("check Code coverage"))
+        arrival.endMoment(of: second)
+        #expect(arrival.pointedOut == nil)
+    }
 }

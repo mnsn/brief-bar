@@ -182,6 +182,13 @@ final class SessionStore: ObservableObject {
         return task.show()
     }
 
+    /// Opens what a task is for the other way, as its menu's item after the one a click does chose it (`SentTask.otherOpening`),
+    /// where it lives or in BriefBar's window: as a click does, the opt-in setting dismisses its recent completion.
+    func open(_ session: SessionSnapshot, theOtherWay opening: () -> Void) {
+        markViewedIfEnded(session)
+        opening()
+    }
+
     /// Opens a session itself, even when its question is asked in another session.
     func openItself(_ session: SessionSnapshot) {
         open(sessionId: session.id)

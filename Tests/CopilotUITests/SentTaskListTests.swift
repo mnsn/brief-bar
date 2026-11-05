@@ -144,6 +144,27 @@ import Testing
         #expect(!store.show(session))
     }
 
+    /// The other way to what a finished task is for, from its menu, such as its pull request in Azure DevOps after Show Pull
+    /// Request in BriefBar, opens it as a click does: it dismisses the task only with Move Viewed Sessions to Idle.
+    @Test(arguments: [false, true])
+    func openingAFinishedTaskTheOtherWayOnlyDismissesItWhenEnabled(_ moveViewedToIdle: Bool) throws {
+        var opened = 0
+        let sent = SentTasks()
+        sent.publish(.azureDevOps, tasks: [task("t1", stage: .finished, since: now.addingTimeInterval(-60))])
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.moveViewedToIdle = moveViewedToIdle
+        let store = store(sent, settings: settings)
+        store.receive(EngineSnapshot())
+        let finished = try #require(store.sessions.first)
+        #expect(finished.phase == .done)
+
+        store.open(finished, theOtherWay: { opened += 1 })
+        #expect(opened == 1)
+        #expect((settings.viewed["t1"] != nil) == moveViewedToIdle)
+        store.receive(EngineSnapshot())
+        #expect(store.sessions.first?.phase == (moveViewedToIdle ? .idle : .done))
+    }
+
     /// A task you stopped yourself is nothing to look at; one that failed or stopped by itself stays until dismissed.
     @Test func aTaskYouStoppedIsNothingToLookAt() {
         let sent = SentTasks()

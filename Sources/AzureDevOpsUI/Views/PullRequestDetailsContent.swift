@@ -31,9 +31,8 @@ struct PullRequestDetailsContent: View {
     @Environment(\.shownSection) private var section
     @Environment(\.shownWindow) private var window
 
-    /// The thread, the build or the check it just went to, pointed out for a moment.
-    @LocalState private var highlighted: PullRequestDetailsStore.Anchor?
-    /// Where it went last, for VoiceOver to follow (`DetailsArrival`).
+    /// Where it went last, for VoiceOver to follow, and the thread, the file's row, the build or the check it points out
+    /// there for a moment (`DetailsArrival`).
     @LocalState private var arrival = DetailsArrival()
     /// The composer in place that's open in its comments, builds or conflicts: one at a time in all of them, so Esc, Return,
     /// the keyboard's focus and the scroll that shows it as it opens are its own; and what each sends, until it's done. It
@@ -104,7 +103,7 @@ struct PullRequestDetailsContent: View {
                 }
                 PullRequestCommentsSection(
                     item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place,
-                    highlighted: highlighted, composing: $composing, drafts: drafts
+                    highlighted: arrival.pointedOut, composing: $composing, drafts: drafts
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.comments))
                     // A thread's file opens here, at the thread, in all of the change, which has it whatever the Files show.
@@ -114,12 +113,13 @@ struct PullRequestDetailsContent: View {
                         }
                     })
                 PullRequestFilesSection(
-                    details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, highlighted: highlighted
+                    details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads,
+                    highlighted: arrival.pointedOut
                 )
                     .id(PullRequestDetailsStore.Anchor.files)
                 PullRequestChecksSection(
-                    item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted,
-                    composing: $composing, drafts: drafts
+                    item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place,
+                    highlighted: arrival.pointedOut, composing: $composing, drafts: drafts
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.checks))
                 PullRequestReviewersSection(panel: panel)
@@ -216,16 +216,14 @@ struct PullRequestDetailsContent: View {
             // A file's row, which they come back to from its page, in the middle, with the files around it.
             let position: UnitPoint = if case .file = anchor { .center } else { .top }
             withAnimation(isRendering ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(anchor, anchor: position) }
-            arrival.arrive(at: anchor)
+            // VoiceOver goes there; a thread, a file's row, a build or a check is pointed out for a moment, and what was a
+            // moment ago elsewhere isn't anymore.
+            withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { arrival.arrive(at: anchor) }
+            guard arrival.pointedOut != nil else { return }
             let arrived = arrival.count
-            if case .section = anchor { return }
-            if anchor == .top || anchor == .files { return }
-            withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { highlighted = anchor }
             try? await Task.sleep(for: .seconds(1.6))
-            // Unless they went there again meanwhile, which points it out for a moment of its own.
-            if highlighted == anchor, arrival.count == arrived {
-                withAnimation(.easeOut(duration: 0.4)) { highlighted = nil }
-            }
+            // Unless they went somewhere since, there again too, which has a moment of its own.
+            withAnimation(.easeOut(duration: 0.4)) { arrival.endMoment(of: arrived) }
         }
     }
 }
