@@ -30,7 +30,12 @@ import Testing
                 ] as [String: Any])))
             case .deleteComment:
                 return .done
-            case .reply, .setStatus, .addTag, .removeTag:
+            case .setStatus(let address, let status):
+                // A status set meanwhile, as from its thread's menu.
+                return .thread(try ADOJSON.decoder().decode(ADOThread.self, from: JSONSerialization.data(withJSONObject: [
+                    "id": address.id, "status": status.rawValue,
+                ] as [String: Any])))
+            case .reply, .addTag, .removeTag:
                 // Comments' changes never send one (ThreadChangesTests, TagChangesTests).
                 throw ADOError.http(400)
             }
@@ -311,6 +316,39 @@ import Testing
         try #require(waiting).resume()
         #expect(await editing.value)
         #expect(azure.sent.map(\.kind) == [.editComment])
+    }
+
+    /// A thread takes one change at a time: while a status you set, or that another window sent, is on its way, your
+    /// deletion sends nothing, and the comment stays, which the delete confirmation shows by waiting to delete it
+    /// (`CommentDeleteConfirmation.isBusy`); once the status is done, it goes.
+    @Test(.timeLimit(.minutes(1)))
+    func aDeletionWaitsForAStatusOnItsWay() async throws {
+        let (store, changes, azure, _) = live()
+        let (mine, _) = try comments(store)
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        var waiting: CheckedContinuation<Void, Never>?
+        var holds = true
+        changes.send = { write, _ in
+            if holds {
+                holds = false
+                await withCheckedContinuation { waiting = $0 }
+            }
+            return try azure.send(write)
+        }
+        let original = try thread(store)
+        let setting = Task { await changes.setStatus(.fixed, of: original, in: key) }
+        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        #expect(changes.isSending(threadKey))
+        #expect(await changes.delete(mine, in: original, of: key) == false)
+        #expect(changes.state(of: threadKey) == .sending(.status(.fixed)))
+        #expect(azure.sent.isEmpty)
+        #expect(try thread(store).comments.contains { $0.id == mine.id })
+
+        try #require(waiting).resume()
+        await setting.value
+        #expect(!changes.isSending(threadKey))
+        #expect(await changes.delete(mine, in: try thread(store), of: key))
+        #expect(azure.sent.map(\.kind) == [.setStatus, .deleteComment])
     }
 
     /// An edit Azure DevOps didn't answer in time may have been saved: the pull request is read again, and the same edit isn't

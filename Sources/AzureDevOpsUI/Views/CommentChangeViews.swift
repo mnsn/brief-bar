@@ -10,9 +10,12 @@ import SwiftUI
 // MARK: - Deleting your comment
 
 /// What confirms you delete a comment of yours, under what it says: that Azure DevOps deletes it, as you, and that it can't be
-/// undone, with Cancel, which Esc presses, and Delete. It's the details' one composer in place, so Esc closes it rather than
-/// the details; VoiceOver goes to it, and hears it, as it opens.
+/// undone, with Cancel, which Esc presses, and Delete, which waits while another change to its thread is on its way, as one
+/// another window sent, since its thread takes one at a time. It's the details' one composer in place, so Esc closes it
+/// rather than the details; VoiceOver goes to it, and hears it, as it opens.
 struct CommentDeleteConfirmation: View {
+    /// Another change to its thread is on its way.
+    var isBusy = false
     let cancel: () -> Void
     let delete: () -> Void
 
@@ -50,7 +53,10 @@ struct CommentDeleteConfirmation: View {
                 Button(role: .destructive, action: delete) { ControlLabel("Delete") }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
-                    .help("Delete your comment in Azure DevOps, as you: it can't be undone")
+                    .disabled(isBusy)
+                    .help(isBusy
+                        ? "Another change to this thread is on its way: you can delete your comment once it's done"
+                        : "Delete your comment in Azure DevOps, as you: it can't be undone")
             }
             .controlSize(.small)
             .fixedSize(horizontal: false, vertical: true)

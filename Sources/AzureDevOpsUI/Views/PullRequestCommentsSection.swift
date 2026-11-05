@@ -627,13 +627,14 @@ struct ThreadCard: View {
             )
         } else if composing == deleting {
             yours.confirmation = AnyView(
-                CommentDeleteConfirmation {
+                CommentDeleteConfirmation(isBusy: isSending) {
                     // Kept: its ⋯ takes the keyboard's focus back.
                     guard composing == deleting else { return }
                     composing = nil
                     refocus.closed(deleting, on: thread.id)
                 } delete: {
-                    guard composing == deleting else { return }
+                    // Not while another change to the thread is on its way, which it would wait for: it stays open.
+                    guard composing == deleting, !isSending else { return }
                     composing = nil
                     refocus.deleting(comment.id)
                     hold(thread)
