@@ -205,8 +205,8 @@ unless you add `--greedy`), and keep Full Disk Access.
 Sources are read-only, but for one opt-in: with **Make Changes in Azure DevOps**, off by default,
 BriefBar posts your replies in pull requests' threads, sets threads' statuses, edits and deletes your own
 comments, and adds and removes pull requests' tags, as you, only when you click. Azure DevOps and GitHub use
-your existing CLI sign-ins, and Teams and Copilot tracking reads files on your Mac. Full Disk Access is needed for Teams and the optional
-**Pull Requests Sent in Chats**, not for ordinary pull-request or session tracking.
+your existing CLI sign-ins, and Teams and Copilot tracking reads files on your Mac. Full Disk Access is needed for
+Teams and the optional **Pull Requests Sent in Chats**, not for ordinary pull-request or session tracking.
 
 Links, summaries, Send Work to Copilot, Make Changes in Azure DevOps and agent access each start off. Once you turn summaries on,
 they send the details of the work you open to GitHub Copilot when the Copilot CLI is installed, to be

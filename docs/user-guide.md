@@ -497,10 +497,11 @@ changes in Azure DevOps, when Edit starts again from what it says now. **Fix Gra
 doesn't show it, and deletes its thread once none of its comments is left, so the comment leaves its thread at once, and
 the thread leaves the details then. After each, BriefBar reads the pull request again, as after a reply. While a comment
 is open to edit or delete, its thread's comments don't fold, and once it closes, the keyboard's focus goes back to its
-**⋯**, or to **Reply** once it's deleted. When an edit or a deletion can't go, the thread says why, as for a reply, such
-as **Azure DevOps says you may not edit this comment**, **You're offline**, or until when Azure DevOps asked BriefBar to slow down, with
-**Edit…**, **Try Again** or **Sign In…**; an edit that didn't go keeps what you wrote, and one that Azure DevOps didn't
-answer in time is read again before you save or delete it twice. The demo changes only its own made-up pull requests.
+**⋯**, or to **Reply** once it's deleted. When an edit or a deletion can't go, the thread says why, as for a reply,
+such as **Azure DevOps says you may not edit this comment**, **You're offline**, or until when Azure DevOps asked
+BriefBar to slow down, with **Edit…**, **Try Again** or **Sign In…**; an edit that didn't go keeps what you wrote, and
+one that Azure DevOps didn't answer in time is read again before you save or delete it twice. The demo changes only its
+own made-up pull requests.
 
 **Spelling.** In your reply, and in a comment you edit, the Mac checks your spelling as you type, in the languages
 your Mac uses: it underlines the words it doesn't know, and a right-click on one suggests others. It never corrects
