@@ -21,6 +21,11 @@
       "name": "briefbar-pr-order",
       "description": "Lets the sessions that open pull requests together tell BriefBar the order those must merge in: Pull Request Order, in BriefBar's Settings.",
       "source": "./briefbar-pr-order"
+    },
+    {
+      "name": "briefbar-updates",
+      "description": "Lets Copilot sessions tell BriefBar the work items and pull requests they're working on, and what they changed in Azure DevOps: Updates from Copilot Sessions, in BriefBar's Settings › Agents.",
+      "source": "./briefbar-updates"
     }
   ]
 }

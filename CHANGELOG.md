@@ -17,6 +17,21 @@
   than that you can complete it.
 - **`--render` draws Settings with its chosen page highlighted in the sidebar**, where it drew a black capsule.
 
+## 0.15.0 - 2026-11-04
+
+- **Copilot sessions keep BriefBar up to date.** Turn on **Updates from Copilot Sessions** in Settings › Agents, and
+  sessions tell BriefBar the work items and pull requests they're working on, the pull requests they opened, and what
+  they just changed in Azure DevOps. With Show Links on, a session shows on what it's working on, in the Sprint, on your
+  pull requests and in their details, where it can be the pull request's session, and a click opens it; with Pull
+  Request Order on, a pull request it opened joins its lane in By Mission, whose Map says what it's working on now. What
+  a session changed, BriefBar reads again right away instead of at its next refresh, never more than it reads anyway.
+  Sessions change Azure DevOps with their own tools: BriefBar still gives them no way to. It's off by default, and agents
+  pause until you've seen what they get now.
+- **After this update, Azure DevOps, Copilot and agents ask you once to look at what they read and get, and wait until
+  you have.** With Updates from Copilot Sessions on, Copilot reads what sessions tell BriefBar they're working on and
+  the pull requests they opened, Azure DevOps reads again right away what a session says it changed there, and agents
+  get the tools to tell BriefBar.
+
 ## 0.14.1 - 2026-11-04
 
 - **What you write to Copilot in a pull request's details stays until you send it.** What you type in **Explain**,

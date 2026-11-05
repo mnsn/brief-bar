@@ -38,11 +38,13 @@ package final class PullRequestOrder: ObservableObject {
     /// and one that finished goes two weeks later, whether or not the sources show anything new meanwhile.
     package static let timeCheckInterval: TimeInterval = 3_600
 
-    /// What a source told: its pull requests and sessions, and how its things look, for what shows them.
+    /// What a source told: its pull requests and sessions, how its things look, for what shows them, and what each of its
+    /// sessions told BriefBar it works on, which the Map shows.
     private struct Told {
         var pullRequests: [OrderPullRequest]
         var sessions: [OrderSession]
         var items: [ItemRef: LinkedItem]
+        var working: [ItemRef: [ItemRef]] = [:]
     }
 
     /// - Parameters:
@@ -134,20 +136,22 @@ package final class PullRequestOrder: ObservableObject {
     // MARK: What the sources show
 
     /// What a source shows now, while it's on: the pull requests it lists, with what an order needs of each, the sessions
-    /// it knows, and how its things look, for what shows them. It replaces what the source told before. Nothing's kept
-    /// while Pull Request Order is off.
+    /// it knows, how its things look, for what shows them, and what each session told BriefBar it works on now
+    /// (`SessionUpdates`), which changes no mission. It replaces what the source told before. Nothing's kept while Pull
+    /// Request Order is off.
     package func publish(
-        _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = []
+        _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = [],
+        working: [ItemRef: [ItemRef]] = [:]
     ) {
         guard isOn else { return }
         var byRef: [ItemRef: LinkedItem] = [:]
         for item in items where byRef[item.ref] == nil {
             byRef[item.ref] = item
         }
-        let new = Told(pullRequests: pullRequests, sessions: sessions, items: byRef)
+        let new = Told(pullRequests: pullRequests, sessions: sessions, items: byRef, working: working)
         let old = told[source]
         let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions
-        guard !sameFacts || old?.items != new.items else { return }
+        guard !sameFacts || old?.items != new.items || old?.working != new.working else { return }
         objectWillChange.send()
         told[source] = new
         if !sameFacts { rebuild() }
@@ -190,6 +194,25 @@ package final class PullRequestOrder: ObservableObject {
             if let item = told[source]?.items[ref] { return item }
         }
         return nil
+    }
+
+    /// What a session told BriefBar it's working on now, as it shows: nothing while it isn't shown.
+    package func workingOn(_ session: ItemRef) -> [ItemRef] {
+        for source in SourceID.allCases {
+            if let working = told[source]?.working[session] { return working }
+        }
+        return []
+    }
+
+    /// The sessions that told BriefBar they're working on a thing now, in reference order.
+    package func sessionsWorking(on ref: ItemRef) -> [ItemRef] {
+        var sessions: Set<ItemRef> = []
+        for told in told.values {
+            for (session, refs) in told.working where refs.contains(ref) {
+                sessions.insert(session)
+            }
+        }
+        return sessions.sorted()
     }
 
     // MARK: Your choices

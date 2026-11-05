@@ -144,8 +144,10 @@ public enum LinkOrigin: String, Codable, Sendable, CaseIterable, Comparable {
     /// Linked in Azure DevOps: a pull request's work items.
     case azureDevOps
     /// Copilot started there, or opened it: a session sent from a work item or a pull request, the pull request a session
-    /// opened, or the work item it opened it for.
+    /// opened, as the Copilot app records it or the session told BriefBar, or the work item it opened it for.
     case copilot
+    /// A session told BriefBar it's working on it, with Updates from Copilot Sessions on (`SessionReports`).
+    case session
     /// A session on the pull request's branch, in the same repository.
     case branch
     /// You linked them, in BriefBar only.
@@ -160,6 +162,7 @@ public enum LinkOrigin: String, Codable, Sendable, CaseIterable, Comparable {
         switch self {
         case .azureDevOps: return "Linked in Azure DevOps"
         case .copilot: return "Recorded by Copilot"
+        case .session: return "Told BriefBar it's working on it"
         case .branch: return "On its branch"
         case .you: return "Linked by you, in BriefBar"
         }
@@ -496,6 +499,34 @@ extension ItemRef {
            path[index + 1].lowercased() == "edit", let id = number(path[index + 2]) {
             return .workItem(organization: organization, id: id)
         }
+        // The links Azure DevOps' API gives, which its MCP server passes on: …/_apis/wit/workItems/5101,
+        // …/_apis/git/repositories/<id>/pullRequests/4071 and …/_apis/git/pullRequests/4071.
+        if let index = path.firstIndex(where: { $0.lowercased() == "_apis" }) {
+            let api = path[(index + 1)...].map { $0.lowercased() }
+            if api.count == 3, api[0] == "wit", api[1] == "workitems", let id = number(api[2]) {
+                return .workItem(organization: organization, id: id)
+            }
+            if api.first == "git", let at = api.firstIndex(of: "pullrequests"), at + 2 == api.count,
+               at == 1 || (at == 3 && api[1] == "repositories"), let number = number(api[at + 1]) {
+                return .pullRequest(organization: organization, number: number)
+            }
+        }
+        return nil
+    }
+
+    /// What an agent names: a link, as `from(link:)` reads it, or an Azure DevOps number with its organization, such as
+    /// "5101" or "#5101" for a work item and "4071" or "!4071" for a pull request. Nil for anything else, or another kind.
+    /// - Parameter kinds: what it can be: work items, or pull requests, Azure DevOps' or GitHub's.
+    public static func named(_ text: String, as kinds: Set<Kind>, organization: String?) -> ItemRef? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let ref = from(link: trimmed) { return kinds.contains(ref.kind) ? ref : nil }
+        var digits = Substring(trimmed)
+        if digits.first == "#" || digits.first == "!" { digits = digits.dropFirst() }
+        guard let number = number(String(digits)),
+              let organization = organization?.trimmingCharacters(in: .whitespaces).lowercased(), isOrganization(organization)
+        else { return nil }
+        if kinds.contains(.workItem) { return .workItem(organization: organization, id: number) }
+        if kinds.contains(.pullRequest) { return .pullRequest(organization: organization, number: number) }
         return nil
     }
 }

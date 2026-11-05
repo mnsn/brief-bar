@@ -11,6 +11,7 @@ final class MemorySettings: SettingsStorage {
     func bool(forKey defaultName: String) -> Bool { values[defaultName] as? Bool ?? false }
     func set(_ value: Any?, forKey defaultName: String) { values[defaultName] = value }
     func removeObject(forKey defaultName: String) { values[defaultName] = nil }
+    func dictionaryRepresentation() -> [String: Any] { values }
 }
 
 func makeTemporaryDirectory() throws -> URL {

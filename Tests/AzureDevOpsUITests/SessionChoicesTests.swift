@@ -183,6 +183,25 @@ private struct DatabaseError: Error {
         #expect(choices.first { $0.id == other }?.opensInApp == true)
     }
 
+    /// A session that told BriefBar it's working on the pull request, as Show Links has it with Updates from Copilot
+    /// Sessions on, goes with it for that, besides its other reasons.
+    @Test func aSessionThatToldBriefBarItsWorkingOnItGoesWithIt() throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let store = store(home: home)
+        store.linkedSessions = { [linkedChat, onBranch] _ in
+            [
+                LinkedSession(id: linkedChat, origins: [.session], isThrough: false),
+                LinkedSession(id: onBranch, origins: [.session, .branch], isThrough: false),
+            ]
+        }
+        let reasons = store.linkedReasons(for: subject)
+        #expect(reasons[linkedChat] == [.toldBriefBar])
+        #expect(Set(reasons[onBranch] ?? []) == [.toldBriefBar, .onItsBranch])
+        #expect(SessionChoice.Reason.toldBriefBar.phrase == "told BriefBar it's working on it")
+        #expect(SessionChoice.Reason.recordedByCopilot < .toldBriefBar && SessionChoice.Reason.toldBriefBar < .onItsBranch)
+    }
+
     @Test func findsTheSessionsWhoseLogsMentionIt() async throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
