@@ -58,8 +58,16 @@ import Testing
         for _ in 0..<20 { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
     }
 
-    /// VoiceOver hears a split button's two parts, each named with its title and saying what it does, presses its button and
-    /// can open its menu; and it takes the keyboard's focus, as AppKit's controls do with keyboard navigation on.
+    /// The actions AppKit offers VoiceOver on an element, such as Show Menu: what VoiceOver can do with it. Every element
+    /// answers each `accessibilityPerform` method, so only this list says which apply. Read by its key, since declaring
+    /// them this way is deprecated, though AppKit still lists them so.
+    private func actions(of element: NSObject) -> [String] {
+        element.value(forKey: "accessibilityActionNames") as? [String] ?? []
+    }
+
+    /// VoiceOver hears a split button's two parts, each named with its title and saying what it does, presses its button,
+    /// and can open the menu from the menu's part alone. Whether Tab reaches either part, keyboard navigation decides, for
+    /// every app on the Mac, so that isn't tested here.
     @Test func voiceOverHearsAndPressesEachPartOfASplitButton() throws {
         let pressed = Choice(0)
         try inWindow(
@@ -74,17 +82,17 @@ import Testing
             #expect(primary.accessibilityHelp() == "Resolve it")
             #expect(menu.accessibilityLabel() == "Resolve")
             #expect(menu.accessibilityHelp() == "Its menu sets another status")
-            #expect(menu.responds(to: #selector(NSAccessibilityProtocol.accessibilityPerformShowMenu)))
+            let showMenu = NSAccessibility.Action.showMenu.rawValue
+            #expect(actions(of: menu).contains(showMenu))
+            #expect(!actions(of: primary).contains(showMenu))
+            #expect(actions(of: primary).contains(NSAccessibility.Action.press.rawValue))
             _ = primary.accessibilityPerformPress()
             settle()
             #expect(pressed.value == 1)
-            let takesFocus = button.subviews.contains { $0.acceptsFirstResponder }
-            #expect(takesFocus)
         }
     }
 
-    /// VoiceOver hears a segmented picker's segments by their titles, symbols alone too, and chooses among them; and it takes
-    /// the keyboard's focus, as AppKit's controls do with keyboard navigation on.
+    /// VoiceOver hears a segmented picker's segments by their titles, symbols alone too, and chooses among them.
     @Test func voiceOverHearsAndChoosesASegmentedPickersSegments() throws {
         let chosen = Choice(0)
         try inWindow(
@@ -100,7 +108,6 @@ import Testing
             _ = segments.last?.accessibilityPerformPress()
             settle()
             #expect(chosen.value == 1)
-            #expect(picker.acceptsFirstResponder)
         }
     }
 
