@@ -3,7 +3,7 @@ import Foundation
 /// What you've already seen, and what you've taken off Needs You. Azure DevOps has no read/unread state for pull
 /// requests, so BriefBar keeps its own: activity up to the baseline, or up to when you last opened a pull request from
 /// BriefBar (or marked it seen), counts as seen. Comments you've seen still need you while they wait on you, until you
-/// remove the pull request from Needs You, or send them to Copilot.
+/// remove the pull request from Needs You, send them to Copilot, or mark their thread as read.
 public struct SeenState: Sendable, Codable, Equatable {
     /// Activity before this was there before BriefBar first ran.
     public var baseline: Date
@@ -12,31 +12,71 @@ public struct SeenState: Sendable, Codable, Equatable {
     /// Pull request → when you last removed it from Needs You, or sent its comments to Copilot: comments up to then
     /// that still wait on you don't need you anymore. Never later than when you last looked at it.
     public var dismissedAt: [String: Date]
+    /// Pull request → the comment threads you marked as read, by their IDs → up to when: the latest comment in each as you
+    /// did. What it said up to then doesn't wait on you anymore, and a comment after it does again. BriefBar's own, as the
+    /// rest: nothing goes to Azure DevOps.
+    public var readThreads: [String: [Int: Date]]
     /// Whose this is (`AccessToken.account`), once known: each account you sign in with has its own.
     public var account: String?
 
     /// On the first run, only the last few days count as new, so years of old threads don't all need you.
     public static let firstRunLookback: TimeInterval = 3 * 86_400
 
-    public init(baseline: Date, seenAt: [String: Date] = [:], dismissedAt: [String: Date] = [:], account: String? = nil) {
+    public init(
+        baseline: Date, seenAt: [String: Date] = [:], dismissedAt: [String: Date] = [:], readThreads: [String: [Int: Date]] = [:],
+        account: String? = nil
+    ) {
         self.baseline = baseline
         self.seenAt = Self.folded(seenAt)
         self.dismissedAt = Self.folded(dismissedAt)
+        self.readThreads = Self.folded(readThreads)
         self.account = account
     }
 
     enum CodingKeys: String, CodingKey {
-        case baseline, seenAt, dismissedAt, account
+        case baseline, seenAt, dismissedAt, readThreads, account
     }
 
-    /// What builds from before you could remove a pull request from Needs You saved has no `dismissedAt`, and earlier
-    /// builds named pull requests spelled as given.
+    /// What builds from before you could remove a pull request from Needs You saved has no `dismissedAt`, nor, from before
+    /// you could mark a thread as read, `readThreads`; and earlier builds named pull requests spelled as given. A thread
+    /// that isn't named by a number or doesn't say when, which another program could have written there, is left out, and
+    /// only it: never the other threads, or what you've seen.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         baseline = try container.decode(Date.self, forKey: .baseline)
         seenAt = try Self.folded(container.decode([String: Date].self, forKey: .seenAt))
         dismissedAt = try Self.folded(container.decodeIfPresent([String: Date].self, forKey: .dismissedAt) ?? [:])
+        readThreads = Self.folded(Self.readThreads(in: container))
         account = try container.decodeIfPresent(String.self, forKey: .account)
+    }
+
+    /// A name a JSON object has for what it holds: a pull request's, or a thread's number.
+    private struct NameKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+
+        init(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue: Int) {
+            nil
+        }
+    }
+
+    /// The threads marked as read, as they're saved, each that can be read: one that isn't named by a number or doesn't
+    /// say when, or a pull request's that aren't an object of them, is left out on its own.
+    private static func readThreads(in container: KeyedDecodingContainer<CodingKeys>) -> [String: [Int: Date]] {
+        guard let byName = try? container.nestedContainer(keyedBy: NameKey.self, forKey: .readThreads) else { return [:] }
+        var read: [String: [Int: Date]] = [:]
+        for name in byName.allKeys {
+            guard let threads = try? byName.nestedContainer(keyedBy: NameKey.self, forKey: name) else { continue }
+            for thread in threads.allKeys {
+                guard let id = Int(thread.stringValue), let date = try? threads.decode(Date.self, forKey: thread) else { continue }
+                read[name.stringValue, default: [:]][id] = date
+            }
+        }
+        return read
     }
 
     public static func firstRun(now: Date = Date(), account: String? = nil) -> SeenState {
@@ -56,6 +96,26 @@ public struct SeenState: Sendable, Codable, Equatable {
     /// Comments up to this that still wait on you don't need you anymore.
     public func dismissedCutoff(for key: PRKey) -> Date {
         max(baseline, dismissedAt[Self.name(of: key)] ?? .distantPast)
+    }
+
+    /// The comment threads of a pull request you marked as read, by their IDs: up to when each doesn't wait on you.
+    public func readThreads(of key: PRKey) -> [Int: Date] {
+        readThreads[Self.name(of: key)] ?? [:]
+    }
+
+    /// Marks one of a pull request's comment threads as read, up to `date`, the latest comment in it as you did: what it
+    /// said until then doesn't wait on you anymore, and what comes after does. A thread marked up to a later time stays so.
+    public mutating func markRead(_ thread: Int, of key: PRKey, upTo date: Date) {
+        let name = Self.name(of: key)
+        readThreads[name, default: [:]][thread] = max(date, readThreads[name]?[thread] ?? .distantPast)
+    }
+
+    /// Puts a thread back as it was read before, as Mark as Unread does: up to `date`, or, for nil, not marked as read.
+    public mutating func setRead(_ thread: Int, of key: PRKey, to date: Date?) {
+        let name = Self.name(of: key)
+        var threads = readThreads[name] ?? [:]
+        threads[thread] = date
+        readThreads[name] = threads.isEmpty ? nil : threads
     }
 
     public mutating func markSeen<S: Sequence>(_ keys: S, at date: Date) where S.Element == PRKey {
@@ -78,20 +138,25 @@ public struct SeenState: Sendable, Codable, Equatable {
 
     /// Forgets pull requests that are no longer listed and were last seen long ago.
     public mutating func prune(keeping keys: Set<PRKey>, olderThan date: Date) {
-        (seenAt, dismissedAt) = Self.pruned(seenAt: seenAt, dismissedAt: dismissedAt, keeping: keys, olderThan: date)
+        let kept = Self.pruned(seenAt: seenAt, dismissedAt: dismissedAt, readThreads: readThreads, keeping: keys, olderThan: date)
+        (seenAt, dismissedAt, readThreads) = (kept.seenAt, kept.dismissedAt, kept.readThreads)
     }
 
-    /// What's left of when you last looked at pull requests and took them off Needs You, by `name(of:)`, once those no
-    /// longer listed and last seen before `date` are forgotten: for `prune`, and for what's kept elsewhere, such as in
-    /// memory. When you took one off goes with when you last looked at it, never before: you may have taken it off long
-    /// ago and looked at it since, and forgetting only that would bring back what you took off, once it's listed again.
+    /// What's left of when you last looked at pull requests and took them off Needs You, and of the threads you marked as
+    /// read there, by `name(of:)`, once those no longer listed and last seen before `date` are forgotten: for `prune`, and
+    /// for what's kept elsewhere, such as in memory. When you took one off goes with when you last looked at it, never
+    /// before: you may have taken it off long ago and looked at it since, and forgetting only that would bring back what
+    /// you took off, once it's listed again. The threads you marked as read go with it too, and while it's listed, they
+    /// stay.
     public static func pruned(
-        seenAt: [String: Date], dismissedAt: [String: Date], keeping keys: Set<PRKey>, olderThan date: Date
-    ) -> (seenAt: [String: Date], dismissedAt: [String: Date]) {
+        seenAt: [String: Date], dismissedAt: [String: Date], readThreads: [String: [Int: Date]] = [:], keeping keys: Set<PRKey>,
+        olderThan date: Date
+    ) -> (seenAt: [String: Date], dismissedAt: [String: Date], readThreads: [String: [Int: Date]]) {
         let kept = Set(keys.map { name(of: $0) })
         let seen = folded(seenAt).filter { kept.contains($0.key) || $0.value > date }
         let dismissed = folded(dismissedAt).filter { seen[$0.key] != nil || kept.contains($0.key) || $0.value > date }
-        return (seen, dismissed)
+        let read = folded(readThreads).filter { seen[$0.key] != nil || kept.contains($0.key) }
+        return (seen, dismissed, read)
     }
 
     /// `dates` by `name(of:)`, however they named the pull requests: of one named two ways, the later time counts.
@@ -101,6 +166,15 @@ public struct SeenState: Sendable, Codable, Equatable {
             // The number after the slash has no case.
             let lowercased = name.lowercased()
             byName[lowercased] = max(date, byName[lowercased] ?? .distantPast)
+        }
+        return byName
+    }
+
+    /// The threads marked as read, by `name(of:)` the same way: of a thread of one named two ways, the later time counts.
+    static func folded(_ read: [String: [Int: Date]]) -> [String: [Int: Date]] {
+        var byName: [String: [Int: Date]] = [:]
+        for (name, threads) in read where !threads.isEmpty {
+            byName[name.lowercased(), default: [:]].merge(threads) { max($0, $1) }
         }
         return byName
     }

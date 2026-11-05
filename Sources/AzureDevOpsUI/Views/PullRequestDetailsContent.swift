@@ -26,6 +26,8 @@ struct PullRequestDetailsContent: View {
     @EnvironmentObject private var files: PullRequestFilesStore
     @EnvironmentObject private var changes: ThreadChanges
     @EnvironmentObject private var tagChanges: TagChanges
+    /// Which comment threads show, Active or All, which its comments and its files' pages follow.
+    @EnvironmentObject private var settings: AppSettings
     @Environment(\.itemNavigation) private var navigation
     /// The window's page it's on, which its Copilot session is read only while the window shows on screen.
     @Environment(\.shownSection) private var section
@@ -65,6 +67,17 @@ struct PullRequestDetailsContent: View {
         isShown ? details.record : store.record(for: item.key)
     }
 
+    /// Where the threads you marked as read while `details` shows it were then, which they stay at, as those you changed
+    /// do (`DetailsDrafts.held`); kept apart from those, so that Mark as Unread lets go of them alone.
+    private var readHolds: [Int: PullRequestPanel.Thread.Held] {
+        isShown ? details.readHolds : [:]
+    }
+
+    /// Mark as Read and Mark as Unread on its threads, once `details` shows it.
+    private var reading: ThreadReading? {
+        isShown ? ThreadReading(details) : nil
+    }
+
     /// What shows under it, from the work item or the pull request it opened from, as a page; nothing beside the list.
     private var trail: [ItemRef] {
         guard let navigation, let index = navigation.trail.lastIndex(of: item.key.linkRef) else { return [] }
@@ -81,7 +94,8 @@ struct PullRequestDetailsContent: View {
             if let file = isShown ? details.file : nil {
                 PullRequestFilePage(
                     details: details, item: item, pullRequest: record?.pullRequest, threads: panel.threads, me: record?.me, open: file,
-                    scroll: scroll
+                    scroll: scroll, readHolds: readHolds, filter: settings.commentFilter, showAll: { settings.commentFilter = .all },
+                    reading: reading
                 )
             } else {
                 PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact) {
@@ -103,7 +117,8 @@ struct PullRequestDetailsContent: View {
                 }
                 PullRequestCommentsSection(
                     item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place,
-                    highlighted: arrival.pointedOut, composing: $composing, drafts: drafts
+                    highlighted: arrival.pointedOut, composing: $composing, drafts: drafts, readHolds: readHolds,
+                    filter: $settings.commentFilter, reading: reading
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.comments))
                     // A thread's file opens here, at the thread, in all of the change, which has it whatever the Files show.

@@ -413,8 +413,7 @@ struct CommentComposer: View {
     /// Fix All's title, which says what it takes on (`CopilotAsk.fixAllTitle`).
     private var fixAllTitle: String {
         guard let record else { return CopilotAsk.fixAll.title(about: nil) }
-        let open = (record.details?.threads ?? []).filter { !$0.isResolved }.count
-        return CopilotAsk.fixAllTitle(waiting: PullRequestPrompt.waitingThreads(record).count, open: open)
+        return CopilotAsk.fixAllTitle(record)
     }
 
     /// The code its thread is on, once it's read.
@@ -505,10 +504,12 @@ struct CommentComposer: View {
 
 /// The Comments header, with Fix All on your pull request while comments wait on you: Fix Comments, through the same
 /// composer in place as a thread's Fix, under it. It says what it takes on: "Fix 1 Comment" while others wait on someone
-/// else.
+/// else. Active | All, beside its title, chooses which threads show, for every pull request.
 struct CommentsHeader: View {
     let item: PRSnapshot
     let count: Int?
+    /// Which threads show: all of them, or only the active ones; nil for none to choose, as before there are any.
+    var filter: Binding<PullRequestPanel.CommentFilter>? = nil
     /// The composer in place that's open in the comments.
     @Binding var composing: CopilotComposing?
     let drafts: CopilotDrafts
@@ -516,6 +517,8 @@ struct CommentsHeader: View {
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
     @Environment(\.copilotActionsPreview) private var preview
+    /// Active | All grows with the text, which a segmented control's font doesn't.
+    @Environment(\.textScale) private var textScale
     @LocalState private var copied: String?
     @FocusState private var isFocused: Bool
 
@@ -528,10 +531,11 @@ struct CommentsHeader: View {
         return PullRequestTasks.actions(for: record, canShip: false).contains(.fixComments)
     }
 
-    /// "Fix All", or "Fix 1 Comment" while others wait on someone else.
+    /// "Fix All", or "Fix 1 Comment" while others wait on someone else: of all the unresolved threads, as the composer says
+    /// it, not only those the heading counts with Active.
     private var title: String {
         guard let record else { return CopilotAsk.fixAll.title(about: nil) }
-        return CopilotAsk.fixAllTitle(waiting: PullRequestPrompt.waitingThreads(record).count, open: count ?? 0)
+        return CopilotAsk.fixAllTitle(record)
     }
 
     var body: some View {
@@ -539,6 +543,19 @@ struct CommentsHeader: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 PageSectionHeader(title: "Comments", count: count)
                     .takesFocusOnArrival(at: .section(.comments))
+                if let filter {
+                    Picker("Comments Shown", selection: filter) {
+                        Text("Active").tag(PullRequestPanel.CommentFilter.active)
+                        Text("All").tag(PullRequestPanel.CommentFilter.all)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .font(size: 11.5)
+                    .controlSize(textScale < 1.15 ? .small : textScale < 1.35 ? .regular : .large)
+                    .fixedSize()
+                    .help("Active: only the comments whose status is active or pending. All: every comment, the resolved ones folded")
+                    .accessibilityLabel("Comments Shown")
+                }
                 Spacer(minLength: 8)
                 if canFixAll, !isFixing {
                     Button {

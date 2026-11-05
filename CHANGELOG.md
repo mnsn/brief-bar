@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Mark a comment thread as read, and show only the active ones.** In a pull request's details, **✓** beside a
+  thread's **Waits on you**, or **Mark as Read** in its right-click menu, stops it waiting on you, and the pull request
+  leaves Needs You once nothing else there does, until someone comments in the thread again. It's BriefBar's own:
+  nothing goes to Azure DevOps, and **Mark as Unread** puts it back while the details are open. That ends a bot's note in
+  a closed thread, say, as soon as you've read it. **Active | All**, beside **Comments**, shows only the threads that are
+  active or pending, in every pull request's details and their files' pages, and says how many it hides; BriefBar
+  remembers which you chose.
+
 ## 0.15.1 - 2026-11-05
 
 - **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,

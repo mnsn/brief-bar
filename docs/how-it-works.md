@@ -1322,8 +1322,9 @@ one keeps its own width (`ado.pullRequestDetailsWidth`). The row shows as select
 request, as opening it does. While they show it, though, what waits on you in its threads is as it was before
 they showed it (`PullRequestDetailsStore.pendingEvents`, with `PRStore.snapshot(of:seenAt:)`): a new comment in
 a resolved thread, which waits on you only while it's new, doesn't fold away as you read it, and what was new
-stays new. Answering it still counts, and removing the pull request from Needs You or sending its comments to
-Copilot ends that look, as showing another one or closing them does: then what you've seen is seen there too.
+stays new. Answering it still counts, and so does marking its thread as read there, at once; removing the pull
+request from Needs You or sending its comments to Copilot ends that look, as showing another one or closing them does:
+then what you've seen is seen there too.
 
 A pull request opens there from anywhere else in BriefBar too, as the one place it opens
 (`PullRequestDetailsStore`): from the window's other pages, the Overview's rows and its brief (`BriefLine.show`),
@@ -1468,6 +1469,23 @@ then it's your turn, not someone else's. Each comment shows in full, its Markdow
 (`ReviewComment.markdown`, `RichText`, `RichTextView`), mentions as names, parsed again only when it changes, not
 as the time beside it moves on (`CommentBody`); a thread of more than three shows its first and latest until you
 ask for the rest.
+
+**Active | All**, beside the heading (`PullRequestPanel.CommentFilter`, kept in `ado.commentFilter`, All until you
+choose), chooses which threads the details and a file's page show (`PullRequestPanel.Threads.listed`): All, as above;
+Active, only those whose status is active or pending (`ReviewThread.isActive`), as What's Left counts open comments, by
+file the same way, without the resolved ones, even one that waits on you, their fold, or those without a status, with a
+line that says how many it leaves out and **Show All**. A thread you
+changed or marked as read in the details stays, as it was then, unless it was resolved then and still is, and so does
+one they were taken to, as from a notification. The heading counts what shows that's open; What's Left, Needs You and
+the rows count every thread, as Azure DevOps and your attention need.
+
+**Mark as Read**, beside a thread's **Waits on you**, in its right-click menu and among VoiceOver's actions, takes the
+thread off waiting on you (`PullRequestDetailsStore.markRead`, `PRStore.markRead`; [below](#what-still-waits-on-you)),
+and works without **Make Changes in Azure DevOps**, since nothing goes there. The details show it at once, the thread
+staying where it was while they show the pull request (`markedRead`), kept apart from where the threads you replied to
+or set a status of stay (`DetailsDrafts.held`), though a change after Mark as Read keeps where it was then
+(`PullRequestPanel.Thread.Held.kept`, `holding`, `DetailsDrafts.hold`). **Mark as Unread** puts back what it was read up
+to before, until they show another pull request or close.
 
 #### Replying and setting a thread's status
 
@@ -1887,10 +1905,17 @@ It stops waiting on you when:
   beyond the 30 it lists at most or deleted before you sent it, nor one in a thread reopened meanwhile.
   Since there's one cutoff, it then stops before the first comment that waits on you when the task
   starts, as BriefBar last read the pull request, and wasn't handed off: one in a thread answered or
-  resolved meanwhile doesn't hold it back. If BriefBar doesn't have the pull request then, it goes by
-  the prompt as it was written. They leave the Needs You of the account signed in to the Azure CLI when
-  the prompt was written, even if another has signed in since: that account's seen state keeps it for
-  when it signs in again. What comes after needs you again, as new;
+  resolved meanwhile doesn't hold it back, nor one in a thread its account has marked as read, as the
+  marks are then. If BriefBar doesn't have the pull request then, it goes by the prompt as it was
+  written, with the marks as they are then. They leave the Needs You of the account signed in to the
+  Azure CLI when the prompt was written, even if another has signed in since: that account's seen state
+  keeps it for when it signs in again. What comes after needs you again, as new;
+- you mark its thread as read in the pull request's details: up to the thread's latest comment as they show it,
+  whatever its status, seen or not (`SeenState.readThreads`, by pull request and thread, which `PRClassifier.snapshot`
+  takes as `read`), so a comment after it needs you again, as new. It's kept for the account signed in now, whose list
+  it's in, as a task's hand-off is (`AppSettings.markRead(_:of:upTo:for:sentInChat:)`): another account's Needs You
+  keeps it. It's BriefBar's own, as what you've seen is: nothing goes to Azure DevOps. The command line and agents
+  leave out what you marked too;
 - the pull request has had no activity for as long as **Idle After No Activity For** says (two weeks
   by default): it's idle, as it would be otherwise. Something new still needs you.
 
@@ -1898,10 +1923,10 @@ The rest don't wait like that once you've seen them: a review request is in **To
 and a vote that wants changes leave the pull request in its usual group, and a link someone sent you
 stops needing you. So **Mark as Seen** sees everything in Needs You, but keeps the comments that wait on
 you there. A comment from before the three days before BriefBar first ran never needs you. What you
-take off Needs You is kept as what you've seen is: in the preferences, with each account, except for
-pull requests listed only because someone sent them to you, kept in memory only. It's forgotten with
-when you last looked at the pull request, never before (`SeenState.pruned`): once it's no longer listed
-and you last looked at it two months ago or more.
+take off Needs You, and the threads you mark as read, are kept as what you've seen is: in the preferences, with each
+account, except for pull requests listed only because someone sent them to you, kept in memory only. They're forgotten
+with when you last looked at the pull request, never before (`SeenState.pruned`): once it's no longer listed and you
+last looked at it two months ago or more.
 
 ### Answered
 
@@ -1984,9 +2009,10 @@ from a menu, turning it on opens Settings › Pull Requests, which says what it 
 - It keeps only the link, the app, the sender, the time and, for Teams, the chat and message IDs (to
   open the message). Never the message itself. Links are kept in memory only, for at most two weeks,
   and forgotten when you turn the setting off, or Azure DevOps. So is what you've seen of the pull
-  requests listed only because of a link, and what you've taken off Needs You there. None of it goes to
+  requests listed only because of a link, what you've taken off Needs You there, and the threads you
+  marked as read there. None of it goes to
   BriefBar's preferences or to disk, where any program running as you could read it: only what you've
-  seen of your own pull requests, and taken off Needs You, is in the preferences. Builds from before the
+  seen of your own pull requests, taken off Needs You and marked as read there, is in the preferences. Builds from before the
   first release did keep the links there (`ado.chatLinks`), so at
   launch BriefBar removes them. What those builds saved of which of those pull requests you'd seen
   leaves the preferences once they're listed again, and otherwise two months after you last saw

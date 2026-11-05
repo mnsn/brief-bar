@@ -31,17 +31,27 @@ struct PullRequestCommentsSection: View {
     /// another page shows over them (`DetailsDrafts.held`); and whether the resolved ones show, kept with them
     /// (`DetailsDrafts.showsResolved`).
     @EnvironmentObject private var kept: DetailsDrafts
+    /// Where the threads you marked as read there were then, which they stay at too, unless you changed them first.
+    var readHolds: [Int: PullRequestPanel.Thread.Held] = [:]
+    /// Which threads show, as you choose in the heading: all of them, or only the active ones (`AppSettings.commentFilter`).
+    var filter: Binding<PullRequestPanel.CommentFilter> = .constant(.all)
+    /// Mark as Read and Mark as Unread on the threads, the details'; nil where they can't be.
+    var reading: ThreadReading? = nil
+    /// The threads the details were taken to, which show with Active too, whatever their status.
+    @LocalState private var revealed: Set<Int> = []
 
     var body: some View {
         let threads = panel.threads
-        let held = kept.held(in: item.key)
-        let arranged = threads.arranged(holding: held)
-        let resolvedCount = arranged.resolved.reduce(0) { $0 + $1.threads.count }
+        // Those you changed here, and those you marked as read here, each where it was as you first did.
+        let holding = PullRequestPanel.Thread.Held.kept(changed: kept.held(in: item.key), read: readHolds)
+        let listing = threads.listed(filter.wrappedValue, holding: holding, revealing: revealed)
+        let resolvedCount = listing.resolved.reduce(0) { $0 + $1.threads.count }
         let showsResolved = kept.showsResolved(in: item.key)
         VStack(alignment: .leading, spacing: 8) {
-            // With Fix All, while comments wait on you on your pull request.
+            // With Fix All, while comments wait on you on your pull request; and Active | All, once there are threads.
             CommentsHeader(
-                item: item, count: threads.unresolvedCount > 0 ? threads.unresolvedCount : nil, composing: $composing, drafts: drafts
+                item: item, count: listing.count > 0 ? listing.count : nil, filter: panel.hasDetails && !threads.isEmpty ? filter : nil,
+                composing: $composing, drafts: drafts
             )
             if !panel.hasDetails {
                 Text(panel.isClosed ? "BriefBar reads a pull request's comments only while it's open."
@@ -53,12 +63,15 @@ struct PullRequestCommentsSection: View {
                     .font(size: 12.5)
                     .foregroundStyle(.tertiary)
             } else {
-                if threads.unresolvedCount == 0 {
-                    Text("Every thread is resolved.")
+                if listing.count == 0 {
+                    Text(filter.wrappedValue == .active ? "No active comments." : "Every thread is resolved.")
                         .font(size: 12.5)
                         .foregroundStyle(.secondary)
                 }
-                files(arranged.open)
+                files(listing.open)
+                if let hidden = listing.hiddenSentence {
+                    HiddenCommentsLine(sentence: hidden) { filter.wrappedValue = .all }
+                }
                 if resolvedCount > 0 {
                     Button {
                         withAnimation(.easeOut(duration: 0.15)) { kept.setShowsResolved(!showsResolved, in: item.key) }
@@ -76,16 +89,20 @@ struct PullRequestCommentsSection: View {
                     .help(showsResolved ? "Hide the threads that are resolved" : "Show the threads that are fixed, won't be fixed, closed or by design")
                     .accessibilityValue(showsResolved ? "Expanded" : "Collapsed")
                     if showsResolved {
-                        files(arranged.resolved)
+                        files(listing.resolved)
                     }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Asked to go to a thread among the resolved ones, as they show it, such as one you reactivated here: they unfold.
+        // Asked to go to a thread among the resolved ones, as they show it, such as one you reactivated here: they unfold;
+        // and with Active, it shows too, whatever its status.
         .onChange(of: place, initial: true) {
-            if case .thread(let id)? = place, threads.listsResolved(id, holding: held) {
+            if case .thread(let id)? = place, threads.listsResolved(id, holding: holding) {
                 kept.setShowsResolved(true, in: item.key)
+            }
+            if case .thread(let id)? = place, panel.threads.contains(id) {
+                revealed.insert(id)
             }
         }
         // Its threads' code is read, and kept, while it shows: in the panel's details, or on a pull request's page.
@@ -104,10 +121,65 @@ struct PullRequestCommentsSection: View {
                 ThreadCard(
                     thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now,
                     isHighlighted: highlighted == .thread(thread.id), composing: $composing, drafts: drafts,
-                    hold: { kept.hold($0, in: item.key) }
+                    hold: { kept.hold($0, in: item.key, read: readHolds) }, reading: reading
                 )
             }
         }
+    }
+}
+
+/// Mark as Read on a thread that waits on you, and Mark as Unread on one you marked while the details show its pull
+/// request: the details' (`PullRequestDetailsStore.markRead`).
+@MainActor
+struct ThreadReading {
+    /// The threads you marked as read while the details show the pull request.
+    var marked: Set<Int>
+    var markRead: (PullRequestPanel.Thread) -> Void
+    var markUnread: (Int) -> Void
+
+    init(_ details: PullRequestDetailsStore) {
+        marked = Set(details.markedRead.keys)
+        // VoiceOver hears it, since the button it was on goes.
+        markRead = { [weak details] thread in
+            details?.markRead(thread)
+            SpokenText.announce("Marked as read")
+        }
+        markUnread = { [weak details] thread in
+            details?.markUnread(thread)
+            SpokenText.announce("Marked as unread")
+        }
+    }
+}
+
+/// "4 closed or resolved comments hidden", with All, when the comments show only the active ones: in the details'
+/// comments, and on a file's page for its own.
+struct HiddenCommentsLine: View {
+    let sentence: String
+    let showAll: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "eye.slash")
+                .font(size: 10.5, weight: .medium)
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+            Text(sentence)
+                .font(size: 11.5)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { showAll() }
+            } label: {
+                Text("Show All")
+                    .font(size: 11.5, weight: .medium)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Show every comment, the closed and resolved ones too")
+        }
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: "Show All") { showAll() }
     }
 }
 
@@ -221,6 +293,8 @@ struct ThreadCard: View {
     /// Keeps it where it is as you change it, with your reply or its status: in the comments, with the open ones it was
     /// with; on its file's page, unfolded.
     var hold: (PullRequestPanel.Thread) -> Void = { _ in }
+    /// Mark as Read while it waits on you, and Mark as Unread once you did while the details show it; nil where it can't be.
+    var reading: ThreadReading? = nil
 
     @EnvironmentObject private var changes: ThreadChanges
     @Environment(\.threadChangesPreview) private var preview
@@ -285,6 +359,14 @@ struct ThreadCard: View {
                 .strokeBorder(Color.accentColor.opacity(isHighlighted ? 0.8 : 0), lineWidth: 1.5)
         }
         .contextMenu {
+            // BriefBar's own, with or without Make Changes in Azure DevOps.
+            if let reading, thread.waitsOnYou {
+                Button("Mark as Read") { reading.markRead(thread) }
+                Divider()
+            } else if let reading, reading.marked.contains(thread.id) {
+                Button("Mark as Unread") { reading.markUnread(thread.id) }
+                Divider()
+            }
             if changes.canChange(pullRequest) {
                 let sending = changes.isSending(ThreadChanges.Key(pullRequest: item.key, thread: thread.id))
                 Button("Reply") { ThreadReplyArea.open(thread, composing: $composing, hold: hold) }
@@ -306,6 +388,13 @@ struct ThreadCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityActions {
+            if let reading, thread.waitsOnYou {
+                Button("Mark as Read") { reading.markRead(thread) }
+            } else if let reading, reading.marked.contains(thread.id) {
+                Button("Mark as Unread") { reading.markUnread(thread.id) }
+            }
+        }
         .accessibilityFocused($isFocused)
         // Also as it's made, once the details scrolled to it; and as its file's page points it out, going on to it.
         .onAppear { if isHighlighted { isFocused = true } }
@@ -334,7 +423,30 @@ struct ThreadCard: View {
                         .help(placeHelp)
                 }
                 if thread.waitsOnYou {
-                    Chip(text: "Waits on you", color: ItemState.needsYou.textColor, symbol: ItemState.needsYou.symbol)
+                    // With Mark as Read beside it, which goes where it goes.
+                    HStack(spacing: 3) {
+                        Chip(text: "Waits on you", color: ItemState.needsYou.textColor, symbol: ItemState.needsYou.symbol)
+                            .help(waitsHelp)
+                        if let reading {
+                            // Takes it off waiting on you, here and in Needs You: BriefBar's own, nothing goes to Azure
+                            // DevOps. A capsule as tall as the chip, so it reads as the chip's, not as the status after it.
+                            Button {
+                                reading.markRead(thread)
+                            } label: {
+                                Text(Image(systemName: "checkmark"))
+                                    .font(size: 10.5, weight: .bold)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2.5)
+                                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .fixedSize()
+                            .help("Mark as Read")
+                            .accessibilityLabel("Mark as Read")
+                        }
+                    }
                 }
                 standing
             }
@@ -398,6 +510,11 @@ struct ThreadCard: View {
 
     private var waitingOn: String? {
         pullRequest.flatMap { thread.waitingOn(in: $0, me: me) }
+    }
+
+    /// Why it waits on you: in a resolved thread, only a comment you haven't seen does.
+    private var waitsHelp: String {
+        thread.isResolved ? "New since you last looked" : "It waits on you until you reply in it, or mark it as read"
     }
 
     /// Resolved green, pending orange; active, won't fix, closed and by design gray.

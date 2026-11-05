@@ -387,6 +387,22 @@ added or removed, and whether the comment is on it. When it can't show a thread'
 isn't text, it says why in a few words, with **↗** to see it in Azure DevOps, and, when reading it again may
 help, as when you were offline, **↻** to try again.
 
+**Mark a thread as read, and show only the active ones.** A thread that waits on you has **✓** beside its **Waits on
+you**: **Mark as Read**, which its right-click menu and VoiceOver's actions have too. It doesn't wait on you anymore, up
+to its latest comment, so its pull request leaves Needs You once nothing else there does, and a newer comment in it waits
+on you again. It's BriefBar's own, like what you've seen: nothing goes to Azure DevOps, and it works without Make Changes
+in Azure DevOps, on your pull requests, the ones you review and the ones sent to you. Its chip and dot go at once, and the
+thread stays where it is while the details show its pull request; **Mark as Unread**, in its right-click menu, puts it
+back until they show another. A new comment in a resolved thread, such as a bot's note that it updated the description,
+waits on you only until you've seen it (**New since you last looked**, its chip's tooltip says), and since the details
+keep it as it was while you read, Mark as Read is how to end that before you close them. **Active | All**, beside
+**Comments**, chooses which threads show, in every pull request's details and on their files' pages, and BriefBar
+remembers it: **All** shows every thread, the resolved ones folded, and **Active** only those whose status is active or
+pending, as What's Left counts them, without the closed, fixed, won't fix and by design ones, even one that waits on you,
+or those without a status, saying how many it leaves out, such as **4 closed or resolved comments hidden**, with **Show
+All**. A thread you're taken to, as from a
+notification, shows either way. What's Left, Needs You and the lists count every thread all the same.
+
 **Ask Copilot about a comment.** With Send Work to Copilot on, each open thread ends with
 **✨ Explain** and **Fix**, side by side, in the comments and on its file's page. Each opens a small composer under the comment, rather than a window: a field for
 what you want in your own words, where it goes, and its button, which Return presses, so a plain explanation or fix takes
@@ -572,9 +588,9 @@ its target moves, and keeps them in memory only, while the details show that pul
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
 a comment that waits on you, such as a reply to you, a mention or a comment on your pull request, stays
 there and in the menu bar's count, no longer marked new. It leaves once you reply in its thread or the
-thread is resolved, once you send the comments to Copilot with **Fix Comments** or **Push & Reply**, or
-when you choose **Remove from Needs You** in its menu (right-click it, or **Actions** in the window);
-anything after that needs you again. A pull request without activity for two weeks goes to Idle, as
+thread is resolved, once you mark the thread as read in the pull request's details, once you send the comments
+to Copilot with **Fix Comments** or **Push & Reply**, or when you choose **Remove from Needs You** in its menu
+(right-click it, or **Actions** in the window); anything after that needs you again. A pull request without activity for two weeks goes to Idle, as
 before. The first time, only the last three days count as new, and each account you sign in to the Azure
 CLI with has its own. Notifications announce new replies, mentions, comments, review requests, votes, new
 commits, failed builds, pull requests that become ready or complete, and, after you merge one, a pipeline
@@ -1198,8 +1214,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
   and chat, and when, never the messages, and only in memory, as it does which of those pull requests
-  you've seen or taken off Needs You: nothing about them goes to its preferences or to disk, where
-  other programs running as you could read it. It forgets them when you turn it off.
+  you've seen or taken off Needs You, and the threads you marked as read there: nothing about them goes to its
+  preferences or to disk, where other programs running as you could read it. It forgets them when you turn it off.
 - **Show Links** reads more only if you turn it on, with the same sign-ins: from Azure DevOps, through
   GET requests, the work items linked to your pull requests, the pull requests linked to the sprint's
   work items while it's on screen, and what the linked ones your lists don't show are; from the Copilot
@@ -1228,7 +1244,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   its notifications off the page.
 - **On disk**, it keeps Teams' unread chats (each chat's name, and its unread messages' sender and
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
-  read; which of your Azure DevOps pull requests you've seen or taken off Needs You, with each account,
+  read; which of your Azure DevOps pull requests you've seen or taken off Needs You, and the comment threads you
+  marked as read there, by their numbers, with each account,
   your organizations, and the pull requests you watch; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
   sessions you've cleared; the links you added or hid, with Show Links; with Make Changes in Azure DevOps, the tags you
   added to pull requests, up to 20 for each project, to suggest them; and its settings. Turning a source off deletes
