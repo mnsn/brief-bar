@@ -157,6 +157,8 @@ package struct MissionHeader: View {
     @LocalState private var confirmsForget = false
     @LocalState private var isRenaming = false
     @LocalState private var draft = ""
+    /// What the rename field started with.
+    @LocalState private var original = ""
     @LocalState private var isFull = false
     @FocusState private var isEditing: Bool
     @Environment(\.textScale) private var textScale
@@ -315,6 +317,7 @@ package struct MissionHeader: View {
             return
         }
         draft = title
+        original = title
         isRenaming = true
         order.renaming = mission.key
     }
@@ -322,7 +325,7 @@ package struct MissionHeader: View {
     private func commit() {
         guard isRenaming else { return }
         stopRenaming()
-        if order.rename(mission, to: draft) == .full { isFull = true }
+        if order.rename(mission, to: draft, from: original) == .full { isFull = true }
     }
 
     private func cancel() {

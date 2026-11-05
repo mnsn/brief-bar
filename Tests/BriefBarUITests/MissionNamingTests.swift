@@ -14,18 +14,30 @@ fileprivate final class Clock {
     }
 }
 
-/// Apple Intelligence, as a test answers for it: what it was asked, and the answer it gives.
+/// Apple Intelligence, as a test answers for it: what it was asked, and the answer it gives, at once or once released.
 @MainActor
 fileprivate final class Model {
     var prompts: [String] = []
     var answer: Result<String, OnDeviceModel.Failure> = .success("Faster checkout")
     var isAvailable = true
+    /// Whether it holds its answers until `release()`.
+    var holds = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+
+    func release() {
+        let waiting = held
+        held = []
+        for answer in waiting { answer.resume() }
+    }
 
     func namer(clock: Clock) -> MissionNamer {
         MissionNamer(
             isAvailable: { [unowned self] in isAvailable },
             respond: { [unowned self] prompt, _ in
                 prompts.append(prompt)
+                if holds {
+                    await withCheckedContinuation { held.append($0) }
+                }
                 return answer
             },
             now: { clock.now }
@@ -256,6 +268,104 @@ fileprivate final class Viewer {}
         #expect(await Self.eventually { model.prompts.count == 2 })
         try await Task.sleep(for: .milliseconds(50))
         #expect(order.title(of: mission) == "Checkout redesign")
+        order.stopShowing(in: viewer)
+    }
+
+    @Test func anAnswerForWhatChangedOrWentMeanwhileDoesntCountAndItsAskedAgain() async throws {
+        let clock = Clock()
+        let model = Model()
+        model.holds = true
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let viewer = Viewer()
+        order.showing([key], in: viewer)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { model.prompts.count == 1 })
+
+        // What it's named from changed while Apple Intelligence answered: asked again, once settled, from what it is now.
+        Self.tell(order, firstTitle: "Make checkout faster")
+        model.release()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(order.modelNames[key] == nil)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { model.prompts.count == 2 })
+        #expect(model.prompts[1].contains("- Make checkout faster"))
+
+        // Pull Request Order went off meanwhile: on again, it's asked again.
+        order.setOn(false)
+        model.release()
+        try await Task.sleep(for: .milliseconds(50))
+        order.setOn(true)
+        Self.tell(order, firstTitle: "Make checkout faster")
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { model.prompts.count == 3 })
+
+        // Azure DevOps was turned off meanwhile: its name isn't kept, and on again, it's asked again.
+        order.forget(.azureDevOps)
+        model.release()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(order.modelNames.isEmpty)
+        Self.tell(order, firstTitle: "Make checkout faster")
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { model.prompts.count == 4 })
+        model.holds = false
+        model.release()
+        #expect(await Self.eventually { order.modelNames[key] == "Faster checkout" })
+        order.stopShowing(in: viewer)
+    }
+
+    @Test func whileAppleIntelligenceIsOffItLooksAgainEveryHalfMinute() async throws {
+        let clock = Clock()
+        let model = Model()
+        model.isAvailable = false
+        let order = Self.service(clock: clock)
+        let namer = model.namer(clock: clock)
+        order.namer = namer
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let viewer = Viewer()
+        order.showing([key], in: viewer)
+        clock.advance(MissionNamer.settleFor)
+        namer.next()
+        #expect(model.prompts.isEmpty)
+        #expect(namer.wakesAt == clock.now.addingTimeInterval(MissionNamer.retryAfter))
+        // Turned on meanwhile: it's asked as it looks again.
+        model.isAvailable = true
+        clock.advance(MissionNamer.retryAfter)
+        namer.next()
+        #expect(await Self.eventually { model.prompts.count == 1 })
+        order.stopShowing(in: viewer)
+    }
+
+    @Test func aRenameLeftAsItWasKeepsNothingThoughAppleIntelligenceNamedItMeanwhile() async throws {
+        let clock = Clock()
+        let model = Model()
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults, clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let mission = try #require(order.missions.first)
+        // Rename… shows its name now…
+        let shown = order.title(of: mission)
+        #expect(shown == "Checkout redesign")
+        // …and Apple Intelligence names it before you're done.
+        let viewer = Viewer()
+        order.showing([mission.key], in: viewer)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { order.modelNames[mission.key] != nil })
+        #expect(order.rename(mission, to: shown, from: shown) == .unchanged)
+        #expect(order.names.entries.isEmpty && defaults.object(forKey: MissionNames.defaultsKey) == nil)
+        #expect(order.title(of: mission) == "Faster checkout")
+        // What you typed is kept.
+        #expect(order.rename(mission, to: "Coupons and speed", from: shown) == .named)
+        #expect(order.title(of: mission) == "Coupons and speed")
         order.stopShowing(in: viewer)
     }
 

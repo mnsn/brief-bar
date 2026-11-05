@@ -260,14 +260,17 @@ final class WorkLinksStore {
         var byPullRequest: [PRKey: [OrderStory]] = [:]
         var named: Set<WorkItemKey> = []
         for (key, ids) in read.workItemsOfPullRequests {
+            // Until each of its work items is read, or Azure DevOps says it can't be, its stories aren't known: its mission
+            // isn't named from half of what it's made of.
+            guard !ids.contains(where: { read.pendingWorkItems.contains(WorkItemKey(key.organization, $0)) }) else { continue }
             let found = finder.stories(of: key, workItems: ids)
             byPullRequest[PRKey(key.organization.lowercased(), key.number)] = found
             for ref in found.flatMap({ [$0.ref, $0.task].compactMap { $0 } }) {
                 if let id = ref.number { named.insert(WorkItemKey(ref.scope, id)) }
             }
         }
-        let read = Stories(areRead: true, byPullRequest: byPullRequest, workItems: named.sorted().compactMap { known[$0] })
-        if read != storiesRead { storiesRead = read }
+        let stories = Stories(areRead: true, byPullRequest: byPullRequest, workItems: named.sorted().compactMap { known[$0] })
+        if stories != storiesRead { storiesRead = stories }
     }
 
     /// The work items and pull requests in links that your lists and the sprint don't show.

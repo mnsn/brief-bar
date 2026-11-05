@@ -5,9 +5,9 @@ import Foundation
 /// request's linked work items' own type, never its parent's, and never guessed. A task gives its parent, and none without
 /// one; a feature or an epic, too broad for a mission, none; anything else on the backlog, such as a user story, a product
 /// backlog item, a requirement, an issue or a bug, is a story itself; and one whose type BriefBar hasn't read yet, none,
-/// until it has. Tasks are the types on the sprint's team's task board, in its project, and those its sprint places under a
-/// story; features and epics, its portfolio backlogs' types. Elsewhere, as in every process Azure DevOps comes with: Task,
-/// and Feature and Epic.
+/// until it has. Tasks are the types on the sprint's team's task board, in its project, the sprint saying which story each
+/// of its own is under; features and epics, its portfolio backlogs' types. Elsewhere, as in every process Azure DevOps comes
+/// with: Task, and Feature and Epic.
 public struct WorkItemStories: Sendable {
     /// What a project's types are, lowercased.
     public struct Types: Sendable, Equatable {
@@ -32,7 +32,7 @@ public struct WorkItemStories: Sendable {
     }
 
     private let workItems: [WorkItemKey: WorkItem]
-    /// The sprint's tasks, by the story each is under on its board.
+    /// The sprint's work items under a story or bug on its board, by its ID: a task's story when its parent wasn't read.
     private let placed: [WorkItemKey: Int]
     /// The sprint's team's project, by organization and name, lowercased, and its types.
     private let project: (organization: String, name: String, types: Types)?
@@ -63,18 +63,15 @@ public struct WorkItemStories: Sendable {
         return project.types
     }
 
-    /// The story a work item is for, by its own type; nil for none, or while its type isn't read.
+    /// The story a work item is for, by its own type; nil for none, or while its type isn't read. Where the sprint's board
+    /// puts it says only which story a task is under: a bug or a story the board shows under another is a story itself.
     public func story(of key: WorkItemKey) -> OrderStory? {
+        guard let item = workItems[key] else { return nil }
         let ref = ItemRef.workItem(organization: key.organization, id: key.id)
-        let item = workItems[key]
-        if let parent = placed[key] {
-            return story(WorkItemKey(key.organization, parent), task: ref, rank: item?.rank)
-        }
-        guard let item else { return nil }
         let types = types(of: item)
         let type = item.type.lowercased()
         if types.tasks.contains(type) {
-            return item.parentId.map { story(WorkItemKey(key.organization, $0), task: ref, rank: item.rank) }
+            return (placed[key] ?? item.parentId).map { story(WorkItemKey(key.organization, $0), task: ref, rank: item.rank) }
         }
         if types.portfolio.contains(type) { return nil }
         return OrderStory(ref: ref, type: item.type)

@@ -23,9 +23,15 @@ import Testing
         team: TeamRef(organization: "Contoso", projectId: "p1", projectName: "Storefront", id: "t1", name: "Storefront Team"),
         sprint: Sprint(id: "s1", name: "Sprint 42", path: "Storefront\\Sprint 42", start: nil, finish: nil),
         rows: [
-            SprintBoard.Row(parent: item(5101, "User Story", rank: 1), tasks: [item(5102, "Task", parent: 5101, rank: 1)]),
+            SprintBoard.Row(parent: item(5101, "User Story", rank: 1), tasks: [
+                item(5102, "Task", parent: 5101, rank: 1),
+                // Read with the sprint, without its parent.
+                item(5103, "Task", rank: 2),
+            ]),
             // A bug the sprint puts under a story, as a team that tracks bugs as tasks does.
             SprintBoard.Row(parent: item(5110, "User Story", rank: 2), tasks: [item(5111, "Bug", parent: 5110, rank: 3)]),
+            // A story the board shows under another, as a team that nests them does.
+            SprintBoard.Row(parent: item(5120, "User Story", rank: 3), tasks: [item(5121, "User Story", parent: 5120, rank: 4)]),
         ],
         me: "me", taskTypes: ["Task", "Bug"], portfolioTypes: ["Feature", "Epic", "Initiative"]
     )
@@ -82,6 +88,13 @@ import Testing
         ])
         #expect(stories.stories(of: Self.pullRequest, workItems: [5180]) == [OrderStory(ref: Self.ref(5180), type: "Bug")])
         #expect(stories.stories(of: Self.pullRequest, workItems: [5004]) == [OrderStory(ref: Self.ref(5004), type: "Initiative")])
+        // The board says which story a task is under, when its parent wasn't read; never what a work item is: a story it
+        // shows under another is a story itself.
+        #expect(stories.stories(of: Self.pullRequest, workItems: [5103]) == [
+            OrderStory(ref: Self.ref(5101), type: "User Story", task: Self.ref(5103), rank: 2),
+        ])
+        #expect(stories.stories(of: Self.pullRequest, workItems: [5121]) == [OrderStory(ref: Self.ref(5121), type: "User Story")])
+        #expect(stories.parents(ofTasksIn: [WorkItemKey(Self.organization, 5121)]).isEmpty)
     }
 
     @Test func aPullRequestIsForEachStoryOnceWithItsTaskThatComesFirst() {

@@ -472,6 +472,13 @@ import Testing
         order.setOn(true)
         try await until("stories are wanted") { workLinks.engineInputs?.wantsStories == true }
         #expect(workLinks.engineInputs?.parentLookups.isEmpty == true)
+        // Until the engine reads the task again, with what stories want, its pull request's stories aren't known: its
+        // mission isn't named from half of what it's made of.
+        engines.told[0](WorkLinks(
+            workItemsOfPullRequests: [pullRequest: [5181]], workItems: [WorkItemKey(organization, 5181): task],
+            pendingWorkItems: [WorkItemKey(organization, 5181)]
+        ))
+        try await until("its stories wait for the task") { workLinks.storiesRead.areRead && workLinks.storiesRead.byPullRequest.isEmpty }
         // The task, read again with its parent, which changes no link: its story is to read next.
         task.parentId = 5180
         task.rank = 1

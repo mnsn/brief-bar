@@ -365,9 +365,12 @@ package final class PullRequestOrder: ObservableObject {
 
     /// Rename…: what you typed becomes its name, as you typed it; nothing, or BriefBar's name for it, gives it BriefBar's
     /// name again, and keeps nothing. At the cap, it keeps none. Never logged.
+    /// - Parameter shown: what the field started with: left as it was, it changes nothing, though Apple Intelligence named
+    ///   the mission meanwhile.
     @discardableResult
-    package func rename(_ mission: OrderMission, to typed: String) -> MissionNames.Outcome {
+    package func rename(_ mission: OrderMission, to typed: String, from shown: String? = nil) -> MissionNames.Outcome {
         guard isOn else { return .unchanged }
+        if let shown, MissionNames.cleaned(typed) == MissionNames.cleaned(shown) { return .unchanged }
         var names = self.names
         let outcome = names.rename(mission.key, to: typed, briefBarsName: briefBarsName(of: mission))
         guard names != self.names else { return outcome }

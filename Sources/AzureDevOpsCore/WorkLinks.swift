@@ -33,16 +33,22 @@ public struct WorkLinks: Sendable, Equatable {
     /// The parents of linked work items, their stories, that no list, sprint or link has, as read: only while stories are
     /// wanted, to name their missions.
     public var parents: [WorkItemKey: WorkItem]
+    /// While stories are wanted, the work items linked to your pull requests that the sprint doesn't show and that no read
+    /// answered for yet with what stories want, or whose read failed: the stories of their pull requests aren't known until
+    /// then. One a read left out, deleted or that can't be read, isn't among them.
+    public var pendingWorkItems: Set<WorkItemKey>
 
     public init(
         workItemsOfPullRequests: [PRKey: [Int]] = [:], pullRequestsOfWorkItems: [WorkItemKey: [PRKey]] = [:],
-        workItems: [WorkItemKey: WorkItem] = [:], pullRequests: [PRKey: PullRequest] = [:], parents: [WorkItemKey: WorkItem] = [:]
+        workItems: [WorkItemKey: WorkItem] = [:], pullRequests: [PRKey: PullRequest] = [:], parents: [WorkItemKey: WorkItem] = [:],
+        pendingWorkItems: Set<WorkItemKey> = []
     ) {
         self.workItemsOfPullRequests = workItemsOfPullRequests
         self.pullRequestsOfWorkItems = pullRequestsOfWorkItems
         self.workItems = workItems
         self.pullRequests = pullRequests
         self.parents = parents
+        self.pendingWorkItems = pendingWorkItems
     }
 
     /// Every link it read, between pull requests and work items.
@@ -455,13 +461,11 @@ public actor LinkEngine {
     }
 
     /// What the work items linked to your pull requests are, when the sprint doesn't show them, and those you linked: with
-    /// their parent and place in the backlog while stories are wanted.
+    /// their parent and place in the backlog while stories are wanted, as each request goes.
     private func readLinkedWorkItems(at date: Date) async throws {
         let wanted = wantedWorkItems()
         links.workItems = links.workItems.filter { wanted.contains($0.key) }
         workItemsRead = workItemsRead.filter { wanted.contains($0.key) }
-        let readsStories = inputs.wantsStories
-        let fields = readsStories ? WorkLinks.workItemFields + WorkLinks.storyFields : WorkLinks.workItemFields
         let due = wanted.filter {
             isDue(workItemsRead[$0], failed: failures["wi \($0)"], at: date, asked: isAsked("wi \($0)", read: workItemsRead[$0]))
         }
@@ -469,6 +473,9 @@ public actor LinkEngine {
             let ids = keys.map(\.id).sorted()
             for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
                 let batch = Array(ids[start..<min(start + Self.batchSize, ids.count)])
+                // Stories may have been turned on or off during the last request.
+                let readsStories = inputs.wantsStories
+                let fields = readsStories ? WorkLinks.workItemFields + WorkLinks.storyFields : WorkLinks.workItemFields
                 do {
                     let list = try await get(
                         ADOEndpoint.workItems(organization: organization, ids: batch, fields: fields),
@@ -519,19 +526,25 @@ public actor LinkEngine {
         for (organization, keys) in Dictionary(grouping: due, by: \.organization) {
             let ids = keys.map(\.id).sorted()
             for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
-                let batch = Array(ids[start..<min(start + Self.batchSize, ids.count)])
+                // Only those still wanted: stories may have been turned off, or their tasks gone, during the last request.
+                let wantedNow = wantedParents()
+                let batch = ids[start..<min(start + Self.batchSize, ids.count)].filter { wantedNow.contains(WorkItemKey(organization, $0)) }
+                guard !batch.isEmpty else { continue }
                 do {
                     let list = try await get(
                         ADOEndpoint.workItems(organization: organization, ids: batch, fields: WorkLinks.workItemFields),
                         as: ADOList<ADOWorkItem>.self
                     )
                     let stillWanted = wantedParents()
+                    // Those left out were deleted, or can't be read: their missions are named by their numbers.
+                    for id in batch {
+                        links.parents[WorkItemKey(organization, id)] = nil
+                    }
                     for dto in list.value {
                         let key = WorkItemKey(organization, dto.id)
                         guard stillWanted.contains(key) else { continue }
                         links.parents[key] = WorkItem(organization: organization, project: dto.fields.teamProject ?? "", dto)
                     }
-                    // Those left out were deleted, or can't be read: their missions are named by their numbers.
                     for id in batch where stillWanted.contains(WorkItemKey(organization, id)) {
                         parentsRead[WorkItemKey(organization, id)] = date
                         settle("parent \(WorkItemKey(organization, id))", readAt: date)
@@ -592,6 +605,16 @@ public actor LinkEngine {
     }
 
     private func publish() {
+        var pending: Set<WorkItemKey> = []
+        if inputs.wantsStories {
+            for (pullRequest, ids) in links.workItemsOfPullRequests {
+                for id in ids {
+                    let key = WorkItemKey(pullRequest.organization, id)
+                    if workItemsRead[key] == nil, !inputs.sprintItems.contains(key) { pending.insert(key) }
+                }
+            }
+        }
+        links.pendingWorkItems = pending
         guard links != lastPublished else { return }
         lastPublished = links
         onChange(links)

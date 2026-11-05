@@ -39,8 +39,12 @@ package final class MissionNamer {
     /// Since when each mission on screen has been named from what it is now.
     private var since: [MissionKey: (inputs: MissionNameInputs, at: Date)] = [:]
     private var asking: MissionKey?
+    /// The answer under way no longer counts: Pull Request Order went off, or its mission's name was forgotten, meanwhile.
+    private var dropsAnswer = false
     private var waitUntil: Date?
     private var timer: Timer?
+    /// When it comes back to see what's due, if it will.
+    package private(set) var wakesAt: Date?
     private let isAvailable: @MainActor () -> Bool
     private let respond: Respond
     private let now: () -> Date
@@ -74,27 +78,38 @@ package final class MissionNamer {
         next()
     }
 
-    /// Pull Request Order went off: it asks for nothing more, and forgets what it asked. Once nothing's on screen, `update`
-    /// with none, which keeps what it asked, so the same missions aren't asked again when they show again.
+    /// Pull Request Order went off: it asks for nothing more, and forgets what it asked, and the answer under way. Once
+    /// nothing's on screen, `update` with none, which keeps what it asked, so the same missions aren't asked again when they
+    /// show again.
     package func stop() {
         requests = []
         since = [:]
         asked = [:]
+        if asking != nil { dropsAnswer = true }
         timer?.invalidate()
         timer = nil
+        wakesAt = nil
     }
 
-    /// Forgets what it asked for these missions, whose names went, as when their source was turned off: shown again, they're
-    /// asked again.
+    /// Forgets what it asked for these missions, whose names went, as when their source was turned off, and the answer under
+    /// way for one: shown again, they're asked again.
     package func forget(where matches: (MissionKey) -> Bool) {
         asked = asked.filter { !matches($0.key) }
         since = since.filter { !matches($0.key) }
+        if let asking, matches(asking) { dropsAnswer = true }
     }
 
-    /// Asks for the next mission that's due, or comes back when one will be.
+    /// Asks for the next mission that's due, or comes back when one will be: while Apple Intelligence is off or getting
+    /// ready, every `retryAfter`, as long as one waits for a name.
     package func next() {
-        guard asking == nil, !requests.isEmpty, isAvailable() else { return }
+        guard asking == nil, !requests.isEmpty else { return }
         let date = now()
+        guard isAvailable() else {
+            if requests.contains(where: { $0.isSettled && asked[$0.key] != $0.inputs }) {
+                wake(at: date.addingTimeInterval(Self.retryAfter))
+            }
+            return
+        }
         if let waitUntil, date < waitUntil {
             wake(at: waitUntil)
             return
@@ -119,6 +134,14 @@ package final class MissionNamer {
             let answer = await respond(prompt, MissionNaming.instructions)
             guard let self else { return }
             asking = nil
+            // Stopped or forgotten meanwhile, or named from something else now: the answer doesn't count, and the mission is
+            // asked again once it settles.
+            let isStale = dropsAnswer || requests.contains { $0.key == request.key && $0.inputs != request.inputs }
+            dropsAnswer = false
+            guard !isStale else {
+                next()
+                return
+            }
             switch answer {
             case .success(let text):
                 asked[request.key] = request.inputs
@@ -140,8 +163,12 @@ package final class MissionNamer {
 
     private func wake(at date: Date) {
         timer?.invalidate()
+        wakesAt = date
         let timer = Timer(timeInterval: max(date.timeIntervalSince(now()), 0) + 0.05, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.next() }
+            MainActor.assumeIsolated {
+                self?.wakesAt = nil
+                self?.next()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
