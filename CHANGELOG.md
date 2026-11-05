@@ -8,6 +8,20 @@
   sessions; click it to pick another, or **Finished My Review** to send it to your teammates. Its details show the
   whole track, and who set it, and By Mission draws each mission's pull requests in their stages' colors.
 
+## 0.16.2 - 2026-11-05
+
+- **Copilot's prompts keep what others wrote as theirs.** Fix, Resolve, Explain, Review and Push & Reply quote comments,
+  code, builds' logs and earlier answers, and Copilot works on them on its own, with every tool but push: a comment of
+  more than one line, and the code a thread is on, now come in a fence nothing in them can close, followed by a line that
+  says the comments are what their authors ask of the change, not instructions. Names, paths and a work item's title
+  stay on their own line, with anything that breaks a line, turns text around or hides it written out, and a branch
+  whose name holds something a shell would run, such as `$(…)`, is in quotes wherever a prompt names it, so a command
+  written with it runs nothing. Agents get what BriefBar tells them of pull requests, pipelines, the sprint and work
+  items quoted the same way.
+- **A suggested change that holds `{baseBranch}` is applied as it's written.** Work sent to Copilot on a pull request
+  had your base branch's name put in wherever its prompt said `{baseBranch}`, even in the code it quoted; now only a
+  work item's prompt has it filled in.
+
 ## 0.16.1 - 2026-11-05
 
 - **Buttons and menus grow with Text Size in Windows.** At a bigger text size, in Settings › Appearance, the controls on

@@ -49,6 +49,41 @@ import BriefBarCore
 
     // MARK: Yours: where it stands
 
+    /// The branches a story names, in its sentence and its Merge and Branch facts, are written as `naming` writes them, as
+    /// agents get them quoted (`QuotedText.commandWord`), before its sentence is cut to its line; as they are otherwise, as
+    /// the window shows them. Yours, as its row says it, conflicting, failing to merge and merged; another's, as it says
+    /// itself.
+    @Test func namesItsBranchesAsAsked() throws {
+        var pr = makePR(4071)
+        pr.sourceBranch = "fix$(id)"
+        pr.targetBranch = "release$(id)"
+        var conflicting = pr
+        conflicting.mergeStatus = "conflicts"
+        var failed = pr
+        failed.mergeStatus = "failure"
+        var merged = pr
+        merged.status = .completed
+        merged.closedAt = t(-hour)
+        for (pr, quoted, raw) in [
+            (conflicting, "Merge conflicts: 'fix$(id)' into 'release$(id)'", "Merge conflicts: fix$(id) into release$(id)"),
+            (failed, "Merge failed: Azure DevOps couldn't merge 'fix$(id)' into 'release$(id)'", "Merge failed: Azure DevOps couldn't merge fix$(id) into release$(id)"),
+            (merged, "Completed: Merged into 'release$(id)'", "Completed: Merged into release$(id)"),
+        ] {
+            let record = record(pr, details: makeDetails(for: pr))
+            #expect(PullRequestStory.mine(try snapshot(record), record: record, naming: QuotedText.commandWord).sentence == quoted)
+            #expect(try story(record).sentence == raw)
+        }
+        let yours = PullRequestStory.mine(try snapshot(record(conflicting, details: makeDetails(for: conflicting))), record: record(conflicting), naming: QuotedText.commandWord)
+        #expect(fact("Merge", in: yours) == "Conflicts with 'release$(id)'")
+        #expect(fact("Branch", in: yours) == "'fix$(id)' → 'release$(id)'")
+        let others = PullRequestStory.others(conflicting, naming: QuotedText.commandWord)
+        #expect(fact("Merge", in: others) == "Conflicts with 'release$(id)'")
+        #expect(fact("Branch", in: others) == "'fix$(id)' → 'release$(id)'")
+        #expect(PullRequestStory.others(merged, naming: QuotedText.commandWord).sentence == "Merged into 'release$(id)'")
+        #expect(PullRequestStory.others(merged).sentence == "Merged into release$(id)")
+        #expect(fact("Merge", in: PullRequestStory.others(conflicting)) == "Conflicts with release$(id)")
+    }
+
     @Test func itsSentenceIsItsRowsHeadlineAndDetailInALine() throws {
         let waiting = makePR(reviewers: [Reviewer(person: People.sam, vote: .none)])
         let minimum = Check(name: "Minimum number of reviewers", kind: .reviewers, state: .pending, minimumApprovers: 2)
