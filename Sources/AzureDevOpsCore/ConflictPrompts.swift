@@ -15,7 +15,7 @@ extension PullRequestPrompt {
         answer: CopilotAnswer? = nil
     ) -> String {
         let pr = record.pullRequest
-        let target = oneLine(pr.targetBranch)
+        let target = branch(pr.targetBranch)
         var parts = [
             header(record, workplace: workplace),
             """
@@ -46,7 +46,7 @@ extension PullRequestPrompt {
     ) -> String {
         let pr = record.pullRequest
         var parts = [
-            "\(introduction(pr)), has merge conflicts with \(oneLine(pr.targetBranch))."
+            "\(introduction(pr)), has merge conflicts with \(branch(pr.targetBranch))."
         ]
         if let list = conflictList(conflicts, of: pr) { parts.append(list) }
         parts += conflictsAsk(pr, question: question, earlier: earlier)
@@ -62,12 +62,12 @@ extension PullRequestPrompt {
         let pr = record.pullRequest
         var parts = [
             "\(introduction(pr)):\n\(pr.webURL.absoluteString)",
-            "It has merge conflicts with \(oneLine(pr.targetBranch)).",
+            "It has merge conflicts with \(branch(pr.targetBranch)).",
         ]
         if let list = conflictList(conflicts, of: pr) { parts.append(list) }
         parts += conflictsAsk(pr, question: question, earlier: earlier)
         parts.append("""
-            Answer from what you know of this change, and read the code, and what origin/\(oneLine(pr.targetBranch)) changed, if that \
+            Answer from what you know of this change, and read the code, and what origin/\(branch(pr.targetBranch)) changed, if that \
             helps. Don't change any file or branch: don't merge, commit or push, and don't reply on the pull request. Only \
             answer.
             """)
@@ -88,7 +88,7 @@ extension PullRequestPrompt {
             ? "Azure DevOps lists \(count) that conflict:" : "Azure DevOps lists these files that conflict, and there may be more:"
         var lines = files.prefix(conflictLimit).enumerated().map { (index: Int, conflict: MergeConflict) -> String in
             let path = conflict.path.hasPrefix("/") ? String(conflict.path.dropFirst()) : conflict.path
-            let how = conflict.how(source: pullRequest.sourceBranch, target: pullRequest.targetBranch)
+            let how = conflict.how(source: branch(pullRequest.sourceBranch), target: branch(pullRequest.targetBranch))
             let resolved = conflict.isResolved ? " (resolved in Azure DevOps, which hasn't committed it)" : ""
             return oneLine("\(index + 1). \(path): \(how.prefix(1).lowercased() + how.dropFirst())\(resolved)")
         }
@@ -111,7 +111,7 @@ extension PullRequestPrompt {
         if earlier != nil, question != nil {
             parts.append("Answer it, with what you answered before in mind.")
         } else {
-            let target = oneLine(pullRequest.targetBranch)
+            let target = branch(pullRequest.targetBranch)
             parts.append("""
                 Explain why they conflict: what this pull request changed in each file, and what \(target) likely changed \
                 there, from how each conflicts. Then say how you'd resolve each, keeping what both sides meant, and what to \
