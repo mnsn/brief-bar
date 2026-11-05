@@ -5,7 +5,8 @@
 # - Only BriefBarCore starts programs, through ProcessRunner and RunningProgram, which keep them from using
 #   BriefBar's privacy permissions, Full Disk Access included.
 # The app's binary combines every module, so this reads the debug build's object files, module by
-# module. (A release build's cross-module optimization could inline one module's code into another's.)
+# module. (A release build's cross-module optimization could inline one module's code into another's.) Every
+# module in Sources must have them, or it fails.
 #   scripts/check-boundaries.sh   (after `swift build`)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -37,6 +38,18 @@ if [[ ! -s "$LIST" ]]; then
     exit 1
 fi
 
+FAILED=false
+MODULES="$(cut -f 1 "$LIST" | sort -u)"
+# Every module in Sources, or a build that stopped partway would pass with the modules it got to.
+for folder in Sources/*/; do
+    module="$(basename "$folder")"
+    if [[ $'\n'"$MODULES"$'\n' != *$'\n'"$module"$'\n'* ]]; then
+        echo "check-boundaries: $module has no object files in .build, so this can't check it. Run 'swift build' first." >&2
+        FAILED=true
+    fi
+done
+$FAILED && exit 1
+
 # The undefined symbols of a module's object files that match a pattern, a few of them.
 uses() {
     awk -F '\t' -v module="$1" '$1 == module { print $2 }' "$LIST" | while IFS= read -r object; do
@@ -44,8 +57,6 @@ uses() {
     done | grep -E "$2" | sort -u | head -n 5 || true
 }
 
-FAILED=false
-MODULES="$(cut -f 1 "$LIST" | sort -u)"
 for module in $MODULES; do
     for check in "network:$NETWORK_MODULES:networking APIs" "processes:$PROCESS_MODULE:ways to start programs"; do
         kind="${check%%:*}"

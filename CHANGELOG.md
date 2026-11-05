@@ -8,6 +8,9 @@
   pull requests opened under one session do, and the story's number opens it. While Apple Intelligence is on, it names
   each mission on your Mac from its pull requests, work items and Copilot sessions, as the work changes; **Rename…**
   gives one a name of your own. After this update, Azure DevOps and Copilot ask you once to look at what they read.
+
+## 0.17.0 - 2026-11-05
+
 - **Edit and delete your comments.** With **Make Changes in Azure DevOps** on, a comment you wrote in a pull request's
   details has **Edit** and **Delete…**, in its **⋯** and right-click menus. Edit opens it in place, as Reply does, with
   **Fix Grammar**, and keeps whom it mentions; **Save** saves it in Azure DevOps, as you, and it shows as edited at once,

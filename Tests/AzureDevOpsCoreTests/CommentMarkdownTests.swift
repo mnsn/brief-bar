@@ -261,8 +261,8 @@ import Testing
     }
 
     /// Each in a fraction of a second, where reading them in quadratic time would take far longer than the limit: kept
-    /// small, since every test runs on one thread in `make test`.
-    @Test func readsAManyTaggedCommentInLinearTime() {
+    /// small, and read on `TestThreads`, since `make test` runs every other test on one thread.
+    @Test(.onTestThreads) func readsAManyTaggedCommentInLinearTime() {
         for long in [
             String(repeating: "<b>x</b> `y` <!-- z --> <a ", count: 1_000),
             "<img " + String(repeating: "a", count: 25_000) + ">",
