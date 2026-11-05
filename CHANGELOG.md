@@ -9,6 +9,9 @@
   a closed thread, say, as soon as you've read it. **Active | All**, beside **Comments**, shows only the threads that are
   active or pending, in every pull request's details and their files' pages, and says how many it hides; BriefBar
   remembers which you chose.
+- **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
+  and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
+  over an app in full screen, so clicking the gear seemed to do nothing.
 
 ## 0.15.0 - 2026-11-04
 
