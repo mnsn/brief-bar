@@ -294,8 +294,8 @@ extension PullRequestAction {
 // MARK: - Which composer is open
 
 /// Which composer in place is open in a part of a pull request's details: one at a time, so Esc, Return and the keyboard's
-/// focus are its own. One that asks Copilot; your reply on a thread (`reply(to:)`), which you write yourself; or the field
-/// that adds a tag (`tags`).
+/// focus are its own. One that asks Copilot; your reply on a thread (`reply(to:)`), which you write yourself; a comment of
+/// yours as you edit it (`edit(_:in:)`), or delete it (`deleting(_:in:)`); or the field that adds a tag (`tags`).
 struct CopilotComposing: Hashable {
     /// What it's about; nil for Fix All.
     var part: PullRequestPart?
@@ -312,12 +312,35 @@ struct CopilotComposing: Hashable {
         CopilotComposing(part: .thread(thread), ask: nil)
     }
 
+    /// A comment of yours in a thread, as you edit it in place of what it says, which BriefBar saves in Azure DevOps
+    /// (`ThreadChanges.edit`).
+    static func edit(_ comment: Int, in thread: Int) -> CopilotComposing {
+        CopilotComposing(part: .thread(thread), ask: nil, row: "edit-\(comment)")
+    }
+
+    /// A comment of yours in a thread, as you confirm you delete it, under what it says, which BriefBar deletes in Azure
+    /// DevOps then (`ThreadChanges.delete`).
+    static func deleting(_ comment: Int, in thread: Int) -> CopilotComposing {
+        CopilotComposing(part: .thread(thread), ask: nil, row: "delete-\(comment)")
+    }
+
+    /// Whether it's yours, on a thread: your reply, a comment you edit, or one you delete.
+    func isYours(on thread: Int) -> Bool { ask == nil && part == .thread(thread) }
+
+    /// The comment of yours it edits, or confirms you delete, on `thread`; nil for anything else.
+    func comment(on thread: Int) -> Int? {
+        guard isYours(on: thread), let row else { return nil }
+        for prefix in ["edit-", "delete-"] where row.hasPrefix(prefix) { return Int(row.dropFirst(prefix.count)) }
+        return nil
+    }
+
     /// The field that adds a tag to the pull request, under its heading (`PullRequestTagsRow`), which BriefBar sends Azure
     /// DevOps (`TagChanges`).
     static let tags = CopilotComposing(part: nil, ask: nil, row: "tags")
 
-    /// Whether it's your reply on a thread, rather than something you ask Copilot, or a tag.
-    var isReply: Bool { ask == nil && part != nil }
+    /// Whether it's your reply on a thread, rather than something you ask Copilot, your comment as you edit or delete it, or
+    /// a tag.
+    var isReply: Bool { ask == nil && part != nil && row == nil }
 }
 
 /// Who a composer in place is, for SwiftUI: what it asks, and how many times Try Again opened it, so that Try Again on one

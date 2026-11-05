@@ -130,8 +130,8 @@ public struct ADOClient: Sendable {
     /// didn't act on; and an answer that says it was made, any 2xx but 203, is taken as made, whatever it holds. When Azure
     /// DevOps refuses it, the error says why, as it said it (`ADOError.refused`); and when it made the change but its answer
     /// can't be read, the answer says so (`Answer.unreadable`), rather than that it failed; and a 503, which Azure Front Door
-    /// answers once Azure DevOps takes too long, as no answer in time, since it may have been made. Taking a tag off says
-    /// nothing more than that it's done, whatever it answers. Called off before it goes, as when its setting is turned off
+    /// answers once Azure DevOps takes too long, as no answer in time, since it may have been made. Deleting a comment, or
+    /// taking a tag off, says nothing more than that it's done, whatever it answers. Called off before it goes, as when its setting is turned off
     /// while a token comes, it never goes, and says so (`CancellationError`); once it's gone, it isn't called off, since
     /// Azure DevOps may make it all the same: its answer, or why it failed, says what happened. And it goes only as whom it
     /// was asked for as, `account` (`AccessToken.account`, as
@@ -147,10 +147,10 @@ public struct ADOClient: Sendable {
         }.data
         do {
             switch write.kind {
-            case .reply: return .comment(try ADOJSON.decoder().decode(ADOComment.self, from: data))
+            case .reply, .editComment: return .comment(try ADOJSON.decoder().decode(ADOComment.self, from: data))
             case .setStatus: return .thread(try ADOJSON.decoder().decode(ADOThread.self, from: data))
             case .addTag: return .tag(try ADOJSON.decoder().decode(ADOTag.self, from: data))
-            case .removeTag: return .done
+            case .deleteComment, .removeTag: return .done
             }
         } catch {
             return .unreadable(Self.describe(error))

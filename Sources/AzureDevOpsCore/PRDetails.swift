@@ -282,12 +282,23 @@ public struct ReviewComment: Sendable, Codable, Equatable {
     public var mentions: [String]
     public var publishedAt: Date
     /// All of it as Azure DevOps keeps it, each mention as its ID (`@<…>`), to tell a reply of yours that went from one to
-    /// send: nil for one made up, as the demo's.
+    /// send, and to edit one: nil for one made up, as the demo's.
     public var content: String?
+    /// When its author last changed what it says, once that's after it was published: nil for one never edited, or when
+    /// Azure DevOps doesn't say.
+    public var editedAt: Date?
+    /// What kind of comment Azure DevOps says it is, `text`, what someone wrote, or `codeChange`; nil when it doesn't say,
+    /// as for the demo's. System comments are never read.
+    public var commentType: String?
+    /// The names its mentions show as (`markdown`), by their lowercased IDs, as BriefBar named them as it read it: from the
+    /// pull request's people, and its thread's identities and comments' authors, those it leaves out too; for your edit of
+    /// it to name them the same (`CommentEditing`). Empty for one made up, as the demo's, whose mentions are names already.
+    public var mentionNames: [String: String]
 
     /// `markdown` is `text` unless it's given.
     public init(
-        id: Int, author: Person, text: String, markdown: String? = nil, mentions: [String] = [], publishedAt: Date, content: String? = nil
+        id: Int, author: Person, text: String, markdown: String? = nil, mentions: [String] = [], publishedAt: Date, content: String? = nil,
+        editedAt: Date? = nil, commentType: String? = nil, mentionNames: [String: String] = [:]
     ) {
         self.id = id
         self.author = author
@@ -296,6 +307,9 @@ public struct ReviewComment: Sendable, Codable, Equatable {
         self.mentions = mentions.map { $0.lowercased() }
         self.publishedAt = publishedAt
         self.content = content
+        self.editedAt = editedAt
+        self.commentType = commentType
+        self.mentionNames = mentionNames
     }
 
     /// Nil for a deleted or system comment, or one without an author or anything to say.
@@ -306,15 +320,33 @@ public struct ReviewComment: Sendable, Codable, Equatable {
         guard comment.isDeleted != true, comment.commentType != "system", let author = comment.author,
               let content = comment.content, !content.isEmpty
         else { return nil }
+        let publishedAt = comment.publishedDate ?? published ?? .distantPast
+        let mentions = CommentText.mentionedIds(content)
         self.init(
             id: comment.id,
             author: Person(author),
             text: CommentText.plain(content, names: names),
             markdown: CommentText.naming(content, names: names),
-            mentions: CommentText.mentionedIds(content),
-            publishedAt: comment.publishedDate ?? published ?? .distantPast,
-            content: content
+            mentions: mentions,
+            publishedAt: publishedAt,
+            content: content,
+            // Azure DevOps dates what it says as it publishes it, then each time its author edits it: a second after, and it
+            // was edited.
+            editedAt: comment.lastContentUpdatedDate.flatMap { $0.timeIntervalSince(publishedAt) > 1 ? $0 : nil },
+            commentType: comment.commentType,
+            mentionNames: names.filter { mentions.contains($0.key) }
         )
+    }
+
+    /// What it says, as Azure DevOps keeps it, or, for one made up, as it shows: two that say the same are the same comment
+    /// as edited.
+    public var kept: String { content ?? markdown }
+
+    /// Whether you may edit or delete it from BriefBar: it's yours, as `me`, the identity the list was read as, says, and what
+    /// someone wrote, rather than a code change's comment. Neither a deleted comment nor a system one is ever read.
+    public func isEditable(by me: String?) -> Bool {
+        guard let me, author.id == me.lowercased() else { return false }
+        return commentType == nil || commentType == "text"
     }
 }
 
@@ -392,7 +424,7 @@ public struct Activity: Sendable, Codable, Equatable {
 /// Turns a comment's markdown into one plain line for the panel.
 public enum CommentText {
     /// Mentions look like `@<6B3C1F2A-...>` in the markdown.
-    nonisolated(unsafe) private static let mention = /@<([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})>/
+    nonisolated(unsafe) static let mention = /@<([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})>/
 
     public static func mentionedIds(_ markdown: String) -> [String] {
         markdown.matches(of: mention).map { String($0.output.1).lowercased() }

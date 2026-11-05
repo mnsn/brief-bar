@@ -803,14 +803,19 @@ final class PRStore: ObservableObject {
     }
 
     /// A pull request's changes with another: a status it sets replaces any set before on that thread, whose comments stay,
-    /// so that a status set back, as Reactivate after Resolve, isn't undone by the one before it until a snapshot has both.
+    /// so that a status set back, as Reactivate after Resolve, isn't undone by the one before it until a snapshot has both;
+    /// and a comment it edits or deletes, the edits of it before, and a comment it deletes, the reply that added it, so that
+    /// neither puts back what the comment said, or the comment, until a snapshot has it.
     static func adding(_ change: ThreadChange, to made: [ThreadChange]) -> [ThreadChange] {
-        guard change.status != nil else { return made + [change] }
+        let edited = Set(change.edited.map(\.id)), deleted = Set(change.deleted)
+        guard change.status != nil || !edited.isEmpty || !deleted.isEmpty else { return made + [change] }
         let kept = made.compactMap { earlier -> ThreadChange? in
-            guard earlier.thread == change.thread, earlier.status != nil else { return earlier }
+            guard earlier.thread == change.thread else { return earlier }
             var earlier = earlier
-            earlier.status = nil
-            return earlier.comments.isEmpty ? nil : earlier
+            if change.status != nil { earlier.status = nil }
+            earlier.edited.removeAll { edited.contains($0.id) || deleted.contains($0.id) }
+            earlier.comments.removeAll { deleted.contains($0.id) }
+            return earlier.isEmpty ? nil : earlier
         }
         return kept + [change]
     }
@@ -897,13 +902,19 @@ final class PRStore: ObservableObject {
         }
     }
 
-    /// The changes that pull requests as read don't have yet: one they have, which changes nothing applied again, is done
-    /// with, and so are those of a pull request that isn't there, or whose threads weren't read.
+    /// The changes that pull requests as read don't have yet: one they have, which changes nothing applied again, after
+    /// those before it, is done with, and so are those of a pull request that isn't there, or whose threads weren't read. An
+    /// edit of your reply is still to show while the reply is.
     static func pending(_ changes: [PRKey: [ThreadChange]], in records: [PRRecord]) -> [PRKey: [ThreadChange]] {
         var pending: [PRKey: [ThreadChange]] = [:]
         for (key, made) in changes {
-            guard let details = records.first(where: { $0.id == key })?.details else { continue }
-            let left = made.filter { details.applying($0) != details }
+            guard var details = records.first(where: { $0.id == key })?.details else { continue }
+            var left: [ThreadChange] = []
+            for change in made {
+                let applied = details.applying(change)
+                if applied != details { left.append(change) }
+                details = applied
+            }
             if !left.isEmpty { pending[key] = left }
         }
         return pending

@@ -19,7 +19,9 @@ private final class ExtensionStandIn: Sendable {
 
     let outbox: URL
     let sessionId: String
-    private let state = Mutex<(received: [String], task: Task<Void, Never>?)>(([], nil))
+    /// What it was asked; the looking under way, and the token of the one `start` began last, which alone claims requests,
+    /// until `stop()`.
+    private let state = Mutex<(received: [String], task: Task<Void, Never>?, looking: UUID?)>(([], nil, nil))
 
     init(outbox: URL, sessionId: String) {
         self.outbox = outbox
@@ -38,38 +40,46 @@ private final class ExtensionStandIn: Sendable {
     }
 
     /// Takes its session's requests until `stop()`: what `answer` returns goes into each one's result, or none when nil.
-    /// Started again, it answers as it's told then, and stops looking as it was told before.
+    /// Started again, it answers as it's told then, and stops looking as it was told before. It looks on `TestThreads`,
+    /// beside the tests, as an extension in another process would: so once `stop()` or `start` returns, a look begun before
+    /// may still be under way, but claims nothing.
     func start(after delay: Duration = .zero, answer: @escaping @Sendable (_ kind: String) -> [String: Any]? = { _ in ["ok": true] }) {
-        let task = Task { [self] in
-            while !Task.isCancelled {
-                let requests = outbox.appendingPathComponent("requests")
-                for name in (try? FileManager.default.contentsOfDirectory(atPath: requests.path)) ?? []
-                where name.hasPrefix("\(sessionId).") && name.hasSuffix(".json") {
-                    let claimed = requests.appendingPathComponent(".\(name.dropLast(".json".count)).claimed-\(getpid())")
-                    guard rename(requests.appendingPathComponent(name).path, claimed.path) == 0,
-                          let data = FileManager.default.contents(atPath: claimed.path),
-                          let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                          let kind = request["kind"] as? String, let requestId = request["requestId"] as? String
-                    else { continue }
-                    state.withLock { $0.received.append(kind == "send" ? request["prompt"] as? String ?? "" : kind) }
-                    try? await Task.sleep(for: delay)
-                    if let fields = answer(kind) {
-                        let result = ["version": 1, "requestId": requestId, "sessionId": sessionId, "kind": kind].merging(fields) { $1 }
-                        try? Self.write(result, to: outbox.appendingPathComponent("results"), named: "\(requestId).json")
-                    }
-                    try? FileManager.default.removeItem(at: claimed)
-                }
-                try? await Task.sleep(for: Self.lookEvery)
-            }
-        }
+        let looking = UUID()
         state.withLock {
             $0.task?.cancel()
-            $0.task = task
+            $0.looking = looking
+            $0.task = Task(executorPreference: TestThreads.shared) { [self] in
+                while !Task.isCancelled {
+                    let requests = outbox.appendingPathComponent("requests")
+                    for name in (try? FileManager.default.contentsOfDirectory(atPath: requests.path)) ?? []
+                    where name.hasPrefix("\(sessionId).") && name.hasSuffix(".json") {
+                        let claimed = requests.appendingPathComponent(".\(name.dropLast(".json".count)).claimed-\(getpid())")
+                        // Claimed under the lock `start` and `stop()` take, only while this looking is still the one
+                        // `start` began last: once either returns, an earlier look claims nothing.
+                        guard state.withLock({ $0.looking == looking && rename(requests.appendingPathComponent(name).path, claimed.path) == 0 }),
+                              let data = FileManager.default.contents(atPath: claimed.path),
+                              let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                              let kind = request["kind"] as? String, let requestId = request["requestId"] as? String
+                        else { continue }
+                        state.withLock { $0.received.append(kind == "send" ? request["prompt"] as? String ?? "" : kind) }
+                        try? await Task.sleep(for: delay)
+                        if let fields = answer(kind) {
+                            let result = ["version": 1, "requestId": requestId, "sessionId": sessionId, "kind": kind].merging(fields) { $1 }
+                            try? Self.write(result, to: outbox.appendingPathComponent("results"), named: "\(requestId).json")
+                        }
+                        try? FileManager.default.removeItem(at: claimed)
+                    }
+                    try? await Task.sleep(for: Self.lookEvery)
+                }
+            }
         }
     }
 
     func stop() {
-        state.withLock { $0.task?.cancel() }
+        state.withLock {
+            $0.task?.cancel()
+            $0.looking = nil
+        }
     }
 
     static func write(_ fields: [String: Any], to folder: URL, named name: String) throws {

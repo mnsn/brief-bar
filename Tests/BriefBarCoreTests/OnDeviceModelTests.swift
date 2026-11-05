@@ -5,7 +5,7 @@ import Testing
 /// availability stays: the Pull Requests page, which read it each time it updated, kept a little more each time. So only
 /// `OnDeviceModel` reads it, once, and keeps the model.
 struct OnDeviceModelTests {
-    @Test func readsTheSystemModelOnceAndKeepsIt() throws {
+    @Test(.onTestThreads) func readsTheSystemModelOnceAndKeepsIt() throws {
         #expect(try sourcesMatching(/SystemLanguageModel\.default/) == ["BriefBarUI/OnDeviceModel.swift"])
         let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../Sources/BriefBarUI/OnDeviceModel.swift")
