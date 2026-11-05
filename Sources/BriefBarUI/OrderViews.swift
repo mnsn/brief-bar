@@ -87,20 +87,24 @@ package struct OrderCapsule: View {
 // MARK: - The graph's marks
 
 /// A pull request's node in the graph, for where it stands: filled for next to merge, outlined while it waits, dotted for
-/// any time, ✓ once merged, an orange ! when its order needs checking.
+/// any time, ✓ once merged, an orange ! when its order needs checking. With a stage, it's in the stage's color, and its
+/// shape still says where it stands.
 package struct OrderNodeMark: View {
     let marker: OrderMarker
     /// Its diameter, before the text size scales it.
     var size: CGFloat = 9
     /// Dimmed while hovering lights up others.
     var isDimmed = false
+    /// Its stage, whose color it takes; nil for one with none.
+    var stage: PullRequestStage?
 
     @Environment(\.textScale) private var textScale
 
-    package init(_ marker: OrderMarker, size: CGFloat = 9, isDimmed: Bool = false) {
+    package init(_ marker: OrderMarker, size: CGFloat = 9, isDimmed: Bool = false, stage: PullRequestStage? = nil) {
         self.marker = marker
         self.size = size
         self.isDimmed = isDimmed
+        self.stage = stage
     }
 
     package var body: some View {
@@ -115,13 +119,13 @@ package struct OrderNodeMark: View {
     private func mark(_ diameter: CGFloat) -> some View {
         switch marker {
         case .next:
-            Circle().fill(Color.accentColor)
+            Circle().fill(stage?.color ?? Color.accentColor)
         case .waiting:
-            Circle().strokeBorder(Color.secondary, lineWidth: max(1.2, diameter / 7))
+            Circle().strokeBorder(stage?.color ?? Color.secondary, lineWidth: max(1.2, diameter / 7))
         case .anyTime:
-            Circle().strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: max(1.2, diameter / 7), dash: [1.6, 1.6]))
+            Circle().strokeBorder(stage?.color ?? Color.secondary, style: StrokeStyle(lineWidth: max(1.2, diameter / 7), dash: [1.6, 1.6]))
         case .merged:
-            symbol("checkmark", on: .green)
+            symbol("checkmark", on: stage?.color ?? .green)
         case .closed:
             symbol("xmark", on: .gray)
         case .check:
@@ -167,7 +171,7 @@ package struct MissionHeader: View {
             titleLine
             Spacer(minLength: 8)
             if !mission.isFamily {
-                OrderProgressBar(mission: mission)
+                OrderProgressBar(mission: mission, stage: order.drawnStage(of:))
                 Text(OrderText.progress(mission))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -250,11 +254,19 @@ package struct MissionHeader: View {
     }
 }
 
-/// A mission's progress: one segment for each of its pull requests, green once merged, grey once closed.
+/// A mission's progress: one segment for each of its pull requests, in its order, merged ones first, green once merged,
+/// grey once closed; where they have stages, each in its stage's color, and its tooltip counts them.
 package struct OrderProgressBar: View {
     let mission: OrderMission
+    /// The stage a pull request's segment takes the color of; nil for one with none.
+    let stage: (OrderStep) -> PullRequestStage?
 
     @Environment(\.textScale) private var textScale
+
+    package init(mission: OrderMission, stage: @escaping (OrderStep) -> PullRequestStage? = { _ in nil }) {
+        self.mission = mission
+        self.stage = stage
+    }
 
     /// At most this wide, at 100% text, whatever its count: past 11 pull requests its parts narrow to fit, and past about
     /// 40, it's one bar, filled as far as they merged.
@@ -269,22 +281,25 @@ package struct OrderProgressBar: View {
     }
 
     package var body: some View {
-        let steps = mission.steps
+        let steps = Self.inOrder(mission.steps)
+        let stages = steps.map(stage)
         let widest = Self.widest * textScale
+        let counts = StageText.counts(stages.compactMap { $0 })
         Group {
             if let parts = Self.parts(steps.count) {
                 HStack(spacing: parts.gap * textScale) {
-                    ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+                    ForEach(Array(zip(steps, stages).enumerated()), id: \.offset) { _, segment in
                         Capsule()
-                            .fill(color(step))
+                            .fill(color(segment.0, stage: segment.1))
                             .frame(width: parts.width * textScale, height: 4 * textScale)
                     }
                 }
             } else {
                 let merged = CGFloat(steps.filter { $0.status == .merged }.count) / CGFloat(steps.count)
                 let closed = CGFloat(steps.filter { $0.status == .closed }.count) / CGFloat(steps.count)
+                let mergedColor = stages.contains(.merged) ? PullRequestStage.merged.color : Color.green
                 HStack(spacing: 0) {
-                    Rectangle().fill(Color.green).frame(width: widest * merged)
+                    Rectangle().fill(mergedColor).frame(width: widest * merged)
                     Rectangle().fill(Color.gray.opacity(0.6)).frame(width: widest * closed)
                     Rectangle().fill(Color.secondary.opacity(0.25))
                 }
@@ -292,10 +307,21 @@ package struct OrderProgressBar: View {
                 .clipShape(Capsule())
             }
         }
-        .accessibilityHidden(true)
+        .help(counts ?? "")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Stages")
+        .accessibilityValue(counts ?? "")
+        .accessibilityHidden(counts == nil)
     }
 
-    private func color(_ step: OrderStep) -> Color {
+    /// Its pull requests as its segments show them: those that merged first, so it fills from the left, then the rest in
+    /// their order.
+    package static func inOrder(_ steps: [OrderStep]) -> [OrderStep] {
+        steps.filter { $0.status == .merged } + steps.filter { $0.status != .merged }
+    }
+
+    private func color(_ step: OrderStep, stage: PullRequestStage?) -> Color {
+        if let stage { return stage.color }
         switch step.status {
         case .merged: return .green
         case .closed: return .gray.opacity(0.6)

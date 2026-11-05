@@ -124,8 +124,11 @@ public struct StageFacts: Equatable, Sendable {
         case author
         /// You're asked to review it.
         case reviewer
-        /// Someone sent it to you in a chat: you're neither its author nor a reviewer.
+        /// Someone sent it to you in a chat: you're neither its author nor a reviewer. What you set on it stays in memory,
+        /// as what you've seen of it does.
         case sentToYou
+        /// You watch it: you're neither its author nor a reviewer.
+        case watching
     }
 
     public var role: Role
@@ -219,8 +222,16 @@ public enum StageOrder: Equatable, Sendable {
     /// Its order needs checking first, as this says: one before it closed, it still targets a merged branch, or a circle.
     case holds(String)
 
-    /// What the missions say of a pull request: the first that holds it, else free.
+    /// What the missions say of a pull request: the first that holds it, else free. One stacked on another, which targets
+    /// its branch or follows it in a GitHub stack, waits for it until BriefBar sees it merge, whatever its order says:
+    /// completing it before would merge it into that one's branch.
     public static func of(_ ref: ItemRef, in missions: [OrderMission]) -> StageOrder {
+        var statuses: [ItemRef: OrderStatus] = [:]
+        for mission in missions {
+            for other in mission.steps + mission.attached where statuses[other.ref] == nil {
+                statuses[other.ref] = other.status
+            }
+        }
         for mission in missions {
             if let step = mission.steps.first(where: { $0.ref == ref }) {
                 switch step.standing {
@@ -231,20 +242,30 @@ public enum StageOrder: Equatable, Sendable {
                 case .prerequisiteClosed, .retarget, .inCycle:
                     return .holds(OrderText.standing(step) ?? "Check the order")
                 default:
-                    continue
+                    break
                 }
+                // Stacked on one of its order's own that the order doesn't put before it: the order decides where it
+                // shows, but not where it merges.
+                let below = step.notes.compactMap { note -> ItemRef? in
+                    guard case .orderDisagrees(let other, let origin) = note, origin.isStacked, statuses[other] != .merged else { return nil }
+                    return other
+                }
+                if !below.isEmpty { return stacked(on: below, ref) }
+                continue
             }
             if let step = mission.attached.first(where: { $0.ref == ref }) {
-                var statuses: [ItemRef: OrderStatus] = [:]
-                for other in mission.steps + mission.attached { statuses[other.ref] = other.status }
                 let below = step.notes.compactMap { note -> ItemRef? in
                     guard case .stackedWith(let other, true, _) = note, statuses[other] != .merged else { return nil }
                     return other
                 }
-                if !below.isEmpty { return .waits(below, words: "After \(OrderText.list(below, near: ref)) · stacked") }
+                if !below.isEmpty { return stacked(on: below, ref) }
             }
         }
         return .free
+    }
+
+    private static func stacked(on below: [ItemRef], _ ref: ItemRef) -> StageOrder {
+        .waits(below, words: "After \(OrderText.list(below, near: ref)) · stacked")
     }
 }
 
@@ -312,6 +333,15 @@ public enum StageWhy: Equatable, Sendable {
     case authorChanges(String)
     /// Someone else's that you finished reviewing.
     case finishedReview
+
+    /// Whether its reading's `since` is when what it says happened, a session's turn, its end or a merge, so it's worth
+    /// saying: "‘Cart’ finished · 10m". Otherwise it's only when its pull request last changed.
+    public var saysWhen: Bool {
+        switch self {
+        case .merged, .working, .asksYou, .finished: true
+        default: false
+        }
+    }
 }
 
 /// How BriefBar works a pull request's stage out: the first rule that applies (plan §2.2), from what its source shows, the
@@ -440,10 +470,10 @@ public enum StageText {
         }
     }
 
-    /// Who set it, and how long ago, when someone did: "You set it · 2h", "‘Cart’ set it · 5m, after you".
+    /// Who set it, and how long ago, when someone did: "You set it 2h ago", "‘Cart’ set it 5m ago, after you".
     public static func who(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String? {
         guard let mark = reading.mark else { return nil }
-        var words = setter(mark, name: name) + " set it · " + Elapsed.short(since: mark.at, now: now)
+        var words = setter(mark, name: name) + " set it " + agoWords(mark.at, now: now)
         if reading.replaced != nil { words += ", after you" }
         return words
     }
@@ -469,6 +499,24 @@ public enum StageText {
     /// What became of it, for the Undo line and VoiceOver: "Moved !4093 to Teammate's review".
     public static func moved(_ ref: ItemRef, to stage: PullRequestStage?) -> String {
         stage.map { "Moved \(ref.shortOrderLabel) to \($0.title)" } ?? "Let BriefBar decide \(ref.shortOrderLabel)'s stage"
+    }
+
+    /// How many of a mission's pull requests are in each stage, in the stages' order, for its progress bar: "1 in progress ·
+    /// 2 for your review · 1 waits · 1 merged"; nil with none.
+    public static func counts(_ stages: [PullRequestStage]) -> String? {
+        let parts = PullRequestStage.allCases.compactMap { stage -> String? in
+            let count = stages.filter { $0 == stage }.count
+            guard count > 0 else { return nil }
+            return switch stage {
+            case .inProgress: "\(count) in progress"
+            case .yourReview: "\(count) for your review"
+            case .teammateReview: "\(count) for a teammate's review"
+            case .canMerge: "\(count) can merge"
+            case .waits: count == 1 ? "1 waits for another PR" : "\(count) wait for other PRs"
+            case .merged: "\(count) merged"
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// When Can merge comes, for its step of the track that can't be clicked.

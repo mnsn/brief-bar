@@ -42,7 +42,7 @@ extension PullRequestStage {
 }
 
 /// A stage, as a pill: its symbol and name in its color, on its color, with ⌄ where a click opens its menu. Only how it
-/// looks: `StagePill` opens the menu, and a row that's a button puts the menu over it (`stageControls`).
+/// looks: `PullRequestStagePill` opens the menu, and a row that's a button puts the menu over it (`stageControls`).
 package struct StagePillLabel: View {
     private let stage: PullRequestStage
     private let opensMenu: Bool
@@ -76,8 +76,9 @@ package struct StagePillLabel: View {
 }
 
 /// A pull request's stage, where its pill can open its own menu, because what it's on isn't a button, such as its details.
+/// (AzureDevOpsUI's `StagePill` is a pipeline's stage's.)
 /// Merged's doesn't open: nothing changes it.
-package struct StagePill: View {
+package struct PullRequestStagePill: View {
     private let ref: ItemRef
     private let reading: StageReading
     @ObservedObject private var order: PullRequestOrder

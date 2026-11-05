@@ -22,6 +22,8 @@ final class PullRequestOrderFacts {
     /// The tasks BriefBar sent to Copilot, whose sessions on a pull request its stage follows.
     private weak var copilot: CopilotTasksStore?
     private var cancellables: Set<AnyCancellable> = []
+    /// Whether the demo's stages were told since Pull Request Order turned on.
+    private var toldDemoStages = false
 
     init(
         order: PullRequestOrder, store: PRStore, settings: AppSettings, details: PullRequestDetailsStore?,
@@ -53,6 +55,8 @@ final class PullRequestOrderFacts {
         store.$items.map { _ in () }
             .merge(with: store.refreshed)
             .merge(with: settings.$showToReview.removeDuplicates().map { _ in () })
+            // Watching one keeps the stage you set on it, rather than only in memory.
+            .merge(with: settings.$watchedPullRequests.dropFirst().map { _ in () })
             .merge(with: tasks)
             .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.publish() } }
@@ -65,7 +69,10 @@ final class PullRequestOrderFacts {
     }
 
     private func turned(on: Bool) {
-        if on { tellDemo() }
+        if on {
+            toldDemoStages = false
+            tellDemo()
+        }
         publish()
     }
 
@@ -77,6 +84,13 @@ final class PullRequestOrderFacts {
     }
 
     /// The demo's orders, as if its sessions had told them.
+    /// The demo's stages, as if you'd set them, once its pull requests are listed, which they're set on.
+    private func tellDemoStages() {
+        guard store.mode == .demo, !toldDemoStages, !store.records.isEmpty else { return }
+        toldDemoStages = true
+        order.tellDemo(stages: DemoPullRequestOrder.stages(now: store.now))
+    }
+
     private func tellDemo() {
         guard store.mode == .demo else { return }
         let now = store.now
@@ -96,8 +110,10 @@ final class PullRequestOrderFacts {
         order.publish(
             .azureDevOps, pullRequests: Self.pullRequests(store.records, items: store.items, showToReview: showToReview),
             items: store.items.map { describe($0, showToReview: showToReview) },
-            stages: Self.stages(store.records, items: store.items, tasks: tasks), account: settings.account
+            stages: Self.stages(store.records, items: store.items, tasks: tasks, watched: settings.watchedKeys),
+            account: settings.account
         )
+        tellDemoStages()
     }
 
     // MARK: What an order sees
@@ -132,12 +148,18 @@ final class PullRequestOrderFacts {
 
     /// Each pull request's stage's facts, from what the list read of it, its row, and the tasks sent to Copilot on it, or
     /// that opened it, newest first.
-    static func stages(_ records: [PRRecord], items: [PRSnapshot], tasks: [CopilotTaskEntry]) -> [ItemRef: StageFacts] {
+    /// - Parameter watched: the pull requests you watch, which BriefBar keeps what you set on, as it keeps what you've seen
+    ///   of them, while it keeps that of those only sent to you in a chat in memory.
+    static func stages(
+        _ records: [PRRecord], items: [PRSnapshot], tasks: [CopilotTaskEntry], watched: Set<PRKey> = []
+    ) -> [ItemRef: StageFacts] {
         let rows = Dictionary(items.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         var facts: [ItemRef: StageFacts] = [:]
         for record in records {
             let on = tasks.filter { $0.pullRequestKey == record.id }
-            if let fact = stageFacts(record, item: rows[record.id], tasks: on) { facts[record.id.linkRef] = fact }
+            guard var fact = stageFacts(record, item: rows[record.id], tasks: on) else { continue }
+            if fact.role == .sentToYou, watched.contains(record.id) { fact.role = .watching }
+            facts[record.id.linkRef] = fact
         }
         return facts
     }
@@ -182,15 +204,17 @@ final class PullRequestOrderFacts {
             if !facts.isReady, facts.changesWanted == nil, !reviews.isEmpty, reviews.allSatisfy(\.isDone) {
                 facts.leftAfterReviews = readiness?.left.first { $0.isRequired }?.label
             }
-            // Someone, or a team, asked to review it besides you: who it waits for, as What's Left says it.
+            // Someone, or a team, asked to review it besides you: who it waits for, as What's Left says it, the required
+            // reviewers it names first.
             if others.contains(where: { $0.person.id != pr.author.id }) {
-                facts.waitingFor = reviews.first { !$0.isDone }?.label ?? "Waiting for reviewers"
+                let waiting = reviews.filter { !$0.isDone }
+                facts.waitingFor = (waiting.first { $0.kind == .requiredReviewers } ?? waiting.first)?.label ?? "Waiting for reviewers"
             }
         case .reviewer:
             let mine = pr.reviewer(me)
             if mine?.vote.wantsChanges == true {
                 facts.youWantChanges = "Waiting for \(pr.author.firstName)'s changes"
-            } else if mine?.hasDeclined != true, (mine?.vote ?? .none) == .none {
+            } else if mine?.hasDeclined != true, mine.map({ $0.vote == Vote.none }) ?? true {
                 facts.asksYou = sentInChat ?? "\(pr.author.firstName) asked you"
             }
         case .linked:

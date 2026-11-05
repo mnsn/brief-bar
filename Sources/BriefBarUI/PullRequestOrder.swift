@@ -26,6 +26,9 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var stages: [ItemRef: StageReading] = [:]
     /// Your last change to a stage, for Undo: in memory only, until your next change, or you dismiss it.
     @Published package private(set) var lastChange: StageChange?
+    /// The kinds of pull request whose source tells their stages now, Azure DevOps': their missions draw merged ones in
+    /// Merged's color.
+    private var stagedKinds: Set<ItemRef.Kind> = []
 
     private let defaults: UserDefaults
     private let isDemo: Bool
@@ -111,6 +114,7 @@ package final class PullRequestOrder: ObservableObject {
             marks = StageMarks()
             marksInMemory = [:]
             stages = [:]
+            stagedKinds = []
             lastChange = nil
         }
     }
@@ -282,6 +286,19 @@ package final class PullRequestOrder: ObservableObject {
         rebuild()
     }
 
+    /// The demo's stages, as if you'd set them then, on those of its pull requests whose source told their stages and that
+    /// you haven't set: only in the demo, while it's on. Each holds as the pull request is now, its votes and commit.
+    package func tellDemo(stages demo: [ItemRef: StageMark]) {
+        guard isDemo, isOn else { return }
+        var kept = false
+        for (ref, set) in demo.sorted(by: { $0.key < $1.key }) {
+            guard let facts = stageFacts[ref], yourMark(of: ref, facts: facts) == nil else { continue }
+            let mark = StageMark(stage: set.stage, at: set.at, votes: facts.votes, commit: facts.commit)
+            if keep(mark, of: ref, facts: facts) { kept = true }
+        }
+        if kept { restage() }
+    }
+
     /// The demo's orders, as if its sessions had told them, unless it has them, with what BriefBar saw become of their pull
     /// requests before, and the mission you focus on: only in the demo, while it's on.
     package func tellDemo(_ demo: DeclaredOrders, evidence seen: OrderEvidence = OrderEvidence(), focus key: MissionKey? = nil) {
@@ -368,6 +385,17 @@ package final class PullRequestOrder: ObservableObject {
     package func stage(of ref: ItemRef) -> StageReading? {
         stages[ref]
     }
+
+    /// The stage a mission's graph colors a pull request by: its own, or Merged for one BriefBar saw merge whose source
+    /// tells stages, listed or not, so every merged one on Azure DevOps' page reads alike; nil for one with none, such as
+    /// GitHub's, which show as they did.
+    package func drawnStage(of step: OrderStep) -> PullRequestStage? {
+        if let reading = stages[step.ref] { return reading.stage }
+        return step.status == .merged && stagedKinds.contains(step.ref.kind) ? .merged : nil
+    }
+
+    /// The time, as it tells stages' ages: "You set it 2h ago".
+    package var currentDate: Date { now() }
 
     /// Whether BriefBar keeps a stage you set, on or off: for Forget Stages… in Settings.
     package var keepsStages: Bool {
@@ -467,8 +495,8 @@ package final class PullRequestOrder: ObservableObject {
         SourceID.allCases.lazy.compactMap { self.told[$0] }.first { $0.stages[ref] != nil }?.account
     }
 
-    /// Whether a stage you set for it stays in memory: one listed only because someone sent it to you, or one BriefBar
-    /// doesn't know the account of yet.
+    /// Whether a stage you set for it stays in memory: one listed only because someone sent it to you in a chat, as what
+    /// you've seen of it does, or one BriefBar doesn't know the account of yet.
     private func keepsInMemory(_ ref: ItemRef, facts: StageFacts) -> Bool {
         facts.role == .sentToYou || account(of: ref) == nil
     }
@@ -503,9 +531,11 @@ package final class PullRequestOrder: ObservableObject {
     private func restage() {
         guard isOn else {
             if !stages.isEmpty { stages = [:] }
+            stagedKinds = []
             return
         }
         let all = stageFacts
+        stagedKinds = Set(all.keys.map(\.kind))
         let sessionsOn = sessionsOnPullRequests()
         var readings: [ItemRef: StageReading] = [:]
         var changed = false
