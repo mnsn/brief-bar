@@ -217,13 +217,18 @@ package final class PullRequestOrder: ObservableObject {
         let focus = OrderFocus.load(from: defaults)
         let kept = OrderFocus.kept(focus, in: orders, changes: changes, forgetting: kinds)
         if kept != focus { OrderFocus.save(kept, to: defaults) }
+        // What's left goes in before the source's pull requests leave the missions, so that rebuilding then, which can save
+        // what it keeps, saves none of what was forgotten back.
+        if isOn {
+            objectWillChange.send()
+            self.orders = orders
+            self.evidence = evidence
+            self.changes = changes
+            self.focus = kept
+            lastChange = nil
+        }
         withdraw(source)
         guard isOn else { return }
-        self.orders = orders
-        self.evidence = evidence
-        self.changes = changes
-        self.focus = kept
-        lastChange = nil
         rebuild()
     }
 
@@ -378,16 +383,25 @@ package final class PullRequestOrder: ObservableObject {
         do {
             touched = try changed.apply(edit, missions: missions, orders: orders, stacked: stacked, now: now())
         } catch {
-            let refusal = OrderLastChange(said: "\(error)", refs: edit.refs, mission: cardMission(for: edit), touched: [:])
+            let refusal = OrderLastChange(
+                said: "\(error)", refs: edit.refs, mission: cardMission(for: edit), touched: [:], evidence: OrderEvidence()
+            )
             lastChange = refusal
             return refusal
         }
         guard !touched.isEmpty else { return nil }
+        // What BriefBar saw become of the pull requests the changes it touched were about, which can go with them, for Undo
+        // to put back.
+        var seen = evidence
+        seen.keep(only: OrderChanges(touched.values.compactMap { $0 }).subjects)
         keep(changed)
         rebuild()
         var made = false
         if case .move(_, .into(let key), _) = edit, case .mine = key { made = !before.contains(key) }
-        let last = OrderLastChange(said: OrderText.did(edit, names: names, newMission: made), refs: edit.refs, mission: cardMission(for: edit), touched: touched)
+        let last = OrderLastChange(
+            said: OrderText.did(edit, names: names, newMission: made), refs: edit.refs, mission: cardMission(for: edit), touched: touched,
+            evidence: seen
+        )
         lastChange = last
         return last
     }
@@ -399,6 +413,7 @@ package final class PullRequestOrder: ObservableObject {
         var changed = changes
         changed.restore(last.touched)
         lastChange = nil
+        evidence = evidence.merging(last.evidence)
         keep(changed)
         rebuild()
         return true
@@ -514,12 +529,17 @@ package final class PullRequestOrder: ObservableObject {
             facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date
         )
         var anchored = self.changes
-        let renamed = anchored.moveAnchors(in: missions)
+        let pending = OrderChanges(lastChange?.touched.values.compactMap { $0 } ?? [])
+        let renamed = anchored.moveAnchors(in: missions, alsoFor: pending)
         if !renamed.isEmpty {
-            keep(anchored)
-            // What Undo would put back names those chains as they're named now too.
+            // What Undo would put back names those chains as they're named now too, though no change of yours names them.
             if let last = lastChange { lastChange = last.renamingChains(renamed) }
-            missions = OrderBoard.missions(facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date)
+            if anchored != self.changes {
+                keep(anchored)
+                missions = OrderBoard.missions(
+                    facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date
+                )
+            }
         }
         cachedNames = nil
         if missions != self.missions { self.missions = missions }
@@ -537,6 +557,8 @@ package struct OrderLastChange: Equatable {
     package let mission: MissionKey?
     /// What it touched, as it was, for Undo; empty for one BriefBar refused.
     package let touched: [ItemRef: OrderChange?]
+    /// What BriefBar saw become of the pull requests those were about, as it was, for Undo to put back with them.
+    package let evidence: OrderEvidence
 
     /// Whether it was made, and Undo can put back what it touched.
     package var canUndo: Bool { !touched.isEmpty }
@@ -548,7 +570,8 @@ package struct OrderLastChange: Equatable {
         var mission = mission
         if case .chain(let anchor)? = mission, let new = renamed[anchor] { mission = .chain(new) }
         return OrderLastChange(
-            said: said, refs: refs, mission: mission, touched: touched.mapValues { change in change.map { undo[$0.ref] ?? $0 } }
+            said: said, refs: refs, mission: mission, touched: touched.mapValues { change in change.map { undo[$0.ref] ?? $0 } },
+            evidence: evidence
         )
     }
 }

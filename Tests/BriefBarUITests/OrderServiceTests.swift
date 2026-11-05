@@ -628,4 +628,75 @@ private final class Clock {
         #expect(order.changes[Self.ref(4130)]?.placement == .into(.chain(Self.ref(4102))) && order.changes[Self.ref(4130)]?.first == nil)
         #expect(OrderBoard.mission(of: Self.ref(4130), in: order.missions)?.contains(Self.ref(4102)) == true)
     }
+
+    /// Undo puts back what BriefBar saw become of the pull requests your change was about, with it: one that merged and left
+    /// the lists is still merged.
+    @Test func undoPutsBackWhatBriefBarSawBecomeOfItsPullRequests() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let yours = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")]
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search")])
+        let mine = MissionKey.mine(UUID())
+        order.change(.move([Self.ref(4130)], to: .into(mine), from: nil))
+        order.publish(.azureDevOps, pullRequests: yours + [Self.ado(4130, from: "sam/search", state: .merged)])
+        order.publish(.azureDevOps, pullRequests: yours)
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] != nil)
+
+        order.change(.undoMission(mine))
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] == nil)
+        #expect(order.undoLastChange())
+
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)] != nil)
+        let step = OrderBoard.mission(of: Self.ref(4130), in: order.missions)?.steps.first { $0.ref == Self.ref(4130) }
+        #expect(step?.status == .merged)
+    }
+
+    /// Undo follows a chain named by another of its pull requests though no change of yours names it anymore, only what Undo
+    /// would put back.
+    @Test func undoFollowsAChainOnlyItNames() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4200))])
+        let order = Self.service(defaults)
+        let second = Self.ado(4102, from: "robin/b", into: "robin/a")
+        let search = Self.ado(4130, from: "sam/search")
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/a"), second, search])
+        order.change(.move([Self.ref(4130)], to: .into(.chain(Self.ref(4101))), from: nil))
+        order.change(.undo(Self.ref(4130)))
+        #expect(order.changes.isEmpty)
+
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/a", state: .merged), second, search])
+        #expect(order.lastChange?.touched[Self.ref(4130)]??.placement == .into(.chain(Self.ref(4102))))
+        order.publish(.azureDevOps, pullRequests: [second, search])
+        #expect(order.undoLastChange())
+
+        #expect(order.changes[Self.ref(4130)]?.placement == .into(.chain(Self.ref(4102))))
+        #expect(OrderBoard.mission(of: Self.ref(4130), in: order.missions)?.contains(Self.ref(4102)) == true)
+    }
+
+    /// Turning a source off forgets your changes to its pull requests, and what BriefBar saw become of them, for good: the
+    /// rebuild that follows, though one of those changes finished meanwhile, saves none of them back.
+    @Test func aSourceTurnedOffForgetsItsChangesForGoodThoughOneFinishesMeanwhile() throws {
+        let defaults = try Self.defaults(on: true)
+        let clock = Clock()
+        let order = Self.service(defaults, clock: clock)
+        let gitHub = OrderPullRequest(
+            ref: .gitHubPullRequest(repository: "octo/storefront", number: 7), repository: "octo/storefront", sourceBranch: "robin/shelf",
+            targetBranch: "main", author: "robin", state: .open, createdAt: Date(timeIntervalSince1970: 1_791_000_007)
+        )
+        order.publish(.azureDevOps, pullRequests: [
+            Self.ado(4101, from: "robin/rounding", state: .merged), Self.ado(4102, from: "robin/cart"),
+            Self.ado(4130, from: "sam/search", state: .merged),
+        ])
+        order.publish(.github, pullRequests: [gitHub])
+        order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true))
+        order.change(.move([Self.ref(4130)], to: .into(.mine(UUID())), from: nil))
+        order.change(.move([gitHub.ref], to: .into(.mine(UUID())), from: nil))
+        #expect(OrderChanges.load(from: defaults).all.count == 3 && OrderEvidence.load(from: defaults).records.count == 2)
+
+        clock.advance(days: 15)
+        order.forget(.azureDevOps)
+
+        #expect(OrderChanges.load(from: defaults).all.map(\.ref) == [gitHub.ref])
+        #expect(OrderEvidence.load(from: defaults).records.isEmpty)
+        #expect(order.changes.all.map(\.ref) == [gitHub.ref])
+    }
 }

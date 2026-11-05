@@ -83,7 +83,8 @@ public struct OrderChange: Equatable, Sendable {
     public var notAfter: [ItemRef]
     /// Where you moved it; nil while it's where BriefBar or its order puts it.
     public var placement: OrderPlacement?
-    /// The mission you moved it from, for what it says.
+    /// The mission it was in when you changed it: the one you moved it from, for what it says, or the one you set it as next
+    /// or put it after another in, for Put Yours Back to put it back in, should an order take it out.
     public var from: MissionKey?
     /// When you last changed it, or put it back.
     public var changedAt: Date
@@ -367,12 +368,15 @@ public struct OrderChanges: Equatable, Sendable {
     /// the changes that put pull requests in it, moved them out of it or set one as next in it, while BriefBar still sees
     /// the chain: so that it's still that chain once the one it was named by is gone. Never to one you put in it, which the
     /// chain doesn't have of its own.
-    /// - Parameter missions: as By Mission shows them now.
-    /// - Returns: what each chain it moved was named by, and is now: for what Undo would put back to follow (`renameChains`).
+    /// - Parameters:
+    ///   - missions: as By Mission shows them now.
+    ///   - pending: other changes whose chains to look for too, such as what Undo would put back, which it doesn't rename.
+    /// - Returns: what each chain it moved, or would for `pending`, was named by, and is now: for those to follow
+    ///   (`renameChains`).
     @discardableResult
-    public mutating func moveAnchors(in missions: [OrderMission]) -> [ItemRef: ItemRef] {
+    public mutating func moveAnchors(in missions: [OrderMission], alsoFor pending: OrderChanges = OrderChanges()) -> [ItemRef: ItemRef] {
         var moved: [ItemRef: ItemRef] = [:]
-        let placed = changes
+        let placed = changes.merging(pending.changes) { live, _ in live }
         func anchor(after ended: ItemRef) -> ItemRef? {
             if let known = moved[ended] { return known }
             guard let mission = missions.first(where: { $0.kind == .stack && $0.steps.contains { $0.ref == ended } }),
@@ -382,9 +386,10 @@ public struct OrderChanges: Equatable, Sendable {
             moved[ended] = next
             return next
         }
-        let before = changes
         rename { anchor(after: $0) }
-        return changes != before ? moved : [:]
+        var others = pending
+        others.rename { anchor(after: $0) }
+        return moved
     }
 
     /// Names the chains these name as `moveAnchors` renamed them.
@@ -649,6 +654,7 @@ extension OrderChanges {
             } else {
                 change.first = nil
             }
+            if change.placement == nil { change.from = key }
             try keep(change)
 
         case .mergeAfter(let ref, let other, let key, let on):
@@ -672,6 +678,7 @@ extension OrderChanges {
                 } ?? false
                 if byOthers, !change.notAfter.contains(other) { change.notAfter.append(other) }
             }
+            if change.placement == nil { change.from = key }
             try keep(change)
 
         case .move(let refs, let placement, let from):
@@ -715,14 +722,17 @@ extension OrderChanges {
 
         case .putBack(let ref):
             guard var change = edited.changes[ref] else { break }
-            if let key = change.first {
-                // Back in the mission you set it as next in, where its order no longer has it, even when nothing's left there
-                // to show it but this one.
+            // Back in the mission you set it as next or put it after another in, where its order no longer has it, even when
+            // nothing's left there to show it but this one.
+            if change.placement == nil, let key = change.first ?? change.from {
                 let mission = missions.first { Self.names($0, key) }
                 if mission.map({ !$0.steps.contains { $0.ref == ref } }) ?? Self.lasts(key, in: orders) {
                     change.placement = .into(key)
+                    change.from = nil
                 }
-                try clearOtherFirsts(named: key, in: mission, besides: ref)
+            }
+            if let key = change.first {
+                try clearOtherFirsts(named: key, in: missions.first { Self.names($0, key) }, besides: ref)
             }
             try keep(change)
         }

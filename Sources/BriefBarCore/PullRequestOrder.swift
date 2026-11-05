@@ -765,9 +765,17 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
         kind == .mine
     }
 
-    /// Whether any of its pull requests has a place in an order: not a group whose order nobody knows.
+    /// Whether any of its pull requests has a place in an order: not a group whose order nobody knows, whatever became of
+    /// its pull requests.
     public var hasOrder: Bool {
-        steps.contains { $0.standing != .unordered }
+        steps.contains { step in
+            switch step.standing {
+            case .unordered: return false
+            // One that merged, closed or can't be seen, with no place in an order and nothing before it.
+            case .merged, .closed, .notVisible: return step.number != nil || !step.prerequisites.isEmpty
+            default: return true
+            }
+        }
     }
 
     /// How many of its pull requests you changed the place of, in a way that holds.
@@ -806,11 +814,14 @@ public enum OrderBoard {
     ) -> [OrderMission] {
         let board = Board(facts: facts, evidence: evidence)
         let layer = Layer(changes: changes, orders: orders, board: board)
-        // The orders' lines each mission keeps, for those made after it: a line that goes round with them through stacked
-        // branches, from one mission to another, is set aside.
+        // The lines each mission keeps, its order's and the one you set as next's, for those made after it: a line that goes
+        // round with them through stacked branches, from one mission to another, is set aside. Those you set one as next in
+        // come first, so that yours goes before a session's order there too.
+        let groups = board.groups(orders: orders, layer: layer)
+        let hasNext = { (group: Board.Group) in group.refs.contains { layer.holding[$0]?.first.map(group.names) == true } }
         var declared: [ItemRef: Set<ItemRef>] = [:]
         var missions: [OrderMission] = []
-        for group in board.groups(orders: orders, layer: layer) {
+        for group in groups.filter(hasNext) + groups.filter({ !hasNext($0) }) {
             if let mission = board.mission(of: group, orders: orders, layer: layer, now: now, declared: &declared) {
                 missions.append(mission)
             }
@@ -1256,10 +1267,11 @@ extension Board {
     /// wherever that is; its order's, but what you took away and what you moved elsewhere. Of its order's, what goes round
     /// in a circle with stacked branches or yours is set aside, with a note, as is what goes round with them and the lines
     /// of the missions made before it, from one mission to another. The one you set as next goes first, and what waits for
-    /// nothing that hasn't merged waits for it. An order's pull request with nothing before or after it merges any time, as
-    /// its order says; one BriefBar or you put with others has no order known.
-    /// - Parameter declared: the lines the missions made before it kept, by pull request, what goes before each; it adds
-    ///   its own.
+    /// nothing that hasn't merged waits for it, but what goes before it that way. An order's pull request with nothing before
+    /// or after it merges any time, as its order says; one BriefBar or you put with others has no order known, while it's
+    /// open.
+    /// - Parameter declared: the lines the missions made before it kept, its order's and the one you set as next's, by pull
+    ///   request, what goes before each; it adds its own.
     func mission(
         of group: Group, orders: DeclaredOrders, layer: Layer, now: Date, declared: inout [ItemRef: Set<ItemRef>]
     ) -> OrderMission? {
@@ -1288,13 +1300,13 @@ extension Board {
             let (left, right) = (layer.changedAt(lhs), layer.changedAt(rhs))
             return left != right ? left < right : lhs > rhs
         }
+        // Other missions' lines, but those between two of this one's pull requests, which it says for itself.
+        var elsewhere: [ItemRef: Set<ItemRef>] = [:]
+        for (later, earlier) in declared {
+            let kept = members.contains(later) ? earlier.subtracting(members) : earlier
+            if !kept.isEmpty { elsewhere[later] = kept }
+        }
         if let plan {
-            // Other missions' lines, but those between two of this one's pull requests, which its own order says.
-            var elsewhere: [ItemRef: Set<ItemRef>] = [:]
-            for (later, earlier) in declared {
-                let kept = members.contains(later) ? earlier.subtracting(members) : earlier
-                if !kept.isEmpty { elsewhere[later] = kept }
-            }
             for ref in group.members where ref != next {
                 guard let entry = plan.entry(for: ref) else { continue }
                 let tookAway = layer.holding[ref]?.notAfter ?? []
@@ -1308,9 +1320,6 @@ extension Board {
                         add(earlier, before: ref, [.declared(revision: plan.revision)])
                     }
                 }
-            }
-            for (edge, origins) in why where origins.contains(where: { if case .declared = $0 { true } else { false } }) {
-                declared[edge.after, default: []].insert(edge.before)
             }
         }
         for ref in refs {
@@ -1336,12 +1345,19 @@ extension Board {
                 chosen = next
                 added[next, default: []].append(.yourNext(layer.changedAt(next)))
                 for ref in refs where ref != next && status(ref).isOpen && layer.holding[ref]?.notAfter.contains(next) != true {
-                    guard prerequisites[ref, default: []].allSatisfy({ status($0).hasEnded }), !Self.isBefore(ref, next, in: before)
+                    guard prerequisites[ref, default: []].allSatisfy({ status($0).hasEnded }),
+                          !Self.isBefore(ref, next, in: before, elsewhere)
                     else { continue }
                     add(next, before: ref, [.yourNext])
                     added[ref, default: []].append(.afterYourNext(next))
                 }
             }
+        }
+        for (edge, origins) in why where origins.contains(where: { origin in
+            if case .declared = origin { return true }
+            return origin == .yourNext
+        }) {
+            declared[edge.after, default: []].insert(edge.before)
         }
 
         let within = prerequisites.mapValues { $0.filter(members.contains) }
@@ -1366,7 +1382,8 @@ extension Board {
         func step(_ ref: ItemRef, number: Int?) -> OrderStep {
             let earlier = prerequisites[ref, default: []]
             let entry = own.contains(ref) ? plan?.entry(for: ref) : nil
-            let stands: OrderStanding = unordered.contains(ref) ? .unordered : standing(
+            // One whose order nobody knows says so while it's open; one that merged, closed or can't be seen says that.
+            let stands: OrderStanding = unordered.contains(ref) && status(ref).isOpen ? .unordered : standing(
                 of: ref, prerequisites: earlier, hasDependents: dependents.contains(ref) || ref == chosen,
                 declared: !(group.isStack && own.contains(ref)), cycle: inCycle[ref], earlier: ancestry
             )

@@ -900,4 +900,69 @@ import Testing
             try changes.apply(.setNext(Self.pr(4102), in: .plan(planID), true), missions: missions, orders: orders)
         }
     }
+
+    /// What you set as next goes before a session's order of another mission that would go round with it through a stacked
+    /// branch, whichever was told first: that order's line is set aside, and nothing waits for itself.
+    @Test func setAsNextGoesBeforeAnotherMissionsOrderThatWouldGoRoundWithIt() throws {
+        var orders = try tell([(4103, []), (4101, [4103])], id: otherID)
+        orders = try tell([(4101, []), (4102, [])], replacing: orders, at: 10)
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a"), OrderBoardTests.ado(4102, from: "users/robin/b"),
+            OrderBoardTests.ado(4103, from: "users/robin/c", into: "users/robin/b"),
+        ])
+        var changes = OrderChanges()
+        try changes.apply(.setNext(Self.pr(4101), in: .plan(planID), true), missions: Self.missions(facts, orders, changes), orders: orders, now: t(60))
+
+        let missions = Self.missions(facts, orders, changes)
+        #expect(OrderBoardTests.summary(try Self.mission(.plan(planID), in: missions).steps)
+            == ["1 !4101 Next to merge", "2 !4102 Merge after !4101"])
+        let other = try Self.mission(.plan(otherID), in: missions)
+        let aside = try Self.step(4101, in: other)
+        #expect(aside.prerequisites.isEmpty && aside.notes.contains(.goesRound(Self.pr(4103), by: Self.session)))
+        #expect(try Self.step(4103, in: other).standing == .waiting(open: [Self.pr(4102)], unknown: []))
+        #expect(missions.allSatisfy { mission in mission.steps.allSatisfy { if case .inCycle = $0.standing { false } else { true } } })
+    }
+
+    /// Put Yours Back puts one you put after another back in the mission you did it in, though its order no longer has it.
+    @Test func puttingBackOneYouPutAfterAnotherPutsItBackInItsMission() throws {
+        var orders = try tell([(4101, []), (4102, []), (4103, [])])
+        let facts = Self.facts([4101, 4102, 4103])
+        var changes = OrderChanges()
+        try changes.apply(
+            .mergeAfter(Self.pr(4102), Self.pr(4103), in: .plan(planID), true), missions: Self.missions(facts, orders, changes),
+            orders: orders, now: t(60)
+        )
+        #expect(changes[Self.pr(4102)]?.from == .plan(planID) && changes[Self.pr(4102)]?.placement == nil)
+        orders = try tell([(4101, []), (4103, [])], replacing: orders, at: 70)
+        changes.noteOverrides(in: orders, now: t(70))
+        var missions = Self.missions(facts, orders, changes)
+        #expect(OrderBoard.mission(of: Self.pr(4102), in: missions) == nil)
+        #expect(MissionChoices.of(Self.pr(4102), missions: missions, changes: changes, orders: orders).canPutBack)
+
+        try changes.apply(.putBack(Self.pr(4102)), missions: missions, orders: orders, now: t(80))
+        #expect(changes[Self.pr(4102)]?.placement == .into(.plan(planID)) && changes[Self.pr(4102)]?.from == nil)
+        missions = Self.missions(facts, orders, changes)
+        #expect(try Self.step(4102, in: Self.mission(.plan(planID), in: missions)).standing == .waiting(open: [Self.pr(4103)], unknown: []))
+        #expect(!MissionChoices.of(Self.pr(4102), missions: missions, changes: changes, orders: orders).canPutBack)
+    }
+
+    /// One whose order nobody knows, such as one you made a mission of, says what became of it once it merges, closes or
+    /// can't be seen; its mission still has no order.
+    @Test func oneWhoseOrderNobodyKnowsSaysWhatBecameOfIt() throws {
+        let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
+        var changes = OrderChanges()
+        try changes.apply(
+            .move([Self.pr(4111), Self.pr(4112)], to: .into(mine), from: nil), missions: Self.missions(Self.facts([4111, 4112]), DeclaredOrders(), changes),
+            orders: DeclaredOrders(), now: t(60)
+        )
+        for (state, standing) in [(PullRequestState.merged, OrderStanding.merged), (.closed, .closed)] {
+            let facts = OrderFacts(pullRequests: [Self.ado(4111, state: state), Self.ado(4112)])
+            let mission = try Self.mission(mine, in: Self.missions(facts, DeclaredOrders(), changes))
+            #expect(try Self.step(4111, in: mission).standing == standing)
+            #expect(try Self.step(4112, in: mission).standing == .unordered)
+            #expect(!mission.hasOrder)
+        }
+        let unseen = try Self.step(4111, in: Self.mission(mine, in: Self.missions(Self.facts([4112]), DeclaredOrders(), changes)))
+        #expect(unseen.status.isUnknown && unseen.standing != .unordered)
+    }
 }
