@@ -11,6 +11,9 @@
 - **A stacked branch counts in a session's order too.** By Mission now puts a pull request after the one whose branch it
   targets, also when that one is in another mission, though the order a Copilot session told doesn't say so, and says
   why. Where the branches only look stacked, **Move to Mission ▸ Not in a Mission** takes it out.
+
+## 0.17.0 - 2026-11-05
+
 - **Edit and delete your comments.** With **Make Changes in Azure DevOps** on, a comment you wrote in a pull request's
   details has **Edit** and **Delete…**, in its **⋯** and right-click menus. Edit opens it in place, as Reply does, with
   **Fix Grammar**, and keeps whom it mentions; **Save** saves it in Azure DevOps, as you, and it shows as edited at once,

@@ -2,8 +2,10 @@ name: CI
 
 # On pushes to main that change more than docs and BriefBar for Windows, on pull requests, and when started by hand.
 # Builds and tests on macOS 26, the oldest macOS BriefBar supports, packages the Apple silicon app, signs its update
-# the way a release does and installs an update through its updater. A pull request that changes only BriefBar for
-# Windows (windows/ and its workflow) builds nothing here, but its check still passes.
+# the way a release does and installs an update through its updater. A pull request packages the app only when it
+# changes what packaging uses beyond what the tests build and check, such as the scripts, Resources or the updater
+# (scripts/ci-changes.sh); every push to main packages it. A pull request that changes only BriefBar for Windows
+# (windows/ and its workflow) builds nothing here, but its check still passes.
 on:
   # Not for a push that changes only BriefBar for Windows: each run on main builds the Mac app, so a newer run that
   # cancels an older one builds everything that one would have.
@@ -28,13 +30,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Which apps this run builds (scripts/ci-changes.sh).
+  # Which apps this run builds, and whether it packages the Mac app (scripts/ci-changes.sh).
   changes:
     name: What changed
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       mac: ${{ steps.changes.outputs.mac }}
+      package: ${{ steps.changes.outputs.package }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,7 +53,8 @@ jobs:
 
   # The check main requires, so it always runs, and passes without building when the Mac app didn't change: then it
   # skips every step, on Linux. Skipped instead, it would report as "Build and test (${{ matrix.os }})", which no
-  # required check matches. If what changed couldn't be found, it builds.
+  # required check matches. If what changed couldn't be found, it builds and packages. A pull request that doesn't
+  # need the package skips the steps that make and check it, in this job, so its check still reports.
   build:
     name: Build and test (${{ matrix.os }})
     needs: changes
@@ -88,14 +92,18 @@ jobs:
           make plugin-test
         timeout-minutes: 5
 
-      # Only AzureDevOpsCore and GitHubCore use the network, and only BriefBarCore starts programs.
+      # Only AzureDevOpsCore and GitHubCore use the network, and only BriefBarCore starts programs: in the object files
+      # that the tests' build made, which hold every module of the app (the check fails if one is missing).
+      # make check-boundaries would build the app first, and after make test, swift build still compiles most of it
+      # again, for the same undefined symbols, which are what the check reads.
       - name: Check the boundaries
         if: needs.changes.outputs.mac != 'false'
-        run: make check-boundaries
+        run: ./scripts/check-boundaries.sh
 
+      # With the BriefBar that the tests' build made, for the same reason.
       - name: Check the demo data
         if: needs.changes.outputs.mac != 'false'
-        run: make demo-check
+        run: make demo-check BRIEFBAR="$(swift build --arch arm64 --show-bin-path)/BriefBar"
 
       # It's macOS that enforces what keeps the keys safe, so this checks it here, in throwaway keychains.
       - name: Check the signing keys' protection
@@ -108,39 +116,47 @@ jobs:
         if: needs.changes.outputs.mac != 'false'
         run: make homebrew-cask-check
 
+      # The rest makes the package and checks it: on every push to main, and on a pull request that changes what
+      # they use beyond what the steps above build and check (scripts/ci-changes.sh).
+      - name: Say why the app isn't packaged
+        if: needs.changes.outputs.mac != 'false' && needs.changes.outputs.package == 'false'
+        run: >-
+          echo "::notice title=Not packaged::This pull request changes nothing that packaging uses beyond what the
+          tests build and check (scripts/ci-changes.sh), so the app isn't packaged here. Every push to main packages it."
+
       # A throwaway certificate in a keychain of its own, on the search list. Only the release workflow's
       # approved job has the release certificate.
       - name: Create a signing certificate
-        if: needs.changes.outputs.mac != 'false'
+        if: needs.changes.outputs.mac != 'false' && needs.changes.outputs.package != 'false'
         run: |
           KEYCHAIN="$(./scripts/ci-signing-identity.sh "$RUNNER_TEMP")"
           echo "BRIEFBAR_SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
       # The Apple silicon app that a release ships, checked and zipped (see scripts/package.sh).
       - name: Package the app
-        if: needs.changes.outputs.mac != 'false'
+        if: needs.changes.outputs.mac != 'false' && needs.changes.outputs.package != 'false'
         run: make package
 
       # Signs the package's update the way a release does, with a throwaway key instead of the real one.
       - name: Check the update signing
-        if: needs.changes.outputs.mac != 'false'
+        if: needs.changes.outputs.mac != 'false' && needs.changes.outputs.package != 'false'
         run: ./scripts/appcast-dry-run.sh
 
       # The updater holds Sparkle with library validation off. In a copy of the package that macOS opens, it's
       # responsible for itself, and other code in Sparkle's place never runs as BriefBar.
       - name: Check the updater's isolation
-        if: needs.changes.outputs.mac != 'false'
+        if: needs.changes.outputs.mac != 'false' && needs.changes.outputs.package != 'false'
         run: ./scripts/test-updater-isolation.sh build/BriefBar.app
 
       # A copy of the package installs a newer one through the updater, from a signed feed on the runner.
       - name: Rehearse an update
-        if: needs.changes.outputs.mac != 'false'
+        if: needs.changes.outputs.mac != 'false' && needs.changes.outputs.package != 'false'
         run: ./scripts/update-rehearsal.sh build/BriefBar.app
 
       # The release workflow builds on macos-26 too, so this is what a release would contain, apart from the
       # certificate.
       - name: Upload the package
-        if: needs.changes.outputs.mac != 'false'
+        if: needs.changes.outputs.mac != 'false' && needs.changes.outputs.package != 'false'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: BriefBar
