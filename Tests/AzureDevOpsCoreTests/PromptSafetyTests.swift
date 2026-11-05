@@ -192,6 +192,8 @@ import Testing
         #expect(PullRequestPrompt.fixComments(record, workplace: .agent).contains("fetch origin/\(source), the pull request's latest commit"))
         let ship = PullRequestPrompt.pushAndReply(record, workplace: .worktree)
         #expect(ship.contains("Push them to \(source), without force: git push origin HEAD:refs/heads/\(source). If that's rejected, rebase on origin/\(source) first"))
+        #expect(ship.contains("This pull request merges into \(target). Fetch origin/\(target) and origin/\(source), and check what you'd push"))
+        #expect(ship.contains("(git merge-base --is-ancestor <commit> origin/\(target))."))
         let agent = PullRequestPrompt.pushAndReply(record, workplace: .agent)
         #expect(agent.contains("(git merge-base --is-ancestor origin/\(source) HEAD)"))
         #expect(agent.contains("git log origin/\(source)..HEAD"))

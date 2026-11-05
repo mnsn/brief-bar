@@ -514,6 +514,46 @@ import Testing
         #expect(arguments.contains("shell(git push)"))
     }
 
+    /// Push & Reply from a fork of a session whose checkout holds a merge of what the pull request's target doesn't have:
+    /// the fork's worktree has it too, so nothing starts, and the fork and its worktree are deleted.
+    @Test(.timeLimit(.minutes(1)))
+    func aForkPushesNoMergeOfWhatTheTargetDoesntHave() async throws {
+        let repository = try await RepositoryFixture()
+        defer { repository.remove() }
+        let seed = repository.folder.appendingPathComponent("seed")
+        let identity = ["-c", "user.name=Robin Diaz", "-c", "user.email=robin@example.com"]
+        try await repository.git(["-C", seed.path, "branch", "release/x"])
+        try await repository.git(["-C", seed.path, "checkout", "--quiet", "-b", pullRequest.sourceBranch])
+        try "Storefront, with totals\n".write(to: seed.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try await repository.git(["-C", seed.path] + identity + ["commit", "--quiet", "-am", "Totals"])
+        try await repository.git(["-C", seed.path, "checkout", "--quiet", "main"])
+        try "Main's work\n".write(to: seed.appendingPathComponent("main.txt"), atomically: true, encoding: .utf8)
+        try await repository.git(["-C", seed.path, "add", "main.txt"])
+        try await repository.git(["-C", seed.path] + identity + ["commit", "--quiet", "-m", "Main's work"])
+        try await repository.git(["-C", seed.path, "push", "--quiet", repository.origin.path, "main", "release/x", pullRequest.sourceBranch])
+        let remote = "https://dev.azure.com/contoso/Storefront/_git/checkout"
+        try await repository.git(["-C", repository.checkout.path, "remote", "set-url", "origin", remote])
+        try await repository.git(["-C", repository.checkout.path, "config", "url.\(repository.origin.path).insteadOf", remote])
+        try await repository.git(["-C", repository.checkout.path, "fetch", "--quiet", "origin"])
+        // The session's checkout, where it resolved the conflicts against main.
+        let checkout = repository.folder.appendingPathComponent("session-checkout")
+        try await repository.git(["-C", repository.checkout.path, "worktree", "add", "--quiet", "--detach", checkout.path, "origin/\(pullRequest.sourceBranch)"])
+        try await repository.git(["-C", checkout.path] + identity + ["merge", "--quiet", "--no-edit", "origin/main"])
+        let fixture = try FakeCopilot.Fixture(in: repository.folder, base: repository.environment)
+        var retargeted = pullRequest
+        retargeted.targetBranch = "release/x"
+
+        let request = CopilotLauncher.Request(
+            subject: .pullRequest(retargeted, .pushAndReply), prompt: "Push and reply", options: CopilotModel.quick,
+            repository: repository.checkout, worktreesFolder: nil, forking: session(in: checkout, repository: repository.checkout)
+        )
+        await #expect(throws: LaunchError.foreignMerge(target: "release/x")) { try await launcher(fixture).launch(request) { _ in } }
+        #expect(fixture.methods == ["connect", "sessions.fork", "session.delete"])
+        #expect(!FileManager.default.fileExists(atPath: repository.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071-fork").path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.arguments.path))
+        #expect(FileManager.default.fileExists(atPath: checkout.appendingPathComponent("main.txt").path))
+    }
+
     /// The fork has the session's whole log, which ends with its task done, and the pull request it opened. If Copilot then
     /// stops before it writes anything, as when the CLI refuses its options, the task failed: it didn't finish as the
     /// session had, nor open that pull request.

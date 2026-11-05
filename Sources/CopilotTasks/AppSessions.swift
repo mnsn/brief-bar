@@ -113,6 +113,35 @@ public enum AppSessions {
         sessionFolder(id, home: home)?.appendingPathComponent("events.jsonl")
     }
 
+    /// When a session was first sent a message, since `since`, that holds `text`, such as a prompt BriefBar copied for you to
+    /// paste there: as you sent it, or as Copilot was told it, whatever else it says before or after, however its lines and
+    /// spaces are broken; not what an agent and its subagent say to each other. From the end of its log, the last
+    /// `maxBytes`, opened without following a symbolic link below the app's folder; nil when no message since holds it, as
+    /// when you sent it something else, or nothing yet.
+    public static func pasted(_ text: String, in id: String, home: URL, since: Date, maxBytes: Int = 4 << 20) -> Date? {
+        let wanted = words(text)
+        guard isSessionID(id), !wanted.isEmpty,
+              let log = LocalFile.tail(below: home, stateFile(id, "events.jsonl", home: home), maxBytes: maxBytes)
+        else { return nil }
+        func isSet(_ value: Any?) -> Bool { (value as? String).map { !words($0).isEmpty } ?? false }
+        for line in log.split(separator: UInt8(ascii: "\n")) where line.starts(with: userMessage) {
+            guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                  let at = (object["timestamp"] as? String).flatMap(Timestamp.parse), at >= since,
+                  let data = object["data"] as? [String: Any], !isSet(object["agentId"]), !isSet(data["parentToolCallId"])
+            else { continue }
+            let said = [data["content"], data["transformedContent"]].compactMap { $0 as? String }
+            if said.contains(where: { words($0).contains(wanted) }) { return at }
+        }
+        return nil
+    }
+
+    private static let userMessage = Data(#"{"type":"user.message""#.utf8)
+
+    /// Text as its words, one space apart.
+    static func words(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
     /// `session-state/<id>/<name>`, by its components below the app's folder, to open it without following a link.
     static func stateFile(_ id: String, _ name: String, home: URL) -> [String] {
         [CopilotPaths(root: home).sessionState.lastPathComponent, id, name]

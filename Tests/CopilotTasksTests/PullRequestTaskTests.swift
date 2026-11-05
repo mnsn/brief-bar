@@ -101,6 +101,61 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071-2").path))
     }
 
+    /// Push & Reply going on with a session whose worktree holds a merge of what the pull request's target doesn't have, as
+    /// when it was retargeted after its conflicts were resolved there: nothing starts, and the worktree stays as it is; nor
+    /// when the list reads such a retarget while git checks. Against the branch it merged, it goes.
+    @Test(.timeLimit(.minutes(1)))
+    func pushesNoMergeOfWhatTheTargetDoesntHave() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let seed = fixture.folder.appendingPathComponent("seed")
+        let identity = ["-c", "user.name=Robin Diaz", "-c", "user.email=robin@example.com"]
+        // release/x where the pull request's branch started, and main a commit further.
+        try await fixture.git(["-C", seed.path, "branch", "release/x", "main"])
+        try await fixture.git(["-C", seed.path, "checkout", "--quiet", "main"])
+        try "Main's work\n".write(to: seed.appendingPathComponent("main.txt"), atomically: true, encoding: .utf8)
+        try await fixture.git(["-C", seed.path, "add", "main.txt"])
+        try await fixture.git(["-C", seed.path] + identity + ["commit", "--quiet", "-m", "Main's work"])
+        try await fixture.git(["-C", seed.path, "push", "--quiet", fixture.origin.path, "main", "release/x"])
+        let (launcher, argumentsFile) = try launcher(fixture)
+        let resolve = try await launch(launcher, CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .resolveConflicts), prompt: "Resolve the conflicts", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil
+        ), id: "9d4f3e5d-6ebf-4a2b-9e7c-5b6c7d8e9fa0")
+        // Its resolution: main merged in.
+        try await fixture.git(["-C", fixture.checkout.path, "fetch", "--quiet", "origin"])
+        try await fixture.git(["-C", resolve.worktree.path] + identity + ["merge", "--quiet", "--no-edit", "origin/main"])
+        try FileManager.default.removeItem(at: argumentsFile)
+
+        var retargeted = pullRequest
+        retargeted.targetBranch = "release/x"
+        let push = CopilotLauncher.Request(
+            subject: .pullRequest(retargeted, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: resolve
+        )
+        await #expect(throws: LaunchError.foreignMerge(target: "release/x")) { try await launcher.launch(push, id: resolve.id) { _ in } }
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+        #expect(FileManager.default.fileExists(atPath: resolve.worktree.appendingPathComponent("main.txt").path))
+        #expect(LaunchError.foreignMerge(target: "release/x").description.hasPrefix("This session holds a merge that release/x doesn't have"))
+
+        // Checked against main, while the list read that it merges into release/x: asked again right before Copilot starts,
+        // it doesn't start.
+        let retargetedMeanwhile = CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: resolve, targetNow: { "release/x" }
+        )
+        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(retargetedMeanwhile, id: resolve.id) { _ in } }
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+        #expect(FileManager.default.fileExists(atPath: resolve.worktree.appendingPathComponent("main.txt").path))
+
+        let ship = try await launch(launcher, CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: resolve, targetNow: { "main" }
+        ), id: resolve.id)
+        #expect(ship.worktree.path == resolve.worktree.path)
+        #expect(try String(contentsOf: argumentsFile, encoding: .utf8).contains("Push and reply"))
+    }
+
     /// A pull request's prompt has no placeholders, but quotes what others wrote, such as a change suggested in a comment,
     /// which Copilot applies as it's written: it goes as it is, `{baseBranch}` and all, where a work item's prompt has its
     /// base branch filled in (`CopilotLauncherTests`).
@@ -189,7 +244,10 @@ import Testing
         let runner = OpensSessionRunner(lock: state.appendingPathComponent("inuse.\(getpid()).lock"))
         let (launcher, argumentsFile) = try launcher(fixture, runner: runner)
         let worktree = fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071")
-        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: worktree.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Its worktree, where the fix left it: what Push & Reply would push is checked, with git, before it looks again.
+        try await fixture.git(["-C", fixture.checkout.path, "fetch", "--quiet", "origin"])
+        try await fixture.git(["-C", fixture.checkout.path, "worktree", "add", "--quiet", "--detach", worktree.path, "origin/\(pullRequest.sourceBranch)"])
         let fix = CopilotRun(
             id: id, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,
             repository: fixture.checkout, worktree: worktree, startedAt: Date(), process: DetachedProgram.Handle(pid: 0, startedAt: nil),

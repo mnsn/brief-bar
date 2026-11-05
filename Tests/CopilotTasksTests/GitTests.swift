@@ -59,6 +59,112 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: worktree.path))
     }
 
+    // MARK: What Push & Reply would push
+
+    private static let source = "users/robin/fix-total"
+    private static let identity = ["-c", "user.name=Robin Diaz", "-c", "user.email=robin@example.com"]
+
+    /// origin with release/x and the pull request's branch started from the first commit, the branch one commit further and
+    /// main another; and the checkout detached at the branch, as a session's checkout of the pull request is.
+    private func retargetable() async throws -> (RepositoryFixture, Git) {
+        let fixture = try await RepositoryFixture()
+        let seed = fixture.folder.appendingPathComponent("seed")
+        try await fixture.git(["-C", seed.path, "branch", "release/x"])
+        try await fixture.git(["-C", seed.path, "checkout", "--quiet", "-b", Self.source])
+        try await commit("Totals", to: "totals.txt", in: seed, fixture)
+        try await fixture.git(["-C", seed.path, "checkout", "--quiet", "main"])
+        try await commit("Main's work", to: "main.txt", in: seed, fixture)
+        try await fixture.git(["-C", seed.path, "push", "--quiet", fixture.origin.path, "main", "release/x", Self.source])
+        try await fixture.git(["-C", fixture.checkout.path, "fetch", "--quiet", "origin"])
+        try await fixture.git(["-C", fixture.checkout.path, "checkout", "--quiet", "--detach", "origin/\(Self.source)"])
+        return (fixture, Git(executable: URL(fileURLWithPath: "/usr/bin/git"), environment: fixture.environment))
+    }
+
+    private func commit(_ text: String, to file: String, in folder: URL, _ fixture: RepositoryFixture) async throws {
+        try "\(text)\n".write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8)
+        try await fixture.git(["-C", folder.path, "add", file])
+        try await fixture.git(["-C", folder.path] + Self.identity + ["commit", "--quiet", "-m", text])
+    }
+
+    /// Commits of its own, merges aside, are the work to push, whatever the target.
+    @Test(.timeLimit(.minutes(1)))
+    func takesTheBranchsOwnCommits() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") == .clean)
+        try await commit("The fix", to: "fix.txt", in: fixture.checkout, fixture)
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") == .clean)
+    }
+
+    /// Resolved against main, then retargeted to release/x: the merge would bring main's work, which release/x doesn't
+    /// have, until it does; as fetched, not as the checkout last saw it.
+    @Test(.timeLimit(.minutes(1)))
+    func findsAMergeOfWhatTheTargetDoesntHave() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        try await fixture.git(["-C", fixture.checkout.path] + Self.identity + ["merge", "--quiet", "--no-edit", "origin/main"])
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "main") == .clean)
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") == .foreignMerge)
+
+        let seed = fixture.folder.appendingPathComponent("seed")
+        try await fixture.git(["-C", seed.path, "push", "--quiet", fixture.origin.path, "main:release/x"])
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") == .clean)
+    }
+
+    /// A merge of the pull request's own branch, whichever way, merges in what the target doesn't have: pulled into the
+    /// work, or merged into main's latest, which on a target with no merges of its own looks the same in history, and
+    /// would push main's work to the branch.
+    @Test(.timeLimit(.minutes(1)))
+    func findsAMergeOfThePullRequestsOwnBranch() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        try await fixture.git(["-C", fixture.checkout.path, "checkout", "--quiet", "--detach", "origin/main"])
+        try await fixture.git(["-C", fixture.checkout.path] + Self.identity + ["merge", "--quiet", "--no-edit", "origin/\(Self.source)"])
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") == .foreignMerge)
+
+        try await fixture.git(["-C", fixture.checkout.path, "checkout", "--quiet", "--detach", "origin/\(Self.source)"])
+        try await commit("The fix", to: "fix.txt", in: fixture.checkout, fixture)
+        let seed = fixture.folder.appendingPathComponent("seed")
+        try await fixture.git(["-C", seed.path, "checkout", "--quiet", Self.source])
+        try await commit("A reviewer's fix", to: "review.txt", in: seed, fixture)
+        try await fixture.git(["-C", seed.path, "push", "--quiet", fixture.origin.path, Self.source])
+        try await fixture.git(["-C", fixture.checkout.path, "fetch", "--quiet", "origin"])
+        try await fixture.git(["-C", fixture.checkout.path] + Self.identity + ["merge", "--quiet", "--no-edit", "origin/\(Self.source)"])
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "main") == .foreignMerge)
+        // Rebased, as a push that's rejected is, it's the work alone.
+        try await fixture.git(["-C", fixture.checkout.path, "reset", "--quiet", "--hard", "HEAD^1"])
+        try await fixture.git(["-C", fixture.checkout.path] + Self.identity + ["rebase", "--quiet", "origin/\(Self.source)"])
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "main") == .clean)
+    }
+
+    /// A merge not committed yet, in the checkout, whose `MERGE_HEAD` git names from where it is, and in a worktree of it,
+    /// whose `MERGE_HEAD` is in the checkout's `.git`; and none, once it's aborted.
+    @Test(.timeLimit(.minutes(1)))
+    func findsAMergeStillInProgress() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        let worktree = fixture.folder.appendingPathComponent("worktree")
+        try await fixture.git(["-C", fixture.checkout.path, "worktree", "add", "--quiet", "--detach", worktree.path, "origin/\(Self.source)"])
+        for folder in [fixture.checkout, worktree] {
+            try await fixture.git(["-C", folder.path] + Self.identity + ["merge", "--quiet", "--no-commit", "--no-ff", "origin/main"])
+            #expect(try await git.checkPush(in: folder, source: Self.source, target: "release/x") == .foreignMerge)
+            #expect(try await git.checkPush(in: folder, source: Self.source, target: "main") == .clean)
+            try await fixture.git(["-C", folder.path, "merge", "--abort"])
+            #expect(try await git.checkPush(in: folder, source: Self.source, target: "release/x") == .clean)
+        }
+    }
+
+    /// Nothing runs for a target it doesn't know, or a name git would read as something else.
+    @Test func checksOnlyBranchesGitTakes() async throws {
+        let runner = FakeRunner { _ in .ok() }
+        let git = Git(executable: URL(fileURLWithPath: "/usr/bin/git"), environment: nil, runner: runner)
+        let folder = URL(fileURLWithPath: "/repo")
+        for (source, target) in [(Self.source, ""), (Self.source, "--upload-pack=touch"), ("main..HEAD", "main")] {
+            await #expect(throws: GitError.self) { try await git.checkPush(in: folder, source: source, target: target) }
+        }
+        #expect(runner.arguments.isEmpty)
+    }
+
     @Test func putsWorktreesNextToTheRepositoryEachInAFolderOfItsOwn() {
         let root = URL(fileURLWithPath: "/Users/robin/dev/repos/Storefront")
         let folder = WorktreeLocation.defaultFolder(for: root)

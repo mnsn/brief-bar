@@ -221,30 +221,38 @@ extension CopilotTasksStore {
     /// with the Copilot app's own fork, and the fork's extension sends the fork the prompt; then the session, or the fork,
     /// shows (`show`). When the extension can't, BriefBar does what Open in Copilot did: it copies the prompt, or for a
     /// fork `/fork <prompt>`, which the app's own `/fork` takes, and shows the session to paste it in; or the fork, with
-    /// the prompt, once the session forked but the prompt didn't reach it. Once the prompt's sent, or copied and the
-    /// session showing, what `handOff` says it takes care of leaves Needs You. Only while Send Work to Copilot is on, never
-    /// in the demo, and one prompt at a time for each session.
+    /// the prompt, once the session forked but the prompt didn't reach it. Once the prompt's sent, what `handOff` says it
+    /// takes care of leaves Needs You; once it's copied, as BriefBar sees it in a message sent the session, which says you
+    /// pasted it (`copiedPrompts`), so a prompt you don't paste leaves the comments on Needs You. Only while Send Work to
+    /// Copilot is on, never in the demo, and one prompt at a time for each session.
     /// - Parameter about: what of the pull request it's about, its threads, a build or its conflicts, and what for: once it's
     ///   sent, or copied for you to paste, BriefBar keeps that, to follow its turn in the session (`SentPrompt`). Whatever
     ///   it's about, the turns of the prompts sent the session before that weren't seen to end aren't followed after
     ///   (`overlap`).
+    ///   - sentAt: as delivering it starts, which its sender may tell, as the time it took on what it's about: what the
+    ///     session does from then on is its turn, even one over before BriefBar heard it went. It's free then, or nothing
+    ///     goes.
+    ///   - checkingPush: the pull request a Push & Reply pushes to: nothing goes, not even copied, while the folder the
+    ///     session works in holds a merge of commits the branch it merges into now doesn't have, or that can't be checked
+    ///     (`pushProblem`); nor once the list reads, before the prompt is sent or copied, that the pull request merges into
+    ///     another branch than the one it was checked against (`retargetProblem`).
     /// - Returns: sent; forked and sent, with the fork; why it fell back; or why nothing went.
     func deliver(
-        _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil
+        _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil,
+        at sentAt: Date = Date(), checkingPush: TaskPullRequest? = nil
     ) async -> SessionDelivery {
-        // Sent as delivering it starts: what the session does from then on is its turn, even one over before BriefBar heard
-        // it went. It's free then, or nothing goes.
-        let sentAt = Date()
         // Until it's known whether it went, the turns of the prompts sent the session before aren't followed: it may reach
         // the session, and its turn end, before BriefBar hears it went (`pauseFollowing`). A fork's goes to the fork.
         if !forking { pauseFollowing(choice.id) }
         defer { if !forking { resumeFollowing(choice.id) } }
-        let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff)
-        keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt)
+        let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff, checkingPush: checkingPush)
+        keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt, copying: prompt, handOff: handOff)
         return outcome
     }
 
-    private func deliverPrompt(_ prompt: String, to choice: SessionChoice, forking: Bool, handOff: CommentHandOff?) async -> SessionDelivery {
+    private func deliverPrompt(
+        _ prompt: String, to choice: SessionChoice, forking: Bool, handOff: CommentHandOff?, checkingPush: TaskPullRequest?
+    ) async -> SessionDelivery {
         guard canSend, isOn, !hasStopped, ItemRef.session(choice.id) != nil else { return .notSent(Self.cantSendNow) }
         let id = choice.id
         if forking, !choice.canFork { return .notSent("The Copilot app can't fork this session.") }
@@ -267,10 +275,23 @@ extension CopilotTasksStore {
         if let busy = busyReason(for: choice, in: checkout) { return .notSent(busy) }
         if let checkout { deliveringFolders[id] = checkout }
         defer { deliveringFolders[id] = nil }
-        if let why = reach.whyNot(forking: forking) {
-            return await fallBack(
-                prompt, in: id, forking: forking, reason: why, foreseen: true, promptsWereOn: promptsWereOn, handOff: handOff
+        // While the checkout is BriefBar's to send to, so no task of its own changes it meanwhile.
+        let checked: CheckedPush?
+        if let pullRequest = checkingPush {
+            let push = CheckedPush(
+                pullRequest: pullRequest, target: targetNow(of: pullRequest), name: CopilotWork.quoted(choice.name, isTask: choice.run != nil)
             )
+            if let problem = await pushProblem(push, in: checkout) { return .notSent(problem) }
+            // Again, after git's wait, as after the one above; and the list may have read meanwhile that the pull request
+            // merges into another branch, which the session wasn't checked against.
+            guard canSend, isOn, !hasStopped, sessionPromptsAreOn || !promptsWereOn else { return .notSent(Self.cantSendNow) }
+            if let problem = retargetProblem(push) { return .notSent(problem) }
+            checked = push
+        } else {
+            checked = nil
+        }
+        if let why = reach.whyNot(forking: forking) {
+            return await fallBack(prompt, in: id, forking: forking, reason: why, foreseen: true, promptsWereOn: promptsWereOn, checked: checked)
         }
         if case .loads = reach, !canOpenInApp { return .notSent(Self.cantOpenInApp) }
 
@@ -297,7 +318,11 @@ extension CopilotTasksStore {
             forkRecord: { id in AppSessions.forkRecord(of: id, home: appHome) },
             forks: { original, since in AppSessions.forks(of: original, since: since, home: appHome) },
             mayGoOn: { [weak self] in
-                await MainActor.run { self?.maySendToSessions ?? false }
+                // Nor once the pull request merges into another branch than the one the push was checked against.
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.maySendToSessions && self.retargetProblem(checked) == nil
+                }
             },
             reserve: { [weak self] fork in
                 // The checkout the fork works in, as its own state says, which another session may work in too: it has to
@@ -346,27 +371,68 @@ extension CopilotTasksStore {
         case .notSent(.cancelled), .forkedNotSent(_, .cancelled):
             return .notSent(SendFailure.cancelled.description)
         case .notSent(.turnedOff), .forkedNotSent(_, .turnedOff):
-            return .notSent(Self.cantSendNow)
+            return .notSent(retargetProblem(checked) ?? Self.cantSendNow)
         case .notSent(let why):
             Log.app.error("Couldn't send a prompt to a session in the Copilot app: \(why.kind, privacy: .public)")
             guard goesOn else { return .notSent(Self.cantSendNow) }
-            return await fallBack(prompt, in: id, forking: forking, reason: why.description, mayHaveSent: why.mayHaveGone, handOff: handOff)
+            return await fallBack(prompt, in: id, forking: forking, reason: why.description, mayHaveSent: why.mayHaveGone, checked: checked)
         case .forkedNotSent(let fork, let why):
             Log.app.error("Forked a session in the Copilot app, but couldn't send the fork a prompt: \(why.kind, privacy: .public)")
             guard goesOn else { return .notSent(Self.cantSendNow) }
             return await fallBack(
-                prompt, in: fork, forking: forking, fork: fork, reason: why.description, mayHaveSent: why.mayHaveGone, handOff: handOff
+                prompt, in: fork, forking: forking, fork: fork, reason: why.description, mayHaveSent: why.mayHaveGone, checked: checked
             )
         }
     }
 
+    /// A Push & Reply's pull request, and the branch BriefBar checks what the session would push against (`pushProblem`):
+    /// until the prompt is sent, or copied, the pull request has to merge into that branch still (`retargetProblem`).
+    struct CheckedPush: Sendable {
+        var pullRequest: TaskPullRequest
+        var target: String
+        /// The session, as a sentence names it.
+        var name: String
+    }
+
+    /// Why a Push & Reply mustn't go to a session: the folder it works in holds a merge of commits that the branch the pull
+    /// request merges into, as the list last read it, doesn't have (`Git.checkPush(in:source:target:)`), as when it was
+    /// retargeted after its conflicts were resolved there; or BriefBar couldn't check, as when the folder isn't a clone of
+    /// the pull request's repository. Nil when it may go.
+    private func pushProblem(_ push: CheckedPush, in folder: URL?) async -> String? {
+        let (pullRequest, target, name) = (push.pullRequest, push.target, push.name)
+        guard let folder else { return "BriefBar can't tell which folder \(name) works in, so it couldn't check what it would push, and nothing went." }
+        let git = await git()
+        do {
+            _ = try await git.repository(at: folder, for: pullRequest)
+            switch try await git.checkPush(in: folder, source: pullRequest.sourceBranch, target: target) {
+            case .clean: return nil
+            case .foreignMerge: return "\(name) holds a merge that \(target) doesn't have, so nothing went. Fix the pull request in a new session."
+            }
+        } catch {
+            Log.app.error("Couldn't check what a session would push: \(String(describing: type(of: error)), privacy: .public)")
+            let why = (error as? GitError)?.description ?? String(describing: error)
+            return "BriefBar couldn't check what \(name) would push, so nothing went: \(why)"
+        }
+    }
+
+    /// Why a Push & Reply checked against one branch mustn't go now: the pull request merges into another, as the list has
+    /// read since. Nil while it merges into the one it was checked against, or when nothing was checked.
+    func retargetProblem(_ checked: CheckedPush?) -> String? {
+        guard let checked else { return nil }
+        let now = targetNow(of: checked.pullRequest)
+        guard now != checked.target else { return nil }
+        return "The pull request now merges into \(now), so nothing went. Send it again, for BriefBar to check \(checked.name) against \(now)."
+    }
+
     /// Copies what to paste, and shows the session to paste it in: the prompt, or, to fork a session that hasn't forked,
-    /// `/fork <prompt>`. Hands it off once the session shows. Nothing's copied or shown once it's stopped, as when its
-    /// window closed, or once Send Work to Copilot is off, as looked at right before; nor once Send Prompts to Copilot
-    /// Sessions is off, unless the window said it would copy it because that was off as you sent it (`promptsWereOn`).
+    /// `/fork <prompt>`. It's handed off only once its turn is seen to start (`deliver`). Nothing's copied or shown once it's
+    /// stopped, as when its window closed, or once Send Work to Copilot is off, as looked at right before; nor once Send
+    /// Prompts to Copilot Sessions is off, unless the window said it would copy it because that was off as you sent it
+    /// (`promptsWereOn`); nor a Push & Reply once the pull request merges into another branch than the one it was checked
+    /// against (`checked`, `retargetProblem`).
     private func fallBack(
         _ prompt: String, in session: String, forking: Bool, fork: String? = nil, reason: String, foreseen: Bool = false,
-        mayHaveSent: Bool = false, promptsWereOn: Bool = true, handOff: CommentHandOff?
+        mayHaveSent: Bool = false, promptsWereOn: Bool = true, checked: CheckedPush? = nil
     ) async -> SessionDelivery {
         let way: Showing?
         if openForTests != nil {
@@ -380,6 +446,8 @@ extension CopilotTasksStore {
         guard canSend, isOn, !hasStopped, sessionPromptsAreOn || (foreseen && !promptsWereOn) else {
             return .notSent(Self.cantSendNow)
         }
+        // Nor a Push & Reply, once the pull request merges into another branch than the one it was checked against.
+        if let problem = retargetProblem(checked) { return .notSent(problem) }
         // Where it shows: in the terminal of a CLI that has it open; otherwise in the app, if anything opens its sessions.
         let place: SessionFallback.Place
         if case .terminal? = way { place = .terminal } else { place = .app }
@@ -406,7 +474,6 @@ extension CopilotTasksStore {
             return .notSent(Self.cantOpenInApp(fallback))
         }
         Log.app.info("Copied a prompt for a session in the Copilot app, and showed the session")
-        if let handOff { handedOff(handOff, prompt) }
         return .fellBack(fallback)
     }
 
@@ -434,6 +501,44 @@ extension CopilotTasksStore {
         guard !Task.isCancelled, maySendToSessions, let way else { return false }
         if let showForTests { return showForTests(id) }
         return Self.reveal(id, way)
+    }
+
+    /// Stops the turn that runs in one of the Copilot app's sessions, as the app's own Stop does, through BriefBar's
+    /// extension in it (`SessionSender.stop`): for a prompt BriefBar sent the session, whose line says Copilot is at it. When
+    /// the extension can't, as one that started before it could, or while Send Prompts to Copilot Sessions is off, BriefBar
+    /// shows the session, to stop it there. Only while Send Work to Copilot is on, never in the demo.
+    /// - Returns: what to say once BriefBar didn't stop it itself; nil once it did.
+    func stopTurn(in session: String) async -> String? {
+        guard canSend, isOn, !hasStopped, AppSessions.isSessionID(session) else { return Self.cantSendNow }
+        var why = "BriefBar can't stop it while \(CopilotSessionPrompts.title) is off."
+        if sessionPromptsAreOn {
+            let homes = await sessionHomes()
+            let appHome = appHome
+            let effects = SessionSender.Effects(
+                open: { _ in false },
+                isHeld: { id in homes.contains { AppSessions.isOpen(id, home: $0) } },
+                forkRecord: { id in AppSessions.forkRecord(of: id, home: appHome) },
+                mayGoOn: { [weak self] in await MainActor.run { self?.maySendToSessions ?? false } }
+            )
+            let sender = SessionSender(outbox: outbox, effects: effects, timing: deliveryTimingForTests ?? SessionSender.Timing())
+            let result = await Task.detached(priority: .userInitiated) { await sender.stop(session) }.value
+            guard canSend, isOn, !hasStopped else { return Self.cantSendNow }
+            switch result {
+            case .success:
+                Log.app.info("Stopped a session's turn in the Copilot app")
+                return nil
+            case .failure(let failure):
+                Log.app.error("Couldn't stop a session's turn in the Copilot app: \(failure.kind, privacy: .public)")
+                switch failure {
+                case .noListener, .unsupported: why = "BriefBar's extension in the session can't stop it."
+                default: why = failure.description
+                }
+            }
+        }
+        let way: Showing? = showForTests != nil ? .app : await showing(session)
+        guard canSend, isOn, !hasStopped else { return Self.cantSendNow }
+        let shown = way.map { way in showForTests?(session) ?? Self.reveal(session, way) } ?? false
+        return shown ? "\(why) Stop it in the session, which BriefBar showed." : "\(why) Stop it in the session, in the Copilot app."
     }
 
     /// How the session would show now: nil when nothing would show it, as without the Copilot app.

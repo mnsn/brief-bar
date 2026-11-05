@@ -160,7 +160,10 @@ private struct CheckRow: View {
                     .padding(.top, 2)
             }
             // What Copilot does about it, and what a session said of it, while it's closed: open, its run says them.
-            BuildWorkLine(line: line, item: item, now: now, isOpen: isExpanded && look?.investigation != nil, show: expand)
+            BuildWorkLine(
+                line: line, item: item, now: now, isOpen: isExpanded && look?.investigation != nil, composing: $composing, drafts: drafts,
+                show: expand
+            )
             if isExpanded, let investigable {
                 BuildInvestigationView(
                     line: line, item: item, pullRequest: investigable.pullRequest, buildId: investigable.buildId, look: look, now: now,

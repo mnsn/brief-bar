@@ -14,7 +14,7 @@
     },
     {
       "name": "briefbar-sessions",
-      "description": "Lets BriefBar send a prompt to one of the GitHub Copilot app's sessions, or to a fork of it, when you ask: Send Prompts to Copilot Sessions, in BriefBar's Settings › Agents.",
+      "description": "Lets BriefBar send a prompt to one of the GitHub Copilot app's sessions, or to a fork of it, or stop its turn, when you ask: Send Prompts to Copilot Sessions, in BriefBar's Settings › Agents.",
       "source": "./briefbar-sessions"
     },
     {

@@ -28,13 +28,13 @@ private final class ExtensionStandIn: Sendable {
         self.sessionId = sessionId
     }
 
-    /// What it was asked, in order: `fork`, or a send's prompt.
+    /// What it was asked, in order: `fork`, `stop`, or a send's prompt.
     var received: [String] { state.withLock { $0.received } }
 
-    func listen() throws {
+    func listen(kinds: [String] = ["send", "fork"]) throws {
         let started = DetachedProgram.startTime(of: getpid()) ?? Date()
         try Self.write([
-            "version": 1, "sessionId": sessionId, "pid": Int(getpid()), "kinds": ["send", "fork"],
+            "version": 1, "sessionId": sessionId, "pid": Int(getpid()), "kinds": kinds,
             "startedAt": started.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)),
         ], to: outbox.appendingPathComponent("listening"), named: "\(sessionId).json")
     }
@@ -61,7 +61,7 @@ private final class ExtensionStandIn: Sendable {
                               let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                               let kind = request["kind"] as? String, let requestId = request["requestId"] as? String
                         else { continue }
-                        state.withLock { $0.received.append(kind == "fork" ? "fork" : request["prompt"] as? String ?? "") }
+                        state.withLock { $0.received.append(kind == "send" ? request["prompt"] as? String ?? "" : kind) }
                         try? await Task.sleep(for: delay)
                         if let fields = answer(kind) {
                             let result = ["version": 1, "requestId": requestId, "sessionId": sessionId, "kind": kind].merging(fields) { $1 }
@@ -247,6 +247,155 @@ private final class TakenAt: Sendable {
         // Nothing starts here.
         #expect(store.pending.isEmpty)
         #expect(store.settings.copilotRuns.isEmpty)
+    }
+
+    /// A clone of the pull request's repository, as Azure DevOps names it, that fetches from one on disk: release/x and the
+    /// pull request's branch started from main's first commit, and main went a commit further. The clone is detached at the
+    /// branch, with main merged in, as resolving its conflicts against main left it.
+    private func resolvedAgainstMain(in home: URL) async throws -> URL {
+        struct GitFailed: Error { let message: String }
+        let environment = ["PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"]
+        func git(_ arguments: [String]) async throws {
+            let result = try await ProcessRunner().run(URL(fileURLWithPath: "/usr/bin/git"), arguments: arguments, environment: environment, timeout: 60)
+            guard result.status == 0 else { throw GitFailed(message: String(decoding: result.stderr, as: UTF8.self)) }
+        }
+        let identity = ["-c", "user.name=Robin Diaz", "-c", "user.email=robin@example.com"]
+        let seed = home.appendingPathComponent("seed")
+        let origin = home.appendingPathComponent("origin.git")
+        let checkout = home.appendingPathComponent("checkout")
+        func commit(_ text: String, to file: String) async throws {
+            try "\(text)\n".write(to: seed.appendingPathComponent(file), atomically: true, encoding: .utf8)
+            try await git(["-C", seed.path, "add", file])
+            try await git(["-C", seed.path] + identity + ["commit", "--quiet", "-m", text])
+        }
+        try await git(["init", "--quiet", "--initial-branch=main", seed.path])
+        try await commit("Storefront", to: "README.md")
+        try await git(["-C", seed.path, "branch", "release/x"])
+        try await git(["-C", seed.path, "checkout", "--quiet", "-b", pullRequest.sourceBranch])
+        try await commit("Totals", to: "totals.txt")
+        try await git(["-C", seed.path, "checkout", "--quiet", "main"])
+        try await commit("Main's work", to: "main.txt")
+        try await git(["clone", "--quiet", "--bare", seed.path, origin.path])
+        try await git(["clone", "--quiet", origin.path, checkout.path])
+        let remote = "https://dev.azure.com/contoso/Storefront/_git/shop-web"
+        try await git(["-C", checkout.path, "remote", "set-url", "origin", remote])
+        try await git(["-C", checkout.path, "config", "url.\(origin.path).insteadOf", remote])
+        try await git(["-C", checkout.path, "checkout", "--quiet", "--detach", "origin/\(pullRequest.sourceBranch)"])
+        try await git(["-C", checkout.path] + identity + ["merge", "--quiet", "--no-edit", "origin/main"])
+        return checkout
+    }
+
+    /// Push & Reply goes once what the folder the session works in would push is checked, against the branch the pull
+    /// request merges into now. While it holds a merge of what that branch doesn't have, as when the pull request was
+    /// retargeted after its conflicts were resolved there, nothing's sent, copied or shown; nor while BriefBar can't
+    /// check, as in a folder that isn't a clone of its repository. Against the branch it merged, it goes.
+    @Test(.timeLimit(.minutes(1)))
+    func sendsNoPushOfAMergeTheTargetDoesntHave() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        var shown: [String] = []
+        var copied: [String] = []
+        store.showForTests = { id in shown.append(id); return true }
+        store.openForTests = { _, text in copied.append(text); return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        ext.start()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        try work(session, in: try await resolvedAgainstMain(in: home), home: home)
+        // The window opened as the pull request merged into main; the list has read since that it merges into release/x.
+        var target: String? = "release/x"
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        store.currentTarget = { $0 == key ? target : nil }
+
+        let refused = await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest)
+        #expect(refused == .notSent("‘Fix the totals’ holds a merge that release/x doesn't have, so nothing went. Fix the pull request in a new session."))
+        #expect(ext.received.isEmpty)
+        #expect(requests(home).isEmpty)
+        #expect(shown.isEmpty && copied.isEmpty)
+        #expect(store.deliveringFolders.isEmpty && store.delivering.isEmpty)
+
+        let elsewhere = home.appendingPathComponent("elsewhere", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try work(session, in: elsewhere, home: home)
+        guard case .notSent(let why) = await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) else {
+            Issue.record("BriefBar sent a push it couldn't check")
+            return
+        }
+        #expect(why.hasPrefix("BriefBar couldn't check what ‘Fix the totals’ would push, so nothing went: "))
+        #expect(ext.received.isEmpty && copied.isEmpty)
+
+        target = nil
+        try work(session, in: home.appendingPathComponent("checkout", isDirectory: true), home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        #expect(ext.received == ["Push and reply"])
+        #expect(copied.isEmpty)
+    }
+
+    /// Checked against main, a Push & Reply doesn't go once the list reads that the pull request merges into release/x,
+    /// before the prompt is sent or copied: while git checks, after BriefBar wrote the prompt for the session's extension
+    /// but before the extension took it, which BriefBar takes back, and right before BriefBar copies it for you to paste.
+    @Test(.timeLimit(.minutes(1)))
+    func sendsNoPushOnceThePullRequestMergesIntoAnotherBranch() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        var copied: [String] = []
+        store.showForTests = { _ in true }
+        store.openForTests = { _, text in copied.append(text); return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        try work(session, in: try await resolvedAgainstMain(in: home), home: home)
+        // Main until the list reads release/x: from the given look on, or from when the test says.
+        var looks = 0
+        var retargetedAt = Int.max
+        var retargeted = false
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        store.currentTarget = { asked in
+            guard asked == key else { return nil }
+            looks += 1
+            return retargeted || looks >= retargetedAt ? "release/x" : "main"
+        }
+        let refused = SessionDelivery.notSent(
+            "The pull request now merges into release/x, so nothing went. Send it again, for BriefBar to check ‘Fix the totals’ against release/x."
+        )
+
+        // Read while git checks against main.
+        retargetedAt = 2
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(requests(home).isEmpty)
+
+        // Read once the prompt is written for the extension, which hasn't taken it.
+        looks = 0
+        retargetedAt = Int.max
+        let sending = Task { await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) }
+        for _ in 0..<2000 where requests(home).isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!requests(home).isEmpty)
+        retargeted = true
+        #expect(await sending.value == refused)
+        #expect(requests(home).isEmpty)
+
+        // Read right before BriefBar copies it, with Send Prompts to Copilot Sessions off.
+        CopilotSessionPrompts.set(false, in: store.settings.defaults)
+        looks = 0
+        retargetedAt = 3
+        retargeted = false
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(copied.isEmpty)
+        #expect(ext.received.isEmpty)
+        #expect(store.deliveringFolders.isEmpty && store.delivering.isEmpty)
+
+        // While it merges into main still, it goes.
+        CopilotSessionPrompts.set(true, in: store.settings.defaults)
+        retargetedAt = Int.max
+        ext.start()
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        #expect(ext.received == ["Push and reply"])
     }
 
     /// A prompt about comments is kept as sent from when delivering it started, before the session's extension took it:
@@ -540,7 +689,8 @@ private final class TakenAt: Sendable {
         #expect(unanswered == .fellBack(SessionFallback(reason: SendFailure.unanswered.description, session: session)))
         #expect(copied == ["Fix the comments"])
         #expect(requests(home).isEmpty)
-        #expect(handed == 1)
+        // Copied, it's handed off only once it's seen pasted in the session (`copiedPromptsWaitToBePasted`).
+        #expect(handed == 0)
         if case .fellBack(let fallback) = unanswered {
             #expect(CopilotComposerView.fallbackNote(fallback) == "BriefBar's extension in the session didn't answer. BriefBar copied the prompt and opened the session in the Copilot app: paste it there, and send it.")
         }
@@ -706,7 +856,8 @@ private final class TakenAt: Sendable {
         }
         #expect(fallback.wasForeseen)
         #expect(copied == ["Fix the comments"])
-        #expect(handed == 1)
+        // Copied, it's handed off only once its turn is seen to start.
+        #expect(handed == 0)
     }
 
     /// The session of a task that BriefBar started with the CLI isn't one of the app's, which the app could load: BriefBar
@@ -1280,6 +1431,105 @@ private final class TakenAt: Sendable {
         }
         #expect(fallback.mayHaveSent)
         #expect(CopilotComposerView.fallbackNote(fallback) == "The session didn't take the prompt: Timed out. BriefBar copied the prompt and opened the session in the Copilot app: paste it there, and send it. If the session has it already, don't.")
+    }
+
+    /// A prompt BriefBar copied for you to paste takes the comments it quotes off Needs You only once BriefBar sees it in a
+    /// message sent the session, which says you pasted it: another message, sent before it or instead, is the session's
+    /// own; and one you don't paste, which BriefBar forgets, leaves them there.
+    @Test func copiedPromptsWaitToBePasted() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.openForTests = { _, _ in true }
+        var handed: [String] = []
+        store.handedOff = { _, prompt in handed.append(prompt) }
+        // No extension listens in it: BriefBar copies the prompt.
+        try hold(session, home: home)
+        let about = SentPrompt.About(pullRequest: PRKey("contoso", 4071), purpose: .fix, parts: [.thread(11)])
+        let text = "Fix the comments\n\nThen   run the tests."
+        guard case .fellBack = await store.deliver(text, to: choice(session), handOff: handOff, about: about) else {
+            Issue.record("BriefBar didn't copy the prompt")
+            return
+        }
+        #expect(handed.isEmpty)
+        let prompt = try #require(store.settings.copilotSentPrompts.first)
+        #expect(store.copiedPrompts[prompt.id]?.text == text)
+        func follow(at date: Date) async throws {
+            store.followSentPrompts(now: date)
+            for _ in 0..<400 where store.isFollowingPrompts {
+                try await Task.sleep(for: ExtensionStandIn.lookEvery)
+            }
+        }
+        let log = home.appendingPathComponent("session-state/\(session)/events.jsonl")
+        func send(_ content: String, at date: Date) throws {
+            let stamp = date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+            let data = String(decoding: try JSONSerialization.data(withJSONObject: ["content": content]), as: UTF8.self)
+            let line = #"{"type":"user.message","data":\#(data),"id":"a","timestamp":"\#(stamp)","parentId":null}"# + "\n"
+            if !FileManager.default.fileExists(atPath: log.path) { try Data().write(to: log) }
+            let handle = try FileHandle(forWritingTo: log)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(line.utf8))
+        }
+        // Not pasted yet.
+        try await follow(at: Date())
+        #expect(handed.isEmpty)
+        // Another message: the session's own turn, not the prompt's.
+        try send("What does this change do?", at: Date().addingTimeInterval(1))
+        try await follow(at: Date().addingTimeInterval(2))
+        #expect(handed.isEmpty)
+        #expect(store.promptTurns[prompt.id]?.phase == .waiting)
+        #expect(store.copiedPrompts[prompt.id] != nil)
+        // Pasted, with words of yours around it, its lines and spaces broken otherwise.
+        try send("Please:\n\nFix the comments\nThen run the tests.\n\nThanks", at: Date().addingTimeInterval(3))
+        try await follow(at: Date().addingTimeInterval(4))
+        #expect(handed == [text])
+        #expect(store.copiedPrompts.isEmpty)
+        #expect(store.promptTurns[prompt.id]?.phase != .waiting)
+
+        // One not pasted within half an hour goes, and hands nothing off.
+        try FileManager.default.removeItem(at: log)
+        store.settings.copilotSentPrompts = []
+        guard case .fellBack = await store.deliver("Fix them again", to: choice(session), handOff: handOff, about: about) else {
+            Issue.record("BriefBar didn't copy the prompt")
+            return
+        }
+        try await follow(at: Date().addingTimeInterval(SentPrompt.pasteWait + 60))
+        #expect(store.settings.copilotSentPrompts.isEmpty)
+        #expect(store.copiedPrompts.isEmpty)
+        #expect(handed == [text])
+    }
+
+    /// Stop, on a prompt's line, stops its session's turn through BriefBar's extension there, as the app's own Stop does.
+    /// An extension that can't, as one that started before it could, or Send Prompts to Copilot Sessions turned off, has
+    /// BriefBar show the session, to stop it there, and say so.
+    @Test func stopsASessionsTurnThroughItsExtension() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var shown: [String] = []
+        store.showForTests = { shown.append($0); return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen(kinds: ["send", "fork", "stop"])
+        ext.start()
+        defer { ext.stop() }
+        try hold(session, home: home)
+
+        #expect(await store.stopTurn(in: session) == nil)
+        #expect(ext.received == ["stop"])
+        #expect(shown.isEmpty)
+
+        // An extension from before BriefBar could ask it to stop.
+        try ext.listen(kinds: ["send", "fork"])
+        #expect(await store.stopTurn(in: session) == "BriefBar's extension in the session can't stop it. Stop it in the session, which BriefBar showed.")
+        #expect(ext.received == ["stop"])
+        #expect(shown == [session])
+
+        CopilotSessionPrompts.set(false, in: store.settings.defaults)
+        #expect(await store.stopTurn(in: session)?.hasPrefix("BriefBar can't stop it while \(CopilotSessionPrompts.title) is off.") == true)
+        #expect(requests(home).isEmpty)
+
+        // Nothing once Azure DevOps stopped.
+        store.stop()
+        #expect(await store.stopTurn(in: session) == CopilotTasksStore.cantSendNow)
     }
 
     /// The demo sends nothing, and reads nothing of yours.

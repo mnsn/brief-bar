@@ -1002,12 +1002,11 @@ final class PRStore: ObservableObject {
         settings.setRead(thread, of: key, to: mark.before, for: mark.account, sentInChat: sentInChats([key]).contains(key))
     }
 
-    /// What Copilot can do with a pull request now (`PullRequestTasks.actions`): Push & Reply once a task that changed
-    /// code has finished, in its session.
-    func copilotActions(for item: PRSnapshot, continuable: CopilotRun?) -> [PullRequestAction] {
+    /// What Copilot can do with a pull request now (`PullRequestTasks.actions`), but Push & Reply, which a pull request's
+    /// menus offer for the fixes it ships, by session (`CopilotTasksStore.pushes(of:)`).
+    func copilotActions(for item: PRSnapshot) -> [PullRequestAction] {
         guard let record = record(for: item.key) else { return [] }
-        let canShip = continuable.map { $0.action?.changesCode == true && $0.ended == .finished } ?? false
-        return PullRequestTasks.actions(for: record, canShip: canShip)
+        return PullRequestTasks.actions(for: record, canShip: false)
     }
 
     /// Writes the prompts for what Copilot should do with a pull request, then opens the composer with them: for a failed
@@ -1016,20 +1015,21 @@ final class PRStore: ObservableObject {
     /// (`PullRequestTasks.parts`).
     /// - Parameters:
     ///   - start: where it goes to begin with, rather than BriefBar's suggestion, such as the session whose fixes Push &
-    ///     Reply ships.
-    ///   - parts: for Push & Reply, what the fixes it ships took on: its prompt lists their threads alone, and replies on
-    ///     those alone, or on none for a build's fix alone; without any, it lists those Fix Comments does.
+    ///     Reply ships, which it always has.
+    ///   - parts: for Push & Reply, what the fixes it ships took on, in that session: its prompt lists their threads alone,
+    ///     and replies on those alone, or on none for a build's fix alone, or for none at all.
     func composeCopilot(
         _ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore, start: ComposerStart? = nil,
         parts: [PullRequestPart] = []
     ) {
         guard let record = record(for: item.key) else { return }
         let pr = record.pullRequest
-        // Push & Reply for some fixes, such as one session's when they're in more than one, ships, replies on and hands off
-        // their threads alone.
-        let scope = action == .pushAndReply ? PullRequestTasks.shippedThreads(parts) : nil
+        // Push & Reply ships, replies on and hands off the threads of the fixes it ships alone, those of the session it goes
+        // on with: never the others that wait on you, which another session may have fixed.
+        let shipping: [PullRequestPart]? = action == .pushAndReply ? parts : nil
+        let scope = PullRequestTasks.shippedThreads(shipping)
         let handOff = commentHandOff(action, for: record, threads: scope)
-        let taken = PullRequestTasks.parts(action, for: record, shipping: action == .pushAndReply ? parts : [])
+        let taken = PullRequestTasks.parts(action, for: record, shipping: shipping)
         // What its details read of its builds, which Fix the Build quotes rather than only their errors.
         var investigations: [Int: BuildInvestigation] = [:]
         if action == .fixBuild {

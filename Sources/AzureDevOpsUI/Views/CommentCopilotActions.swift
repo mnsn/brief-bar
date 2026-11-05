@@ -33,15 +33,20 @@ struct ThreadCopilotActions: View {
     @EnvironmentObject private var code: PullRequestCodeStore
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.copilotActionsPreview) private var preview
+    @Environment(\.isRendering) private var isRendering
     /// The window's page it's on, which the code of its thread is read only while the window shows on screen.
     @Environment(\.shownSection) private var section
     @Environment(\.shownWindow) private var window
 
     /// What BriefBar said once it copied a prompt for you to paste, until you close it.
     @LocalState private var copied: String?
+    /// Why BriefBar didn't stop what Copilot is at on it itself, until you close it.
+    @LocalState private var stopNote: String?
     @LocalState private var isAskingInSession = false
     /// What it tells the code store it is, for its thread's code to be read for Ask in the Session.
     @LocalState private var viewer = UUID()
+    /// How many times Try Again opened its composer: one open already opens anew, to send again.
+    @LocalState private var tries = 0
     /// Explain or Fix, for the keyboard's focus to go back to once its composer closes.
     @FocusState private var focused: CopilotAsk?
 
@@ -89,7 +94,7 @@ struct ThreadCopilotActions: View {
     var body: some View {
         let work = work
         let question = question
-        let hasLines = copilot.isOn && (question != nil || work != nil || copied != nil)
+        let hasLines = copilot.isOn && (question != nil || work != nil || copied != nil || stopNote != nil)
         // Your reply, open on it, takes the row's place, as a composer of Copilot's does: while you can reply.
         let isReplying = yours != nil && composing == .reply(to: thread.id)
         let showsRow = !isReplying && (canAct || yours != nil)
@@ -105,6 +110,9 @@ struct ThreadCopilotActions: View {
                     if let copied {
                         CopilotCopiedNote(note: copied) { self.copied = nil }
                     }
+                    if let stopNote {
+                        CopilotCopiedNote(note: stopNote, symbol: "stop.circle") { self.stopNote = nil }
+                    }
                 }
                 if canAct, let asking {
                     CommentComposer(
@@ -114,10 +122,10 @@ struct ThreadCopilotActions: View {
                         if case .copied(let note)? = result { copied = note }
                         close(asking)
                     }
-                    // A new composer for each, with its own words and where it goes.
-                    .id(asking)
+                    // A new composer for each, with its own words and where it goes, and for each Try Again.
+                    .id(CopilotComposerID(ask: asking, tries: tries))
                 } else if showsRow {
-                    buttons(hasAnswer: question?.answer != nil, showsCopilot: canAct)
+                    buttons(hasAnswer: question?.answer != nil, showsCopilot: canAct, isFixing: isFixing(work))
                 }
             }
             .padding(.horizontal, 10)
@@ -132,8 +140,8 @@ struct ThreadCopilotActions: View {
     }
 
     /// Explain and Fix, while you can ask Copilot about it, then your own actions on it, at the row's end: on one line while
-    /// they fit, else yours under Copilot's.
-    private func buttons(hasAnswer: Bool, showsCopilot: Bool) -> some View {
+    /// they fit, else yours under Copilot's. Not Fix while Copilot fixes it, or pushes its fix: its line's menu stops that.
+    private func buttons(hasAnswer: Bool, showsCopilot: Bool, isFixing: Bool) -> some View {
         let nobody = hasNobodyToAsk
         let explainTitle: String = hasAnswer ? "Ask More" : "Explain"
         let copilotButtons = HStack(spacing: 6) {
@@ -146,7 +154,7 @@ struct ThreadCopilotActions: View {
                 .focused($focused, equals: .explain)
                 .disabled(nobody)
                 .help(explainHelp(nobody: nobody, hasAnswer: hasAnswer))
-                if canFix {
+                if canFix, !isFixing {
                     Button {
                         open(.fix)
                     } label: {
@@ -196,24 +204,49 @@ struct ThreadCopilotActions: View {
         return "Have Copilot address this comment, as you say: it doesn't commit, push or reply"
     }
 
-    /// Opens its composer, closing any other in the comments, whose words stay for when it opens again.
+    /// Whether Copilot fixes it now, or pushes its fix: by a fix or Push & Reply, whatever its line says, as a question sent
+    /// since to another session (`CopilotTasksStore.isFixing`); in pictures, as their line draws it.
+    private func isFixing(_ work: CopilotWork?) -> Bool {
+        preview == nil ? copilot.isFixing(part, of: item.key) : work?.isFixing == true
+    }
+
+    /// Opens its composer, closing any other in the comments, whose words stay for when it opens again: for you to send, not
+    /// what Try Again asked of it before.
     private func open(_ ask: CopilotAsk) {
         copied = nil
-        composing = CopilotComposing(part: part, ask: ask)
+        stopNote = nil
+        let composer = CopilotComposing(part: part, ask: ask)
+        drafts.retries[composer] = nil
+        composing = composer
+    }
+
+    /// Try Again, from its line's menu: Fix's composer, anew, with the words the fix that failed or stopped went with, which
+    /// sends them again, where that fix went, as it opens, if it can go.
+    private func tryAgain(_ work: CopilotWork) {
+        open(.fix)
+        let words = copilot.retryWords(for: work, of: item.key)
+        drafts.retry(CopilotComposing(part: part, ask: .fix), words: words, to: names.retryDestination(of: work))
+        tries += 1
     }
 
     /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
     private func close(_ ask: CopilotAsk) {
         guard composing == CopilotComposing(part: part, ask: ask) else { return }
+        drafts.retries[CopilotComposing(part: part, ask: ask)] = nil
         composing = nil
         Task { @MainActor in focused = ask == .fixAll ? nil : ask }
     }
 
     private func workLine(_ work: CopilotWork) -> some View {
         let look = work.look
+        let names = names
         return CopilotWorkLine(
             symbol: look.symbol, text: names.sentence(work), state: look.state, since: work.since, now: now, subtitle: work.step,
-            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation)
+            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation),
+            actions: names.lineActions(
+                for: work, about: part, of: item.key, isRendering: isRendering, tryAgain: canAct && canFix ? { tryAgain(work) } : nil,
+                stopped: { stopNote = $0 }
+            )
         )
     }
 
@@ -380,6 +413,8 @@ struct CommentComposer: View {
     @Environment(\.shownWindow) private var window
 
     @LocalState private var appliesSuggestion = false
+    /// Try Again set whether it applies the suggestion, as the fix it tries again did: its default doesn't change that.
+    @LocalState private var restoredByRetry = false
     @LocalState private var hasAppeared = false
     /// What it tells the code store it is, as a view that shows its thread's code does, for the code to be read for it.
     @LocalState private var viewer = UUID()
@@ -422,12 +457,14 @@ struct CommentComposer: View {
         return excerpt
     }
 
-    /// What it asks, and the prompts it sends: the thread's, or Fix Comments' for Fix All.
+    /// What it asks, and the prompts it sends: the thread's, or Fix Comments' for Fix All. Whether a fix applies the
+    /// suggestion is as it is when the fix is written, which Try Again may have set as it opened.
     private var asking: CopilotAsking {
         let item = item
         let record = record
         let thread = ask == .fixAll ? nil : thread
-        let suggestion = appliesSuggestion ? suggestion : nil
+        let composer = self
+        let suggestion = suggestion
         let store = store
         let copilot = copilot
         let session = sessions.session(for: item.key)
@@ -447,12 +484,15 @@ struct CommentComposer: View {
         return CopilotAsking(
             ask: ask, part: thread.map { .thread($0.id) }, action: .fixComments,
             title: ask == .fixAll ? fixAllTitle : nil, sendTitle: ask == .fixAll ? fixAllTitle : nil, prepare: prepare,
+            restore: { words in composer.restore(words, suggestion: suggestion) },
             fix: { how, answer in
                 guard let record else {
                     return CopilotSending.Fix(prompts: ("", ""), action: .fixComments, parts: [], handOff: nil)
                 }
                 return CopilotSending(item: item, record: record, store: store, copilot: copilot, session: session)
-                    .commentFix(thread, how: how, suggestion: suggestion, answer: answer, excerpt: readExcerpt())
+                    .commentFix(
+                        thread, how: how, suggestion: composer.appliesSuggestion ? suggestion : nil, answer: answer, excerpt: readExcerpt()
+                    )
             },
             question: { asked, earlier in
                 guard let record, let thread else { return "" }
@@ -494,10 +534,24 @@ struct CommentComposer: View {
                 appliesSuggestion = preview.appliesSuggestion
                 return
             }
-            // A suggestion that's the thread's last word is what it asks for: Fix applies it, unless you say otherwise.
-            if let suggestion, suggestion.commentId == thread?.comments.last?.id { appliesSuggestion = true }
+            // A suggestion that's the thread's last word is what it asks for: Fix applies it, unless you say otherwise, or
+            // Try Again said as the fix it tries again did.
+            if !restoredByRetry, let suggestion, suggestion.commentId == thread?.comments.last?.id { appliesSuggestion = true }
         }
     }
+
+    /// Try Again: applies the suggestion as the fix it tries again did, the same one, or none (`CopilotAsking.restore`).
+    /// Nil once it can go as that fix did; else why not, as when the suggestion it applied isn't the thread's latest now,
+    /// which it doesn't apply in its place.
+    private func restore(_ words: CopilotTasksStore.FixWords, suggestion: CommentSuggestion?) -> String? {
+        restoredByRetry = true
+        appliesSuggestion = words.suggestion != nil && words.suggestion == suggestion
+        guard words.suggestion == nil || words.suggestion == suggestion else { return Self.suggestionGone }
+        return nil
+    }
+
+    /// What Try Again's composer says when the suggestion the fix it tries again applied isn't the thread's latest now.
+    static let suggestionGone = "The suggestion that fix applied isn't the thread's latest now, so nothing went yet: check it, then send it."
 }
 
 // MARK: - The comments' header
