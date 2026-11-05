@@ -33,10 +33,10 @@ build:
 # every test process ran to its end: one that ends early, with status 0, would otherwise pass without the tests it
 # hadn't run (scripts/check-test-events.sh).
 test:
-	@rm -f $(TEST_EVENTS)
+	@rm -f "$(TEST_EVENTS)"
 	LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test --arch arm64 $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS)) \
-		--event-stream-output-path $(TEST_EVENTS) --event-stream-version 0
-	@scripts/check-test-events.sh $(TEST_EVENTS)
+		--event-stream-output-path "$(TEST_EVENTS)" --event-stream-version 0
+	@scripts/check-test-events.sh "$(TEST_EVENTS)"
 
 # BriefBar's extension for the Copilot app's sessions (Resources/CopilotPlugin/briefbar-sessions), with Node's test
 # runner and a stand-in for the Copilot SDK, in Tests/CopilotPlugin so that the tests don't ship. CI runs it.
