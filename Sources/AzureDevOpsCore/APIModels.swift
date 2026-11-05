@@ -441,6 +441,10 @@ public struct ADOComment: Decodable, Sendable {
     public var author: ADOIdentity?
     public var content: String?
     public var publishedDate: Date?
+    /// When what it says last changed: when it was published, until its author edits it.
+    public var lastContentUpdatedDate: Date?
+    /// When anything of it last changed, such as who likes it.
+    public var lastUpdatedDate: Date?
     /// `text`, `system` or `codeChange`.
     public var commentType: String?
     public var isDeleted: Bool?

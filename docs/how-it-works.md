@@ -1165,9 +1165,9 @@ authentication library (MSAL) can be added once there's an app registration to s
 
 ### Where the data comes from
 
-All requests are GETs to the Azure DevOps REST API (version 7.1), but for the four changes **Make Changes in Azure
-DevOps** makes, last in the table, each when you click it ([below](#replying-and-setting-a-threads-status), and
-[a pull request's tags](#a-pull-requests-tags)):
+All requests are GETs to the Azure DevOps REST API (version 7.1), but for the six changes **Make Changes in Azure
+DevOps** makes, last in the table, each when you click it ([below](#replying-and-setting-a-threads-status),
+[your comments](#editing-and-deleting-your-comments) and [a pull request's tags](#a-pull-requests-tags)):
 
 | Request | When | Provides |
 |---|---|---|
@@ -1202,6 +1202,8 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
 | `PATCH {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}` | the same, when you set a thread's status, or after your reply with Reply & Resolve or Reply & Reactivate: once | the thread's status alone; Azure DevOps answers with the thread, its comments as it has them now |
+| `PATCH {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments/{comment}` | the same, when you save a comment of yours you edited: once | what the comment says now, alone; Azure DevOps answers with the comment, as it keeps it |
+| `DELETE {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments/{comment}` | the same, when you delete a comment of yours: once | nothing but the comment; Azure DevOps keeps it, marked deleted, and deletes its thread once none of its comments is left |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only in a pull request's details, for one whose lists don't carry its tags, such as one sent to you or that you watch: as they show on a window's page on screen, then ten minutes after they were read, and half a minute after a read of them failed, while they show; and after a change to its tags, as it settles, though Make Changes in Azure DevOps went off meanwhile, below | its tags |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only with Make Changes in Azure DevOps on, when you add a tag to an open pull request: once | the tag's name; Azure DevOps answers with the tag as the project has it, which it makes when the project has none of that name |
 | `DELETE {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels/{tag}` | the same, when you click a tag's ✕: once | nothing but the tag, by the project's tag's ID; the project keeps the tag |
@@ -1505,9 +1507,11 @@ VoiceOver (`ThreadReadOnlyMark`), and a change that finds it so says so on the t
 `closed`) rather than nothing. They're the only changes BriefBar makes in Azure DevOps (`ADOWrite`, in
 `Sources/AzureDevOpsCore`): your reply in a thread, a `POST` of a comment, in reply to the thread's first, with the body
 Azure DevOps' samples send (`content`, `parentCommentId` and `commentType` 1, text), and a thread's status, a `PATCH` of
-only that (`status`, by the number the API takes for it). `ADOClient.send(_:as:)` alone sends them, with a GET's
-sign-in, headers and redirect guard, from the same request path, once: it sends one again only when Azure DevOps
-rejected the sign-in, which it never acts on, so a change that fails otherwise, or times out, isn't made twice. Once it
+only that (`status`, by the number the API takes for it); and a comment of yours, edited or deleted
+([below](#editing-and-deleting-your-comments)), and a pull request's tags ([below](#a-pull-requests-tags)).
+`ADOClient.send(_:as:)` alone sends them, with a GET's sign-in, headers and redirect guard, from the same request path,
+once: it sends one again only when Azure DevOps rejected the sign-in, which it never acts on, so a change that fails
+otherwise, or times out, isn't made twice. Once it
 has gone, nothing calls it off, as turning the setting off would, since that wouldn't take it back, only lose what Azure
 DevOps answers: it settles with that, or with why it failed. When Azure DevOps refuses one, the error says why, as it
 said it (`ADOError.refused`, TF401181 for a pull request that's completed or abandoned), which shows on the thread but
@@ -1615,6 +1619,81 @@ and with a Copilot model chosen; a reply and a status that couldn't be made; a p
 one that left your lists; then, from lists of their own with them made as the demo makes them, a thread replied to and
 resolved, and one set to Won't Fix; and the setting, as Settings shows it (`ThreadChangesPreview`,
 `threadChangeRenderings`).
+
+#### Editing and deleting your comments
+
+With **Make Changes in Azure DevOps** on, on an open pull request (`ThreadChanges.canChange`), a comment of yours has
+**Edit** and **Delete…**, in a **⋯** menu at the end of its line, in its right-click menu, before its thread's, and as
+VoiceOver's actions on it (`CommentLine`): only one whose author is the identity the list was read as (`PRRecord.me`),
+and that someone wrote, of type `text` or of none, not a code change's (`ReviewComment.isEditable`); system comments and
+deleted ones are never read. **Edit** opens your reply's composer in place of what the comment says
+(`ThreadReplyComposer.editing`), the details' one composer in place (`CopilotComposing.edit(_:in:)`), with Fix Grammar,
+**Cancel**, which Esc presses, and **Save**, which ⌘Return presses. It holds what the comment says as Azure DevOps keeps
+it, each mention as the name it shows, as the details named it as they read the thread, by its identities and the authors
+of comments they leave out too (`ReviewComment.mentionNames`), and saves those names as mentions again (`CommentEditing`):
+a mention whose name
+isn't known, that two of them share, that the comment says as text too, or that wouldn't come back as it was, stays as
+Azure DevOps keeps it, `@<…>`, so that what you leave as it was goes as it was. What you write is kept as you type
+(`ThreadChanges.keepEdit`), in memory only, once it says something else than what you began with, with what the comment
+said then (`ThreadChanges.EditDraft`), until it's saved or you cancel, which forgets it, as turning the setting off,
+Azure DevOps stopping or someone else signing in do. Opened again, the edit has what you wrote, while the comment still
+says what it said as you began; once it says something else, as edited elsewhere, it starts again from what it says
+now, and what you wrote goes (`ThreadChanges.startEditing`): saved, it would put back what the comment said. Its names go
+back as the mentions they showed as you began, though the comment changed meanwhile. Saving is a `PATCH` of what the
+comment says alone, `content` (`ADOWrite.editComment`), unless it says what you began with, or what the comment says now,
+when nothing goes; Azure DevOps answers with the comment as it keeps it, which shows at once in its place
+(`ThreadChange.edited`), but never over a later edit of it, as one made elsewhere that a read had before the answer
+came, as Azure DevOps dates each edit, then or as the list reads it again (`PRDetails.apply`); with **· Edited** after
+when it was written, from its
+`lastContentUpdatedDate`, once that's a second or more after its `publishedDate`, or, when the answer doesn't say, its
+`lastUpdatedDate`, or as you saved it (`ReviewComment.editedAt`). **Delete…** asks first, under what the comment says, that Azure DevOps deletes
+it, as you, and that it can't be undone (`CommentDeleteConfirmation`, `CopilotComposing.deleting(_:in:)`), with
+**Cancel**, which Esc presses, and **Delete**, which waits while another change to the thread is on its way, as a status
+set from its menu or in another window, since a thread takes one at a time. Deleting is a `DELETE` of the comment, with
+no body (`ADOWrite.deleteComment`), whose answer, 200 with nothing, as Azure DevOps' REST reference has it, says it's
+done.
+Azure DevOps keeps a deleted comment, marked `isDeleted`, and deletes its thread once none of its comments is left (the
+thread's `isDeleted`), as the reference says, and its own pages show neither: nor does BriefBar, which never read them,
+so the comment leaves its thread at once, and the thread leaves the details once it has none left (`PRDetails.apply`).
+After either, as after a reply, the pull request is read again, two requests (`PRStore.changed`, `PulseEngine.changed`).
+While a comment of yours is open to edit or delete, its thread's comments don't fold, wherever it is among them, though a
+reply that comes meanwhile would make it one of those between the first and the latest (`ThreadCard.folded`), and they
+stay unfolded once it closes; once the comment leaves its thread, as deleted elsewhere, what was open on it closes, and
+what went wrong with it shows on the thread (`ThreadReplyArea.showsInItsComposer`). Saved or canceled, as the composer
+open, your edit gives the keyboard's focus back to the comment's ⋯, and so does what confirms you delete it, as you keep
+the comment; once a comment you deleted is done with, the thread's Reply takes it, unless a composer opened meanwhile,
+though it closed since (`ThreadRefocus`), as Reply does after your reply.
+
+Both go as a reply does: each only when you click, as whom the list was read as when you did, and once while a change
+to the thread is on its way (`ThreadChanges.isSending`), which the same pull request's details in two windows share;
+called off before it goes as the setting goes off, and settling once it's gone, its thread waiting for it, or doing
+nothing as it settles when someone else signed in meanwhile (`ThreadChanges.settling`, `lifetime`). One that may have
+been made, as one Azure DevOps didn't answer in time, has its pull request read again; and the same edit goes again
+only once its thread, read again first, says the comment doesn't say it (`ThreadChanges.EditAttempt`, a fingerprint of
+what it said, `digest`), and the deletion only once the thread still has the comment, and the pull request is still open
+in your lists: nothing goes while the thread can't be read (`ADOWriteProblem.unconfirmed`). One the thread says was made
+shows at once, as the thread has it, over an edit of the comment from before, or the reply that added it, which the list
+would otherwise show until a snapshot had them, which none will. One that didn't happen says why on the thread (`ADOWriteProblem`), or, an
+edit, in your edit, which stays open with what you wrote, with **Edit…**, **Try Again** or **Sign In…** when they may
+help; a comment Azure DevOps doesn't have anymore has its pull request read again, to show it gone. The list keeps
+the change over its refreshes until a snapshot has it, each after those before it, so that the edit of a reply a
+snapshot doesn't have yet shows with it; an edit takes the place of the comment's edits before it, and a deletion, of
+those and of the reply that added the comment, so that none puts back what it said (`PRStore.adding`,
+`PRStore.pending`). The demo makes them up (`DemoThreadChanges.edit`, `delete`), in its made-up data only.
+
+In your reply and your edit, the Mac checks your spelling as you type, in the system's languages, and the right-click
+menu suggests words (`spellChecked()`). SwiftUI's `TextEditor` turns its text view's continuous spell checking on only
+with autocorrection (`autocorrectionDisabled(false)`), and sets both again each time it updates the editor, as you
+type: so a view behind it, as big as it is, finds its text view, the one there, and turns autocorrection off again
+each time SwiftUI turns it on (`SpellCheckingProbe`, with key-value observing), with text replacement, smart quotes and
+dashes, which would change code, links and mentions as you type, and grammar checking, which Fix Grammar does when you
+ask. The editor, its focus, its size, its shortcuts and what you wrote are as they were.
+
+`--render` draws, in the demo, your comment on the first thread that waits on you with its **⋯** menu open (a picture
+of it, `MenuPicture`, since `--render` can't draw a menu, which macOS draws in a window of its own), as you edit it, as
+you delete it, and when it couldn't be deleted; then, from a list of its own with it made as the demo makes it, the
+comment edited (`threadChangeRenderings`). The underlines spelling draws don't show in its pictures, whose windows are
+offscreen.
 
 #### A pull request's tags
 
@@ -3613,6 +3692,7 @@ when BriefBar does.
 - `WriteTests` checks that the only changes BriefBar can make in Azure DevOps are those `ADOWrite` lists, each as it's
   sent, and that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET
   ([Replying and setting a thread's status](#replying-and-setting-a-threads-status),
+  [Editing and deleting your comments](#editing-and-deleting-your-comments),
   [A pull request's tags](#a-pull-requests-tags)).
 - `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar has
   no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the updater

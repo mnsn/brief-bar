@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **Edit and delete your comments.** With **Make Changes in Azure DevOps** on, a comment you wrote in a pull request's
+  details has **Edit** and **Delete…**, in its **⋯** and right-click menus. Edit opens it in place, as Reply does, with
+  **Fix Grammar**, and keeps whom it mentions; **Save** saves it in Azure DevOps, as you, and it shows as edited at once,
+  while **Cancel** or Esc keeps it as it was. Delete asks first, since it can't be undone, and the comment leaves its
+  thread, which leaves too once none of its comments is left, as in Azure DevOps. Neither goes twice, though you click
+  twice or Azure DevOps doesn't answer in time, and each says why when it can't, such as no permission or offline.
+- **Spell checking as you write.** Your reply, and a comment you edit, underline the words your Mac doesn't know as you
+  type, with suggestions in the right-click menu. Nothing is corrected by itself, so your code, links and mentions stay
+  as you type them.
+- **After this update, Azure DevOps asks you once to look at what it reads and keeps, and waits until you have.** With
+  Make Changes in Azure DevOps on, it now edits and deletes your comments when you click, and keeps what you write in
+  one, in memory only, until you save it.
+
 ## 0.16.2 - 2026-11-05
 
 - **Copilot's prompts keep what others wrote as theirs.** Fix, Resolve, Explain, Review and Push & Reply quote comments,

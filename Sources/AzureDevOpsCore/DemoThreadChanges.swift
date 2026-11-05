@@ -16,4 +16,21 @@ public enum DemoThreadChanges {
     public static func status(_ status: ThreadStatus, of thread: ReviewThread) -> ThreadChange {
         ThreadChange(thread: thread.id, status: status.rawValue)
     }
+
+    /// A comment of yours, edited, as Azure DevOps would keep it: saying what you wrote now, edited now.
+    public static func edit(_ markdown: String, of comment: ReviewComment, in thread: ReviewThread, at date: Date) -> ThreadChange {
+        var edited = comment
+        edited.text = CommentText.plain(markdown, names: [:])
+        edited.markdown = markdown
+        edited.mentions = CommentText.mentionedIds(markdown)
+        if edited.content != nil { edited.content = markdown }
+        edited.editedAt = max(date, comment.publishedAt)
+        return ThreadChange(thread: thread.id, edited: [edited])
+    }
+
+    /// A comment of yours, deleted, as Azure DevOps would delete it: it leaves its thread, which leaves too once none of its
+    /// comments is left.
+    public static func delete(_ comment: ReviewComment, in thread: ReviewThread) -> ThreadChange {
+        ThreadChange(thread: thread.id, deleted: [comment.id])
+    }
 }
