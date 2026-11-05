@@ -12,6 +12,8 @@
   Push & Reply… goes under the sentence rather than beside it.
 - **Fix All goes under Comments where their line has no room for both**, at a bigger text size or in a narrower
   window, rather than Comments breaking in two and Fix All's name being cut short.
+- **At a bigger text size, a pull request's details go over the list in a window too narrow for both**, as in a narrow
+  window, rather than running past the window's edge with their ✕ out of sight.
 - **Adding a tag shows the field and its suggestions**, scrolling the details as they appear, rather than leaving them
   under the fixes ready to push.
 - **A file's diff folds only runs of four or more unchanged lines**: fewer show, where a fold saved no room.

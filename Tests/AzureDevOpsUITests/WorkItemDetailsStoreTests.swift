@@ -610,6 +610,19 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(layout.panelWidth(nearest: 450) == 450)
     }
 
+    /// At a bigger text size, the list or board keeps room for its bigger text: the details go over it in a window too
+    /// narrow for both, rather than past the window's edge, and can be made only as wide as leaves it that room.
+    @Test func theListKeepsRoomForItsBiggerTextBesideTheDetails() {
+        #expect(DetailsLayout(width: 820, showsDetails: true).isBeside)
+        let medium = DetailsLayout(width: 820, showsDetails: true, textScale: 1.5)
+        #expect(!medium.isBeside && medium.coversContent)
+        #expect(DetailsLayout(width: 885, showsDetails: true, textScale: 1.5).isBeside)
+        let wide = DetailsLayout(width: 1_000, showsDetails: true, textScale: 1.5)
+        #expect(wide.isBeside && wide.panelWidth == 400 && wide.panelWidths == 330...445)
+        #expect(DetailsLayout(width: 774, showsDetails: true, textScale: 1.2).isBeside)
+        #expect(!DetailsLayout(width: 773, showsDetails: true, textScale: 1.2).isBeside)
+    }
+
     @Test func keepsHowWideYouMadeTheDetails() {
         let defaults = MemoryDefaults()
         let settings = AppSettings(defaults: defaults)

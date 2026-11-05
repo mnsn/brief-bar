@@ -47,7 +47,9 @@ struct PullRequestsPage: View {
                 .glassButtonStyle()
                 .help("Open in Azure DevOps")
             }
-            DetailsSplit(showsDetails: details.selected != nil, preferredWidth: $settings.pullRequestDetailsWidth) {
+            DetailsSplit(
+                showsDetails: details.selected != nil, preferredWidth: $settings.pullRequestDetailsWidth, listRoomGrowsWithText: true
+            ) {
                 list
             } details: {
                 PullRequestDetailsPanel()
