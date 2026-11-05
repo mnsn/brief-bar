@@ -62,7 +62,8 @@ done
     fail "--demo --source github --dump doesn't show the made-up account"
 
 # Agents: --mcp speaks the Model Context Protocol, one JSON-RPC message a line, with the made-up data. Teams and GitHub
-# have no tools. Pull Request Order's come last: on in the demo, which keeps its orders in memory.
+# have no tools. Pull Request Order's come next, and Updates from Copilot Sessions' last: both on in the demo, which keeps
+# what agents tell them in memory.
 MCP="$(printf '%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}' \
     '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -71,11 +72,12 @@ MCP="$(printf '%s\n' \
     '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"pull_request_prompt","arguments":{"pull_request":4088,"action":"fix_build"}}}' \
     '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"work_item","arguments":{"work_item":"5112"}}}' \
     '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"work_item","arguments":{"work_item":"5101"}}}' \
-    '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"order_pull_requests","arguments":{"pull_requests":["https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/4120",{"link":"https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/4121","after":[4120]}]}}}' |
+    '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"order_pull_requests","arguments":{"pull_requests":["https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/4120",{"link":"https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/4121","after":[4120]}]}}}' \
+    '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"changed_in_azure_devops","arguments":{"work_items":["5124"],"organization":"contoso"}}}' |
     within 60 "$BIN" --demo --mcp)"
 [[ "$(jq -sr 'map(select(.id == 1))[0].result.serverInfo.name' <<<"$MCP")" == briefbar ]] ||
     fail "--demo --mcp doesn't answer initialize"
-EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","work_item","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions","order_pull_requests","pull_request_order","forget_pull_request_order"]'
+EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","work_item","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions","order_pull_requests","pull_request_order","forget_pull_request_order","working_on","changed_in_azure_devops"]'
 TOOLS="$(jq -sc 'map(select(.id == 2))[0].result.tools | map(.name)' <<<"$MCP")"
 [[ "$TOOLS" == "$EXPECTED_TOOLS" ]] || fail "--demo --mcp lists the tools $TOOLS"
 NEEDS_ME="$(jq -sr 'map(select(.id == 3))[0].result.content[0].text' <<<"$MCP")"
@@ -96,6 +98,9 @@ jq -sr 'map(select(.id == 6))[0].result.content[0].text' <<<"$MCP" |
     fail "--demo --mcp's work_item doesn't have the Copilot session on its pull request's branch"
 jq -sr 'map(select(.id == 7))[0].result.content[0].text' <<<"$MCP" | grep '^- !4121 in contoso: merges after !4120.$' >/dev/null ||
     fail "--demo --mcp's order_pull_requests doesn't keep the order"
+jq -sr 'map(select(.id == 8))[0].result.content[0].text' <<<"$MCP" |
+    grep '^BriefBar reads Work Item 5124 again shortly, if it.s running, rather than at its next refresh. (The demo keeps it in memory.)$' \
+    >/dev/null || fail "--demo --mcp's changed_in_azure_devops doesn't say it reads the work item again"
 for source in teams github; do
     if within 60 "$BIN" --demo --source "$source" --mcp </dev/null >/dev/null 2>&1; then
         fail "--demo --source $source --mcp serves $source"

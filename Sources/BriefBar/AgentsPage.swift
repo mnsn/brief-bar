@@ -36,8 +36,8 @@ final class AgentsModel: ObservableObject {
     @Published private var serverProgress = CopilotCLIProgress<CopilotMCPRegistration.Status>()
     @Published private var pluginProgress = CopilotCLIProgress<CopilotPluginRegistration.Status>()
     @Published private var sessionPromptsProgress = CopilotCLIProgress<CopilotPluginRegistration.Status>()
-    /// Pull Request Order's skill, which Copilot gets while both it and agents are on.
-    @Published private var orderProgress = CopilotCLIProgress<CopilotPluginRegistration.Status>()
+    /// The skills that come with a setting, which Copilot gets while both it and agents are on (`SettingSkill`).
+    @Published private var skillProgress: [SettingSkill: CopilotCLIProgress<CopilotPluginRegistration.Status>] = [:]
     /// What you turned Send Prompts to Copilot Sessions to, while the CLI is at it.
     @Published private var sessionPromptsAsked: Bool?
     /// What you last turned it to, which Try Again asks the CLI for again.
@@ -59,10 +59,18 @@ final class AgentsModel: ObservableObject {
         return sessionPromptsProgress.status.map(Plugin.known) ?? .unknown
     }
 
+    /// A setting's skill among the CLI's plugins.
+    func skill(_ skill: SettingSkill) -> Plugin {
+        let progress = progress(skill)
+        if progress.isWorking { return .working }
+        return progress.status.map(Plugin.known) ?? .unknown
+    }
+
     /// Pull Request Order's skill among the CLI's plugins.
-    var orderSkill: Plugin {
-        if orderProgress.isWorking { return .working }
-        return orderProgress.status.map(Plugin.known) ?? .unknown
+    var orderSkill: Plugin { skill(.order) }
+
+    private func progress(_ skill: SettingSkill) -> CopilotCLIProgress<CopilotPluginRegistration.Status> {
+        skillProgress[skill] ?? CopilotCLIProgress()
     }
 
     private let defaults: UserDefaults
@@ -78,16 +86,19 @@ final class AgentsModel: ObservableObject {
     private var checkedAt: Date?
     private var pluginCheckedAt: Date?
     private var sessionPromptsCheckedAt: Date?
-    private var orderCheckedAt: Date?
+    private var skillCheckedAt: [SettingSkill: Date] = [:]
+    /// Updates from Copilot Sessions, which the Agents page turns on and off; nil where nothing shows it, such as in tests.
+    let sessionUpdates: SessionUpdates?
 
     init(
         defaults: UserDefaults, isLive: Bool, executable: String = Bundle.main.executablePath ?? AppIdentity.name,
-        pluginMarketplace: URL? = CopilotPluginRegistration.marketplace()
+        pluginMarketplace: URL? = CopilotPluginRegistration.marketplace(), sessionUpdates: SessionUpdates? = nil
     ) {
         self.defaults = defaults
         self.isLive = isLive
         self.executable = executable
         self.pluginMarketplace = pluginMarketplace
+        self.sessionUpdates = sessionUpdates
         state = AgentAccess.state(in: defaults)
     }
 
@@ -151,12 +162,16 @@ final class AgentsModel: ObservableObject {
             change(demo: .added(enabled: true)) { await $0.add() }
             refreshPlugin(force: true)
             refreshSessionPrompts(force: true)
-            // With Pull Request Order on, which you turned on before agents.
-            if isOrderOn { pullRequestOrderChanged(true) }
+            // With Pull Request Order or Updates from Copilot Sessions on, which you turned on before agents.
+            for skill in SettingSkill.allCases where skill.isOn(in: defaults) {
+                settingChanged(skill, isOn: true)
+            }
         } else {
-            // Pull Request Order, turned on while agents waited for you to see what they get: its skill, unless BriefBar
-            // added it before, which leaves it as you have it in the Copilot CLI, turned off there or not.
-            if isOrderOn, !orderSkillMayBeInstalled { pullRequestOrderChanged(true) }
+            // A setting turned on while agents waited for you to see what they get: its skill, unless BriefBar added it
+            // before, which leaves it as you have it in the Copilot CLI, turned off there or not.
+            for skill in SettingSkill.allCases where skill.isOn(in: defaults) && !mayBeInstalled(skill) {
+                settingChanged(skill, isOn: true)
+            }
             refresh(force: true)
         }
     }
@@ -175,19 +190,25 @@ final class AgentsModel: ObservableObject {
         change(demo: .absent) { await $0.remove() }
         changePlugin(demo: .absent) { await $0.remove() }
         changeSessionPrompts(demo: .absent) { await $0.remove() }
-        changeOrderSkill(demo: .absent) { await $0.remove() }
+        for skill in SettingSkill.allCases {
+            changeSkill(skill, demo: .absent) { await $0.remove() }
+        }
     }
 
     /// Asks the Copilot CLI whether it has BriefBar and its plugins: when the page shows, unless it asked a moment ago.
     func refresh(force: Bool = false) {
-        removeOwedOrderSkill()
+        for skill in SettingSkill.allCases {
+            removeOwedSkill(skill)
+        }
         guard state == .on else { return }
         if registration != .working, force || checkedAt.map({ Date().timeIntervalSince($0) >= 30 }) ?? true {
             change(demo: .added(enabled: true)) { await $0.status() }
         }
         refreshPlugin(force: force)
         refreshSessionPrompts(force: force)
-        refreshOrderSkill(force: force)
+        for skill in SettingSkill.allCases {
+            refreshSkill(skill, force: force)
+        }
     }
 
     func addToCopilotCLI() {
@@ -205,13 +226,17 @@ final class AgentsModel: ObservableObject {
     var leftovers: AgentCleanup? {
         guard state == .off else { return nil }
         return AgentCleanup.left(
-            server: serverProgress, plugin: pluginProgress, sessionPrompts: sessionPromptsProgress, order: orderProgress
+            server: serverProgress, plugin: pluginProgress, sessionPrompts: sessionPromptsProgress, order: progress(.order),
+            updates: progress(.updates)
         )
     }
 
     /// While agents are off, BriefBar is removing itself, or its plugins, from the Copilot CLI.
     var isLeaving: Bool {
-        state == .off && (registration == .working || plugin == .working || sessionPrompts == .working || orderSkill == .working)
+        state == .off && (
+            registration == .working || plugin == .working || sessionPrompts == .working
+                || SettingSkill.allCases.contains { skill($0) == .working }
+        )
     }
 
     /// Removes again what turning agents off couldn't.
@@ -221,90 +246,130 @@ final class AgentsModel: ObservableObject {
         if leftovers.server != nil { change(demo: .absent) { await $0.remove() } }
         if leftovers.plugin != nil { changePlugin(demo: .absent) { await $0.remove() } }
         if leftovers.sessionPrompts != nil { changeSessionPrompts(demo: .absent) { await $0.remove() } }
-        if leftovers.order != nil { changeOrderSkill(demo: .absent) { await $0.remove() } }
+        if leftovers.order != nil { changeSkill(.order, demo: .absent) { await $0.remove() } }
+        if leftovers.updates != nil { changeSkill(.updates, demo: .absent) { await $0.remove() } }
     }
 
-    // MARK: Pull Request Order's skill
+    // MARK: Skills that come with a setting
 
     /// Pull Request Order is on, in Settings › Pull Requests.
     var isOrderOn: Bool { PullRequestOrderSetting.isOn(in: defaults) }
 
+    /// Updates from Copilot Sessions is on, on this page.
+    var areSessionUpdatesOn: Bool {
+        renderedSessionUpdates ?? sessionUpdates?.isOn ?? SessionUpdatesSetting.isOn(in: defaults)
+    }
+
+    /// For `--render`: Updates from Copilot Sessions as the picture shows it, without turning it on or off.
+    private var renderedSessionUpdates: Bool?
+
+    /// Whether a setting with a skill is on.
+    func isOn(_ skill: SettingSkill) -> Bool {
+        skill == .updates ? areSessionUpdatesOn : skill.isOn(in: defaults)
+    }
+
     /// BriefBar asked the Copilot CLI to add Pull Request Order's skill, and the CLI hasn't said since that it's gone: kept
     /// in the preferences, so that a skill a removal couldn't take away still shows after BriefBar starts again.
-    static let orderSkillMayBeInstalledKey = "order.skillMayBeInstalled"
+    static let orderSkillMayBeInstalledKey = SettingSkill.order.mayBeInstalledKey
 
-    private var orderSkillMayBeInstalled: Bool {
-        get { defaults.bool(forKey: Self.orderSkillMayBeInstalledKey) }
-        set {
-            if newValue {
-                defaults.set(true, forKey: Self.orderSkillMayBeInstalledKey)
-            } else {
-                defaults.removeObject(forKey: Self.orderSkillMayBeInstalledKey)
-            }
+    /// BriefBar asked the Copilot CLI to add a setting's skill, and the CLI hasn't said since that it's gone.
+    private func mayBeInstalled(_ skill: SettingSkill) -> Bool {
+        defaults.bool(forKey: skill.mayBeInstalledKey)
+    }
+
+    private func setMayBeInstalled(_ skill: SettingSkill, _ may: Bool) {
+        if may {
+            defaults.set(true, forKey: skill.mayBeInstalledKey)
+        } else {
+            defaults.removeObject(forKey: skill.mayBeInstalledKey)
         }
     }
 
-    /// Whether the Agents page shows the skill: while Pull Request Order is on, or while the Copilot CLI may still have it
-    /// without it, so that you can remove it. Until you turn Pull Request Order on, BriefBar doesn't even ask about it.
-    var showsOrderSkill: Bool { isOrderOn || orderSkillMayBeInstalled }
+    /// Whether the Agents page shows a setting's skill: while the setting is on, or while the Copilot CLI may still have it
+    /// without it, so that you can remove it. Until you turn the setting on, BriefBar doesn't even ask about it.
+    func showsSkill(_ skill: SettingSkill) -> Bool { isOn(skill) || mayBeInstalled(skill) }
 
-    /// Pull Request Order turned on or off: with agents on, Copilot gets its skill, which tells the sessions that open pull
-    /// requests together when to tell BriefBar their order; turned off, the skill goes. Agents turned on later add it then,
-    /// and turned off remove it. A copy of BriefBar without the plugin can remove it, but not install it.
+    var showsOrderSkill: Bool { showsSkill(.order) }
+
+    /// Pull Request Order turned on or off, in Settings › Pull Requests (`settingChanged`).
     func pullRequestOrderChanged(_ isOn: Bool) {
+        settingChanged(.order, isOn: isOn)
+    }
+
+    /// Turns Updates from Copilot Sessions on or off, which forgets what sessions told either way, and adds or removes its
+    /// skill.
+    func setSessionUpdates(_ isOn: Bool) {
+        objectWillChange.send()
+        if let sessionUpdates {
+            sessionUpdates.setOn(isOn)
+        } else {
+            defaults.set(isOn, forKey: SessionUpdatesSetting.defaultsKey)
+            SessionReports.forgetAll(in: defaults)
+        }
+        settingChanged(.updates, isOn: isOn)
+    }
+
+    /// A setting turned on or off: with agents on, Copilot gets its skill, which tells sessions when to use its tools;
+    /// turned off, the skill goes. Agents turned on later add it then, and turned off remove it. A copy of BriefBar without
+    /// the plugin can remove it, but not install it.
+    func settingChanged(_ skill: SettingSkill, isOn: Bool) {
         if isOn {
             guard state == .on, hasPlugin else { return }
-            Log.app.info("Adding Pull Request Order's skill")
-            orderSkillMayBeInstalled = true
-            changeOrderSkill(demo: .installed(enabled: true)) { await $0.install() }
+            Log.app.info("Adding \(skill.title, privacy: .public)'s skill")
+            setMayBeInstalled(skill, true)
+            changeSkill(skill, demo: .installed(enabled: true)) { await $0.install() }
         } else {
-            guard state == .on || orderSkill != .unknown else { return }
-            Log.app.info("Removing Pull Request Order's skill")
-            changeOrderSkill(demo: .absent) { await $0.remove() }
+            guard state == .on || self.skill(skill) != .unknown else { return }
+            Log.app.info("Removing \(skill.title, privacy: .public)'s skill")
+            changeSkill(skill, demo: .absent) { await $0.remove() }
         }
     }
 
-    /// The Copilot CLI may still have Pull Request Order's skill though agents or Pull Request Order are off, as a removal
-    /// that couldn't take it away before BriefBar quit leaves it: BriefBar tries again once as the Agents page shows. If it
-    /// still can't, the page says so, with Try Again.
-    private func removeOwedOrderSkill() {
-        guard orderSkillMayBeInstalled, state == .off || !isOrderOn, orderSkill == .unknown else { return }
-        Log.app.info("Removing Pull Request Order's skill, which a removal before couldn't")
-        changeOrderSkill(demo: .absent) { await $0.remove() }
+    /// The Copilot CLI may still have a setting's skill though agents or the setting are off, as a removal that couldn't
+    /// take it away before BriefBar quit leaves it: BriefBar tries again once as the Agents page shows. If it still can't,
+    /// the page says so, with Try Again.
+    private func removeOwedSkill(_ skill: SettingSkill) {
+        guard mayBeInstalled(skill), state == .off || !skill.isOn(in: defaults), self.skill(skill) == .unknown else { return }
+        Log.app.info("Removing \(skill.title, privacy: .public)'s skill, which a removal before couldn't")
+        changeSkill(skill, demo: .absent) { await $0.remove() }
     }
 
-    private func refreshOrderSkill(force: Bool) {
-        guard orderSkill != .working, showsOrderSkill || orderSkill != .unknown else { return }
-        if !force, let orderCheckedAt, Date().timeIntervalSince(orderCheckedAt) < 30 { return }
+    private func refreshSkill(_ skill: SettingSkill, force: Bool) {
+        guard self.skill(skill) != .working, showsSkill(skill) || self.skill(skill) != .unknown else { return }
+        if !force, let checkedAt = skillCheckedAt[skill], Date().timeIntervalSince(checkedAt) < 30 { return }
         var demo = CopilotPluginRegistration.Status.absent
-        if case .known(let status) = orderSkill { demo = status }
-        changeOrderSkill(demo: demo) { await $0.status() }
+        if case .known(let status) = self.skill(skill) { demo = status }
+        changeSkill(skill, demo: demo) { await $0.status() }
     }
 
-    private func changeOrderSkill(
-        demo: CopilotPluginRegistration.Status,
+    private func changeSkill(
+        _ skill: SettingSkill, demo: CopilotPluginRegistration.Status,
         _ action: @escaping @Sendable (CopilotPluginRegistration) async -> CopilotPluginRegistration.Status
     ) {
         guard isLive else {
-            orderProgress = CopilotCLIProgress(status: demo)
-            note(demo)
+            skillProgress[skill] = CopilotCLIProgress(status: demo)
+            note(skill, demo)
             return
         }
-        let request = orderProgress.ask()
-        withPlugin(.order, action) { [weak self] status in
+        var progress = progress(skill)
+        let request = progress.ask()
+        skillProgress[skill] = progress
+        withPlugin(skill.plugin, action) { [weak self] status in
             guard let self else { return }
-            orderProgress.answer(request, with: status)
-            orderCheckedAt = Date()
-            note(status)
-            Log.app.info("Pull Request Order's skill in the Copilot CLI: \(status.kind, privacy: .public)")
+            var progress = self.progress(skill)
+            progress.answer(request, with: status)
+            skillProgress[skill] = progress
+            skillCheckedAt[skill] = Date()
+            note(skill, status)
+            Log.app.info("\(skill.title, privacy: .public)'s skill in the Copilot CLI: \(status.kind, privacy: .public)")
         }
     }
 
     /// Remembers whether the Copilot CLI may have the skill, from what it said of it.
-    private func note(_ status: CopilotPluginRegistration.Status) {
+    private func note(_ skill: SettingSkill, _ status: CopilotPluginRegistration.Status) {
         switch status {
-        case .installed, .installedElsewhere: orderSkillMayBeInstalled = true
-        case .absent, .taken: orderSkillMayBeInstalled = false
+        case .installed, .installedElsewhere: setMayBeInstalled(skill, true)
+        case .absent, .taken: setMayBeInstalled(skill, false)
         // Without the CLI, or its answer, BriefBar can't tell whether it's gone.
         case .noCLI, .failed: break
         }
@@ -523,12 +588,14 @@ final class AgentsModel: ObservableObject {
     /// For `--render`: agents on, BriefBar added to the Copilot CLI and its plugins not installed yet, or the extension
     /// for the app's sessions installed, or as they were, without saving any of it: `--render` keeps the preferences
     /// in memory.
-    func useForRendering(on: Bool, sessionPrompts: Bool = false) {
+    func useForRendering(on: Bool, sessionPrompts: Bool = false, sessionUpdates: Bool = false) {
         state = on ? .on : AgentAccess.state(in: defaults)
         serverProgress = CopilotCLIProgress(status: on ? .added(enabled: true) : nil)
         pluginProgress = CopilotCLIProgress(status: on ? .absent : nil)
         sessionPromptsProgress = CopilotCLIProgress(status: on ? (sessionPrompts ? .installed(enabled: true) : .absent) : nil)
         if on { CopilotSessionPrompts.set(sessionPrompts, in: defaults) }
+        renderedSessionUpdates = on ? sessionUpdates : nil
+        skillProgress[.updates] = CopilotCLIProgress(status: on && sessionUpdates ? .installed(enabled: true) : nil)
     }
 
     /// For `--render`: agents just turned off, and the Copilot CLI couldn't remove the plugin, without saving either.
@@ -642,6 +709,9 @@ struct AgentsPage: View {
                     Divider()
                     SessionPromptsRow(agents: agents)
                         .padding(.vertical, 10)
+                    Divider()
+                    SessionUpdatesRow(agents: agents)
+                        .padding(.vertical, 10)
                     if agents.showsOrderSkill {
                         Divider()
                         OrderSkillRow(agents: agents)
@@ -696,6 +766,9 @@ private struct AgentsLeftoversRow: View {
                     if let order = leftovers.order {
                         Text("Its skill for \(PullRequestOrderSettingView.title): \(order)")
                     }
+                    if let updates = leftovers.updates {
+                        Text("Its skill for \(SessionUpdatesText.title): \(updates)")
+                    }
                     Text("Agents are off either way: BriefBar's tools answer that they are.")
                         .foregroundStyle(.secondary)
                 }
@@ -726,8 +799,10 @@ struct AgentsDescriptionBox: View {
                 come word for word from whoever wrote them, and an agent may act on what they say.
                 """),
             .init(title: "What agents can change", symbol: "slider.horizontal.3", text: """
-                Only which pull requests BriefBar watches and which pipelines it pins and, with Pull Request Order on, the \
-                orders it keeps. Nothing in Azure DevOps or on GitHub: BriefBar gives agents no way to change them.
+                Only which pull requests BriefBar watches and which pipelines it pins; with Pull Request Order on, the \
+                orders it keeps; and, with \(SessionUpdatesText.title) on, what each session works on and the pull \
+                requests it opened, as BriefBar shows them, and how soon BriefBar reads Azure DevOps again. Nothing in \
+                Azure DevOps or on GitHub: BriefBar gives agents no way to change them.
                 """),
         ])
     }
@@ -1039,23 +1114,76 @@ private struct OrderSkillRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(PullRequestOrderSettingView.title)'s skill")
                     .font(style: .headline)
-                status
+                SettingSkillStatus(agents: agents, skill: .order)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }
     }
+}
 
-    private static let installed = "On, as \(CopilotPluginRegistration.Plugin.order.rawValue). Sessions get it as they start: "
-        + "it tells the ones that open pull requests together when to tell BriefBar their order."
+/// Updates from Copilot Sessions: sessions tell BriefBar what they work on and what they changed in Azure DevOps, off
+/// until you turn it on; with its skill, which Copilot gets while it's on.
+private struct SessionUpdatesRow: View {
+    @ObservedObject var agents: AgentsModel
+    @EnvironmentObject private var services: AppServices
 
-    @ViewBuilder
-    private var status: some View {
-        switch agents.orderSkill {
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(SessionUpdatesText.title)
+                    .font(style: .headline)
+                Text(SessionUpdatesText.explanation)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if agents.areSessionUpdatesOn, !services.links.isOn {
+                    Text("Turn on Show Links in Settings › General to see sessions on work items and pull requests.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if agents.showsSkill(.updates) {
+                    SettingSkillStatus(agents: agents, skill: .updates)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            Toggle(SessionUpdatesText.title, isOn: Binding(
+                get: { agents.areSessionUpdatesOn },
+                set: { agents.setSessionUpdates($0) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+        }
+    }
+}
+
+/// Updates from Copilot Sessions, in words.
+enum SessionUpdatesText {
+    static let title = "Updates from Copilot Sessions"
+    static let explanation = """
+        Sessions tell BriefBar what they're working on, which Show Links and By Mission then show, and what they changed \
+        in Azure DevOps, which BriefBar reads again then, at most every 30 seconds. It keeps references only: what a \
+        session works on, until it says it stopped or a week has passed since it last said, and the pull requests it \
+        opened, for 30 days; and it forgets them all when you turn this off. What an archived session told doesn't show, \
+        nor what a session idle for a day works on. Sessions change Azure DevOps with their own tools, never through \
+        BriefBar.
+        """
+}
+
+/// A skill that comes with a setting, in the Copilot CLI: whether it's there, and what to do when it shouldn't be, or
+/// should and isn't.
+private struct SettingSkillStatus: View {
+    @ObservedObject var agents: AgentsModel
+    let skill: SettingSkill
+
+    var body: some View {
+        let isOn = agents.isOn(skill)
+        switch agents.skill(skill) {
         case .unknown:
-            Text(agents.hasPlugin
-                 ? "It comes with \(PullRequestOrderSettingView.title), in Settings › Pull Requests."
-                 : "This copy of BriefBar doesn't have it: BriefBar.app does.")
+            Text(agents.hasPlugin ? "It comes with \(skill.title)\(skill.place)." : "This copy of BriefBar doesn't have it: BriefBar.app does.")
                 .foregroundStyle(.secondary)
         case .working:
             HStack(spacing: 6) {
@@ -1066,30 +1194,84 @@ private struct OrderSkillRow: View {
             }
         case .known(let status):
             switch status {
-            case .installed where !agents.isOrderOn, .installedElsewhere where !agents.isOrderOn:
+            case .installed where !isOn, .installedElsewhere where !isOn:
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Still in the Copilot CLI, though \(PullRequestOrderSettingView.title) is off.")
+                    Text("Still in the Copilot CLI, though \(skill.title) is off.")
                         .foregroundStyle(.secondary)
-                    Button("Remove") { agents.pullRequestOrderChanged(false) }
+                    Button("Remove") { agents.settingChanged(skill, isOn: false) }
                 }
             case .installed(enabled: true), .installedElsewhere:
-                Label(Self.installed, systemImage: "checkmark.circle.fill")
+                Label("On, as \(skill.plugin.rawValue). Sessions get it as they start: \(skill.purpose)", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             case .installed(enabled: false), .absent, .taken, .noCLI:
                 HStack(alignment: .firstTextBaseline) {
-                    Text(agents.isOrderOn ? "Not in the Copilot CLI." : "Off, with \(PullRequestOrderSettingView.title).")
+                    Text(isOn ? "Not in the Copilot CLI." : "Off, with \(skill.title).")
                         .foregroundStyle(.secondary)
-                    if agents.isOrderOn, agents.hasPlugin {
-                        Button("Add") { agents.pullRequestOrderChanged(true) }
+                    if isOn, agents.hasPlugin {
+                        Button("Add") { agents.settingChanged(skill, isOn: true) }
                     }
                 }
             case .failed(let message):
                 HStack(alignment: .firstTextBaseline) {
                     Text("Couldn't ask the Copilot CLI: \(message)")
                         .foregroundStyle(.secondary)
-                    Button("Try Again") { agents.pullRequestOrderChanged(agents.isOrderOn) }
+                    Button("Try Again") { agents.settingChanged(skill, isOn: isOn) }
                 }
             }
+        }
+    }
+}
+
+/// A skill of BriefBar's that Copilot gets only while its setting and agents are both on, so that it's in no session's
+/// context otherwise: Pull Request Order's, and Updates from Copilot Sessions'.
+enum SettingSkill: CaseIterable {
+    case order
+    case updates
+
+    var plugin: CopilotPluginRegistration.Plugin {
+        switch self {
+        case .order: return .order
+        case .updates: return .updates
+        }
+    }
+
+    /// The setting's name.
+    var title: String {
+        switch self {
+        case .order: return PullRequestOrderSettingView.title
+        case .updates: return SessionUpdatesText.title
+        }
+    }
+
+    /// Where the setting is, from the Agents page: ", in Settings › Pull Requests", or nothing for one on it.
+    var place: String {
+        switch self {
+        case .order: return ", in Settings › Pull Requests"
+        case .updates: return ""
+        }
+    }
+
+    /// What it tells sessions, in a sentence's end.
+    var purpose: String {
+        switch self {
+        case .order: return "it tells the ones that open pull requests together when to tell BriefBar their order."
+        case .updates: return "it tells them when to tell BriefBar what they work on and what they changed in Azure DevOps."
+        }
+    }
+
+    func isOn(in defaults: UserDefaults) -> Bool {
+        switch self {
+        case .order: return PullRequestOrderSetting.isOn(in: defaults)
+        case .updates: return SessionUpdatesSetting.isOn(in: defaults)
+        }
+    }
+
+    /// BriefBar asked the Copilot CLI to add it, and the CLI hasn't said since that it's gone: kept in the preferences, so
+    /// that a skill a removal couldn't take away still shows after BriefBar starts again.
+    var mayBeInstalledKey: String {
+        switch self {
+        case .order: return "order.skillMayBeInstalled"
+        case .updates: return "sessionUpdates.skillMayBeInstalled"
         }
     }
 }
