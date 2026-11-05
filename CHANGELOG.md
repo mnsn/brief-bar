@@ -10,8 +10,8 @@
   someone sent you in a chat in memory only, and changes nothing in Azure DevOps.
 - **A stacked branch counts in a session's order too.** By Mission now puts a pull request after the one whose branch it
   targets, also when that one is in another mission, though the order a Copilot session told doesn't say so, and says
-  why. Where the branches only look
-  stacked, **Move to Mission ▸ Not in a Mission** takes it out.
+  why. Where the branches only look stacked, **Move to Mission ▸ Not in a Mission** takes it out.
+
 ## 0.16.2 - 2026-11-05
 
 - **Copilot's prompts keep what others wrote as theirs.** Fix, Resolve, Explain, Review and Push & Reply quote comments,
