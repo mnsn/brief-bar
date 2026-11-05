@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.1 - 2026-11-05
 
 - **A list's gear menu opens over an app in full screen.** With a BriefBar window or Settings open, the gear menu,
   and any other menu a list opened, opened on the Space of BriefBar's windows, out of sight, when you opened the list
