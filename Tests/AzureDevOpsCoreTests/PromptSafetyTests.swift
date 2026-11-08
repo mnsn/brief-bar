@@ -191,9 +191,9 @@ import Testing
         #expect(PullRequestPrompt.fixComments(record).contains("detached at origin/\(source), "))
         #expect(PullRequestPrompt.fixComments(record, workplace: .agent).contains("fetch origin/\(source), the pull request's latest commit"))
         let ship = PullRequestPrompt.pushAndReply(record, workplace: .worktree)
-        #expect(ship.contains("Push them to \(source), without force: git push origin HEAD:refs/heads/\(source). If that's rejected, rebase on origin/\(source) first"))
-        #expect(ship.contains("This pull request merges into \(target). Fetch origin/\(target) and origin/\(source), and check what you'd push"))
-        #expect(ship.contains("(git merge-base --is-ancestor <commit> origin/\(target))."))
+        #expect(ship.contains("Push the commit you checked, by its ID, without force: git push origin <commit>:refs/heads/\(source), where <commit> is what git rev-parse HEAD says. If that's rejected, rebase on origin/\(source), stop and tell me if that conflicts"))
+        #expect(ship.contains("This pull request merges into \(target): if you have BriefBar's pull_request tool"))
+        #expect(ship.contains("Fetch origin/\(target) and origin/\(source): whatever a merge in git log --merges origin/\(source)..HEAD merged in must be in origin/\(target) (git merge-base --is-ancestor <parent> origin/\(target))."))
         let agent = PullRequestPrompt.pushAndReply(record, workplace: .agent)
         #expect(agent.contains("(git merge-base --is-ancestor origin/\(source) HEAD)"))
         #expect(agent.contains("git log origin/\(source)..HEAD"))
@@ -213,9 +213,9 @@ import Testing
         #expect(PullRequestPrompt.branch("```topic") == "'```topic'")
         // One with a character nobody sees, which Git allows too, has it as its bytes, in quotes a shell reads them in.
         record.pullRequest.sourceBranch = "fix$(id)\u{200B}"
-        #expect(PullRequestPrompt.pushAndReply(record).contains("git push origin HEAD:refs/heads/$'fix$(id)\\xE2\\x80\\x8B'."))
+        #expect(PullRequestPrompt.pushAndReply(record).contains("git push origin <commit>:refs/heads/$'fix$(id)\\xE2\\x80\\x8B', where"))
         record.pullRequest.sourceBranch = "users/robin/fix-total"
-        #expect(PullRequestPrompt.pushAndReply(record).contains("git push origin HEAD:refs/heads/users/robin/fix-total."))
+        #expect(PullRequestPrompt.pushAndReply(record).contains("git push origin <commit>:refs/heads/users/robin/fix-total, where"))
     }
 
     /// A command a prompt writes with a branch's name names that branch: bash, zsh and sh read its word back as the name,

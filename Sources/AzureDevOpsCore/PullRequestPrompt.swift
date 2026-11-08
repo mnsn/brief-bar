@@ -175,11 +175,18 @@ public enum PullRequestPrompt {
         // Fixes of none of its threads, such as of a build: nothing to reply on.
         let repliesOnNone = scoped && threads.isEmpty
         var steps: [String] = []
+        // A merge of another branch, such as one it targeted before, would bring that branch's work into the pull request
+        // with a push nothing stops, and only a force push could take it back: right before each push, after the commit and
+        // after a rebase, Copilot checks what it would push, and that the pull request still merges into the branch the
+        // prompt names, then pushes the commit it checked, by its ID.
+        let checks = !pr.targetBranch.isEmpty
         let ifRejected: String
         switch workplace {
         case .worktree:
             // BriefBar's own worktree, where a task that changed code for it finished.
-            ifRejected = "If that's rejected, rebase on origin/\(source) first, and stop and tell me if that conflicts."
+            ifRejected = checks
+                ? "If that's rejected, rebase on origin/\(source), stop and tell me if that conflicts, and check it again, as above, before you push."
+                : "If that's rejected, rebase on origin/\(source) first, and stop and tell me if that conflicts."
         case .agent:
             // Wherever the agent is, which may be another branch, or hold other work: it checks first, and never rebases.
             steps.append("""
@@ -190,21 +197,21 @@ public enum PullRequestPrompt {
                 """)
             ifRejected = "If that's rejected, stop and tell me: don't rebase, merge or force."
         }
-        // A merge of another branch, such as one it targeted before, would bring that branch's work into the pull request
-        // with a push nothing stops, and only a force push could take it back.
-        if !pr.targetBranch.isEmpty {
+        steps.append("Make sure it builds and the tests you ran pass, then commit your changes with a clear message.")
+        if checks {
             let target = branch(pr.targetBranch)
             steps.append("""
-                This pull request merges into \(target). Fetch origin/\(target) and origin/\(source), and check what you'd \
-                push: whatever a merge in git log --merges origin/\(source)..HEAD merged in, or a merge still in progress \
-                merges in, must be in origin/\(target) (git merge-base --is-ancestor <commit> origin/\(target)). If you find \
-                a merge of any other branch, stop and tell me, and don't commit or push.
+                Right before you push, check it. This pull request merges into \(target): if you have BriefBar's pull_request \
+                tool, or Azure DevOps tools, read the pull request with them, and if it merges into another branch now, or \
+                they can't tell you, stop and tell me. Fetch origin/\(target) and origin/\(source): whatever a merge in git log \
+                --merges origin/\(source)..HEAD merged in must be in origin/\(target) (git merge-base --is-ancestor <parent> \
+                origin/\(target)). If you find a merge of any other branch, stop and tell me, and don't push.
                 """)
         }
-        steps += [
-            "Make sure it builds and the tests you ran pass, then commit your changes with a clear message.",
-            "Push them to \(source), without force: git push origin HEAD:refs/heads/\(source). \(ifRejected)",
-        ]
+        steps.append("""
+            Push the commit you checked, by its ID, without force: git push origin <commit>:refs/heads/\(source), where \
+            <commit> is what git rev-parse HEAD says. \(ifRejected)
+            """)
         if repliesOnNone {
             steps.append("Don't reply on the pull request's comment threads: none that's still open is among what these changes take care of.")
         } else {
