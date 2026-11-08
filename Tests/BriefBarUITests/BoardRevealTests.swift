@@ -9,7 +9,7 @@ import Testing
 /// height, under four missions' lanes.
 @MainActor
 @Suite(.keepsTheMainRunLoopRunning) struct BoardRevealTests {
-    private static let height: CGFloat = 240
+    private static let height: CGFloat = 320
 
     /// Where each card's content is drawn, in the window's content view.
     @MainActor
@@ -106,16 +106,20 @@ import Testing
         }
         host.layoutSubtreeIfNeeded()
         try await until("the board") { drawn.frames.count == 8 }
-        // With a lane for each mission, its card is below the window, where the other missions' lanes push it; with Lanes:
-        // None, it's there once the Board shows a lane for each mission.
+        // With a lane for each mission, its card is below the window, where the other missions' lanes push it. With Lanes:
+        // None, it's in view in the one lane; once the Board shows a lane for each mission, its own is below the others too.
+        let before = drawn.frames[card]
         if lanes == .missions {
-            #expect((drawn.frames[card]?.minY ?? 0) > Self.height)
+            #expect((before?.minY ?? 0) > Self.height)
         }
 
         order.reveal(last.key, kinds: [.pullRequest])
         #expect(order.lanes == .missions)
         try await until("its lane to show") {
-            guard let frame = drawn.frames[card] else { return false }
+            // A window off screen draws only when it's asked to, as the screen asks one that shows.
+            host.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            guard let frame = drawn.frames[card], frame != before else { return false }
             return frame.minY >= 0 && frame.maxY <= Self.height
         }
     }
