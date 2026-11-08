@@ -165,9 +165,10 @@ import Testing
     }
 
     /// Shows the Board in a window while `body` runs, once its card is drawn.
-    /// - Parameter focusWait: how long a card a key moved is owed the keyboard's focus, as the app's ten seconds by default.
+    /// - Parameter focusWait: how long a card a key moved is owed the keyboard's focus, as long as in the app by default.
     private static func showing(
-        _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(), focusWait: Duration = .seconds(10),
+        _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(),
+        focusWait: Duration = OrderBoardView.owedFocusWait,
         _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ drawn: Drawn) async throws -> Void
     ) async throws {
         _ = NSApplication.shared

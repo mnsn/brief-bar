@@ -551,6 +551,26 @@ private final class Clock {
         #expect(!order.missions.contains { $0.key == mine } && last.mission == nil)
     }
 
+    /// Undo Your Changes to It, from the Mission menu of a pull request in two missions, says its Undo is in the card you
+    /// chose it in: not the first that has it.
+    @Test func undoYourChangesToItInTheSecondOfTwoMissionsSaysItThere() throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
+            [.init(link: Self.link(4102)), .init(link: Self.link(4101), after: ["4102"])],
+            numbers: [4100, 4101, 4102], ready: [4101]
+        )
+        let firstHasIt = try #require(OrderBoard.mission(of: Self.ref(4101), in: order.missions)?.key)
+        let chosen = try #require(StageOrder.holders(of: Self.ref(4101), in: order.missions).first { $0 != firstHasIt })
+        MissionMenuContext.setAsNext(Self.ref(4101), in: chosen, order: order)
+        #expect(order.changes[Self.ref(4101)]?.first == chosen)
+        #expect(order.missions.first { $0.key == firstHasIt }?.contains(Self.ref(4101)) == true)
+
+        MissionMenuContext(order: order, mission: chosen).change(.undo(Self.ref(4101)))
+
+        #expect(order.changes[Self.ref(4101)] == nil)
+        #expect(order.lastOrderChange?.mission == chosen)
+    }
+
     /// An order an agent tells that goes against your change shows instead once BriefBar reads it again, and still does after
     /// BriefBar starts again, with Put Yours Back.
     @Test func anOrderAnAgentToldAgainstYoursShowsInsteadForGood() throws {
@@ -1266,6 +1286,16 @@ private final class Clock {
         let frees = "its Mission ▸ Merge After there takes that away"
         #expect(order.stillWaits(Self.ref(4101), nextIn: one) == "It still waits for \(waitsFor(two)) in ‘\(try title(two))’: \(frees)")
         #expect(order.stillWaits(Self.ref(4101), nextIn: two) == nil)
+        // Nor in a mission it isn't next in, where it never is.
+        #expect(order.stillWaits(Self.ref(4101), nextIn: .mine(UUID())) == nil)
+        // What VoiceOver hears of a change BriefBar refused is only why, though one of yours has it next there.
+        let refused = try #require(order.change(.setNext(Self.ref(4101), in: .mine(UUID()), true)))
+        #expect(!refused.canUndo)
+        let again = OrderEdit.setNext(Self.ref(4101), in: one, true)
+        #expect(
+            MissionMenuContext(order: order, mission: one).spoken(refused, of: again) == OrderText.spoken(refused.said, undo: nil)
+        )
+        order.dismissRefusal()
 
         // With a lane for every card, its one card is the other's now: ⌘← doesn't set it as next there.
         let why = BoardMove.refused(
