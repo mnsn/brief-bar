@@ -233,8 +233,9 @@ import Testing
 
     /// Which of the app's sessions run a turn, by its own flag. Strictly, for a check that mustn't take what it can't tell
     /// for none, it reads the flag alone: whatever else the app changes of what the session list reads, the flag is read as
-    /// the app keeps it. It can't tell when the database can't be read, or doesn't keep the flag, or say it for a session, as
-    /// BriefBar reads it; and without the database, as without the Copilot app, none of the app's sessions runs one.
+    /// the app keeps it. It can't tell when the database can't be read, even one that's there but out of reach, or doesn't
+    /// keep the flag, or say it for a session as a flag, 0 or 1, as BriefBar reads it; and with nothing at all where the
+    /// database goes, as without the Copilot app, none of the app's sessions runs one.
     @Test func readsWhichSessionsRunATurnStrictlyByTheirFlagAlone() throws {
         let home = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -251,6 +252,12 @@ import Testing
 
         try database(at: home)
         #expect(try AppSessions.running(home: home) == [opener])
+        #expect(try AppSessions.running(home: home, strictly: true) == [opener])
+        // There, but out of reach, as in a folder BriefBar may not read: it can't tell, rather than say none runs one.
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: home.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: home.path) }
+        #expect(throws: AppSessions.TurnsUnknown.unreadable) { try AppSessions.running(home: home, strictly: true) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: home.path)
         #expect(try AppSessions.running(home: home, strictly: true) == [opener])
         // Not an archived one, however its flag stayed.
         try sql("UPDATE sessions SET is_running = 1 WHERE id = '\(archived)';", home: home)
@@ -271,6 +278,9 @@ import Testing
         #expect(Set(try AppSessions.running(home: home, strictly: true)) == [opener, archived])
         // One that doesn't say it for a session.
         try sql("INSERT INTO sessions (id, is_running) VALUES ('6c7d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e04', NULL);", home: home)
+        #expect(throws: AppSessions.TurnsUnknown.unsaid) { try AppSessions.running(home: home, strictly: true) }
+        // Nor one that says it otherwise than as a flag, 0 or 1, as an app that kept it as text would: not as idle.
+        try sql("UPDATE sessions SET is_running = 'true' WHERE id = '6c7d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e04';", home: home)
         #expect(throws: AppSessions.TurnsUnknown.unsaid) { try AppSessions.running(home: home, strictly: true) }
         // An app that keeps it another way: its sessions have no flag to read.
         try FileManager.default.removeItem(at: file)

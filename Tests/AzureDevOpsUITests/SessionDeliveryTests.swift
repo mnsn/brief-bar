@@ -605,9 +605,10 @@ private final class TakenAt: Sendable {
     }
 
     /// Nor does a Push & Reply go when BriefBar can't tell whether a turn runs there: when the app's database can't be read,
-    /// or doesn't keep the flag that says which sessions run one, as the app might once it keeps that another way. Anything
-    /// else goes, as before. Whatever else the app changes of what it keeps of its sessions, the flag is read as it is, and
-    /// the push goes once it says no turn runs there; and without the database, as without the Copilot app, it goes too.
+    /// or doesn't keep the flag that says which sessions run one, or says it otherwise than as a flag, 0 or 1, as the app
+    /// might once it keeps that another way. Anything else goes, as before. Whatever else the app changes of what it keeps
+    /// of its sessions, the flag is read as it is, and the push goes once it says no turn runs there; and without the
+    /// database, as without the Copilot app, it goes too.
     @Test(.timeLimit(.minutes(1)))
     func sendsNoPushWhenItCantTellWhetherATurnRuns() async throws {
         let (store, home) = try store()
@@ -663,6 +664,9 @@ private final class TakenAt: Sendable {
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .notSent(
             "Copilot is running a turn in ‘Fix the totals’, so nothing went: what that turn changes would go with the push, unchecked. Send it again once that turn is done."
         ))
+        // Nor once it says it otherwise than as a flag, 0 or 1, as an app that kept it as text would.
+        try sql("UPDATE sessions SET is_running = 'true';", home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == unknown(.unsaid))
         try sql("UPDATE sessions SET is_running = 0;", home: home)
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
         // Without the database, as without the Copilot app, it goes too.

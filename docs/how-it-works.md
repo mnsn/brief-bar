@@ -2366,10 +2366,12 @@ names that one (`CopilotTasksStore.rereadPullRequest`, `PRStore.reread(_:)`). No
 app's sessions while Copilot runs a turn in it, or another of the app's sessions runs one in the checkout it works in,
 as the app's database says (`CopilotTasksStore.turnProblem`): the prompt would wait for that turn, whose changes, a
 merge to fix the build, say, would go with it, unchecked. Nor while BriefBar can't tell, as when that database can't be
-read, or doesn't keep the flag that says which sessions run one, as when the app keeps that another way now. It reads
-that flag alone (`AppSessions.running(home:strictly:)`, `AppDatabase.turns(at:)`), so whatever else the app changes of
-what it keeps of its sessions, which the session list reads, the push still goes while no turn runs there; and with no
-database at all, as without the Copilot app, none of the app's sessions runs one. BriefBar reads that before git checks
+read, or doesn't keep the flag that says which sessions run one, or keeps it otherwise than as 0 or 1 (`SQLiteRow.flag`),
+as when the app keeps that another way now. It reads that flag alone (`AppSessions.running(home:strictly:)`,
+`AppDatabase.turns(at:)`), so whatever else the app changes of what it keeps of its sessions, which the session list
+reads, the push still goes while no turn runs there; and with nothing at all where that database goes, as without the
+Copilot app, none of the app's sessions runs one (`SessionEngine.isMissing`), though one that's there but out of reach,
+as in a folder BriefBar may not read, can't be read. BriefBar reads that before git checks
 and again after, right before it copies the prompt, or writes the request for the session's extension and then, at most
 once a second, until the extension takes it, taking the request back if a turn starts; the composer says to send it
 once the turn is done. A turn that starts in that last second, or once the extension took the prompt, before the

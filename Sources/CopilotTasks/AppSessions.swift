@@ -78,14 +78,14 @@ public enum AppSessions {
     /// be read. `strictly`, for a check that mustn't take what it can't tell for none, it reads the flag alone
     /// (`AppDatabase.turns(at:)`), so that a change to anything else the app keeps of its sessions leaves it to be read; it
     /// throws `TurnsUnknown` when the database can't be read, or doesn't keep the flag, or say it for a session, as BriefBar
-    /// reads it; and with no database at all, as without the Copilot app, none of its sessions runs one.
+    /// reads it; and with nothing at all where the database goes, as without the Copilot app, none of its sessions runs
+    /// one. A database that's there but out of reach, as in a folder BriefBar may not read, can't be read.
     public static func running(home: URL, strictly: Bool = false) throws -> [String] {
         let database = CopilotPaths(root: home).database
         guard strictly else {
             return try AppDatabase.load(at: database).sessions.filter { $0.isRunning == true && isSessionID($0.id) }.map(\.id)
         }
-        // Nothing there, not even a link.
-        guard (try? FileManager.default.attributesOfItem(atPath: database.path)) != nil else { return [] }
+        if SessionEngine.isMissing(database) { return [] }
         let turns: [(id: String, isRunning: Bool?)]?
         do {
             turns = try AppDatabase.turns(at: database)

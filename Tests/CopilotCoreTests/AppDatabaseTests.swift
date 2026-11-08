@@ -425,7 +425,7 @@ import BriefBarCore
     /// The running flag, read alone: whatever else the app changes of what the session list reads, which leaves `load`
     /// without the flag, it's read as the app keeps it, of the sessions that aren't archived; of every session, when the
     /// app doesn't record which are. Nil once the app doesn't keep the flag as BriefBar reads it, and nil for a session it
-    /// doesn't say it for.
+    /// doesn't say it for as a flag, 0 or 1.
     @Test func readsWhichSessionsRunATurnByTheirFlagAlone() throws {
         try withTemporaryDirectory { directory in
             let url = directory.appendingPathComponent("data.db")
@@ -454,6 +454,9 @@ import BriefBarCore
             // Nor for a session it doesn't say it for.
             try other.exec("INSERT INTO sessions (id, is_running) VALUES ('c', NULL);")
             #expect(try Self.turns(at: unarchived) == ["a": true, "b": false, "c": nil])
+            // Nor for one it says it for otherwise than as a flag, 0 or 1, as an app that kept it as text would: not as idle.
+            try other.exec("INSERT INTO sessions (id, is_running) VALUES ('d', 'true'), ('e', 2);")
+            #expect(try Self.turns(at: unarchived) == ["a": true, "b": false, "c": nil, "d": nil, "e": nil])
             // One that keeps the flag another way.
             try other.exec("ALTER TABLE sessions RENAME COLUMN is_running TO running;")
             #expect(try Self.turns(at: unarchived) == nil)

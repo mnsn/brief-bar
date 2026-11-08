@@ -36,6 +36,21 @@ import Testing
         }
     }
 
+    /// A flag is an INTEGER, 0 or 1, as SQLite keeps a boolean: anything else isn't one, rather than false, as `bool`
+    /// would read it.
+    @Test func readsAFlagOnlyAsZeroOrOne() throws {
+        try withTemporaryDirectory { directory in
+            let url = try makeDatabase(in: directory)
+            var db: OpaquePointer?
+            try #require(sqlite3_open(url.path, &db) == SQLITE_OK)
+            try #require(sqlite3_exec(db, "INSERT INTO item (id, flag) VALUES (3, 2), (4, -1), (5, 'true'), (6, 'yes'), (7, 1.5), (8, NULL);", nil, nil, nil) == SQLITE_OK)
+            sqlite3_close(db)
+            let connection = try SQLiteConnection(readOnly: url)
+            let flags = try connection.rows("SELECT flag FROM item ORDER BY id") { $0.flag(0) }
+            #expect(flags == [true, false, nil, nil, nil, nil, nil, nil])
+        }
+    }
+
     @Test func readsAClosedDatabaseImmutably() throws {
         try withTemporaryDirectory { directory in
             let url = try makeDatabase(in: directory)

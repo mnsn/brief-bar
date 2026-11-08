@@ -349,9 +349,9 @@ public enum AppDatabase {
 
     /// Which sessions run a turn now, by the app's own flag, read alone: so that a change to anything else the session
     /// list reads, which leaves `load` without the flag (`fallbackQuery`), leaves the flag to be read. Each session's ID,
-    /// and whether it runs one, nil where it doesn't say; of the sessions that aren't archived, or of every session when
-    /// the app doesn't record which are as BriefBar reads it. Nil when the app doesn't keep the flag as BriefBar reads it;
-    /// throws when the database can't be read, as `load` does.
+    /// and whether it runs one, nil where it doesn't say it as a flag, 0 or 1 (`SQLiteRow.flag`); of the sessions that
+    /// aren't archived, or of every session when the app doesn't record which are as BriefBar reads it. Nil when the app
+    /// doesn't keep the flag as BriefBar reads it; throws when the database can't be read, as `load` does.
     public static func turns(at url: URL) throws -> [(id: String, isRunning: Bool?)]? {
         try turns(at: url, afterClosedRead: nil)
     }
@@ -362,7 +362,7 @@ public enum AppDatabase {
             for sql in [turnsQuery, everyTurnQuery] {
                 do {
                     return try connection.rows(sql) { row -> (id: String, isRunning: Bool?) in
-                        (id: row.string(0) ?? "", isRunning: row.isNull(1) ? nil : row.bool(1))
+                        (id: row.string(0) ?? "", isRunning: row.flag(1))
                     }.filter { !$0.id.isEmpty }
                 } catch let error as SQLiteError where error.primaryCode == SQLITE_ERROR {
                     // No such table or column, as BriefBar reads them: the next query, if any.
