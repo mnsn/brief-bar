@@ -24,8 +24,8 @@ public struct BoardCard: Equatable, Sendable, Identifiable {
     /// Its place in that mission as By Mission lists it, from 0: its order's steps, then those stacked with them. Only for
     /// which comes first when nothing else tells them apart, never for which merges first.
     public var listIndex: Int?
-    /// The pull requests that wait for it, directly or through others, by their steps' prerequisites and what they're
-    /// stacked on, in any mission the board shows: those that build on it.
+    /// The open pull requests that wait for it, directly or through other open ones, by their steps' prerequisites and what
+    /// they're stacked on, in any mission the board shows: those that build on it.
     public var waitingForIt: Set<ItemRef>
     /// That mission is the one you focus on.
     public var isFocused: Bool
@@ -657,13 +657,22 @@ public struct PullRequestBoard: Equatable, Sendable {
 
     /// For each pull request in these missions, those that wait for it, directly or through others: by their steps'
     /// prerequisites, and by what they're stacked on (`OrderMission.stackedBases(of:)`), as one stacked on a pull request
-    /// its order doesn't name can't merge before it either. Across the missions, so that a pull request in two gathers what
-    /// waits for it in each.
+    /// its order doesn't name can't merge before it either. Only between open ones: one that merged or closed waits for
+    /// nothing, and nothing waits through it, as its order lets what comes after it merge once it merged. Across the
+    /// missions, so that a pull request in two gathers what waits for it in each.
     static func waiters(in missions: [OrderMission]) -> [ItemRef: Set<ItemRef>] {
-        var direct: [ItemRef: Set<ItemRef>] = [:]
+        var ended: Set<ItemRef> = []
         for mission in missions {
             for step in mission.steps + mission.attached {
-                for earlier in step.prerequisites.map(\.ref) + mission.stackedBases(of: step.ref) where earlier != step.ref {
+                if step.status.hasEnded { ended.insert(step.ref) }
+                for prerequisite in step.prerequisites where prerequisite.status.hasEnded { ended.insert(prerequisite.ref) }
+            }
+        }
+        var direct: [ItemRef: Set<ItemRef>] = [:]
+        for mission in missions {
+            for step in mission.steps + mission.attached where !ended.contains(step.ref) {
+                for earlier in step.prerequisites.map(\.ref) + mission.stackedBases(of: step.ref)
+                where earlier != step.ref && !ended.contains(earlier) {
                     direct[earlier, default: []].insert(step.ref)
                 }
             }

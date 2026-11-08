@@ -291,6 +291,25 @@ import Testing
         #expect(Self.column(.yourReview, stages, missions: [first, second]) == ["!4101", "!4105", "!4106", "!4102"])
     }
 
+    /// One that merged or closed waits for nothing, and nothing waits through it, as its order lets what comes after it
+    /// merge once it merged: in !4801 → !4802 → !4803 with !4802 ended, !4801 doesn't take !4803's wait, nor count either
+    /// among what builds on it.
+    @Test func oneThatEndedInBetweenPassesNoWaitOn() {
+        for (status, standing) in [(OrderStatus.merged, OrderStanding.merged), (.closed, .closed)] {
+            let order = Self.mission([
+                Self.step(4801, .next, place: 1), Self.step(4802, standing, status: status, place: 2, after: [4801]),
+                Self.step(4803, .next, place: 3, after: [4802]),
+            ])
+            let asked = StageWhy.asked("Sam asked you")
+            let stages: [Int: StageReading] = [
+                4801: Self.reading(.yourReview, asked, at: 40), 4803: Self.reading(.yourReview, asked, at: 10),
+            ]
+            let cards = Self.board(stages, missions: [order]).lanes.first?.cards ?? []
+            #expect(cards.first { $0.ref == Self.pr(4801) }?.waitingForIt == [], "\(status)")
+            #expect(Self.column(.yourReview, stages, missions: [order]) == ["!4803", "!4801"], "\(status)")
+        }
+    }
+
     /// Only an open pull request its order numbers has a place in its merge order, among what's left to merge; one that
     /// merged, one that merges any time and one stacked with the order's have none. Each keeps its place in By Mission's
     /// list, for ties.

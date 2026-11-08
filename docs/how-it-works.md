@@ -1385,7 +1385,9 @@ merges any time, one in a group with no order, such as a family's, and one stack
 it have none, and come after those that have one, as By Mission lists them. What waits for a pull request follows its
 steps' prerequisites and what they're stacked on, such as a base the order doesn't name that a step's changes show
 against (`BoardCard.waitingForIt`, `OrderMission.stackedBases(of:)`), not those places, as two lines in one order don't
-wait for each other; and a mission's lane counts how long those in other missions have waited, as Up Next does.
+wait for each other. It's only between open pull requests: nothing waits through one that merged or closed, as its order
+then lets what comes after it merge, or holds it until you check the order. A mission's lane counts how long those in
+other missions have waited, as Up Next does.
 A pull request in two missions has a card in each lane, and counts once. On the Board (`OrderBoardView`), a card drags
 with SwiftUI's `draggable`, carrying its reference and a token made for that drag alone (`BoardDrag`), so a column takes
 only a card dragged from its own board, never text from another app that names a pull request. A drop, and the columns
