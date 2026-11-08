@@ -34,6 +34,23 @@ import Testing
         #expect(PullRequestAction.named("FIX_BUILD") == .fixBuild)
     }
 
+    /// What `pull_request_stage` reads of the pull requests a session names: each the lists have, as the app works its
+    /// stage out, and none for one they don't, or that isn't Azure DevOps'.
+    @Test func readsWhatAStageIsWorkedOutFromForPullRequestStage() async throws {
+        let stages = try #require(agent.source.stages)
+        func ref(_ number: Int) -> ItemRef { .pullRequest(organization: DemoData.organization, number: number) }
+        let gitHub = try #require(ItemRef.from(link: "https://github.com/octo/app/pull/12"))
+        let read = try await stages.read([ref(4093), ref(4085), ref(4097), ref(9999), gitHub])
+        #expect(read.account == nil)
+        #expect(read.facts.keys.sorted() == [ref(4085), ref(4093), ref(4097)].sorted())
+        #expect(read.facts[ref(4093)]?.role == .author)
+        #expect(read.facts[ref(4093)]?.state == .open)
+        #expect(read.facts[ref(4093)]?.isListed == true)
+        #expect(read.facts[ref(4085)]?.state == .merged)
+        #expect(read.facts[ref(4097)]?.role == .reviewer)
+        #expect(try await stages.read([]).facts.isEmpty)
+    }
+
     @Test func needsYouHasWhatTheMenuBarCounts() async throws {
         let text = try #require(try await agent.needsYou())
         #expect(text.contains("Needs You (4):"))
@@ -43,9 +60,10 @@ import Testing
         // What you've seen and haven't answered says so.
         #expect(text.contains("(yours): Sam Rivera replied, 12m ago (seen, still waiting on you). Could we cap"))
         #expect(text.contains("Alex Kim mentioned you, 25m ago. @Robin Diaz"))
-        // Not what waits on others, or what's idle.
-        #expect(!text.contains("Waiting"))
-        #expect(!text.contains("!3990"))
+        // Not what waits on others, or what's idle, but on the Board, with Pull Request Order on, as the demo has it.
+        let groups = try #require(text.components(separatedBy: "\n\nStages, as BriefBar's Board shows them").first)
+        #expect(!groups.contains("Waiting"))
+        #expect(!groups.contains("!3990"))
         #expect(text.contains("""
             - !4088 “Show delivery estimates on the product page” in shop-web (yours): Build failed, 1h 5m ago. shop-web CI · \
             Run unit tests: 2 tests failed in DeliveryEstimateTests.

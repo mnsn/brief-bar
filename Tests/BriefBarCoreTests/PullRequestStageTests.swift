@@ -289,6 +289,27 @@ import Testing
         #expect(StageRules.stands(mark, facts: moved, sessions: [Self.session(.finished, at: 500)]))
     }
 
+    /// A session that read the pull request itself, just now, set its stage with what it saw: what the source read before,
+    /// its votes and commit, ends nothing until it reads them again.
+    @Test func votesAndCommitsCountOnlyAsReadSinceItWasSet() {
+        let onIt = StageMark(stage: .inProgress, at: t(100), by: Self.cart, commit: "e4f5a6b")
+        var before = StageFacts(role: .author, commit: "a1b2c3d", readAt: t(90))
+        #expect(StageRules.stands(onIt, facts: before, sessions: []))
+        before.readAt = t(100)
+        #expect(!StageRules.stands(onIt, facts: before, sessions: []))
+        // A session that finishes since ends it, however long ago the source read the pull request.
+        before.readAt = t(90)
+        #expect(!StageRules.stands(onIt, facts: before, sessions: [Self.session(.finished, at: 150)]))
+
+        let reviewed = StageMark(stage: .teammateReview, at: t(100), by: Self.cart, votes: "10")
+        let unread = StageFacts(role: .author, votes: "", readAt: t(99))
+        #expect(StageRules.stands(reviewed, facts: unread, sessions: []))
+        #expect(Self.reading(unread, marks: [reviewed])?.mark == reviewed)
+        let read = StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10,10", readAt: t(120))
+        #expect(!StageRules.stands(reviewed, facts: read, sessions: []))
+        #expect(Self.reading(read, marks: [reviewed])?.stage == .canMerge)
+    }
+
     @Test func onceTheLatestEndsAnOlderOneDoesntComeBack() {
         let yours = StageMark(stage: .yourReview, at: t(100))
         let cart = StageMark(stage: .inProgress, at: t(200), by: Self.cart, commit: "a1b2c3d")

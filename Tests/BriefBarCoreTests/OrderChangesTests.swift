@@ -1768,4 +1768,51 @@ import Testing
         #expect(MissionChoices.of(Self.pr(4101), missions: missions, changes: changes, orders: none).next == .isSet)
         #expect(MissionChoices.of(Self.pr(4103), missions: missions, changes: changes, orders: none).next == .stacked(on: Self.pr(4102)))
     }
+
+    // MARK: What sessions are told
+
+    /// The session that told an order is told the user's changes to it that hold, a line each, by references and numbers;
+    /// none of another order's; and none an order went against since.
+    @Test func aSessionIsToldTheUsersChangesToItsOrderThatHold() throws {
+        var orders = try tell([(4101, []), (4102, [4101]), (4103, [4102]), (4104, [])])
+        let facts = Self.facts([4101, 4102, 4103, 4104])
+        var changes = OrderChanges()
+        func apply(_ edit: OrderEdit, at seconds: Double) throws {
+            try changes.apply(edit, missions: Self.missions(facts, orders, changes), orders: orders, now: t(seconds))
+        }
+        try apply(.setNext(Self.pr(4103), in: .plan(planID), true), at: 60)
+        try apply(.mergeAfter(Self.pr(4102), Self.pr(4101), in: .plan(planID), false), at: 70)
+        try apply(.move([Self.pr(4104)], to: .outside, from: .plan(planID)), at: 80)
+        #expect(OrderText.userChanges(to: try #require(orders.plan(planID)), holding: changes.holding(in: orders)) == [
+            "!4102 in contoso doesn't merge after !4101: the user took that away.",
+            "!4103 in contoso merges first: the user set it as next to merge.",
+            "!4104 in contoso is in no mission: the user moved it out.",
+        ])
+
+        let other = try tell([(4201, [])], replacing: orders, id: otherID, at: 90)
+        #expect(OrderText.userChanges(to: try #require(other.plan(otherID)), holding: changes.holding(in: other)).isEmpty)
+
+        orders = try tell([(4101, []), (4102, [4101]), (4103, [4101]), (4104, [])], replacing: orders, at: 120)
+        #expect(OrderText.userChanges(to: try #require(orders.plan(planID)), holding: changes.holding(in: orders)) == [
+            "!4102 in contoso doesn't merge after !4101: the user took that away.",
+            "!4104 in contoso is in no mission: the user moved it out.",
+        ])
+    }
+
+    /// What the user put a pull request after, and one they moved into an order's mission or to another.
+    @Test func aSessionIsToldWhatTheUserPutItAfterAndWhereTheyMovedIt() throws {
+        let orders = try tell([(4101, []), (4102, [])])
+        let mine = MissionKey.mine(otherID)
+        let place = { (number: Int) in OrderPlace(of: Self.pr(number), in: orders) }
+        let changes = OrderChanges([
+            OrderChange(ref: Self.pr(4102), after: [Self.pr(4101)], from: .plan(planID), changedAt: t(60), replaced: place(4102)),
+            OrderChange(ref: Self.pr(4101), placement: .into(mine), from: .plan(planID), changedAt: t(60), replaced: place(4101)),
+            OrderChange(ref: Self.pr(4120), placement: .into(.plan(planID)), changedAt: t(60)),
+        ])
+        #expect(OrderText.userChanges(to: try #require(orders.plan(planID)), holding: changes.holding(in: orders)) == [
+            "!4101 in contoso is in another mission: the user moved it.",
+            "!4102 in contoso merges after !4101: the user put it there.",
+            "!4120 in contoso is in this order's mission: the user moved it there.",
+        ])
+    }
 }

@@ -210,4 +210,76 @@ private final class Announcements: Sendable {
         #expect(told.contains("at revision 1. (The demo keeps it in memory.)"))
         #expect(announcements.total == 0)
     }
+
+    /// The session that tells an order is told the user's changes to it that hold, by references and numbers, as
+    /// `pull_request_order` lists them under each order; and that a revision of its went against one. Neither tool writes
+    /// the user's changes: only the app does.
+    @Test func aSessionIsToldTheUsersChangesToItsOrder() async throws {
+        let defaults = Self.settings()
+        let tools = Self.tools(defaults)
+        let order = try #require(tools["order_pull_requests"])
+        func told(_ entries: String, plan: String? = nil, revision: Int? = nil) async throws -> String {
+            let replacing = plan.map { #", "order": "\#($0)", "revision": \#(revision ?? 1)"# } ?? ""
+            return try await order.run(try Self.arguments(#"{"pull_requests": [\#(entries)]\#(replacing)}"#))
+        }
+        let entries = """
+            "\(Self.link(4101))", {"link": "\(Self.link(4102))", "after": [4101]}, {"link": "\(Self.link(4103))", "after": [4102]},
+            "\(Self.link(4104))"
+            """
+        _ = try await told(entries)
+        let orders = DeclaredOrders.load(from: defaults)
+        let plan = try #require(orders.plans.first)
+        let id = plan.id.uuidString.lowercased()
+        func ref(_ number: Int) -> ItemRef { .pullRequest(organization: "contoso", number: number) }
+        func change(_ number: Int, first: Bool = false, notAfter: [Int] = [], placement: OrderPlacement? = nil) -> OrderChange {
+            OrderChange(
+                ref: ref(number), first: first ? .plan(plan.id) : nil, notAfter: notAfter.map(ref), placement: placement,
+                from: .plan(plan.id), changedAt: Self.now - 60, replaced: OrderPlace(of: ref(number), in: orders)
+            )
+        }
+        OrderChanges([change(4103, first: true), change(4102, notAfter: [4101]), change(4104, placement: .outside)]).save(to: defaults)
+        let saved = defaults.data(forKey: OrderChanges.defaultsKey)
+
+        let again = try await told(entries, plan: id)
+        #expect(again.hasSuffix("""
+
+            The user changed this order in BriefBar:
+            - !4102 in contoso doesn't merge after !4101: the user took that away.
+            - !4103 in contoso merges first: the user set it as next to merge.
+            - !4104 in contoso is in no mission: the user moved it out.
+            Keep these in the order you tell, unless you and the user decided otherwise. A later change of yours that goes \
+            against one of these shows instead of the user's, and the user can put theirs back.
+            """))
+
+        let revised = try await told(
+            entries.replacingOccurrences(of: #""after": [4102]"#, with: #""after": [4101]"#), plan: id, revision: 2
+        )
+        #expect(revised.contains("""
+            - !4104 in contoso: any time.
+
+            You changed where !4103 in contoso goes after the user had: BriefBar shows yours now, and says so to the user.
+
+            The user changed this order in BriefBar:
+            - !4102 in contoso doesn't merge after !4101: the user took that away.
+            - !4104 in contoso is in no mission: the user moved it out.
+            Keep these
+            """))
+
+        let read = try await #require(tools["pull_request_order"]).run(.object([:]))
+        #expect(read.hasSuffix("""
+            - !4104 in contoso: any time.
+
+            The user changed this order in BriefBar:
+            - !4102 in contoso doesn't merge after !4101: the user took that away.
+            - !4104 in contoso is in no mission: the user moved it out.
+
+            Keep these in the order you tell, unless you and the user decided otherwise. A later change of yours that goes \
+            against one of these shows instead of the user's, and the user can put theirs back.
+            """))
+        #expect(defaults.data(forKey: OrderChanges.defaultsKey) == saved)
+
+        // With no change of the user's, neither says anything of them.
+        OrderChanges().save(to: defaults)
+        #expect(!(try await #require(tools["pull_request_order"]).run(.object([:]))).contains("The user changed"))
+    }
 }

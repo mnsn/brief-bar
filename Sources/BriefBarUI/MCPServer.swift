@@ -174,8 +174,32 @@ package struct MCPToolError: Error, CustomStringConvertible, Equatable {
     }
 }
 
-/// What a source gives agents through `--mcp`: its tools, its part of `needs_me`, and what it knows of the other sources'
-/// things, for their tools.
+/// What a source tells `pull_request_stage` of its pull requests, as it reads them now (`PullRequestOrderMCP`): what each
+/// one's stage is worked out from, as the app's would be, for the stage a session sets to keep what would end it
+/// (`StageRules.mark`), and the account it reads them with, whose stages the user set apply.
+package struct MCPStages: Sendable {
+    package struct Read: Sendable, Equatable {
+        /// Lowercased, as the app keeps the stages the user set by it; nil when the source can't tell.
+        package var account: String?
+        /// Each one's, as the source reads it now: one its lists don't have is missing.
+        package var facts: [ItemRef: StageFacts]
+
+        package init(account: String?, facts: [ItemRef: StageFacts]) {
+            self.account = account?.lowercased()
+            self.facts = facts
+        }
+    }
+
+    /// Reads these pull requests: what it throws says why it can't, such as being off in BriefBar.
+    package var read: @Sendable ([ItemRef]) async throws -> Read
+
+    package init(read: @escaping @Sendable ([ItemRef]) async throws -> Read) {
+        self.read = read
+    }
+}
+
+/// What a source gives agents through `--mcp`: its tools, its part of `needs_me`, what it knows of the other sources'
+/// things, for their tools, and what its pull requests' stages are worked out from, for `pull_request_stage`.
 package struct MCPSource: Sendable {
     /// Its name in `needs_me`, such as “Azure DevOps”.
     package var name: String
@@ -183,20 +207,23 @@ package struct MCPSource: Sendable {
     /// What it tells of the things the other sources' tools name, such as the Copilot sessions on a pull request's branch;
     /// nil when it tells nothing.
     package var related: MCPRelated.Teller?
+    /// What it tells of its pull requests' stages; nil for a source whose stages BriefBar doesn't work out.
+    package var stages: MCPStages?
     /// What needs you in it now, in Markdown; nil when nothing does.
     package var needsYou: @Sendable () async throws -> String?
 
     package init(
-        name: String, tools: [MCPTool], related: MCPRelated.Teller? = nil,
+        name: String, tools: [MCPTool], related: MCPRelated.Teller? = nil, stages: MCPStages? = nil,
         needsYou: @escaping @Sendable () async throws -> String?
     ) {
         self.name = name
         self.tools = tools
         self.related = related
+        self.stages = stages
         self.needsYou = needsYou
     }
 
-    /// The same source, whose tools, part of `needs_me` and what it tells the others' tools are refused when
+    /// The same source, whose tools, part of `needs_me`, what it tells the others' tools and its stages are refused when
     /// `isAvailable` says no, such as once it's turned off in the app.
     package func available(while isAvailable: @escaping @Sendable () -> Bool, refusal: String) -> MCPSource {
         let needsYou = self.needsYou
@@ -212,10 +239,24 @@ package struct MCPSource: Sendable {
                         guard isAvailable() else { throw MCPToolError(refusal) }
                         return try await sessions()
                     }
+                },
+                stageSessions: teller.stageSessions.map { sessions in
+                    { @Sendable () async throws -> MCPRelated.StageSessions in
+                        guard isAvailable() else { throw MCPToolError(refusal) }
+                        return try await sessions()
+                    }
                 }
             )
         }
-        return MCPSource(name: name, tools: tools.map { $0.available(while: isAvailable, refusal: refusal) }, related: related) {
+        let stages = self.stages.map { stages in
+            MCPStages { refs in
+                guard isAvailable() else { throw MCPToolError(refusal) }
+                return try await stages.read(refs)
+            }
+        }
+        return MCPSource(
+            name: name, tools: tools.map { $0.available(while: isAvailable, refusal: refusal) }, related: related, stages: stages
+        ) {
             guard isAvailable() else { throw MCPToolError(refusal) }
             return try await needsYou()
         }
@@ -243,7 +284,8 @@ package struct MCPSource: Sendable {
             description: """
                 What needs the user now, as BriefBar's menu bar counts it, in each of its sources that's on: Azure DevOps \
                 pull requests that need them, are failing or are ready to complete, pinned pipelines that failed, and \
-                GitHub Copilot sessions waiting for them. Start here when the user asks what to do next or what's going on.
+                GitHub Copilot sessions waiting for them; with Pull Request Order on, each Azure DevOps pull request's \
+                stage too, as BriefBar's Board shows it. Start here when the user asks what to do next or what's going on.
                 """
         ) { _ in
             let checks = sources.map(\.needsYou)

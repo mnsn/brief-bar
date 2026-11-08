@@ -34,7 +34,9 @@ import Testing
 
     /// Pull Request Order's tools, which `--demo --mcp` lists, as Pull Request Order is on there. Its own skill tells
     /// agents about them, not `/briefbar`, which leaves them out.
-    static let orderTools: Set<String> = ["order_pull_requests", "pull_request_order", "forget_pull_request_order"]
+    static let orderTools: Set<String> = [
+        "order_pull_requests", "pull_request_order", "forget_pull_request_order", "pull_request_stage",
+    ]
 
     /// What Pull Request Order's skill may name besides its tools, their arguments and values: the todos with dependencies
     /// that a session keeps.
@@ -45,8 +47,8 @@ import Testing
     static let updateTools: Set<String> = ["working_on", "changed_in_azure_devops"]
 
     /// What Updates from Copilot Sessions' skill may name besides its tools, their arguments and values: Pull Request
-    /// Order's tool, which it doesn't replace.
-    static let updatesVocabulary: Set<String> = ["briefbar", "order_pull_requests"]
+    /// Order's tools, which it doesn't replace.
+    static let updatesVocabulary: Set<String> = ["briefbar", "order_pull_requests", "pull_request_stage"]
 
     static func object(_ url: URL) throws -> [String: Any] {
         try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any], "\(url.path) isn't a JSON object")
@@ -153,6 +155,25 @@ import Testing
         #expect(refused.contains("stop there"))
         let told = try #require(points.first { $0.contains("best effort") })
         #expect(told.contains("only once `order_pull_requests` answered"))
+    }
+
+    /// The skill tells sessions to keep BriefBar current without being asked: the session that did the work tells its pull
+    /// requests' stages, as it pushes and as the user says they reviewed one, never Can merge, Waits or Merged; only the
+    /// session that owns the plan tells an order; and what the user set is kept, unless they decided otherwise together.
+    @Test func orderSkillTellsStagesAndKeepsWhatTheUserSet() throws {
+        let text = try String(contentsOf: Self.orderSkill, encoding: .utf8)
+        let description = try #require(text.components(separatedBy: "\n").first { $0.hasPrefix("description: ") })
+        #expect(description.contains("without being asked") && description.contains("each one's stage"))
+        let points = Self.points(in: text).map { $0.lowercased() }
+        #expect(points.contains { $0.hasPrefix("`user_review` at the end of a turn that pushed the work") })
+        #expect(points.contains { $0.hasPrefix("`in_progress` as you start fixing it again") })
+        #expect(points.contains { $0.hasPrefix("`teammate_review` once the user tells you they've reviewed it") })
+        #expect(points.contains { $0.hasPrefix("only the session that did the work") && $0.contains("azure devops' pull requests only") })
+        #expect(points.contains { $0.hasPrefix("never claim a pull request can merge, waits or merged") })
+        let owner = try #require(points.first { $0.hasPrefix("only the session that owns the plan tells it") })
+        #expect(owner.contains("never tells an order"))
+        let kept = try #require(points.first { $0.contains("what the user changed") })
+        #expect(kept.contains("keep it") && kept.contains("unless you and the user decided otherwise"))
     }
 
     /// Updates from Copilot Sessions' plugin holds only its skill, which BriefBar installs only once you turn it on: until

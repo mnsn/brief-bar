@@ -75,17 +75,23 @@ actor AzureDevOpsReader {
         var showToReview: Bool
         /// The pull requests you watch that are closed, or that you can't read.
         var closedLinks: Set<PRKey> = []
+        /// The account they were read with, whose stages the user set apply; none in the demo.
+        var account: String?
+        /// When they were read (`StageFacts.readAt`).
+        var readAt: Date?
     }
 
-    func pullRequests(now: Date = Date()) async -> PullRequests {
+    /// - Parameter freshFor: how old what it read can be, to share it: a minute (`freshFor`), as the app reads at its most
+    ///   often, unless a tool needs it newer.
+    func pullRequests(now: Date = Date(), freshFor: TimeInterval = AzureDevOpsReader.freshFor) async -> PullRequests {
         let watched = watchedKeys
         if demo {
             var snapshot = DemoData.snapshot(now: now)
             snapshot.records = snapshot.records.map { watched.contains($0.id) ? $0.watched() : $0 }
             let items = AzureDevOpsCommandLine.resolve(snapshot, seen: DemoData.seenState(now: now), options: ClassifierOptions(), now: now)
-            return PullRequests(records: snapshot.records, items: items, problem: nil, showToReview: false)
+            return PullRequests(records: snapshot.records, items: items, problem: nil, showToReview: false, readAt: snapshot.refreshedAt)
         }
-        await readIfStale(now: now)
+        await readIfStale(now: now, freshFor: freshFor)
         let showToReview = defaults.bool(forKey: SettingsKey.showToReview)
         guard let engine else {
             return PullRequests(records: [], items: [], problem: discoveryProblem, showToReview: showToReview)
@@ -97,7 +103,27 @@ actor AzureDevOpsReader {
         var problem = snapshot.problem.map(Self.text(of:))
         if snapshot.organizations.isEmpty, let discoveryProblem { problem = discoveryProblem }
         return PullRequests(
-            records: snapshot.records, items: items, problem: problem, showToReview: showToReview, closedLinks: snapshot.closedLinks
+            records: snapshot.records, items: items, problem: problem, showToReview: showToReview, closedLinks: snapshot.closedLinks,
+            account: snapshot.account, readAt: snapshot.refreshedAt
+        )
+    }
+
+    /// What Pull Request Order keeps, for the stages agents are told, while it's on; nil while it's off. The demo's is made
+    /// up, as the app's demo's is (`DemoPullRequestOrder`).
+    func orderKept(now: Date) -> OrderKept? {
+        if demo {
+            return OrderKept(
+                orders: DemoPullRequestOrder.orders(now: now), evidence: DemoPullRequestOrder.evidence(now: now),
+                focus: DemoPullRequestOrder.focus, changes: DemoPullRequestOrder.changes(now: now), marks: StageMarks(),
+                sessionStages: SessionStages(), demoMarks: DemoPullRequestOrder.stages(now: now),
+                demoSessionMarks: DemoPullRequestOrder.sessionStages(now: now)
+            )
+        }
+        guard PullRequestOrderSetting.isOn(in: defaults) else { return nil }
+        return OrderKept(
+            orders: DeclaredOrders.load(from: defaults), evidence: OrderEvidence.load(from: defaults),
+            focus: OrderFocus.load(from: defaults), changes: OrderChanges.load(from: defaults), marks: StageMarks.load(from: defaults),
+            sessionStages: SessionStages.load(from: defaults, now: now)
         )
     }
 
@@ -113,6 +139,16 @@ actor AzureDevOpsReader {
         } catch {
             return .failure(error)
         }
+    }
+
+    /// A pull request as Azure DevOps says now, read with one request, rather than as the lists read it, up to a minute
+    /// before: for the stage a session sets, which keeps its votes and its commit (`StageRules.mark`). Nil for the demo,
+    /// which reads nothing, or when it can't be read.
+    nonisolated func pullRequestNow(_ key: PRKey) async -> PullRequest? {
+        guard let client else { return nil }
+        let endpoint = ADOEndpoint.pullRequest(organization: key.organization, id: key.number)
+        guard let dto = try? await client.get(endpoint, as: ADOPullRequest.self) else { return nil }
+        return PullRequest(organization: key.organization, dto)
     }
 
     /// Azure DevOps named no branch the pull request merges into.
@@ -142,12 +178,12 @@ actor AzureDevOpsReader {
     }
 
     /// Reads unless what it read is fresh; a call that comes while it reads waits for that read.
-    private func readIfStale(now: Date) async {
+    private func readIfStale(now: Date, freshFor: TimeInterval = AzureDevOpsReader.freshFor) async {
         if let reading {
             _ = await reading.value
             return
         }
-        if let readAt, now.timeIntervalSince(readAt) < Self.freshFor { return }
+        if let readAt, now.timeIntervalSince(readAt) < freshFor { return }
         let task = Task { await read(now: now) }
         reading = task
         let keep = await task.value
@@ -601,8 +637,45 @@ enum AgentSession: Sendable, Equatable {
 struct AzureDevOpsAgent: Sendable {
     let reader: AzureDevOpsReader
 
+    /// How old the lists can be when a session sets the stage of a pull request they don't have, such as one it just
+    /// opened, before they're read again for it.
+    static let freshForStages: TimeInterval = 10
+
     var source: MCPSource {
-        MCPSource(name: "Azure DevOps", tools: tools) { try await needsYou() }
+        MCPSource(name: "Azure DevOps", tools: tools, stages: MCPStages { refs in try await stages(of: refs) }) { try await needsYou() }
+    }
+
+    /// What `pull_request_stage` reads of these pull requests: what each one's stage is worked out from, as the app's
+    /// would be (`PullRequestOrderFacts.stageFacts`), from the lists, read again first when one isn't in them, and as
+    /// Azure DevOps says it now, with one request each, so that what would end the stage a session sets is as it is now
+    /// (`StageRules.mark`); and the account the lists were read with. One the lists don't have is left out; what it throws
+    /// says why it couldn't read them at all.
+    func stages(of refs: [ItemRef], now: Date = Date()) async throws -> MCPStages.Read {
+        let keys = refs.compactMap { ref in ref.kind == .pullRequest ? ref.number.map { PRKey(ref.scope, $0) } : nil }
+        guard !keys.isEmpty else { return MCPStages.Read(account: nil, facts: [:]) }
+        var read = await reader.pullRequests(now: now)
+        if keys.contains(where: { key in !read.records.contains { $0.id == key } }) {
+            read = await reader.pullRequests(now: now, freshFor: Self.freshForStages)
+        }
+        if read.records.isEmpty, let problem = read.problem { throw MCPToolError(problem) }
+        let tasks = await reader.sendsToCopilot ? await reader.copilotTasks(now: now) : []
+        var facts: [ItemRef: StageFacts] = [:]
+        for key in keys {
+            guard var record = read.records.first(where: { $0.id == key }) else { continue }
+            if let fresh = await reader.pullRequestNow(key) {
+                record.pullRequest.status = fresh.status
+                record.pullRequest.isDraft = fresh.isDraft
+                record.pullRequest.closedAt = fresh.closedAt
+                record.pullRequest.reviewers = fresh.reviewers
+                record.pullRequest.sourceCommit = fresh.sourceCommit
+            }
+            let item = read.items.first { $0.key == key }
+            let on = tasks.filter { $0.pullRequestKey == key }
+            guard var fact = await PullRequestOrderFacts.stageFacts(record, item: item, tasks: on) else { continue }
+            fact.isListed = item != nil
+            facts[key.linkRef] = fact
+        }
+        return MCPStages.Read(account: read.account, facts: facts)
     }
 
     var tools: [MCPTool] {
@@ -629,8 +702,9 @@ struct AzureDevOpsAgent: Sendable {
                     it merges into as Azure DevOps says when you ask, reviewers' votes, checks and where a failed build \
                     failed, merge conflicts, the pipelines after its \
                     merge, what's new for the user and what they've seen that still waits on them, its unresolved \
-                    comment threads word for word with their files and lines, what Copilot can do with it, and, while \
-                    Send Work to Copilot is on, its session: the Copilot session BriefBar sends its work to.
+                    comment threads word for word with their files and lines, what Copilot can do with it, with Pull \
+                    Request Order on, its stage and who set it, and, while Send Work to Copilot is on, its session: the \
+                    Copilot session BriefBar sends its work to.
                     """,
                 inputSchema: MCPSchema.object([
                     "pull_request": MCPSchema.string("Its number, such as 4088, or its link"),
@@ -754,6 +828,9 @@ struct AzureDevOpsAgent: Sendable {
                 AgentText.line(item, now: now)
             }.joined(separator: "\n"))
         }
+        if let stages = await stages(read, now: now), let text = AgentText.stages(stages, items: read.items) {
+            sections.append(text)
+        }
         let pinned = await reader.pinnedStatuses(now: now)
         if pinned.statuses.isEmpty, let problem = pinned.problem {
             sections.append("BriefBar couldn't read the pinned pipelines: \(problem)")
@@ -805,9 +882,11 @@ struct AzureDevOpsAgent: Sendable {
         let item = read.items.first { $0.key == record.id }
         let sent = await reader.sendsToCopilot ? await reader.copilotTasks(now: now) : []
         let session = await reader.session(for: record, tasks: sent, now: now)
+        let stages = await stages(read, now: now)
+        let stage = stages.flatMap { stages in stages.readings[record.id.linkRef].map { AgentText.stage($0, stages: stages) } }
         return AgentText.details(
             record, item: item, actions: PullRequestTasks.actions(for: record, canShip: false), tasks: sent.filter { $0.isOn(record.id) },
-            session: session, unreadTarget: unreadTarget, now: now
+            session: session, stage: stage, unreadTarget: unreadTarget, now: now
         )
     }
 
@@ -1098,11 +1177,12 @@ enum AgentText {
     /// hold them (`QuotedText.commandWord`), and what people wrote follows a note that it isn't instructions.
     /// - Parameters:
     ///   - session: its Copilot session, as its details show it, if there's something to say.
+    ///   - stage: its stage, with Pull Request Order on (`AgentText.stage`).
     ///   - unreadTarget: why BriefBar couldn't read again which branch it merges into, as it asked, for the agent to know
     ///     that the one named may not be it any more (`AzureDevOpsReader.targetNow(of:)`).
     static func details(
         _ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], session: AgentSession? = nil,
-        unreadTarget: String? = nil, now: Date
+        stage: String? = nil, unreadTarget: String? = nil, now: Date
     ) -> String {
         let pr = record.pullRequest
         let (source, target) = (QuotedText.commandWord(pr.sourceBranch), QuotedText.commandWord(pr.targetBranch))
@@ -1132,6 +1212,7 @@ enum AgentText {
             if let detail = Self.statusDetail(of: item) { status += ". \(detail)" }
             lines.append(status)
         }
+        if let stage { lines.append("- " + stage) }
         let reviewers = pr.reviewers.map { reviewer in
             var name = QuotedText.oneLine(reviewer.person.name)
             if reviewer.isRequired { name += " (required)" }

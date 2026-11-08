@@ -173,12 +173,15 @@ public struct StageFacts: Equatable, Sendable {
     public var isListed: Bool
     /// Someone else's: who opened it, by their first name, such as "Priya", as its row names them: they ask for its reviews.
     public var author: String?
+    /// When its source read what it says of it, when it says: a stage set since, such as by a session that read it again
+    /// itself, isn't ended by its votes or its commit until its source reads it again (`StageRules.stands`).
+    public var readAt: Date?
 
     public init(
         role: Role, state: PullRequestState = .open, failure: String? = nil, changesWanted: String? = nil, asksYou: String? = nil,
         isReady: Bool = false, autoComplete: Bool = false, leftAfterReviews: String? = nil, waitingFor: String? = nil,
         othersVoted: Bool = false, youWantChanges: String? = nil, votes: String = "", commit: String? = nil,
-        sessions: [StageSession] = [], since: Date? = nil, isListed: Bool = true, author: String? = nil
+        sessions: [StageSession] = [], since: Date? = nil, isListed: Bool = true, author: String? = nil, readAt: Date? = nil
     ) {
         self.role = role
         self.state = state
@@ -197,6 +200,7 @@ public struct StageFacts: Equatable, Sendable {
         self.since = since
         self.isListed = isListed
         self.author = author
+        self.readAt = readAt
     }
 
     public var isYours: Bool { role == .author }
@@ -484,6 +488,20 @@ public enum StageRules {
         return (latest, yours)
     }
 
+    /// What you and the sessions set on a pull request that counts now (`reading`'s marks): yours while it stands, and
+    /// the sessions', while the latest of them all stands and the pull request is open. Once the latest ends, or it merged
+    /// or closed, none counts, and `latestEnded` says so, for what keeps them to end them all, so that an older one never
+    /// comes back.
+    /// - Parameter theirs: what the sessions the sources list set on it (`SessionStages.marks`).
+    public static func counted(
+        yours: StageMark?, theirs: [StageMark], facts: StageFacts, sessions: [StageSession]
+    ) -> (yours: StageMark?, theirs: [StageMark], latestEnded: Bool) {
+        let latest = ([yours].compactMap { $0 } + theirs).max { $0.at < $1.at }
+        let latestEnded = !facts.state.isOpen || latest.map { !stands($0, facts: facts, sessions: sessions) } == true
+        let mine = yours.flatMap { latestEnded || !stands($0, facts: facts, sessions: sessions) ? nil : $0 }
+        return (mine, latestEnded ? [] : theirs, latestEnded)
+    }
+
     /// A stage you set now, keeping of what it was set over only what `stands` reads to end it: the commit, for In
     /// progress, and for Teammate's review on someone else's; the votes, for Teammate's review alone, on yours how many of
     /// each others cast, on someone else's your own vote. Your review keeps neither.
@@ -497,15 +515,18 @@ public enum StageRules {
     /// session writing it finishes, or new commits come, after it was set: a review's end ends nothing. A set Teammate's
     /// review ends when its votes change (`StageFacts.votes`): on yours, the votes others cast; on someone else's that you
     /// finished reviewing, your own vote, and new commits. A set Your review stands until it's changed: BriefBar can't tell
-    /// you reviewed it.
+    /// you reviewed it. Votes and commits count only as its source read them after it was set, when it says when it read
+    /// them (`StageFacts.readAt`): a session that read the pull request itself, just now, may have seen what its source
+    /// hasn't yet.
     public static func stands(_ mark: StageMark, facts: StageFacts, sessions: [StageSession]) -> Bool {
-        let newCommits = mark.commit != nil && facts.commit != nil && mark.commit != facts.commit
+        let readSince = facts.readAt.map { $0 >= mark.at } ?? true
+        let newCommits = readSince && mark.commit != nil && facts.commit != nil && mark.commit != facts.commit
         switch mark.stage {
         case .inProgress:
             return !newCommits
                 && !sessions.contains { !$0.isReview && $0.activity == .finished && ($0.since ?? .distantPast) > mark.at }
         case .teammateReview:
-            if let votes = mark.votes, votes != facts.votes { return false }
+            if readSince, let votes = mark.votes, votes != facts.votes { return false }
             return facts.isYours || !newCommits
         case .yourReview:
             return true
@@ -719,7 +740,8 @@ public enum StageText {
         name(session).map { "‘\($0)’" } ?? "A Copilot session"
     }
 
-    static func agoWords(_ date: Date, now: Date) -> String {
+    /// "just now", "5m ago".
+    public static func agoWords(_ date: Date, now: Date) -> String {
         let short = Elapsed.short(since: date, now: now)
         return short == "now" ? "just now" : short + " ago"
     }
