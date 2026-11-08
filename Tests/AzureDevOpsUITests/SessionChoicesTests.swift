@@ -189,6 +189,17 @@ private struct DatabaseError: Error {
         let told = await store.sessionChoices(for: subject)
         #expect(told.filter { $0.toldSince != nil }.map(\.id) == [linkedChat])
         #expect(told.first { $0.id == linkedChat }?.toldSince == began)
+
+        // A task BriefBar ran with the Copilot CLI for another pull request, which the app lists since you opened it there,
+        // that says so too goes with it for that, but takes the place of nothing you chose, as BriefBar's own.
+        store.settings.copilotRuns.append(run(other, worktree: worktree, onPullRequest: 4088))
+        store.linkedSessions = { [linkedChat, other] _ in
+            [linkedChat, other].map { LinkedSession(id: $0, origins: [.session], isThrough: false, began: began) }
+        }
+        let own = await store.sessionChoices(for: subject)
+        #expect(own.first { $0.id == other }?.appSession != nil)
+        #expect(own.first { $0.id == other }?.reasons == [.toldBriefBar])
+        #expect(own.filter { $0.toldSince != nil }.map(\.id) == [linkedChat])
     }
 
     /// A session that told BriefBar it's working on the pull request, as Show Links has it with Updates from Copilot

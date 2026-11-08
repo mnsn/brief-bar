@@ -131,7 +131,7 @@ extension CopilotTasksStore {
         guard !Task.isCancelled else { return [] }
         let links = linkedSessions(Self.ref(of: subject))
         let linked = Self.reasons(of: links)
-        let told = Self.toldSince(of: links)
+        let told = toldSince(of: links)
         let apps = found.sessions.map { session in
             SessionChoice(
                 kind: .app(session), name: session.name, place: Self.place(of: session), lastActive: session.lastActive,
@@ -256,18 +256,27 @@ extension CopilotTasksStore {
     }
 
     /// When each session that Show Links shows telling BriefBar it's working on this began to say so, by its ID
-    /// (`SessionChoice.toldSince`): nothing while it's off.
+    /// (`SessionChoice.toldSince`), but BriefBar's own (`toldSince(of:)`): nothing while it's off.
     func toldSince(_ ref: ItemRef) -> [String: Date] {
-        Self.toldSince(of: linkedSessions(ref))
+        toldSince(of: linkedSessions(ref))
     }
 
-    /// When each of these sessions that tells BriefBar it's working on what they're linked to began to say so, by its ID.
-    static func toldSince(of links: [LinkedSession]) -> [String: Date] {
+    /// When each of these sessions that tells BriefBar it's working on what they're linked to began to say so, by its ID:
+    /// those that can take the place of the session you chose for a pull request's work, so the same for what picks its
+    /// session and what forgets what you chose (`forgetChoicesToldSince`). Not BriefBar's own, which the Copilot app
+    /// doesn't have, even one you opened there, which the app then lists.
+    func toldSince(of links: [LinkedSession]) -> [String: Date] {
+        let own = ownSessionIDs
         var since: [String: Date] = [:]
-        for link in links where !link.isThrough && link.origins.contains(.session) {
+        for link in links where !link.isThrough && link.origins.contains(.session) && !own.contains(link.id) {
             if let began = link.began { since[link.id] = began }
         }
         return since
+    }
+
+    /// BriefBar's own sessions: those of the tasks it ran with the Copilot CLI, not the Copilot app's that it went on with.
+    var ownSessionIDs: Set<String> {
+        Set(settings.copilotRuns.compactMap { $0.isValid && $0.isAppSession != true ? $0.id : nil })
     }
 
     /// What a task is for, as Show Links names it.

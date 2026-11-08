@@ -467,7 +467,7 @@ final class PullRequestSessions: ObservableObject {
         let taskIDs = Set(tasks.map(\.id))
         let links = copilot.linkedSessions(CopilotTasksStore.ref(of: subject))
         let linked = CopilotTasksStore.reasons(of: links)
-        let told = CopilotTasksStore.toldSince(of: links)
+        let told = copilot.toldSince(of: links)
         let apps = found.compactMap { choice -> SessionChoice? in
             guard let session = choice.appSession, !taskIDs.contains(choice.id) else { return nil }
             var choice = choice

@@ -93,14 +93,18 @@ import Testing
     ///   - chosen: the session you chose for !4088's work, or a new session for nil, and when.
     ///   - told: what sessions told BriefBar, with Updates from Copilot Sessions on.
     private func reader(
-        home: URL, sending: Bool = true, links: LinkEdits? = nil, chosen: (session: String?, at: Date)? = nil, told: [SessionReport] = []
+        home: URL, sending: Bool = true, links: LinkEdits? = nil, chosen: (session: String?, at: Date)? = nil, replaced: Bool = false,
+        told: [SessionReport] = []
     ) -> AzureDevOpsReader {
         // As the app keeps it: Use for This Pull Request, in the line's menu; in preferences of their own, as what the main
         // actor's settings hold can't go to the reader's actor.
         var kept: Data?
         if let chosen {
             let app = MemoryDefaults()
-            AppSettings(defaults: app).choose(session: chosen.session, for: PRKey("contoso", 4088), at: chosen.at)
+            let settings = AppSettings(defaults: app)
+            settings.choose(session: chosen.session, for: PRKey("contoso", 4088), at: chosen.at)
+            // As the app keeps it once a session took its place.
+            if replaced { settings.copilotPullRequestSessions = settings.copilotPullRequestSessions.map { $0.givenWay() } }
             kept = app.data(forKey: SettingsKey.copilotPullRequestSessions)
         }
         let defaults = MemoryDefaults()
@@ -360,8 +364,8 @@ import Testing
 
     /// What sessions told BriefBar counts for agents as it does in its details, with Show Links and Updates from Copilot
     /// Sessions on, for the sessions Copilot's list has, which the Copilot source says while it's on: one that said it
-    /// opened it is its; one that began to say it's working on it after you chose another takes that one's place, and one
-    /// you chose since stays.
+    /// opened it is its; one that began to say it's working on it after you chose another takes that one's place, even once
+    /// what you chose gave way to it, which then doesn't come back; and one you chose since stays.
     @Test func countsWhatSessionsToldBriefBar() async throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -412,6 +416,17 @@ import Testing
         )))
         #expect(before.suggested?.choice.id == elsewhere)
         #expect(before.suggested?.basis == .chosenByYou)
+
+        // Once what you chose gave way to it, as the app keeps it, it goes on taking its place; once none says so, what you
+        // chose doesn't come back.
+        let gaveWay = try #require(await session(reader(
+            home: home, links: LinkEdits(), chosen: (elsewhere, now.addingTimeInterval(-3_600)), replaced: true, told: [working]
+        )))
+        #expect(gaveWay.suggested?.choice.id == opener)
+        #expect(gaveWay.suggested?.basis == .toldBriefBar)
+        let chosen = (session: Optional(elsewhere), at: now.addingTimeInterval(-3_600))
+        #expect(await session(reader(home: home, links: LinkEdits(), chosen: chosen))?.suggested?.choice.id == elsewhere)
+        #expect(await session(reader(home: home, links: LinkEdits(), chosen: chosen, replaced: true)) == nil)
     }
 
     @Test func namesNoneWhileSendingIsOffInTheDemoOrWhenTheresNone() async throws {

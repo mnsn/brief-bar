@@ -632,15 +632,15 @@ import Testing
         services.sessionUpdates.tellDemo([report])
         services.links.publish(.copilot, links: [try #require(ItemLink(session, key.linkRef, origin: .session))], items: [])
         try await Task.sleep(for: .milliseconds(200))
-        #expect(source.settings.chosenSession(for: key) != nil)
+        #expect(source.settings.chosenSession(for: key)?.isReplaced == false)
 
         report.setWorkingOn([], at: chosenAt)
         report.setWorkingOn([key.linkRef], at: chosenAt.addingTimeInterval(60))
         services.sessionUpdates.tellDemo([report])
-        for _ in 0..<150 where source.settings.chosenSession(for: key) != nil {
+        for _ in 0..<150 where source.settings.chosenSession(for: key)?.isReplaced != true {
             try await Task.sleep(for: .milliseconds(20))
         }
-        #expect(source.settings.chosenSession(for: key) == nil)
+        #expect(source.settings.chosenSession(for: key)?.isReplaced == true)
     }
 
     /// Clicking the notification that says a task started shows it with your Copilot sessions: in the menu bar, or else a

@@ -350,8 +350,9 @@ import Testing
     }
 
     /// What you chose is forgotten once another of the app's sessions began to tell BriefBar it's working on the pull
-    /// request since, so that it doesn't come back once that session no longer says so: not for one that began before, the
-    /// one you chose, a session of BriefBar's own, another pull request, or while Send Work to Copilot is off.
+    /// request since, so that it doesn't come back once that session no longer says so, though when you chose is kept: not
+    /// for one that began before, the one you chose, a session of BriefBar's own, another pull request, or while Send Work
+    /// to Copilot is off.
     @Test func forgetsWhatYouChoseOnceASessionTookItsPlace() throws {
         let defaults = MemoryDefaults()
         let settings = AppSettings(defaults: defaults, now: now)
@@ -383,27 +384,34 @@ import Testing
         #expect(settings.chosenSession(for: key)?.session == ItemRef.session(other))
         told[key.linkRef] = [LinkedSession(id: recorded, origins: [.session], isThrough: false, began: now.addingTimeInterval(-10))]
         store.forgetChoicesToldSince()
-        #expect(settings.chosenSession(for: key) == nil)
-        #expect(settings.chosenSession(for: elsewhere) != nil)
-        #expect(defaults.data(forKey: SettingsKey.copilotPullRequestSessions).map { String(decoding: $0, as: UTF8.self).contains(other) } == false)
+        // Its session is forgotten, and when you chose kept, in the preferences too; what you chose stays in it for an older
+        // BriefBar's `--mcp`, which reads it as before.
+        let givenWay = try #require(PullRequestSessionChoice(pullRequest: key, session: other, date: now.addingTimeInterval(-60))).givenWay()
+        #expect(settings.chosenSession(for: key) == givenWay)
+        #expect(settings.chosenSession(for: elsewhere)?.isReplaced == false)
+        #expect(AppSettings(defaults: defaults, now: now).copilotPullRequestSessions == settings.copilotPullRequestSessions)
+        let text = String(decoding: try #require(defaults.data(forKey: SettingsKey.copilotPullRequestSessions)), as: UTF8.self)
+        #expect(text.contains(#""replaced":true"#) && text.contains(other))
+        store.forgetChoicesToldSince()
+        #expect(settings.chosenSession(for: key) == givenWay)
 
         // A session of BriefBar's own says so, for another pull request's task, which the app doesn't have: nothing.
         settings.copilotRuns = [run(fixing, startedAgo: 3_600)]
         told[elsewhere.linkRef] = [LinkedSession(id: fixing, origins: [.session], isThrough: false, began: now.addingTimeInterval(-10))]
         store.forgetChoicesToldSince()
-        #expect(settings.chosenSession(for: elsewhere) != nil)
+        #expect(settings.chosenSession(for: elsewhere)?.isReplaced == false)
         // Linked only through another pull request, or without saying so: nothing.
         told[elsewhere.linkRef] = [
             LinkedSession(id: linked, origins: [], isThrough: true, began: now.addingTimeInterval(-10)),
             LinkedSession(id: recorded, origins: [.copilot], isThrough: false, began: now.addingTimeInterval(-10)),
         ]
         store.forgetChoicesToldSince()
-        #expect(settings.chosenSession(for: elsewhere) != nil)
+        #expect(settings.chosenSession(for: elsewhere)?.isReplaced == false)
     }
 
     /// Only a session the pull request's work could go to takes your choice's place, as when its details ask which: one of
     /// the app's that BriefBar went on with for another pull request does; not its own task's, while its worktree is there,
-    /// nor one of BriefBar's own, which the app doesn't have.
+    /// nor one of BriefBar's own, which the app doesn't have, for what picks its session too (`toldSince(of:)`).
     @Test func onlyASessionItsWorkCouldGoToTakesYourChoicesPlace() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -432,18 +440,59 @@ import Testing
 
         telling(linked, fixing, on: key)
         store.forgetChoicesToldSince()
-        #expect(settings.chosenSession(for: key) != nil)
+        #expect(settings.chosenSession(for: key)?.isReplaced == false)
         // Once its worktree is gone, it's not its task's, but one of the app's sessions like any other.
         try FileManager.default.removeItem(at: folder)
         store.forgetChoicesToldSince()
-        #expect(settings.chosenSession(for: key) == nil)
+        #expect(settings.chosenSession(for: key)?.isReplaced == true)
 
         telling(fixing, on: elsewhere)
+        #expect(store.toldSince(elsewhere.linkRef).isEmpty)
         store.forgetChoicesToldSince()
-        #expect(settings.chosenSession(for: elsewhere) != nil)
+        #expect(settings.chosenSession(for: elsewhere)?.isReplaced == false)
         telling(recorded, on: elsewhere)
+        #expect(store.toldSince(elsewhere.linkRef) == [recorded: now.addingTimeInterval(-10)])
         store.forgetChoicesToldSince()
-        #expect(settings.chosenSession(for: elsewhere) == nil)
+        #expect(settings.chosenSession(for: elsewhere)?.isReplaced == true)
+    }
+
+    /// Once what you chose gave way to a session that began to tell BriefBar it's working on the pull request since, that
+    /// session goes on taking its place, ahead of a task that started before you chose, and two such ask which; once none
+    /// says so, the rest decide, never what you chose; a task that starts since takes its place, as it would yours.
+    @Test func aSessionGoesOnTakingYourChoicesPlaceOnceItsForgotten() throws {
+        let settings = AppSettings(defaults: MemoryDefaults(), now: now)
+        settings.copilotEnabled = true
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        var told: [LinkedSession] = []
+        store.linkedSessions = { $0 == key.linkRef ? told : [] }
+        let earlier = task(fixing, startedAgo: 3_600)
+        let lastTask = last(earlier)
+        settings.choose(session: other, for: key, at: now.addingTimeInterval(-600))
+        told = [LinkedSession(id: linked, origins: [.session], isThrough: false, began: now.addingTimeInterval(-60))]
+        let claims = store.toldSince(key.linkRef)
+        var choices = [
+            earlier, app(other, [], active: -7_200),
+            app(linked, [.toldBriefBar], active: -60, told: try #require(claims[linked]).timeIntervalSince(now)),
+        ]
+        #expect(PullRequestSession.pick(choices, chosen: settings.chosenSession(for: key), lastTask: lastTask) == .session(choices[2], .toldBriefBar))
+        store.forgetChoicesToldSince()
+        #expect(settings.chosenSession(for: key)?.isReplaced == true)
+        #expect(PullRequestSession.pick(choices, chosen: settings.chosenSession(for: key), lastTask: lastTask) == .session(choices[2], .toldBriefBar))
+
+        // Two that began since: which?
+        choices.append(app(recorded, [.toldBriefBar, .recordedByCopilot], active: -30, told: -30))
+        #expect(PullRequestSession.pick(choices, chosen: settings.chosenSession(for: key), lastTask: lastTask) == .ask([choices[3], choices[2]]))
+        // The one you chose, once it says so since, too, as it gave way already.
+        choices = [earlier, app(other, [.toldBriefBar], active: -20, told: -20)]
+        #expect(PullRequestSession.pick(choices, chosen: settings.chosenSession(for: key), lastTask: lastTask) == .session(choices[1], .toldBriefBar))
+        // None says so any more: its last task, not what you chose.
+        choices = [earlier, app(other, [], active: -7_200), app(linked, [], active: -60)]
+        #expect(PullRequestSession.pick(choices, chosen: settings.chosenSession(for: key), lastTask: lastTask) == .session(choices[0], .lastTask))
+        #expect(PullRequestSession.pick(Array(choices.dropFirst()), chosen: settings.chosenSession(for: key), lastTask: nil) == .newSession(chosenByYou: false))
+        // A task that started since: its own.
+        let later = task(opener, startedAgo: 30)
+        choices = [later, app(linked, [.toldBriefBar], active: -60, told: -60)]
+        #expect(PullRequestSession.pick(choices, chosen: settings.chosenSession(for: key), lastTask: last(later)) == .session(choices[0], .lastTask))
     }
 
     @Test func leavesOutWhatIsntAPullRequestsSession() throws {

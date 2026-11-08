@@ -1459,7 +1459,11 @@ pull request in another session forgets it, so clearing that task doesn't bring 
 app's sessions its work could go to, not one of its tasks' or of BriefBar's own, that Show Links shows began to tell
 BriefBar it's working on it after you chose, so it doesn't come back once that session stops saying so: the app
 forgets it as it sees that, while Send Work to Copilot is on (`CopilotTasksStore.forgetChoicesToldSince`), so one that
-began and stopped saying so while BriefBar wasn't running, or Send Work to Copilot was off, leaves it be. What a
+began and stopped saying so while BriefBar wasn't running, or Send Work to Copilot was off, leaves it be. It keeps when
+you chose, though, marked as given way (`PullRequestSessionChoice.givenWay`), with what you chose for an older
+BriefBar's `--mcp`, which reads it as before: while a session that began to say so since does, that session goes on
+taking its place, ahead of a task that started before you chose, and two such ask which; once none does, the rest
+decide; and **Let BriefBar Choose** doesn't show. What a
 session told before BriefBar kept when it began to say it works on something, or tells through an older BriefBar's
 `--mcp`, which doesn't keep that, began, as far as BriefBar knows, when the session last said so. Turning Azure DevOps off
 forgets it. The Send to Copilot window goes there too, unless you choose otherwise

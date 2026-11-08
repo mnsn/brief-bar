@@ -14,6 +14,20 @@ struct PullRequestSessionChoice: Codable, Equatable, Sendable {
     /// When you chose it: a task that BriefBar starts on the pull request afterwards, in whatever session, takes its place,
     /// and so does another session that begins to tell BriefBar it's working on it afterwards.
     let date: Date
+    /// It gave way to such a session (`CopilotTasksStore.forgetChoicesToldSince`): nothing goes to it any more, but when
+    /// you chose is kept, so that a session that began to say so since goes on taking its place, ahead of an earlier task
+    /// (`PullRequestSession.toldSince`). Nil in what's kept from before, and in one that didn't; what you chose stays in it,
+    /// for an older BriefBar's `--mcp`, which reads it as before.
+    private(set) var replaced: Bool?
+
+    var isReplaced: Bool { replaced == true }
+
+    /// What's kept of it once a session took its place.
+    func givenWay() -> PullRequestSessionChoice {
+        var choice = self
+        choice.replaced = true
+        return choice
+    }
 
     /// Nil when `id` isn't a session's.
     init?(pullRequest key: PRKey, session id: String?, date: Date) {
@@ -33,6 +47,7 @@ struct PullRequestSessionChoice: Codable, Equatable, Sendable {
         pullRequest = try container.decode(ItemRef.self, forKey: .pullRequest)
         session = try container.decodeIfPresent(ItemRef.self, forKey: .session)
         date = try container.decode(Date.self, forKey: .date)
+        replaced = try container.decodeIfPresent(Bool.self, forKey: .replaced)
         guard pullRequest.kind == .pullRequest, session.map({ $0.kind == .session }) ?? true else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Not a pull request's session"))
         }
@@ -248,9 +263,11 @@ struct PullRequestSession: Equatable, Sendable {
             let told = toldSince(chosen, among: choices)
             if told.count == 1, let only = told.first { return .session(only, .toldBriefBar) }
             if told.count > 1 { return .ask(told.sorted { ($0.lastActive ?? .distantPast) > ($1.lastActive ?? .distantPast) }) }
-            guard let id = chosen.session?.id else { return .newSession(chosenByYou: true) }
-            // One that's gone, such as a task you cleared, or a session the app archived, leaves it to the rest.
-            if let session = choices.first(where: { $0.id == id }) { return .session(session, .chosenByYou) }
+            if !chosen.isReplaced {
+                guard let id = chosen.session?.id else { return .newSession(chosenByYou: true) }
+                // One that's gone, such as a task you cleared, or a session the app archived, leaves it to the rest.
+                if let session = choices.first(where: { $0.id == id }) { return .session(session, .chosenByYou) }
+            }
         }
         let tasks = choices.filter { $0.run != nil }
         if let lastTask, let last = tasks.first(where: { $0.id == lastTask.id && $0.reasons.contains(.earlierTask) }) {
@@ -281,12 +298,13 @@ struct PullRequestSession: Equatable, Sendable {
     }
 
     /// The Copilot app's sessions that began to tell BriefBar they're working on it after you chose, while it shows that,
-    /// which take the place of what you chose: none when the one you chose is among them, which goes on as you chose it.
+    /// which take the place of what you chose: none when the one you chose is among them, which goes on as you chose it,
+    /// unless it gave way already. BriefBar's own sessions aren't among them (`CopilotTasksStore.toldSince(of:)`).
     static func toldSince(_ chosen: PullRequestSessionChoice, among choices: [SessionChoice]) -> [SessionChoice] {
         let told = choices.filter { choice in
             choice.run == nil && choice.reasons.contains(.toldBriefBar) && (choice.toldSince.map { $0 > chosen.date } ?? false)
         }
-        if let id = chosen.session?.id, told.contains(where: { $0.id == id }) { return [] }
+        if !chosen.isReplaced, let id = chosen.session?.id, told.contains(where: { $0.id == id }) { return [] }
         return told
     }
 
@@ -391,22 +409,26 @@ extension CopilotTasksStore {
     /// Forgets the session you chose for a pull request's work, or a new one, once another of the Copilot app's sessions
     /// began to tell BriefBar it's working on it after you chose, which takes its place (`PullRequestSession.toldSince`):
     /// so that what you chose doesn't come back once that session no longer says so, as when it stops or has been idle for
-    /// a day. Only while Send Work to Copilot is on, as it sees it, and as Show Links shows what sessions told; and only for
-    /// the sessions the pull request's work could go to there: not those of its own tasks, which its last task decides on
-    /// (`AppSettings.forgetChosenSession(for:supersededBy:)`), nor BriefBar's own, which aren't the app's.
+    /// a day. When you chose stays (`PullRequestSessionChoice.givenWay`), so that while a session that began to say so since
+    /// does, it goes on taking its place, ahead of an earlier task, and two such ask which. Only while Send Work to Copilot
+    /// is on, as it sees it, and as Show Links shows what sessions told; and only for the sessions the pull request's work
+    /// could go to there, as it picks them: not those of its own tasks, which its last task decides on
+    /// (`AppSettings.forgetChosenSession(for:supersededBy:)`), nor BriefBar's own (`toldSince(of:)`).
     func forgetChoicesToldSince() {
         guard isOn, !settings.copilotPullRequestSessions.isEmpty else { return }
-        let ownSessions = Set(entries.compactMap { $0.run?.isAppSession == true ? nil : $0.id })
-        let replaced = settings.copilotPullRequestSessions.filter { chosen in
-            var told = toldSince(chosen.pullRequest).filter { $0.value > chosen.date && !ownSessions.contains($0.key) }
-            guard !told.isEmpty else { return false }
+        var replaced = false
+        let choices = settings.copilotPullRequestSessions.map { chosen -> PullRequestSessionChoice in
+            guard !chosen.isReplaced else { return chosen }
+            var told = toldSince(chosen.pullRequest).filter { $0.value > chosen.date }
+            guard !told.isEmpty else { return chosen }
             let tasks = taskSessionIDs(forPullRequest: chosen.pullRequest)
             told = told.filter { !tasks.contains($0.key) }
-            guard !told.isEmpty else { return false }
-            return chosen.session.map { told[$0.id] == nil } ?? true
+            guard !told.isEmpty, chosen.session.map({ told[$0.id] == nil }) ?? true else { return chosen }
+            replaced = true
+            return chosen.givenWay()
         }
-        guard !replaced.isEmpty else { return }
-        settings.copilotPullRequestSessions.removeAll { replaced.contains($0) }
+        guard replaced else { return }
+        settings.copilotPullRequestSessions = choices
     }
 
     /// The latest task BriefBar started on a pull request, that got as far as starting, whatever its session and however
