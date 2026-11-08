@@ -142,7 +142,8 @@ public struct StageFacts: Equatable, Sendable {
     public var failure: String?
     /// Yours: who wants changes, such as "Priya wants changes"; nil while nobody does.
     public var changesWanted: String?
-    /// Someone else's that waits for your review: who asked, such as "Sam asked you" or "Priya sent it in Teams".
+    /// Someone else's that waits for your review: who asked, such as "Sam asked you" or "Priya sent it in Teams", or what
+    /// brought it back to you since your vote, "New commits by Sam".
     public var asksYou: String?
     /// Yours: its source says it's ready to complete, as its Ready to Complete group does.
     public var isReady: Bool

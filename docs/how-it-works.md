@@ -1330,7 +1330,7 @@ what you set, and its order. The first rule that applies decides:
 | Yours: a session writes it, or waits for you, since what you set | In progress | **‘Cart’ is writing it**, **‘Cart’ asks you** |
 | Someone else's: Copilot's pre-review runs, since what you set | Your review | **Copilot is pre-reviewing it** |
 | You set one, and it still holds | What you set | **Find a reviewer**, **Waiting on Sam**, **You set it 2h ago** |
-| Someone else's: you're asked, or someone sent it to you | Your review | **Sam asked you**, **Priya sent it in Teams** |
+| Someone else's: you're asked, someone sent it to you, or new commits came since your vote | Your review | **Sam asked you**, **Priya sent it in Teams**, **New commits by Sam** |
 | Someone else's: you want changes | In progress | **Waiting for Sam's changes** |
 | Yours: a required item failed, or someone wants changes | In progress | **Build failed**, **Merge conflicts**, **Sam wants changes** |
 | Yours: a session that worked on it finished, and nobody else voted | Your review | **‘Cart’ finished** |
