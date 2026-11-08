@@ -57,7 +57,8 @@ private struct LaneAnchor: Hashable {
 private struct BoardNotice: Equatable {
     var lane: BoardLane.Kind
     var text: String
-    /// The pull request it's about, and how its stage read then: once that changes, from anywhere, it's said no more.
+    /// The pull request it's about, and how its stage read then: once that changes, from anywhere, it's said no more; a new
+    /// name for a mission its stage's words name is no change (`StageReading.readTheSame`).
     var ref: ItemRef
     var reading: StageReading?
     /// Why it didn't move; false for where it still waits once it did.
@@ -186,8 +187,9 @@ package struct OrderBoardView: View {
     let now: Date
     /// A mission's lane came into the page's sight, or left it: Apple Intelligence names the missions on screen.
     let see: (MissionKey, Bool) -> Void
-    /// How long a card a key moved is owed the keyboard's focus, for the board to draw it in its new column.
-    let focusWait: Duration
+    /// How long a card a key moved is owed the keyboard's focus, for the board to draw it in its new column: until this
+    /// ends, as a test ends it itself; nil for the app's wait, `owedFocusWait`.
+    let focusWait: (@MainActor () async -> Void)?
     /// The app's wait for that: ten seconds.
     package static let owedFocusWait: Duration = .seconds(10)
 
@@ -228,7 +230,7 @@ package struct OrderBoardView: View {
         place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, shownOnTop: ItemRef?,
         setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?,
-        now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in }, focusWait: Duration = OrderBoardView.owedFocusWait
+        now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in }, focusWait: (@MainActor () async -> Void)? = nil
     ) {
         self.board = board
         self.missions = missions
@@ -277,10 +279,13 @@ package struct OrderBoardView: View {
             if order.stageRefusal != nil { order.stageRefusal = nil }
         }
         // Each change to a stage, as it comes: once the refused one's changes, from anywhere, as from its stage's menu, the
-        // details say why no more, even back in the stage it couldn't leave; nor does its lane.
+        // details say why no more, even back in the stage it couldn't leave; nor does its lane. A mission's new name, which
+        // its words may say, as where two orders go round, changes no stage.
         .onReceive(order.$stages) { stages in
-            if let refusal = order.stageRefusal, stages[refusal.ref] != refusal.reading { order.stageRefusal = nil }
-            if let notice, stages[notice.ref] != notice.reading { self.notice = nil }
+            if let refusal = order.stageRefusal, !StageReading.readTheSame(stages[refusal.ref], refusal.reading) {
+                order.stageRefusal = nil
+            }
+            if let notice, !StageReading.readTheSame(stages[notice.ref], notice.reading) { self.notice = nil }
         }
         .onDisappear {
             if order.stageRefusal != nil { order.stageRefusal = nil }
@@ -849,7 +854,11 @@ package struct OrderBoardView: View {
         }
         let move = refocus.owe(spot)
         Task { @MainActor [focusWait] in
-            try? await Task.sleep(for: focusWait)
+            if let focusWait {
+                await focusWait()
+            } else {
+                try? await Task.sleep(for: Self.owedFocusWait)
+            }
             refocus.waitEnded(move)
         }
     }

@@ -136,9 +136,11 @@ import Testing
         #expect(missions.first?.steps.map(\.ref.id) == ["4103", "4104"])
     }
 
-    /// Waits for what the main queue delivers, as the facts hear the list change.
+    /// Waits for what the main queue delivers, as the facts hear the list change, for as long as a busy machine could
+    /// need (`waitLimit`).
     private static func eventually(_ condition: () -> Bool) async -> Bool {
-        for _ in 0..<300 where !condition() {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !condition(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()

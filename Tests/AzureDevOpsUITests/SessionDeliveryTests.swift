@@ -257,7 +257,7 @@ private final class TakenAt: Sendable {
     /// So here, where nothing is stood in for, each is refused: showing the session once the prompt is sent; copying the
     /// prompt and showing the session to paste it in, which BriefBar then says it couldn't; and showing the session to stop
     /// its turn there.
-    @Test(.timeLimit(.minutes(3)))
+    @Test(.timeLimit(.minutes(5)))
     func opensNothingWhenATestStandsInForNothing() async throws {
         #expect(ThisMac.runsTests)
         let (store, home) = try store()
@@ -360,7 +360,7 @@ private final class TakenAt: Sendable {
     /// names. While it holds a merge of what that branch doesn't have, as when the pull request was retargeted after its
     /// conflicts were resolved there, nothing's sent, copied or shown; nor while BriefBar can't check, as in a folder that
     /// isn't a clone of its repository. Against the branch it merged, it goes.
-    @Test(.timeLimit(.minutes(3)))
+    @Test(.timeLimit(.minutes(5)))
     func sendsNoPushOfAMergeTheTargetDoesntHave() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -414,7 +414,7 @@ private final class TakenAt: Sendable {
     /// before the prompt is sent or copied: before git checks, while it does, after BriefBar wrote the prompt for the
     /// session's extension but before the extension took it, which BriefBar takes back, and right before BriefBar copies it
     /// for you to paste.
-    @Test(.timeLimit(.minutes(3)))
+    @Test(.timeLimit(.minutes(5)))
     func sendsNoPushOnceThePullRequestMergesIntoAnotherBranch() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -458,7 +458,8 @@ private final class TakenAt: Sendable {
         looks = 0
         retargetedAt = Int.max
         let sending = Task { await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) }
-        for _ in 0..<2000 where requests(home).isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while requests(home).isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(!requests(home).isEmpty)
@@ -487,7 +488,7 @@ private final class TakenAt: Sendable {
     /// A Push & Reply whose prompt names main doesn't go when Azure DevOps says, right before git checks what it would push,
     /// or right after, that the pull request merges into release/x, though the list hasn't read that yet; nor when it can't
     /// be read.
-    @Test(.timeLimit(.minutes(3)))
+    @Test(.timeLimit(.minutes(5)))
     func sendsNoPushWhenAzureDevOpsSaysThePullRequestMergesIntoAnotherBranch() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -542,7 +543,7 @@ private final class TakenAt: Sendable {
     /// checkout it works in, as the app's database says then: what that turn changes, such as a merge, would go with the
     /// push, unchecked. Before git checks; and from right before the request is written until the session's extension takes
     /// it, which BriefBar takes back then. Once no turn runs there, it goes.
-    @Test(.timeLimit(.minutes(3)))
+    @Test(.timeLimit(.minutes(5)))
     func sendsNoPushWhileATurnRunsInTheSessionOrItsCheckout() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -585,7 +586,8 @@ private final class TakenAt: Sendable {
         // A turn that starts once the request is written, before the extension takes it.
         try turns(running: [], home: home)
         let sending = Task { await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) }
-        for _ in 0..<2000 where requests(home).isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while requests(home).isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(!requests(home).isEmpty)
@@ -611,7 +613,7 @@ private final class TakenAt: Sendable {
     /// might once it keeps that another way. Anything else goes, as before. Whatever else the app changes of what it keeps
     /// of its sessions, the flag is read as it is, and the push goes once it says no turn runs there; and without the
     /// database, as without the Copilot app, it goes too.
-    @Test(.timeLimit(.minutes(3)))
+    @Test(.timeLimit(.minutes(5)))
     func sendsNoPushWhenItCantTellWhetherATurnRuns() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -768,7 +770,7 @@ private final class TakenAt: Sendable {
     /// What the sender does in a task of its own is noted for the test too: here, loading a session that nothing has open,
     /// with nothing standing in for it, though something stands in for copying the prompt once it didn't load. So
     /// `.opensNothing` fails a test that does that.
-    @Test(.timeLimit(.minutes(3)))
+    @Test(.timeLimit(.minutes(5)))
     func notesALoadInTheSendersOwnTask() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -1245,7 +1247,8 @@ private final class TakenAt: Sendable {
         defer { ext.stop() }
 
         let sending = Task { await store.deliver("Fix the comments", to: task) }
-        for _ in 0..<400 where requests(home).isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while requests(home).isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         #expect(store.isWorking(inFolder: worktree))
@@ -1322,7 +1325,8 @@ private final class TakenAt: Sendable {
 
         // The fork's extension takes its prompt only a moment later, however long other tests keep the main actor.
         let sending = Task { await store.deliver("Try it", to: choice(session), forking: true) }
-        for _ in 0..<2_000 where !requests(home).contains(where: { $0.hasPrefix("\(fork).") }) {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !requests(home).contains(where: { $0.hasPrefix("\(fork).") }), ContinuousClock.now < deadline {
             try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         #expect(store.isWorking(inFolder: worktree))
@@ -1379,7 +1383,8 @@ private final class TakenAt: Sendable {
         defer { ext.stop() }
 
         let sending = Task { await store.deliver("Fix the comments", to: found) }
-        for _ in 0..<400 where requests(home).isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while requests(home).isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         #expect(store.isWorking(inFolder: now))
@@ -1456,7 +1461,8 @@ private final class TakenAt: Sendable {
         try ext.listen()
         defer { ext.stop() }
         let sending = Task { await store.deliver("Fix the comments", to: task) }
-        for _ in 0..<400 where requests(home).isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while requests(home).isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         #expect(store.deliveringFolders[session]?.standardizedFileURL.path == now.standardizedFileURL.path)
@@ -1583,7 +1589,8 @@ private final class TakenAt: Sendable {
 
         async let first = store.deliver("Fix the comments", to: choice(session))
         // Once it's on its way, however long other tests keep the main actor.
-        for _ in 0..<400 where !store.delivering.contains(session) {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !store.delivering.contains(session), ContinuousClock.now < deadline {
             try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         #expect(store.delivering == [session])
@@ -1653,7 +1660,8 @@ private final class TakenAt: Sendable {
         try hold(session, home: home)
 
         let sending = Task { await store.deliver("Fix the comments", to: choice(session), handOff: handOff) }
-        for _ in 0..<400 where requests(home).isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while requests(home).isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         sending.cancel()
@@ -1677,7 +1685,8 @@ private final class TakenAt: Sendable {
         try hold(session, home: home)
 
         let sending = Task { await store.deliver("Fix the comments", to: choice(session)) }
-        for _ in 0..<400 where requests(home).isEmpty {
+        var deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while requests(home).isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         CopilotSessionPrompts.set(false, in: store.settings.defaults)
@@ -1692,7 +1701,8 @@ private final class TakenAt: Sendable {
         ext.start(after: .milliseconds(600))
         defer { ext.stop() }
         let taken = Task { await store.deliver("Fix the comments", to: choice(session), handOff: handOff) }
-        for _ in 0..<400 where ext.received.isEmpty {
+        deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while ext.received.isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         CopilotSessionPrompts.set(false, in: store.settings.defaults)
@@ -1714,7 +1724,8 @@ private final class TakenAt: Sendable {
         try hold(session, home: home)
 
         let sending = Task { await store.deliver("Fix the comments", to: choice(session)) }
-        for _ in 0..<400 where requests(home).isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while requests(home).isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: ExtensionStandIn.lookEvery)
         }
         store.stop()
@@ -1769,7 +1780,8 @@ private final class TakenAt: Sendable {
         #expect(store.copiedPrompts[prompt.id]?.text == text)
         func follow(at date: Date) async throws {
             store.followSentPrompts(now: date)
-            for _ in 0..<400 where store.isFollowingPrompts {
+            let deadline = ContinuousClock.now.advanced(by: waitLimit)
+            while store.isFollowingPrompts, ContinuousClock.now < deadline {
                 try await Task.sleep(for: ExtensionStandIn.lookEvery)
             }
         }

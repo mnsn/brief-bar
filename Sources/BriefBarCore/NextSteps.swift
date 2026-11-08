@@ -766,7 +766,8 @@ public enum BoardRules {
     ///   - missions: the missions it's in, for whether it can be set as next to merge (`OrderMission.whyNotNext`), and
     ///     where it waits (`StageOrder.holders(of:in:)`).
     ///   - names: what names the mission it waits in, where its lane's doesn't hold it.
-    ///   - nextIn: the mission you set it as next to merge in, whose order would hold it again were it next in another.
+    ///   - nextIn: the mission you set it as next to merge in, whose order would hold it again were it next in its lane's
+    ///     mission instead, or in another's, where its lane's doesn't hold it.
     public static func move(
         _ card: BoardCard, to stage: PullRequestStage, sameLane: Bool = true, isYours: Bool, author: String? = nil,
         missionChanges: Bool = false, missions: [OrderMission] = [], names: OrderNames = .none, nextIn: MissionKey? = nil
@@ -783,10 +784,10 @@ public enum BoardRules {
             guard card.stage == .waits else { return .refused(BoardText.azureDevOpsDecides) }
             if let why = missions.lazy.compactMap({ $0.whyNotNext(card.ref) }).first { return .refused(why) }
             guard missionChanges else { return .refused(BoardText.waitsUntilMerged(card)) }
-            // Next in a mission whose order would hold it again: set as next in another, it would only wait in that one
+            // Next in a mission whose order would hold it again: set as next in its lane's, it would only wait in that one
             // instead, back and forth. Merge After takes away what it waits for where it waits.
             if let nextIn, let there = missions.first(where: { $0.key == nextIn }),
-               let why = BoardText.nextIn(there, ref: card.ref, missions: missions, names: names) {
+               let why = BoardText.nextIn(there, ref: card.ref, lane: card.mission, missions: missions, names: names) {
                 return .refused(why)
             }
             // In its lane's mission, where that one holds it: set as next in another of its missions, it would still wait.
@@ -871,21 +872,23 @@ public enum BoardText {
 
     /// Why the Board doesn't set a pull request as next to merge in one of its missions where it's next in another, whose
     /// order would hold it again: "It's next to merge in ‘Checkout’ and still waits for !4102 in ‘Payments’: its Mission ▸
-    /// Merge After there takes that away". Nil where no other mission holds it.
+    /// Merge After there takes that away", naming the lane's mission where it waits there too. Nil where no other mission
+    /// holds it.
     static func nextIn(
-        _ mission: OrderMission, ref: ItemRef, missions: [OrderMission], names: OrderNames
+        _ mission: OrderMission, ref: ItemRef, lane: MissionKey?, missions: [OrderMission], names: OrderNames
     ) -> String? {
-        waitsElsewhere(ref, besides: mission.key, in: missions, names: names).map {
+        waitsElsewhere(ref, besides: mission.key, lane: lane, in: missions, names: names).map {
             "It's next to merge in ‘\(title(of: mission, names: names))’ and still " + $0
         }
     }
 
     /// "waits for !4102 in ‘Payments’: its Mission ▸ Merge After there takes that away", or "waits in ‘Payments’, whose
-    /// order needs checking", for the first other mission whose order holds it.
+    /// order needs checking", for the lane's mission where its order holds it, else the first other mission whose does.
     private static func waitsElsewhere(
-        _ ref: ItemRef, besides mission: MissionKey, in missions: [OrderMission], names: OrderNames
+        _ ref: ItemRef, besides mission: MissionKey, lane: MissionKey? = nil, in missions: [OrderMission], names: OrderNames
     ) -> String? {
-        for other in missions where other.key != mission {
+        let others = missions.filter { $0.key != mission }
+        for other in others.filter({ $0.key == lane }) + others.filter({ $0.key != lane }) {
             guard let hold = StageOrder.hold(ref, in: other, among: missions) else { continue }
             let title = title(of: other, names: names)
             if case .waits(let refs, _) = hold, !refs.isEmpty {

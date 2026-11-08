@@ -168,6 +168,26 @@ import Testing
         #expect(Self.why(holds) == "!4102 was closed without merging: check the order")
     }
 
+    /// Two readings read the same whatever names the missions their words name: as they read naming none, as agents read
+    /// them. Not once what they say naming none differs, nor their stage.
+    @Test func readingsReadTheSameWhateverNamesTheMissionsTheyName() {
+        let says = { (name: String) in StageWhy.orderHolds("\(name) puts !4102 after it: check the order") }
+        var named = StageReading(stage: .waits, why: says("‘Payments’"), since: t(10))
+        named.unnamedWhy = says("Another order")
+        var renamed = named
+        renamed.why = says("‘Checkout’")
+        #expect(renamed != named && StageReading.readTheSame(renamed, named))
+        #expect(StageReading.readTheSame(StageReading(stage: .waits, why: says("Another order"), since: t(10)), named))
+
+        var otherWords = named
+        otherWords.unnamedWhy = .orderHolds("Another order puts !4103 after it: check the order")
+        #expect(!StageReading.readTheSame(otherWords, named))
+        var otherStage = named
+        otherStage.stage = .yourReview
+        #expect(!StageReading.readTheSame(otherStage, named))
+        #expect(StageReading.readTheSame(nil, nil) && !StageReading.readTheSame(named, nil))
+    }
+
     @Test func yoursWithItsReviewsDoneButNotReadyIsInProgressWithWhatsLeft() {
         let left = Self.reading(StageFacts(role: .author, leftAfterReviews: "Build running", othersVoted: true))
         #expect(left?.stage == .inProgress)

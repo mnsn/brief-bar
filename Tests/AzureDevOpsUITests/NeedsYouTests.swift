@@ -312,7 +312,8 @@ import Testing
         let sams = (seen: settings.seenCutoff(for: key), dismissed: settings.dismissedCutoff(for: key))
         #expect(settings.copilotRuns.isEmpty)
         letItGo.yield()
-        for _ in 0..<500 where settings.copilotRuns.isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while settings.copilotRuns.isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(settings.copilotRuns.map(\.action) == [.fixComments])

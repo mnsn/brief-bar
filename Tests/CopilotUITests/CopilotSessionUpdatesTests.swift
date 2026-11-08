@@ -48,9 +48,10 @@ import Testing
         let description: String
     }
 
-    /// Lets the main queue deliver what the source hears until `condition` holds, for as long as a busy machine could need.
+    /// Lets the main queue deliver what the source hears until `condition` holds, for as long as a busy machine could
+    /// need (`waitLimit`).
     private static func until(_ what: String, _ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
         while !condition() {
             guard ContinuousClock.now < deadline else { throw Timeout(description: "Timed out waiting for \(what)") }
             try await Task.sleep(for: .milliseconds(5))

@@ -53,6 +53,30 @@ import Testing
         }
     }
 
+    /// How long a card a key moved is owed the keyboard's focus, as the test has it: each move's wait lasts until the test
+    /// ends it, rather than the app's ten seconds.
+    @MainActor
+    private final class FocusWaits {
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        /// How many ended: each counts as the move's wait goes on, and before the Board stops owing its card the focus.
+        private(set) var ended = 0
+
+        /// How many moves wait now.
+        var count: Int { waiting.count }
+
+        func wait() async {
+            await withCheckedContinuation { waiting.append($0) }
+            ended += 1
+        }
+
+        /// Ends every move's wait.
+        func end() {
+            let waits = waiting
+            waiting = []
+            for wait in waits { wait.resume() }
+        }
+    }
+
     /// The details a click shows: on a narrow page, or at a bigger text size, over the Board, which they disable then, as
     /// `DetailsSplit` does, with a field to type in.
     @MainActor
@@ -77,7 +101,7 @@ import Testing
         @ObservedObject var details: Details
         @ObservedObject var late: Late
         let drawn: Drawn
-        let focusWait: Duration
+        let waits: FocusWaits?
 
         var body: some View {
             let kinds: Set<ItemRef.Kind> = [.pullRequest]
@@ -103,7 +127,7 @@ import Testing
                 },
                 shownOnTop: details.hasPageOver ? nil : details.shown,
                 setAsNext: nil, notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000),
-                focusWait: focusWait
+                focusWait: waits.map { waits in { @MainActor in await waits.wait() } }
             )
             .disabled(covered)
             .overlay(alignment: .topTrailing) {
@@ -165,17 +189,15 @@ import Testing
     }
 
     /// Shows the Board in a window while `body` runs, once its card is drawn.
-    /// - Parameter focusWait: how long a card a key moved is owed the keyboard's focus, as long as in the app by default.
+    /// - Parameter waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as
+    ///   in the app.
     private static func showing(
-        _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(),
-        focusWait: Duration = OrderBoardView.owedFocusWait,
+        _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(), waits: FocusWaits? = nil,
         _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ drawn: Drawn) async throws -> Void
     ) async throws {
         _ = NSApplication.shared
         let drawn = Drawn()
-        let host = NSHostingView(
-            rootView: Board(order: order, details: details, late: late, drawn: drawn, focusWait: focusWait)
-        )
+        let host = NSHostingView(rootView: Board(order: order, details: details, late: late, drawn: drawn, waits: waits))
         let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_200, height: 500), styleMask: .borderless,
                                backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -185,6 +207,8 @@ import Testing
         window.orderFrontRegardless()
         window.makeKey()
         defer {
+            // No move waits on once the test's done.
+            waits?.end()
             window.contentView = nil
             window.close()
         }
@@ -254,16 +278,13 @@ import Testing
     }
 
     /// One the Board draws in its new column only once the move's wait ended, as in a lane you fold and unfold later, is
-    /// owed the keyboard no more: it doesn't take it.
-    @Test(.disabled("""
-        Flaky on CI: it times a 300 ms wait against fixed sleeps, so on a slow runner the wait can end after the \
-        redraw, as in v0.18.0's release build (run 42516738182). Turn it back on once it waits on the wait's end, \
-        not on time.
-        """))
-    func aMovedCardTheBoardDrawsOnlyAfterItsWaitDoesntTakeTheKeyboard() async throws {
+    /// owed the keyboard no more: it doesn't take it. The test ends the wait itself, and lets the Board draw the card once
+    /// it has ended.
+    @Test func aMovedCardTheBoardDrawsOnlyAfterItsWaitDoesntTakeTheKeyboard() async throws {
         let order = Self.order()
         let late = Late()
-        try await Self.showing(order, late: late, focusWait: .milliseconds(300)) { window, host, drawn in
+        let waits = FocusWaits()
+        try await Self.showing(order, late: late, waits: waits) { window, host, drawn in
             Self.click(at: try #require(drawn.frame), in: host)
             try await until("the click to show its details") { drawn.shown == 1 }
             late.column = .yourReview
@@ -271,9 +292,12 @@ import Testing
                 Self.press(.rightArrow, command: true, in: window)
                 return order.stage(of: Self.ref)?.stage == .yourReview
             }
-            try await Task.sleep(for: .milliseconds(800))
+            try await until("the move to wait for the card to be drawn in its new column") { waits.count == 1 }
+            waits.end()
+            try await until("the move's wait to end") { waits.ended == 1 }
             late.release(redrawing: order)
             try await until("the card drawn in Your review") { drawn.columns[Self.ref] == .yourReview }
+            // A card that took the keyboard would take it as it appears, a moment after it's drawn.
             try await Task.sleep(for: .milliseconds(300))
             Self.press(.rightArrow, command: true, in: window)
             try await Task.sleep(for: .milliseconds(300))
@@ -781,6 +805,75 @@ import Testing
         }
     }
 
+    /// Where two orders go round, the details say why ⌘← in the lane of the order its stage names didn't set it as next,
+    /// as they cover the Board; and they still do as you rename that order, whose new name its stage's words say: its
+    /// stage didn't change.
+    @Test func whileTheyCoverTheBoardWhyItDidntMoveStaysAsTheOrderItsStageNamesIsRenamed() async throws {
+        let order = try Self.twoOrders([4102, 4101], [4101, 4102], ready: [4101, 4102])
+        let ref = ItemRef.pullRequest(organization: "contoso", number: 4101)
+        let other = MissionKey.plan(Self.otherID)
+        #expect(StageOrder.holders(of: ref, in: order.missions) == [.plan(Self.planID)])
+        let details = Details(covers: true)
+        try await Self.showingWired(order, details: details) { window, host, wired in
+            try await Self.pressUntil("the click in the other mission's lane") {
+                Self.click(at: wired.frames[Self.key(ref, other)] ?? .zero, in: host)
+                return details.shown == ref
+            }
+            #expect(window.makeFirstResponder(nil))
+            try await Self.pressUntil("the details to say where it waits") {
+                Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+                return order.stageRefusal(of: ref) != nil
+            }
+            let why = try #require(order.stageRefusal(of: ref))
+            #expect(why.hasPrefix("It waits in ‘"))
+
+            let mission = try #require(order.missions.first { $0.key == other })
+            #expect(order.rename(mission, to: "Payments") == .named)
+            #expect(order.stageRefusal(of: ref) == why)
+            let words = StageWhy.orderHolds("‘Payments’ puts !4102 after it: check the order")
+            try await until("the Board to draw its stage's new words") { wired.whys[Self.key(ref, other)] == words }
+            #expect(order.stageRefusal(of: ref) == why)
+        }
+    }
+
+    /// Where two orders go round, ⌘← in the lane of the order its stage names says why it didn't set it as next, under that
+    /// lane's header, which moves its cards down; and it still does as you rename that order, whose new name its stage's
+    /// words say: its stage didn't change.
+    @Test func whyItDidntMoveStaysUnderItsLaneAsTheOrderItsStageNamesIsRenamed() async throws {
+        let order = try Self.twoOrders([4102, 4101], [4101, 4102], ready: [4101, 4102])
+        let ref = ItemRef.pullRequest(organization: "contoso", number: 4101)
+        let other = MissionKey.plan(Self.otherID)
+        let details = Details()
+        try await Self.showingWired(order, details: details) { window, host, wired in
+            let top = { () -> CGFloat? in
+                host.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                return wired.tops[Self.key(ref, other)]
+            }
+            let before = try #require(top())
+            try await Self.pressUntil("the click in the other mission's lane") {
+                Self.click(at: wired.frames[Self.key(ref, other)] ?? .zero, in: host)
+                return details.shown == ref
+            }
+            try await Self.pressUntil("⌘← to say under its lane where it waits") {
+                Self.press(.leftArrow, command: true, in: window)
+                return (top() ?? before) > before
+            }
+            let below = try #require(top())
+            #expect(order.stage(of: ref)?.stage == .waits && order.lastOrderChange == nil)
+
+            let mission = try #require(order.missions.first { $0.key == other })
+            #expect(order.rename(mission, to: "Payments") == .named)
+            let words = StageWhy.orderHolds("‘Payments’ puts !4102 after it: check the order")
+            try await until("the Board to draw its stage's new words") { wired.whys[Self.key(ref, other)] == words }
+            // Laid out again, a few times over: the line is still there.
+            for _ in 0..<5 {
+                try await Task.sleep(for: .milliseconds(50))
+                #expect(top() == below)
+            }
+        }
+    }
+
     // MARK: Two missions, with Set as Next to Merge
 
     private static let planID = UUID(uuidString: "11111111-2222-4333-8444-555555555555")!
@@ -792,6 +885,10 @@ import Testing
     private final class Wired {
         var frames: [String: CGRect] = [:]
         var places: [MissionMenuContext.UndoPlace] = []
+        /// Why each card is in its stage, as the Board last drew it.
+        var whys: [String: StageWhy] = [:]
+        /// How far down the Board each card is: the window centers the Board, and sizes it anew as it changes.
+        var tops: [String: CGFloat] = [:]
     }
 
     private static func key(_ ref: ItemRef, _ mission: MissionKey?) -> String {
@@ -815,6 +912,8 @@ import Testing
                     let key = BoardKeyboardTests.key(card.ref, card.mission)
                     let content = Text(label)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { wired.frames[key] = $0 }
+                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).minY } action: { wired.tops[key] = $0 }
+                        .onChange(of: card.reading.why, initial: true) { _, why in wired.whys[key] = why }
                     return BoardCardContent(view: AnyView(content), menu: AnyView(EmptyView()), label: label)
                 },
                 isSelected: { [details] in details.shown == $0 },
@@ -827,7 +926,11 @@ import Testing
                 notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000)
             )
             .disabled(covered)
+            .coordinateSpace(.named(Self.space))
         }
+
+        /// The Board's own, for how far down it each card is.
+        static let space = "WiredBoard"
     }
 
     /// Pull Request Order, on, with two sessions' orders of pull requests you opened, each one's in turn, these ready to

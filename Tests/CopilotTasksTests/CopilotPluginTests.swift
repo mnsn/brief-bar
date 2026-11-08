@@ -402,7 +402,7 @@ import Testing
         }
     }
 
-    @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
     func skillNamesOnlyRealTools() async throws {
         let tools = try await Self.listedTools()
         let names = Set(tools.compactMap { $0["name"] as? String })
@@ -422,7 +422,7 @@ import Testing
     /// `--mcp`'s instructions, while Pull Request Order's tools are listed, as in the demo, tell sessions to keep BriefBar
     /// current without being asked, a pull request's stage once they've pushed its work included; and that a story's pull
     /// requests go together by themselves, so they link each to its task and tell only a real order.
-    @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
     func instructionsAskForStagesAndTellOfStories() async throws {
         let instructions = try await Self.demoServer().instructions
         #expect(instructions.contains("Keep BriefBar current on your pull requests without being asked"))
@@ -435,7 +435,7 @@ import Testing
 
     /// Pull Request Order's skill names only its tools, what they take, a session's todos and the tools that tell a story,
     /// which BriefBar lists too, and tells agents about every one of its tools.
-    @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
     func orderSkillNamesOnlyItsTools() async throws {
         let listed = try await Self.listedTools()
         let tools = listed.filter { Self.orderTools.contains($0["name"] as? String ?? "") }
@@ -454,7 +454,7 @@ import Testing
 
     /// Updates from Copilot Sessions' skill names only its tools, what they take, and Pull Request Order's tool, and tells
     /// agents about every one of its tools.
-    @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
     func updatesSkillNamesOnlyItsTools() async throws {
         let tools = try await Self.listedTools().filter { Self.updateTools.contains($0["name"] as? String ?? "") }
         #expect(Set(tools.compactMap { $0["name"] as? String }) == Self.updateTools)

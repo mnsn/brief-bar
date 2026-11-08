@@ -17,9 +17,9 @@ package final class PullRequestOrder: ObservableObject {
     /// The missions, as By Mission lists them (`OrderBoard.missions`): none while it's off.
     @Published package private(set) var missions: [OrderMission] = []
     /// The pull requests you set as next to merge in a session's order whose order would hold them again were they set as
-    /// next in another mission that holds them now, by the mission they're next in (`OrderBoard.nextsHeldAgain`): the
-    /// Board doesn't move where one's next back and forth. None while it's off.
-    @Published package private(set) var nextsHeldAgain: [ItemRef: MissionKey] = [:]
+    /// next in another mission that holds them now: by pull request, then by that mission, the mission they're next in
+    /// (`OrderBoard.nextsHeldAgain`). The Board doesn't move where one's next back and forth. None while it's off.
+    @Published package private(set) var nextsHeldAgain: [ItemRef: [MissionKey: MissionKey]] = [:]
     /// The mission you keep on top: none while it's off.
     @Published package private(set) var focus: MissionKey?
     /// The orders sessions told BriefBar: none while it's off.
@@ -1378,7 +1378,13 @@ package final class PullRequestOrder: ObservableObject {
             marksInMemory[ref]?.listedAt = now()
             let order = StageOrder.of(ref, in: missions, names: names)
             let set = [mine].compactMap { $0 } + counted.theirs
-            if let reading = StageRules.reading(facts: facts, sessions: sessions, marks: set, order: order, setters: setters) {
+            if var reading = StageRules.reading(facts: facts, sessions: sessions, marks: set, order: order, setters: setters) {
+                // Its words name the other order where two go round: what they say naming none, as agents read it, so that
+                // a rename, which restages it, changes only its words (`StageReading.readTheSame`).
+                if case .orderHolds = reading.why, case .holds(let words) = StageOrder.of(ref, in: missions),
+                   reading.why != .orderHolds(words) {
+                    reading.unnamedWhy = .orderHolds(words)
+                }
                 readings[ref] = reading
             }
         }

@@ -62,7 +62,7 @@ import Testing
 
     /// Turning Copilot off while a session waits for your login shell, to find `copilot`, opens nothing once the shell
     /// answers: nothing more of the session is read, and no script is written or opened.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func turningCopilotOffWhileItFindsTheCLIOpensNothing() async throws {
         let shell = Shell()
         let outside = Outside()
@@ -93,7 +93,7 @@ import Testing
     }
 
     /// Another list of sessions stopping, as when another source stops, doesn't stop what this one opens.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func stillOpensItAsAnotherSourceStops() async throws {
         let shell = Shell()
         let outside = Outside()
@@ -111,7 +111,7 @@ import Testing
     }
 
     /// A script nothing opened says so, with the command to run instead, and the next click tries again.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aScriptNothingOpenedLetsTheNextClickTryAgain() async throws {
         let shell = Shell()
         let outside = Outside()

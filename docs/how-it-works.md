@@ -1521,9 +1521,10 @@ order holds it, as for details shown from Up Next, but not from a text field you
 them, such as a linked pull request's, whose card isn't that one, or a file's, which doesn't show its stage
 (`PullRequestDetailsStore.shownOnTop`). That card has the focus once they close. A move it can't make, the details say
 why under its stage track (`StageRefusalLine`), as the line under its lane can't be seen; each goes once its stage
-changes, from anywhere, and the details' once the Board shows again. A change it makes to a mission says its Undo is
-beside it, in the details' order line. Like the monitor, a card takes ⌘ alone: ⇧⌘→ is another shortcut. `BoardRules`
-decides what a move does: In progress, Your review and Teammate's review are set as you set them
+changes, from anywhere, though not for a new name, from Rename… or Apple Intelligence, of a mission its stage's words
+name (`StageReading.readTheSame`), and the details' once the Board shows again. A change it makes to a mission says its
+Undo is beside it, in the details' order line. Like the monitor, a card takes ⌘ alone: ⇧⌘→ is another shortcut.
+`BoardRules` decides what a move does: In progress, Your review and Teammate's review are set as you set them
 from a stage's menu; someone else's pull request can't go to Teammate's review, there, in its menus or in VoiceOver's
 actions, as it asks its own reviewers, and Finished My Review takes it off your board instead; Can merge, Waits and Merged
 come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge
@@ -1536,10 +1537,13 @@ waits for !4102 in ‘Payments’: its Mission ▸ Merge After there takes that 
 BriefBar refused the change, as with 500 changes kept. Only one mission has a pull request as next, so set as next in
 the other, it would wait in the first again, back and forth, and with Lanes: None for ever, as its one card is the other's
 then: the Board doesn't, in either lane, and says "It's next to merge in ‘Checkout’ and still waits for !4102 in
-‘Payments’: …" (`BoardRules.move`), where the order it's next in would hold it again. BriefBar works that out from the
-missions as they'd be, made as they are now with your next in the other instead (`OrderBoard.nextsHeldAgain`): the
-first's lines that your next there set aside come back, the other's next can set one of them aside, and what you moved
-out of the first, or put after it with Merge After, holds it there no more. Its Mission menu's Set as Next to Merge
+‘Payments’: …" (`BoardRules.move`), where the order it's next in would hold it again; it names the lane's mission
+where it waits in that one. BriefBar works that out for each other mission that holds it, from the missions as they'd
+be, made as they are now with your next there instead (`OrderBoard.nextsHeldAgain`): the first's lines that your next
+there set aside come back, that mission's next can set one of them aside, and what you moved out of the first, or put
+after it with Merge After, holds it there no more. So with three, it's set as next in a third whose next sets aside
+the first's line, though the second's wouldn't; in a lane whose mission doesn't hold it, as the one it's next in
+doesn't, the Board says it still waits. Its Mission menu's Set as Next to Merge
 still moves it. None is set as next while
 stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
 (`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card

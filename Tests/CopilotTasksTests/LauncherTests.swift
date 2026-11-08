@@ -33,7 +33,7 @@ import Testing
         echo "Pull request: https://dev.azure.com/contoso/Storefront/_git/web/pullrequest/77"
         """
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func preparesAWorktreeAndStartsCopilotInIt() async throws {
         let fixture = try await RepositoryFixture()
         defer { fixture.remove() }
@@ -100,7 +100,7 @@ import Testing
 
     /// The CLI gives a worktree of a repository you trust the same trust by itself, and refuses `--trust-folder` with
     /// `--session-id`: a trusted repository's run starts like any other.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func startsTheWorktreeOfATrustedRepositoryWithoutTrustingTheFolder() async throws {
         let fixture = try await RepositoryFixture()
         defer { fixture.remove() }

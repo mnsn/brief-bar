@@ -33,7 +33,7 @@ import Testing
     }
 
     /// Started from an app, a program is otherwise attributed to it, and may use its privacy permissions.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func startsAProgramResponsibleForItself() async throws {
         let recorder = Recorder()
         let program = try recorder.start("/bin/cat")
@@ -70,7 +70,7 @@ import Testing
 
     /// The program gets its input, its output and /dev/null, and nothing else BriefBar has open, such as a database it
     /// opened with Full Disk Access.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func passesTheProgramNoOtherDescriptor() async throws {
         // Without FD_CLOEXEC, which nothing sets here, a program would inherit it.
         let opened = open("/dev/null", O_RDONLY)
@@ -95,7 +95,7 @@ import Testing
         #expect(open.allSatisfy { $0 <= 4 }, "\(open)")
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func talksToItLineByLineUntilItsInputEnds() async throws {
         let recorder = Recorder()
         let program = try recorder.start("/bin/cat")
@@ -110,7 +110,7 @@ import Testing
         #expect(await lines.next() == nil)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func deliversEveryLineBeforeTheExit() async throws {
         let recorder = Recorder()
         _ = try recorder.start("/bin/sh", ["-c", "echo one; printf 'two\\nthree'; echo; exit 3"])
@@ -123,7 +123,7 @@ import Testing
         #expect(await exits.next() == 3)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func dropsLinesThatAreTooLong() async throws {
         let recorder = Recorder()
         _ = try recorder.start(
@@ -136,7 +136,7 @@ import Testing
         #expect(received == ["short", "after"])
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func sendingToAProgramThatQuitDoesNothing() async throws {
         let recorder = Recorder()
         let program = try recorder.start("/usr/bin/true")
@@ -148,7 +148,7 @@ import Testing
 
     /// A program that frames what it writes itself, such as the Copilot CLI's server, whose messages say how long they
     /// are and end with no newline: it's heard as it writes, and written to as BriefBar writes, without a newline added.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func talksToAProgramThatFramesItsOwnMessages() async throws {
         let (chunks, chunkSink) = AsyncStream.makeStream(of: Data.self)
         let (exits, exitSink) = AsyncStream.makeStream(of: Int32.self)
@@ -181,7 +181,7 @@ import Testing
         #expect(await exitIterator.next() == 0)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func deliversEverythingAProgramWritesBeforeItsExit() async throws {
         let (chunks, chunkSink) = AsyncStream.makeStream(of: Data.self)
         let (exits, exitSink) = AsyncStream.makeStream(of: Int32.self)
@@ -205,7 +205,7 @@ import Testing
         #expect(await exitIterator.next() == 4)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func writingToAProgramThatStoppedReadingFailsQuietly() async throws {
         let recorder = Recorder()
         // It closes its input, says so, and becomes `sleep`, which runs until it's asked to stop: a shell that runs it
@@ -225,7 +225,7 @@ import Testing
         #expect(await exits.next() == SIGTERM)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func endsAProgramWhenAsked() async throws {
         let recorder = Recorder()
         let program = try recorder.start("/bin/sleep", ["30"])
@@ -236,7 +236,7 @@ import Testing
 
     /// What it started that ignores being asked to stop is made to, once the program itself has quit when its input
     /// ended, or when it was asked to stop.
-    @Test(.timeLimit(.minutes(1)), arguments: [
+    @Test(.timeLimit(.minutes(5)), arguments: [
         // It quits when its input ends, long before it would be asked to stop, however busy the Mac.
         (quits: "read line; exit 0", grace: 30.0, status: Int32(0)),
         // It doesn't, and is asked to stop.
@@ -265,7 +265,7 @@ import Testing
     /// A program that quits by itself, without being ended, takes what it started along, even what ignores being asked to
     /// stop, when it's started to, as the Copilot CLI's server is; otherwise what it started is left alone, as the
     /// updater's is.
-    @Test(.timeLimit(.minutes(1)), arguments: [true, false])
+    @Test(.timeLimit(.minutes(5)), arguments: [true, false])
     func endsWhatItStartedWhenItQuitsByItselfOnlyIfStartedTo(_ endsWhatItStarted: Bool) async throws {
         let recorder = Recorder()
         // What it starts says who it is once it ignores being asked to stop, then doesn't hold the output open. The
@@ -280,12 +280,14 @@ import Testing
         var exits = recorder.exits.makeAsyncIterator()
         #expect(await exits.next() == 3)
         if endsWhatItStarted {
-            for _ in 0..<2000 where kill(child, 0) == 0 {
+            var deadline = ContinuousClock.now.advanced(by: waitLimit)
+            while kill(child, 0) == 0, ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(10))
             }
             #expect(kill(child, 0) == -1 && errno == ESRCH)
             // And it's reaped then, leaving no zombie.
-            for _ in 0..<2000 where kill(program.pid, 0) == 0 {
+            deadline = ContinuousClock.now.advanced(by: waitLimit)
+            while kill(program.pid, 0) == 0, ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(10))
             }
             #expect(kill(program.pid, 0) == -1 && errno == ESRCH)
@@ -298,7 +300,7 @@ import Testing
     }
 
     /// Ended again and again, as it ends and after, it's still reaped once it's gone, and leaves no zombie.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func endingItAgainAndAgainStillReapsIt() async throws {
         let recorder = Recorder()
         let program = try recorder.start("/bin/sh", ["-c", "trap '' TERM; echo ready; while :; do sleep 1; done"])
@@ -313,7 +315,8 @@ import Testing
         var exits = recorder.exits.makeAsyncIterator()
         #expect(await exits.next() == SIGKILL)
         // A zombie still has its process ID: one that's reaped doesn't.
-        for _ in 0..<2000 where kill(program.pid, 0) == 0 {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while kill(program.pid, 0) == 0, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         ending.cancel()

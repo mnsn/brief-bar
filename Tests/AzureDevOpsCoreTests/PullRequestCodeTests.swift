@@ -368,7 +368,7 @@ private struct AccentedCode: CodeSource {
     }
 
     /// A file's request goes only where it's sent too.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func followsNoRedirect() async {
         let server = StubServer()
         server.on("/blobs/0a1b") { request in
@@ -840,10 +840,10 @@ private actor Gate {
     }
 }
 
-/// Waits for `condition`. `make test` runs every test on one thread, which a long test can keep for seconds on a slow
-/// runner, so the deadline is long, and the condition is checked once more after it.
+/// Waits for `condition`, for as long as a busy machine could need (`waitLimit`). `make test` runs every test on one
+/// thread, which a long test can keep for seconds on a slow runner, so the condition is checked once more after that.
 private func waitUntil(_ what: String, _ condition: () async -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(60)
+    let deadline = ContinuousClock.now + waitLimit
     while ContinuousClock.now < deadline {
         if await condition() { return }
         try await Task.sleep(for: .milliseconds(5))

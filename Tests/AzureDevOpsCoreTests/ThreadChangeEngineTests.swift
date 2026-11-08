@@ -58,7 +58,7 @@ import Testing
 
     /// A read of its threads that started before the change, and answers as they were, doesn't undo it: the pull request is
     /// read again instead.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aReadThatStartedBeforeAChangeDoesntUndoIt() async throws {
         let now = Date()
         let server = StubServer()
@@ -106,7 +106,7 @@ import Testing
 
     /// Nor does one that answers after the change's own read was taken, as a slow answer may come after a quick one: the
     /// change's read having been taken doesn't make an older read new.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aReadThatStartedBeforeAChangeAndAnswersLastDoesntUndoIt() async throws {
         let now = Date()
         let server = StubServer()
@@ -155,7 +155,7 @@ import Testing
     /// A change that may have been made, as one Azure DevOps didn't answer in time: a read that started before it, and
     /// answers last, is taken neither for its threads nor for its policies, which a thread's status changes; and the read
     /// again for it says how the threads are, as it read them.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aReadThatStartedBeforeAChangeThatMayHaveBeenMadeIsntTaken() async throws {
         let now = Date()
         let server = StubServer()
