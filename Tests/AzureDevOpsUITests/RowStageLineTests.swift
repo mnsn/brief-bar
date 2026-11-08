@@ -60,4 +60,29 @@ import Testing
         #expect(width(teammates, order: next) > width(teammates, order: nil) + 10)
         #expect(width(teammates, order: moved) > width(teammates, order: nil) + 10)
     }
+
+    /// Where a change of yours speaks of one its order places, Can merge and Waits show its capsule too, as main's rows did:
+    /// ✎ Next to merge for one you set as next, which "Complete it" doesn't say; and, for one an order put after another
+    /// since, going against yours, the capsule whose tooltip and VoiceOver say so, with Put Yours Back in its menu. One
+    /// whose order alone places it still has none.
+    @Test func aChangeOfYoursShowsOnCanMergeAndWaitsWhereItHasAnOrder() {
+        let ref = ItemRef.pullRequest(organization: "contoso", number: 4102)
+        let other = ItemRef.pullRequest(organization: "contoso", number: 4103)
+        let yours = OrderRowContext(
+            step: OrderStep(ref: ref, status: .open, standing: .next, notes: [.yourNext(Self.now)], isYours: true, isChangedByYou: true),
+            isReady: true
+        )
+        let override = OrderOverride(by: nil, at: Self.now, now: .after([other]), yours: .next)
+        let overridden = OrderRowContext(
+            step: OrderStep(ref: ref, status: .open, standing: .waiting(open: [other], unknown: []), notes: [.orderChangedIt(override)]),
+            isReady: true
+        )
+        let theirs = OrderRowContext(step: OrderStep(ref: ref, status: .open, standing: .waiting(open: [other], unknown: [])), isReady: true)
+        let canMerge = StageReading(stage: .canMerge, why: .ready(autoComplete: false))
+        let waits = StageReading(stage: .waits, why: .waitsFor([other], words: "After !4103"))
+        #expect(width(canMerge, order: yours) > width(canMerge, order: nil) + 10)
+        #expect(width(waits, order: overridden) > width(waits, order: nil) + 10)
+        #expect(abs(width(waits, order: theirs) - width(waits, order: nil)) < 0.5)
+        #expect(overridden.sentence?.contains("after you'd set it as next") == true)
+    }
 }

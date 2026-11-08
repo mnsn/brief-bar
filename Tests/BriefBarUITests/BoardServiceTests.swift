@@ -206,7 +206,7 @@ import Testing
         let dropped = try #require(moves.drop(drag.payload, of: drag, on: .canMerge, in: .mission(lane)))
         #expect(dropped.card.stage == .canMerge)
         #expect(dropped.move == .stays)
-        #expect(moves.move(asDragged, to: .canMerge, in: .mission(lane)) == .setAsNext)
+        #expect(moves.move(asDragged, to: .canMerge, in: .mission(lane)) == .setAsNext(lane))
     }
 
     /// Only what a drag from this board carries drops: never text that names a pull request on it, as from another app, nor
@@ -279,7 +279,7 @@ import Testing
         #expect(moves.key(Self.ref(4093), in: .notInAMission, forward: false) == nil)
         #expect(moves.key(Self.ref(4102), in: .mission(lane), forward: false)?.move
             == .refused("It waits for !4101: it can merge once BriefBar sees it merge"))
-        #expect(Self.moves(order, missionChanges: true).key(Self.ref(4102), in: .mission(lane), forward: false)?.move == .setAsNext)
+        #expect(Self.moves(order, missionChanges: true).key(Self.ref(4102), in: .mission(lane), forward: false)?.move == .setAsNext(lane))
         #expect(moves.key(Self.ref(4999), in: .notInAMission, forward: true) == nil)
 
         // Once moved, the next key moves it on from where it is now.

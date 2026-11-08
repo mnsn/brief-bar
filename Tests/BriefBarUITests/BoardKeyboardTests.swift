@@ -89,6 +89,33 @@ import Testing
         return order
     }
 
+    /// Pull Request Order, on, with a session's order of !4101, then !4102 after it, which can complete: it waits.
+    private static func ordered() throws -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        var orders = DeclaredOrders()
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        try orders.apply(OrderRequest(entries: [.init(link: link(4101)), .init(link: link(4102), after: ["4101"])]))
+        orders.save(to: defaults)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
+        order.publish(
+            .azureDevOps,
+            pullRequests: [4101, 4102].map { number in
+                OrderPullRequest(
+                    ref: .pullRequest(organization: "contoso", number: number), repository: "contoso/7d3f9a12/shop-web",
+                    sourceBranch: "robin/\(number)", targetBranch: "main", author: "robin",
+                    createdAt: Date(timeIntervalSince1970: 1_791_000_000 + Double(number))
+                )
+            },
+            stages: [
+                .pullRequest(organization: "contoso", number: 4101): StageFacts(role: .author),
+                .pullRequest(organization: "contoso", number: 4102): StageFacts(role: .author, isReady: true),
+            ],
+            account: "robin@contoso.com"
+        )
+        return order
+    }
+
     /// Shows the Board in a window while `body` runs, once its card is drawn.
     private static func showing(
         _ order: PullRequestOrder, details: Details = Details(),
@@ -112,6 +139,21 @@ import Testing
         host.layoutSubtreeIfNeeded()
         try await until("the card") { drawn.frame != nil }
         try await body(window, host, drawn)
+    }
+
+    /// A mission's lane shows the Undo line of your last change to that mission, as List's card does, where nothing else on
+    /// the Board would: Set as Next to Merge, by a drop in its lane or from a menu, says so there, with Undo.
+    @Test func aMissionsLaneShowsTheUndoOfYourChangeToIt() async throws {
+        let order = try Self.ordered()
+        let waits = ItemRef.pullRequest(organization: "contoso", number: 4102)
+        #expect(order.stage(of: waits)?.stage == .waits)
+        let mission = try #require(order.missions.first { $0.contains(waits) }?.key)
+        try await Self.showing(order) { _, host, _ in
+            let before = host.fittingSize.height
+            MissionMenuContext.setAsNext(waits, in: mission, order: order)
+            #expect(order.lastOrderChange?.mission == mission && order.stage(of: waits)?.stage == .canMerge)
+            try await until("the lane's Undo line") { host.fittingSize.height > before + 10 }
+        }
     }
 
     @Test func aClickedCardMovesWithTheCommandArrowsAndKeepsTheKeyboard() async throws {

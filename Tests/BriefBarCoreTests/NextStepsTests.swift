@@ -529,7 +529,7 @@ import Testing
             == .refused("A card moves between stages in its own mission's lane"))
         #expect(BoardRules.move(review, to: .inProgress, sameLane: false, isYours: true, missionChanges: true)
             == .refused("It goes in another mission with Mission ▸ Move to Mission, in its menu"))
-        #expect(BoardMove.setStage(.inProgress).isTaken && BoardMove.setAsNext.isTaken)
+        #expect(BoardMove.setStage(.inProgress).isTaken && BoardMove.setAsNext(.plan(PullRequestStageTests.planID)).isTaken)
         #expect(!BoardMove.stays.isTaken && !BoardMove.refused("No").isTaken)
     }
 
@@ -558,7 +558,7 @@ import Testing
         )
         let waits = Self.waiting(4102, in: free)
         #expect(free[0].whyNotNext(Self.pr(4102)) == nil)
-        #expect(BoardRules.move(waits, to: .canMerge, isYours: true, missionChanges: true, missions: free) == .setAsNext)
+        #expect(BoardRules.move(waits, to: .canMerge, isYours: true, missionChanges: true, missions: free) == .setAsNext(free[0].key))
         // Until you can change missions yourself, it says what it waits for.
         #expect(BoardRules.move(waits, to: .canMerge, isYours: true, missions: free)
             == .refused("It waits for !4101: it can merge once BriefBar sees it merge"))

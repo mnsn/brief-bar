@@ -1,18 +1,18 @@
 import BriefBarCore
 import SwiftUI
 
-// Changing a mission yourself (`OrderChanges`): a pull request's Mission menu, in its row's menu, its details' and a Map
-// node's, with the same as VoiceOver's actions; and the line that says what you did, with Undo. Azure DevOps' pull requests
-// only for now: GitHub's show as they always have.
+// Changing a mission yourself (`OrderChanges`): a pull request's Mission menu, in its row's menu, its details', a Map node's
+// and a Board card's, with the same as VoiceOver's actions; and the line that says what you did, with Undo. Azure DevOps'
+// pull requests only for now: GitHub's show as they always have.
 
 /// Where a pull request's Mission menu speaks from: the order, the mission whose card it's in, and where the Undo line
 /// shows once you changed something, for VoiceOver to say.
 package struct MissionMenuContext {
     /// Where the Undo line shows.
     package enum UndoPlace {
-        /// By Mission: in the mission's card, or at the top of the list when no card has it.
+        /// By Mission: in the mission's card, or its lane on the Board, or at the top of the list when none has it.
         case byMission
-        /// At the top of the list, as By Status shows it.
+        /// At the top of the list, as By Status shows it, and the Board with a lane for every card.
         case top
         /// In the pull request's details, beside its mission.
         case details
@@ -41,9 +41,18 @@ package struct MissionMenuContext {
     @MainActor
     package func change(_ edit: OrderEdit) {
         guard let done = order.change(edit) else { return }
-        let place = switch undo {
+        AccessibilityNotification.Announcement(
+            OrderText.spoken(done.said, undo: done.canUndo ? undoPlace(of: edit, in: done.mission) : nil)
+        ).post()
+    }
+
+    /// Where VoiceOver says a change's Undo is: in the mission's card or lane, or at the top of the list where none shows
+    /// it.
+    /// - Parameter mission: the mission whose card shows the Undo line; nil for none.
+    package func undoPlace(of edit: OrderEdit, in mission: MissionKey?) -> String {
+        switch undo {
         case .byMission:
-            if done.mission == nil {
+            if mission == nil {
                 "at the top of the list"
             } else if case .move = edit {
                 "in the mission you moved it from"
@@ -53,16 +62,15 @@ package struct MissionMenuContext {
         case .top: "at the top of the list"
         case .details: "beside it"
         }
-        AccessibilityNotification.Announcement(OrderText.spoken(done.said, undo: done.canUndo ? place : nil)).post()
     }
 }
 
 extension MissionMenuContext {
     /// Set as Next to Merge in a mission, as dropping a card from Waits onto Can merge on the Board does, and says so to
-    /// VoiceOver, with its Undo in its mission.
+    /// VoiceOver, with where its Undo is: in its mission's lane, or at the top with a lane for every card.
     @MainActor
-    package static func setAsNext(_ ref: ItemRef, in mission: MissionKey, order: PullRequestOrder) {
-        of(ref, order: order, mission: mission)?.change(.setNext(ref, in: mission, true))
+    package static func setAsNext(_ ref: ItemRef, in mission: MissionKey, order: PullRequestOrder, undo: UndoPlace = .byMission) {
+        of(ref, order: order, mission: mission, undo: undo)?.change(.setNext(ref, in: mission, true))
     }
 }
 
@@ -186,12 +194,14 @@ struct MissionMenuItems: View {
 extension View {
     /// A pull request's Mission menu's main items as VoiceOver's actions: Set as Next to Merge, Put Yours Back and Undo
     /// Your Changes to It. The rest is in its menu, which works out Merge After's as it opens.
+    /// - Parameter offersNext: Set as Next to Merge and Not Next to Merge are among them; false where the view offers its
+    ///   own, as a Board card that waits does.
     @MainActor
-    package func missionActions(_ ref: ItemRef, context: MissionMenuContext?) -> some View {
+    package func missionActions(_ ref: ItemRef, context: MissionMenuContext?, offersNext: Bool = true) -> some View {
         accessibilityActions {
             if let context {
                 let choices = context.order.choices(for: ref, in: context.mission, withPrerequisites: false)
-                if let mission = choices.mission, let next = choices.next, next == .offered || next == .isSet {
+                if offersNext, let mission = choices.mission, let next = choices.next, next == .offered || next == .isSet {
                     Button(next == .isSet ? "Not Next to Merge" : "Set as Next to Merge") {
                         context.change(.setNext(ref, in: mission, next != .isSet))
                     }

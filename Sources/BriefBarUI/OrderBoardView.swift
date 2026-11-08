@@ -17,12 +17,15 @@ package struct BoardCardContent {
     package var label: String
     /// What else VoiceOver says of it, after its stage: what needs you on it, where it stands in its order.
     package var details: [String]
+    /// Its Mission menu, for VoiceOver's actions as its row has them; nil where it has none.
+    package var mission: MissionMenuContext?
 
-    package init(view: AnyView, menu: AnyView, label: String, details: [String] = []) {
+    package init(view: AnyView, menu: AnyView, label: String, details: [String] = [], mission: MissionMenuContext? = nil) {
         self.view = view
         self.menu = menu
         self.label = label
         self.details = details
+        self.mission = mission
     }
 }
 
@@ -716,15 +719,18 @@ package struct OrderBoardView: View {
                     return started.payload
                 },
                 move: { forward in keyMove(card.ref, in: lane.kind, forward: forward, moves: moves) },
-                setAsNext: Self.setAsNext(card, with: setAsNext)
+                setAsNext: Self.setAsNext(card, in: lane.kind, moves: moves, with: setAsNext)
             )
         }
     }
 
-    /// Set as Next to Merge for a card that waits, in the mission whose lane it's in, as dropping it onto Can merge and
-    /// VoiceOver's action do; nil for one that doesn't wait, or where you can't change missions yourself.
-    package static func setAsNext(_ card: BoardCard, with setAsNext: ((ItemRef, MissionKey) -> Void)?) -> (() -> Void)? {
-        guard card.stage == .waits, let setAsNext, let mission = card.mission else { return nil }
+    /// Set as Next to Merge for a card that waits, as dropping it onto Can merge and ⌘← do, for VoiceOver's action: in its
+    /// lane's mission, where that one holds it. Nil where the Board wouldn't take it there, such as for one that doesn't
+    /// wait, one that waits in another of its missions, or where you can't change missions yourself.
+    package static func setAsNext(
+        _ card: BoardCard, in lane: BoardLane.Kind, moves: BoardMoves, with setAsNext: ((ItemRef, MissionKey) -> Void)?
+    ) -> (() -> Void)? {
+        guard let setAsNext, case .setAsNext(let mission) = moves.move(card, to: .canMerge, in: lane) else { return nil }
         return { setAsNext(card.ref, mission) }
     }
 
@@ -779,10 +785,10 @@ package struct OrderBoardView: View {
             notice = nil
             // As the row's menu and VoiceOver's action move it, saying where Undo is.
             StageCommand.perform(.move(stage), on: card.ref, order: order, undo: .lane)
-        case .setAsNext:
-            guard let setAsNext = Self.setAsNext(card, with: setAsNext) else { return false }
+        case .setAsNext(let mission):
+            guard let setAsNext else { return false }
             notice = nil
-            setAsNext()
+            setAsNext(card.ref, mission)
         case .stays:
             return false
         case .refused(let why):
@@ -944,6 +950,9 @@ private struct BoardCardView: View {
                 }
                 Button("Show Details", action: select)
             }
+            // Its Mission menu's, as its row has them; but for one that waits, Set as Next to Merge is the Board's, above,
+            // only where its lane's mission holds it.
+            .missionActions(card.ref, context: content.mission, offersNext: card.stage != .waits)
     }
 
     private var accessibilityValue: String {

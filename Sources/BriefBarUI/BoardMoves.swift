@@ -31,7 +31,7 @@ package struct BoardMoves {
         let sameLane = lane == .all || board.lanes.first { $0.kind == lane }?.cards.contains { $0.ref == card.ref } == true
         return BoardRules.move(
             card, to: stage, sameLane: sameLane, isYours: order.isYours(card.ref), author: order.author(of: card.ref),
-            missionChanges: missionChanges, missions: missions.filter { $0.contains(card.ref) }
+            missionChanges: missionChanges, missions: missions.filter { $0.contains(card.ref) }, names: order.names
         )
     }
 

@@ -534,7 +534,7 @@ public struct PullRequestBoard: Equatable, Sendable {
         let shown = missions.filter { $0.shows(kinds) }
         let onBoard = stages.filter { kinds.contains($0.key.kind) && $0.value.isOnBoard }
 
-        // Each pull request once, in the first mission that has it.
+        // Each pull request once, in the first mission that has it, but one that waits (below).
         var first: [ItemRef: BoardCard] = [:]
         var laneCards: [[BoardCard]] = []
         let waiters = waiters(in: shown)
@@ -551,6 +551,14 @@ public struct PullRequestBoard: Equatable, Sendable {
                 if first[step.ref] == nil { first[step.ref] = card }
             }
             laneCards.append(cards)
+        }
+        // One that waits, in the first mission that holds it, as its stage says: with a lane for every card too, its card
+        // speaks for that mission, its capsule, its menu and Set as Next to Merge.
+        for (ref, card) in first where card.stage == .waits {
+            guard let holder = StageOrder.holders(of: ref, in: shown).first, holder != card.mission,
+                  let index = shown.firstIndex(where: { $0.key == holder }),
+                  let held = laneCards[index].first(where: { $0.ref == ref }) else { continue }
+            first[ref] = held
         }
         let outside = onBoard.keys.filter { first[$0] == nil }.sorted().compactMap { ref in
             onBoard[ref].map { BoardCard(ref: ref, reading: $0) }
@@ -726,8 +734,8 @@ public enum BoardMove: Equatable, Sendable {
     case stays
     /// Sets that stage, as you.
     case setStage(PullRequestStage)
-    /// Set as Next to Merge: it no longer waits.
-    case setAsNext
+    /// Set as Next to Merge in this mission, which holds it: it no longer waits there.
+    case setAsNext(MissionKey)
     /// Why it can't go there.
     case refused(String)
 
@@ -741,9 +749,9 @@ public enum BoardMove: Equatable, Sendable {
 }
 
 /// What the Board lets you do with a card. You can set the three stages that are yours to set; Can merge, Waits and Merged
-/// come only from what BriefBar sees, so a card goes there only by Set as Next to Merge, from Waits. Someone else's pull
-/// request asks its own reviewers: Finished My Review takes it off your board instead. A card moves between columns in its
-/// own lane: another mission is Move to Mission's, in its menu.
+/// come only from what BriefBar sees, so a card goes there only by Set as Next to Merge, from Waits, in a mission whose order
+/// holds it. Someone else's pull request asks its own reviewers: Finished My Review takes it off your board instead. A card
+/// moves between columns in its own lane: another mission is Move to Mission's, in its menu.
 public enum BoardRules {
     /// What dropping a card on a column does.
     /// - Parameters:
@@ -751,10 +759,12 @@ public enum BoardRules {
     ///   - isYours: you opened it.
     ///   - author: who did, for someone else's: "Priya".
     ///   - missionChanges: you can change missions yourself: Set as Next to Merge, Merge After and Move to Mission.
-    ///   - missions: the missions it's in, for whether it can be set as next to merge (`OrderMission.whyNotNext`).
+    ///   - missions: the missions it's in, for whether it can be set as next to merge (`OrderMission.whyNotNext`), and
+    ///     where it waits (`StageOrder.holders(of:in:)`).
+    ///   - names: what names the mission it waits in, where its lane's doesn't hold it.
     public static func move(
         _ card: BoardCard, to stage: PullRequestStage, sameLane: Bool = true, isYours: Bool, author: String? = nil,
-        missionChanges: Bool = false, missions: [OrderMission] = []
+        missionChanges: Bool = false, missions: [OrderMission] = [], names: OrderNames = .none
     ) -> BoardMove {
         if card.stage == .merged { return stage == .merged && sameLane ? .stays : .refused(BoardText.hasMerged) }
         guard sameLane else { return .refused(BoardText.otherLane(missionChanges: missionChanges)) }
@@ -767,8 +777,14 @@ public enum BoardRules {
         case .canMerge:
             guard card.stage == .waits else { return .refused(BoardText.azureDevOpsDecides) }
             if let why = missions.lazy.compactMap({ $0.whyNotNext(card.ref) }).first { return .refused(why) }
-            if missionChanges { return .setAsNext }
-            return .refused(BoardText.waitsUntilMerged(card))
+            guard missionChanges else { return .refused(BoardText.waitsUntilMerged(card)) }
+            // In its lane's mission, where that one holds it: set as next in another of its missions, it would still wait.
+            let holders = StageOrder.holders(of: card.ref, in: missions)
+            if let mission = card.mission, holders.isEmpty || holders.contains(mission) { return .setAsNext(mission) }
+            guard let holder = holders.first.flatMap({ key in missions.first { $0.key == key } }) else {
+                return .refused(BoardText.waitsUntilMerged(card))
+            }
+            return .refused(BoardText.waitsIn(names.title(holder.key) ?? OrderText.title(of: holder, name: names.name)))
         case .waits:
             return .refused(BoardText.orderDecides(missionChanges: missionChanges))
         case .merged:
@@ -825,6 +841,11 @@ public enum BoardText {
 
     static func orderDecides(missionChanges: Bool) -> String {
         missionChanges ? "Its order decides what it waits for: Mission ▸ Merge After, in its menu" : "Its order decides what it waits for"
+    }
+
+    /// Why a card that waits isn't set as next to merge in its lane's mission, which doesn't hold it.
+    static func waitsIn(_ mission: String) -> String {
+        "It waits in ‘\(mission)’: set it as next there"
     }
 
     static func someoneElses(_ author: String?) -> String {

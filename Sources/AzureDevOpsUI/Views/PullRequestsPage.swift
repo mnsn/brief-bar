@@ -135,11 +135,13 @@ struct PullRequestsPage: View {
         ordering.revealColumn(stage)
     }
 
-    /// A pull request's card on the Board: what it shows, its menu as its row's, and what VoiceOver says of it.
+    /// A pull request's card on the Board: what it shows, its menu as its row's, and what VoiceOver says of it. With a lane
+    /// for every card, Undo shows at the top.
     private func boardCard(_ item: PRSnapshot, _ card: BoardCard) -> BoardCardContent {
         let order = card.step.map {
             OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready, names: ordering.names)
         }
+        let mission = missionMenu(item, in: card.mission, undo: PullRequestsByMission.undoPlace(lanes: lanes ?? ordering.lanes))
         return BoardCardContent(
             view: AnyView(PullRequestBoardCard(item: item, card: card, order: order, ordering: ordering, now: store.now)),
             menu: AnyView(Group {
@@ -147,11 +149,12 @@ struct PullRequestsPage: View {
                 Button("Open in Azure DevOps") { store.open(item) }
                 PullRequestMenuItems(
                     item: item, openSource: source(item), dismiss: dismissing(item), stopWatching: watching(item),
-                    mission: missionMenu(item, in: card.mission), ordering: ordering
+                    mission: mission, ordering: ordering
                 )
             }),
             label: "!\(item.key.number) \(item.title)",
-            details: PullRequestBoardCard.details(item, reading: card.reading, order: order, ordering: ordering)
+            details: PullRequestBoardCard.details(item, reading: card.reading, order: order, ordering: ordering),
+            mission: mission
         )
     }
 
@@ -180,8 +183,12 @@ struct PullRequestsPage: View {
     }
 
     /// A row's Mission menu, while Pull Request Order is on: from the mission whose card it's in, By Mission.
-    private func missionMenu(_ item: PRSnapshot, in mission: MissionKey? = nil) -> MissionMenuContext? {
-        MissionMenuContext.of(item.key.linkRef, order: ordering, mission: mission, undo: shownOrder == .byMission ? .byMission : .top)
+    /// - Parameter undo: where its Undo shows; nil for where the page's list shows it.
+    private func missionMenu(_ item: PRSnapshot, in mission: MissionKey? = nil, undo: MissionMenuContext.UndoPlace? = nil)
+        -> MissionMenuContext? {
+        MissionMenuContext.of(
+            item.key.linkRef, order: ordering, mission: mission, undo: undo ?? (shownOrder == .byMission ? .byMission : .top)
+        )
     }
 
     /// Shows a pull request's details, which sees it, as opening it does.

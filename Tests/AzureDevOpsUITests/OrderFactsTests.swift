@@ -685,6 +685,69 @@ import Testing
         #expect(abs(height(next) - height(nil)) < 0.5)
     }
 
+    /// The page hands the Board its Set as Next to Merge, which a drop from Waits onto Can merge and ⌘← do: it sets it as
+    /// next in that mission, as Mission ▸ does, and it can merge. VoiceOver hears its Undo is in its mission's lane, or, with
+    /// a lane for every card, which shows no mission's, at the top, as the card's Mission menu says too.
+    @Test func theBoardSetsItAsNextInItsMissionAndSaysWhereUndoIs() throws {
+        let (order, _) = try Self.order()
+        let first = ItemRef.pullRequest(organization: "contoso", number: 4085)
+        let later = ItemRef.pullRequest(organization: "contoso", number: 4093)
+        order.publish(
+            .azureDevOps,
+            pullRequests: [first, later].map { ref in
+                OrderPullRequest(
+                    ref: ref, repository: "contoso/7a0c4e1d/repository-shop", sourceBranch: "robin/\(ref.id)", targetBranch: "main",
+                    author: Self.me.id, createdAt: Date(timeIntervalSince1970: 1_791_000_000)
+                )
+            },
+            stages: [first: StageFacts(role: .author), later: StageFacts(role: .author, isReady: true)],
+            account: "robin@contoso.com"
+        )
+        let mission = try #require(order.missions.first { $0.contains(later) }?.key)
+        #expect(order.stage(of: later)?.stage == .waits)
+        PullRequestsByMission.setAsNext(order, lanes: .missions)(later, mission)
+        #expect(order.lastOrderChange?.mission == mission && order.lastOrderChange?.said == "You set !4093 as next to merge")
+        #expect(order.stage(of: later)?.stage == .canMerge)
+
+        #expect(PullRequestsByMission.undoPlace(lanes: .missions) == .byMission)
+        #expect(PullRequestsByMission.undoPlace(lanes: BoardLanes.none) == .top)
+        let edit = OrderEdit.setNext(later, in: mission, true)
+        #expect(MissionMenuContext(order: order, mission: mission, undo: .byMission).undoPlace(of: edit, in: mission) == "in its mission")
+        #expect(MissionMenuContext(order: order, mission: mission, undo: .top).undoPlace(of: edit, in: mission) == "at the top of the list")
+    }
+
+    /// A Board card in Can merge says, to VoiceOver too, that you set it as next to merge, and in Waits that an order went
+    /// against your change, as its row does: the stage's words say neither. One whose order alone places it says nothing
+    /// more there.
+    @Test func aBoardCardKeepsWhatAChangeOfYoursSaysOnCanMergeAndWaits() throws {
+        let order = Self.onOrder()
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let item = try #require(
+            PRClassifier.snapshot(for: Self.record(4130), seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now)
+        )
+        let ref = item.key.linkRef
+        let other = ItemRef.pullRequest(organization: "contoso", number: 4131)
+        let canMerge = StageReading(stage: .canMerge, why: .ready(autoComplete: false))
+        let yours = OrderRowContext(
+            step: OrderStep(ref: ref, status: .open, standing: .next, notes: [.yourNext(now)], isYours: true, isChangedByYou: true),
+            isReady: true
+        )
+        let set = try #require(yours.sentence)
+        #expect(PullRequestBoardCard.details(item, reading: canMerge, order: yours, ordering: order) == [set, "shop-web"])
+
+        let waits = StageReading(stage: .waits, why: .waitsFor([other], words: "After !4131"))
+        let override = OrderOverride(by: nil, at: now, now: .after([other]), yours: .next)
+        let overridden = OrderRowContext(
+            step: OrderStep(ref: ref, status: .open, standing: .waiting(open: [other], unknown: []), notes: [.orderChangedIt(override)]),
+            isReady: true
+        )
+        let against = try #require(overridden.sentence)
+        #expect(against.contains("after you'd set it as next"))
+        #expect(PullRequestBoardCard.details(item, reading: waits, order: overridden, ordering: order) == [against, "shop-web"])
+        let theirs = OrderRowContext(step: OrderStep(ref: ref, status: .open, standing: .waiting(open: [other], unknown: [])), isReady: true)
+        #expect(PullRequestBoardCard.details(item, reading: waits, order: theirs, ordering: order) == ["shop-web"])
+    }
+
     /// Your made-up changes in the demo hold over its orders: the order status rename goes first, the retry waits for it, and
     /// the delivery estimates and the one-click checkout are a mission of your own.
     @Test func theDemosChangesHoldOverItsOrders() async throws {

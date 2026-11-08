@@ -34,10 +34,12 @@ package struct OrderRowContext {
     }
 
     /// Whether this stage's words already say where its order puts it, so that its capsule would only repeat them: Can merge
-    /// and Waits, for one its order places. Never for one with no order known, whose quiet ✎ says what a change of yours
-    /// says of it, which no stage says.
+    /// and Waits, for one its order places. Never where a change of yours speaks of it, such as that you set it as next, with
+    /// ✎, or that an order went against yours, in its tooltip and to VoiceOver, which no stage says; nor for one with no
+    /// order known, whose quiet ✎ says what a change of yours says of it.
     package func isSaid(by stage: PullRequestStage) -> Bool {
-        step.standing != .unordered && (stage == .canMerge || stage == .waits)
+        guard stage == .canMerge || stage == .waits else { return false }
+        return step.standing != .unordered && !step.notes.contains(where: \.isAboutYourChanges)
     }
 
     /// The row of a pull request in the missions, if one has it in its order or is stacked with it.

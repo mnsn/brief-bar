@@ -243,52 +243,67 @@ public enum StageOrder: Equatable, Sendable {
     /// branch. Once that one merged, one still targeting its branch holds until it's retargeted. One that two orders put
     /// before and after another holds, until you check them.
     public static func of(_ ref: ItemRef, in missions: [OrderMission]) -> StageOrder {
+        let statuses = statuses(in: missions)
+        return missions.lazy.compactMap { hold(ref, in: $0, statuses: statuses) }.first ?? .free
+    }
+
+    /// The missions that hold a pull request, the one `of(_:in:)` reads first: where its order puts it after one that
+    /// hasn't merged, needs checking, or goes round with another order, or where it's stacked on one that hasn't merged.
+    /// Set as Next to Merge in another of its missions leaves it where it is.
+    public static func holders(of ref: ItemRef, in missions: [OrderMission]) -> [MissionKey] {
+        let statuses = statuses(in: missions)
+        return missions.filter { hold(ref, in: $0, statuses: statuses) != nil }.map(\.key)
+    }
+
+    private static func statuses(in missions: [OrderMission]) -> [ItemRef: OrderStatus] {
         var statuses: [ItemRef: OrderStatus] = [:]
         for mission in missions {
             for other in mission.steps + mission.attached where statuses[other.ref] == nil {
                 statuses[other.ref] = other.status
             }
         }
-        for mission in missions {
-            if let step = mission.steps.first(where: { $0.ref == ref }) {
-                // Two orders put it and another in opposite orders, directly or through others' lines: neither can merge
-                // first, whatever else it waits for.
-                if !step.standing.needsChecking, let round = step.ordersGoRound {
-                    return .holds(OrderText.note(round, of: ref))
-                }
-                switch step.standing {
-                case .waiting(let open, let unknown):
-                    return .waits(open + unknown, words: OrderText.capsule(step) ?? "After \(OrderText.list(open + unknown, near: ref))")
-                case .unresolved(let unknown):
-                    return .waits(unknown, words: OrderText.capsule(step) ?? "After \(OrderText.list(unknown, near: ref))")
-                case .prerequisiteClosed, .retarget, .inCycle:
-                    return .holds(OrderText.standing(step) ?? "Check the order")
-                default:
-                    break
-                }
-                // Stacked on one its order doesn't put before it, one of its own or one it doesn't name: the order
-                // decides where it shows, but not where it merges.
-                var below: [ItemRef] = []
-                for note in step.notes {
-                    switch note {
-                    case .orderDisagrees(let other, let origin) where origin.isStacked: below.append(other)
-                    case .showsAgainst(let other): below.append(other)
-                    default: break
-                    }
-                }
-                var seen: Set<ItemRef> = []
-                below = below.filter { statuses[$0] != .merged && seen.insert($0).inserted }
-                if !below.isEmpty { return stacked(on: below, ref) }
-                continue
+        return statuses
+    }
+
+    /// What one mission says of merging a pull request: nil where it doesn't hold it.
+    private static func hold(_ ref: ItemRef, in mission: OrderMission, statuses: [ItemRef: OrderStatus]) -> StageOrder? {
+        if let step = mission.steps.first(where: { $0.ref == ref }) {
+            // Two orders put it and another in opposite orders, directly or through others' lines: neither can merge
+            // first, whatever else it waits for.
+            if !step.standing.needsChecking, let round = step.ordersGoRound {
+                return .holds(OrderText.note(round, of: ref))
             }
-            if mission.attached.contains(where: { $0.ref == ref }) {
-                // What it's stacked on, wherever that is, the order's pull requests, another mission's or one in none, as Set
-                // as Next to Merge reads it.
-                let below = mission.stackedBases(of: ref).filter { statuses[$0] != .merged }
-                if !below.isEmpty { return stacked(on: below, ref) }
+            switch step.standing {
+            case .waiting(let open, let unknown):
+                return .waits(open + unknown, words: OrderText.capsule(step) ?? "After \(OrderText.list(open + unknown, near: ref))")
+            case .unresolved(let unknown):
+                return .waits(unknown, words: OrderText.capsule(step) ?? "After \(OrderText.list(unknown, near: ref))")
+            case .prerequisiteClosed, .retarget, .inCycle:
+                return .holds(OrderText.standing(step) ?? "Check the order")
+            default:
+                break
             }
+            // Stacked on one its order doesn't put before it, one of its own or one it doesn't name: the order
+            // decides where it shows, but not where it merges.
+            var below: [ItemRef] = []
+            for note in step.notes {
+                switch note {
+                case .orderDisagrees(let other, let origin) where origin.isStacked: below.append(other)
+                case .showsAgainst(let other): below.append(other)
+                default: break
+                }
+            }
+            var seen: Set<ItemRef> = []
+            below = below.filter { statuses[$0] != .merged && seen.insert($0).inserted }
+            return below.isEmpty ? nil : stacked(on: below, ref)
         }
-        return .free
+        if mission.attached.contains(where: { $0.ref == ref }) {
+            // What it's stacked on, wherever that is, the order's pull requests, another mission's or one in none, as Set
+            // as Next to Merge reads it.
+            let below = mission.stackedBases(of: ref).filter { statuses[$0] != .merged }
+            if !below.isEmpty { return stacked(on: below, ref) }
+        }
+        return nil
     }
 
     private static func stacked(on below: [ItemRef], _ ref: ItemRef) -> StageOrder {

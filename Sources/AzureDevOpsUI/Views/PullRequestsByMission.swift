@@ -53,9 +53,23 @@ struct PullRequestsByMission: View {
             },
             rest: { refs in rest(refs.compactMap { byRef[$0] }) },
             board: board, card: { boardCard in byRef[boardCard.ref].map { card($0, boardCard) } },
-            setAsNext: { ref, mission in MissionMenuContext.setAsNext(ref, in: mission, order: ordering) },
+            setAsNext: Self.setAsNext(ordering, lanes: board?.mode ?? .missions),
             showByStatus: showByStatus, now: now
         )
+    }
+
+    /// The Board's Set as Next to Merge, as dropping a card from Waits onto Can merge does it: VoiceOver hears its Undo is in
+    /// its mission's lane, or at the top with a lane for every card.
+    static func setAsNext(_ ordering: PullRequestOrder, lanes: BoardLanes) -> (ItemRef, MissionKey) -> Void {
+        { ref, mission in
+            MissionMenuContext.setAsNext(ref, in: mission, order: ordering, undo: undoPlace(lanes: lanes))
+        }
+    }
+
+    /// Where the Board shows the Undo of a change to a mission: in its mission's lane, or at the top with a lane for every
+    /// card, which shows no mission's.
+    static func undoPlace(lanes: BoardLanes) -> MissionMenuContext.UndoPlace {
+        lanes == .none ? .top : .byMission
     }
 
     /// The missions with Azure DevOps' pull requests.
