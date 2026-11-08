@@ -313,6 +313,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             guard let store else { throw CopilotTasksStore.TargetUnread() }
             return try await store.readTarget(of: key)
         }
+        copilot.rereadPullRequest = { [weak store] key in store?.reread([key]) }
         workLinks?.showPullRequest = { [weak pullRequestDetails] key in pullRequestDetails?.revealAtWhatItsAbout(key) ?? false }
         return store
     }

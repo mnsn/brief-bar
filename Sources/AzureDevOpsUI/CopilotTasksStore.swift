@@ -172,11 +172,18 @@ final class CopilotTasksStore: ObservableObject {
         var description: String { "Azure DevOps isn't on." }
     }
 
+    /// Reads a pull request again now, as `PRStore.reread(_:)` does, rather than at the list's next refresh. The source's.
+    var rereadPullRequest: (PRKey) -> Void = { _ in }
+
     /// The branch a pull request merges into, as Azure DevOps says now (`readTarget`): what a Push & Reply's prompt has to
-    /// name for it to go. Throws when it can't be read, or Azure DevOps names none.
+    /// name for it to go. When the list has read another, it reads the pull request again then (`rereadPullRequest`), rather
+    /// than at its next refresh, so that the window, opened again, writes its prompt for this one. Throws when it can't be
+    /// read, or Azure DevOps names none.
     func freshTarget(of pullRequest: TaskPullRequest) async throws -> String {
-        let target = try await readTarget(PRKey(pullRequest.organization, pullRequest.id))
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        let target = try await readTarget(key)
         guard !target.isEmpty else { throw TargetUnread() }
+        if let listed = currentTarget(key), !listed.isEmpty, listed != target { rereadPullRequest(key) }
         return target
     }
 

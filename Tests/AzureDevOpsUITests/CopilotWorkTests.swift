@@ -868,6 +868,53 @@ import Testing
         #expect(try await asks[3]?() == "main")
     }
 
+    /// When Azure DevOps says a Push & Reply's pull request merges into another branch than the list has read, the list
+    /// reads it again then (`rereadPullRequest`), rather than at its next refresh: so the window, opened again, writes its
+    /// prompt for that branch, and it goes. Not while the two agree, nor when Azure DevOps can't be read.
+    @Test func aRetargetAzureDevOpsSaysIsReadAgainForTheNextPrompt() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let list = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
+        var snapshot = DemoData.snapshot(now: list.now)
+        list.receive(snapshot)
+        let store = store(settings)
+        // As the source has them: what the list has read, and what Azure DevOps says.
+        store.currentTarget = { [weak list] key in list?.record(for: key)?.pullRequest.targetBranch }
+        store.readTarget = { _ in "release/x" }
+        var reread: [PRKey] = []
+        store.rereadPullRequest = { reread.append($0) }
+
+        // The window wrote its prompt as the list has it: for main.
+        let listed = try #require(list.record(for: key))
+        let written = try #require(await list.copilotPrompts(.pushAndReply, for: listed))
+        let first = PullRequestTasks.task(for: written.record)
+        #expect(first.targetBranch == "main")
+        #expect(await store.freshTargetProblem(first) == CopilotTasksStore.retargetedMessage("release/x"))
+        #expect(reread == [key])
+
+        // The list's next read, which that brings forward, has release/x: the window, opened again, names it, and it goes.
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        snapshot.records[index].pullRequest.targetBranch = "release/x"
+        list.receive(snapshot)
+        let refreshed = try #require(list.record(for: key))
+        let again = try #require(await list.copilotPrompts(.pushAndReply, for: refreshed))
+        let next = PullRequestTasks.task(for: again.record)
+        #expect(next.targetBranch == "release/x")
+        #expect(again.prompts.worktree.contains("This pull request merges into release/x"))
+        #expect(again.prompts.session.contains("This pull request merges into release/x"))
+        #expect(await store.freshTargetProblem(next) == nil)
+        #expect(reread == [key])
+
+        // Moved back to main in Azure DevOps: the list reads that again too.
+        store.readTarget = { _ in "main" }
+        #expect(await store.freshTargetProblem(next) == CopilotTasksStore.retargetedMessage("main"))
+        #expect(reread == [key, key])
+        // Not when Azure DevOps can't be read.
+        store.readTarget = { _ in throw ADOError.offline }
+        #expect(await store.freshTargetProblem(next)
+            == "BriefBar couldn't read which branch the pull request merges into, so nothing went: \(ADOError.offline)")
+        #expect(reread == [key, key])
+    }
+
     // MARK: Prompts to the Copilot app's sessions
 
     /// Kept by references only: which session took it, which threads, what for and when; once it's sent, or copied for
