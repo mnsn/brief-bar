@@ -93,9 +93,11 @@ import Testing
         source.store.receive(Self.state(withLinks: false))
         #expect(try makeup() == nil)
         try await Task.sleep(for: .milliseconds(50))
-        // Read with where their work goes, though none changed: it tells that too.
+        // Read with where their work goes, though none changed: it tells that too, as the main queue delivers it, for as
+        // long as a busy machine could need (`waitLimit`).
         source.store.receive(Self.state(withLinks: false, readsLinks: true))
-        for _ in 0..<100 where try makeup() == nil {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while try makeup() == nil, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(try makeup()?.tells == .init(stories: true, sessions: true))
