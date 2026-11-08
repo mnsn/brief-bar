@@ -871,7 +871,7 @@ package final class PullRequestOrder: ObservableObject {
         let kindsOn = kindsOn
         let before = names.entries.count
         let changed = names.account(shown: Set(missions.map(\.key)), canSee: { key in
-            MissionNames.canSee(key, plans: plans, kindsOn: kindsOn, readsStories: facts.readsStories)
+            MissionNames.canSee(key, plans: plans, kindsOn: kindsOn, readsStories: facts.seesStories)
         }, elapsed: elapsed)
         if names.entries.count != before { renamed = true }
         if renamed { objectWillChange.send() }

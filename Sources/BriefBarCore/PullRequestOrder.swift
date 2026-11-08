@@ -159,6 +159,18 @@ public struct OrderFacts: Equatable, Sendable {
     /// are no stories' missions, and their names wait.
     public var readsStories: Bool
 
+    /// Whether a source reads stories but hasn't read yet what some of its pull requests' work items are for, as right after
+    /// BriefBar starts or Show Links is turned on: until it has, which stories' missions there are can't be told.
+    public var storiesArePending: Bool {
+        readsStories && pullRequests.values.contains { $0.ref.kind == .pullRequest && $0.stories == nil }
+    }
+
+    /// Whether BriefBar can tell which stories' missions there are: a source reads stories, and has read them for each of
+    /// its pull requests.
+    public var seesStories: Bool {
+        readsStories && !storiesArePending
+    }
+
     /// - Parameters:
     ///   - pullRequests: the first of each wins.
     ///   - sessions: the first of each wins.
@@ -2006,8 +2018,8 @@ extension Board {
         }
         if case .into(let target)? = change.placement {
             if case .mine = group.kind, target == group.key, !Self.isOwn(target) {
-                // A story's mission isn't gone while BriefBar can't read stories, only unseen.
-                if case .story = target, !facts.readsStories {
+                // A story's mission isn't gone while BriefBar can't tell stories' missions yet, only unseen.
+                if case .story = target, !facts.seesStories {
                     notes.append(.placementUnseen(target))
                 } else {
                     notes.append(.placementGone(target))

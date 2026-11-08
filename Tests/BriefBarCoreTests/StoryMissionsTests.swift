@@ -489,19 +489,30 @@ import Testing
         #expect(order.steps.map(\.ref).contains(Self.pr(4101)) && order.sameStory.isEmpty)
     }
 
-    /// One you put in a story's mission waits with the others you put there while BriefBar can't read stories, as before
-    /// Show Links has: its mission isn't gone, only unseen. Once it reads them and no pull request is for that story, it's
-    /// gone.
+    /// One you put in a story's mission waits with the others you put there while BriefBar can't tell stories' missions, as
+    /// before Show Links has read every pull request's work items: its mission isn't gone, only unseen. Once it has, and no
+    /// pull request is for that story, it's gone.
     @Test func oneYouPutInAStorysMissionWaitsUnseenWhileStoriesArentRead() throws {
         let story = MissionKey.story(Self.item(5101))
         let changes = OrderChanges([OrderChange(ref: Self.pr(4110), placement: .into(story), changedAt: t(10))])
         let unread = OrderFacts(pullRequests: [Self.ado(4110, nil), Self.ado(4101, nil), Self.ado(4102, nil)])
+        #expect(!unread.readsStories && !unread.storiesArePending && !unread.seesStories)
         let waiting = try #require(Self.missions(unread, changes: changes).first { $0.key == story })
         let step = try #require(waiting.steps.first)
         #expect(waiting.isMine && step.notes.contains(.placementUnseen(story)) && !step.notes.contains(.placementGone(story)))
         #expect(OrderText.note(.placementUnseen(story), of: step.ref) == "You put it in a story's mission, which shows once Show Links reads the story")
-        // Read, with no pull request for the story anymore: gone.
-        let read = Self.facts([Self.ado(4110, []), Self.ado(4101, []), Self.ado(4102, [])])
+        // Show Links on, but one pull request's work items not read yet, as right after BriefBar starts: still unseen.
+        let pending = Self.facts([Self.ado(4110, []), Self.ado(4101, []), Self.ado(4102, nil)])
+        #expect(pending.readsStories && pending.storiesArePending && !pending.seesStories)
+        let unseen = try #require(Self.missions(pending, changes: changes).first { $0.key == story }?.steps.first)
+        #expect(unseen.notes.contains(.placementUnseen(story)))
+        // All read, with no pull request for the story anymore: gone. A GitHub pull request has no stories to read.
+        let gitHub = OrderPullRequest(
+            ref: OrderBoardTests.gh(7), repository: OrderBoardTests.gitHubRepository, sourceBranch: "refs/heads/coupons",
+            targetBranch: "refs/heads/main"
+        )
+        let read = Self.facts([Self.ado(4110, []), Self.ado(4101, []), Self.ado(4102, []), gitHub])
+        #expect(read.seesStories)
         let gone = try #require(Self.missions(read, changes: changes).first { $0.key == story }?.steps.first)
         #expect(gone.notes.contains(.placementGone(story)))
     }

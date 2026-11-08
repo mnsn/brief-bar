@@ -195,7 +195,8 @@ public struct MissionNames: Equatable, Sendable {
     /// DevOps with Show Links for a story's.
     /// - Parameters:
     ///   - kindsOn: the kinds of thing whose source is on.
-    ///   - readsStories: a source reads the stories its pull requests are for.
+    ///   - readsStories: a source reads the stories its pull requests are for, and has read them for each
+    ///     (`OrderFacts.seesStories`).
     public static func canSee(_ key: MissionKey, plans: Set<UUID>, kindsOn: Set<ItemRef.Kind>, readsStories: Bool) -> Bool {
         switch key {
         case .plan(let id): return plans.contains(id)

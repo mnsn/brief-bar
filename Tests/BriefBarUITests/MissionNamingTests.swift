@@ -512,6 +512,13 @@ fileprivate final class Viewer {}
             order.timePassed()
         }
         #expect(order.yourNames.name(for: mission.key) == "Coupons and speed")
+        // Show Links on, but its pull requests' work items not read yet, as right after BriefBar starts: it waits too.
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4113, nil), Self.ado(4105, nil)], readsStories: true)
+        for _ in 0..<(30 * 12) {
+            clock.advance(2 * 3_600)
+            order.timePassed()
+        }
+        #expect(order.yourNames.name(for: mission.key) == "Coupons and speed")
         // Pull Request Order off: it waits too, and turned on again, it's there.
         order.setOn(false)
         clock.advance(30 * 86_400)

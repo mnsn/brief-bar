@@ -38,7 +38,8 @@ disabled, saying so, drawn from its settings alone, as a source that's off reads
 Pull Request Order keeps the names you give missions with **Rename…** (`MissionNames`, under `order.names`), by what
 makes each mission: only names you typed, never one left as it was or set back to BriefBar's own, up to 200, of 80
 characters at most. A name is forgotten once its mission hasn't shown for 14 days, counted only while Pull Request
-Order, and what makes the mission, are on; with the order that makes it; with the source whose things make it, as you
+Order, and what makes the mission, are on, and for a story's, once Show Links has read what each pull request is for
+(`OrderFacts.seesStories`); with the order that makes it; with the source whose things make it, as you
 turn that off; for a mission of your own, once no change of yours puts a pull request in it, nor would Undo; and with
 **Forget All Orders…**. As a mission's key changes, its name follows it, as Focus and your changes do
 (`OrderBoard.successor`, below). The names Apple Intelligence gives missions with Azure DevOps' pull requests, on this
