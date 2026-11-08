@@ -51,8 +51,16 @@ enum WaitCLI {
     /// What Azure DevOps says of a pull request the engine found closed, or couldn't read.
     enum Found: Equatable, Sendable {
         case status(PullRequest.Status)
+        /// Someone else's, whatever its status: it waits only on yours.
+        case notYours
         /// Why it couldn't be read.
         case unreadable(String)
+    }
+
+    /// What a pull request read on its own says, for one the engine found closed: its status, once it's yours, as the
+    /// engine tells yours, by who created it; `me`, your ID there.
+    static func found(_ pullRequest: PullRequest, me: String) -> Found {
+        pullRequest.author.id == me.lowercased() ? .status(pullRequest.status) : .notYours
     }
 
     // MARK: Arguments
@@ -65,6 +73,12 @@ enum WaitCLI {
         }
         guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else {
             return usage("Name the pull request to wait on, by its link or its number.")
+        }
+        // Each --org with a name: the options take the word after it for one, even another option, and leave out one
+        // without, which would read the app's organization instead.
+        for org in arguments.indices where arguments[org] == "--org" {
+            let name = org + 1 < arguments.count ? arguments[org + 1].trimmingCharacters(in: .whitespaces) : ""
+            guard !name.isEmpty, !name.hasPrefix("--") else { return usage("--org takes an organization's name.") }
         }
         let target = arguments[index + 1].trimmingCharacters(in: .whitespaces)
         let key: PRKey
@@ -156,8 +170,10 @@ enum WaitCLI {
             },
             status: {
                 do {
+                    let me = try await client.get(ADOEndpoint.connectionData(organization: key.organization), as: ADOConnectionData.self)
+                        .authenticatedUser.id
                     let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
-                    return .status(PullRequest(organization: key.organization, dto).status)
+                    return found(PullRequest(organization: key.organization, dto), me: me)
                 } catch {
                     return .unreadable(AzureDevOpsCommandLine.describe(error))
                 }
@@ -256,10 +272,12 @@ enum WaitCLI {
             "Its project doesn't let you read its policies, so BriefBar can't tell how its builds stand."
         }
 
-        /// The engine found it closed, or couldn't read it: which, as Azure DevOps says now.
+        /// The engine found it closed, or couldn't read it: which, as Azure DevOps says now; or, closed as it began,
+        /// someone else's.
         private func closed() async -> Ended {
             let number = request.key.number
             switch await status() {
+            case .notYours: return notYours(request.key)
             case .status(.completed): return Ended(exit: .closed, output: "!\(number) was completed.")
             case .status(.abandoned): return Ended(exit: .closed, output: "!\(number) was abandoned.")
             case .status: return Ended(exit: .couldntRead, error: "BriefBar can't read !\(number) now: you may no longer read it.")

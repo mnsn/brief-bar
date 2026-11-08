@@ -56,6 +56,26 @@ import Testing
         }
     }
 
+    /// `--org` with a name: the options take the word after it for one, even another option, and leave out one without,
+    /// so it would read the app's organization, or one called “--timeout”.
+    @Test func refusesAnOrgWithoutAName() {
+        let arguments: [[String]] = [
+            ["--wait", "4102", "--org"],
+            ["--wait", "4102", "--org", "--timeout", "5"],
+            ["--wait", "4102", "--org", " "],
+            ["--wait", link, "--timeout", "5", "--org"],
+        ]
+        for arguments in arguments {
+            // As the options read them, as for any of its modes.
+            let named = AzureDevOpsCommandLine.Options(CommandLineOptions(arguments: arguments, demo: false)).organizations
+            guard case .failure(let ended) = request(arguments, org: named, app: [organization]) else {
+                Issue.record("Took \(arguments)")
+                continue
+            }
+            #expect(ended.exit == .usage && ended.error == "--org takes an organization's name.\n\(WaitCLI.usageLine)")
+        }
+    }
+
     /// Its exit codes, as `--help` says them, and its timeout's.
     @Test func saysWhatItsExitCodesMean() {
         #expect(WaitCLI.Exit.allCases.map(\.rawValue) == Array(0...7))
@@ -357,9 +377,23 @@ import Testing
         #expect(unreadable.exit == .couldntRead && unreadable.error == "BriefBar can't read !4099 now: you may no longer read it.")
     }
 
+    /// Someone else's, open or closed as it began: one the engine found closed is read on its own, and it's yours once you
+    /// created it, as the engine tells yours, whatever the letter case of your ID.
     @Test func waitsOnlyOnYourOwn() async throws {
         let ended = await waiter(Script([try read(4097, at: 0)], now: start), 4097).run()
         #expect(ended.exit == .usage && ended.error == "!4097 isn't yours: --wait waits only on your own pull requests.")
+        let closed = PulseSnapshot(hasLoaded: true, closedLinks: [PRKey(organization, 4097)])
+        #expect(await waiter(Script([closed], now: start), 4097, status: .notYours).run() == ended)
+
+        let records = DemoData.records(now: start)
+        let theirs = try #require(records.first { $0.id.number == 4097 })
+        var completed = theirs.pullRequest
+        completed.status = .completed
+        #expect(WaitCLI.found(completed, me: theirs.me) == .notYours)
+        let yours = try #require(records.first { $0.id.number == 4099 })
+        var abandoned = yours.pullRequest
+        abandoned.status = .abandoned
+        #expect(WaitCLI.found(abandoned, me: yours.me.uppercased()) == .status(.abandoned))
     }
 
     /// Agents turned off, or Azure DevOps, meanwhile: before the next read.

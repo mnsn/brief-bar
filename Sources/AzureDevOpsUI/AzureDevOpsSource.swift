@@ -778,8 +778,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     static let firstLoadWait = 60
 
     private func fixWithCopilot(_ action: PullRequestAction, userInfo: [String: String]) {
-        guard let store, let copilot, let item = store.items.first(where: { $0.key.description == userInfo["pullRequest"] }),
-              store.copilotCan(action, item, copilot: copilot)
+        // By its key, in which an organization's name is the same in any letter case, as Azure DevOps has it.
+        guard let store, let copilot, let key = userInfo["pullRequest"].flatMap(PRKey.init(description:)),
+              let item = store.items.first(where: { $0.key == key }), store.copilotCan(action, item, copilot: copilot)
         else {
             openNotification(userInfo)
             return

@@ -72,6 +72,22 @@ import Testing
         #expect(details.selected?.key.number == 4091 && details.place == .thread(63))
     }
 
+    /// By its pull request's key, in which an organization's name is the same in any letter case, as Azure DevOps has it:
+    /// the list's pull request, though the notification spelled its organization otherwise.
+    @Test func findsItsPullRequestInAnyLetterCase() throws {
+        let (source, services) = try demo()
+        defer { source.stop() }
+        var composed: [(action: PullRequestAction, number: Int)] = []
+        source.composingFix = { composed.append(($0, $1.key.number)) }
+        var comment = try entry(4091, titled: "Priya", in: services).userInfo
+        let spelled = "\(organization.uppercased())/4091"
+        try #require(comment["pullRequest"] != spelled)
+        comment["pullRequest"] = spelled
+
+        source.notificationButton(PRStore.copilotButton.id, userInfo: comment)
+        #expect(composed.map(\.action) == [.fixComments] && composed.map(\.number) == [4091])
+    }
+
     /// Anything else opens the notification: Fix with Copilot… on what Copilot is fixing already, or another button.
     @Test func otherwiseOpensTheNotification() throws {
         let (source, services) = try demo()

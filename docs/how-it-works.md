@@ -3623,13 +3623,14 @@ last word there, matched by thread and comment, so an edit isn't news. It prints
 then conflicts, comments and a build that passed, the pull request's link, and each one's prompt as
 `pull_request_prompt` writes it for an agent's checkout, and exits with the first one's code: 0 the build passed, 4 a
 build failed, 5 comments, 6 conflicts. It exits with 7 once the pull request is completed or abandoned, with 3 at its
-timeout, saying what still runs or what hasn't passed, with 2 on wrong usage or for a pull request that isn't yours, and
-with 1 when it can't read it: five reads in a row that fail, or a pull request you may no longer read. A read counts
-only once it read both the pull request (`PulseSnapshot.linkedReadAt`) and its details (`PRDetails.fetchedAt`) again,
-since one that fails leaves what it couldn't read as it was, such as the pull request's conflicts while its policies are
-read anew; and only with its policies, since policies you can't read leave its builds unknown rather than none. Like
-`--mcp`, it runs only from a shell and only while agents and Azure DevOps are on in the app, checked before each read,
-so turning either off stops it. `--demo --wait` waits a second for the demo's one change, Priya's comment on !4091.
+timeout, saying what still runs or what hasn't passed, with 2 on wrong usage, such as `--org` without a name, or for a
+pull request that isn't yours, even one closed as it began, and with 1 when it can't read it: five reads in a row that
+fail, or a pull request you may no longer read. A read counts only once it read both the pull request
+(`PulseSnapshot.linkedReadAt`) and its details (`PRDetails.fetchedAt`) again, since one that fails leaves what it
+couldn't read as it was, such as the pull request's conflicts while its policies are read anew; and only with its
+policies, since policies you can't read leave its builds unknown rather than none. Like `--mcp`, it runs only from a
+shell and only while agents and Azure DevOps are on in the app, checked before each read, so turning either off stops
+it. `--demo --wait` waits a second for the demo's one change, Priya's comment on !4091.
 
 ### Its Copilot plugin
 
