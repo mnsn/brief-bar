@@ -451,23 +451,28 @@ import Testing
             Self.click(at: try #require(drawn.frame), in: host)
             try await until("the click to show its details over the Board") { details.shown == Self.ref }
             #expect(window.makeFirstResponder(nil))
-            try await Task.sleep(for: .milliseconds(200))
+            // Each key as the app takes it, again until it moves the card, then once the Board draws it in its new column.
             for stage in [PullRequestStage.yourReview, .teammateReview] {
-                Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
-                try await until("⌘→ to \(stage.title)") { order.stage(of: Self.ref)?.stage == stage }
-                try await Task.sleep(for: .milliseconds(300))
+                let before = drawn.frame?.minX
+                try await Self.pressUntil("⌘→ to \(stage.title)") {
+                    Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+                    return order.stage(of: Self.ref)?.stage == stage
+                }
+                try await until("the Board to draw it in \(stage.title)") { drawn.frame?.minX != before }
             }
             let withoutIt = host.fittingSize.height
-            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
-            try await until("the details to say why") { order.stageRefusal(of: Self.ref) == Self.azureDevOpsDecides }
-            try await Task.sleep(for: .milliseconds(300))
+            try await Self.pressUntil("the details to say why") {
+                Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+                return order.stageRefusal(of: Self.ref) == Self.azureDevOpsDecides
+            }
+            try await until("the lane to say why under it") { host.fittingSize.height > withoutIt + 8 }
             let withIt = host.fittingSize.height
-            #expect(withIt > withoutIt + 8, "The lane didn't say why under it")
 
             #expect(order.setStage(.yourReview, of: Self.ref) == .done)
             details.shown = nil
-            try await Task.sleep(for: .milliseconds(500))
-            #expect(host.fittingSize.height < withIt - 8, "The lane still said why a move was refused, though it moved since")
+            try await until("the lane's line to go, though it showed when the Board did again") {
+                host.fittingSize.height < withIt - 8
+            }
         }
     }
 
@@ -485,46 +490,60 @@ import Testing
         #expect(order.board(kinds: [.pullRequest]).lanes.first { $0.cards.contains { $0.ref == ref } }?.mission == other)
         let details = Details(covers: true)
         try await Self.showingWired(order, details: details) { window, host, wired in
+            let waits = try #require(wired.frames[Self.key(ref, other)]?.minX)
+            // Each key again until what it does is done: the Board's keys take it once it's drawn with the details over it.
             details.shown = ref
-            try await Task.sleep(for: .milliseconds(300))
-            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
-            try await until("⌘← to set it as next where it waits") { order.stage(of: ref)?.stage == .canMerge }
+            try await Self.pressUntil("⌘← to set it as next where it waits") {
+                Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+                return order.stage(of: ref)?.stage == .canMerge
+            }
             #expect(order.lastOrderChange?.mission == holder)
             #expect(wired.places == [.details])
+            try await until("the Board to draw it in Can merge") { wired.frames[Self.key(ref, other)]?.minX != waits }
             _ = order.undo()
             #expect(order.stage(of: ref)?.stage == .waits)
             details.shown = nil
-            try await Task.sleep(for: .milliseconds(300))
+            try await until("the Board to draw it in Waits again") { wired.frames[Self.key(ref, other)]?.minX == waits }
 
-            Self.click(at: try #require(wired.frames[Self.key(ref, other)]), in: host)
-            try await until("the click in the other mission's lane") { details.shown == ref }
+            // A click, again until it shows its details: it takes it once the Board, which the details covered, is back.
+            try await Self.pressUntil("the click in the other mission's lane") {
+                Self.click(at: wired.frames[Self.key(ref, other)] ?? .zero, in: host)
+                return details.shown == ref
+            }
             #expect(window.makeFirstResponder(nil))
-            try await Task.sleep(for: .milliseconds(200))
-            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
-            try await until("the details to say where it waits") { order.stageRefusal(of: ref) != nil }
+            try await Self.pressUntil("the details to say where it waits") {
+                Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+                return order.stageRefusal(of: ref) != nil
+            }
             let mission = try #require(order.missions.first { $0.key == holder })
             let title = order.names.title(holder) ?? OrderText.title(of: mission, name: order.names.name)
             #expect(order.stageRefusal(of: ref) == "It waits in ‘\(title)’: set it as next there")
             #expect(order.lastOrderChange == nil && order.stage(of: ref)?.stage == .waits)
             details.shown = nil
             try await until("the Board back") { order.stageRefusal == nil }
-            try await Task.sleep(for: .milliseconds(300))
 
-            Self.click(at: try #require(wired.frames[Self.key(ref, holder)]), in: host)
-            try await until("the click in its mission's lane") { details.shown == ref }
+            try await Self.pressUntil("the click in its mission's lane") {
+                Self.click(at: wired.frames[Self.key(ref, holder)] ?? .zero, in: host)
+                return details.shown == ref
+            }
             #expect(window.makeFirstResponder(nil))
-            try await Task.sleep(for: .milliseconds(200))
-            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
-            try await until("⌘← to set it as next there") { order.stage(of: ref)?.stage == .canMerge }
+            try await Self.pressUntil("⌘← to set it as next there") {
+                Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+                return order.stage(of: ref)?.stage == .canMerge
+            }
             #expect(order.lastOrderChange?.mission == holder)
             #expect(wired.places == [.details, .details])
+            // The click's focus came after the card lost it, as the window isn't truly key: it loses it again, as the
+            // disabled Board's card does in the app, and has it back once the details close.
+            #expect(window.makeFirstResponder(nil))
             _ = order.undo()
             details.shown = nil
-            try await Task.sleep(for: .milliseconds(500))
 
-            // The card you clicked has the keys back.
-            Self.press(.leftArrow, command: true, in: window)
-            try await until("⌘← on the card to set it as next") { order.stage(of: ref)?.stage == .canMerge }
+            // The card you clicked has the keys back: ⌘← on it, once it has them.
+            try await Self.pressUntil("⌘← on the card to set it as next") {
+                Self.press(.leftArrow, command: true, in: window)
+                return order.stage(of: ref)?.stage == .canMerge
+            }
             #expect(wired.places == [.details, .details, .byMission])
         }
     }
@@ -538,9 +557,10 @@ import Testing
         let details = Details(covers: true)
         try await Self.showingWired(order, details: details) { window, _, wired in
             details.shown = ref
-            try await Task.sleep(for: .milliseconds(300))
-            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
-            try await until("⌘← to set it as next where it waits") { order.stage(of: ref)?.stage == .canMerge }
+            try await Self.pressUntil("⌘← to set it as next where it waits") {
+                Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+                return order.stage(of: ref)?.stage == .canMerge
+            }
             #expect(order.lastOrderChange?.mission == .plan(Self.planID))
             #expect(wired.places == [.details])
         }
@@ -556,9 +576,10 @@ import Testing
         let details = Details(covers: true)
         try await Self.showingWired(order, details: details) { window, _, _ in
             details.shown = ref
-            try await Task.sleep(for: .milliseconds(300))
-            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
-            try await until("⌘← to set it as next where it waits first") { order.lastOrderChange?.mission == holders.first }
+            try await Self.pressUntil("⌘← to set it as next where it waits first") {
+                Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+                return order.lastOrderChange?.mission == holders.first
+            }
             #expect(order.stage(of: ref)?.stage == .waits)
             let still = try #require(BoardText.stillWaits(ref, besides: holders[0], in: order.missions, names: order.names))
             #expect(still.hasPrefix("It still waits for !"))
