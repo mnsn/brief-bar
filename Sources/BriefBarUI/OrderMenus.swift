@@ -46,7 +46,7 @@ package struct MissionMenuContext {
     /// Makes a change, and says it to VoiceOver.
     @MainActor
     package func change(_ edit: OrderEdit) {
-        guard let done = order.change(edit) else { return }
+        guard let done = order.change(edit, in: mission) else { return }
         AccessibilityNotification.Announcement(spoken(done, of: edit)).post()
     }
 
@@ -55,14 +55,16 @@ package struct MissionMenuContext {
     @MainActor
     package func spoken(_ done: OrderLastChange, of edit: OrderEdit) -> String {
         let spoken = OrderText.spoken(done.said, undo: done.canUndo ? undoPlace(of: edit, in: done.mission) : nil)
-        guard case .setNext(let ref, let mission, true) = edit,
-              let still = BoardText.stillWaits(ref, besides: mission, in: order.missions, names: order.names) else { return spoken }
+        guard done.canUndo, case .setNext(let ref, let mission, true) = edit, let still = order.stillWaits(ref, nextIn: mission)
+        else { return spoken }
         return spoken + " " + OrderText.spoken(SpokenText.unquoted(still), undo: nil) + "."
     }
 
     /// Where VoiceOver says a change's Undo is: in the mission's card or lane, or at the top of the list where none shows
-    /// it.
+    /// it. A Move's is in the mission you moved it from, and one whose pull request left the card you chose it in, as Put
+    /// Yours Back takes it, in the mission it was in.
     /// - Parameter mission: the mission whose card shows the Undo line; nil for none.
+    @MainActor
     package func undoPlace(of edit: OrderEdit, in mission: MissionKey?) -> String {
         switch undo {
         case .byMission:
@@ -70,6 +72,8 @@ package struct MissionMenuContext {
                 "at the top of the list"
             } else if case .move = edit {
                 "in the mission you moved it from"
+            } else if let ref = edit.refs.first, order.missions.first(where: { $0.key == mission })?.contains(ref) == false {
+                "in the mission it was in"
             } else {
                 "in its mission"
             }

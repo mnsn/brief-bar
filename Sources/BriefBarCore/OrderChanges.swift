@@ -448,6 +448,33 @@ public struct OrderChanges: Equatable, Sendable {
         return changes != before
     }
 
+    /// Forgets what each change keeps of where orders put its pull request, of the orders BriefBar no longer keeps, which
+    /// nothing reads again; and the pull requests sent to you only in a chat that no order BriefBar keeps names anymore, so
+    /// that their references go as everything else BriefBar kept of them does. A session that tells an order again that
+    /// names such a one where it did before then goes against your change, as BriefBar no longer knows it did. True when
+    /// that forgot something.
+    /// - Parameter chatOnly: the pull requests listed only because someone sent them in a chat.
+    @discardableResult
+    public mutating func forgetPlaces(besides orders: DeclaredOrders, chatOnly: Set<ItemRef>) -> Bool {
+        let kept = Set(orders.plans.map(\.id))
+        let named = Set(orders.plans.flatMap { plan in plan.entries.flatMap { [$0.ref] + $0.after } })
+        let gone = chatOnly.subtracting(named)
+        func tidied(_ place: OrderPlace) -> OrderPlace {
+            OrderPlace(orders: place.orders.filter { kept.contains($0.key) }.mapValues { $0.subtracting(gone) })
+        }
+        var forgot = false
+        for (ref, change) in changes {
+            var tidy = change
+            tidy.replaced = tidied(change.replaced)
+            tidy.found = tidied(change.found)
+            if tidy != change {
+                changes[ref] = tidy
+                forgot = true
+            }
+        }
+        return forgot
+    }
+
     /// When a change finished: when BriefBar saw the last of the pull requests it's about merge or close, once it saw every
     /// one of them do so; nil while any is open, or one BriefBar can't see.
     public static func finishedAt(_ change: OrderChange, evidence: OrderEvidence) -> Date? {
@@ -835,15 +862,19 @@ extension OrderChanges {
             edited.remove(ref)
         }
         // One for each mission: the others set as next there aren't anymore, and one beside its order that you set as next
-        // only goes back beside it. Also one an order went against since, which stays as that order left it but for that:
-        // should BriefBar forget that order, it doesn't come back as a second next there.
+        // only goes back beside it. Also one an order went against since that you changed more of, such as moved, which stays
+        // as that order left it but for that: should BriefBar forget that order, it doesn't come back as a second next there.
+        // One an order went against that's only set as next stays as it is, its note and Put Yours Back with it: should
+        // BriefBar forget that order, it says you set this one as next there later (`nextSince`).
         func clearOtherFirsts(named key: MissionKey, in mission: OrderMission?, besides ref: ItemRef) throws {
             for other in edited.all where other.ref != ref {
                 guard let first = other.first, mission.map({ Self.names($0, first) }) ?? (first == key) else { continue }
+                let holds = other.holds(in: orders)
                 var cleared = other
                 cleared.first = nil
                 cleared.detachIfDone()
-                try keep(cleared, stamped: other.holds(in: orders))
+                if cleared.isEmpty, !holds { continue }
+                try keep(cleared, stamped: holds)
             }
         }
 
@@ -969,7 +1000,8 @@ extension OrderChanges {
 
     /// The changes Undo Your Changes to This Mission takes back, as `apply` does and its ⋯ counts them: to the mission's pull
     /// requests, and those that put pull requests in it or moved them out of it, set one as next or put one after another
-    /// in it, a chain by any of its own pull requests.
+    /// in it, a chain by any of its own pull requests. A next that went over to an order (`OrderChange.follow`) is that
+    /// order's mission's, not the one you set it in.
     /// - Parameter missions: as By Mission shows them now.
     public func undone(in key: MissionKey, missions: [OrderMission]) -> [OrderChange] {
         let mission = missions.first { $0.key == key }
@@ -978,7 +1010,10 @@ extension OrderChanges {
             guard let named else { return false }
             return mission.map { Self.names($0, named) } ?? (named == key)
         }
-        return all.filter { refs.contains($0.ref) || isThis($0.placement?.mission) || isThis($0.from) }
+        return all.filter { change in
+            refs.contains(change.ref) || isThis(change.placement?.mission)
+                || isThis(change.placement == nil ? change.first ?? change.from : change.from)
+        }
     }
 
     /// Puts back the changes an edit touched, as `apply` said they were.

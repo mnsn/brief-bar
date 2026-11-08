@@ -504,6 +504,30 @@ import Testing
         #expect(change.holds(in: DeclaredOrders.load(from: defaults)))
     }
 
+    /// What a change keeps of where orders put its pull request goes with the orders BriefBar no longer keeps, and so does
+    /// a pull request sent to you only in a chat once no order BriefBar keeps names it; one an order still names stays.
+    @Test func forgettingPlacesTakesOrdersGoneAndPullRequestsOnlyAChatSentThatNoOrderNames() throws {
+        var orders = try tell([(4102, []), (4079, [4102]), (4103, [])])
+        orders = try tell([(4104, []), (4079, [4104])], replacing: orders, id: otherID)
+        let place = OrderPlace(orders: [planID: [Self.pr(4102), Self.pr(4103)], otherID: [Self.pr(4104)]])
+        var changes = OrderChanges([OrderChange(ref: Self.pr(4079), first: .plan(planID), changedAt: t(60), replaced: place)])
+
+        let chatOnly: Set<ItemRef> = [Self.pr(4102), Self.pr(4104)]
+        let whileNamed = changes.forgetPlaces(besides: orders, chatOnly: chatOnly)
+        #expect(!whileNamed)
+
+        orders.forget(otherID)
+        orders = try tell([(4079, []), (4103, [])], replacing: orders, at: 120)
+        let once = changes.forgetPlaces(besides: orders, chatOnly: chatOnly)
+        #expect(once)
+
+        let tidied = try #require(changes[Self.pr(4079)])
+        #expect(tidied.replaced == OrderPlace(orders: [planID: [Self.pr(4103)]]) && tidied.found == tidied.replaced)
+        #expect(tidied.first == .plan(planID) && tidied.changedAt == t(60))
+        let again = changes.forgetPlaces(besides: orders, chatOnly: chatOnly)
+        #expect(!again)
+    }
+
     @Test func forgetAllOrdersForgetsYourChangesToo() {
         let defaults = MemorySettings()
         OrderChanges([OrderChange(ref: Self.pr(4101), first: .plan(planID), changedAt: t(0))]).save(to: defaults)
@@ -954,6 +978,11 @@ import Testing
         // Neither can merge first: each one's stage holds, saying why, and its capsule turns orange, as for an order to check.
         #expect(StageOrder.of(Self.pr(4101), in: missions) == .holds("Another order puts !4102 after it: check the order"))
         #expect(StageOrder.of(Self.pr(4102), in: missions) == .holds("Another order puts !4101 after it: check the order"))
+        // Where BriefBar names the other order's mission, as its header does, the stage names it too.
+        #expect(StageOrder.of(Self.pr(4101), in: missions, names: names) == .holds("‘Search’ puts !4102 after it: check the order"))
+        let mission = try Self.mission(.plan(planID), in: missions)
+        #expect(StageOrder.hold(Self.pr(4101), in: mission, among: missions, names: names)
+            == .holds("‘Search’ puts !4102 after it: check the order"))
         #expect(OrderText.tone(of: first, isReady: false) == .warning && OrderText.tone(of: second, isReady: false) == .warning)
     }
 
@@ -1742,6 +1771,81 @@ import Testing
 
         changes.restore(touched)
         #expect(changes[Self.pr(4110)] == overridden)
+    }
+
+    /// A session that opened !4110, !4111 and !4112; you set !4110 as next among them, and then an order put it after !4120,
+    /// going against yours; then you set !4111 as next among the other two.
+    private func nextAnOrderWentAgainstThenAnother() throws
+        -> (facts: OrderFacts, orders: DeclaredOrders, changes: OrderChanges, overridden: OrderChange, opener: ItemRef,
+            touched: [ItemRef: OrderChange?]) {
+        let opener = ItemRef.session("7a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9")!
+        let facts = Self.facts([4110, 4111, 4112, 4120], sessions: [
+            OrderSession(ref: opener, pullRequests: [Self.pr(4110), Self.pr(4111), Self.pr(4112)]),
+        ])
+        let none = DeclaredOrders()
+        var changes = OrderChanges()
+        try changes.apply(.setNext(Self.pr(4110), in: .family(opener), true), missions: Self.missions(facts, none, changes), orders: none, now: t(60))
+        let orders = try tell([(4120, []), (4110, [4120])], at: 120)
+        changes.noteOverrides(in: orders, now: t(120))
+        let overridden = try #require(changes[Self.pr(4110)])
+        #expect(!overridden.holds(in: orders) && overridden.first == .family(opener))
+        let touched = try changes.apply(
+            .setNext(Self.pr(4111), in: .family(opener), true), missions: Self.missions(facts, orders, changes), orders: orders,
+            now: t(180)
+        )
+        return (facts, orders, changes, overridden, opener, touched)
+    }
+
+    /// Setting one as next leaves one you set as next there before as it is, where an order went against that one since and
+    /// it's all you changed of it: its row in that order's card still says so, with Put Yours Back.
+    @Test func settingAnotherAsNextLeavesOneAnOrderWentAgainstThatsOnlyNext() throws {
+        let (facts, orders, changes, overridden, opener, touched) = try nextAnOrderWentAgainstThenAnother()
+
+        #expect(changes[Self.pr(4110)] == overridden && !touched.keys.contains(Self.pr(4110)))
+        let missions = Self.missions(facts, orders, changes)
+        let override = try #require(overridden.overridden(in: orders))
+        let step = try Self.step(4110, in: Self.mission(.plan(planID), in: missions))
+        #expect(step.notes.filter(\.isAboutYourChanges) == [.orderChangedIt(override)])
+        #expect(MissionChoices.of(Self.pr(4110), missions: missions, changes: changes, orders: orders).canPutBack)
+        #expect(try Self.step(4111, in: Self.mission(.family(opener), in: missions)).standing == .next)
+    }
+
+    /// Once BriefBar forgets that order, the one you set last is next there, and the other says so, once: not that it merges
+    /// after it too.
+    @Test func ofTwoNextsTheEarlierSaysOnlyThatYouSetTheOtherLater() throws {
+        var (facts, orders, changes, _, opener, _) = try nextAnOrderWentAgainstThenAnother()
+
+        orders.forget(planID)
+        changes.noteOverrides(in: orders, now: t(240))
+
+        let mission = try Self.mission(.family(opener), in: Self.missions(facts, orders, changes))
+        #expect(try Self.step(4111, in: mission).standing == .next)
+        let earlier = try Self.step(4110, in: mission)
+        #expect(earlier.prerequisites.map(\.ref) == [Self.pr(4111)])
+        #expect(earlier.notes.filter(\.isAboutYourChanges) == [.nextSince(Self.pr(4111))])
+        #expect(try Self.step(4112, in: mission).notes.filter(\.isAboutYourChanges) == [.afterYourNext(Self.pr(4111))])
+    }
+
+    /// Undo Your Changes to This Mission on a session's pull requests leaves a next you set among them that went over to an
+    /// order taking it in: that's the order's mission's now, which counts it instead.
+    @Test func undoYourChangesToThisMissionLeavesANextThatWentOverToAnOrder() throws {
+        let opener = ItemRef.session("7a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9")!
+        let facts = Self.facts([4110, 4111, 4112, 4120], sessions: [
+            OrderSession(ref: opener, pullRequests: [Self.pr(4110), Self.pr(4111), Self.pr(4112)]),
+        ])
+        let none = DeclaredOrders()
+        var changes = OrderChanges()
+        try changes.apply(.setNext(Self.pr(4110), in: .family(opener), true), missions: Self.missions(facts, none, changes), orders: none, now: t(60))
+        let orders = try tell([(4120, []), (4110, [])], at: 120)
+        changes.noteOverrides(in: orders, now: t(120))
+        #expect(changes[Self.pr(4110)]?.first == .plan(planID) && changes[Self.pr(4110)]?.from == .family(opener))
+
+        let missions = Self.missions(facts, orders, changes)
+        #expect(changes.undone(in: .family(opener), missions: missions).isEmpty)
+        #expect(changes.undone(in: .plan(planID), missions: missions).map(\.ref) == [Self.pr(4110)])
+        var undone = changes
+        try undone.apply(.undoMission(.family(opener)), missions: missions, orders: orders, now: t(180))
+        #expect(undone == changes)
     }
 
     /// Two you set as next that come to be in one mission, as a retarget makes one chain of two: the one you set last is

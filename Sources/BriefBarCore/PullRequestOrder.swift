@@ -1904,7 +1904,10 @@ extension Board {
                           !Self.isBefore(ref, next, in: before, everywhere)
                     else { continue }
                     add(next, before: ref, [.yourNext])
-                    added[ref, default: []].append(.afterYourNext(next))
+                    // One you set as next here before says why it waits for this one itself (`nextSince`).
+                    if added[ref]?.contains(.nextSince(next)) != true {
+                        added[ref, default: []].append(.afterYourNext(next))
+                    }
                     waiting.insert(ref)
                 }
                 lines.nexts.append((group.key, next, waiting))
