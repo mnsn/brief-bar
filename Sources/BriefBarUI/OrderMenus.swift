@@ -224,10 +224,15 @@ package struct OrderUndoLine: View {
     }
 
     package var body: some View {
-        let said = order.said.filter { Self.shows($0, about: refs, in: mission, outside: outside) }
-        if !said.isEmpty {
+        // Each slot in its place: why BriefBar didn't make the change you asked for last, above what you did before it.
+        let refusal = order.refusal.flatMap { Self.shows($0, about: refs, in: mission, outside: outside) ? $0 : nil }
+        let last = order.lastChange.flatMap { Self.shows($0, about: refs, in: mission, outside: outside) ? $0 : nil }
+        if refusal != nil || last != nil {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(said, id: \.canUndo) { last in
+                if let refusal {
+                    line(refusal)
+                }
+                if let last {
                     line(last)
                 }
             }

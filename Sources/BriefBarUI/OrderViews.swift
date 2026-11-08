@@ -74,6 +74,7 @@ package struct OrderCapsule: View {
                 : context.step.isYours ? "pencil" : "point.3.connected.trianglepath.dotted"
             HStack(spacing: 3) {
                 Image(systemName: symbol)
+                    .accessibilityHidden(true)
                 Text(text)
             }
             .font(size: 10, weight: .semibold)

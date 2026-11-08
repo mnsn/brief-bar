@@ -126,9 +126,14 @@ private struct OrderLineContent: View {
 
     /// "1st", "2nd", "3rd", "4th".
     static func ordinal(_ number: Int) -> String {
+        ordinals.string(from: NSNumber(value: number)) ?? "\(number)"
+    }
+
+    /// Made once, as the line draws again and again.
+    private static let ordinals: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .ordinal
         formatter.locale = Locale(identifier: "en_US")
-        return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
-    }
+        return formatter
+    }()
 }
