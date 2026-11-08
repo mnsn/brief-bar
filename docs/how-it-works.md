@@ -1446,25 +1446,26 @@ Together**, Undo, Undo Your Changes to It or to This Mission, and an order that 
 session's later change does one you moved, each keep the mission it's in together as it's made now: in the preferences
 (`KeptTogether`, as `order.splits`), by its key, as digests (SHA-256) of what it's made of, never a title, until it has
 been made of something else for three hours (`KeptTogether.settleFor`), or two weeks after BriefBar last saw the
-mission, counted as names' are. Those three hours count only while BriefBar can tell what the mission is made of, and at
-most an hour from one look to the next (`KeptTogether.mostAtOnce`), as while the Mac sleeps: so a read that fails, tried
-again each hour, or a source that tells less for a while, as when BriefBar starts before the network's up, doesn't bring
-a suggestion back. How long one has differed is kept in memory, and starts again as it's made of something else again,
-as it isn't shown, or as you keep it together again. What it's made of is what BriefBar can tell: with Show Links off,
-not which story each pull request is for, so those for a story are among the pull requests opened under a session; with
-Copilot off, not who opened them. So it keeps a digest for each way it has told the mission, Show Links and Copilot each
-on or off, and compares each only with what it told the same way: turning either off or on isn't a change, and a way it
-tells the mission, the same for three hours, is kept with it, so a change from then on counts. A change within three
-hours of a way it hadn't told before isn't seen. Nothing counts while a source still reads what it shows, however long
-that takes: till Azure DevOps has read an organization's lists since BriefBar started, Show Links has read what each
-pull request is for, and Copilot has read which pull requests its sessions opened, from the app's database where there
-is one (`OrderFacts.isReading`); nor while Azure DevOps is off, or its latest refresh could read nothing, as offline or
-signed out. A suggestion on screen holds the same way: told another way, by its parts alone. Each follows its mission as
-Focus does (`OrderBoard.successor`); at most 200, the one seen longest ago going first, which only brings back a
-suggestion you can keep together again. Turning a source off forgets those of its missions, turning Pull Request Order
-off keeps them, their days waiting, and **Forget All Orders…** forgets them. **Suggested Split…**, in the mission's
-**⋯**, shows one you kept together again, asking Apple Intelligence again if BriefBar restarted since. A split applies
-whole: to take part of one, Keep Together, then Move to Mission.
+mission, counted as names' are. Those three hours count only while BriefBar can tell what the mission is made of: it
+looks again whenever what it reads changes, and every hour, so what it told at one look holds till the next, of which at
+most an hour counts (`KeptTogether.mostAtOnce`), as while the Mac sleeps: so a read that fails, tried again each hour,
+or a source that tells less for a while, as when BriefBar starts before the network's up, doesn't bring a suggestion
+back. How long one has differed is kept in memory, and starts again as it's made of something else again, as it isn't
+shown, or as you keep it together again. What it's made of is what BriefBar can tell: with Show Links off, not which
+story each pull request is for, so those for a story are among the pull requests opened under a session; with Copilot
+off, not who opened them. So it keeps a digest for each way it has told the mission, Show Links and Copilot each on or
+off, and compares each only with what it told the same way: turning either off or on isn't a change, and a way it tells
+the mission, the same for three hours, is kept with it, so a change from then on counts. A change within three hours of
+a way it hadn't told before isn't seen. Nothing counts while a source still reads what it shows, however long that
+takes: till Azure DevOps has read an organization's lists since BriefBar started, Show Links has read what each pull
+request is for, and Copilot has read which pull requests its sessions opened, from the app's database where there is one
+(`OrderFacts.isReading`); nor while Azure DevOps is off, or its latest refresh could read nothing, as offline or signed
+out. A suggestion on screen holds the same way: told another way, by its parts alone. Each follows its mission as Focus
+does (`OrderBoard.successor`); at most 200, the one seen longest ago going first, which only brings back a suggestion
+you can keep together again. Turning a source off forgets those of its missions, turning Pull Request Order off keeps
+them, their days waiting, and **Forget All Orders…** forgets them. **Suggested Split…**, in the mission's **⋯**, shows
+one you kept together again, asking Apple Intelligence again if BriefBar restarted since. A split applies whole: to take
+part of one, Keep Together, then Move to Mission.
 
 ### A pull request's stage
 

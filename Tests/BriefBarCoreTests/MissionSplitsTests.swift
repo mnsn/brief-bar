@@ -588,22 +588,32 @@ import Testing
         Self.account(&kept, [key: Self.m("a")], at: 2 * hour + 1)
         Self.hourly(&kept, [key: Self.m("b")], from: 3 * hour, to: 5 * hour)
         #expect(kept.keeps(key))
-        // Asleep for ten hours: an hour of it counts.
+        // What it was made of at one look holds till the next, as BriefBar looks again as that changes. Asleep for ten
+        // hours: an hour of it counts.
         kept.keep(key, makeup: Self.m("a"), at: t(0))
         Self.account(&kept, [key: Self.m("b")], at: 0)
         Self.account(&kept, [key: Self.m("b")], at: 10 * hour)
         Self.account(&kept, [key: Self.m("b")], at: 20 * hour)
         #expect(kept.keeps(key) && kept.differences[key]?.counted == 2 * hour)
-        // While BriefBar can't tell, as while a source reads or Azure DevOps is offline: none of it counts.
+        // Then it can't be told, as while a source reads or Azure DevOps is offline: the time till then counts, but none
+        // of the time it can't be told, however often BriefBar looks, nor once it can be told again.
+        Self.account(&kept, [:], at: 20 * hour + 10 * 60, seen: [key])
         Self.hourly(&kept, [:], from: 21 * hour, to: 30 * hour, seen: [key])
         Self.account(&kept, [key: Self.m("b")], at: 30 * hour + hour / 2)
+        #expect(kept.differences[key]?.counted == 2 * hour + 10 * 60)
         // Looked at often: only the time between looks counts.
         for minutes in stride(from: 40.0, through: 50.0, by: 10) {
             Self.account(&kept, [key: Self.m("b")], at: 30 * hour + minutes * 60)
         }
-        #expect(kept.keeps(key) && kept.differences[key]?.counted == 2 * hour + 50 * 60)
-        Self.account(&kept, [key: Self.m("b")], at: 31 * hour)
+        #expect(kept.keeps(key) && kept.differences[key]?.counted == 2 * hour + 30 * 60)
+        // Three hours told the same, the last of them till it couldn't be told: gone.
+        Self.account(&kept, [:], at: 31 * hour + 20 * 60, seen: [key])
         #expect(!kept.keeps(key))
+        // Made of something else again, once its time has lasted: that settles first, then what it's made of now counts.
+        kept.keep(key, makeup: Self.m("a"), at: t(0))
+        Self.hourly(&kept, [key: Self.m("b")], from: 0, to: 2 * hour)
+        let settled = kept.account(seen: [key], makeups: [key: Self.m("c")], canSee: { _ in true }, elapsed: 0, at: t(3 * hour))
+        #expect(settled && !kept.keeps(key))
         // Not shown meanwhile: its time starts again.
         kept.keep(key, makeup: Self.m("a"), at: t(0))
         Self.hourly(&kept, [key: Self.m("b")], from: 0, to: 2 * hour)
@@ -633,7 +643,7 @@ import Testing
         Self.hourly(&kept, [key: off], from: hour, to: 2 * hour)
         #expect(kept.entries[key]?.makeups.count == 1)
         let told = kept.account(seen: [key], makeups: [key: off], canSee: { _ in true }, elapsed: 0, at: t(3 * hour))
-        #expect(told && kept.entries[key]?.makeups == [Self.m("a").tells: "a", off.tells: "x"])
+        #expect(told && kept.entries[key]?.makeups == [Self.m("a").tells: "a", off.tells: "x"] && kept.differences.isEmpty)
         // The same again: nothing to save. Back on, made of what it was: kept.
         let unchanged = kept.account(seen: [key], makeups: [key: off], canSee: { _ in true }, elapsed: 0, at: t(4 * hour))
         #expect(!unchanged && kept.differences.isEmpty)

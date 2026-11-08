@@ -685,11 +685,13 @@ public struct KeptTogether: Equatable, Sendable {
 
     /// What a mission you kept together has been made of, shown all along, where that isn't what it was made of as
     /// BriefBar told it the same way, or BriefBar tells it a way it hadn't; nil for one it no longer looks at, as one
-    /// that finished: for how long, counted only while BriefBar could tell, and when it last looked. In memory only.
+    /// that finished: for how long, counted only while BriefBar could tell, when it last looked, and whether it couldn't
+    /// tell then. In memory only.
     public struct Difference: Equatable, Sendable {
         public var makeup: MissionSplitQuestion.Makeup?
         public var counted: TimeInterval
         public var lookedAt: Date
+        public var paused = false
     }
 
     public private(set) var entries: [MissionKey: Entry]
@@ -725,8 +727,9 @@ public struct KeptTogether: Equatable, Sendable {
     /// Counts `elapsed` against those whose missions BriefBar could have seen, but didn't, forgetting those it hasn't seen
     /// for `forgottenAfter`; and forgets those whose missions have been made of something else for `settleFor`, as
     /// BriefBar told them the same way before, keeping a way it hadn't told one before once told that way, the same, for
-    /// as long. That time counts only while BriefBar can tell what each is made of, at most `mostAtOnce` since it last
-    /// looked, and starts again once it's made of something else again, and once it isn't shown.
+    /// as long. BriefBar looks again as anything that makes a mission, or tells what it's made of, changes, so what it
+    /// told at one look held till the next: that time counts, only if BriefBar could tell then, and at most `mostAtOnce`
+    /// of it, as when the Mac slept. It starts again once it's made of something else again, and once it isn't shown.
     /// - Parameters:
     ///   - seen: the missions shown now.
     ///   - makeups: what those whose makeup BriefBar can tell are made of now: none while a source still reads what it
@@ -743,28 +746,33 @@ public struct KeptTogether: Equatable, Sendable {
         differences = differences.filter { entries[$0.key] != nil && seen.contains($0.key) }
         for (key, entry) in entries {
             if seen.contains(key) {
-                if let now = makeups[key] {
-                    if let now, entry.makeups[now.tells] == now.digest {
+                // What it was made of since the last look, as BriefBar told it then, settles first, once it has lasted.
+                if var was = differences[key], !was.paused {
+                    was.counted += min(max(date.timeIntervalSince(was.lookedAt), 0), Self.mostAtOnce)
+                    differences[key] = was
+                    if was.counted >= Self.settleFor {
                         differences[key] = nil
-                    } else if var was = differences[key], was.makeup == now {
-                        was.counted += min(max(date.timeIntervalSince(was.lookedAt), 0), Self.mostAtOnce)
-                        was.lookedAt = date
-                        differences[key] = was
-                        if was.counted >= Self.settleFor {
-                            differences[key] = nil
-                            changed = true
-                            guard let now, entry.makeups[now.tells] == nil else {
-                                entries[key] = nil
-                                continue
-                            }
-                            entries[key]?.makeups[now.tells] = now.digest
+                        changed = true
+                        guard let made = was.makeup, entry.makeups[made.tells] == nil else {
+                            entries[key] = nil
+                            continue
                         }
+                        entries[key]?.makeups[made.tells] = made.digest
+                    }
+                }
+                if let now = makeups[key] {
+                    if let now, entries[key]?.makeups[now.tells] == now.digest {
+                        differences[key] = nil
+                    } else if differences[key]?.makeup == now, differences[key] != nil {
+                        differences[key]?.lookedAt = date
+                        differences[key]?.paused = false
                     } else {
                         differences[key] = Difference(makeup: now, counted: 0, lookedAt: date)
                     }
                 } else {
-                    // It can't be told now: that time doesn't count.
+                    // It can't be told now: till it can, that time doesn't count.
                     differences[key]?.lookedAt = date
+                    differences[key]?.paused = true
                 }
                 if entry.unseen > 0 {
                     entries[key]?.unseen = 0
