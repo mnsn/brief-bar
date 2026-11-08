@@ -104,25 +104,30 @@ final class PullRequestSessions: ObservableObject {
     func follow(_ item: PRSnapshot, record: PRRecord?, on page: String?) async {
         let key = item.key
         let follower = UUID()
-        // Until its sessions have been read, starting to follow it reads them (`update`). Then not here too: on a busy Mac,
-        // that read can be done before one here starts, which would read them again, and check again how work would reach
-        // its session.
-        var readsNow = !start(following: key, record: record, createdAt: item.createdAt, by: follower, on: page)
+        // Until its sessions have been read, starting to follow it reads them (`update`), and while no window shows its page
+        // on screen, the first to show it does (`setVisible`). Then not here too: on a busy Mac, a read here could start only
+        // once theirs was done, which would read them again, and check again how work would reach its session.
+        var readsNow = !start(following: key, record: record, createdAt: item.createdAt, by: follower, on: page) && isOnScreen(key)
         defer { stop(following: key, by: follower) }
         let pause = refreshEvery
         while !Task.isCancelled, !hasStopped {
             // Each as a task of its own, which stopping cancels too, such as a search of the logs that's under way.
             if readsNow { await awaitSpawned(for: key) { [weak self] in await self?.read(key) } }
-            readsNow = true
-            await awaitSpawned(for: key) { try? await Task.sleep(for: pause) }
+            // Again after each pause, if a window shows its page on screen then, which keeps up with it too once it can't be
+            // read, such as once it's completed; not after a pause cut short as it went off screen (`callOff`), since a
+            // window that shows it again reads them, for the same reason.
+            readsNow = await awaitSpawned(for: key) { try? await Task.sleep(for: pause) } && isOnScreen(key)
         }
     }
 
     /// Does `work` in a task that stops with the pull request's following, or with everything (`spawn`), and with the
     /// task that waits for it.
-    private func awaitSpawned(for key: PRKey, _ work: @escaping @MainActor () async -> Void) async {
-        guard let task = spawn(for: key, work) else { return }
+    /// - Returns: whether it ran without being called off.
+    @discardableResult
+    private func awaitSpawned(for key: PRKey, _ work: @escaping @MainActor () async -> Void) async -> Bool {
+        guard let task = spawn(for: key, work) else { return false }
         await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        return !task.isCancelled
     }
 
     /// Reads these pull requests' sessions once, for pictures, as they stand now: pictures follow nothing, and show neither
@@ -284,6 +289,11 @@ final class PullRequestSessions: ObservableObject {
     /// Whether a window shows on screen the page that something following it is on.
     private func isOnScreen(_ state: Followed) -> Bool {
         state.followers.values.contains { $0.map(visiblePages.contains) ?? false }
+    }
+
+    /// Whether a window shows on screen the page that something following this pull request is on.
+    private func isOnScreen(_ key: PRKey) -> Bool {
+        followed[key].map(isOnScreen) ?? false
     }
 
     /// Reads the sessions a followed pull request's work could go to, the Copilot app's database and the sessions' state,

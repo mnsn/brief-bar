@@ -47,11 +47,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// 24: with Make Changes in Azure DevOps, your own comment edited, a PATCH of what it says, or deleted, a DELETE of it,
     /// each when you click it; what you write in place of one, kept in memory until it's saved; and Fix Grammar there, which
     /// sends it to GitHub Copilot when you choose a Copilot model for it.
-    /// 25: with Pull Request Order and Show Links on, the parent and place in the backlog of the work items linked to your
-    /// pull requests, and what those stories are when BriefBar hasn't read them; and, while Apple Intelligence is on,
-    /// missions named on this Mac from the titles of their pull requests, work items, stories and sessions, with the names
-    /// you give missions kept.
-    nonisolated package static let descriptionVersion = 25
+    nonisolated package static let descriptionVersion = 24
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
