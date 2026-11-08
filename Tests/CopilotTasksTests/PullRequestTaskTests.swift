@@ -101,6 +101,74 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071-2").path))
     }
 
+    /// Push & Reply going on with a session whose worktree holds a merge of what the pull request's target doesn't have, as
+    /// when it was retargeted after its conflicts were resolved there: nothing starts, and the worktree stays as it is; nor
+    /// when Azure DevOps says, right before git checks or right before Copilot starts, that the pull request merges into
+    /// another branch than the prompt names, or that can't be read. Against the branch it merged, it goes.
+    @Test(.timeLimit(.minutes(1)))
+    func pushesNoMergeOfWhatTheTargetDoesntHave() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let seed = fixture.folder.appendingPathComponent("seed")
+        let identity = ["-c", "user.name=Robin Diaz", "-c", "user.email=robin@example.com"]
+        // release/x where the pull request's branch started, and main a commit further.
+        try await fixture.git(["-C", seed.path, "branch", "release/x", "main"])
+        try await fixture.git(["-C", seed.path, "checkout", "--quiet", "main"])
+        try "Main's work\n".write(to: seed.appendingPathComponent("main.txt"), atomically: true, encoding: .utf8)
+        try await fixture.git(["-C", seed.path, "add", "main.txt"])
+        try await fixture.git(["-C", seed.path] + identity + ["commit", "--quiet", "-m", "Main's work"])
+        try await fixture.git(["-C", seed.path, "push", "--quiet", fixture.origin.path, "main", "release/x"])
+        let (launcher, argumentsFile) = try launcher(fixture)
+        let resolve = try await launch(launcher, CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .resolveConflicts), prompt: "Resolve the conflicts", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil
+        ), id: "9d4f3e5d-6ebf-4a2b-9e7c-5b6c7d8e9fa0")
+        // Its resolution: main merged in.
+        try await fixture.git(["-C", fixture.checkout.path, "fetch", "--quiet", "origin"])
+        try await fixture.git(["-C", resolve.worktree.path] + identity + ["merge", "--quiet", "--no-edit", "origin/main"])
+        try FileManager.default.removeItem(at: argumentsFile)
+
+        var retargeted = pullRequest
+        retargeted.targetBranch = "release/x"
+        let push = CopilotLauncher.Request(
+            subject: .pullRequest(retargeted, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: resolve
+        )
+        await #expect(throws: LaunchError.foreignMerge(target: "release/x")) { try await launcher.launch(push, id: resolve.id) { _ in } }
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+        #expect(FileManager.default.fileExists(atPath: resolve.worktree.appendingPathComponent("main.txt").path))
+        #expect(LaunchError.foreignMerge(target: "release/x").description.hasPrefix("This session holds a merge that release/x doesn't have"))
+
+        // The prompt names main, but Azure DevOps says the pull request merges into release/x: as BriefBar reads it right
+        // before git checks, or right before Copilot starts, once git is done; or it can't be read. Nothing starts.
+        var reads = TargetReads([])
+        func request(_ targets: [String]) -> CopilotLauncher.Request {
+            let answers = TargetReads(targets)
+            reads = answers
+            return CopilotLauncher.Request(
+                subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+                repository: fixture.checkout, worktreesFolder: nil, continuing: resolve, targetNow: { try answers.next() }
+            )
+        }
+        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(request(["release/x"]), id: resolve.id) { _ in } }
+        #expect(reads.read == ["release/x"])
+        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(request(["main", "release/x"]), id: resolve.id) { _ in } }
+        #expect(reads.read == ["main", "release/x"])
+        await #expect(throws: LaunchError.cantReadTarget("Azure DevOps didn't answer in time.")) {
+            try await launcher.launch(request(["main"]), id: resolve.id) { _ in }
+        }
+        #expect(reads.read == ["main", "unread"])
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+        #expect(FileManager.default.fileExists(atPath: resolve.worktree.appendingPathComponent("main.txt").path))
+        #expect(LaunchError.retargeted("release/x").description.hasPrefix("The pull request merges into release/x now, not the branch its prompt named"))
+        #expect(LaunchError.cantReadTarget("Azure DevOps didn't answer in time.").description == "BriefBar couldn't read which branch the pull request merges into, so Copilot didn't push from this session: Azure DevOps didn't answer in time.")
+
+        let ship = try await launch(launcher, request(["main", "main"]), id: resolve.id)
+        #expect(reads.read == ["main", "main"])
+        #expect(ship.worktree.path == resolve.worktree.path)
+        #expect(try String(contentsOf: argumentsFile, encoding: .utf8).contains("Push and reply"))
+    }
+
     /// A pull request's prompt has no placeholders, but quotes what others wrote, such as a change suggested in a comment,
     /// which Copilot applies as it's written: it goes as it is, `{baseBranch}` and all, where a work item's prompt has its
     /// base branch filled in (`CopilotLauncherTests`).
@@ -189,7 +257,10 @@ import Testing
         let runner = OpensSessionRunner(lock: state.appendingPathComponent("inuse.\(getpid()).lock"))
         let (launcher, argumentsFile) = try launcher(fixture, runner: runner)
         let worktree = fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071")
-        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: worktree.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Its worktree, where the fix left it: what Push & Reply would push is checked, with git, before it looks again.
+        try await fixture.git(["-C", fixture.checkout.path, "fetch", "--quiet", "origin"])
+        try await fixture.git(["-C", fixture.checkout.path, "worktree", "add", "--quiet", "--detach", worktree.path, "origin/\(pullRequest.sourceBranch)"])
         let fix = CopilotRun(
             id: id, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,
             repository: fixture.checkout, worktree: worktree, startedAt: Date(), process: DetachedProgram.Handle(pid: 0, startedAt: nil),
@@ -516,6 +587,26 @@ private final class MeanwhileRunner: ProcessRunning {
 
 /// Runs programs as `ProcessRunner` does, and leaves a lock in a session's folder as the first one starts, as the Copilot app
 /// does when it opens the session.
+/// What Azure DevOps says a pull request merges into, read by read, as `CopilotLauncher.Request.targetNow` reads it: once
+/// the answers run out, it can't be read. What was read, in order.
+private final class TargetReads: Sendable {
+    private let answers: Mutex<[String]>
+    private let reads = Mutex<[String]>([])
+
+    init(_ answers: [String]) {
+        self.answers = Mutex(answers)
+    }
+
+    var read: [String] { reads.withLock { $0 } }
+
+    func next() throws -> String {
+        let target = answers.withLock { $0.isEmpty ? "unread" : $0.removeFirst() }
+        reads.withLock { $0.append(target) }
+        guard target != "unread" else { throw TestError("Azure DevOps didn't answer in time.") }
+        return target
+    }
+}
+
 private final class OpensSessionRunner: ProcessRunning {
     let lock: URL
     private let inner = ProcessRunner()

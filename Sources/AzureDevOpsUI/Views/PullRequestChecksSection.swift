@@ -137,7 +137,7 @@ private struct CheckRow: View {
                 }
                 if let url = run.url {
                     Button {
-                        NSWorkspace.shared.open(url)
+                        ThisMac.open(url)
                     } label: {
                         Image(systemName: "arrow.up.forward.app")
                             .font(size: 11.5, weight: .medium)
@@ -160,7 +160,10 @@ private struct CheckRow: View {
                     .padding(.top, 2)
             }
             // What Copilot does about it, and what a session said of it, while it's closed: open, its run says them.
-            BuildWorkLine(line: line, item: item, now: now, isOpen: isExpanded && look?.investigation != nil, show: expand)
+            BuildWorkLine(
+                line: line, item: item, now: now, isOpen: isExpanded && look?.investigation != nil, composing: $composing, drafts: drafts,
+                show: expand
+            )
             if isExpanded, let investigable {
                 BuildInvestigationView(
                     line: line, item: item, pullRequest: investigable.pullRequest, buildId: investigable.buildId, look: look, now: now,
@@ -252,9 +255,9 @@ private struct CheckRow: View {
             Divider()
         }
         if let url = run.url {
-            Button("Open Run in Azure DevOps") { NSWorkspace.shared.open(url) }
+            Button("Open Run in Azure DevOps") { ThisMac.open(url) }
             if let investigation = look?.investigation, let log = investigation.log {
-                Button("Open Log in Azure DevOps") { NSWorkspace.shared.open(investigation.logPage(for: log.stepId)) }
+                Button("Open Log in Azure DevOps") { ThisMac.open(investigation.logPage(for: log.stepId)) }
             }
             Button("Copy Link") { PullRequestDetailsPanel.copy(url.absoluteString) }
         }

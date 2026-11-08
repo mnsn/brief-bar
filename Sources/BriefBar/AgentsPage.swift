@@ -124,7 +124,7 @@ final class AgentsModel: ObservableObject {
         Log.app.info("Asked \(app.rawValue, privacy: .public) to install BriefBar")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.open([link], withApplicationAt: application, configuration: configuration)
+        ThisMac.open([link], with: application, configuration: configuration)
     }
 
     /// The Copilot CLI has this BriefBar, turned on there or not.
@@ -1323,8 +1323,7 @@ private struct OtherAgentsRow: View {
     }
 
     private func copyCommand() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(agents.command, forType: .string)
+        ThisMac.copy(agents.command)
     }
 }
 

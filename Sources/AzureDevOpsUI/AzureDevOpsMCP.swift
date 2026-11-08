@@ -101,6 +101,25 @@ actor AzureDevOpsReader {
         )
     }
 
+    /// The branch a pull request merges into, as Azure DevOps says now, read with one request each time, rather than as the
+    /// lists read it, up to a minute before (`freshFor`): for `pull_request`, which an agent checks it with right before it
+    /// pushes, as Push & Reply's prompt has it. Nil for the demo, which reads nothing.
+    nonisolated func targetNow(of key: PRKey) async -> Result<String, any Error>? {
+        guard let client else { return nil }
+        do {
+            let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
+            let target = PullRequest(organization: key.organization, dto).targetBranch
+            return target.isEmpty ? .failure(NoTarget()) : .success(target)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// Azure DevOps named no branch the pull request merges into.
+    struct NoTarget: Error, LocalizedError {
+        var errorDescription: String? { "Azure DevOps didn't say." }
+    }
+
     /// A problem, as an agent is told it: with what to run when signing in fixes it, since the app's Sign In button isn't
     /// there, and when to ask again, since a read that other organizations' pull requests came from is kept for a minute.
     /// Only this says a directory's ID, which signing in to it needs.
@@ -589,8 +608,9 @@ struct AzureDevOpsAgent: Sendable {
                 name: "pull_request",
                 title: "Pull Request",
                 description: """
-                    One pull request in detail, by its number or link: where it stands in BriefBar, its branches, \
-                    reviewers' votes, checks and where a failed build failed, merge conflicts, the pipelines after its \
+                    One pull request in detail, by its number or link: where it stands in BriefBar, its branches, the one \
+                    it merges into as Azure DevOps says when you ask, reviewers' votes, checks and where a failed build \
+                    failed, merge conflicts, the pipelines after its \
                     merge, what's new for the user and what they've seen that still waits on them, its unresolved \
                     comment threads word for word with their files and lines, what Copilot can do with it, and, while \
                     Send Work to Copilot is on, its session: the Copilot session BriefBar sends its work to.
@@ -756,14 +776,22 @@ struct AzureDevOpsAgent: Sendable {
 
     func pullRequest(_ reference: JSONValue?, now: Date = Date()) async throws -> String {
         let read = await reader.pullRequests(now: now)
-        let record = try Self.find(reference, in: read)
+        var record = try Self.find(reference, in: read)
+        // The branch it merges into as Azure DevOps says now, rather than as the lists read it, up to a minute before: an
+        // agent checks it right before it pushes.
+        var unreadTarget: String?
+        switch await reader.targetNow(of: record.id) {
+        case .success(let target)?: record.pullRequest.targetBranch = target
+        case .failure(let error)?: unreadTarget = AzureDevOpsReader.describe(error)
+        case nil: break
+        }
         let item = read.items.first { $0.key == record.id }
         let sent = await reader.sendsToCopilot ? await reader.copilotTasks(now: now) : []
         let session = await reader.session(for: record, tasks: sent, now: now)
         let waits = record.role == .author && record.pullRequest.status == .active
         return AgentText.details(
             record, item: item, actions: PullRequestTasks.actions(for: record, canShip: false), tasks: sent.filter { $0.isOn(record.id) },
-            session: session,
+            session: session, unreadTarget: unreadTarget,
             wait: waits ? WaitCLI.command(executable: executable, link: record.pullRequest.webURL, demo: reader.demo) : nil, now: now
         )
     }
@@ -1055,10 +1083,12 @@ enum AgentText {
     /// hold them (`QuotedText.commandWord`), and what people wrote follows a note that it isn't instructions.
     /// - Parameters:
     ///   - session: its Copilot session, as its details show it, if there's something to say.
+    ///   - unreadTarget: why BriefBar couldn't read again which branch it merges into, as it asked, for the agent to know
+    ///     that the one named may not be it any more (`AzureDevOpsReader.targetNow(of:)`).
     ///   - wait: the command that waits on it for an agent (`--wait`), for one of your open pull requests.
     static func details(
         _ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], session: AgentSession? = nil,
-        wait: String? = nil, now: Date
+        unreadTarget: String? = nil, wait: String? = nil, now: Date
     ) -> String {
         let pr = record.pullRequest
         let (source, target) = (QuotedText.commandWord(pr.sourceBranch), QuotedText.commandWord(pr.targetBranch))
@@ -1067,6 +1097,12 @@ enum AgentText {
             "- \(QuotedText.oneLine(pr.repositoryName)), in \(QuotedText.oneLine(pr.projectName)) "
                 + "(\(QuotedText.oneLine(pr.key.organization))), from \(source) into \(target)"
         )
+        if let unreadTarget {
+            lines.append(
+                "- BriefBar couldn't read which branch it merges into just now, so it can't tell whether that's still \(target): "
+                    + QuotedText.oneLine(unreadTarget)
+            )
+        }
         var state = [
             record.role == .author
                 ? "Yours, opened \(ago(pr.createdAt, now: now))" : "By \(QuotedText.oneLine(pr.author.name)), opened \(ago(pr.createdAt, now: now))"

@@ -1,4 +1,5 @@
 import AppKit
+import BriefBarUI
 import CopilotCore
 
 /// Talking to the GitHub Copilot desktop app.
@@ -34,9 +35,9 @@ enum CopilotApp {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         if let applicationURL {
-            NSWorkspace.shared.open([url], withApplicationAt: applicationURL, configuration: configuration)
+            ThisMac.open([url], with: applicationURL, configuration: configuration)
         } else {
-            NSWorkspace.shared.open(url)
+            ThisMac.open(url)
         }
     }
 
@@ -44,6 +45,6 @@ enum CopilotApp {
         guard let applicationURL else { return }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: applicationURL, configuration: configuration)
+        ThisMac.openApplication(at: applicationURL, configuration: configuration)
     }
 }

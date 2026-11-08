@@ -9,7 +9,7 @@ import Testing
 
 /// What Azure DevOps reads again, and when, as Copilot sessions say they changed things there.
 @MainActor
-@Suite struct AgentRereadsTests {
+@Suite(.opensNothing) struct AgentRereadsTests {
     private final class Clock {
         var now = Date(timeIntervalSince1970: 1_791_979_200)
     }

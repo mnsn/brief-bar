@@ -615,7 +615,7 @@ struct PullRequestSessionMenu: View {
             alert.messageText = "The session didn't open in Copilot"
             alert.informativeText = reason
             NSApp.activate()
-            alert.runModal()
+            ThisMac.ask(alert)
             return
         }
         if let ref = ItemRef.session(choice.id), links.isOn, links.isDescribed(ref), let open = links.describe(ref).open {

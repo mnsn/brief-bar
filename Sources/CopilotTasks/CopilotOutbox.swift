@@ -4,13 +4,15 @@ import Darwin
 import Foundation
 
 /// What BriefBar asks its extension in one of the Copilot app's sessions to do (`CopilotOutbox`): send that session a
-/// prompt, or fork it.
+/// prompt, fork it, or stop its turn.
 public struct OutboxRequest: Sendable, Equatable {
     public enum Kind: String, Sendable, CaseIterable {
         /// Send the session the prompt, as your own message.
         case send
         /// Fork the session with the app's own fork, and say the fork's ID. It sends nothing.
         case fork
+        /// Stop the turn that runs in the session, as the app's own Stop does. It sends nothing.
+        case stop
     }
 
     /// A lowercase UUID, which names its result.
@@ -18,7 +20,7 @@ public struct OutboxRequest: Sendable, Equatable {
     /// The session whose extension takes it: a lowercase UUID.
     public let sessionId: String
     public let kind: Kind
-    /// For a send; nil for a fork.
+    /// For a send; nil for a fork or a stop.
     public let prompt: String?
     public let createdAt: Date
     /// After this, no extension takes it.
@@ -39,6 +41,11 @@ public struct OutboxRequest: Sendable, Equatable {
         OutboxRequest(sessionId: sessionId, kind: .fork, prompt: nil, now: now)
     }
 
+    /// Asks the session's extension to stop the turn that runs in it.
+    public static func stop(_ sessionId: String, now: Date = Date()) -> OutboxRequest {
+        OutboxRequest(sessionId: sessionId, kind: .stop, prompt: nil, now: now)
+    }
+
     init(sessionId: String, kind: Kind, prompt: String?, now: Date, requestId: String = UUID().uuidString.lowercased()) {
         self.requestId = requestId
         self.sessionId = sessionId
@@ -52,7 +59,7 @@ public struct OutboxRequest: Sendable, Equatable {
     /// `<sessionId>.<requestId>.json`, in `requests`.
     public var fileName: String { "\(sessionId).\(requestId).json" }
 
-    /// It as the contract has it, version 1: only for a session's ID, with a prompt for a send and none for a fork.
+    /// It as the contract has it, version 1: only for a session's ID, with a prompt for a send and none for a fork or a stop.
     func encoded() throws -> Data {
         guard AppSessions.isSessionID(sessionId), AppSessions.isSessionID(requestId),
               (kind == .send) == (prompt != nil), prompt?.isEmpty != true,
@@ -81,6 +88,8 @@ public struct OutboxResult: Sendable, Equatable {
         case forkUnavailable = "fork_unavailable"
         /// The fork failed, or gave no session ID.
         case forkFailed = "fork_failed"
+        /// The session didn't stop its turn.
+        case stopFailed = "stop_failed"
         /// A code this version of BriefBar doesn't know.
         case unknown
         /// BriefBar couldn't read what the extension said: not as the contract has it.
@@ -144,6 +153,8 @@ public struct OutboxResult: Sendable, Equatable {
         case .fork:
             guard let fork = fields["forkSessionId"] as? String, AppSessions.isSessionID(fork), fork != request.sessionId else { return }
             forkSessionId = fork
+        case .stop:
+            break
         }
         failure = nil
     }

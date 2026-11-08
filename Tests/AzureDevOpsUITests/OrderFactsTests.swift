@@ -222,4 +222,39 @@ import Testing
         #expect(steps[DemoPullRequestOrder.legacyCoupons]?.review == .after([DemoPullRequestOrder.couponRounding], .sameCode))
         #expect(OrderBoard.step(for: DemoPullRequestOrder.retry, in: order.missions)?.mission.key == DemoPullRequestOrder.focus)
     }
+
+    /// Your made-up changes in the demo hold over its orders: the order status rename goes first, the retry waits for it, and
+    /// the delivery estimates and the one-click checkout are a mission of your own.
+    @Test func theDemosChangesHoldOverItsOrders() async throws {
+        let store = await Self.demoStore()
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+        order.tellDemo(
+            DemoPullRequestOrder.orders(now: store.now), evidence: DemoPullRequestOrder.evidence(now: store.now),
+            focus: DemoPullRequestOrder.focus, changes: DemoPullRequestOrder.changes(now: store.now)
+        )
+
+        facts.publish()
+
+        let payments = try #require(order.missions.first { $0.key == DemoPullRequestOrder.focus })
+        let steps = Dictionary(uniqueKeysWithValues: payments.steps.map { ($0.ref, $0) })
+        let rename = try #require(steps[DemoPullRequestOrder.statusRename])
+        #expect(rename.standing == .next && rename.isYours && rename.isChangedByYou)
+        let retry = try #require(steps[DemoPullRequestOrder.retry])
+        #expect(retry.standing == .waiting(open: [DemoPullRequestOrder.statusRename], unknown: []) && retry.isYours)
+        #expect(OrderText.kind(of: payments) == "changed by you")
+        let yours = try #require(order.missions.first { $0.key == .mine(DemoPullRequestOrder.mineID) })
+        #expect(yours.steps.map(\.ref) == [DemoPullRequestOrder.deliveryEstimates, DemoPullRequestOrder.oneClickCheckout])
+        #expect(yours.steps.map(\.standing) == [.next, .waiting(open: [DemoPullRequestOrder.deliveryEstimates], unknown: [])])
+        #expect(OrderText.kind(of: yours) == "Your mission")
+    }
+
+    /// The pull requests listed only because someone sent them in a chat, which you don't watch.
+    @Test func itSaysWhichArentYoursButSentInAChat() async throws {
+        let store = await Self.demoStore()
+        let sent = PullRequestOrderFacts.sentInChats(store.records, watched: [])
+        let linked = store.records.filter { $0.role == .linked }.map(\.id)
+        #expect(!sent.isEmpty && sent == Set(linked.map(\.linkRef)))
+        #expect(PullRequestOrderFacts.sentInChats(store.records, watched: Set(linked)).isEmpty)
+    }
 }

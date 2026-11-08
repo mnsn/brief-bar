@@ -87,6 +87,9 @@ final class PRStore: ObservableObject {
     /// The reads of pull requests after changes to their threads (`changed`, `mayHaveChanged`, `threadsReadAgain`), under
     /// way, by their IDs: stopping calls them off.
     private var changeReads: [UUID: Task<[ReviewThread]?, Never>] = [:]
+    /// The reads of which branch pull requests merge into (`readTarget(of:)`), under way, by their IDs: stopping calls them
+    /// off.
+    private var targetReads: [UUID: Task<String, any Error>] = [:]
     private var ticker: Timer?
     private var monitor: NetworkMonitor?
     private var chatMonitor: ChatLinkMonitor?
@@ -365,9 +368,9 @@ final class PRStore: ObservableObject {
     /// Opens the message that sent the pull request: the exact message in Teams, or the app otherwise.
     func openSource(_ item: PRSnapshot) {
         guard let source = item.chatSource else { return }
-        if let url = source.messageURL, NSWorkspace.shared.open(url) { return }
+        if let url = source.messageURL, ThisMac.open(url) { return }
         if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: source.app) {
-            NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+            ThisMac.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
         }
     }
 
@@ -420,6 +423,8 @@ final class PRStore: ObservableObject {
         accessChecks = [:]
         changeReads.values.forEach { $0.cancel() }
         changeReads = [:]
+        targetReads.values.forEach { $0.cancel() }
+        targetReads = [:]
         // Stops reading Notification Center; what it found stays until Azure DevOps is turned off.
         chatMonitor?.stop()
         chatMonitor = nil
@@ -969,6 +974,46 @@ final class PRStore: ObservableObject {
         return settings.watchedKeys.contains(key) ? record.watched() : record
     }
 
+    /// Reads which branch a pull request merges into, in place of Azure DevOps: a test's stand-in, or nil for Azure DevOps.
+    var readPullRequestTarget: (@Sendable (PRKey) async throws -> String)?
+
+    /// How many reads of which branch pull requests merge into are under way, for tests.
+    var targetReadsUnderWay: Int { targetReads.count }
+
+    /// The branch a pull request merges into, as Azure DevOps says now, read with one request: what a Push & Reply checks
+    /// what it would push against, right before it goes, since the list may not have read a retarget yet. In a task that
+    /// stopping calls off (`targetReads`). Throws when it can't be read: in the demo, once stopped, as when Azure DevOps is
+    /// turned off, and when it's stopped meanwhile, whatever the read said.
+    func readTarget(of key: PRKey) async throws -> String {
+        guard mode == .live, !isStopped else { throw CopilotTasksStore.TargetUnread() }
+        let read: @Sendable (PRKey) async throws -> String
+        if let readPullRequestTarget {
+            read = readPullRequestTarget
+        } else {
+            let client = client
+            read = { key in
+                let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
+                return PullRequest(organization: key.organization, dto).targetBranch
+            }
+        }
+        let id = UUID()
+        let task = Task {
+            try Task.checkCancellation()
+            return try await read(key)
+        }
+        targetReads[id] = task
+        defer { targetReads[id] = nil }
+        let target: String
+        do {
+            target = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+        } catch {
+            if isStopped { throw CopilotTasksStore.TargetUnread() }
+            throw error
+        }
+        guard !isStopped else { throw CopilotTasksStore.TargetUnread() }
+        return target
+    }
+
     /// When you last looked at a pull request, as far as BriefBar remembers.
     func seenCutoff(for key: PRKey) -> Date {
         settings.seenCutoff(for: key)
@@ -1020,19 +1065,18 @@ final class PRStore: ObservableObject {
         settings.setRead(thread, of: key, to: mark.before, for: mark.account, sentInChat: sentInChats([key]).contains(key))
     }
 
-    /// What Copilot can do with a pull request now (`PullRequestTasks.actions`): Push & Reply once a task that changed
-    /// code has finished, in its session.
-    func copilotActions(for item: PRSnapshot, continuable: CopilotRun?) -> [PullRequestAction] {
+    /// What Copilot can do with a pull request now (`PullRequestTasks.actions`), but Push & Reply, which a pull request's
+    /// menus offer for the fixes it ships, by session (`CopilotTasksStore.pushes(of:)`).
+    func copilotActions(for item: PRSnapshot) -> [PullRequestAction] {
         guard let record = record(for: item.key) else { return [] }
-        let canShip = continuable.map { $0.action?.changesCode == true && $0.ended == .finished } ?? false
-        return PullRequestTasks.actions(for: record, canShip: canShip)
+        return PullRequestTasks.actions(for: record, canShip: false)
     }
 
     /// Whether Copilot can do this with a pull request now, as its Actions menu offers it (`PullRequestCopilotMenuItems`):
     /// with Send Work to Copilot on, among what it can do with it, while its last task there isn't under way.
     func copilotCan(_ action: PullRequestAction, _ item: PRSnapshot, copilot: CopilotTasksStore) -> Bool {
         guard copilot.isOn, copilot.latest(forPullRequest: item.key)?.status.phase.isActive != true else { return false }
-        return copilotActions(for: item, continuable: copilot.continuable(forPullRequest: item.key)).contains(action)
+        return copilotActions(for: item).contains(action)
     }
 
     /// Does `body` once the list was read the first time, with what it read: at once, if it was; or after `seconds` without
@@ -1056,20 +1100,21 @@ final class PRStore: ObservableObject {
     /// (`PullRequestTasks.parts`).
     /// - Parameters:
     ///   - start: where it goes to begin with, rather than BriefBar's suggestion, such as the session whose fixes Push &
-    ///     Reply ships.
-    ///   - parts: for Push & Reply, what the fixes it ships took on: its prompt lists their threads alone, and replies on
-    ///     those alone, or on none for a build's fix alone; without any, it lists those Fix Comments does.
+    ///     Reply ships, which it always has.
+    ///   - parts: for Push & Reply, what the fixes it ships took on, in that session: its prompt lists their threads alone,
+    ///     and replies on those alone, or on none for a build's fix alone, or for none at all.
     func composeCopilot(
         _ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore, start: ComposerStart? = nil,
         parts: [PullRequestPart] = []
     ) {
         guard let record = record(for: item.key) else { return }
         let pr = record.pullRequest
-        // Push & Reply for some fixes, such as one session's when they're in more than one, ships, replies on and hands off
-        // their threads alone.
-        let scope = action == .pushAndReply ? PullRequestTasks.shippedThreads(parts) : nil
+        // Push & Reply ships, replies on and hands off the threads of the fixes it ships alone, those of the session it goes
+        // on with: never the others that wait on you, which another session may have fixed.
+        let shipping: [PullRequestPart]? = action == .pushAndReply ? parts : nil
+        let scope = PullRequestTasks.shippedThreads(shipping)
         let handOff = commentHandOff(action, for: record, threads: scope)
-        let taken = PullRequestTasks.parts(action, for: record, shipping: action == .pushAndReply ? parts : [])
+        let taken = PullRequestTasks.parts(action, for: record, shipping: shipping)
         // What its details read of its builds, which Fix the Build quotes rather than only their errors.
         var investigations: [Int: BuildInvestigation] = [:]
         if action == .fixBuild {

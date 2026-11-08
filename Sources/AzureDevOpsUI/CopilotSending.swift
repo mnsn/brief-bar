@@ -182,6 +182,12 @@ struct CopilotSending {
         var action: PullRequestAction
         var parts: [PullRequestPart]
         var handOff: CommentHandOff?
+        /// The pull request as its prompts quote it, when they're written after a wait, as for the files its conflicts are
+        /// in, pushed to or retargeted meanwhile or not: what's kept with what it takes on, such as the branch its conflicts
+        /// are with, and the task it starts, go by it too. Nil for the pull request as the fix was asked for.
+        var record: PRRecord?
+        /// For a thread's fix, the change suggested in it that it applies as written, for Try Again to apply it again.
+        var suggestion: CommentSuggestion?
     }
 
     var task: TaskPullRequest { PullRequestTasks.task(for: record) }
@@ -189,17 +195,36 @@ struct CopilotSending {
     /// Sends a fix where you chose: to a task's session with the Copilot CLI, or to one of the Copilot app's sessions through
     /// BriefBar's extension in it, or copied for you to paste there, as the Send to Copilot window would; to a fork of
     /// either; or to a new session in a worktree of the local clone BriefBar knows, or else the window, to choose one.
-    func fix(_ fix: Fix, to destination: CopilotDestination, choice: SessionChoice?) async -> Outcome {
-        guard copilot.canSend, copilot.isOn else { return .notSent(CopilotTasksStore.cantSendNow) }
-        guard !Task.isCancelled else { return .notSent(Self.calledOff) }
+    /// - Returns: what became of it; and, once it went, or was copied, when what it takes on was taken on, by the task it
+    ///   starts or the prompt it sent, for what's kept of the fix to go with that attempt alone (`CopilotTasksStore.FixWords`).
+    func fix(_ fix: Fix, to destination: CopilotDestination, choice: SessionChoice?) async -> (outcome: Outcome, takenAt: Date?) {
+        guard copilot.canSend, copilot.isOn else { return (.notSent(CopilotTasksStore.cantSendNow), nil) }
+        guard !Task.isCancelled else { return (.notSent(Self.calledOff), nil) }
         // Gone from your lists, completed or abandoned while it waited for what its prompts quote: nothing goes.
-        guard isOpen else { return .notSent(Self.pullRequestGone) }
-        let about = SentPrompt.About(pullRequest: item.key, purpose: .fix, parts: fix.parts)
+        guard isOpen else { return (.notSent(Self.pullRequestGone), nil) }
+        let record = fix.record ?? self.record
+        let task = PullRequestTasks.task(for: record)
+        let about = SentPrompt.About(pullRequest: item.key, purpose: .fix, parts: fix.parts, target: record.pullRequest.targetBranch)
         let subject = TaskSubject.pullRequest(task, fix.action)
         let options = copilot.settings.copilotOptions
+        // A task it starts: when, or, once nothing starts, that it can't send now.
+        func started(_ at: Date?) -> (outcome: Outcome, takenAt: Date?) {
+            at.map { (.sent, $0) } ?? (.notSent(CopilotTasksStore.cantSendNow), nil)
+        }
+        // A prompt it delivers, as delivering it starts.
+        func delivered(forking: Bool = false, to choice: SessionChoice) async -> (outcome: Outcome, takenAt: Date?) {
+            let at = Date()
+            let outcome = Self.outcome(
+                await copilot.deliver(fix.prompts.session, to: choice, forking: forking, handOff: fix.handOff, about: about, at: at)
+            )
+            switch outcome {
+            case .sent, .copied: return (outcome, at)
+            case .notSent, .needsWindow: return (outcome, nil)
+            }
+        }
         switch destination {
         case .session(let id):
-            guard let choice else { return .notSent(Self.gone) }
+            guard let choice else { return (.notSent(Self.gone), nil) }
             let known = session?.session?.id == id ? session?.delivery : nil
             let delivery: PullRequestSession.Delivery
             if let known {
@@ -208,39 +233,38 @@ struct CopilotSending {
                 delivery = await copilot.delivery(to: choice, for: task, checksRepository: true)
             }
             // Called off while it looked, as its composer closed: nothing starts.
-            guard !Task.isCancelled else { return .notSent(Self.calledOff) }
+            guard !Task.isCancelled else { return (.notSent(Self.calledOff), nil) }
             switch delivery {
             case .cli:
                 guard let run = choice.run ?? choice.appSession.flatMap({ copilot.appRun(for: $0, subject: subject, options: options) }) else {
-                    return .notSent("BriefBar can't tell which folder it works in.")
+                    return (.notSent("BriefBar can't tell which folder it works in."), nil)
                 }
-                if let busy = copilot.busyReason(for: choice) { return .notSent(busy) }
-                copilot.send(
+                if let busy = copilot.busyReason(for: choice) { return (.notSent(busy), nil) }
+                return started(copilot.send(
                     subject, prompt: run.worksInPullRequestWorktree ? fix.prompts.worktree : fix.prompts.session, options: options,
                     repository: run.repository, continuing: run, parts: fix.parts, handOff: fix.handOff
-                )
-                return .sent
+                ))
             case .app:
-                return Self.outcome(await copilot.deliver(fix.prompts.session, to: choice, handOff: fix.handOff, about: about))
+                return await delivered(to: choice)
             case .busy(let why), .unavailable(let why):
-                return .notSent(why)
+                return (.notSent(why), nil)
             }
         case .fork:
-            guard let choice else { return .notSent(Self.gone) }
+            guard let choice else { return (.notSent(Self.gone), nil) }
             if CopilotDestinations.forksWithTheCLI(choice), let run = choice.run {
-                copilot.send(
+                return started(copilot.send(
                     subject, prompt: fix.prompts.session, options: options, repository: run.repository, forking: run, parts: fix.parts,
                     handOff: fix.handOff
-                )
-                return .sent
+                ))
             }
-            return Self.outcome(await copilot.deliver(fix.prompts.session, to: choice, forking: true, handOff: fix.handOff, about: about))
+            return await delivered(forking: true, to: choice)
         case .newSession:
             let repository = try? await copilot.repository(for: task, using: copilot.git())
-            guard !Task.isCancelled else { return .notSent(Self.calledOff) }
-            guard let repository else { return .needsWindow }
-            copilot.send(subject, prompt: fix.prompts.worktree, options: options, repository: repository.root, parts: fix.parts, handOff: fix.handOff)
-            return .sent
+            guard !Task.isCancelled else { return (.notSent(Self.calledOff), nil) }
+            guard let repository else { return (.needsWindow, nil) }
+            return started(copilot.send(
+                subject, prompt: fix.prompts.worktree, options: options, repository: repository.root, parts: fix.parts, handOff: fix.handOff
+            ))
         }
     }
 
@@ -249,7 +273,7 @@ struct CopilotSending {
     func explainAsPrompt(_ prompt: String, about part: PullRequestPart, to choice: SessionChoice) async -> Outcome {
         guard copilot.canSend, copilot.isOn else { return .notSent(CopilotTasksStore.cantSendNow) }
         guard isOpen else { return .notSent(Self.pullRequestGone) }
-        let about = SentPrompt.About(pullRequest: item.key, purpose: .explain, parts: [part])
+        let about = SentPrompt.About(pullRequest: item.key, purpose: .explain, parts: [part], target: record.pullRequest.targetBranch)
         return Self.outcome(await copilot.deliver(prompt, to: choice, about: about))
     }
 
@@ -258,9 +282,10 @@ struct CopilotSending {
     func openWindow(_ fix: Fix, destination: CopilotDestination?, choice: SessionChoice?) {
         var forking = false
         if case .fork? = destination { forking = true }
+        let record = fix.record ?? self.record
         CopilotComposer.shared.show(
-            subject: .pullRequest(task, fix.action), prompt: fix.prompts.worktree, sessionPrompt: fix.prompts.session,
-            createdAt: record.pullRequest.createdAt, options: copilot.settings.copilotOptions,
+            subject: .pullRequest(PullRequestTasks.task(for: record), fix.action), prompt: fix.prompts.worktree,
+            sessionPrompt: fix.prompts.session, createdAt: record.pullRequest.createdAt, options: copilot.settings.copilotOptions,
             continuing: copilot.continuable(forPullRequest: item.key), handOff: fix.handOff,
             session: destination == .newSession ? .newSession : choice.map { .session($0, forking: forking) },
             parts: fix.parts, store: copilot
@@ -317,7 +342,7 @@ extension CopilotSending {
                 PullRequestPrompt.fixThread(record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .worktree),
                 PullRequestPrompt.fixThread(record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .agent)
             ),
-            action: .fixComments, parts: [.thread(thread.id)], handOff: handOff
+            action: .fixComments, parts: [.thread(thread.id)], handOff: handOff, suggestion: suggestion
         )
     }
 }

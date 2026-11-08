@@ -58,8 +58,7 @@ enum Diagnose {
         let (paths, cache, follows) = (store.paths, store.storage.cache, store.followsReadsInTeams)
         Task(priority: .userInitiated) { @MainActor in
             let report = await Diagnostics.report(paths: paths, cache: cache, followsReadsInTeams: follows, appVersion: version)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(report, forType: .string)
+            ThisMac.copy(report)
         }
     }
 }

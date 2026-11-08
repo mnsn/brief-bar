@@ -17,27 +17,30 @@ package struct OrderRowContext {
     package let isReady: Bool
     /// Shows its mission in By Mission, from another list; nil where it shows already.
     package let open: (() -> Void)?
+    /// What names sessions and missions in what it says, and the time, for what your changes and orders' later ones say.
+    package let names: OrderNames
 
-    package init(step: OrderStep, mission: MissionKey? = nil, isReady: Bool, open: (() -> Void)? = nil) {
+    package init(step: OrderStep, mission: MissionKey? = nil, isReady: Bool, open: (() -> Void)? = nil, names: OrderNames = .none) {
         self.step = step
         self.mission = mission
         self.isReady = isReady
         self.open = open
+        self.names = names
     }
 
     /// What its capsule says in full.
     package var sentence: String? {
-        OrderText.sentence(of: step, isReady: isReady)
+        OrderText.sentence(of: step, isReady: isReady, names: names)
     }
 
     /// The row of a pull request in the missions, if one has it in its order or is stacked with it.
     /// - Parameter open: shows the mission in By Mission; nil where it shows already.
     package static func of(
-        _ ref: ItemRef, in missions: [OrderMission], isReady: Bool, open: ((MissionKey) -> Void)? = nil
+        _ ref: ItemRef, in missions: [OrderMission], isReady: Bool, open: ((MissionKey) -> Void)? = nil, names: OrderNames = .none
     ) -> OrderRowContext? {
         guard let (mission, step) = OrderBoard.step(for: ref, in: missions) else { return nil }
         let key = mission.key
-        return OrderRowContext(step: step, mission: key, isReady: isReady, open: open.map { open in { open(key) } })
+        return OrderRowContext(step: step, mission: key, isReady: isReady, open: open.map { open in { open(key) } }, names: names)
     }
 }
 
@@ -52,8 +55,10 @@ extension OrderCapsuleTone {
     }
 }
 
-/// A row's order capsule, beside its links: "Next to merge", "After !4103 · stacked", "Any time", "Check the order". It
-/// says the rest in its tooltip. From another list, a click shows its mission in By Mission.
+/// A row's order capsule, beside its links: "Next to merge", "After !4103 · stacked", "Any time", "Check the order"; with ✎
+/// where a change of yours decides it. It says the rest in its tooltip. From another list, a click shows its mission in By
+/// Mission. With no order known, a quiet ✎ alone, where a change of yours says something of it, such as that you moved it
+/// there, in its tooltip.
 package struct OrderCapsule: View {
     private let context: OrderRowContext
 
@@ -65,8 +70,11 @@ package struct OrderCapsule: View {
         if let text = OrderText.capsule(context.step) {
             let tone = OrderText.tone(of: context.step, isReady: context.isReady)
             let help: String = (context.sentence ?? text) + (context.open == nil ? "" : "\nClick to show it By Mission")
+            let symbol = tone == .warning ? "exclamationmark.triangle.fill"
+                : context.step.isYours ? "pencil" : "point.3.connected.trianglepath.dotted"
             HStack(spacing: 3) {
-                Image(systemName: tone == .warning ? "exclamationmark.triangle.fill" : "point.3.connected.trianglepath.dotted")
+                Image(systemName: symbol)
+                    .accessibilityHidden(true)
                 Text(text)
             }
             .font(size: 10, weight: .semibold)
@@ -80,6 +88,18 @@ package struct OrderCapsule: View {
             .help(help)
             .accessibilityLabel(context.sentence ?? text)
             .highPriorityGesture(TapGesture().onEnded { context.open?() }, including: context.open == nil ? .subviews : .all)
+        } else if context.step.notes.contains(where: \.isAboutYourChanges), let sentence = context.sentence {
+            Image(systemName: "pencil")
+                .font(size: 10, weight: .semibold)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1.5)
+                .background(Capsule().fill(Color.secondary.opacity(0.10)))
+                .contentShape(Capsule())
+                .fixedSize()
+                .help(sentence + (context.open == nil ? "" : "\nClick to show it By Mission"))
+                .accessibilityLabel(sentence)
+                .highPriorityGesture(TapGesture().onEnded { context.open?() }, including: context.open == nil ? .subviews : .all)
         }
     }
 }
@@ -154,6 +174,7 @@ package struct MissionHeader: View {
     let place: String?
 
     @LocalState private var confirmsForget = false
+    @LocalState private var confirmsUndo = false
 
     package init(mission: OrderMission, order: PullRequestOrder, place: String?) {
         self.mission = mission
@@ -184,7 +205,20 @@ package struct MissionHeader: View {
         .confirmationDialog("Forget this order?", isPresented: $confirmsForget) {
             Button("Forget This Order", role: .destructive) { forget() }
         } message: {
-            Text("BriefBar no longer shows it, and tells a session that names it that it forgot it. Its pull requests stay in your lists.")
+            Text("""
+                BriefBar no longer shows it, and tells a session that names it that it forgot it. Its pull requests stay in your \
+                lists, and those you put in it stay together, as a mission of yours.
+                """)
+        }
+        .confirmationDialog("Undo your changes to this mission?", isPresented: $confirmsUndo) {
+            Button("Undo Your Changes") {
+                MissionMenuContext(order: order, mission: mission.key).change(.undoMission(mission.key))
+            }
+        } message: {
+            Text("""
+                Its pull requests go back to where their order and BriefBar put them, those you put in it go back to where they \
+                were, and those you moved out of it come back. Undo, after it, takes this back too.
+                """)
         }
     }
 
@@ -223,12 +257,18 @@ package struct MissionHeader: View {
     }
 
     private var menu: some View {
-        Menu {
+        let yours = order.changes(in: mission)
+        return Menu {
             Button(mission.isFocused ? "Stop Focusing" : "Focus on It") {
                 order.setFocus(mission.isFocused ? nil : mission.key)
             }
-            if case .plan = mission.key {
+            if yours > 0 || mission.kind.isDeclared {
                 Divider()
+            }
+            if yours > 0 {
+                Button("Undo Your Changes to This Mission… (\(yours))") { confirmsUndo = true }
+            }
+            if mission.kind.isDeclared {
                 Button("Forget This Order…") { confirmsForget = true }
             }
         } label: {
@@ -246,7 +286,15 @@ package struct MissionHeader: View {
     }
 
     private func forget() {
-        if case .plan(let id) = mission.key { order.forget(order: id) }
+        if case .declared(let id, _, _, _) = mission.kind { order.forget(order: id) }
+    }
+}
+
+extension OrderMission.Kind {
+    /// A session's order.
+    var isDeclared: Bool {
+        if case .declared = self { return true }
+        return false
     }
 }
 
@@ -335,7 +383,7 @@ struct OrderSessionsMenu: View {
         if let open = order.describe(session)?.open {
             open()
         } else if let url = URL(string: "ghapp://sessions/\(session.id)") {
-            NSWorkspace.shared.open(url)
+            ThisMac.open(url)
         }
     }
 }

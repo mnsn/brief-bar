@@ -15,7 +15,7 @@ private struct DatabaseError: Error {
 /// Where a task goes instead of a new session: BriefBar's earlier tasks, the work item's task that opened the pull request,
 /// and the Copilot app's sessions, those that go with it first, by why; and what it goes to unless you choose.
 @MainActor
-@Suite struct SessionChoicesTests {
+@Suite(.opensNothing) struct SessionChoicesTests {
     private let now = Date(timeIntervalSince1970: 1_792_317_600)
     private let fixing = "11111111-1111-4111-8111-111111111111"
     private let opener = "22222222-2222-4222-8222-222222222222"
@@ -320,7 +320,8 @@ private struct DatabaseError: Error {
 
     /// While Send Prompts to Copilot Sessions is off, BriefBar does what Open in Copilot did, as the window says it will:
     /// it copies the prompt, or `/fork` and the prompt, and opens the session, for you to paste and send. Nothing starts
-    /// here, and the comments the prompt quotes leave Needs You only once the session opened.
+    /// here, and the comments the prompt quotes leave Needs You only once it's seen in a message sent the session, as you
+    /// paste it (`SessionDeliveryTests.copiedPromptsWaitToBePasted`).
     @Test func copiesThePromptForYouToPasteWhileSendingToSessionsIsOff() async throws {
         let store = store(home: URL(fileURLWithPath: "/nonexistent"))
         var opened: [(String, String)] = []
@@ -340,8 +341,8 @@ private struct DatabaseError: Error {
         )))
         #expect(opened.map(\.0) == [onBranch])
         #expect(opened.map(\.1) == ["Fix the comments"])
-        // It's in your hands now: its comments leave Needs You.
-        #expect(handed == ["Fix the comments"])
+        // It's in your hands now, but its comments stay on Needs You until you paste it.
+        #expect(handed.isEmpty)
         // Nothing starts here.
         #expect(store.pending.isEmpty)
         #expect(store.settings.copilotRuns.isEmpty)
@@ -355,11 +356,11 @@ private struct DatabaseError: Error {
         #expect(forked.wasForeseen)
         #expect(opened.last.map { [$0.0, $0.1] } == [onBranch, "/fork Try it another way"])
 
-        // When it doesn't open, nothing's handed off: the comments still wait on you, and the window says why.
+        // When it doesn't open, nothing's handed off either, and the window says why.
         opens = false
         #expect(await store.deliver("Fix them again", to: session, handOff: handOff) == .notSent(CopilotTasksStore.cantOpenInApp))
         #expect(opened.count == 3)
-        #expect(handed == ["Fix the comments"])
+        #expect(handed.isEmpty)
 
         store.settings.copilotEnabled = false
         #expect(await store.deliver("Again", to: session) == .notSent(CopilotTasksStore.cantSendNow))

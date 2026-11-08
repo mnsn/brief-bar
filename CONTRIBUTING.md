@@ -282,6 +282,13 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - **Tests leave nothing behind.** They write only to temporary directories, and keep settings in
   `MemorySettings`, or `MemoryDefaults` where code takes a `UserDefaults`: a UserDefaults suite leaves
   a file in `~/Library/Preferences`, even once removed.
+- **Tests open nothing on your Mac.** BriefBar opens links, files and apps, shows files in the Finder,
+  puts text on the clipboard, and asks in alerts and panels only through `ThisMac`, which refuses each in
+  a test process (`ThisMacPlaceTests` checks that nothing else does them). A test stands in for what its
+  code would do there, as `showForTests` does for showing a session in the Copilot app, and a suite whose
+  code can get there has `.opensNothing`, which fails a test that doesn't. It sees what the test's task
+  does, and the tasks it starts: code that gets there in a detached task carries `ThisMac.noting` into it,
+  as delivery's sender does.
 - **Never block a thread while waiting for async work.** Swift's cooperative pool has a thread per core,
   so code that blocks one of them until a task finishes (on a semaphore, say) can hang where there are
   few cores, as on CI's runners, and blocking the main actor that way hangs as soon as the task needs
