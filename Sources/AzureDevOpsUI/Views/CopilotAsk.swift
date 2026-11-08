@@ -281,7 +281,7 @@ struct CopilotAskComposer<Destinations: View, Options: View>: View {
                         .strokeBorder(Color.accentColor.opacity(isFocused ? 0.6 : 0.2), lineWidth: isFocused ? 1.5 : 1)
                 )
                 // Return sends it, once it can go: until then, a beep, and the note under it says why.
-                .onSubmit { if canSend, !isSending { send() } else { NSSound.beep() } }
+                .onSubmit { if canSend, !isSending { send() } else { ThisMac.beep() } }
                 .disabled(isSending)
                 .accessibilityLabel(placeholder)
             options()

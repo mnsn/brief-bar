@@ -47,7 +47,23 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// 24: with Make Changes in Azure DevOps, your own comment edited, a PATCH of what it says, or deleted, a DELETE of it,
     /// each when you click it; what you write in place of one, kept in memory until it's saved; and Fix Grammar there, which
     /// sends it to GitHub Copilot when you choose a Copilot model for it.
-    nonisolated package static let descriptionVersion = 24
+    /// 25: stopping the turn of a prompt sent to one of the Copilot app's sessions, through BriefBar's extension there;
+    /// the messages sent a session since BriefBar copied a prompt for you to paste there, to tell the one you pasted it
+    /// in; for a pull request's conflicts that a task or prompt takes on, the name of the branch it targets then; when
+    /// each Push & Reply in a task's session ran, and how it ended; and, right before a Push & Reply goes, the pull
+    /// request, with one request before git checks and one after, for the branch it merges into, and, when Azure DevOps
+    /// names another than the list has read, your lists again then, with that pull request's details, rather than at
+    /// their next refresh; that branch and the pull request's, fetched with git into the clone its session works in, to
+    /// check that it pushes no merge of what that branch doesn't have; and, for one of the Copilot app's sessions,
+    /// which of them run a turn now, from its database, until the prompt goes. With Pull Request Order on, each pull
+    /// request's stage, worked out from what it reads already and Copilot's sessions, and the stages you set, kept for
+    /// each account you sign in with, with only what would end each: for In progress, its commit; for Teammate's
+    /// review, the votes it was set over, never who cast them (on someone else's, your own vote and its commit). With
+    /// Pull Request Order and Show Links on, the parent and place in the backlog of the work items linked to your pull
+    /// requests, and what those stories are when BriefBar hasn't read them; and, while Apple Intelligence is on,
+    /// missions named on this Mac from the titles of their pull requests, work items, stories and sessions, with the
+    /// names you give missions kept.
+    nonisolated package static let descriptionVersion = 25
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
