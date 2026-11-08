@@ -379,6 +379,104 @@ import Testing
                                      on: ThreadChanges.Key(pullRequest: key, thread: 11)))
     }
 
+    /// Which of two versions of a comment is later, as Azure DevOps dates edits: the later edit; and any edit, over the
+    /// comment as first written, which it doesn't date.
+    @Test func aVersionIsLaterAsAzureDevOpsDatesItsEdits() throws {
+        var first = try comments(live().store).mine
+        first.editedAt = nil
+        var edited = first, later = first
+        edited.editedAt = Date(timeIntervalSince1970: 100)
+        later.editedAt = Date(timeIntervalSince1970: 200)
+        #expect(ThreadChanges.isLater(later, than: edited))
+        #expect(!ThreadChanges.isLater(edited, than: later))
+        #expect(!ThreadChanges.isLater(edited, than: edited))
+        #expect(ThreadChanges.isLater(edited, than: first))
+        #expect(!ThreadChanges.isLater(first, than: edited))
+        #expect(!ThreadChanges.isLater(first, than: first))
+    }
+
+    /// An edit that may have gone, checked by reading its thread again, finds something else than you began with, as first
+    /// written, which Azure DevOps doesn't date, while a refresh brought an edit of it, which it dates: the later stays, and
+    /// nothing goes; your edit says what the list has, which Save Anyway replaces, and VoiceOver, which heard of it as it
+    /// showed, hears only that your edit wasn't saved. Refreshes after don't bring back what the thread had.
+    @Test func anEditCheckedAgainKeepsTheLaterVersionTheListHas() async throws {
+        final class Spoken {
+            var said: [String] = []
+        }
+        let (store, changes, azure, _) = live()
+        let spoken = Spoken()
+        changes.speak = { spoken.said.append($0) }
+        let record = try #require(store.record(for: key))
+        let (mine, _) = try comments(store)
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        let started = changes.startEditing(mine, in: try thread(store), of: record.pullRequest)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.edit("Capped it.", from: started.base, of: mine, in: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        let elsewhere = "Capped it at a minute."
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        let at = try #require(snapshot.records[index].details?.threads.firstIndex { $0.id == 11 })
+        let comment = try #require(snapshot.records[index].details?.threads[at].comments.firstIndex { $0.id == mine.id })
+        snapshot.records[index].details?.threads[at].comments[comment].text = elsewhere
+        snapshot.records[index].details?.threads[at].comments[comment].markdown = elsewhere
+        snapshot.records[index].details?.threads[at].comments[comment].editedAt = store.now
+        let refreshed = snapshot
+        let listed = try #require(refreshed.records[index].details?.threads[at].comments[comment])
+        var first = try thread(store)
+        let mineAt = try #require(first.comments.firstIndex { $0.id == mine.id })
+        first.comments[mineAt].text = "Capped it at 30 seconds."
+        first.comments[mineAt].markdown = "Capped it at 30 seconds."
+        first.comments[mineAt].editedAt = nil
+        let read = [first]
+        changes.readThreads = { _ in
+            store.receive(refreshed)
+            changes.sayChanged(listed, on: ThreadChanges.CommentKey(thread: threadKey, comment: mine.id))
+            return read
+        }
+        #expect(await changes.edit("Capped it.", from: started.base, of: mine, in: try thread(store), of: key) == false)
+        #expect(azure.sent.count == 1)
+        #expect(try comments(store).mine.markdown == elsewhere)
+        #expect(changes.changedSince(started.base, now: try comments(store).mine, editing: "Capped it.", on: threadKey))
+        #expect(spoken.said == [ThreadChanges.changedSentence + " " + ThreadChanges.changedChoices, ThreadChanges.unsavedSentence])
+        store.receive(refreshed)
+        #expect(try comments(store).mine.markdown == elsewhere)
+    }
+
+    /// An edit that may have gone, checked by reading its thread again, finds something else than you began with, but older,
+    /// as Azure DevOps dates edits, than what the list has, which is as you began: the read tells nothing the list doesn't,
+    /// and your edit goes, as Save's does.
+    @Test func anEditCheckedAgainByAReadOlderThanTheListGoesAsSaveDoes() async throws {
+        let (store, changes, azure, _) = live()
+        // As you begin, an edit of the comment, which Azure DevOps dates.
+        let id = try comments(store).mine.id, edited = store.now
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        let at = try #require(snapshot.records[index].details?.threads.firstIndex { $0.id == 11 })
+        let comment = try #require(snapshot.records[index].details?.threads[at].comments.firstIndex { $0.id == id })
+        snapshot.records[index].details?.threads[at].comments[comment].editedAt = edited
+        store.receive(snapshot)
+        let record = try #require(store.record(for: key))
+        let (mine, _) = try comments(store)
+        #expect(mine.editedAt == edited)
+        let started = changes.startEditing(mine, in: try thread(store), of: record.pullRequest)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.edit("Capped it.", from: started.base, of: mine, in: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        var older = try thread(store)
+        let mineAt = try #require(older.comments.firstIndex { $0.id == id })
+        older.comments[mineAt].text = "Capped it at 30 seconds."
+        older.comments[mineAt].markdown = "Capped it at 30 seconds."
+        older.comments[mineAt].editedAt = edited.addingTimeInterval(-60)
+        let read = [older]
+        changes.readThreads = { _ in read }
+        #expect(await changes.edit("Capped it.", from: started.base, of: mine, in: try thread(store), of: key))
+        #expect(azure.sent.map(\.kind) == [.editComment, .editComment])
+        #expect(try comments(store).mine.markdown == "Capped it.")
+    }
+
     /// An edit that may have gone, checked by reading its thread again, finds the comment says something else, which you
     /// haven't seen: nothing goes, and it shows what the thread has, for your edit to say what it says now.
     @Test func anEditCheckedAfterTheCommentChangedElsewhereSendsNothing() async throws {

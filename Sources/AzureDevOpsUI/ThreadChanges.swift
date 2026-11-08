@@ -257,6 +257,13 @@ final class ThreadChanges: ObservableObject {
         return unsureEdits[key]?.contains { $0.comment == comment.id && $0.digest == now } != true
     }
 
+    /// Whether a comment as the list has it is a later version of it than one read, as Azure DevOps dates edits: the comment
+    /// as first written, which it doesn't date, is older than any edit of it.
+    static func isLater(_ listed: ReviewComment, than read: ReviewComment) -> Bool {
+        guard let at = listed.editedAt else { return false }
+        return read.editedAt.map { at > $0 } ?? true
+    }
+
     /// What your edit says, and VoiceOver hears, when the comment changed since you began it (`changedSince`), and what you
     /// can do then.
     static let changedSentence = "This comment changed since you began editing it, in Azure DevOps or another window."
@@ -468,8 +475,8 @@ final class ThreadChanges: ObservableObject {
     /// and your edit says why. One that says what you began with, or what the comment says now, goes nowhere. Nor does one
     /// begun before the comment changed, as in Azure DevOps or in another window, which you haven't seen (`changedSince`),
     /// unless it's what you chose to replace (`accepted`, Save Anyway). After one that may have gone, as one Azure DevOps
-    /// didn't answer in time, the same edit goes only once the thread, read again first, says the comment doesn't say it,
-    /// nor something else you haven't seen, and nor does the list, as when a refresh brought something else meanwhile.
+    /// didn't answer in time, the same edit goes only once the thread, read again first, says the comment doesn't say it, and
+    /// the later of what it says and what the list has, as a refresh may bring meanwhile, isn't something else unseen.
     /// Called off, it settles as a reply does (`reply(_:then:to:of:)`).
     @discardableResult
     func edit(
@@ -525,19 +532,20 @@ final class ThreadChanges: ObservableObject {
                 SpokenText.announce("Your edit is saved already")
                 return true
             }
-            // It didn't, or something else came after it, which you haven't seen: as above. It shows, as the thread has it,
-            // over what the list showed, for your edit to say what it says now.
-            if changedSince(base, now: read, editing: text, replacing: accepted, on: key) {
+            // It didn't, or something else came after it, which you haven't seen: it shows, as the thread has it, over what
+            // the list showed, unless the list has a later version, as a refresh brought meanwhile.
+            let listed = store.record(for: pullRequest)?.details?.threads.first(where: { $0.id == thread.id })?
+                .comments.first(where: { $0.id == comment.id })
+            if changedSince(base, now: read, editing: text, replacing: accepted, on: key),
+               listed.map({ Self.isLater($0, than: read) }) != true {
                 store.changed(pullRequest, by: ThreadChange(thread: thread.id, edited: [read]))
-                sayChanged(read, on: draft, unsaved: true)
-                return false
             }
-            // Nor once the list has something else since you began, as a refresh brought meanwhile, though the thread, read
-            // before it, didn't: it shows already.
-            if let latest = store.record(for: pullRequest)?.details?.threads.first(where: { $0.id == thread.id })?
-                .comments.first(where: { $0.id == comment.id }),
-                changedSince(base, now: latest, editing: text, replacing: accepted, on: key) {
-                sayChanged(latest, on: draft, unsaved: true)
+            // What shows then, the later of the two, as Azure DevOps dates edits, changed since you began, unseen: as above,
+            // for your edit to say what it says now. A read older than what the list has tells nothing it doesn't.
+            let shown = store.record(for: pullRequest)?.details?.threads.first(where: { $0.id == thread.id })?
+                .comments.first(where: { $0.id == comment.id }) ?? read
+            if changedSince(base, now: shown, editing: text, replacing: accepted, on: key) {
+                sayChanged(shown, on: draft, unsaved: true)
                 return false
             }
             // Its pull request may have closed, or left your lists, while its thread was read.

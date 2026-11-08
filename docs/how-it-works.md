@@ -1681,12 +1681,14 @@ called off before it goes as the setting goes off, and settling once it's gone, 
 nothing as it settles when someone else signed in meanwhile (`ThreadChanges.settling`, `lifetime`). One that may have
 been made, as one Azure DevOps didn't answer in time, has its pull request read again; and the same edit goes again
 only once its thread, read again first, says the comment doesn't say it (`ThreadChanges.EditAttempt`, a fingerprint of
-what it said, `digest`), nor something else since you began, which shows then, for your edit to say so as above, and the
-list, which a refresh may bring meanwhile, doesn't either, and the deletion only once the thread still has the comment,
-and the pull request is still open
-in your lists: nothing goes while the thread can't be read (`ADOWriteProblem.unconfirmed`). One the thread says was made
-shows at once, as the thread has it, over an edit of the comment from before, or the reply that added it, which the list
-would otherwise show until a snapshot had them, which none will. One that didn't happen says why on the thread (`ADOWriteProblem`), or, an
+what it said, `digest`), and the later of what it says and what the list has, which a refresh may bring meanwhile (as
+Azure DevOps dates edits, the comment as first written, which it doesn't date, being older than any edit of it:
+`ThreadChanges.isLater`), which shows then, isn't something else since you began, for your edit to say so as above (a
+read older than the list's tells nothing more), and the deletion only once the thread still has the comment, and the
+pull request is still open in your lists: nothing goes while the thread can't be read (`ADOWriteProblem.unconfirmed`).
+One the thread says was made shows at once, as the thread has it, over an edit of the comment from before, or the reply
+that added it, which the list would otherwise show until a snapshot had them, which none will. One that didn't happen
+says why on the thread (`ADOWriteProblem`), or, an
 edit, in your edit, which stays open with what you wrote, with **Edit…**, **Try Again** or **Sign In…** when they may
 help; a comment Azure DevOps doesn't have anymore has its pull request read again, to show it gone. The list keeps
 the change over its refreshes until a snapshot has it, each after those before it, so that the edit of a reply a
