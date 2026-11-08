@@ -23,15 +23,15 @@ case "${GITHUB_EVENT_NAME:-}" in
 esac
 
 # CHANGELOG.md from the first version's heading on: the released versions' notes, where scripts/package.sh finds the
-# current version's. A pull request's own notes go above them, under "## Unreleased".
+# current version's. Only a release changes them: a pull request writes its own notes in changes/ instead.
 released_notes() {
   git show "$1:CHANGELOG.md" 2>/dev/null | sed -n '/^## [0-9]/,$p'
 }
 
 # Whether packaging the app, or checking the package, uses a path that a pull request changed, beyond what the tests
 # build and check. They use the app's Swift code only to build it, optimized, which every push to main still does, but
-# for the updater's, which they run. They don't use the tests, the documentation, or a pull request's own notes in
-# CHANGELOG.md. Anything else counts, so a new kind of file packages the app until it's listed here.
+# for the updater's, which they run. They don't use the tests, the documentation, or a pull request's own notes, in
+# changes/ or CHANGELOG.md. Anything else counts, so a new kind of file packages the app until it's listed here.
 packaging_uses() {
   case "$1" in
     # The updater, and the code that starts it and talks to it, which the package's checks run: BriefBar's
@@ -42,7 +42,7 @@ packaging_uses() {
       Sources/BriefBarCore/ProcessRunner.swift | Sources/BriefBarCore/Attribution.swift | \
       Sources/BriefBarCore/LaunchEnvironment.swift)
       return 0 ;;
-    Sources/*.swift | Tests/* | docs/* | .github/ISSUE_TEMPLATE/* | .github/pull_request_template.md | LICENSE)
+    Sources/*.swift | Tests/* | docs/* | changes/* | .github/ISSUE_TEMPLATE/* | .github/pull_request_template.md | LICENSE)
       return 1 ;;
     CHANGELOG.md)
       [[ "$(released_notes "$from")" != "$(released_notes HEAD)" ]]
