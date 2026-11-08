@@ -45,9 +45,12 @@ package final class PullRequestOrder: ObservableObject {
     /// The stages you set, for each Azure DevOps account (`order.stages`).
     private var marks = StageMarks()
     /// The stages you set for pull requests listed only because someone sent them to you, or before BriefBar knew which
-    /// account signed in: in memory only.
-    private var marksInMemory: [ItemRef: StageMark] = [:]
+    /// account signed in: in memory only, each with when a list last had it, so that they go after 30 days as those
+    /// kept do. They count with those toward the most an account keeps, and stay, unused, while Pull Request Order is off.
+    /// One waits here too while its account has no room: one set before BriefBar knew the account, or put back by Undo.
+    private var marksInMemory: [ItemRef: StageMarks.Entry] = [:]
     /// The account each source last told while it knew one: the stages you set in memory, and Undo, are that account's.
+    /// Turning Pull Request Order off keeps it, so that once it's on again, another account still forgets them.
     private var accounts: [SourceID: String] = [:]
     /// What each source told it last.
     private var told: [SourceID: Told] = [:]
@@ -133,7 +136,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Pull Request Order, in Settings. On, it reads the orders it kept, and the sources tell it what they show; off, it
-    /// forgets all that, in memory only.
+    /// forgets all that, in memory only, but for the stages you set, which it keeps, unused: those in memory too, with
+    /// the account each source told last, so that one that tells another once it's on again forgets them.
     package func setOn(_ on: Bool) {
         guard on != isOn else { return }
         defaults.set(on, forKey: PullRequestOrderSetting.defaultsKey)
@@ -151,8 +155,6 @@ package final class PullRequestOrder: ObservableObject {
             focus = nil
             missions = []
             marks = StageMarks()
-            marksInMemory = [:]
-            accounts = [:]
             stages = [:]
             stagedKinds = []
             lastChange = nil
@@ -180,10 +182,12 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Looks again at what time alone changes, as its clock does every hour: orders that went stale, those that finished
-    /// long enough ago to go, and the stages you set for pull requests no list has had for 30 days.
+    /// long enough ago to go, and the stages you set for pull requests no list has had for 30 days, kept or in memory.
     package func timePassed() {
         guard isOn else { return }
-        if marks.forgetUnlisted(now: now()) { marks.save(to: defaults) }
+        let date = now()
+        if marks.forgetUnlisted(now: date) { marks.save(to: defaults) }
+        marksInMemory = marksInMemory.filter { !$0.value.isUnlisted(at: date) }
         rebuild()
     }
 
@@ -334,13 +338,14 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// The demo's stages, as if you'd set them then, on those of its pull requests whose source told their stages and that
-    /// you haven't set: only in the demo, while it's on. Each holds as the pull request is now, its votes and commit.
+    /// you haven't set: only in the demo, while it's on. Each keeps what would end it as the pull request is now, as one
+    /// you set does (`StageRules.mark`).
     package func tellDemo(stages demo: [ItemRef: StageMark]) {
         guard isDemo, isOn else { return }
         var kept = false
         for (ref, set) in demo.sorted(by: { $0.key < $1.key }) {
             guard let facts = stageFacts[ref], yourMark(of: ref, facts: facts) == nil else { continue }
-            let mark = StageMark(stage: set.stage, at: set.at, votes: facts.votes, commit: facts.commit)
+            let mark = StageRules.mark(set.stage, at: set.at, facts: facts)
             if keep(mark, of: ref, facts: facts) { kept = true }
         }
         if kept { restage() }
@@ -498,7 +503,7 @@ package final class PullRequestOrder: ObservableObject {
         guard facts.state.isOpen else { return .refused(facts.state == .merged ? StageChange.merged : StageChange.closed) }
         let before = yourMark(of: ref, facts: facts)
         if let before, before.stage == stage, stages[ref]?.mark == before { return .unchanged }
-        let mark = StageMark(stage: stage, at: now(), votes: facts.votes, commit: facts.commit)
+        let mark = StageRules.mark(stage, at: now(), facts: facts)
         guard keep(mark, of: ref, facts: facts) else {
             return .refused(
                 "BriefBar keeps up to \(StageMarks.mostPerAccount) stages you set. Let BriefBar decide one you no longer need first."
@@ -533,7 +538,9 @@ package final class PullRequestOrder: ObservableObject {
         return .done
     }
 
-    /// Undo: puts back exactly the stage your last change replaced, or none.
+    /// Undo: puts back exactly the stage your last change replaced, or none. What it puts back is kept even once the account
+    /// keeps the most, as when Let BriefBar Decide made room that one waiting in memory took: it waits there in turn, until
+    /// the account has room.
     package func undo() {
         guard isOn, let change = lastChange, let facts = stageFacts[change.ref] else {
             lastChange = nil
@@ -541,7 +548,9 @@ package final class PullRequestOrder: ObservableObject {
         }
         lastChange = nil
         if let before = change.before {
-            _ = keep(before, of: change.ref, facts: facts)
+            if !keep(before, of: change.ref, facts: facts) {
+                marksInMemory[change.ref] = StageMarks.Entry(mark: before, listedAt: now())
+            }
         } else {
             forgetMark(of: change.ref, facts: facts)
         }
@@ -586,21 +595,31 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     private func yourMark(of ref: ItemRef, facts: StageFacts) -> StageMark? {
-        if let mark = marksInMemory[ref] { return mark }
+        if let entry = marksInMemory[ref] { return entry.mark }
         guard !keepsInMemory(ref, facts: facts), let account = account(of: ref) else { return nil }
         return marks.mark(of: ref, for: account)
     }
 
-    /// Keeps the stage you set: false when the account keeps the most already.
+    /// Keeps the stage you set, in place of the one it had: false for a new one once the account keeps the most
+    /// already, counting those in memory, so that one in memory always has room with the account once it can go there.
     private func keep(_ mark: StageMark, of ref: ItemRef, facts: StageFacts) -> Bool {
-        if keepsInMemory(ref, facts: facts) {
-            marksInMemory[ref] = mark
-            return true
+        let account = account(of: ref)
+        let isNew = marksInMemory[ref] == nil && account.flatMap { marks.mark(of: ref, for: $0) } == nil
+        guard !isNew || keptCount(of: ref.kind, for: account) < StageMarks.mostPerAccount else { return false }
+        if !keepsInMemory(ref, facts: facts), let account, marks.set(mark, of: ref, for: account, at: now()) {
+            marksInMemory[ref] = nil
+            marks.save(to: defaults)
+        } else {
+            // One only sent to you, one whose account BriefBar doesn't know yet, or one kept here before it knew, until
+            // the account has room for it.
+            marksInMemory[ref] = StageMarks.Entry(mark: mark, listedAt: now())
         }
-        guard let account = account(of: ref), marks.set(mark, of: ref, for: account, at: now()) else { return false }
-        marksInMemory[ref] = nil
-        marks.save(to: defaults)
         return true
+    }
+
+    /// How many stages you set an account keeps, with those in memory for pull requests of this kind, its source's.
+    private func keptCount(of kind: ItemRef.Kind, for account: String?) -> Int {
+        (account.map { marks.count(for: $0) } ?? 0) + marksInMemory.keys.filter { $0.kind == kind }.count
     }
 
     private func forgetMark(of ref: ItemRef, facts: StageFacts) {
@@ -614,12 +633,13 @@ package final class PullRequestOrder: ObservableObject {
         if let change = lastChange, kinds.contains(change.ref.kind) { lastChange = nil }
     }
 
-    /// Each pull request's stage again: from what its source tells, the sessions on it, the stage you set while it stands,
-    /// and its order. A stage you set that no longer stands, or whose pull request merged or closed, goes; one kept in memory
-    /// before BriefBar knew the account, or while it was only sent to you, is kept with the account once it can be, and one
-    /// kept with the account goes into memory once it's only sent to you, such as when you stop watching it; and what lists
-    /// have now is noted, once a day, for what no list has had for 30 days to go. Only those a list has show a stage: what
-    /// was set on one it still reads, but no list has, still ends as it moves on.
+    /// Each pull request's stage again: from what its source tells, the sessions on it, the stage you set while it
+    /// stands, and its order. A stage you set that no longer stands, or whose pull request merged or closed, goes; one
+    /// kept in memory before BriefBar knew the account, or while it was only sent to you, is kept with the account once
+    /// it can be, and one kept with the account goes into memory once it's only sent to you, such as when you stop
+    /// watching it; and what lists have now is noted, for what no list has had for 30 days to go: in memory each time,
+    /// and once a day for those kept. Only those a list has show a stage: what was set on one it still reads, but no
+    /// list has, still ends as it moves on.
     private func restage() {
         guard isOn else {
             if !stages.isEmpty { stages = [:] }
@@ -634,10 +654,10 @@ package final class PullRequestOrder: ObservableObject {
         for (ref, facts) in all {
             let sessions = Self.merged(facts.sessions, sessionsOn[ref] ?? [])
             if let memory = marksInMemory[ref], !keepsInMemory(ref, facts: facts), let account = account(of: ref),
-               marks.set(memory, of: ref, for: account, at: now()) {
+               marks.set(memory.mark, of: ref, for: account, at: memory.listedAt) {
                 marksInMemory[ref] = nil
                 changed = true
-            } else if facts.role == .sentToYou, let account = account(of: ref), let saved = marks.mark(of: ref, for: account) {
+            } else if facts.role == .sentToYou, let account = account(of: ref), let saved = marks.entry(of: ref, for: account) {
                 if marksInMemory[ref] == nil { marksInMemory[ref] = saved }
                 if marks.clear(ref, for: account) { changed = true }
             }
@@ -648,6 +668,7 @@ package final class PullRequestOrder: ObservableObject {
                 mine = nil
             }
             guard facts.isListed else { continue }
+            marksInMemory[ref]?.listedAt = now()
             let order = StageOrder.of(ref, in: missions)
             if let reading = StageRules.reading(facts: facts, sessions: sessions, marks: [mine].compactMap { $0 }, order: order) {
                 readings[ref] = reading
@@ -702,10 +723,21 @@ package final class PullRequestOrder: ObservableObject {
         }
     }
 
-    /// The sessions a source knows of on a pull request, with the Copilot app's, each once: the source's first.
+    /// The sessions a source knows of on a pull request, with the Copilot app's, each once. One both know, such as a task
+    /// BriefBar sent that you went on with in the Copilot app, does what the app says once that's later, unless the app
+    /// can't tell how it ended; the source's still names it and says whether it reviews.
     static func merged(_ own: [StageSession], _ others: [StageSession]) -> [StageSession] {
+        let theirs = Dictionary(others.map { ($0.ref, $0) }) { first, _ in first }
         let known = Set(own.map(\.ref))
-        return own + others.filter { !known.contains($0.ref) }
+        let reconciled = own.map { session in
+            guard let other = theirs[session.ref], other.activity != .stopped, let since = other.since,
+                  session.since.map({ since > $0 }) ?? true else { return session }
+            var now = session
+            now.activity = other.activity
+            now.since = since
+            return now
+        }
+        return reconciled + others.filter { !known.contains($0.ref) }
     }
 }
 

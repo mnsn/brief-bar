@@ -16,7 +16,8 @@ public struct AgentConsent: Codable, Equatable, Sendable {
 /// `turnOn` turns it on, and until you do, `--mcp` answers every call by saying so. When agents get something new, they
 /// wait until you've seen what they get now (`SourceState.needsReview`).
 public enum AgentAccess {
-    /// What agents get: raise it when they get something new, such as another tool or another source's data.
+    /// What agents get. The release that gives them something new, such as another tool or another source's data,
+    /// raises it, from what pull requests say under Descriptions in their notes (scripts/prepare-release.sh).
     public static let version = 5
 
     public static let defaultsKey = "agents"

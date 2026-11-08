@@ -1,4 +1,4 @@
-.PHONY: build test plugin-test check-boundaries signing-key-check homebrew-cask-check updater-check update-rehearsal app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots readme-tour icon signing-identity pppc-profile clean
+.PHONY: build test plugin-test check-boundaries signing-key-check homebrew-cask-check release-notes-check updater-check update-rehearsal app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots readme-tour icon signing-identity pppc-profile clean
 
 # With only the Command Line Tools installed, the compiler sometimes misses Swift Testing's macro
 # plugin (it lives in a subfolder), so point it there explicitly.
@@ -28,11 +28,14 @@ WINDOW_SHOTS := window-overview-light window-overview-dark \
 build:
 	swift build --arch arm64
 
+# First, in a second, the release notes in changes/ (scripts/prepare-release.sh --check): on a release's tag, as the
+# release workflow runs it, that also refuses notes the release didn't gather. Then the tests.
 # With a single thread in Swift's cooperative pool, rather than one per core, code that blocks a thread of it while
 # waiting for async work hangs here too, as it would on a runner with few cores. Swift Testing's events then show that
 # every test process ran to its end: one that ends early, with status 0, would otherwise pass without the tests it
 # hadn't run (scripts/check-test-events.sh).
 test:
+	@./scripts/prepare-release.sh --check
 	@rm -f "$(TEST_EVENTS)"
 	LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test --arch arm64 $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS)) \
 		--event-stream-output-path "$(TEST_EVENTS)" --event-stream-version 0
@@ -55,6 +58,13 @@ signing-key-check:
 # temporary folder: no network, no key. CI runs it.
 homebrew-cask-check:
 	./scripts/test-homebrew-cask.sh
+
+# The release notes that pull requests write in changes/ (see "Release notes" in CONTRIBUTING.md), and the tests of
+# scripts/prepare-release.sh, which gathers them for a release, in repositories of their own in a temporary folder. CI
+# runs it.
+release-notes-check:
+	./scripts/prepare-release.sh --check
+	./scripts/test-prepare-release.sh
 
 # That BriefBar's updater, which holds Sparkle with library validation off, can't use BriefBar's privacy
 # permissions, and that other code in Sparkle's place never runs as BriefBar: in a copy of build/BriefBar.app

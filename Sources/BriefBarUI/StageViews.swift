@@ -125,7 +125,7 @@ package enum StageWords {
     /// "‘Cart’ finished, worked out by BriefBar", without the quotes VoiceOver would read.
     @MainActor
     package static func spokenWhy(_ reading: StageReading, order: PullRequestOrder, now: Date) -> String {
-        SpokenText.unquoted(StageText.why(reading, name: order.name(of:)) + ", " + StageText.spokenWho(reading, now: now, name: order.name(of:)))
+        SpokenText.unquoted(StageText.why(reading, name: order.name(of:), then: ", ") + ", " + StageText.spokenWho(reading, now: now, name: order.name(of:)))
     }
 
     /// For a row's or a card's value: "Your review, ‘Cart’ finished, worked out by BriefBar".
@@ -138,9 +138,9 @@ package enum StageWords {
 // MARK: Its menu
 
 /// A pull request's stage's menu, its pill's and Stage ▸ in its row's menus: what it is and why, the three stages you can
-/// set, checked as it's in one, the two only BriefBar sets, dimmed with why, then Finished My Review, Put Yours Back and Let
-/// BriefBar Decide, as they apply; once it merged, only what it is. Undo heads it while your last change was to it, even
-/// once it has no stage left to show.
+/// set, checked as it's in one, which choosing sets as yours, the checked one too; the two only BriefBar sets, dimmed with
+/// why; then Finished My Review, Put Yours Back and Let BriefBar Decide, as they apply; once it merged, only what it is.
+/// Undo heads it while your last change was to it, even once it has no stage left to show.
 package struct StageMenuItems: View {
     private let ref: ItemRef
     @ObservedObject private var order: PullRequestOrder
@@ -179,10 +179,7 @@ package struct StageMenuItems: View {
                 }
                 .disabled(true)
             } else {
-                Toggle(isOn: Binding(
-                    get: { reading.stage == stage },
-                    set: { isOn in if isOn { StageCommand.set(stage, of: ref, order: order, undo: undoPlace) } }
-                )) {
+                Toggle(isOn: Self.choice(stage, of: ref, reading: reading, order: order, undo: undoPlace)) {
                     Label(stage.title, systemImage: stage.symbol)
                 }
                 .disabled(stage == .teammateReview && othersReviews != nil)
@@ -216,6 +213,17 @@ package struct StageMenuItems: View {
         if reading.isSetByYou {
             Button("Let BriefBar Decide") { StageCommand.letBriefBarDecide(ref, order: order, undo: undoPlace) }
         }
+    }
+
+    /// A stage you can set, checked while it's in it. Choosing it sets it as yours, the one it's in too, so that one
+    /// BriefBar decided stays there until you change it, as someone else's you review does once you've voted; one you set
+    /// already is unchanged.
+    /// - Parameter undo: where Undo is, for what VoiceOver hears once it's set.
+    package static func choice(
+        _ stage: PullRequestStage, of ref: ItemRef, reading: StageReading, order: PullRequestOrder,
+        undo: StageUndoPlace = .stageMenu
+    ) -> Binding<Bool> {
+        Binding(get: { reading.stage == stage }, set: { _ in StageCommand.set(stage, of: ref, order: order, undo: undo) })
     }
 }
 

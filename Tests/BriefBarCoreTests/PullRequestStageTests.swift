@@ -47,20 +47,41 @@ import Testing
         let failing = StageFacts(role: .author, failure: "Build failed")
         let working = Self.reading(failing, sessions: [Self.session(.working, at: 10)])
         #expect(working?.stage == .inProgress)
-        #expect(Self.why(working) == "‘Cart’ is writing it")
+        #expect(Self.why(working) == "‘Cart’ is writing it · build failed")
         #expect(working?.since == t(10))
 
         let asking = Self.reading(
             failing, sessions: [Self.session(.working, at: 30, Self.backoff), Self.session(.waitsForYou, at: 20)]
         )
-        #expect(Self.why(asking) == "‘Cart’ asks you")
+        #expect(Self.why(asking) == "‘Cart’ asks you · build failed")
 
         // A task BriefBar sent, which the sources don't name, has its own.
         let task = StageSession(ref: .session("9e8d7c6b-5a49-4382-a1b0-c9d8e7f6a5b4")!, activity: .working, since: t(5), name: "Copilot")
-        #expect(Self.why(Self.reading(failing, sessions: [task])) == "Copilot is writing it")
+        #expect(Self.why(Self.reading(failing, sessions: [task])) == "Copilot is writing it · build failed")
         // One the sources can't name.
         let unnamed = StageSession(ref: .session("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d")!, activity: .working, since: t(5))
-        #expect(Self.why(Self.reading(failing, sessions: [unnamed])) == "A Copilot session is writing it")
+        #expect(Self.why(Self.reading(failing, sessions: [unnamed])) == "A Copilot session is writing it · build failed")
+    }
+
+    /// On yours, a failed build or merge is said after the reason of a session or a stage you set that decides its stage,
+    /// in its row's words and its tooltip, and to VoiceOver after a pause; where the failure decides, it's said once, and
+    /// someone else's says none.
+    @Test func aFailureIsSaidAfterTheSessionOrStageThatDecides() {
+        let failing = StageFacts(role: .author, failure: "Merge conflicts")
+        let asking = Self.reading(failing, sessions: [Self.session(.waitsForYou, at: 20)])
+        #expect(asking?.stage == .inProgress)
+        #expect(Self.why(asking) == "‘Cart’ asks you · merge conflicts")
+        #expect(asking.map { StageText.why($0, name: Self.name, then: ", ") } == "‘Cart’ asks you, merge conflicts")
+        #expect(asking.map { StageText.sentence($0, now: t(60), name: Self.name) }
+            == "In progress: ‘Cart’ asks you · merge conflicts. Worked out by BriefBar.")
+
+        let set = Self.reading(failing, marks: [StageMark(stage: .yourReview, at: t(100))])
+        #expect(set?.stage == .yourReview)
+        #expect(Self.why(set) == "Waiting for your review · merge conflicts")
+
+        #expect(Self.why(Self.reading(failing)) == "Merge conflicts")
+        #expect(Self.reading(StageFacts(role: .author), sessions: [Self.session(.waitsForYou, at: 20)])?.alsoFailing == nil)
+        #expect(Self.reading(StageFacts(role: .reviewer, failure: "Build failed", asksYou: "Jordan asked you"))?.alsoFailing == nil)
     }
 
     @Test func aStageYouSetShowsUntilASessionStartsAfterIt() {

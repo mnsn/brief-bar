@@ -1,11 +1,14 @@
 import Foundation
 
 /// The stages you set, in BriefBar's preferences, for each Azure DevOps account you sign in with, as what you've seen is:
-/// one key, `order.stages`, which only the app writes, of references, stages and dates, and what a stage was set over, the
-/// others' votes as a digest of the votes alone and a commit. A pull request listed only because someone sent it to you
-/// isn't kept here: its stage stays in memory (`PullRequestOrder`). One goes once it no longer stands, its pull request
-/// merges or closes, or no list has had it for 30 days; turning a source off forgets its own, and Forget Stages… all of
-/// them. At most 500 for each account: past that, a new one is refused, never one dropped to make room.
+/// one key, `order.stages`, which only the app writes, of references, stages and dates, and of what a stage was set over
+/// only what would end it (`StageRules.mark`): the commit, for In progress and for Teammate's review on someone else's;
+/// the votes, for Teammate's review alone, on yours a digest of the votes others cast, how many of each, never who cast
+/// them, and on someone else's your own vote. A pull request listed only because someone sent it to you isn't kept here:
+/// its stage stays in memory (`PullRequestOrder`). One goes once it no longer stands, its pull request merges or closes,
+/// or no list has had it for 30 days; turning a source off forgets its own, and Forget Stages… all of them. At most 500
+/// for each account, counting those `PullRequestOrder` keeps in memory for it: past that, a new one is refused, never
+/// one dropped to make room.
 public struct StageMarks: Equatable, Sendable {
     public static let defaultsKey = "order.stages"
     public static let mostPerAccount = 500
@@ -22,6 +25,11 @@ public struct StageMarks: Equatable, Sendable {
         public init(mark: StageMark, listedAt: Date) {
             self.mark = mark
             self.listedAt = listedAt
+        }
+
+        /// Whether no list has had its pull request for 30 days, so it goes.
+        public func isUnlisted(at now: Date) -> Bool {
+            now.timeIntervalSince(listedAt) > StageMarks.unlistedFor
         }
     }
 
@@ -41,11 +49,22 @@ public struct StageMarks: Equatable, Sendable {
 
     /// The stage you set for a pull request, with this account.
     public func mark(of ref: ItemRef, for account: String) -> StageMark? {
-        accounts[account.lowercased()]?[ref]?.mark
+        entry(of: ref, for: account)?.mark
+    }
+
+    /// The stage you set for a pull request, with this account, and when a list last had it.
+    public func entry(of ref: ItemRef, for account: String) -> Entry? {
+        accounts[account.lowercased()]?[ref]
+    }
+
+    /// How many this account keeps.
+    public func count(for account: String) -> Int {
+        accounts[account.lowercased()]?.count ?? 0
     }
 
     /// Sets yours, in place of the one it had: false, keeping nothing, when the account has the most already and this is a
     /// new one.
+    /// - Parameter now: when a list last had it: now, or when it did while it was kept elsewhere.
     public mutating func set(_ mark: StageMark, of ref: ItemRef, for account: String, at now: Date) -> Bool {
         guard ref.kind.isPullRequest, mark.isYours, mark.stage.isSettable else { return false }
         let account = account.lowercased()
@@ -81,7 +100,7 @@ public struct StageMarks: Equatable, Sendable {
 
     /// Forgets those no list has had for 30 days, with every account: true when it forgot any.
     public mutating func forgetUnlisted(now: Date) -> Bool {
-        forget { now.timeIntervalSince($0.value.listedAt) > Self.unlistedFor }
+        forget { $0.value.isUnlisted(at: now) }
     }
 
     /// Forgets the stages of the sources you turned off, with every account: true when it forgot any.

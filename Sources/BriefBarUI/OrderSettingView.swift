@@ -29,9 +29,10 @@ package struct PullRequestOrderSettingView: View {
         Teammate's review, Can merge or Waits for another PR, as BriefBar works it out from Azure DevOps and Copilot, or as \
         you set it; what's next, at the top of the Pull Requests page; and a Board beside List and Map. With agents on, \
         sessions get the tools to tell BriefBar an order as they start, and Copilot gets a skill that says when to. It \
-        keeps references only: the orders, and the stages you set, for each Azure DevOps account you sign in with, until \
-        they end or you forget them; none of it goes to Azure DevOps or GitHub. Turning it off keeps them, unused, until \
-        you forget them.
+        keeps the orders, by reference, and the stages you set, for each Azure DevOps account you sign in with, with only \
+        what would end them: the commit an In progress was set at, and the votes a Teammate's review was set over, how \
+        many of each others cast on yours, or your own vote and the commit on someone else's; until they end or you \
+        forget them. None of it goes to Azure DevOps or GitHub. Turning it off keeps them, unused, until you forget them.
         """
 
     package var body: some View {

@@ -112,12 +112,11 @@ package final class CopilotSource: BriefBarSource {
 
     package func stop() {
         linkObservers.removeAll()
+        // And what it opens in Terminal: a session still being opened opens nothing now.
         store.stop()
         services.links.withdraw(.copilot)
         services.stories.withdraw(.copilot)
         services.pullRequestOrder.withdraw(.copilot)
-        // A session still being opened in Terminal opens nothing now.
-        CLISession.stop()
     }
 
     package func deleteSavedData() {

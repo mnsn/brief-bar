@@ -206,8 +206,8 @@ public struct StageFacts: Equatable, Sendable {
     }
 }
 
-/// A stage you or a session set, when, and what it was set over: the others' votes and the pull request's commit then,
-/// which some stages end with (`StageRules.stands`).
+/// A stage you or a session set, when, and of what it was set over only what would end it (`StageRules.mark`): the votes
+/// then, for Teammate's review, and the pull request's commit, where new commits end it (`StageRules.stands`).
 public struct StageMark: Equatable, Sendable {
     public var stage: PullRequestStage
     public var at: Date
@@ -304,10 +304,13 @@ public struct StageReading: Equatable, Sendable {
     public var replaced: StageMark?
     /// Whether it's on your board: not someone else's that you finished reviewing, until something new needs you there.
     public var isOnBoard: Bool
+    /// On yours, a failed build or merge, where a session or a stage you set decides its stage rather than the failure: its
+    /// words still say it, after their reason: "‘Cart’ asks you · build failed".
+    public var alsoFailing: String?
 
     public init(
         stage: PullRequestStage, why: StageWhy, since: Date? = nil, mark: StageMark? = nil, replaced: StageMark? = nil,
-        isOnBoard: Bool = true
+        isOnBoard: Bool = true, alsoFailing: String? = nil
     ) {
         self.stage = stage
         self.why = why
@@ -315,6 +318,7 @@ public struct StageReading: Equatable, Sendable {
         self.mark = mark
         self.replaced = replaced
         self.isOnBoard = isOnBoard
+        self.alsoFailing = alsoFailing
     }
 
     /// Whether you set what it shows.
@@ -374,7 +378,17 @@ public enum StageRules {
     ///   - sessions: every Copilot session on it, its source's and the Copilot app's, each once.
     ///   - marks: what you and sessions set, in any order: the latest decides, while it stands (`stands`).
     /// - Returns: nil for one that isn't on your board, such as someone else's you approved, or one closed without merging.
+    ///   On yours, a failed build or merge is said too, after the reason of a session or a stage you set that decides it.
     public static func reading(facts: StageFacts, sessions: [StageSession], marks: [StageMark], order: StageOrder) -> StageReading? {
+        guard var reading = decided(facts: facts, sessions: sessions, marks: marks, order: order) else { return nil }
+        if facts.isYours, facts.state.isOpen, let failure = facts.failure, reading.why != .failing(failure) {
+            reading.alsoFailing = failure
+        }
+        return reading
+    }
+
+    /// The first rule that applies.
+    private static func decided(facts: StageFacts, sessions: [StageSession], marks: [StageMark], order: StageOrder) -> StageReading? {
         if facts.state == .merged { return StageReading(stage: .merged, why: .merged, since: facts.since) }
         guard facts.state.isOpen else { return nil }
         let (mark, replaced) = standingMark(marks, facts: facts, sessions: sessions)
@@ -442,6 +456,14 @@ public enum StageRules {
         guard !latest.isYours, let yours = marks.filter(\.isYours).max(by: { $0.at < $1.at }), yours.stage != latest.stage
         else { return (latest, nil) }
         return (latest, yours)
+    }
+
+    /// A stage you set now, keeping of what it was set over only what `stands` reads to end it: the commit, for In
+    /// progress, and for Teammate's review on someone else's; the votes, for Teammate's review alone, on yours how many of
+    /// each others cast, on someone else's your own vote. Your review keeps neither.
+    public static func mark(_ stage: PullRequestStage, at date: Date, facts: StageFacts) -> StageMark {
+        let keepsCommit = stage == .inProgress || (stage == .teammateReview && !facts.isYours)
+        return StageMark(stage: stage, at: date, votes: stage == .teammateReview ? facts.votes : nil, commit: keepsCommit ? facts.commit : nil)
     }
 
     /// Whether a stage set still stands, as the pull request moved on since (plan §2.4). A later change replaces it, which
@@ -532,9 +554,18 @@ public enum StageUndoPlace: Sendable {
 /// What a stage says, in BriefBar's words, for the pull requests' rows, their details and VoiceOver: sessions by their
 /// names, pull requests by their numbers.
 public enum StageText {
-    /// Why it's in its stage: "‘Cart’ finished", "Find a reviewer", "After !4102".
-    /// - Parameter name: what the sources call a session, when they say.
-    public static func why(_ reading: StageReading, name: (ItemRef) -> String?) -> String {
+    /// Why it's in its stage: "‘Cart’ finished", "Find a reviewer", "After !4102"; with a failed build or merge after it
+    /// where something else decides its stage: "‘Cart’ asks you · build failed".
+    /// - Parameters:
+    ///   - name: what the sources call a session, when they say.
+    ///   - separator: before the failure: ", " for VoiceOver, which reads it as a pause.
+    public static func why(_ reading: StageReading, name: (ItemRef) -> String?, then separator: String = " · ") -> String {
+        let words = reason(reading, name: name)
+        guard let failing = reading.alsoFailing, let first = failing.first else { return words }
+        return words + separator + first.lowercased() + failing.dropFirst()
+    }
+
+    private static func reason(_ reading: StageReading, name: (ItemRef) -> String?) -> String {
         switch reading.why {
         case .merged: return "Merged"
         case .working(let session): return "\(called(session, name: name)) is writing it"

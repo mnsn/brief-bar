@@ -82,6 +82,12 @@ package struct UpNextView: View {
         .accessibilityHint(folded ? "Shows what's next for you" : "Folds it")
         .accessibilityAddTraits(.isHeader)
     }
+
+    /// What VoiceOver hears after a slot's title: why, a second reason after a pause, then its mission: "Cart asks you,
+    /// build failed, Not in a mission", where its tooltip says "‘Cart’ asks you · build failed".
+    package static func spoken(_ slot: UpNext.Slot, mission: String, order: PullRequestOrder) -> String {
+        SpokenText.unquoted(StageText.why(slot.card.reading, name: order.name(of:), then: ", ") + ", " + mission)
+    }
 }
 
 /// One of Up Next's slots: its kind in its stage's color and how many it has; its pull request, why, and its mission; and
@@ -142,7 +148,7 @@ private struct UpNextSlotView: View {
             .help([[ref.fullOrderLabel, title].compactMap { $0 }.joined(separator: " "), why, mission, slot.kind.help, "Click to see its details"]
                 .joined(separator: "\n"))
             .accessibilityLabel("\(slot.kind.title): \([ref.shortOrderLabel, title].compactMap { $0 }.joined(separator: " "))")
-            .accessibilityValue(SpokenText.unquoted("\(why), \(mission)"))
+            .accessibilityValue(UpNextView.spoken(slot, mission: mission, order: order))
             .accessibilityHint("Shows its details")
             moreLine
         }

@@ -6,9 +6,9 @@ import Testing
 @testable import CopilotUI
 
 /// Opening a session with the Copilot CLI on a Mac without the app, from the click to Terminal, with what that does
-/// beyond BriefBar stood in for. One test at a time: they share what's being opened.
+/// beyond BriefBar stood in for. Each test opens sessions with an opener of its own.
 @MainActor
-@Suite(.serialized) struct CLISessionTests {
+@Suite struct CLISessionTests {
     private let id = "5d2e8a90-1f3b-4e7c-8a26-7b9c0d4e5f02"
     private let paths = CopilotPaths(root: URL(fileURLWithPath: "/Users/robin/.copilot", isDirectory: true))
 
@@ -66,15 +66,11 @@ import Testing
     func turningCopilotOffWhileItFindsTheCLIOpensNothing() async throws {
         let shell = Shell()
         let outside = Outside()
-        CLISession.stop()
-        CLISession.effects = standIn(shell, outside)
-        defer {
-            CLISession.effects = CLISession.Effects()
-            CLISession.stop()
-        }
-        let source = CopilotSource(services: AppServices(defaults: MemoryDefaults(), isDemo: false))
+        let source = CopilotSource(services: AppServices(defaults: MemoryDefaults(), isDemo: false), paths: nil)
+        let opener = source.store.cliSessions
+        opener.effects = standIn(shell, outside)
 
-        let stopped = try #require(CLISession.open(id, paths: paths))
+        let stopped = try #require(opener.open(id, paths: paths))
         await shell.asked()
         #expect(outside.read == ["lock"])
         source.stop()
@@ -85,7 +81,7 @@ import Testing
         #expect(outside.said.isEmpty)
 
         // Left on, the same click opens it.
-        let opened = try #require(CLISession.open(id, paths: paths))
+        let opened = try #require(opener.open(id, paths: paths))
         await shell.asked()
         shell.answer()
         await opened.value
@@ -93,7 +89,25 @@ import Testing
         #expect(outside.launched == [CLISession.script(for: id)])
         #expect(outside.said.isEmpty)
         // It's starting in Terminal: another click starts nothing more.
-        #expect(CLISession.open(id, paths: paths) == nil)
+        #expect(opener.open(id, paths: paths) == nil)
+    }
+
+    /// Another list of sessions stopping, as when another source stops, doesn't stop what this one opens.
+    @Test(.timeLimit(.minutes(1)))
+    func stillOpensItAsAnotherSourceStops() async throws {
+        let shell = Shell()
+        let outside = Outside()
+        let opener = CLISession.Opener(effects: standIn(shell, outside))
+        let another = CopilotSource(services: AppServices(defaults: MemoryDefaults(), isDemo: false), paths: nil)
+
+        let opened = try #require(opener.open(id, paths: paths))
+        await shell.asked()
+        another.stop()
+        shell.answer()
+        await opened.value
+        #expect(outside.read == ["lock", "lock", "folder"])
+        #expect(outside.launched == [CLISession.script(for: id)])
+        #expect(outside.said.isEmpty)
     }
 
     /// A script nothing opened says so, with the command to run instead, and the next click tries again.
@@ -102,14 +116,9 @@ import Testing
         let shell = Shell()
         let outside = Outside()
         outside.opens = false
-        CLISession.stop()
-        CLISession.effects = standIn(shell, outside)
-        defer {
-            CLISession.effects = CLISession.Effects()
-            CLISession.stop()
-        }
+        let opener = CLISession.Opener(effects: standIn(shell, outside))
 
-        let first = try #require(CLISession.open(id, paths: paths))
+        let first = try #require(opener.open(id, paths: paths))
         await shell.asked()
         shell.answer()
         await first.value
@@ -117,7 +126,7 @@ import Testing
         #expect(outside.said == ["The session didn't open in Terminal"])
 
         outside.opens = true
-        let again = try #require(CLISession.open(id, paths: paths))
+        let again = try #require(opener.open(id, paths: paths))
         await shell.asked()
         shell.answer()
         await again.value

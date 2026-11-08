@@ -467,12 +467,15 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
 
     /// With no next step of yours, what it waits for: its first pull request that hasn't merged, in its order, as its stage
     /// says why, "Waiting for Priya (!4091)"; nil once all merged, or with a step of yours.
-    /// - Parameter name: what a source calls a session, when it says.
-    public func waiting(name: (ItemRef) -> String?) -> String? {
+    /// - Parameters:
+    ///   - name: what a source calls a session, when it says.
+    ///   - separator: what goes before a second reason, "‘Cart’ is writing it · build failed": ", " for VoiceOver's
+    ///     pause.
+    public func waiting(name: (ItemRef) -> String?, then separator: String = " · ") -> String? {
         guard nextSteps.isEmpty else { return nil }
         let open = cards.filter { $0.stage != .merged }
         guard let first = open.min(by: { BoardOrder.isEarlierInOrder($0, $1) ?? BoardOrder.isOlder($0, $1) }) else { return nil }
-        return "\(StageText.why(first.reading, name: name)) (\(first.ref.shortOrderLabel))"
+        return "\(StageText.why(first.reading, name: name, then: separator)) (\(first.ref.shortOrderLabel))"
     }
 }
 
