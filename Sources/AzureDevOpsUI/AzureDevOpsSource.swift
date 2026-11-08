@@ -90,7 +90,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// What writes its store's brief; nil for one that asks the on-device model.
     private let summarizer: Summarizer?
     /// Made when Azure DevOps starts, so its notifications count from then.
-    private var store: PRStore?
+    private(set) var store: PRStore?
     /// Made with it, sharing its client: they read only while their sections are on screen.
     private var sprint: SprintStore?
     private var pipelines: PipelinesStore?
@@ -142,6 +142,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// What a list by state shows changed: any pull request or pipeline, not only the counts.
     private let rowChanges = PassthroughSubject<Void, Never>()
     private var cancellables: Set<AnyCancellable> = []
+    /// Fix with Copilot…, clicked as the click started BriefBar: it waits for the list to be read.
+    private var pendingFix: AnyCancellable?
     /// Hears about the pull requests and pipelines an agent watches or pins through `--mcp`.
     private var agentChanges: AnyObject?
 
@@ -238,6 +240,11 @@ package final class AzureDevOpsSource: BriefBarSource {
             }
             .store(in: &cancellables)
         self.copilot = copilot
+        // Its notifications about what Copilot can fix offer to, as the Actions menu would then (Fix with Copilot…).
+        store.offersCopilot = { [weak store, weak copilot] key, action in
+            guard let store, let copilot, let item = store.items.first(where: { $0.key == key }) else { return false }
+            return store.copilotCan(action, item, copilot: copilot)
+        }
         workLinks = WorkLinksStore(
             links: services.links, stories: services.stories, store: store, sprint: sprint, copilot: copilot, settings: settings,
             order: services.pullRequestOrder
@@ -352,6 +359,8 @@ package final class AzureDevOpsSource: BriefBarSource {
             settings.startSeeing()
         }
         let store = makeStores(notifier: services.notifier)
+        // Before any notification has it: Notification Center shows a button only once its category is registered.
+        services.notifier.register([PRStore.copilotButton])
         let access = services.fullDiskAccess
         store.showChatAccessSetup = { [weak access] in access?.show() }
         store.chatAccessChanged = { [weak self, weak access] status in
@@ -459,6 +468,7 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     package func stop() {
         cancellables.removeAll()
+        pendingFix = nil
         agentChanges = nil
         store?.stop()
         sprint?.stop()
@@ -769,6 +779,43 @@ package final class AzureDevOpsSource: BriefBarSource {
     package func openNotificationInWindow(_ userInfo: [String: String]) {
         openNotification(userInfo, inWindow: true)
     }
+
+    /// Fix with Copilot…, on a notification about your pull request: the composer, for what it says, as the Actions menu opens
+    /// it, with BriefBar's usual pick of where it goes, while Copilot can still do that; or else the notification opens, as
+    /// a click on it does. Clicked as the click started BriefBar, once the list is read, or a minute has gone by.
+    package func notificationButton(_ id: String, userInfo: [String: String]) {
+        guard id == PRStore.copilotButton.id, let store,
+              let action = userInfo[PRStore.copilotActionKey].flatMap(PullRequestAction.init(rawValue:)) else {
+            openNotification(userInfo)
+            return
+        }
+        pendingFix = store.onceLoaded(within: Self.firstLoadWait) { [weak self] in
+            self?.pendingFix = nil
+            self?.fixWithCopilot(action, userInfo: userInfo)
+        }
+    }
+
+    /// How long Fix with Copilot… waits for the list, in seconds, when its click started BriefBar.
+    static let firstLoadWait = 60
+
+    private func fixWithCopilot(_ action: PullRequestAction, userInfo: [String: String]) {
+        // By its key, in which an organization's name is the same in any letter case, as Azure DevOps has it.
+        guard let store, let copilot, let key = userInfo["pullRequest"].flatMap(PRKey.init(description:)),
+              let item = store.items.first(where: { $0.key == key }), store.copilotCan(action, item, copilot: copilot)
+        else {
+            openNotification(userInfo)
+            return
+        }
+        store.markSeen(item)
+        if let composingFix {
+            composingFix(action, item)
+        } else {
+            store.composeCopilot(action, for: item, copilot: copilot)
+        }
+    }
+
+    /// For tests: what Fix with Copilot… asks the composer for, rather than opening its window.
+    var composingFix: ((PullRequestAction, PRSnapshot) -> Void)?
 
     /// A click on one of its notifications: a task's, with your Copilot sessions; a pull request's, in BriefBar's window, at
     /// the comment or the run it's about, from the window's Notifications page, and from Notification Center once you chose

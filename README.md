@@ -131,7 +131,9 @@ With **Send Work to Copilot** on in Azure DevOps' settings, send a sprint task t
 context already filled in. Review, edit or copy the prompt, choose a repository and model, and follow the
 task from running to its linked pull request. For pull requests, choose **Fix Comments**, **Fix the
 Build**, **Resolve Conflicts** or **Pre-review**, and send follow-up work to the session that opened
-the pull request instead of starting from scratch.
+the pull request instead of starting from scratch. When a notification says your pull request's build
+failed, someone commented or it has merge conflicts, **Fix with Copilot…** on it opens the same window
+with the fix's prompt.
 
 <p align="center">
   <picture>
@@ -159,6 +161,11 @@ Enable agent access in **Settings › Agents**, then install the **Copilot plugi
 | `/briefbar` | What needs you across Azure DevOps and Copilot; in the Copilot app, an inbox you can search, sort and group. |
 | `/briefbar 5101` | Where the work item stands, what's done, what's left and who it waits on. |
 | “Fix the comments on !4102” | In the Copilot app, the pull request's own session, a fork of it or a new one, which you can follow and steer. |
+
+Sessions don't sit waiting on your pipelines. Once one pushes, it ends its turn, and if the build fails,
+BriefBar's notification offers **Fix with Copilot…**. For a short build its next step needs, a session
+can wait with `BriefBar --wait`, for up to two hours, and carry on with what it prints: the build's
+result, new comments or conflicts, with the prompt to fix them.
 
 Turn on **Send Prompts to Copilot Sessions** there too, and BriefBar's Send to Copilot window sends its
 prompt to one of the app's sessions itself, with **Send to Session**, or to a fork of it, with **Send to a

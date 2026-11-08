@@ -625,14 +625,15 @@ public struct PullRequestBoard: Equatable, Sendable {
     }
 
     /// The pull requests whose Undo line a lane shows, when your last change was to one of them: a mission's lane, every
-    /// one of its mission's, on the board or not, as List's card does; the lane of those in no mission, or of every card,
-    /// its cards, and the one you changed once it left the board where no mission's lane has it.
+    /// one of its mission's, those for its story apart from its order too, on the board or not, as List's card does; the
+    /// lane of those in no mission, or of every card, its cards, and the one you changed once it left the board where no
+    /// mission's lane has it.
     public func undoRefs(of lane: BoardLane, missions: [OrderMission], changed: ItemRef?) -> Set<ItemRef> {
         var refs = Set(lane.cards.map(\.ref))
         switch lane.kind {
         case .mission(let key):
             if let mission = missions.first(where: { $0.key == key }) {
-                refs.formUnion((mission.steps + mission.attached).map(\.ref))
+                refs.formUnion(mission.refs)
             }
         case .notInAMission, .all:
             if let changed, isUnhosted(changed, missions: missions) { refs.insert(changed) }

@@ -108,6 +108,8 @@ private final class TakenAt: Sendable {
 /// Sending a prompt to one of the Copilot app's sessions, or to a fork of it, through BriefBar's extension in it
 /// (`CopilotTasksStore.deliver`): only while Send Prompts to Copilot Sessions is on; and, when the extension can't,
 /// copying the prompt for you to paste, as Open in Copilot did.
+/// The tests that push run git, which takes them about 40 seconds on CI's runners and over a minute on a slow one, so
+/// they have three minutes: enough to tell a slow runner from a hang.
 @MainActor
 @Suite(.opensNothing) struct SessionDeliveryTests {
     private let session = "a4444444-4444-4444-8444-44444444444f"
@@ -255,7 +257,7 @@ private final class TakenAt: Sendable {
     /// So here, where nothing is stood in for, each is refused: showing the session once the prompt is sent; copying the
     /// prompt and showing the session to paste it in, which BriefBar then says it couldn't; and showing the session to stop
     /// its turn there.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(3)))
     func opensNothingWhenATestStandsInForNothing() async throws {
         #expect(ThisMac.runsTests)
         let (store, home) = try store()
@@ -358,7 +360,7 @@ private final class TakenAt: Sendable {
     /// names. While it holds a merge of what that branch doesn't have, as when the pull request was retargeted after its
     /// conflicts were resolved there, nothing's sent, copied or shown; nor while BriefBar can't check, as in a folder that
     /// isn't a clone of its repository. Against the branch it merged, it goes.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(3)))
     func sendsNoPushOfAMergeTheTargetDoesntHave() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -412,7 +414,7 @@ private final class TakenAt: Sendable {
     /// before the prompt is sent or copied: before git checks, while it does, after BriefBar wrote the prompt for the
     /// session's extension but before the extension took it, which BriefBar takes back, and right before BriefBar copies it
     /// for you to paste.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(3)))
     func sendsNoPushOnceThePullRequestMergesIntoAnotherBranch() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -485,7 +487,7 @@ private final class TakenAt: Sendable {
     /// A Push & Reply whose prompt names main doesn't go when Azure DevOps says, right before git checks what it would push,
     /// or right after, that the pull request merges into release/x, though the list hasn't read that yet; nor when it can't
     /// be read.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(3)))
     func sendsNoPushWhenAzureDevOpsSaysThePullRequestMergesIntoAnotherBranch() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -540,7 +542,7 @@ private final class TakenAt: Sendable {
     /// checkout it works in, as the app's database says then: what that turn changes, such as a merge, would go with the
     /// push, unchecked. Before git checks; and from right before the request is written until the session's extension takes
     /// it, which BriefBar takes back then. Once no turn runs there, it goes.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(3)))
     func sendsNoPushWhileATurnRunsInTheSessionOrItsCheckout() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -609,7 +611,7 @@ private final class TakenAt: Sendable {
     /// might once it keeps that another way. Anything else goes, as before. Whatever else the app changes of what it keeps
     /// of its sessions, the flag is read as it is, and the push goes once it says no turn runs there; and without the
     /// database, as without the Copilot app, it goes too.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(3)))
     func sendsNoPushWhenItCantTellWhetherATurnRuns() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -766,7 +768,7 @@ private final class TakenAt: Sendable {
     /// What the sender does in a task of its own is noted for the test too: here, loading a session that nothing has open,
     /// with nothing standing in for it, though something stands in for copying the prompt once it didn't load. So
     /// `.opensNothing` fails a test that does that.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(3)))
     func notesALoadInTheSendersOwnTask() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }

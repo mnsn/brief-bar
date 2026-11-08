@@ -686,6 +686,21 @@ import Testing
         #expect(board.lanes(keepingUndoOf: Self.pr(4202), missions: [payments]) == board.lanes)
     }
 
+    /// So does a lane of one for its story apart from its order, such as a teammate's whose review you finished.
+    @Test func aMissionsLaneKeepsTheUndoOfOneForItsStoryApartFromItsOrderThatLeftTheBoard() throws {
+        var payments = Self.mission([Self.step(4201, .next)])
+        payments.sameStory = [Self.step(4202)]
+        let stages: [Int: StageReading] = [
+            4201: Self.reading(.inProgress, .draft),
+            4202: Self.reading(.teammateReview, .finishedReview, isOnBoard: false),
+        ]
+        let board = Self.board(stages, missions: [payments])
+        let lane = try #require(board.lane(for: payments.key))
+        #expect(lane.cards.map(\.ref) == [Self.pr(4201)])
+        #expect(board.undoRefs(of: lane, missions: [payments], changed: Self.pr(4202)) == [Self.pr(4201), Self.pr(4202)])
+        #expect(board.lanes(keepingUndoOf: Self.pr(4202), missions: [payments]) == board.lanes)
+    }
+
     /// One in no mission that left the board keeps the lane of those in no mission, though it was the only card there, or
     /// with every card in one lane, that lane, though the board is empty.
     @Test func oneInNoMissionThatLeftTheBoardKeepsALaneForItsUndo() {

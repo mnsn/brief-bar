@@ -909,6 +909,11 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
         steps.contains { $0.ref == ref } || attached.contains { $0.ref == ref } || sameStory.contains { $0.ref == ref }
     }
 
+    /// Its pull requests, those stacked with its own, and those for its story apart from it: all that `contains(_:)` has.
+    public var refs: Set<ItemRef> {
+        Set((steps + attached + sameStory).map(\.ref))
+    }
+
     /// Whether it's a group with no known order.
     public var isFamily: Bool {
         if case .family = kind { return true }

@@ -8,7 +8,7 @@ import NotificationCenterDB
 package enum AzureDevOpsCommandLine: SourceCommandLine {
     package static let source = SourceID.azureDevOps
     package static var descriptionVersion: Int { AzureDevOpsSource.descriptionVersion }
-    package static let flags = ["--orgs", "--chats", "--sprint", "--teams", "--pipelines"]
+    package static let flags = ["--orgs", "--chats", "--sprint", "--teams", "--pipelines", WaitCLI.flag]
     package static let usage = """
         Azure DevOps:
           --orgs             List your organizations, and the ones where you have pull requests
@@ -22,6 +22,14 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
           --pipelines        Print the pipelines pinned in the app: their latest runs and stages
             --search <text> --project <name>   Find pipelines to pin by name or number instead
               --status       …and show how the first five are doing
+          --wait <pull request>   For agents: wait on one of your pull requests, by its link, or its
+                             number with --org, reading it every minute, until its next build passes or
+                             fails, comments wait on you, it has merge conflicts or it closes. Then print
+                             what to do, as the pull_request_prompt tool does. Exits with 0 when the build
+                             passed, 1 when it can't read it, 2 on wrong usage, 3 at the timeout, 4 when a
+                             build failed, 5 for comments, 6 for conflicts, 7 once it's completed or
+                             abandoned. Only while agents and Azure DevOps are on in the app
+            --timeout <minutes>   …for at most this long, from 1 to 120 (90 by default)
           --org <name>       Read this organization instead of the app's choice (repeatable)
           It signs in with the Azure CLI (az login) and only reads: every request is a GET. Set
           BRIEFBAR_AZ to the path of az to use another one. --dump, --json and --watch leave out pull
@@ -68,6 +76,9 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
 
     package static func run(_ options: CommandLineOptions) -> Int32? {
         // The demo never uses the Azure CLI, your settings, Azure DevOps or Notification Center.
+        if options.arguments.contains(WaitCLI.flag) {
+            return WaitCLI.run(options)
+        }
         if options.arguments.contains("--orgs") {
             return options.demo ? listDemoOrganizations() : listOrganizations()
         }

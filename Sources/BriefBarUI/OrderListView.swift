@@ -84,7 +84,7 @@ package struct MissionCard: View {
                         .padding(.trailing, 12)
                         .padding(.vertical, 6)
                 }
-                StageUndoLine(refs: Set((mission.steps + mission.attached).map(\.ref)), order: order)
+                StageUndoLine(refs: mission.refs, order: order)
                     .padding(.leading, max(width, 6) + 8)
                     .padding(.trailing, 12)
                     .padding(.vertical, 6)

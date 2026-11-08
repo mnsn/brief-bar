@@ -60,7 +60,7 @@ package final class RecentNotifications: ObservableObject {
         for note in notes {
             history.add(NotificationHistory.Entry(
                 id: note.id, source: note.source, state: note.state, title: note.title, subtitle: note.subtitle,
-                body: note.body, date: date, userInfo: note.userInfo
+                body: note.body, date: date, userInfo: note.userInfo, button: note.button
             ))
         }
         self.history = history

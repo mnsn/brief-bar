@@ -73,6 +73,20 @@ import Testing
             let demo = try Self.runPlainly(binary, ["--source", "ado", "--json", "--demo"], environment: environment)
             #expect(demo.status == 0, "\(demo.stderr)")
             #expect(demo.stdout.contains("\"needsYou\""))
+
+            // Waiting on one, for an agent, until Priya comments on it, a second in: what to do then, and comments' exit code.
+            let waited = try Self.runPlainly(binary, ["--demo", "--wait", "4091", "--timeout", "1"], environment: environment)
+            #expect(waited.status == 5, "\(waited.stderr)")
+            #expect(waited.stdout.hasPrefix("""
+                A comment thread on !4091 waits on you.
+                https://dev.azure.com/contoso/Storefront/_git/payments-api/pullrequest/4091
+
+
+                """))
+            #expect(waited.stdout.contains("Could you add a test for a negative total before you merge?"))
+            let wrong = try Self.runPlainly(binary, ["--demo", "--wait", "4091", "--timeout", "121"], environment: environment)
+            #expect(wrong.status == 2 && wrong.stdout.isEmpty)
+            #expect(wrong.stderr.contains("--timeout takes the minutes to wait, from 1 to 120."))
         }
     }
 
