@@ -155,7 +155,9 @@ public struct Git: Sendable {
     /// and what a merge still going on merges in, has to be in `origin/<target>`. A merge of the pull request's own branch,
     /// as `git pull` makes, doesn't pass either: from history alone it can't be told from one of the pull request's branch
     /// into another, which would push that other branch's work. Both branches are fetched first, so it goes by where they
-    /// are now. Commits made on the branch, merges aside, are the work to push.
+    /// are now. Commits made on the branch, merges aside, are the work to push. Throws when it can't tell: as when what it
+    /// would push has a commit without parents, as where a shallow clone's history stops, which hides whether it's a merge;
+    /// or a merge is going on that it can't read (`mergingIn`).
     public func checkPush(in folder: URL, source: String, target: String) async throws -> PushCheck {
         guard !target.isEmpty else { throw GitError.failed("BriefBar doesn't know which branch the pull request merges into.") }
         for branch in [source, target] where !Self.isBranchName(branch) {
@@ -168,6 +170,12 @@ public struct Git: Sendable {
              "+refs/heads/\(source):\(sourceRef)", "+refs/heads/\(target):\(targetRef)"],
             timeout: 300
         )
+        // A commit without parents: where a shallow clone's history stops, which git takes for a root, though it may be a
+        // merge, of anything; or the start of history the branch doesn't come from.
+        let parentless = try await run(
+            ["-C", folder.path, "rev-list", "--max-parents=0", "--max-count=1", "HEAD", "^\(sourceRef)", "^\(targetRef)", "--"], timeout: 120
+        )
+        guard parentless.isEmpty else { throw GitError.failed(Self.cutShort) }
         // Each merge with its parents: the first is the branch it merged into, the others what it merged in. One the target
         // has merged in only what the target has.
         let merges = try await run(
@@ -187,12 +195,27 @@ public struct Git: Sendable {
         return .clean
     }
 
-    /// What a merge still going on in a folder's checkout merges in, as its `MERGE_HEAD` lists it: nothing when none is.
+    /// Why `checkPush` can't tell what a commit without parents brings in.
+    static let cutShort = "What it would push has a commit without parents, as where a shallow clone's history stops, so BriefBar can't tell what that commit brings in. If it's a shallow clone, fetch the rest of its history first: git fetch --unshallow."
+
+    /// Why `checkPush` can't tell what a merge going on brings in.
+    static let unreadableMerge = "A merge is going on in it, and BriefBar couldn't read what it merges in."
+
+    /// What a merge still going on in a folder's checkout merges in, as its `MERGE_HEAD` lists it: nothing when there's
+    /// none. Throws when one may be going on that BriefBar can't read: a `MERGE_HEAD` that isn't a file it can read, such as
+    /// a link, which it doesn't follow, or that lists anything but commits.
     func mergingIn(_ folder: URL) async throws -> [String] {
         let path = try await run(["-C", folder.path, "rev-parse", "--git-path", "MERGE_HEAD"], timeout: 30)
         let file = path.hasPrefix("/") ? URL(fileURLWithPath: path) : folder.appendingPathComponent(path)
-        guard let data = LocalFile.tail(of: file, maxBytes: 64 * 1024) else { return [] }
-        return String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let data = LocalFile.tail(of: file, maxBytes: 64 * 1024) else {
+            // Nothing there, not even a link: no merge is going on.
+            guard (try? FileManager.default.attributesOfItem(atPath: file.path)) == nil else { throw GitError.failed(Self.unreadableMerge) }
+            return []
+        }
+        let commits = String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard !commits.isEmpty, commits.allSatisfy(Self.isCommit) else { throw GitError.failed(Self.unreadableMerge) }
+        return commits
     }
 
     /// A commit's full ID, as git writes it: 40 hexadecimal digits, or 64 in a SHA-256 repository.

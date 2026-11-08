@@ -189,6 +189,57 @@ import Testing
         }
     }
 
+    /// A merge going on whose `MERGE_HEAD` it can't read, as when it's a link, which it doesn't follow, or lists anything but
+    /// commits, may merge in anything: it can't tell, rather than taking it for none. Readable again, it's checked as before.
+    @Test(.timeLimit(.minutes(1)))
+    func cantTellAMergeGoingOnItCantRead() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        try await fixture.git(["-C", fixture.checkout.path] + Self.identity + ["merge", "--quiet", "--no-commit", "--no-ff", "origin/main"])
+        let mergeHead = fixture.checkout.appendingPathComponent(".git/MERGE_HEAD")
+        let kept = fixture.checkout.appendingPathComponent(".git/MERGE_HEAD.kept")
+        try FileManager.default.moveItem(at: mergeHead, to: kept)
+        let cantTell = GitError.failed(Git.unreadableMerge)
+
+        try FileManager.default.createSymbolicLink(atPath: mergeHead.path, withDestinationPath: kept.lastPathComponent)
+        await #expect(throws: cantTell) { try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") }
+        try FileManager.default.removeItem(at: mergeHead)
+        for text in ["", "\n", "origin/main\n"] {
+            try Data(text.utf8).write(to: mergeHead)
+            await #expect(throws: cantTell) { try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") }
+            try FileManager.default.removeItem(at: mergeHead)
+        }
+
+        try FileManager.default.moveItem(at: kept, to: mergeHead)
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") == .foreignMerge)
+        try await fixture.git(["-C", fixture.checkout.path, "merge", "--abort"])
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") == .clean)
+    }
+
+    /// In a shallow clone, where its history stops git takes a commit for a root, though it may be a merge, of anything:
+    /// there, it can't tell what that brings in, whichever branch it's checked against. Once the clone has the rest of its
+    /// history, it's checked as any other.
+    @Test(.timeLimit(.minutes(1)))
+    func cantTellWhatAShallowClonesHistoryHides() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        // A branch of the pull request's, with main merged in, which a clone of it alone, one commit deep, has as its root.
+        let seed = fixture.folder.appendingPathComponent("seed")
+        try await fixture.git(["-C", seed.path, "checkout", "--quiet", "-b", "with-main", Self.source])
+        try await fixture.git(["-C", seed.path] + Self.identity + ["merge", "--quiet", "--no-edit", "main"])
+        try await fixture.git(["-C", seed.path, "push", "--quiet", fixture.origin.path, "with-main"])
+        let shallow = fixture.folder.appendingPathComponent("shallow")
+        try await fixture.git(["clone", "--quiet", "--depth=1", "--branch", "with-main", "file://\(fixture.origin.path)", shallow.path])
+        let cantTell = GitError.failed(Git.cutShort)
+
+        for target in ["release/x", "main"] {
+            await #expect(throws: cantTell) { try await git.checkPush(in: shallow, source: Self.source, target: target) }
+        }
+        try await fixture.git(["-C", shallow.path, "fetch", "--quiet", "--unshallow", "origin"])
+        #expect(try await git.checkPush(in: shallow, source: Self.source, target: "release/x") == .foreignMerge)
+        #expect(try await git.checkPush(in: shallow, source: Self.source, target: "main") == .clean)
+    }
+
     /// Nothing runs for a target it doesn't know, or a name git would read as something else.
     @Test func checksOnlyBranchesGitTakes() async throws {
         let runner = FakeRunner { _ in .ok() }
