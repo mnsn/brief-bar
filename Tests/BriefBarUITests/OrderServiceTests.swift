@@ -830,4 +830,60 @@ private final class Clock {
         #expect(order.focus == .chain(Self.ref(4101)) && OrderFocus.load(from: defaults) == .chain(Self.ref(4101)))
         #expect(order.missions.first?.key == .chain(Self.ref(4101)) && order.missions.first?.isFocused == true)
     }
+
+    /// Focus on a chain stays with its own pull requests as you move the one it's named by into another chain, which shows
+    /// before them: it never goes along with that one. Undo brings it back.
+    @Test func focusOnAChainStaysWithItsOwnAsYouMoveTheOneItsNamedByIntoAnother() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4200))])
+        let order = Self.service(defaults)
+        let chain = [Self.ado(4101, from: "robin/a"), Self.ado(4102, from: "robin/b", into: "robin/a"), Self.ado(4103, from: "robin/c", into: "robin/b")]
+        let other = [Self.ado(4120, from: "sam/x"), Self.ado(4121, from: "sam/y", into: "sam/x")]
+        order.publish(.azureDevOps, pullRequests: chain + other)
+        order.setFocus(.chain(Self.ref(4101)))
+        order.change(.move([Self.ref(4101)], to: .into(.chain(Self.ref(4120))), from: .chain(Self.ref(4101))))
+
+        let date = { (key: MissionKey) in order.missions.first { $0.key == key }?.date ?? .distantPast }
+        #expect(date(.chain(Self.ref(4120))) > date(.chain(Self.ref(4102))))
+        #expect(order.missions.first { $0.key == .chain(Self.ref(4120)) }?.contains(Self.ref(4101)) == true)
+        #expect(order.focus == .chain(Self.ref(4102)) && OrderFocus.load(from: defaults) == .chain(Self.ref(4102)))
+        #expect(order.missions.first?.key == .chain(Self.ref(4102)) && order.missions.first?.isFocused == true)
+
+        #expect(order.undoLastChange())
+        #expect(order.focus == .chain(Self.ref(4101)) && OrderFocus.load(from: defaults) == .chain(Self.ref(4101)))
+        #expect(order.missions.first?.key == .chain(Self.ref(4101)) && order.missions.first?.isFocused == true)
+    }
+
+    /// A Move's Undo line is in the card you moved it from, where you are: also once the chain that card was named by goes on
+    /// by another of its own; and at the top of the list once that card is gone, never in the card it went to, which can be
+    /// out of sight. (Moved into an order, the one a chain is named by takes the rest with it, stacked on it: that card's
+    /// gone too.)
+    @Test func aMovesUndoLineIsWhereYouMovedItFromOrAtTheTop() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4101)), .init(link: Self.link(4102))])
+        let order = Self.service(defaults)
+        let chain = [Self.ado(4110, from: "robin/a"), Self.ado(4111, from: "robin/b", into: "robin/a"), Self.ado(4112, from: "robin/c", into: "robin/b")]
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/x"), Self.ado(4102, from: "robin/y")] + chain)
+
+        order.change(.move([Self.ref(4110)], to: .outside, from: .chain(Self.ref(4110))))
+        #expect(order.missions.contains { $0.key == .chain(Self.ref(4111)) })
+        #expect(order.lastChange?.mission == .chain(Self.ref(4111)) && order.lastChange?.canUndo == true)
+
+        let mine = MissionKey.mine(UUID())
+        order.change(.move([Self.ref(4112)], to: .into(mine), from: .chain(Self.ref(4111))))
+        #expect(order.missions.first { $0.key == mine }?.steps.map(\.ref) == [Self.ref(4112)])
+        order.change(.move([Self.ref(4112)], to: .into(.plan(Self.planID)), from: mine))
+        #expect(!order.missions.contains { $0.key == mine })
+        #expect(order.lastChange?.mission == nil && order.lastChange?.canUndo == true)
+    }
+
+    /// The ages it says go on as the time does, between changes: the names are worked out again only once the sources or the
+    /// missions change, the time on every read.
+    @Test func theTimeGoesOnInWhatItSaysBetweenChanges() throws {
+        let defaults = try Self.defaults(on: true)
+        let clock = Clock()
+        let order = Self.service(defaults, clock: clock)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/a"), Self.ado(4102, from: "robin/b")])
+        #expect(order.names.now == clock.now)
+        clock.now = clock.now.addingTimeInterval(300)
+        #expect(order.names.now == clock.now)
+    }
 }

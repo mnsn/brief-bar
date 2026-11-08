@@ -1337,12 +1337,12 @@ what you set there goes over to that order, or one that changes what you didn't,
 holds; so does telling the same order again, or as it was when you made yours, whatever it said between, and a revision
 told before yours that BriefBar saw only after. An order forgotten since is no change. A row with no order known shows a
 quiet ✎ where your change says something of it, such as that you moved it there, or that the order you set it as next in
-is gone. **Undo** takes back your last change, in memory only, and shows in the card you made it in; a change BriefBar
-refuses says why beside it. BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates,
-never titles, those about a pull request sent to you in a chat in memory only; at most 500, refusing more rather than
-dropping one; each until two weeks after BriefBar saw its pull requests merge or close. Turning a source off forgets
-those about its pull requests, turning Pull Request Order off keeps them, unused, and **Forget All Orders…** forgets
-them. Nothing goes to Azure DevOps.
+is gone. **Undo** takes back your last change, in memory only, and shows in the card you made it in, or at the top of
+the list once that card is gone; a change BriefBar refuses says why beside it. BriefBar keeps them in the preferences
+(`order.changes`) as references, codes and dates, never titles, those about a pull request sent to you in a chat in
+memory only; at most 500, refusing more rather than dropping one; each until two weeks after BriefBar saw its pull
+requests merge or close. Turning a source off forgets those about its pull requests, turning Pull Request Order off
+keeps them, unused, and **Forget All Orders…** forgets them. Nothing goes to Azure DevOps.
 
 ### A pull request's details
 

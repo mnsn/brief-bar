@@ -348,7 +348,7 @@ import Testing
         merged[0].state = .merged
         facts = OrderFacts(pullRequests: merged + [Self.ado(4110)])
         missions = Self.missions(facts, DeclaredOrders(), changes)
-        let moved = changes.moveAnchors(in: missions)
+        let moved = changes.moveAnchors(in: missions, orders: DeclaredOrders())
         #expect(moved == [Self.pr(4101): Self.pr(4102)])
         #expect(changes[Self.pr(4110)]?.placement == .into(.chain(Self.pr(4102))))
         // Once no list has 4101, the chain is still where you put it.
@@ -585,7 +585,7 @@ import Testing
         facts = OrderFacts(pullRequests: merged + [Self.ado(4110)])
         missions = Self.missions(facts, DeclaredOrders(), changes)
         #expect(missions.first { $0.contains(Self.pr(4110)) }?.steps.first?.ref == Self.pr(4101))
-        let moved = changes.moveAnchors(in: missions)
+        let moved = changes.moveAnchors(in: missions, orders: DeclaredOrders())
         #expect(moved == [Self.pr(4101): Self.pr(4102)])
         #expect(changes[Self.pr(4110)]?.placement == .into(.chain(Self.pr(4102))) && changes[Self.pr(4110)]?.first == .chain(Self.pr(4102)))
 
@@ -595,6 +595,44 @@ import Testing
         let mission = try Self.mission(.chain(Self.pr(4102)), in: missions)
         #expect(mission.kind == .stack && Set(mission.steps.map(\.ref)) == [Self.pr(4102), Self.pr(4110)])
         #expect(try Self.step(4110, in: mission).standing == .next)
+    }
+
+    /// One you moved out of a chain, that an order took back since and then left out, is the chain's own again, as By Mission
+    /// shows it: the chain goes on by it, with what you put in it, as the one it's named by merges, or as you move that one
+    /// out.
+    @Test func aChainGoesOnByOneYouMovedOutThatAnOrderTookBack() throws {
+        let chain = [OrderBoardTests.ado(4101, from: "users/robin/a"), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a")]
+        var facts = OrderFacts(pullRequests: chain + [Self.ado(4103), Self.ado(4110)])
+        var changes = OrderChanges()
+        let none = DeclaredOrders()
+        try changes.apply(
+            .move([Self.pr(4110)], to: .into(.chain(Self.pr(4101))), from: nil), missions: Self.missions(facts, none, changes),
+            orders: none, now: t(60)
+        )
+        try changes.apply(
+            .move([Self.pr(4102)], to: .outside, from: .chain(Self.pr(4101))), missions: Self.missions(facts, none, changes),
+            orders: none, now: t(70)
+        )
+
+        var orders = try tell([(4102, []), (4103, [])], at: 120)
+        changes.noteOverrides(in: orders, now: t(120))
+        orders = try tell([(4103, [])], replacing: orders, at: 180)
+        changes.noteOverrides(in: orders, now: t(180))
+        #expect(changes[Self.pr(4102)]?.holds(in: orders) == false)
+        var missions = Self.missions(facts, orders, changes)
+        #expect(try Set(Self.mission(.chain(Self.pr(4101)), in: missions).steps.map(\.ref)) == [Self.pr(4101), Self.pr(4102), Self.pr(4110)])
+
+        var moving = changes
+        try moving.apply(.move([Self.pr(4101)], to: .outside, from: .chain(Self.pr(4101))), missions: missions, orders: orders, now: t(240))
+        #expect(moving[Self.pr(4110)]?.placement == .into(.chain(Self.pr(4102))))
+
+        var merged = chain
+        merged[0].state = .merged
+        facts = OrderFacts(pullRequests: merged + [Self.ado(4103), Self.ado(4110)])
+        missions = Self.missions(facts, orders, changes)
+        let moved = changes.moveAnchors(in: missions, orders: orders)
+        #expect(moved == [Self.pr(4101): Self.pr(4102)])
+        #expect(changes[Self.pr(4110)]?.placement == .into(.chain(Self.pr(4102))))
     }
 
     /// Moving the pull request a chain is named by out of it names the chain by another of its own, in the same change.
@@ -1101,7 +1139,7 @@ import Testing
         merged[0].state = .merged
         let missions = Self.missions(OrderFacts(pullRequests: merged + [Self.ado(4110)]), DeclaredOrders(), changes)
 
-        #expect(changes.moveAnchors(in: missions, alsoFor: undo) == [Self.pr(4101): Self.pr(4102)])
+        #expect(changes.moveAnchors(in: missions, orders: DeclaredOrders(), alsoFor: undo) == [Self.pr(4101): Self.pr(4102)])
         #expect(changes[Self.pr(4110)]?.placement == .into(.chain(Self.pr(4102))))
     }
 

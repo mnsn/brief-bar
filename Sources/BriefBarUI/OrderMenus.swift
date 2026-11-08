@@ -45,7 +45,7 @@ package struct MissionMenuContext {
         case .byMission:
             if done.mission == nil {
                 "at the top of the list"
-            } else if case .move(_, _, let from) = edit, from == done.mission {
+            } else if case .move = edit {
                 "in the mission you moved it from"
             } else {
                 "in its mission"

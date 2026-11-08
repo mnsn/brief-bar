@@ -453,14 +453,18 @@ public struct OrderChanges: Equatable, Sendable {
     /// chain doesn't have of its own.
     /// - Parameters:
     ///   - missions: as By Mission shows them now.
+    ///   - orders: the orders, for which of your changes hold: one an order went against puts its pull request nowhere.
     ///   - pending: other changes whose chains to look for too, such as what Undo would put back, which it doesn't rename.
     /// - Returns: what each chain it moved, or would for `pending`, was named by, and is now: for those to follow
     ///   (`renameChains`).
     @discardableResult
-    public mutating func moveAnchors(in missions: [OrderMission], alsoFor pending: OrderChanges = OrderChanges()) -> [ItemRef: ItemRef] {
+    public mutating func moveAnchors(
+        in missions: [OrderMission], orders: DeclaredOrders, alsoFor pending: OrderChanges = OrderChanges()
+    ) -> [ItemRef: ItemRef] {
         var moved: [ItemRef: ItemRef] = [:]
-        // Where your changes put pull requests now, not where Undo would: one Undo would move out is the chain's own today.
-        let placed = changes
+        // Where your changes that hold put pull requests now, as By Mission shows them, not where Undo would: one Undo would
+        // move out is the chain's own today, and so is one you moved out that an order took back.
+        let placed = holding(in: orders)
         func anchor(after ended: ItemRef) -> ItemRef? {
             if let known = moved[ended] { return known }
             guard let mission = missions.first(where: { $0.kind == .stack && $0.steps.contains { $0.ref == ended } }),
@@ -482,7 +486,9 @@ public struct OrderChanges: Equatable, Sendable {
         rename { renamed[$0] }
     }
 
-    /// The first open pull request a stack has of its own, but these: not one you put in it.
+    /// The first open pull request a stack has of its own, but these: not one you put in it, by a change that holds, as By
+    /// Mission shows it.
+    /// - Parameter changes: your changes that hold.
     static func ownOpen(of mission: OrderMission, besides refs: Set<ItemRef>, placed changes: [ItemRef: OrderChange]) -> ItemRef? {
         mission.steps.first { step in
             !refs.contains(step.ref) && step.status.isOpen && changes[step.ref]?.placement == nil
@@ -815,7 +821,7 @@ extension OrderChanges {
             // A chain named by one of these goes on by another of its own pull requests, as when that one ends.
             for ref in refs {
                 guard let chain = missions.first(where: { $0.kind == .stack && $0.steps.contains { $0.ref == ref } }),
-                      let next = Self.ownOpen(of: chain, besides: moving, placed: edited.changes)
+                      let next = Self.ownOpen(of: chain, besides: moving, placed: edited.holding(in: orders))
                 else { continue }
                 let before = edited.changes
                 edited.rename { $0 == ref ? next : nil }

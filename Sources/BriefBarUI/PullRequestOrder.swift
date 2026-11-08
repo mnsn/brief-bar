@@ -47,7 +47,7 @@ package final class PullRequestOrder: ObservableObject {
     private var told: [SourceID: Told] = [:] {
         didSet { cachedNames = nil }
     }
-    /// `names`, until the sources or the missions change.
+    /// `names`, but the time, until the sources or the missions change.
     private var cachedNames: OrderNames?
     /// What BriefBar sees each pull request stacked on, as the missions were last made: what your changes can't go against.
     private var stacked: [ItemRef: Set<ItemRef>] = [:]
@@ -360,24 +360,29 @@ package final class PullRequestOrder: ObservableObject {
         changes.undone(in: mission.key, missions: missions).count
     }
 
-    /// What names sessions, pull requests and missions in the order's words, as the sources say now, and the time: worked
-    /// out again once they change.
+    /// What names sessions, pull requests and missions in the order's words, as the sources say now, and the time: the names
+    /// worked out again once they change, the time read each time, for ages to go on.
     package var names: OrderNames {
-        if let cachedNames { return cachedNames }
-        var titles: [ItemRef: String] = [:]
-        for source in SourceID.allCases {
-            for (ref, item) in told[source]?.items ?? [:] where titles[ref] == nil {
-                titles[ref] = item.title
+        var names: OrderNames
+        if let cachedNames {
+            names = cachedNames
+        } else {
+            var titles: [ItemRef: String] = [:]
+            for source in SourceID.allCases {
+                for (ref, item) in told[source]?.items ?? [:] where titles[ref] == nil {
+                    titles[ref] = item.title
+                }
             }
+            let named = titles
+            var missionTitles: [MissionKey: String] = [:]
+            for mission in missions where missionTitles[mission.key] == nil {
+                missionTitles[mission.key] = OrderText.title(of: mission) { named[$0] }
+            }
+            let titled = missionTitles
+            names = OrderNames(name: { named[$0] }, title: { titled[$0] })
+            cachedNames = names
         }
-        let named = titles
-        var missionTitles: [MissionKey: String] = [:]
-        for mission in missions where missionTitles[mission.key] == nil {
-            missionTitles[mission.key] = OrderText.title(of: mission) { named[$0] }
-        }
-        let titled = missionTitles
-        let names = OrderNames(name: { named[$0] }, title: { titled[$0] }, now: now())
-        cachedNames = names
+        names.now = now()
         return names
     }
 
@@ -391,13 +396,18 @@ package final class PullRequestOrder: ObservableObject {
         // is what it replaced, not one that goes against it.
         reloadOrders()
         let before = Set(missions.map(\.key))
+        // The card you move a pull request from, as it was, for its Undo line: a chain named by one you move goes on by
+        // another of its own.
+        var source: OrderMission?
+        if case .move(_, _, let from?) = edit { source = missions.first { $0.key == from } }
         var changed = changes
         let touched: [ItemRef: OrderChange?]
         do {
             touched = try changed.apply(edit, missions: missions, orders: orders, stacked: stacked, now: now())
         } catch {
             let refused = OrderLastChange(
-                said: "\(error)", refs: edit.refs, mission: cardMission(for: edit), touched: [:], evidence: OrderEvidence()
+                said: "\(error)", refs: edit.refs, mission: cardMission(for: edit, source: source), touched: [:],
+                evidence: OrderEvidence()
             )
             refusal = refused
             return refused
@@ -412,8 +422,8 @@ package final class PullRequestOrder: ObservableObject {
         var made = false
         if case .move(_, .into(let key), _) = edit, case .mine = key { made = !before.contains(key) }
         let last = OrderLastChange(
-            said: OrderText.did(edit, names: names, newMission: made), refs: edit.refs, mission: cardMission(for: edit), touched: touched,
-            evidence: seen
+            said: OrderText.did(edit, names: names, newMission: made), refs: edit.refs, mission: cardMission(for: edit, source: source),
+            touched: touched, evidence: seen
         )
         refusal = nil
         lastChange = last
@@ -450,15 +460,23 @@ package final class PullRequestOrder: ObservableObject {
         [refusal, lastChange].compactMap { $0 }
     }
 
-    /// The mission whose card shows what an edit did: where you made it, the one you changed it in or moved it from, so
-    /// that Undo is where you are, else where its pull request is now.
-    private func cardMission(for edit: OrderEdit) -> MissionKey? {
+    /// The mission whose card shows what an edit did, so that Undo is where you are: the one you changed it in, else where
+    /// its pull request is now. For a Move, the one you moved it from, also once a chain named by what you moved goes on by
+    /// another of its own, else none, for the top of the list: never the card it went to, which can be out of sight.
+    /// - Parameter source: the card you moved it from, as it was before the Move.
+    private func cardMission(for edit: OrderEdit, source: OrderMission? = nil) -> MissionKey? {
         switch edit {
         case .undoMission(let key):
             return missions.contains { $0.key == key } ? key : nil
-        case .setNext(_, let key, _), .mergeAfter(_, _, let key, _), .move(_, _, let key?):
+        case .move(let refs, _, let from):
+            guard let from else { return nil }
+            if missions.contains(where: { $0.key == from }) { return from }
+            guard case .chain = from, let source else { return nil }
+            let stayed = Set(source.steps.map(\.ref)).subtracting(refs)
+            return missions.first { $0.kind == .stack && $0.steps.contains { stayed.contains($0.ref) } }?.key
+        case .setNext(_, let key, _), .mergeAfter(_, _, let key, _):
             if missions.contains(where: { $0.key == key }) { return key }
-        case .move, .undo, .putBack:
+        case .undo, .putBack:
             break
         }
         if let ref = edit.refs.first, let mission = OrderBoard.mission(of: ref, in: missions) { return mission.key }
@@ -565,7 +583,7 @@ package final class PullRequestOrder: ObservableObject {
         )
         var anchored = self.changes
         let pending = OrderChanges(lastChange?.touched.values.compactMap { $0 } ?? [])
-        let renamed = anchored.moveAnchors(in: missions, alsoFor: pending)
+        let renamed = anchored.moveAnchors(in: missions, orders: orders, alsoFor: pending)
         if !renamed.isEmpty {
             // What Undo would put back names those chains as they're named now too, though no change of yours names them.
             if let last = lastChange { lastChange = last.renamingChains(renamed) }
@@ -577,10 +595,12 @@ package final class PullRequestOrder: ObservableObject {
             }
         }
         // Focus on a chain follows its pull requests to the chain they're in now, as it's named by another of them: once the
-        // one it was named by ended or moved out, or came back with Undo.
+        // one it was named by ended or moved out, or came back with Undo. Not those your changes moved, into it or out of
+        // it, wherever they are now.
         if case .chain? = focus, let key = focus, !missions.contains(where: { $0.key == key }),
            let was = self.missions.first(where: { $0.key == key }) {
-            let open = Set(was.steps.filter { $0.status.isOpen }.map(\.ref))
+            let moved = Set(self.changes.holding(in: orders).filter { $0.value.placement != nil }.keys)
+            let open = Set(was.steps.filter { $0.status.isOpen && !moved.contains($0.ref) }.map(\.ref))
             if let now = missions.first(where: { $0.kind == .stack && $0.steps.contains { open.contains($0.ref) } }) {
                 focus = now.key
                 OrderFocus.save(now.key, to: defaults)
@@ -601,7 +621,8 @@ package struct OrderLastChange: Equatable {
     package let said: String
     /// The pull requests it was about.
     package let refs: [ItemRef]
-    /// The mission whose card shows it: where its pull request is now, else where it was.
+    /// The mission whose card shows it: the one you changed it in, or moved it from, else where its pull request is now; nil
+    /// for the top of the list.
     package let mission: MissionKey?
     /// What it touched, as it was, for Undo; empty for one BriefBar refused.
     package let touched: [ItemRef: OrderChange?]
