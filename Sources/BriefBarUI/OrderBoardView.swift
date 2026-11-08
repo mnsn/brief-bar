@@ -168,6 +168,9 @@ package struct OrderBoardView: View {
     let card: (BoardCard) -> BoardCardContent?
     let isSelected: (ItemRef) -> Bool
     let select: (ItemRef) -> Void
+    /// The pull request whose own details show, with nothing over them, such as a linked item's page or a file's: while
+    /// they cover the board, ⌘→ and ⌘← move its card, where you see it move. Nil while none show, or something is over them.
+    let shownOnTop: ItemRef?
     /// Set as Next to Merge in a mission, which dropping a card from Waits onto Can merge does: nil where you can't change
     /// missions yourself, and the Board says what it waits for instead.
     let setAsNext: ((ItemRef, MissionKey) -> Void)?
@@ -205,14 +208,15 @@ package struct OrderBoardView: View {
     @LocalState private var lastFocus: CardSpot?
     @LocalState private var keys = BoardKeys()
     @Environment(\.textScale) private var textScale
-    /// False while the details of what you clicked cover the board, in a narrow window or at a bigger text size.
+    /// False while the details of what you clicked cover the board: in a narrow window or at a bigger text size, or while a
+    /// file's page in them fills the page (⤢).
     @Environment(\.isEnabled) private var isEnabled
 
     package init(
         board: PullRequestBoard, missions: [OrderMission], order: PullRequestOrder, elsewhere: String, openElsewhere: (() -> Void)?,
         place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
-        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, setAsNext: ((ItemRef, MissionKey) -> Void)?,
-        notOnBoard: Int, showByStatus: (() -> Void)?, now: Date
+        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, shownOnTop: ItemRef?,
+        setAsNext: ((ItemRef, MissionKey) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?, now: Date
     ) {
         self.board = board
         self.missions = missions
@@ -223,6 +227,7 @@ package struct OrderBoardView: View {
         self.card = card
         self.isSelected = isSelected
         self.select = select
+        self.shownOnTop = shownOnTop
         self.setAsNext = setAsNext
         self.notOnBoard = notOnBoard
         self.showByStatus = showByStatus
@@ -252,7 +257,18 @@ package struct OrderBoardView: View {
             if isEnabled { lastFocus = spot }
         }
         .onChange(of: isEnabled) { _, enabled in
-            if enabled { giveFocusBack() }
+            guard enabled else { return }
+            giveFocusBack()
+            // The details' line of why a key couldn't move a card goes: the board's own, under its lane, shows again.
+            if order.stageRefusal != nil { order.stageRefusal = nil }
+        }
+        // Each change to a stage, as it comes: once the refused one's changes, from anywhere, as from its stage's menu, the
+        // details say why no more, even back in the stage it couldn't leave.
+        .onReceive(order.$stages) { stages in
+            if let refusal = order.stageRefusal, stages[refusal.ref] != refusal.reading { order.stageRefusal = nil }
+        }
+        .onDisappear {
+            if order.stageRefusal != nil { order.stageRefusal = nil }
         }
         // On the Board, a card that a change takes off it leaves its Undo at the top of its lane, as VoiceOver says.
         .environment(\.stageUndoPlace, .lane)
@@ -292,7 +308,8 @@ package struct OrderBoardView: View {
     // MARK: Keys while the details cover the board
 
     /// While the details cover the board, its cards can't have the keyboard's focus: ⌘→ and ⌘← move the card of the pull
-    /// request they show.
+    /// request whose own details show. Not while a page is over them, such as a linked pull request's, whose card isn't the
+    /// one they'd move, or a file's, which doesn't show its stage: the keys are the page's then.
     private func coveredKeys(_ lanes: [BoardLane], moves: BoardMoves) -> some View {
         let move: (@MainActor (Bool) -> Void)? = if isEnabled || shownSpot(in: lanes) == nil {
             nil
@@ -584,27 +601,7 @@ package struct OrderBoardView: View {
     }
 
     private func noticeLine(_ notice: BoardNotice) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "nosign")
-                .foregroundStyle(.orange)
-            Text(notice.text + ".")
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 4)
-            Button {
-                self.notice = nil
-            } label: {
-                Image(systemName: "xmark")
-                    .font(size: 9, weight: .bold)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Dismiss")
-            .accessibilityLabel("Dismiss")
-        }
-        .font(size: 11)
-        .accessibilityElement(children: .contain)
+        StageRefusalLine.Line(text: notice.text) { self.notice = nil }
     }
 
     // MARK: Cells
@@ -759,22 +756,23 @@ package struct OrderBoardView: View {
     }
 
     /// ⌘→ and ⌘← while the details cover the board, which can't take the keyboard's focus then: on the card of the pull
-    /// request they show, as its own keys would. That card has the focus once they close.
+    /// request whose own details show, as its own keys would. That card has the focus once they close.
     private func moveShown(forward: Bool, lanes: [BoardLane], moves: BoardMoves) {
         guard let spot = shownSpot(in: lanes) else { return }
         lastFocus = spot
         keyMove(spot.ref, in: spot.lane, forward: forward, moves: moves, keepsFocus: false)
     }
 
-    /// The card of the pull request the details show: in the lane of the card you clicked, where it has it, else in the
-    /// first that does; nil for one that isn't on the board.
+    /// The card of the pull request whose own details show, with nothing over them: in the lane of the card you clicked,
+    /// where it has it, else in the first that does; nil for one that isn't on the board, and while something is over them.
     private func shownSpot(in lanes: [BoardLane]) -> CardSpot? {
-        if let spot = lastFocus, isSelected(spot.ref),
-           lanes.contains(where: { $0.kind == spot.lane && $0.cards.contains { $0.ref == spot.ref } }) {
+        guard let shown = shownOnTop else { return nil }
+        if let spot = lastFocus, spot.ref == shown,
+           lanes.contains(where: { $0.kind == spot.lane && $0.cards.contains { $0.ref == shown } }) {
             return spot
         }
-        for lane in lanes {
-            if let card = lane.cards.first(where: { isSelected($0.ref) }) { return CardSpot(lane: lane.kind, ref: card.ref) }
+        for lane in lanes where lane.cards.contains(where: { $0.ref == shown }) {
+            return CardSpot(lane: lane.kind, ref: shown)
         }
         return nil
     }
@@ -795,6 +793,10 @@ package struct OrderBoardView: View {
             NSSound.beep()
             SpokenText.announce(why)
             notice = BoardNotice(lane: lane, text: why)
+            // While the details cover the board, which hides that line under its lane, they say it, under its stage.
+            if !isEnabled, let reading = order.stage(of: card.ref) {
+                order.stageRefusal = StageRefusal(ref: card.ref, why: why, reading: reading)
+            }
             return false
         }
         if keepsFocus { keepFocus(on: CardSpot(lane: lane, ref: card.ref)) }
@@ -928,7 +930,8 @@ private struct BoardCardView: View {
                 DispatchQueue.main.async { focus.wrappedValue = spot }
             }
             .onKeyPress(keys: [.leftArrow, .rightArrow], phases: .down) { press in
-                guard press.modifiers.contains(.command) else { return .ignored }
+                // ⌘ alone, as the board's key monitor takes it while the details cover the board: ⇧⌘→ is another shortcut.
+                guard press.modifiers.isCommandAlone else { return .ignored }
                 move(press.key == .rightArrow)
                 return .handled
             }

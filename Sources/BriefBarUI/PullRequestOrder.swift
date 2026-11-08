@@ -42,6 +42,9 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var isUpNextFolded: Bool
     /// The column Up Next's "2 more ›" asked the Board to show, until it has.
     @Published package var revealedColumn: PullRequestStage?
+    /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
+    /// (`StageRefusalLine`), until the Board shows again. In memory only.
+    @Published package var stageRefusal: StageRefusal?
     /// Each pull request's stage, where it is in its flow, as BriefBar works it out from what its source shows, or as you or
     /// a session set it: for the pull requests whose source tells their stages, Azure DevOps'; none while it's off.
     @Published package private(set) var stages: [ItemRef: StageReading] = [:]

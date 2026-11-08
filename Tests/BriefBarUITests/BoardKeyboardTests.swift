@@ -6,11 +6,12 @@ import Testing
 
 /// The Board's keyboard, with the Mac's keyboard navigation off, as it comes: a click on a card gives it the keyboard's
 /// focus, as a field takes it, then ⌘→ and ⌘← move it, again once it's drawn in its new column, and Return shows its
-/// details; Tab reaches a card too. Where its details cover the Board, the keys move the card they show, which has the focus
-/// back once they close. AppKit gets the clicks and the keys as it would from the window server, in a window off screen that
-/// takes the keyboard, as the app's do, though the tests' process can't be the active app.
+/// details; Tab reaches a card too. Where its details cover the Board, the keys move the card whose own details show, which
+/// has the focus back once they close, and they say why one can't move. AppKit gets the clicks and the keys as it would from
+/// the window server, in a window off screen that takes the keyboard, as the app's do, though the tests' process can't be the
+/// active app. One test at a time: the app gives a key to the window that was made key last, whichever test's it is.
 @MainActor
-@Suite(.keepsTheMainRunLoopRunning) struct BoardKeyboardTests {
+@Suite(.serialized, .keepsTheMainRunLoopRunning) struct BoardKeyboardTests {
     private final class KeyWindow: NSWindow {
         override var canBecomeKey: Bool { true }
         override var isKeyWindow: Bool { true }
@@ -28,6 +29,8 @@ import Testing
     @MainActor
     private final class Details: ObservableObject {
         @Published var shown: ItemRef?
+        /// A page is over them, such as a linked pull request's or a file's.
+        @Published var hasPageOver = false
         /// They go over the Board, rather than beside it.
         let covers: Bool
 
@@ -59,6 +62,7 @@ import Testing
                     drawn.shown += 1
                     details.shown = ref
                 },
+                shownOnTop: details.hasPageOver ? nil : details.shown,
                 setAsNext: nil, notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000)
             )
             .disabled(covered)
@@ -72,6 +76,8 @@ import Testing
     }
 
     private static let ref = ItemRef.pullRequest(organization: "contoso", number: 4093)
+    /// Why a card can't go to Can merge from Teammate's review, as the Board says it.
+    private static let azureDevOpsDecides = "Azure DevOps decides when it can merge: once it says it's ready to complete"
 
     /// Pull Request Order, on, told of one pull request of yours whose build failed: In progress.
     private static func order() -> PullRequestOrder {
@@ -227,16 +233,187 @@ import Testing
                                   backing: .buffered, defer: false)
             other.isReleasedWhenClosed = false
             other.orderFrontRegardless()
+            // The app gives it the key, as it would to the window you're in.
+            other.makeKey()
             defer { other.close() }
             Self.press(.rightArrow, command: true, in: other, throughTheApp: true)
             try await Task.sleep(for: .milliseconds(300))
             #expect(order.stage(of: Self.ref)?.stage == .inProgress)
+            window.makeKey()
 
             // Once they close, the card has the keyboard's focus back, as its own keys show.
             details.shown = nil
             try await Task.sleep(for: .milliseconds(300))
             Self.press(.rightArrow, command: true, in: window)
             try await until("⌘→ to move the card that has the focus back") { order.stage(of: Self.ref)?.stage == .yourReview }
+        }
+    }
+
+    /// A page over the details, such as a linked pull request's, which has a stage of its own, or a file's, which shows none:
+    /// the keys are the page's, and move no card, not even the one whose details are under it. Back on its details, they move
+    /// it again.
+    @Test func whileAPageIsOverItsDetailsTheKeysMoveNoCard() async throws {
+        let order = Self.order()
+        let details = Details(covers: true)
+        try await Self.showing(order, details: details) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details over the Board") { details.shown == Self.ref }
+            #expect(window.makeFirstResponder(nil))
+            try await Task.sleep(for: .milliseconds(200))
+            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            try await until("⌘→ on its details to move it") { order.stage(of: Self.ref)?.stage == .yourReview }
+
+            details.hasPageOver = true
+            try await Task.sleep(for: .milliseconds(200))
+            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(order.stage(of: Self.ref)?.stage == .yourReview, "A key moved the card under a page over its details")
+
+            details.hasPageOver = false
+            try await Task.sleep(for: .milliseconds(200))
+            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+            try await until("⌘← back on its details to move it") { order.stage(of: Self.ref)?.stage == .inProgress }
+        }
+    }
+
+    /// Details shown without a click on its card, as Up Next shows them: while they cover the Board, the keys move its card
+    /// all the same.
+    @Test func whileTheyCoverTheBoardTheKeysMoveTheCardOfDetailsShownFromElsewhere() async throws {
+        let order = Self.order()
+        let details = Details(covers: true)
+        try await Self.showing(order, details: details) { window, _, _ in
+            details.shown = Self.ref
+            try await Task.sleep(for: .milliseconds(300))
+            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            try await until("⌘→ while they cover the Board") { order.stage(of: Self.ref)?.stage == .yourReview }
+        }
+    }
+
+    /// Beside the Board, the details leave it the keys, which only a card that has the focus takes: shown from elsewhere,
+    /// without a click on its card, ⌘→ moves nothing.
+    @Test func whileTheDetailsAreBesideTheBoardOnlyAFocusedCardTakesTheKeys() async throws {
+        let order = Self.order()
+        let details = Details(covers: false)
+        try await Self.showing(order, details: details) { window, _, _ in
+            details.shown = Self.ref
+            try await Task.sleep(for: .milliseconds(300))
+            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(order.stage(of: Self.ref)?.stage == .inProgress, "The Board took a key that no card had")
+        }
+    }
+
+    /// The card you clicked has the focus back once its details close, though no key moved it while they covered the Board.
+    @Test func aClickedCardHasTheFocusBackOnceItsDetailsCloseThoughNoKeyMovedIt() async throws {
+        let order = Self.order()
+        let details = Details(covers: true)
+        try await Self.showing(order, details: details) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details over the Board") { details.shown == Self.ref }
+            #expect(window.makeFirstResponder(nil))
+            try await Task.sleep(for: .milliseconds(200))
+            details.shown = nil
+            try await Task.sleep(for: .milliseconds(300))
+            Self.press(.rightArrow, command: true, in: window)
+            try await until("⌘→ to move the card that has the focus back") { order.stage(of: Self.ref)?.stage == .yourReview }
+        }
+    }
+
+    /// While the details cover the Board, its keys take ⌘ alone, whatever else an arrow carries, Caps Lock too: ⇧⌘→, ⌥⌘→ and
+    /// ⌃⌘→ are other shortcuts. A key held down moves the card once: its repeats aren't more presses.
+    @Test func whileTheyCoverTheBoardOnlyCommandAloneMovesTheCardAndAHeldKeyMovesItOnce() async throws {
+        let order = Self.order()
+        let details = Details(covers: true)
+        try await Self.showing(order, details: details) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details over the Board") { details.shown == Self.ref }
+            #expect(window.makeFirstResponder(nil))
+            try await Task.sleep(for: .milliseconds(200))
+            for other: NSEvent.ModifierFlags in [.shift, .option, .control] {
+                Self.press(.rightArrow, command: true, also: other, in: window, throughTheApp: true)
+            }
+            Self.press(.rightArrow, command: true, isRepeat: true, in: window, throughTheApp: true)
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(order.stage(of: Self.ref)?.stage == .inProgress, "Another shortcut, or a repeat, moved the card")
+            Self.press(.rightArrow, command: true, also: .capsLock, in: window, throughTheApp: true)
+            try await until("⌘→ with Caps Lock on") { order.stage(of: Self.ref)?.stage == .yourReview }
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(order.stage(of: Self.ref)?.stage == .yourReview, "One press moved it more than once")
+        }
+    }
+
+    /// A card that has the keyboard's focus takes ⌘ alone, as the Board does while the details cover it: ⇧⌘→, ⌥⌘→ and ⌃⌘→ are
+    /// other shortcuts, but Caps Lock doesn't matter.
+    @Test func aFocusedCardTakesCommandAloneAsTheBoardDoesWhileTheDetailsCoverIt() async throws {
+        let order = Self.order()
+        try await Self.showing(order) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details") { drawn.shown == 1 }
+            for other: NSEvent.ModifierFlags in [.shift, .option, .control] {
+                Self.press(.rightArrow, command: true, also: other, in: window)
+            }
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(order.stage(of: Self.ref)?.stage == .inProgress, "Another shortcut moved the card")
+            Self.press(.rightArrow, command: true, also: .capsLock, in: window)
+            try await until("⌘→ with Caps Lock on") { order.stage(of: Self.ref)?.stage == .yourReview }
+        }
+    }
+
+    /// A move the keys can't make while the details cover the Board: they say why, under its stage, as the Board does under
+    /// the card's lane, which can't be seen then. No more once it's in another stage, or the Board shows again; and never
+    /// while the Board shows, which says it itself.
+    @Test func aMoveRefusedWhileTheDetailsCoverTheBoardSaysWhyInThem() async throws {
+        let order = Self.order()
+        let details = Details(covers: true)
+        try await Self.showing(order, details: details) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details over the Board") { details.shown == Self.ref }
+            #expect(window.makeFirstResponder(nil))
+            try await Task.sleep(for: .milliseconds(200))
+
+            @MainActor func move(_ arrow: KeyEquivalent, to stage: PullRequestStage, _ what: String, throughTheApp: Bool = true)
+                async throws {
+                Self.press(arrow, command: true, in: window, throughTheApp: throughTheApp)
+                try await until(what) { order.stage(of: Self.ref)?.stage == stage }
+                try await Task.sleep(for: .milliseconds(200))
+            }
+            try await move(.rightArrow, to: .yourReview, "⌘→ to Your review")
+            try await move(.rightArrow, to: .teammateReview, "⌘→ to Teammate's review")
+            // Only Azure DevOps decides that it can merge.
+            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            try await until("the details to say why it can't move on") {
+                order.stageRefusal(of: Self.ref) == Self.azureDevOpsDecides
+            }
+            #expect(order.stage(of: Self.ref)?.stage == .teammateReview)
+
+            // Moved since, it's said no more.
+            try await move(.leftArrow, to: .yourReview, "⌘← back to Your review")
+            #expect(order.stageRefusal(of: Self.ref) == nil)
+            #expect(order.stageRefusal == nil)
+            try await move(.rightArrow, to: .teammateReview, "⌘→ to Teammate's review again")
+            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            try await until("the details to say why again") { order.stageRefusal(of: Self.ref) == Self.azureDevOpsDecides }
+            // Moved elsewhere, as from its stage's menu in the details, it's said no more there, even once it's back.
+            #expect(order.setStage(.yourReview, of: Self.ref) == .done)
+            #expect(order.stageRefusal(of: Self.ref) == nil)
+            #expect(order.stageRefusal == nil, "The Board kept the details' line of one moved elsewhere")
+            #expect(order.setStage(.teammateReview, of: Self.ref) == .done)
+            #expect(order.stageRefusal(of: Self.ref) == nil, "Back in the stage it couldn't leave, it said so again")
+            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            try await until("the details to say why once more") { order.stageRefusal(of: Self.ref) == Self.azureDevOpsDecides }
+
+            // Once they close, the Board says it under the card's lane.
+            details.shown = nil
+            try await until("the details' line to go as the Board shows again") { order.stageRefusal == nil }
+            try await Task.sleep(for: .milliseconds(300))
+            // The card, which has the keys back, can't move on either: the Board says why itself, not the details.
+            try await move(.leftArrow, to: .yourReview, "⌘← on the card", throughTheApp: false)
+            try await move(.rightArrow, to: .teammateReview, "⌘→ on the card", throughTheApp: false)
+            Self.press(.rightArrow, command: true, in: window)
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(order.stage(of: Self.ref)?.stage == .teammateReview)
+            #expect(order.stageRefusal == nil, "The details were told why, though the Board showed")
         }
     }
 
@@ -259,21 +436,26 @@ import Testing
         }
     }
 
-    /// A key, pressed and let go: an arrow or Return. To the window, as it gives them to its views; or through the app's own
-    /// handling, as the window server's keys come, which has the app's key monitors look first.
-    private static func press(_ key: KeyEquivalent, command: Bool = false, in window: NSWindow, throughTheApp: Bool = false) {
+    /// A key, pressed and let go: an arrow or Return, with ⌘ and other modifiers, or held down, as its repeats come. To the
+    /// window, as it gives them to its views; or through the app's own handling, as the window server's keys come, which has
+    /// the app's key monitors look first.
+    private static func press(
+        _ key: KeyEquivalent, command: Bool = false, also others: NSEvent.ModifierFlags = [], isRepeat: Bool = false,
+        in window: NSWindow, throughTheApp: Bool = false
+    ) {
         let (code, character): (UInt16, Character) = switch key {
         case .rightArrow: (124, Character(UnicodeScalar(UInt32(NSRightArrowFunctionKey))!))
         case .leftArrow: (123, Character(UnicodeScalar(UInt32(NSLeftArrowFunctionKey))!))
         default: (36, "\r")
         }
         var flags: NSEvent.ModifierFlags = command ? [.command] : []
+        flags.formUnion(others)
         if key == .rightArrow || key == .leftArrow { flags.formUnion([.numericPad, .function]) }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             guard let event = NSEvent.keyEvent(
                 with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: window.windowNumber, context: nil, characters: String(character),
-                charactersIgnoringModifiers: String(character), isARepeat: false, keyCode: code
+                charactersIgnoringModifiers: String(character), isARepeat: type == .keyDown && isRepeat, keyCode: code
             ) else { continue }
             if throughTheApp {
                 NSApp.sendEvent(event)

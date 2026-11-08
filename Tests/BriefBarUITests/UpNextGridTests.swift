@@ -6,8 +6,8 @@ import Testing
 /// Up Next's slots: the size their layout gives is one SwiftUI can use, whatever it's asked.
 @MainActor
 @Suite struct UpNextGridTests {
-    /// What the layout answered when its parent asked for its largest size.
-    private final class Answer {
+    /// What the layout answered when its parent asked for its largest size. SwiftUI lays out on the main thread alone.
+    private final class Answer: @unchecked Sendable {
         var size: CGSize?
     }
 

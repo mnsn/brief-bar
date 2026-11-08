@@ -287,6 +287,21 @@ import Testing
         #expect(Self.moves(order).key(Self.ref(4093), in: .notInAMission, forward: true)?.move == .setStage(.teammateReview))
     }
 
+    /// Why a key couldn't move a pull request while its details covered the Board, which they say under its stage: only for
+    /// it, and only while its stage reads as it did then, whether or not a Board is there to see it change.
+    @Test func theDetailsSayWhyAKeyCouldntMoveItOnlyWhileItsStageReadsAsThen() throws {
+        let order = Self.service(MemoryDefaults())
+        Self.tell(order, [4093: StageFacts(role: .author, failure: "Build failed"), 4094: StageFacts(role: .author)])
+        #expect(order.setStage(.teammateReview, of: Self.ref(4093)) == .done)
+        let reading = try #require(order.stage(of: Self.ref(4093)))
+        order.stageRefusal = StageRefusal(ref: Self.ref(4093), why: "Azure DevOps decides when it can merge", reading: reading)
+        #expect(order.stageRefusal(of: Self.ref(4093)) == "Azure DevOps decides when it can merge")
+        #expect(order.stageRefusal(of: Self.ref(4094)) == nil)
+
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        #expect(order.stageRefusal(of: Self.ref(4093)) == nil)
+    }
+
     // MARK: Undo, once a card leaves the board
 
     /// Finished My Review on someone else's card, the only one in no mission, takes it off the board, and its lane with it:

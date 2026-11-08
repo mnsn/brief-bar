@@ -36,6 +36,8 @@ struct PullRequestStageTrack: View {
             words(reading)
             actions(reading)
             StageUndoLine(refs: [item.key.linkRef], order: ordering)
+            // While the details cover the Board: why its keys couldn't move it, which the Board says under its lane.
+            StageRefusalLine(ref: item.key.linkRef, order: ordering)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -101,8 +101,9 @@ struct PullRequestsPage: View {
                 if shownOrder == .byMission {
                     PullRequestsByMission(
                         view: shownView, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
-                        card: boardCard, isSelected: isSelected, select: select, rest: { AnyView(groups($0, showsBrief: false)) },
-                        board: board, showByStatus: { settings.pullRequestOrder = .status }, now: store.now
+                        card: boardCard, isSelected: isSelected, select: select, shownOnTop: details.shownOnTop,
+                        rest: { AnyView(groups($0, showsBrief: false)) }, board: board,
+                        showByStatus: { settings.pullRequestOrder = .status }, now: store.now
                     )
                 } else {
                     // What you changed last of a mission, from a row's Mission menu: By Status has no mission's card to say it.
