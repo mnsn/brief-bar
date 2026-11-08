@@ -164,7 +164,7 @@ struct PullRequestsPage: View {
         let byMission = shownOrder == .byMission
         return OrderRowContext.of(item.key.linkRef, in: ordering.missions, isReady: item.group == .ready, open: byMission ? nil : { key in
             settings.pullRequestOrder = .byMission
-            ordering.reveal(key)
+            ordering.reveal(key, kinds: PullRequestsByMission.kinds)
         })
     }
 

@@ -174,7 +174,8 @@ package struct MissionsBody: View {
     }
 
     private func reveal(_ key: MissionKey?, with proxy: ScrollViewProxy) {
-        guard let key else { return }
+        // The Board shows it itself, once its lane is laid out.
+        guard let key, view != .board else { return }
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(key, anchor: .top) }
             ordering.revealed = nil

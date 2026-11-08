@@ -1397,8 +1397,11 @@ come only from what BriefBar sees, so a card goes there only from Waits onto Can
 and never for one stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
 (`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card off
 it: in its mission's lane, which has Undo for all its pull requests, as List's card does, or in a lane of those in no
-mission, kept for it. The Board, its lanes and whether Up Next is folded are kept as choices only: `order.view`, which
-GitHub's page reads as List where it's the Board, without saving that, `order.boardLanes` and `order.upNextFolded`.
+mission, kept for it. A row's order capsule, clicked in another sort, shows its mission's lane on the Board, as it shows
+the mission in List and on the Map; with Lanes: None, which has no lane for it, the Board shows a lane for each mission
+again, remembered (`PullRequestOrder.reveal(_:kinds:)`). The Board, its lanes and whether Up Next is folded are kept as
+choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
+`order.boardLanes` and `order.upNextFolded`.
 
 ### A pull request's details
 

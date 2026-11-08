@@ -329,7 +329,7 @@ private final class Clock {
         var shown: [MissionKey] = []
         let context = try #require(OrderRowContext.of(Self.ref(4102), in: order.missions, isReady: true) { key in
             shown.append(key)
-            order.reveal(key)
+            order.reveal(key, kinds: [.pullRequest])
         })
 
         #expect(context.mission == .plan(Self.planID))

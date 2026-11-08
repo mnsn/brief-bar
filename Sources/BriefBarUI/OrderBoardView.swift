@@ -44,6 +44,12 @@ private struct ColumnAnchor: Hashable {
     var stage: PullRequestStage
 }
 
+/// Where a mission's lane starts, for the page to scroll to: an identity of its own for its spacer, so that only the anchor
+/// at the lane's top has the mission's key.
+private struct LaneAnchor: Hashable {
+    var mission: MissionKey
+}
+
 /// Why a card couldn't move, under its lane until your next move.
 private struct BoardNotice: Equatable {
     var lane: BoardLane.Kind
@@ -143,6 +149,8 @@ package struct OrderBoardView: View {
     @LocalState private var scroll = BoardScroll()
     /// Where each mission's lane starts, for By Mission to show it, as a row's capsule asks.
     @LocalState private var laneTops: [MissionKey: CGFloat] = [:]
+    /// The mission a row's capsule asked to show, for a moment, while the board settles.
+    @LocalState private var revealing: MissionKey?
     @LocalState private var titlesHeight: CGFloat = 0
     @FocusState private var focused: CardSpot?
     /// The card a key, or a drop, just moved while it had the keyboard's focus: drawn anew in its new column, it takes the
@@ -342,7 +350,13 @@ package struct OrderBoardView: View {
             .scrollIndicators(metrics.content > metrics.visible + 1 ? .automatic : .hidden)
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in scroll.x = x }
             .onChange(of: order.revealedColumn) { _, stage in reveal(stage, with: proxy) }
-            .onAppear { reveal(order.revealedColumn, with: proxy) }
+            .onAppear {
+                reveal(order.revealedColumn, with: proxy)
+                takeReveal(order.revealed, with: proxy)
+            }
+            .onChange(of: order.revealed) { _, key in takeReveal(key, with: proxy) }
+            .onChange(of: laneTops) { _, _ in revealMission(with: proxy) }
+            .onChange(of: titlesHeight) { _, _ in revealMission(with: proxy) }
             .overlay(alignment: .topLeading) { missionAnchors(lanes) }
         }
     }
@@ -351,15 +365,38 @@ package struct OrderBoardView: View {
     /// scroll, so that it scrolls the page, just under the column titles that stay at its top.
     private func missionAnchors(_ lanes: [BoardLane]) -> some View {
         ZStack(alignment: .topLeading) {
-            ForEach(lanes.compactMap(\.mission), id: \.self) { key in
+            ForEach(lanes.compactMap(\.mission).map(LaneAnchor.init), id: \.self) { anchor in
                 VStack(spacing: 0) {
-                    Color.clear.frame(width: 1, height: max(0, (laneTops[key] ?? 0) - titlesHeight))
-                    Color.clear.frame(width: 1, height: 1).id(key)
+                    Color.clear.frame(width: 1, height: max(0, (laneTops[anchor.mission] ?? 0) - titlesHeight))
+                    Color.clear.frame(width: 1, height: 1).id(anchor.mission)
                 }
             }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// Takes the mission a row's capsule asks By Mission to show, and shows it.
+    private func takeReveal(_ key: MissionKey?, with proxy: ScrollViewProxy) {
+        guard let key else { return }
+        revealing = key
+        revealMission(with: proxy)
+        DispatchQueue.main.async {
+            if order.revealed == key { order.revealed = nil }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            if revealing == key { revealing = nil }
+        }
+    }
+
+    /// The page scrolls to the lane of the mission it shows, once the lane is laid out, and again as the board settles, as
+    /// when it just showed a lane for each mission for it: where the lane is moves until then.
+    private func revealMission(with proxy: ScrollViewProxy) {
+        guard let key = revealing, laneTops[key] != nil else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(key, anchor: .top) }
+        }
     }
 
     private func laneView(_ lane: BoardLane, metrics: BoardMetrics, moves: BoardMoves) -> some View {

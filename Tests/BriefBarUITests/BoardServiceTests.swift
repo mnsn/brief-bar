@@ -114,6 +114,26 @@ import Testing
         #expect(defaults.string(forKey: OrderView.defaultsKey) == "board")
     }
 
+    /// A row's capsule asks By Mission to show its mission. On the Board with Lanes: None, which has no lane for it, the
+    /// Board shows a lane for each mission again, remembered; List, and GitHub's page, which shows List, change nothing.
+    @Test func showingAMissionOnTheBoardWithNoLanesShowsTheMissionsLanes() {
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults)
+        let key = MissionKey.chain(Self.ref(4101))
+        order.setLanes(.none)
+
+        order.reveal(key, kinds: Self.kinds)
+        #expect(order.revealed == key && order.lanes == .none)
+
+        order.setView(.board)
+        order.reveal(key, kinds: [.gitHubPullRequest])
+        #expect(order.lanes == .none)
+
+        order.reveal(key, kinds: Self.kinds)
+        #expect(order.revealed == key && order.lanes == .missions)
+        #expect(Self.service(defaults).lanes == .missions)
+    }
+
     @Test func theBoardAndUpNextFollowWhatAzureDevOpsTellsAndOnlyYoursCanGoToATeammate() {
         let order = Self.service(MemoryDefaults())
         Self.tell(order, [

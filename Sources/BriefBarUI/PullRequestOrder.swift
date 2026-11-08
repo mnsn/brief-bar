@@ -124,8 +124,11 @@ package final class PullRequestOrder: ObservableObject {
         revealedColumn = stage
     }
 
-    /// Asks By Mission to show a mission, as clicking a row's capsule does.
-    package func reveal(_ key: MissionKey) {
+    /// Asks By Mission to show a mission, as clicking a row's capsule does. On a page that shows the Board with Lanes: None,
+    /// which has no lane for it, the Board shows a lane for each mission again, remembered, as choosing Missions does.
+    /// - Parameter kinds: the kinds of pull request the page lists, for the view it shows.
+    package func reveal(_ key: MissionKey, kinds: Set<ItemRef.Kind>) {
+        if view(offering: OrderView.offered(for: kinds)) == .board { setLanes(.missions) }
         revealed = key
     }
 
