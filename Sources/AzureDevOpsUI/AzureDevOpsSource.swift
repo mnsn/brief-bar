@@ -47,13 +47,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// 24: with Make Changes in Azure DevOps, your own comment edited, a PATCH of what it says, or deleted, a DELETE of it,
     /// each when you click it; what you write in place of one, kept in memory until it's saved; and Fix Grammar there, which
     /// sends it to GitHub Copilot when you choose a Copilot model for it.
-    /// 25: stopping the turn of a prompt sent to one of the Copilot app's sessions, through BriefBar's extension there; the
-    /// messages sent a session since BriefBar copied a prompt for you to paste there, to tell the one you pasted it in; and,
-    /// for a pull request's conflicts that a task or prompt takes on, the name of the branch it targets then, and when each
-    /// Push & Reply in a task's session ran, and how it ended; and, right before a Push & Reply goes, the pull request's branch
-    /// and the one it merges into, fetched with git into the clone its session works in, to check that it pushes no merge of
-    /// what that branch doesn't have.
-    nonisolated package static let descriptionVersion = 25
+    nonisolated package static let descriptionVersion = 24
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
