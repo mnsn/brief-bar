@@ -1368,12 +1368,17 @@ is gone, or that an order went against it, with Put Yours Back. A mission your c
 changed, is followed by them and by what Undo would put back, as Focus and the name you gave it are, by one rule
 (`OrderBoard.successor`): to the mission all its open pull requests went to, but those your changes moved into it or out
 of it, when that's their story's, once Show Links reads it; out of a story's, as Show Links is turned off, to the chain,
-GitHub stack or session's with the most of them that has no other open one, so what followed them in comes back out with
-them, and goes back in as they do; or, for a chain, the chain or GitHub stack they're in now, or the one with the most
-of them, as you split it; the first shown of those with as many; else they wait. Where you set one as next follows only
-to a mission with all of them and nothing else open but what you moved, never to a part of one that split, so that a
-teammate's of the same story doesn't wait for it, and it holds again as the mission comes back whole; else that row says
-the mission you set it as next in is gone, or, for a story's while Show Links hasn't read the stories, that it shows
+GitHub stack or session's they went to that has no other open one, when it's the only one (a teammate's on its own, in
+no mission, doesn't count), so what followed them in comes back out with them, and goes back in as they do. When they
+went to more than one, as a teammate's chain or a session's, it waits on the story's mission, as which one it came from
+isn't known: no mission has its Focus or your name, and what you put in it shows on its own card, saying it shows once
+Show Links reads the story. For a chain, it goes to the chain or GitHub stack they're in now, or the one with the most
+of them, as you split it, the first shown of those with as many; else they wait. The mission one you didn't move was in,
+as you set it as next or put it after another there, goes on only to a mission that has it. Where you set one as next
+follows only to a mission with all of them and nothing else open but what you moved, never to a part of one that split,
+so that a teammate's of the same story doesn't wait for it, and it holds again as the mission comes back whole; else
+that row says the mission you set it as next in is gone, or, for a story's while Show Links hasn't read the stories,
+that it shows
 once it does. **Undo** takes back your last change, in memory only,
 and shows in the card you made it in, or at the top of the list once that card is gone; a change BriefBar refuses says
 why beside it. BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never titles,

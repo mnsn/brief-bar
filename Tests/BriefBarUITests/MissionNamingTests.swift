@@ -689,7 +689,7 @@ fileprivate final class Viewer {}
 
     /// What's kept by a chain follows its pull requests into their story's mission as Show Links reads them, and back out
     /// as it's turned off: Focus, your name, and the one you put in it, which never shows apart from them. So it does when a
-    /// teammate's pull request is for the story too: out, it goes with the chain, which has the most of the story's.
+    /// teammate's pull request is for the story too, on its own: out, it goes with the chain, the one mission they went to.
     @Test func focusYourNameAndWhatYouPutInAChainFollowItIntoItsStoryAndBackOut() throws {
         for teammate in [false, true] {
             let clock = Clock()
@@ -739,6 +739,123 @@ fileprivate final class Viewer {}
             publish(reading: true, stories: true)
             try expectKept(by: story)
         }
+    }
+
+    /// A story's pull requests that go back to more than one mission as Show Links is turned off, as a teammate's chain's
+    /// or a session's do: what was kept by the story's mission waits on it, as which of them it came from isn't known. No
+    /// mission has its Focus or your name, and the one you put in it shows on its own card, saying it shows once Show
+    /// Links reads the story. On again, the story's mission has them all back.
+    @Test func whatsKeptWaitsOnAStorysMissionThatSplitsInSeveral() throws {
+        let (chain, theirs, family, story) = (
+            MissionKey.chain(Self.pr(4110)), MissionKey.chain(Self.pr(4120)), MissionKey.family(Self.session), MissionKey.story(Self.story)
+        )
+        // Two chains; your chain and a session's three; your chain, a teammate's and a session's two, where you kept them
+        // by the session's.
+        let shapes: [(name: String, prs: [Int], sessionPRs: [Int], kept: MissionKey, parts: Set<MissionKey>)] = [
+            ("two chains", [4110, 4111, 4120, 4121], [], chain, [chain, theirs]),
+            ("a chain and a session's", [4110, 4111, 4113, 4105, 4106], [4113, 4105, 4106], chain, [chain, family]),
+            ("three ways", [4110, 4111, 4120, 4121, 4113, 4105], [4113, 4105], family, [chain, theirs, family]),
+        ]
+        for shape in shapes {
+            let clock = Clock()
+            let defaults = MemoryDefaults()
+            let order = Self.service(defaults, clock: clock)
+            if !shape.sessionPRs.isEmpty {
+                order.publish(.copilot, sessions: [OrderSession(ref: Self.session, pullRequests: shape.sessionPRs.map(Self.pr))])
+            }
+            func publish(reading: Bool, stories: Bool) {
+                let read = { (task: Int) -> [OrderStory]? in reading ? (stories ? [Self.task(task, rank: Double(task - 5180))] : []) : nil }
+                let prs = shape.prs.map { number -> OrderPullRequest in
+                    switch number {
+                    case 4110: Self.stacked(4110, from: "robin/a", into: "main", read(5181))
+                    case 4111: Self.stacked(4111, from: "robin/b", into: "robin/a", read(5182))
+                    case 4120: Self.stacked(4120, from: "sam/a", into: "main", read(5184))
+                    case 4121: Self.stacked(4121, from: "sam/b", into: "sam/a", read(5185))
+                    default: Self.ado(number, read(number + 1_090))
+                    }
+                }
+                order.publish(.azureDevOps, pullRequests: prs + [Self.ado(4130, reading ? [] : nil)], readsStories: reading)
+            }
+            func expectKept(by key: MissionKey) throws {
+                let mission = try #require(order.missions.first { $0.key == key }, "\(shape.name)")
+                #expect(mission.steps.map(\.ref).contains(Self.pr(4130)), "\(shape.name)")
+                #expect(mission.isFocused && order.focus == key && OrderFocus.load(from: defaults) == key, "\(shape.name)")
+                #expect(order.title(of: mission) == "Totals" && Array(MissionNames.load(from: defaults).entries.keys) == [key], "\(shape.name)")
+                #expect(OrderChanges.load(from: defaults)[Self.pr(4130)]?.placement == .into(key), "\(shape.name)")
+            }
+            publish(reading: true, stories: false)
+            order.setFocus(shape.kept)
+            order.rename(try #require(order.missions.first { $0.key == shape.kept }), to: "Totals")
+            order.change(.move([Self.pr(4130)], to: .into(shape.kept), from: nil))
+            if shape.kept == family { order.change(.setNext(Self.pr(4113), in: family, true)) }
+            order.dismissLastChange()
+            try expectKept(by: shape.kept)
+            // Where you set one as next among the session's, and the mission it was in then, stay with the session's.
+            func expectNextKept() {
+                guard shape.kept == family else { return }
+                #expect(order.changes[Self.pr(4113)]?.first == family && order.changes[Self.pr(4113)]?.from == family)
+            }
+            // Show Links read them all for User Story 5180: one mission, which has them.
+            publish(reading: true, stories: true)
+            #expect(order.missions.map(\.key) == [story], "\(shape.name)")
+            try expectKept(by: story)
+            expectNextKept()
+            for _ in 1...2 {
+                // Off: they wait on the story's mission. The one you put in it is on its own card, unseen.
+                publish(reading: false, stories: false)
+                let parts = order.missions.filter { $0.key != story }
+                #expect(Set(parts.map(\.key)) == shape.parts, "\(shape.name)")
+                #expect(parts.allSatisfy { !$0.isFocused && order.title(of: $0) != "Totals" }, "\(shape.name)")
+                #expect(order.focus == story && OrderFocus.load(from: defaults) == story, "\(shape.name)")
+                #expect(Array(MissionNames.load(from: defaults).entries.keys) == [story], "\(shape.name)")
+                #expect(OrderChanges.load(from: defaults)[Self.pr(4130)]?.placement == .into(story), "\(shape.name)")
+                let card = try #require(order.missions.first { $0.key == story }, "\(shape.name)")
+                #expect(card.isMine && card.steps.map(\.ref) == [Self.pr(4130)], "\(shape.name)")
+                #expect(card.steps.first?.notes.contains(.placementUnseen(story)) == true, "\(shape.name)")
+                expectNextKept()
+                if shape.kept == family {
+                    #expect(order.missions.first { $0.key == family }?.steps.first { $0.ref == Self.pr(4113) }?.standing == .next)
+                }
+                // On: all back.
+                publish(reading: true, stories: true)
+                #expect(order.missions.map(\.key) == [story], "\(shape.name)")
+                try expectKept(by: story)
+                expectNextKept()
+            }
+        }
+    }
+
+    /// The mission one you didn't move was in, as you set it as next or put it after another there, goes on only to a
+    /// mission that has it: a teammate's in a story's mission that goes back to your chain's as Show Links is turned off
+    /// keeps the story's, and Undo Your Changes to This Mission in your chain doesn't take it back.
+    @Test func theMissionYouChangedOneInGoesOnOnlyWhereItIs() throws {
+        let clock = Clock()
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults, clock: clock)
+        let (chain, story) = (MissionKey.chain(Self.pr(4110)), MissionKey.story(Self.story))
+        func publish(reading: Bool) {
+            let read = { (task: Int) -> [OrderStory]? in reading ? [Self.task(task, rank: Double(task - 5180))] : nil }
+            order.publish(.azureDevOps, pullRequests: [
+                Self.stacked(4110, from: "robin/a", into: "main", read(5181)), Self.stacked(4111, from: "robin/b", into: "robin/a", read(5182)),
+                Self.ado(4120, read(5184)), Self.ado(4121, read(5185)), Self.ado(4122, read(5186)),
+            ], readsStories: reading)
+        }
+        publish(reading: true)
+        #expect(order.missions.map(\.key) == [story])
+        order.change(.setNext(Self.pr(4121), in: story, true))
+        order.change(.mergeAfter(Self.pr(4122), Self.pr(4120), in: story, true))
+        order.dismissLastChange()
+        #expect(order.changes[Self.pr(4121)]?.from == story && order.changes[Self.pr(4122)]?.from == story)
+        // Off: your chain is the one mission the story's went to, but neither of these is in it.
+        publish(reading: false)
+        #expect(order.missions.map(\.key) == [chain])
+        #expect(order.changes[Self.pr(4121)]?.from == story && order.changes[Self.pr(4121)]?.first == story)
+        #expect(order.changes[Self.pr(4122)]?.from == story && OrderChanges.load(from: defaults)[Self.pr(4122)]?.from == story)
+        #expect(order.changes.undone(in: chain, missions: order.missions).isEmpty)
+        // On again: the story's, as you left them.
+        publish(reading: true)
+        let mission = try #require(order.missions.first)
+        #expect(mission.key == story && mission.steps.first { $0.ref == Self.pr(4121) }?.standing == .next)
     }
 
     /// A chain you split in two, moving one from its middle into a mission of your own, goes on as the part with the most

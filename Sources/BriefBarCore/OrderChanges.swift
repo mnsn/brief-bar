@@ -524,17 +524,21 @@ public struct OrderChanges: Equatable, Sendable {
             guard case .chain(let old) = key, let new = anchor(old) else { return nil }
             return .chain(new)
         }
-        renameMissions(chain, nexts: chain)
+        renameMissions(chain, nexts: chain, froms: { key, _ in chain(key) })
     }
 
     /// Names the missions your changes name as they went on, where `successor` gives where one went
     /// (`OrderBoard.successor`): the pull requests opened under a session, or a chain, to their story's, and back; a chain
-    /// to another chain or a GitHub stack. Where each puts its pull request and the mission it came from, by `successor`;
-    /// where it's set as next, by `nexts`, which can leave it where it was, so that others where they went don't wait for it.
+    /// to another chain or a GitHub stack. Where each puts its pull request and the mission one you moved came from, by
+    /// `successor`; where it's set as next, by `nexts`, which can leave it where it was, so that others where they went
+    /// don't wait for it. The mission one you didn't move was in, as you set it as next or put it after another there, goes
+    /// as where you set it as next does, or by `successor`, and only to a mission that has it (`holds`): Undo Your Changes
+    /// to This Mission takes it back only where it is.
     /// - Returns: what each mission it renamed was named, and is now.
     @discardableResult
     public mutating func followMissions(
-        _ successor: (MissionKey) -> MissionKey?, nexts: ((MissionKey) -> MissionKey?)? = nil
+        _ successor: (MissionKey) -> MissionKey?, nexts: ((MissionKey) -> MissionKey?)? = nil,
+        holds: ((MissionKey, ItemRef) -> Bool)? = nil
     ) -> [MissionKey: MissionKey] {
         var renamed: [MissionKey: MissionKey] = [:]
         func went(_ key: MissionKey, to next: MissionKey?) -> MissionKey? {
@@ -546,23 +550,36 @@ public struct OrderChanges: Equatable, Sendable {
             guard let nexts else { return follow(key) }
             return went(key, to: nexts(key))
         }
-        renameMissions(follow, nexts: followNext)
+        func followFrom(_ key: MissionKey, of change: OrderChange) -> MissionKey? {
+            let next: MissionKey? = if change.first != nil, let nexts { nexts(key) } else { successor(key) }
+            guard let next, holds?(next, change.ref) ?? true else { return nil }
+            return went(key, to: next)
+        }
+        renameMissions(follow, nexts: followNext, froms: followFrom)
         return renamed
     }
 
-    /// Names the missions changes name as `rename` gives, where it gives one; where each is set as next, as `nexts` gives.
-    private mutating func renameMissions(_ rename: (MissionKey) -> MissionKey?, nexts: (MissionKey) -> MissionKey?) {
+    /// Names the missions changes name as `rename` gives, where it gives one; where each is set as next, as `nexts` gives;
+    /// the mission one that doesn't move its pull request was in, as `froms` gives.
+    private mutating func renameMissions(
+        _ rename: (MissionKey) -> MissionKey?, nexts: (MissionKey) -> MissionKey?,
+        froms: (MissionKey, OrderChange) -> MissionKey?
+    ) {
         func renamed(_ key: MissionKey?, by rename: (MissionKey) -> MissionKey?) -> MissionKey? {
             key.map { rename($0) ?? $0 }
         }
         for (ref, change) in changes {
-            var change = change
+            var renaming = change
             if let placement = change.placement?.mission {
-                change.placement = renamed(placement, by: rename).map(OrderPlacement.into)
+                renaming.placement = renamed(placement, by: rename).map(OrderPlacement.into)
             }
-            change.from = renamed(change.from, by: rename)
-            change.first = renamed(change.first, by: nexts)
-            if change != changes[ref] { changes[ref] = change }
+            if change.placement != nil {
+                renaming.from = renamed(change.from, by: rename)
+            } else if let from = change.from {
+                renaming.from = froms(from, change) ?? from
+            }
+            renaming.first = renamed(change.first, by: nexts)
+            if renaming != changes[ref] { changes[ref] = renaming }
         }
     }
 

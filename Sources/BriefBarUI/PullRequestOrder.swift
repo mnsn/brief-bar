@@ -821,21 +821,26 @@ package final class PullRequestOrder: ObservableObject {
             }
         }
         // What's kept by a mission's key follows it, once it's gone, to where all its open pull requests went: a session's
-        // pull requests, or a chain, to their story's, and back out to the part with the most of the story's, made of them
-        // alone; a chain to the chain or GitHub stack they're in now, as the one it was named by ended, moved out or came
-        // back with Undo, or to the one with the most of them, as you split it.
+        // pull requests, or a chain, to their story's, and back out to the one mission made of them alone they went to, but
+        // not while they're in more than one, as a teammate's chain's are; a chain to the chain or GitHub stack they're in
+        // now, as the one it was named by ended, moved out or came back with Undo, or to the one with the most of them, as
+        // you split it.
         // Not by those your changes moved, into it or out of it, wherever they are now. Else it waits, as ever. One rule
         // for all of it: your changes and what Undo would put back, Focus, and the name you gave the mission; but where you
-        // set one as next follows only where nothing else open is, so that others there don't wait for it.
+        // set one as next follows only where nothing else open is, so that others there don't wait for it, and where one
+        // you didn't move was as you changed it, only to a mission that has it.
         let moved = Set(self.changes.holding(in: orders).filter { $0.value.placement != nil }.keys)
         let old = self.missions
         let new = missions
         let successor = { (key: MissionKey) in OrderBoard.successor(of: key, from: old, to: new, moved: moved) }
         let nexts = { (key: MissionKey) in OrderBoard.successor(of: key, from: old, to: new, moved: moved, alone: true) }
+        let holds = { (key: MissionKey, ref: ItemRef) in
+            new.first { $0.key == key }.map { ($0.steps + $0.attached).contains { $0.ref == ref } } ?? false
+        }
         var followed = self.changes
-        var remade = !followed.followMissions(successor, nexts: nexts).isEmpty
+        var remade = !followed.followMissions(successor, nexts: nexts, holds: holds).isEmpty
         if remade { keep(followed) }
-        if let last = lastChange { lastChange = last.renamingMissions(successor, nexts: nexts) }
+        if let last = lastChange { lastChange = last.renamingMissions(successor, nexts: nexts, holds: holds) }
         if let focus, let next = successor(focus) {
             self.focus = next
             OrderFocus.save(next, to: defaults)
@@ -926,12 +931,14 @@ package struct OrderLastChange: Equatable {
     }
 
     /// The same, with the missions it names that are gone named as where they went (`OrderBoard.successor`), as your changes
-    /// are: in what Undo would put back, where it sets one as next by `nexts`, and its card.
+    /// are: in what Undo would put back, where it sets one as next by `nexts`, the mission one it didn't move was in only
+    /// where that one is (`holds`), and its card.
     func renamingMissions(
-        _ successor: (MissionKey) -> MissionKey?, nexts: ((MissionKey) -> MissionKey?)? = nil
+        _ successor: (MissionKey) -> MissionKey?, nexts: ((MissionKey) -> MissionKey?)? = nil,
+        holds: ((MissionKey, ItemRef) -> Bool)? = nil
     ) -> OrderLastChange {
         var undo = OrderChanges(touched.values.compactMap { $0 })
-        let renamed = undo.followMissions(successor, nexts: nexts)
+        let renamed = undo.followMissions(successor, nexts: nexts, holds: holds)
         let card = mission.map { successor($0) ?? $0 }
         guard !renamed.isEmpty || card != mission else { return self }
         return OrderLastChange(
