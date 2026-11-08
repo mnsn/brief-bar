@@ -120,10 +120,19 @@ function end_file() {
     if (sources && !after) report(descriptions, "needs an After this update: under ## Descriptions, saying what changed.")
     if (!bullets && !sources) report(last_line, "has no notes.")
 }
-# The bullet that ends here, whose bold lead must close.
-function end_bullet() {
+# A bullet's bold lead, between its first two **, from its lines joined with single spaces.
+function lead_of(text,    rest) {
+    rest = substr(text, 5)
+    return substr(rest, 1, index(rest, "**") - 1)
+}
+# The bullet that ends here, whose bold lead must close, and mustn't be a released bullet's: a notes file that a
+# release gathered already, which a later pull request from the same branch added to.
+function end_bullet(    lead) {
     if (bullet != "" && bullet !~ /^- \*\*([^*]|\*[^*])+\*\*/) {
         report(bullet_line, "has a bullet whose bold lead doesn't close, as in \"- **What changed.** And how.\"")
+    } else if (bullet != "" && (lead_of(bullet) in released)) {
+        report(bullet_line, "has the bullet **" lead_of(bullet) "**, but it's already in " changelog ": write a new file" \
+            " for new notes (\"Release notes\" in CONTRIBUTING.md).")
     }
     bullet = ""
     rejected = 0
@@ -134,6 +143,17 @@ BEGIN {
     for (i = 1; i <= count; i++) key_of[label_list[i]] = key_list[i]
     named_labels = "\"" label_list[1] ":\""
     for (i = 2; i <= count; i++) named_labels = named_labels ", \"" label_list[i] ":\""
+    # The leads of the bullets that CHANGELOG.md has already, from their lines joined the same way.
+    text = ""
+    while ((getline line < changelog) > 0) {
+        sub(/\r$/, "", line)
+        sub(/ +$/, "", line)
+        if (line ~ /^  +[^ ]/ && text != "") { sub(/^ +/, "", line); text = text " " line; continue }
+        if (text ~ /^- \*\*([^*]|\*[^*])+\*\*/) released[lead_of(text)] = 1
+        text = (line ~ /^- \*\*/) ? line : ""
+    }
+    if (text ~ /^- \*\*([^*]|\*[^*])+\*\*/) released[lead_of(text)] = 1
+    close(changelog)
 }
 FNR == 1 {
     if (file != "") end_file()
@@ -361,7 +381,7 @@ plural() { # <number> <word>: such as "1 bullet" or "2 bullets"
 }
 
 parse() { # <files...>: into $WORK, or fails
-    awk -v out="$WORK" -v labels="$LABELS" -v keys="$KEYS" "$PARSE" "$@" ||
+    awk -v out="$WORK" -v labels="$LABELS" -v keys="$KEYS" -v changelog="$CHANGELOG" "$PARSE" "$@" ||
         fail "fix the notes above, as \"Release notes\" in CONTRIBUTING.md says."
 }
 

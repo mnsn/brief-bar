@@ -362,6 +362,43 @@ ${CHANGELOG_1_0_0#*
 
 }"
 
+# A later pull request from a branch whose notes file a release gathered already, which adds to that file rather than
+# writing a new one: the release's deletion conflicts with its change, and keeping the file would release the first
+# pull request's bullets again. Whether the release came first, or was still in flight, --check refuses them.
+# keep_in_merge <branch> <file>: merges that branch, which deleted the file that this one changed, keeping the file.
+keep_in_merge() {
+    if in_repo merge --quiet --no-ff -m "Merge $1" "$1" > /dev/null 2>&1; then fail "merging $1 didn't conflict over $2."; fi
+    in_repo add "$2"
+    in_repo commit --quiet --no-edit
+}
+REUSED=changes/reused-20260101-000000.md
+make_repo
+notes reused 2026-01-10T10:00:00 "- **First.** From the branch's first pull request."
+merge reused 2026-01-11T10:00:00
+prepare --main main 1.1.0 2026-02-01 || fail "it refused the release: $(cat "$WORK/err")"
+commit "Prepare BriefBar 1.1.0" 2026-01-12T10:00:00
+in_repo tag v1.1.0
+in_repo checkout --quiet reused
+printf '%s\n' "- **Second.** From its second." >> "$REPO/$REUSED"
+commit "Add to the notes" 2026-01-13T10:00:00
+keep_in_merge main "$REUSED"
+check_refuses "$REUSED:1: has the bullet **First.**, but it's already in CHANGELOG.md: write a new file for new notes"
+
+make_repo
+notes reused 2026-01-10T10:00:00 "- **First.** From the branch's first pull request."
+merge reused 2026-01-11T10:00:00
+in_repo checkout --quiet -b release main
+prepare --main main 1.1.0 2026-02-01 || fail "it refused the release: $(cat "$WORK/err")"
+commit "Prepare BriefBar 1.1.0" 2026-01-12T10:00:00
+in_repo checkout --quiet reused
+printf '%s\n' "- **Second.** From its second." >> "$REPO/$REUSED"
+commit "Add to the notes" 2026-01-12T11:00:00
+in_repo checkout --quiet main
+merge reused 2026-01-12T12:00:00
+in_repo checkout --quiet release
+keep_in_merge main "$REUSED"
+check_refuses "$REUSED:1: has the bullet **First.**, but it's already in CHANGELOG.md: write a new file for new notes"
+
 # What it refuses, changing nothing.
 make_repo
 notes good 2026-01-10T10:00:00 "- **Good.** Notes."
