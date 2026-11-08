@@ -769,7 +769,7 @@ package struct OrderBoardView: View {
     /// keyboard's focus, where the board can take it.
     private func keyMove(_ ref: ItemRef, in lane: BoardLane.Kind, forward: Bool, moves: BoardMoves, keepsFocus: Bool = true) {
         guard let (card, move) = moves.key(ref, in: lane, forward: forward) else {
-            NSSound.beep()
+            ThisMac.beep()
             return
         }
         _ = apply(move, to: card, in: lane, keepsFocus: keepsFocus)
@@ -818,7 +818,7 @@ package struct OrderBoardView: View {
         case .stays:
             return false
         case .refused(let why):
-            NSSound.beep()
+            ThisMac.beep()
             SpokenText.announce(why)
             say(why, about: card.ref, in: lane)
             return false

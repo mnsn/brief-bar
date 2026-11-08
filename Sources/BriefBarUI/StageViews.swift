@@ -316,7 +316,7 @@ package enum StageCommand {
         case .unchanged:
             break
         case .refused(let why):
-            NSSound.beep()
+            ThisMac.beep()
             SpokenText.announce(why)
         }
     }

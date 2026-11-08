@@ -3,11 +3,11 @@ import Foundation
 import Testing
 @testable import AzureDevOpsUI
 
-/// Fails a test whose code did what BriefBar does on your Mac beyond its own windows: opening a link, such as a session's
-/// in the Copilot app, a file or an app, showing files in the Finder, putting text on the clipboard, or asking in an alert.
-/// In tests, `ThisMac` refuses each, so a test whose code meets one tests what BriefBar does when it fails, unawares: such
-/// a test stands in for it, as `showForTests` does for showing a session. A test that checks what's refused notes it
-/// itself, which this doesn't see (`ThisMac.$noting`).
+/// Fails a test whose code did what BriefBar does on your Mac beyond its own windows: opening a link, such as a
+/// session's in the Copilot app, a file or an app, showing files in the Finder, putting text on the clipboard, asking
+/// in an alert, or beeping. In tests, `ThisMac` refuses each, so a test whose code meets one tests what BriefBar does
+/// when it fails, unawares: such a test stands in for it, as `showForTests` does for showing a session. A test that
+/// checks what's refused notes it itself, which this doesn't see (`ThisMac.$noting`).
 struct OpensNothing: SuiteTrait, TestTrait, TestScoping {
     var isRecursive: Bool { true }
 
@@ -25,8 +25,8 @@ struct OpensNothing: SuiteTrait, TestTrait, TestScoping {
 }
 
 extension Trait where Self == OpensNothing {
-    /// Fails a test whose code opens, shows or copies anything on this Mac, or asks in an alert, which `ThisMac` refuses
-    /// in tests: each test of the suite stands in for what it would do.
+    /// Fails a test whose code opens, shows or copies anything on this Mac, asks in an alert or beeps, which `ThisMac`
+    /// refuses in tests: each test of the suite stands in for what it would do.
     static var opensNothing: Self { Self() }
 }
 
