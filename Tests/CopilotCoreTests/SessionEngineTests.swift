@@ -47,6 +47,8 @@ import Testing
             #expect(snapshot.records.isEmpty)
             #expect(snapshot.problem == "No Copilot data found at \(paths.root.path)")
             #expect(!snapshot.databaseMissing)
+            // Nothing at all to read where each session's work goes: read, as far as it's anywhere.
+            #expect(SessionEngine.loadOnce(paths: paths, links: true).readsLinks)
         }
     }
 

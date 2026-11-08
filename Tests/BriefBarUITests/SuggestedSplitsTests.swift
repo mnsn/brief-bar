@@ -138,10 +138,12 @@ fileprivate final class SplitViewer {}
         return order.keptTogether.entries[question.key]?.makeups[makeup.tells] == makeup.digest
     }
 
-    /// Two hours go by, as `KeptTogether.settleFor` counts them, and the service looks again, as its clock does.
-    fileprivate static func twoHoursPass(_ order: PullRequestOrder, clock: SplitClock) {
-        clock.advance(KeptTogether.settleFor)
-        order.timePassed()
+    /// Three hours go by, as `KeptTogether.settleFor` counts them, the service looking again each hour, as its clock does.
+    fileprivate static func hoursPass(_ order: PullRequestOrder, clock: SplitClock) {
+        for _ in 0..<Int(KeptTogether.settleFor / KeptTogether.mostAtOnce) {
+            clock.advance(KeptTogether.mostAtOnce)
+            order.timePassed()
+        }
     }
 
     /// What you kept together is kept: its suggestion doesn't show, nor is Apple Intelligence asked it again once settled.
@@ -412,7 +414,7 @@ fileprivate final class SplitViewer {}
 
     /// Turning Show Links or Copilot off, which only leaves BriefBar telling less of what a mission is made of, doesn't bring
     /// back a suggestion you kept together, then or as they're on again: what it's made of each way is kept with it once
-    /// told so for two hours, and compared only with what it was made of the same way. Nor does keeping one together while
+    /// told so for three hours, and compared only with what it was made of the same way. Nor does keeping one together while
     /// Show Links is off.
     @Test func turningShowLinksOrCopilotOffKeepsWhatYouKeptTogether() async throws {
         let clock = SplitClock()
@@ -426,12 +428,12 @@ fileprivate final class SplitViewer {}
         }
         Self.tell(order, readsStories: false)
         try await stillKept("Show Links off")
-        Self.twoHoursPass(order, clock: clock)
-        try await stillKept("Show Links off for two hours")
+        Self.hoursPass(order, clock: clock)
+        try await stillKept("Show Links off for three hours")
         order.withdraw(.copilot)
         try await stillKept("Copilot off too")
-        Self.twoHoursPass(order, clock: clock)
-        try await stillKept("Copilot off too for two hours")
+        Self.hoursPass(order, clock: clock)
+        try await stillKept("Copilot off too for three hours")
         Self.tellCopilot(order)
         Self.tell(order)
         try await stillKept("Both on again")
@@ -457,7 +459,7 @@ fileprivate final class SplitViewer {}
         _ = order.keepTogether(unread)
         #expect(KeptTogether.load(from: defaults).entries[key]?.makeups.keys.map(\.stories) == [false])
         Self.tell(order)
-        Self.twoHoursPass(order, clock: clock)
+        Self.hoursPass(order, clock: clock)
         #expect(KeptTogether.load(from: defaults).entries[key]?.makeups.count == 2)
         try await stillKept("Show Links on, once kept while off")
         #expect(model.splitPrompts.count == asked)
@@ -478,13 +480,13 @@ fileprivate final class SplitViewer {}
 
         let order = Self.service(defaults, clock: clock)
         order.namer = model.namer(clock: clock)
-        // Before any source tells anything, for two hours: nothing told of it, nothing kept.
-        Self.twoHoursPass(order, clock: clock)
+        // Before any source tells anything, for three hours: nothing told of it, nothing kept.
+        Self.hoursPass(order, clock: clock)
         #expect(order.keptTogether.entries[key]?.makeups.count == 1)
         order.publish(.azureDevOps, readsStories: true, listed: false)
         order.publish(.copilot, listed: false)
         #expect(order.missions.map(\.key) == [key])
-        Self.twoHoursPass(order, clock: clock)
+        Self.hoursPass(order, clock: clock)
         #expect(order.keptTogether.entries[key] != nil)
         Self.tell(order)
         order.publish(.copilot, items: [MissionNamingTests.item(Self.session, "Checkout coupons and agents")], listed: false)
@@ -499,7 +501,7 @@ fileprivate final class SplitViewer {}
 
     /// Show Links decides which pull requests opened under a session are its mission: with it off, those for a story join
     /// the others. What you kept together holds as it goes off and on again, and a change while it's off still counts, once
-    /// it has lasted two hours.
+    /// it has lasted three hours.
     @Test func keepTogetherHoldsForASessionsPullRequestsAsShowLinksChangesWhichTheyAre() async throws {
         let clock = SplitClock()
         let model = SplitModel()
@@ -543,13 +545,13 @@ fileprivate final class SplitViewer {}
         try await stillKept("Show Links on again")
         tell(readsStories: false, all)
         try await stillKept("Off again")
-        Self.twoHoursPass(order, clock: clock)
-        try await stillKept("Off for two hours")
-        // Off, and the session opened another: made of something else, so it's asked again once that's lasted two hours.
+        Self.hoursPass(order, clock: clock)
+        try await stillKept("Off for three hours")
+        // Off, and the session opened another: made of something else, so it's asked again once that's lasted three hours.
         let asked = model.splitPrompts.count
         tell(readsStories: false, all + [4104])
         try await stillKept("Another, just now")
-        Self.twoHoursPass(order, clock: clock)
+        Self.hoursPass(order, clock: clock)
         #expect(order.keptTogether.entries[key] == nil)
         Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
@@ -715,7 +717,7 @@ fileprivate final class SplitViewer {}
         order.namer = model.namer(clock: clock)
         tell(order, pending: true)
         #expect(Self.mission(key, in: order)?.isFinished == true)
-        Self.twoHoursPass(order, clock: clock)
+        Self.hoursPass(order, clock: clock)
         #expect(order.keptTogether.entries[key] != nil)
         tell(order, pending: false)
         try await Self.stillKept(key, in: order, model: model, clock: clock, viewer: viewer, "All read")

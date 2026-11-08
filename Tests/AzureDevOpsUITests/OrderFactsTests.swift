@@ -124,13 +124,26 @@ import Testing
         facts.publish()
         let offline = try #require(order.missions.first)
         let none = try #require(order.splitQuestion(for: offline))
-        #expect(store.hasLoaded && !store.hasListed && none.makeup == nil)
+        #expect(store.hasLoaded && !store.isListing && none.makeup == nil)
+        // Nor one that read something, but not its organization's lists.
+        store.receive(PulseSnapshot(
+            organizations: [DemoData.organization], problem: .someOrganizations("Couldn't read its lists."), hasLoaded: true
+        ))
+        #expect(store.problem?.readNothing == false && !store.isListing)
 
         await store.loadOnce()
         facts.publish()
         let listed = try #require(order.missions.first)
         let read = try #require(order.splitQuestion(for: listed))
         #expect(read.makeup != nil)
+        // Offline since: it shows what it read before, so what a mission is made of can't be told for now.
+        var unreachable = DemoData.snapshot()
+        unreachable.problem = PulseProblem.offline
+        store.receive(unreachable)
+        facts.publish()
+        let shown = try #require(order.missions.first)
+        let stale = try #require(order.splitQuestion(for: shown))
+        #expect(!store.isListing && stale.makeup == nil)
     }
 
     /// Off, it tells nothing.

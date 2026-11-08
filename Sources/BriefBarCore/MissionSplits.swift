@@ -648,8 +648,8 @@ public enum MissionSplitting {
 /// The suggested splits you kept together, in the preferences by the mission's key, each as digests of what the mission
 /// is made of (`MissionSplitQuestion.Makeup`), one for each way BriefBar has told it, as with Show Links on or off, which
 /// only the app writes: never a title. A suggestion you kept together doesn't come back till its mission has been made of
-/// something else for `settleFor`, compared only with what BriefBar told the same way, and not while a source still reads
-/// what it shows: turning Show Links or Copilot off or on changes nothing, nor does a read that fails for a while. One also
+/// something else for `settleFor`, compared only with what BriefBar told the same way, and counted only while it can tell:
+/// turning Show Links or Copilot off or on changes nothing, nor does a read that fails for a while. One also
 /// goes once BriefBar hasn't seen its mission for `forgottenAfter`, counting only while it could have, as the names you
 /// give missions (`MissionNames`). Turning a source off forgets those of its missions, Forget All Orders… all of them;
 /// Pull Request Order off keeps them, their days waiting. At most `mostEntries`: the one seen longest ago goes first,
@@ -660,9 +660,12 @@ public struct KeptTogether: Equatable, Sendable {
     public static let forgottenAfter: TimeInterval = MissionNames.forgottenAfter
     /// How long a mission is made of something else, as BriefBar tells it the same way, before what you kept together
     /// goes; and how long it's told a way it wasn't before, made of the same all along, before that way is kept, to compare
-    /// with: longer than a read that failed waits to be tried again, an hour, so that a read that fails, or a source that
-    /// tells less for a while, as BriefBar starts before the network's up, doesn't bring a suggestion back.
-    public static let settleFor: TimeInterval = 2 * 3_600
+    /// with. Counted only while BriefBar can tell what it's made of, at most `mostAtOnce` from one look to the next, as
+    /// when the Mac slept: longer than two tries of a read that failed, an hour apart, so that a read that fails, or a
+    /// source that tells less for a while, as BriefBar starts before the network's up, doesn't bring a suggestion back.
+    public static let settleFor: TimeInterval = 3 * 3_600
+    /// At most this much counts from one look at a mission to the next.
+    public static let mostAtOnce: TimeInterval = 3_600
 
     public struct Entry: Equatable, Sendable {
         /// What its mission is made of, as a digest for each way BriefBar told it: as you kept it together, unless it
@@ -680,12 +683,13 @@ public struct KeptTogether: Equatable, Sendable {
         }
     }
 
-    /// What a mission you kept together has been made of since when, shown all along, where that isn't what it was made
-    /// of as BriefBar told it the same way, or BriefBar tells it a way it hadn't; nil for one it no longer looks at, as
-    /// one that finished. In memory only.
+    /// What a mission you kept together has been made of, shown all along, where that isn't what it was made of as
+    /// BriefBar told it the same way, or BriefBar tells it a way it hadn't; nil for one it no longer looks at, as one
+    /// that finished: for how long, counted only while BriefBar could tell, and when it last looked. In memory only.
     public struct Difference: Equatable, Sendable {
         public var makeup: MissionSplitQuestion.Makeup?
-        public var since: Date
+        public var counted: TimeInterval
+        public var lookedAt: Date
     }
 
     public private(set) var entries: [MissionKey: Entry]
@@ -721,7 +725,8 @@ public struct KeptTogether: Equatable, Sendable {
     /// Counts `elapsed` against those whose missions BriefBar could have seen, but didn't, forgetting those it hasn't seen
     /// for `forgottenAfter`; and forgets those whose missions have been made of something else for `settleFor`, as
     /// BriefBar told them the same way before, keeping a way it hadn't told one before once told that way, the same, for
-    /// as long. The time each has differed starts again once it's made of something else again, and once it isn't shown.
+    /// as long. That time counts only while BriefBar can tell what each is made of, at most `mostAtOnce` since it last
+    /// looked, and starts again once it's made of something else again, and once it isn't shown.
     /// - Parameters:
     ///   - seen: the missions shown now.
     ///   - makeups: what those whose makeup BriefBar can tell are made of now: none while a source still reads what it
@@ -741,8 +746,11 @@ public struct KeptTogether: Equatable, Sendable {
                 if let now = makeups[key] {
                     if let now, entry.makeups[now.tells] == now.digest {
                         differences[key] = nil
-                    } else if let was = differences[key], was.makeup == now {
-                        if date.timeIntervalSince(was.since) >= Self.settleFor {
+                    } else if var was = differences[key], was.makeup == now {
+                        was.counted += min(max(date.timeIntervalSince(was.lookedAt), 0), Self.mostAtOnce)
+                        was.lookedAt = date
+                        differences[key] = was
+                        if was.counted >= Self.settleFor {
                             differences[key] = nil
                             changed = true
                             guard let now, entry.makeups[now.tells] == nil else {
@@ -752,8 +760,11 @@ public struct KeptTogether: Equatable, Sendable {
                             entries[key]?.makeups[now.tells] = now.digest
                         }
                     } else {
-                        differences[key] = Difference(makeup: now, since: date)
+                        differences[key] = Difference(makeup: now, counted: 0, lookedAt: date)
                     }
+                } else {
+                    // It can't be told now: that time doesn't count.
+                    differences[key]?.lookedAt = date
                 }
                 if entry.unseen > 0 {
                     entries[key]?.unseen = 0

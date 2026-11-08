@@ -541,10 +541,23 @@ import Testing
         kept.account(seen: seen ?? Set(makeups.keys), makeups: makeups, canSee: { _ in true }, elapsed: 0, at: t(seconds))
     }
 
-    @Test func keepTogetherHoldsTillTheMakeupHasChangedForTwoHoursOrTheMissionGoesUnseenFor14Days() {
+    /// Counts it each hour from `from` seconds in till `to`.
+    static func hourly(
+        _ kept: inout KeptTogether, _ makeups: [MissionKey: MissionSplitQuestion.Makeup?], from: TimeInterval,
+        to: TimeInterval, seen: Set<MissionKey>? = nil
+    ) {
+        for seconds in stride(from: from, through: to, by: hour) {
+            account(&kept, makeups, at: seconds, seen: seen)
+        }
+    }
+
+    static let hour: TimeInterval = 3_600
+
+    @Test func keepTogetherHoldsTillTheMakeupHasChangedForThreeHoursOrTheMissionGoesUnseenFor14Days() {
         var kept = KeptTogether()
         let key = MissionKey.story(Self.story)
-        let settle = KeptTogether.settleFor
+        let hour = Self.hour
+        #expect(KeptTogether.settleFor == 3 * hour)
         kept.keep(key, makeup: Self.m("a"), at: t(0))
         #expect(kept.keeps(key))
         // Seen, made of the same: kept, its time unseen back to none.
@@ -553,7 +566,7 @@ import Testing
         Self.account(&kept, [key: Self.m("a")], at: 0)
         #expect(kept.entries[key]?.unseen == 0)
         // Seen while BriefBar can't tell its makeup yet: kept.
-        Self.account(&kept, [:], at: settle, seen: [key])
+        Self.account(&kept, [:], at: hour, seen: [key])
         #expect(kept.keeps(key) && kept.differences.isEmpty)
         // Unseen while what makes it is off: it waits.
         kept.account(seen: [], makeups: [:], canSee: { _ in false }, elapsed: KeptTogether.forgottenAfter, at: t(0))
@@ -561,70 +574,84 @@ import Testing
         // 14 days unseen while it could have been seen: gone.
         kept.account(seen: [], makeups: [:], canSee: { _ in true }, elapsed: KeptTogether.forgottenAfter, at: t(0))
         #expect(kept.entries.isEmpty)
-        // Its makeup changed: kept till it's been changed the same for two hours, its time starting again as it changes.
+        // Its makeup changed: kept till it's been changed the same for three hours, its time starting again as it changes.
         kept.keep(key, makeup: Self.m("a"), at: t(0))
         Self.account(&kept, [key: Self.m("b")], at: 0)
         #expect(kept.keeps(key) && kept.differences[key]?.makeup == Self.m("b"))
-        Self.account(&kept, [key: Self.m("c")], at: settle - 1)
-        Self.account(&kept, [key: Self.m("c")], at: settle)
+        Self.hourly(&kept, [key: Self.m("c")], from: hour, to: 3 * hour)
         #expect(kept.keeps(key))
-        let gone = kept.account(
-            seen: [key], makeups: [key: Self.m("c")], canSee: { _ in true }, elapsed: 0, at: t(2 * settle - 1)
-        )
+        let gone = kept.account(seen: [key], makeups: [key: Self.m("c")], canSee: { _ in true }, elapsed: 0, at: t(4 * hour))
         #expect(gone && !kept.keeps(key) && kept.differences.isEmpty)
-        // Back to what it was made of before the two hours: kept, and its time forgotten.
+        // Back to what it was made of before the three hours: kept, and its time forgotten.
+        kept.keep(key, makeup: Self.m("a"), at: t(0))
+        Self.hourly(&kept, [key: Self.m("b")], from: 0, to: 2 * hour)
+        Self.account(&kept, [key: Self.m("a")], at: 2 * hour + 1)
+        Self.hourly(&kept, [key: Self.m("b")], from: 3 * hour, to: 5 * hour)
+        #expect(kept.keeps(key))
+        // Asleep for ten hours: an hour of it counts.
         kept.keep(key, makeup: Self.m("a"), at: t(0))
         Self.account(&kept, [key: Self.m("b")], at: 0)
-        Self.account(&kept, [key: Self.m("a")], at: settle / 2)
-        Self.account(&kept, [key: Self.m("b")], at: settle)
-        Self.account(&kept, [key: Self.m("b")], at: 3 * settle / 2)
-        #expect(kept.keeps(key))
+        Self.account(&kept, [key: Self.m("b")], at: 10 * hour)
+        Self.account(&kept, [key: Self.m("b")], at: 20 * hour)
+        #expect(kept.keeps(key) && kept.differences[key]?.counted == 2 * hour)
+        // While BriefBar can't tell, as while a source reads or Azure DevOps is offline: none of it counts.
+        Self.hourly(&kept, [:], from: 21 * hour, to: 30 * hour, seen: [key])
+        Self.account(&kept, [key: Self.m("b")], at: 30 * hour + hour / 2)
+        // Looked at often: only the time between looks counts.
+        for minutes in stride(from: 40.0, through: 50.0, by: 10) {
+            Self.account(&kept, [key: Self.m("b")], at: 30 * hour + minutes * 60)
+        }
+        #expect(kept.keeps(key) && kept.differences[key]?.counted == 2 * hour + 50 * 60)
+        Self.account(&kept, [key: Self.m("b")], at: 31 * hour)
+        #expect(!kept.keeps(key))
         // Not shown meanwhile: its time starts again.
-        Self.account(&kept, [:], at: 2 * settle, seen: [])
-        Self.account(&kept, [key: Self.m("b")], at: 5 * settle / 2)
+        kept.keep(key, makeup: Self.m("a"), at: t(0))
+        Self.hourly(&kept, [key: Self.m("b")], from: 0, to: 2 * hour)
+        Self.account(&kept, [:], at: 3 * hour, seen: [])
+        Self.hourly(&kept, [key: Self.m("b")], from: 4 * hour, to: 6 * hour)
         #expect(kept.keeps(key))
-        // It finished, for two hours: gone.
+        // It finished, for three hours: gone.
         let finished: [MissionKey: MissionSplitQuestion.Makeup?] = [key: nil]
         kept.keep(key, makeup: Self.m("a"), at: t(0))
-        Self.account(&kept, finished, at: 0)
+        Self.hourly(&kept, finished, from: 0, to: 2 * hour)
         #expect(kept.keeps(key))
-        Self.account(&kept, finished, at: settle)
+        Self.account(&kept, finished, at: 3 * hour)
         #expect(!kept.keeps(key))
     }
 
     /// What you kept together is compared only with what BriefBar told the same way: turning Show Links or Copilot off or on
-    /// changes nothing, and what it tells another way is kept with it once told the same for two hours, then counts.
+    /// changes nothing, and what it tells another way is kept with it once told the same for three hours, then counts.
     @Test func keepTogetherComparesOnlyWhatBriefBarToldTheSameWay() {
         var kept = KeptTogether()
         let key = MissionKey.plan(Self.planID)
-        let settle = KeptTogether.settleFor
+        let hour = Self.hour
         kept.keep(key, makeup: Self.m("a"), at: t(0))
-        // Show Links off: told another way, so kept; that way's kept with it once told the same for two hours.
+        // Show Links off: told another way, so kept; that way's kept with it once told the same for three hours.
         let off = Self.m("x", stories: false)
         let waits = kept.account(seen: [key], makeups: [key: off], canSee: { _ in true }, elapsed: 0, at: t(0))
         #expect(!waits && kept.keeps(key) && kept.entries[key]?.makeups.count == 1)
-        let told = kept.account(seen: [key], makeups: [key: off], canSee: { _ in true }, elapsed: 0, at: t(settle))
+        Self.hourly(&kept, [key: off], from: hour, to: 2 * hour)
+        #expect(kept.entries[key]?.makeups.count == 1)
+        let told = kept.account(seen: [key], makeups: [key: off], canSee: { _ in true }, elapsed: 0, at: t(3 * hour))
         #expect(told && kept.entries[key]?.makeups == [Self.m("a").tells: "a", off.tells: "x"])
         // The same again: nothing to save. Back on, made of what it was: kept.
-        let unchanged = kept.account(seen: [key], makeups: [key: off], canSee: { _ in true }, elapsed: 0, at: t(2 * settle))
+        let unchanged = kept.account(seen: [key], makeups: [key: off], canSee: { _ in true }, elapsed: 0, at: t(4 * hour))
         #expect(!unchanged && kept.differences.isEmpty)
-        Self.account(&kept, [key: Self.m("a")], at: 2 * settle)
+        Self.account(&kept, [key: Self.m("a")], at: 4 * hour)
         #expect(kept.differences.isEmpty)
-        // Changed while off, for two hours: gone.
-        Self.account(&kept, [key: Self.m("y", stories: false)], at: 3 * settle)
-        Self.account(&kept, [key: Self.m("y", stories: false)], at: 4 * settle)
+        // Changed while off, for three hours: gone.
+        Self.hourly(&kept, [key: Self.m("y", stories: false)], from: 5 * hour, to: 8 * hour)
         #expect(kept.entries.isEmpty)
-        // Kept together while BriefBar couldn't tell: kept every way, till it first tells one for two hours, which then
+        // Kept together while BriefBar couldn't tell: kept every way, till it first tells one for three hours, which then
         // counts. Keeping it together again starts that time again.
         kept.keep(key, makeup: nil, at: t(0))
-        Self.account(&kept, [key: Self.m("a")], at: 0)
-        kept.keep(key, makeup: nil, at: t(settle / 2))
-        Self.account(&kept, [key: Self.m("a")], at: settle)
+        Self.hourly(&kept, [key: Self.m("a")], from: 0, to: 2 * hour)
+        kept.keep(key, makeup: nil, at: t(2 * hour))
+        Self.hourly(&kept, [key: Self.m("a")], from: 3 * hour, to: 5 * hour)
         #expect(kept.entries[key]?.makeups.isEmpty == true)
-        Self.account(&kept, [key: Self.m("a")], at: 2 * settle)
+        Self.account(&kept, [key: Self.m("a")], at: 6 * hour)
         #expect(kept.entries[key]?.makeups == [Self.m("a").tells: "a"])
-        Self.account(&kept, [key: Self.m("b")], at: 2 * settle)
-        Self.account(&kept, [key: Self.m("b")], at: 3 * settle)
+        Self.hourly(&kept, [key: Self.m("b")], from: 7 * hour, to: 10 * hour)
         #expect(!kept.keeps(key))
     }
 
@@ -679,8 +706,7 @@ import Testing
         let digest = String(repeating: "ab", count: 16)
         let other = String(repeating: "cd", count: 16)
         kept.keep(key, makeup: Self.m(digest), at: t(0))
-        Self.account(&kept, [key: Self.m(other, sessions: false)], at: 0)
-        Self.account(&kept, [key: Self.m(other, sessions: false)], at: KeptTogether.settleFor)
+        Self.hourly(&kept, [key: Self.m(other, sessions: false)], from: 0, to: KeptTogether.settleFor)
         kept.account(seen: [], makeups: [:], canSee: { _ in true }, elapsed: 7_200, at: t(0))
         kept.save(to: defaults)
         #expect(KeptTogether.load(from: defaults) == kept)

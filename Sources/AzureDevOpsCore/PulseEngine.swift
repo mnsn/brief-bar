@@ -58,6 +58,15 @@ public enum PulseProblem: Sendable, Equatable {
     /// Signing in fixes it: to the Azure CLI, or to an organization's directory.
     public var offersSignIn: Bool { needsSignIn || signInTenant != nil }
 
+    /// Nothing more could be read: signed out, offline or nothing reachable, or Azure DevOps asked BriefBar to slow down.
+    /// What the list shows is what it read before.
+    public var readNothing: Bool {
+        switch self {
+        case .cliNotFound, .signedOut, .authFailed, .offline, .throttled, .unreachable: return true
+        case .noOrganizations, .someOrganizations, .otherDirectory: return false
+        }
+    }
+
     /// What goes to the log: the message, but naming no organization when some are in another directory, since a pull
     /// request sent to you comes from a link in a chat: how many are, and whether others couldn't be read, some of which
     /// may be in yet another directory.

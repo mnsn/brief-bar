@@ -261,7 +261,8 @@ public final class SessionEngine: @unchecked Sendable {
                 problem = "\(error). The list may be out of date."
             } else {
                 metas = SessionStateScanner.recentSessions(paths: paths)
-                linksRead = readsLinks && databaseMissing
+                // Nothing at all where the database goes, its folder or not: the folders are all there is.
+                linksRead = readsLinks && Self.isMissing(paths.database)
                 problem = hasFolder
                     ? String(describing: error)
                     : "No Copilot data found at \(paths.root.path)"

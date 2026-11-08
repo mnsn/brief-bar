@@ -28,10 +28,11 @@ final class PRStore: ObservableObject {
     @Published private(set) var now = Date()
     @Published private(set) var problem: PulseProblem?
     @Published private(set) var hasLoaded = false
-    /// The list read what it lists since BriefBar started: an organization's lists at least once, or, with none to watch,
-    /// whatever its first refresh read. Not while none could be read, as before the network's up or `az login`.
-    var hasListed: Bool {
-        hasLoaded && (state.organizations.isEmpty || !state.firstLoaded.isEmpty)
+    /// The list shows what it reads now: it read what it lists since BriefBar started, an organization's lists at least
+    /// once, or, with none to watch, whatever its first refresh read; and its latest refresh could read. Not before, as
+    /// before the network's up or `az login`, nor while it shows only what it read before, as offline.
+    var isListing: Bool {
+        hasLoaded && (state.organizations.isEmpty || !state.firstLoaded.isEmpty) && !(problem?.readNothing ?? false)
     }
     @Published private(set) var isRefreshing = false
     @Published private(set) var refreshedAt: Date?
