@@ -4173,14 +4173,14 @@ when BriefBar does.
 - `scripts/check-boundaries.sh` reads each module's object files and fails unless only
   `AzureDevOpsCore` and `GitHubCore` use networking APIs, and only `BriefBarCore` starts programs. It also fails unless
   only `ThisMac`, in `BriefBarUI`, opens links, files, apps and System Settings, brings another app forward, shows
-  files in the Finder, writes the clipboard, asks in alerts and panels, and makes SwiftUI's links and what opens them:
-  in a test process it refuses each, so no test does any of them on your Mac. It goes by what the compiled code calls,
-  the Objective-C messages it sends and the SwiftUI types it uses, so a call however it's spelled, through a variable or
-  an extension, counts. Links in text, such as a comment's, open with what the view around them sets, which the
-  compiled code doesn't show: `RichTextView`, the one view with such links, opens them through `ThisMac`. It
-  also fails if those stop using them, since the check could no longer tell, and if a module in `Sources` has no
-  object files, as when a build stopped partway. It reads BriefBar's own modules, the updater's included, not
-  Sparkle, whose requests are only for updates.
+  files in the Finder, writes the clipboard, asks in alerts and panels, beeps, and makes SwiftUI's links and what opens
+  them: in a test process it refuses each, so no test does any of them on your Mac. It goes by what the compiled code
+  calls, the Objective-C messages it sends, the SwiftUI types it uses and the functions that beep, so a call however
+  it's spelled, through a variable or an extension, counts. Links in text, such as a comment's, open with what the view
+  around them sets, which the compiled code doesn't show: `RichTextView`, the one view with such links, opens them
+  through `ThisMac`. It also fails if those stop using them, since the check could no longer tell, and if a module in
+  `Sources` has no object files, as when a build stopped partway. It reads BriefBar's own modules, the updater's
+  included, not Sparkle, whose requests are only for updates.
 - `WriteTests` checks that the only changes BriefBar can make in Azure DevOps are those `ADOWrite` lists, each as it's
   sent, and that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET
   ([Replying and setting a thread's status](#replying-and-setting-a-threads-status),

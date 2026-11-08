@@ -726,7 +726,7 @@ struct ThreadReplyComposer: View {
 
     private func send(then status: ThreadStatus?) {
         guard canSend else {
-            NSSound.beep()
+            ThisMac.beep()
             return
         }
         let markdown = text
@@ -743,7 +743,7 @@ struct ThreadReplyComposer: View {
     /// be saved: otherwise, nothing changes, and the notice stays. Save alone, while the notice shows, saves nothing.
     private func save(replacing chosen: String? = nil) {
         guard chosen == nil ? canSave : canSend, let editing, let editBase else {
-            NSSound.beep()
+            ThisMac.beep()
             return
         }
         if let chosen { replacing = chosen }

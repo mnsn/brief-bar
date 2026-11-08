@@ -42,7 +42,8 @@ make build              # debug build
 make plugin-test        # test BriefBar's extension for the Copilot app's sessions, with Node
 make demo-check         # check that each source's made-up data lands in the expected groups and states
 make check-boundaries   # check that only AzureDevOpsCore and GitHubCore use the network, only
-                        # BriefBarCore starts programs, and only ThisMac opens, copies or asks anything
+                        # BriefBarCore starts programs, and only ThisMac opens, copies or asks anything,
+                        # or beeps
 make signing-key-check  # check what keeps signing keys safe, in throwaway keychains (it asks nothing)
 make release-notes-check # check the release notes in changes/, and test the script that gathers them
 make updater-check      # check, on a copy of build/BriefBar.app, that its updater can't use its permissions
@@ -283,14 +284,15 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   `MemorySettings`, or `MemoryDefaults` where code takes a `UserDefaults`: a UserDefaults suite leaves
   a file in `~/Library/Preferences`, even once removed.
 - **Tests open nothing on your Mac.** BriefBar opens links, files, apps and System Settings, brings
-  another app forward, shows files in the Finder, puts text on the clipboard, and asks in alerts and
-  panels only through `ThisMac`, which refuses each in a test process. Its SwiftUI links are made with
-  `ThisMac.link(to:label:)`, and a view with links in its text has `.opensLinksThroughThisMac()`, as
-  `RichTextView` does. `make check-boundaries` fails when any other code does them, by what the
+  another app forward, shows files in the Finder, puts text on the clipboard, asks in alerts and panels,
+  and beeps only through `ThisMac`, which refuses each in a test process. Its SwiftUI links are made
+  with `ThisMac.link(to:label:)`, and a view with links in its text has `.opensLinksThroughThisMac()`,
+  as `RichTextView` does. `make check-boundaries` fails when any other code does them, by what the
   compiled code calls. A test stands in for what its code would do there, as `showForTests` does for
   showing a session in the Copilot app, and a suite whose code can get there has `.opensNothing`, which
   fails a test that doesn't. It sees what the test's task does, and the tasks it starts: code that gets
-  there in a detached task carries `ThisMac.noting` into it, as delivery's sender does.
+  there in a detached task carries `ThisMac.noting` into it, as delivery's sender does. A test that
+  presses keys does it in a `TestWindow`, where a key nothing takes goes quietly: AppKit beeps for it.
 - **Never block a thread while waiting for async work.** Swift's cooperative pool has a thread per core,
   so code that blocks one of them until a task finishes (on a semaphore, say) can hang where there are
   few cores, as on CI's runners, and blocking the main actor that way hangs as soon as the task needs

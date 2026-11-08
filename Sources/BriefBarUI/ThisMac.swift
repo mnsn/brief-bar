@@ -5,13 +5,13 @@ import SwiftUI
 import Synchronization
 
 /// What BriefBar does on your Mac beyond its own windows and files: opening a link, a file, an app or System Settings,
-/// bringing another app forward, showing files in the Finder, putting text on the clipboard, and asking in an alert or a
-/// panel; and, for SwiftUI's links, `link(to:label:)` and `opensLinksThroughThisMac()`. All of BriefBar does these
-/// through here, and only here, since tests run BriefBar's code on your Mac: in a test process, each is refused, whether or
-/// not the test stands in for it, and noted for the test (`noting`). So no test opens a session in the Copilot app, a page
-/// in your browser or a script in Terminal, brings up an app, replaces what you copied, or waits on an alert that nobody
-/// answers. `scripts/check-boundaries.sh` checks that no other code does any of them, by the calls the compiled code makes,
-/// whatever it's spelled like.
+/// bringing another app forward, showing files in the Finder, putting text on the clipboard, asking in an alert or a
+/// panel, and beeping; and, for SwiftUI's links, `link(to:label:)` and `opensLinksThroughThisMac()`. All of BriefBar
+/// does these through here, and only here, since tests run BriefBar's code on your Mac: in a test process, each is
+/// refused, whether or not the test stands in for it, and noted for the test (`noting`). So no test opens a session in
+/// the Copilot app, a page in your browser or a script in Terminal, brings up an app, replaces what you copied, waits
+/// on an alert that nobody answers, or beeps. `scripts/check-boundaries.sh` checks that no other code does any of them,
+/// by the calls the compiled code makes, whatever it's spelled like.
 package enum ThisMac {
     /// Whether this process runs tests: whatever runs them, xctest or swiftpm-testing-helper, they're in a test bundle,
     /// as `swift test` builds them. The app and its command line never load one.
@@ -27,7 +27,7 @@ package enum ThisMac {
     @TaskLocal package static var noting: Notes?
 
     /// What a test process refused: "open <link>", "open <app>", "open Login Items in System Settings",
-    /// "activate <app>", "show <files> in the Finder", "copy <text>", "ask <alert's message>", oldest first.
+    /// "activate <app>", "show <files> in the Finder", "copy <text>", "ask <alert's message>", "beep", oldest first.
     package final class Notes: Sendable {
         private let list = Mutex<[String]>([])
 
@@ -101,6 +101,12 @@ package enum ThisMac {
     package static func ask(_ panel: NSSavePanel) -> NSApplication.ModalResponse {
         guard !refuses("ask \(panel.message ?? "")") else { return .cancel }
         return panel.runModal()
+    }
+
+    /// Beeps, as the Mac does for what it can't do: a key that can't do what it asks, such as a move the Board refuses.
+    package static func beep() {
+        guard !refuses("beep") else { return }
+        NSSound.beep()
     }
 
     /// A link to a page or a file, SwiftUI's `Link`, that opens through `open` (`opensLinksThroughThisMac`).

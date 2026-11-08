@@ -34,7 +34,7 @@ import Testing
             keep: { field.said.append("keep \(field.draft)") }, cancel: { field.said.append("cancel") },
             gone: { field.said.append("gone") }
         )
-        let window = NSWindow(
+        let window = TestWindow(
             contentRect: CGRect(x: -20_000, y: -20_000, width: 400, height: 60), styleMask: [.titled, .closable],
             backing: .buffered, defer: false
         )
