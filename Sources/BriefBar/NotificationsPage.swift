@@ -97,6 +97,8 @@ struct NotificationsPage: View {
                     }
                     NotificationRow(entry: entry, now: recent.now, source: model.source(entry.source)) {
                         model.open(entry)
+                    } press: { button in
+                        model.press(button, of: entry)
                     } remove: {
                         recent.remove(entry.id)
                     }
@@ -141,13 +143,14 @@ struct NotificationsPage: View {
 }
 
 /// One notification on the page: what it means for you, its title and message, and how long ago it came. A click opens
-/// what it's about.
+/// what it's about, and its right-click menu has its button, such as Fix with Copilot….
 private struct NotificationRow: View {
     let entry: NotificationHistory.Entry
     let now: Date
     /// Where it came from, for its symbol when it's in no state, and its name.
     let source: (any BriefBarSource)?
     let open: () -> Void
+    let press: (NotificationButton) -> Void
     let remove: () -> Void
 
     @LocalState private var isHovered = false
@@ -203,6 +206,9 @@ private struct NotificationRow: View {
         .onHover { isHovered = $0 }
         .contextMenu {
             Button("Open", action: open)
+            if let button = entry.button {
+                Button(button.title) { press(button) }
+            }
             Button("Remove from This Page", action: remove)
         }
         .help(help)
@@ -211,6 +217,12 @@ private struct NotificationRow: View {
         .accessibilityValue(([entry.isSeen ? nil : "New"] + [entry.subtitle, entry.body, Elapsed.short(since: entry.date, now: now)])
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "))
         .accessibilityHint("Opens what it's about")
+        .accessibilityActions {
+            if let button = entry.button {
+                // Its title without the ellipsis, as VoiceOver says an action.
+                Button(button.title.trimmingCharacters(in: CharacterSet(charactersIn: "…"))) { press(button) }
+            }
+        }
     }
 
     private var help: String {

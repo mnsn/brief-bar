@@ -1,5 +1,19 @@
 import Foundation
 
+/// A button on a notification, beside opening what it's about, such as Fix with Copilot…: its source does what it says.
+/// On the Notifications page, it's in its entry's right-click menu.
+public struct NotificationButton: Equatable, Hashable, Sendable {
+    /// Which button it is, as its source knows it: in Notification Center, its action's identifier.
+    public var id: String
+    /// What it says, such as "Fix with Copilot…".
+    public var title: String
+
+    public init(id: String, title: String) {
+        self.id = id
+        self.title = title
+    }
+}
+
 /// What BriefBar notified you of lately, from every source, the newest first: the Notifications page in its window,
 /// so you can see what you missed, even what macOS didn't show. It's kept in memory only, for as long as you choose.
 /// Each entry keeps what its source needs to open what it's about, as its notification does.
@@ -19,10 +33,12 @@ public struct NotificationHistory: Equatable, Sendable {
         public var userInfo: [String: String]
         /// You've seen it: on the page, or by clicking it, there or in Notification Center.
         public var isSeen: Bool
+        /// Its button, as its notification had it.
+        public var button: NotificationButton?
 
         public init(
             id: String, source: SourceID, state: ItemState? = nil, title: String, subtitle: String? = nil, body: String,
-            date: Date, userInfo: [String: String] = [:], isSeen: Bool = false
+            date: Date, userInfo: [String: String] = [:], isSeen: Bool = false, button: NotificationButton? = nil
         ) {
             self.id = id
             self.source = source
@@ -33,6 +49,7 @@ public struct NotificationHistory: Equatable, Sendable {
             self.date = date
             self.userInfo = userInfo
             self.isSeen = isSeen
+            self.button = button
         }
     }
 

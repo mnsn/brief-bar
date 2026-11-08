@@ -44,6 +44,10 @@ import BriefBarCore
         #expect(pipeline.buildId == 204_417)
         let fromItsRun = try #require(try check(Fixture.evaluation("Build", status: "rejected", context: ["buildId": 1, "buildDefinitionId": 32])))
         #expect(fromItsRun.definitionId == 32)
+        // The policy it reports, which tells apart two that run one pipeline.
+        let policy = try #require(try check(Fixture.evaluation("Build", status: "approved", context: ["buildId": 7], policy: 15)))
+        #expect(policy.policyId == 15)
+        #expect(fromItsRun.policyId == nil)
         let status = try #require(try check(Fixture.evaluation("Status", status: "rejected", settings: ["buildDefinitionId": 31])))
         #expect(status.definitionId == nil)
     }

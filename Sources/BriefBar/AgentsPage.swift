@@ -791,8 +791,10 @@ struct AgentsDescriptionBox: View {
                 word for word and, with Send Work to Copilot on, the Copilot session BriefBar sends its work to, your \
                 pipelines and sprint, a work item with its description, latest comments, the pull requests linked to it and \
                 the Copilot sessions on those, with what Copilot recorded of their work, the work BriefBar sent to Copilot, \
-                and your Copilot sessions. With Pull Request Order on, the orders sessions told BriefBar their pull \
-                requests merge in. Never your Teams chats or your pull requests on GitHub.
+                and your Copilot sessions. They can wait on one of your pull requests, for up to two hours, until its next \
+                build passes or fails, comments wait on you, or it has merge conflicts. With Pull Request Order on, the \
+                orders sessions told BriefBar their pull requests merge in. Never your Teams chats or your pull requests on \
+                GitHub.
                 """),
             .init(title: "Where it goes", symbol: "network", text: """
                 To the agent that asks, and its model, which may run in the cloud. Titles, comments and Copilot's notes \

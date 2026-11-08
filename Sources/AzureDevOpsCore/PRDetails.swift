@@ -111,6 +111,9 @@ public struct Check: Sendable, Codable, Equatable {
     /// The pipeline a build policy runs, its build definition's ID, which each of its runs shares; nil when the policy
     /// doesn't say.
     public var definitionId: Int?
+    /// The branch policy it reports, the same in every read: two policies may run one pipeline under one name. Nil when
+    /// Azure DevOps doesn't say.
+    public var policyId: Int?
     /// Where that build failed, and the first error there, once its timeline has been read.
     public var failure: PipelineFailure?
     /// For a build that expired, how it stood before: failed, for a rejected or broken one, which is still to fix, not only
@@ -122,7 +125,7 @@ public struct Check: Sendable, Codable, Equatable {
     public init(
         name: String, kind: Kind, state: State, isBlocking: Bool = true, minimumApprovers: Int? = nil, completedAt: Date? = nil,
         buildId: Int? = nil, definitionId: Int? = nil, failure: PipelineFailure? = nil, reviewerIds: [String] = [],
-        expiredFrom: State? = nil
+        expiredFrom: State? = nil, policyId: Int? = nil
     ) {
         self.name = name
         self.kind = kind
@@ -135,6 +138,7 @@ public struct Check: Sendable, Codable, Equatable {
         self.failure = failure
         self.reviewerIds = reviewerIds.map { $0.lowercased() }
         self.expiredFrom = expiredFrom
+        self.policyId = policyId
     }
 
     /// Nil for a disabled policy.
@@ -199,6 +203,7 @@ public struct Check: Sendable, Codable, Equatable {
         completedAt = evaluation.completedDate
         buildId = kind == .build ? context?.buildId : nil
         definitionId = kind == .build ? settings?.buildDefinitionId ?? context?.buildDefinitionId : nil
+        policyId = configuration.id
         reviewerIds = kind == .reviewers ? (settings?.requiredReviewerIds ?? []).map { $0.lowercased() } : []
     }
 

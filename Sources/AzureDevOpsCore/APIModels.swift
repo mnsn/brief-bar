@@ -155,6 +155,8 @@ public struct ADOPolicyEvaluation: Decodable, Sendable {
     public var completedDate: Date?
 
     public struct Configuration: Decodable, Sendable {
+        /// The policy, the same in every read of a pull request's policies, whichever pipeline it runs.
+        public var id: Int?
         public var isEnabled: Bool?
         public var isBlocking: Bool?
         public var type: PolicyType

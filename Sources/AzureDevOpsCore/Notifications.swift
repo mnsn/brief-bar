@@ -3,6 +3,17 @@ import Foundation
 
 /// A notification to post.
 public struct PulseNotification: Sendable, Equatable, Identifiable {
+    /// What of your pull request Copilot can fix, when a notification is about it: with Send Work to Copilot on, it offers
+    /// to (Fix with Copilot…).
+    public enum Fix: String, Sendable, Equatable {
+        /// Its comments: someone commented, replied, mentioned you or wants changes.
+        case comments
+        /// Its build failed.
+        case build
+        /// It has merge conflicts.
+        case conflicts
+    }
+
     /// Stable, so the same news is never posted twice.
     public var id: String
     /// What it means for you, such as a build that failed, for its symbol on the Notifications page. Nil for one in no
@@ -16,10 +27,12 @@ public struct PulseNotification: Sendable, Equatable, Identifiable {
     /// The pull request it's about, which clicking it marks as seen.
     public var key: PRKey?
     public var at: Date
+    /// What Copilot could fix of what it says, on your pull request; nil for anything else.
+    public var fix: Fix?
 
     public init(
         id: String, state: ItemState? = nil, title: String, subtitle: String? = nil, body: String, url: URL?, key: PRKey? = nil,
-        at: Date
+        at: Date, fix: Fix? = nil
     ) {
         self.id = id
         self.state = state
@@ -29,6 +42,7 @@ public struct PulseNotification: Sendable, Equatable, Identifiable {
         self.url = url
         self.key = key
         self.at = at
+        self.fix = fix
     }
 }
 
@@ -112,7 +126,7 @@ public enum NotificationPlanner {
                 notes.append(PulseNotification(
                     id: "\(snapshot.id):failing:\(snapshot.reason.rawValue):\(occurrence)", state: .failing,
                     title: snapshot.headline, subtitle: snapshot.title, body: snapshot.detail ?? snapshot.repository,
-                    url: snapshot.url, key: snapshot.key, at: at
+                    url: snapshot.url, key: snapshot.key, at: at, fix: fix(failing: snapshot.reason)
                 ))
             case .ready:
                 notes.append(PulseNotification(
@@ -171,6 +185,25 @@ public enum NotificationPlanner {
         }
     }
 
+    /// What Copilot can fix of one of your pull requests that fails for this reason: its build or its conflicts.
+    static func fix(failing reason: PRReason) -> PulseNotification.Fix? {
+        switch reason {
+        case .buildFailed: return .build
+        case .conflicts: return .conflicts
+        default: return nil
+        }
+    }
+
+    /// What Copilot can fix of what an event says: on your pull request, a comment, a reply, a mention or a vote that wants
+    /// changes, its comments.
+    static func fix(for event: PREvent, in snapshot: PRSnapshot) -> PulseNotification.Fix? {
+        guard snapshot.role == .author else { return nil }
+        switch event.kind {
+        case .comment, .reply, .mention, .changesRequested: return .comments
+        case .sentInChat, .reviewRequest, .newCommits, .rejected, .approved: return nil
+        }
+    }
+
     static func note(for event: PREvent, in snapshot: PRSnapshot) -> PulseNotification {
         let actor = event.actor ?? "Someone"
         let title: String
@@ -203,7 +236,8 @@ public enum NotificationPlanner {
         // Its own thread: the pull request's link goes to the comment that needs you most, which may be another one.
         return PulseNotification(
             id: "\(snapshot.id):\(event.id)", state: state, title: title, subtitle: snapshot.title,
-            body: body ?? snapshot.repository, url: snapshot.pageURL(thread: event.threadId), key: snapshot.key, at: event.at
+            body: body ?? snapshot.repository, url: snapshot.pageURL(thread: event.threadId), key: snapshot.key, at: event.at,
+            fix: fix(for: event, in: snapshot)
         )
     }
 }
