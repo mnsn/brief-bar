@@ -94,6 +94,15 @@ fileprivate final class Viewer {}
         return PullRequestOrder(defaults: defaults, isDemo: isDemo, now: { clock.now })
     }
 
+    /// The window's page the tests show By Mission on.
+    static let page = PullRequestOrder.page(.azureDevOpsPullRequests, window: "1")
+
+    /// By Mission shows these missions in `viewer`, on a window's page that's on screen, as its source says.
+    fileprivate static func show(_ keys: [MissionKey], in viewer: Viewer, by order: PullRequestOrder) {
+        order.setVisible(true, for: page)
+        order.showing(keys, in: viewer, on: page)
+    }
+
     /// Waits for what the model's answer sets, on the main actor.
     static func eventually(_ condition: () -> Bool) async -> Bool {
         for _ in 0..<300 where !condition() {
@@ -114,7 +123,7 @@ fileprivate final class Viewer {}
         #expect(order.title(of: mission) == "Checkout redesign" && order.naming(of: mission) == .briefBar)
 
         let viewer = Viewer()
-        order.showing([mission.key], in: viewer)
+        Self.show([mission.key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         #expect(await Self.eventually { order.modelNames[mission.key] != nil })
@@ -156,7 +165,7 @@ fileprivate final class Viewer {}
         let mission = try #require(order.missions.first)
         #expect(order.title(of: mission) == "Checkout redesign" && order.naming(of: mission) == .briefBar)
         let viewer = Viewer()
-        order.showing([mission.key], in: viewer)
+        Self.show([mission.key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         #expect(await Self.eventually { order.modelNames[mission.key] != nil })
@@ -178,7 +187,7 @@ fileprivate final class Viewer {}
         order.namer?.next()
         #expect(model.prompts.isEmpty)
         // On screen: once it's stayed the same for five seconds.
-        order.showing([key], in: viewer)
+        Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor - 1)
         order.namer?.next()
         #expect(model.prompts.isEmpty)
@@ -187,7 +196,7 @@ fileprivate final class Viewer {}
         #expect(await Self.eventually { model.prompts.count == 1 })
         // Shown again as it was: not again.
         order.stopShowing(in: viewer)
-        order.showing([key], in: viewer)
+        Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         try await Task.sleep(for: .milliseconds(50))
@@ -220,7 +229,7 @@ fileprivate final class Viewer {}
         Self.tell(order)
         let key = try #require(order.missions.first?.key)
         let viewer = Viewer()
-        order.showing([key], in: viewer)
+        Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         #expect(await Self.eventually { order.modelNames[key] != nil })
@@ -228,7 +237,7 @@ fileprivate final class Viewer {}
         order.forget(.azureDevOps)
         #expect(order.modelNames[key] == nil)
         Self.tell(order)
-        order.showing([key], in: viewer)
+        Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         #expect(await Self.eventually { model.prompts.count == 2 && order.modelNames[key] != nil })
@@ -248,7 +257,7 @@ fileprivate final class Viewer {}
                       items: [Self.item(Self.pr(4113), "Speed up the checkout page")], readsStories: true)
         let key = try #require(order.missions.first?.key)
         #expect(key == .family(Self.session))
-        order.showing([key], in: viewer)
+        Self.show([key], in: viewer, by: order)
         clock.advance(10 * MissionNamer.settleFor)
         order.namer?.next()
         try await Task.sleep(for: .milliseconds(50))
@@ -273,7 +282,7 @@ fileprivate final class Viewer {}
         Self.tell(order)
         let mission = try #require(order.missions.first)
         let viewer = Viewer()
-        order.showing([mission.key], in: viewer)
+        Self.show([mission.key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         #expect(await Self.eventually { model.prompts.count == 1 })
@@ -303,7 +312,7 @@ fileprivate final class Viewer {}
         Self.tell(order)
         let key = try #require(order.missions.first?.key)
         let viewer = Viewer()
-        order.showing([key], in: viewer)
+        Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         #expect(await Self.eventually { model.prompts.count == 1 })
@@ -353,7 +362,7 @@ fileprivate final class Viewer {}
         Self.tell(order)
         let key = try #require(order.missions.first?.key)
         let viewer = Viewer()
-        order.showing([key], in: viewer)
+        Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         namer.next()
         #expect(model.prompts.isEmpty)
@@ -377,7 +386,7 @@ fileprivate final class Viewer {}
         Self.tell(order)
         let key = try #require(order.missions.first?.key)
         let viewer = Viewer()
-        order.showing([key], in: viewer)
+        Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         namer.next()
         #expect(model.prompts.isEmpty && namer.wakesAt == nil)
@@ -449,7 +458,7 @@ fileprivate final class Viewer {}
         #expect(shown == "Checkout redesign")
         // …and Apple Intelligence names it before you're done.
         let viewer = Viewer()
-        order.showing([mission.key], in: viewer)
+        Self.show([mission.key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         #expect(await Self.eventually { order.modelNames[mission.key] != nil })
@@ -611,7 +620,7 @@ fileprivate final class Viewer {}
         let key = MissionKey.plan(Self.planID)
         #expect(order.missions.map(\.key) == [key])
         let viewer = Viewer()
-        order.showing([key], in: viewer)
+        Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         #expect(await Self.eventually { order.modelNames[key] == "Faster checkout" })
@@ -626,7 +635,7 @@ fileprivate final class Viewer {}
         let other = MissionKey.plan(Self.otherPlanID)
         #expect(order.missions.map(\.key) == [other])
         model.holds = true
-        order.showing([other], in: viewer)
+        Self.show([other], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         #expect(await Self.eventually { model.prompts.count == 2 })
@@ -635,6 +644,32 @@ fileprivate final class Viewer {}
         model.release()
         try await Task.sleep(for: .milliseconds(50))
         #expect(order.modelNames[other] == nil)
+        order.stopShowing(in: viewer)
+    }
+
+    /// A view that isn't on a window's page names nothing, though a window shows its own page on screen: nothing says that
+    /// view is on screen. On a page that's on screen, the same missions are named.
+    @Test func aViewOffAWindowsPageNamesNothing() async throws {
+        let clock = Clock()
+        let model = Model()
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let viewer = Viewer()
+        order.setVisible(true, for: Self.page)
+        order.showing([key], in: viewer)
+        #expect(order.onScreen.isEmpty)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(model.prompts.isEmpty)
+
+        order.showing([key], in: viewer, on: Self.page)
+        #expect(order.onScreen == [key])
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { model.prompts.count == 1 })
         order.stopShowing(in: viewer)
     }
 
@@ -685,7 +720,7 @@ fileprivate final class Viewer {}
         let titled = [Self.item(working, "Make checkout faster")]
         order.publish(.copilot, items: titled, working: [working: [Self.pr(4113)]])
         let viewer = Viewer()
-        order.showing([key], in: viewer)
+        Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         try #require(await Self.eventually { model.prompts.count == 1 })
@@ -729,10 +764,13 @@ fileprivate final class Viewer {}
                         place: { _ in nil }, isSelected: { _ in false }, select: { _ in false }, rest: { _ in AnyView(EmptyView()) }
                     )
                 }
+                .environment(\.shownSection, .azureDevOpsPullRequests)
+                .environment(\.shownWindow, "1")
                 .environmentObject(services)
                 .frame(width: 600, height: height)
             )
         }
+        order.setVisible(true, for: Self.page)
         let host = NSHostingView(rootView: page(height: 300))
         let window = NSWindow(
             contentRect: CGRect(x: -20_000, y: -20_000, width: 600, height: 300), styleMask: .borderless, backing: .buffered,

@@ -408,8 +408,8 @@ package final class PullRequestOrder: ObservableObject {
 
     /// By Mission shows these missions now, in this view, the first first: Apple Intelligence names them as they settle,
     /// while the window's page the view is on is on screen.
-    /// - Parameter page: the window's page it's on (`page(_:window:)`); nil outside a window, where what it shows is on
-    ///   screen.
+    /// - Parameter page: the window's page it's on (`page(_:window:)`); nil outside a window's page, where nothing it shows
+    ///   is named, as nothing says it's on screen.
     package func showing(_ keys: [MissionKey], in viewer: AnyObject, on page: String? = nil) {
         if let index = shown.firstIndex(where: { $0.viewer.object === viewer }) {
             guard shown[index].keys != keys || shown[index].page != page else { return }
@@ -444,10 +444,11 @@ package final class PullRequestOrder: ObservableObject {
         askNames()
     }
 
-    /// The missions By Mission shows on screen now, in all its views, the first first: those Apple Intelligence names.
+    /// The missions By Mission shows on screen now, in all its views, the first first: those Apple Intelligence names. A
+    /// view counts only while a window shows its page on screen; one that isn't on a window's page never does.
     package var onScreen: [MissionKey] {
         var keys: [MissionKey] = []
-        for view in shown where view.viewer.object != nil && view.page.map(visiblePages.contains) ?? true {
+        for view in shown where view.viewer.object != nil && view.page.map(visiblePages.contains) ?? false {
             for key in view.keys where !keys.contains(key) { keys.append(key) }
         }
         return keys

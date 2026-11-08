@@ -32,7 +32,7 @@ package struct MissionsBody: View {
 
     @EnvironmentObject private var services: AppServices
     /// The section and window whose page this is, when it's on one: its missions are named only while that page is on
-    /// screen.
+    /// screen, and never off a window's page.
     @Environment(\.shownSection) private var section
     @Environment(\.shownWindow) private var window
     /// Who shows the missions, for Apple Intelligence to name them while they're on screen.
