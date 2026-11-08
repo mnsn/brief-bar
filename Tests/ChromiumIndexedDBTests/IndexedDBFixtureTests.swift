@@ -6,7 +6,7 @@ import Testing
 @Suite struct IndexedDBFixtureTests {
     private let folder = IndexedDBFolder(url: Fixture.leveldb)
 
-    @Test func readsTheCatalog() throws {
+    @Test(.onTestThreads) func readsTheCatalog() throws {
         let (catalog, read) = try folder.catalog()
         #expect(Set(catalog.databases.values) == [Fixture.conversationsDatabase, Fixture.replyChainsDatabase])
         let conversations = catalog.stores { $0 == Fixture.conversationsDatabase && $1 == "conversations" }
@@ -29,7 +29,7 @@ import Testing
         return values
     }
 
-    @Test func readsEachConversationAsItIsNow() throws {
+    @Test(.onTestThreads) func readsEachConversationAsItIsNow() throws {
         let values = try conversations()
         #expect(Set(values.keys) == [Fixture.avery, Fixture.sam, Fixture.crew, Fixture.sync, Fixture.big, Fixture.wrapped, "48:notes"])
         func horizon(_ id: String) -> String? { values[id]?.value["properties"]?["consumptionhorizon"]?.string }
@@ -45,7 +45,7 @@ import Testing
         #expect(values.values.filter(\.fromBlobFile).count == 1)
     }
 
-    @Test func readsNestedValues() throws {
+    @Test(.onTestThreads) func readsNestedValues() throws {
         let nested = try #require(try conversations()[Fixture.crew]?.value["nested"])
         #expect(nested["list"] == .array([.number(1), .number(2.5), .number(-3), .bool(true), .null, .string("two-byte ☃")]))
         #expect(nested["when"] == .date(Double(Fixture.base)))
@@ -58,7 +58,7 @@ import Testing
         #expect(members.count == 40)
     }
 
-    @Test func skipsWhatItDoesntNeedInATable() throws {
+    @Test(.onTestThreads) func skipsWhatItDoesntNeedInATable() throws {
         // A table of the fixture's newest writes: metadata, two object stores' records, their exists entries and more.
         try withTemporaryDirectory { directory in
             let read = try LevelDBFolder(url: Fixture.leveldb).read()
@@ -86,7 +86,7 @@ import Testing
         }
     }
 
-    @Test func goesOnReadingTheLogWhereItStopped() throws {
+    @Test(.onTestThreads) func goesOnReadingTheLogWhereItStopped() throws {
         let (bytes, _) = try LevelDBFolder.contents(of: Fixture.log)
         let first = LevelDBLog.parse(Array(bytes.prefix(Fixture.firstRunLength)))
         #expect(first.end == Fixture.firstRunLength)

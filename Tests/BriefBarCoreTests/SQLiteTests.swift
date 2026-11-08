@@ -67,7 +67,7 @@ import Testing
     }
 
     /// So every connection BriefBar opens is a `SQLiteConnection`.
-    @Test func opensDatabasesOnlyThroughSQLiteConnection() throws {
+    @Test(.onTestThreads) func opensDatabasesOnlyThroughSQLiteConnection() throws {
         #expect(try sourcesMatching(/sqlite3_open/) == ["BriefBarCore/SQLite.swift"])
     }
 

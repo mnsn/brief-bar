@@ -77,6 +77,15 @@ jobs:
           xcode-select --print-path
           swift --version
 
+      # The release notes that pull requests write in changes/, and that none changed a description's version or
+      # CHANGELOG.md, which only a release does: against the last release's tag, which it fetches. Then the tests of
+      # the script that gathers the notes for a release. It needs no build, so a mistake there shows in seconds.
+      - name: Check the release notes
+        if: needs.changes.outputs.mac != 'false'
+        run: |
+          ./scripts/prepare-release.sh --check --fetch
+          ./scripts/test-prepare-release.sh
+
       # make test, build included, takes two to three minutes on GitHub's runners, so a test run that hangs ends
       # at ten minutes, not at the job's limit.
       - name: Test
