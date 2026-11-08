@@ -254,7 +254,12 @@ import Testing
 
     /// One the Board draws in its new column only once the move's wait ended, as in a lane you fold and unfold later, is
     /// owed the keyboard no more: it doesn't take it.
-    @Test func aMovedCardTheBoardDrawsOnlyAfterItsWaitDoesntTakeTheKeyboard() async throws {
+    @Test(.disabled("""
+        Flaky on CI: it times a 300 ms wait against fixed sleeps, so on a slow runner the wait can end after the \
+        redraw, as in v0.18.0's release build (run 42516738182). Turn it back on once it waits on the wait's end, \
+        not on time.
+        """))
+    func aMovedCardTheBoardDrawsOnlyAfterItsWaitDoesntTakeTheKeyboard() async throws {
         let order = Self.order()
         let late = Late()
         try await Self.showing(order, late: late, focusWait: .milliseconds(300)) { window, host, drawn in
