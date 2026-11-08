@@ -336,11 +336,13 @@ struct CountChips: View {
     }
 }
 
-/// A row's stage, on its own line under its title, while Pull Request Order is on: its pill, why, and who set it; where it
-/// stands in its order, unless its stage says it, as Can merge and Waits do; and Finished My Review in Your review. As
-/// many lines as it needs, so it wraps rather than squeezes when narrow. The row is a button, which would take every click:
-/// the pill's menu and Finished My Review go over it, where their spots are (`stageControls`). Someone else's that you
-/// finished reviewing says so, without a pill: it's off your board.
+/// A row's stage, on its own line under its title, while Pull Request Order is on: its pill, why, and who set it; where
+/// it stands in its order, unless its stage says it, as Can merge and Waits do; and Finished My Review in Your review.
+/// As many lines as it needs, so it wraps rather than squeezes when narrow; why, and who set it, wrap too where they're
+/// longer than the row is wide, such as a session's long name with a failed build after it, rather than being cut off.
+/// The row is a button, which would take every click: the pill's menu and Finished My Review go over it, where their
+/// spots are (`stageControls`). Someone else's that you finished reviewing says so, without a pill: it's off your
+/// board.
 struct RowStageLine: View {
     let stage: StageReading
     let order: OrderRowContext?
@@ -358,11 +360,9 @@ struct RowStageLine: View {
             }
             Text(StageText.why(stage, name: name))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
             if stage.isOnBoard, let who = StageText.who(stage, now: now, name: name) {
                 Text("· " + who)
                     .foregroundStyle(.tertiary)
-                    .lineLimit(1)
             }
             if let order, stage.stage != .canMerge, stage.stage != .waits {
                 OrderCapsule(order)
