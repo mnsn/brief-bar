@@ -345,7 +345,7 @@ notes_files() {
     for path in "$NOTES"/*; do
         [[ -e "$path" && "$path" != "$NOTES/README.md" ]] || continue
         [[ -f "$path" && "$path" =~ $pattern ]] ||
-            fail "$path isn't a notes file: $NOTES/ holds files named after branches, such as $NOTES/my-branch.md."
+            fail "$path isn't a notes file: $NOTES/ holds files named after branches, such as $NOTES/my-branch-20261108-021500.md."
         [[ -s "$path" ]] || fail "$path is empty."
         echo "$path"
     done

@@ -310,8 +310,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   the pull request changes what they use ([CI](#ci)).
 - Update the README, or [How it works](docs/how-it-works.md), when behavior or settings change.
 - For UI changes, include before and after screenshots from `make screenshots`, never of your own data.
-- Write what users will notice in a file of your own in `changes/`, never in `CHANGELOG.md`, and when a source reads
-  something new, or agents get something new, say so there too, rather than raising a version
+- Write what users will notice in a new file of your own in `changes/`, never in `CHANGELOG.md`, and when a source
+  reads something new, or agents get something new, say so there too, rather than raising a version
   ([Release notes](#release-notes)).
 
 `main` requires a pull request, CI's `Build and test (macos-26)` job and the Windows workflow's
@@ -322,12 +322,14 @@ maintainer can merge their own pull request. Force-pushing to `main` and deletin
 
 ### Release notes
 
-A pull request that changes something users will notice writes its release notes in a file of its own,
-`changes/<branch>.md`, named after its branch (with `-` for any `/`), never in `CHANGELOG.md`, so that no two pull
-requests conflict over them. The release gathers every file into its section of `CHANGELOG.md`, in the order their pull
-requests merged, and deletes them (`scripts/prepare-release.sh`). Write the bullets as `CHANGELOG.md`'s are: one for
-each change users will notice, with a bold lead, for users, and the lines that go on with it indented by two spaces. A
-change users won't notice needs no file.
+A pull request that changes something users will notice writes its release notes in a new file of its own,
+`changes/<branch>-<YYYYMMDD-HHMMSS>.md`: its branch's name, with `-` for any `/`, and the UTC date and time you make
+it (`date -u +%Y%m%d-%H%M%S`), such as `changes/asmanass-microsoft-faster-ci-20261108-021500.md`. It never writes them
+in `CHANGELOG.md`, so that no two pull requests conflict over them, and never edits a notes file that's already on
+`main`: a later pull request from the same branch writes a new file. The release gathers every file into its section
+of `CHANGELOG.md`, in the order their pull requests merged, and deletes them (`scripts/prepare-release.sh`). Write the
+bullets as `CHANGELOG.md`'s are: one for each change users will notice, with a bold lead, for users, and the lines that
+go on with it indented by two spaces. A change users won't notice needs no file.
 
 When a source reads something new, update its `SourceDescription`, but leave its `descriptionVersion` and its `/// N:`
 lines as they are: say it under `## Descriptions`, after the source's name, as its doc line would, without the number.
@@ -359,8 +361,8 @@ script too. A new source goes in its lists.
 A pull request that wrote its notes under `## Unreleased` in `CHANGELOG.md`, or raised a version, moves them as it
 merges `main`:
 
-1. Copy its bullets from `## Unreleased` into `changes/<branch>.md` as they are, then make `CHANGELOG.md` what `main`
-   has: `git checkout origin/main -- CHANGELOG.md`.
+1. Copy its bullets from `## Unreleased` into a new `changes/<branch>-<YYYYMMDD-HHMMSS>.md` as they are, then make
+   `CHANGELOG.md` what `main` has: `git checkout origin/main -- CHANGELOG.md`.
 2. For each version it raised, a source's `descriptionVersion` or `AgentAccess.version`, put back `main`'s number,
    take out the `/// N:` line it added, and put that line's text, without its number, under `## Descriptions` in the
    file, after the source's name.
