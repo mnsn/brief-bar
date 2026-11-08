@@ -1653,4 +1653,90 @@ import Testing
         let again = try Self.step(4110, in: Self.mission(.family(opener), in: Self.missions(facts, forgotten, whenForgotten)))
         #expect(again.standing == .next)
     }
+
+    // MARK: Your next, as an order or you change around it
+
+    /// What you take away from waiting for the one you set as next says so, with ✎, as when it's its order's line you took
+    /// away, which says that itself, once.
+    @Test func takingAwayWaitingForYourNextSaysSo() throws {
+        let orders = try tell([(4101, []), (4102, []), (4103, [4101])])
+        let facts = Self.facts([4101, 4102, 4103])
+        var changes = OrderChanges()
+        try changes.apply(.setNext(Self.pr(4101), in: .plan(planID), true), missions: Self.missions(facts, orders, changes), orders: orders, now: t(60))
+        for number in [4102, 4103] {
+            try changes.apply(
+                .mergeAfter(Self.pr(number), Self.pr(4101), in: .plan(planID), false), missions: Self.missions(facts, orders, changes),
+                orders: orders, now: t(70)
+            )
+        }
+
+        let mission = try Self.mission(.plan(planID), in: Self.missions(facts, orders, changes))
+        let yours = try Self.step(4102, in: mission)
+        #expect(yours.isChangedByYou && yours.prerequisites.isEmpty && yours.notes == [.notAfterYourNext(Self.pr(4101))])
+        #expect(yours.notes.first.map { OrderText.note($0, of: yours.ref) } == "You took away its waiting for !4101, which you set as next to merge")
+        #expect(try Self.step(4103, in: mission).notes == [.tookAway(Self.pr(4101), by: Self.session)])
+    }
+
+    /// Setting one as next takes away the one you set as next there before, also one an order went against since, which stays
+    /// as that order left it but for that: once BriefBar forgets that order, the one you set last is the only next there. Undo
+    /// brings the other back as it was.
+    @Test func settingAnotherAsNextTakesAwayOneAnOrderWentAgainst() throws {
+        let facts = Self.facts([4110, 4111, 4120])
+        let mine = MissionKey.mine(otherID)
+        let none = DeclaredOrders()
+        var changes = OrderChanges()
+        try changes.apply(.move([Self.pr(4110), Self.pr(4111)], to: .into(mine), from: nil), missions: Self.missions(facts, none, changes), orders: none, now: t(50))
+        try changes.apply(.setNext(Self.pr(4110), in: mine, true), missions: Self.missions(facts, none, changes), orders: none, now: t(60))
+        let orders = try tell([(4120, []), (4110, [4120])], at: 120)
+        changes.noteOverrides(in: orders, now: t(120))
+        let overridden = try #require(changes[Self.pr(4110)])
+        #expect(!overridden.holds(in: orders) && overridden.first == mine)
+
+        let touched = try changes.apply(.setNext(Self.pr(4111), in: mine, true), missions: Self.missions(facts, orders, changes), orders: orders, now: t(180))
+        let cleared = try #require(changes[Self.pr(4110)])
+        #expect(cleared.first == nil && cleared.placement == .into(mine))
+        // Still the order's, as it left it: not back among yours.
+        let withOrder = Self.missions(facts, orders, changes)
+        let ordered = try Self.mission(.plan(planID), in: withOrder)
+        let yours = try Self.mission(mine, in: withOrder)
+        #expect(!cleared.holds(in: orders) && ordered.steps.contains { $0.ref == Self.pr(4110) } && !yours.contains(Self.pr(4110)))
+
+        var forgotten = orders
+        forgotten.forget(planID)
+        var afterwards = changes
+        afterwards.noteOverrides(in: forgotten, now: t(240))
+        let missions = Self.missions(facts, forgotten, afterwards)
+        let mission = try Self.mission(mine, in: missions)
+        #expect(try Self.step(4111, in: mission).standing == .next)
+        #expect(try Self.step(4110, in: mission).prerequisites.map(\.ref) == [Self.pr(4111)])
+        #expect(MissionChoices.of(Self.pr(4110), missions: missions, changes: afterwards, orders: forgotten).next == .offered)
+
+        changes.restore(touched)
+        #expect(changes[Self.pr(4110)] == overridden)
+    }
+
+    /// Two you set as next that come to be in one mission, as a retarget makes one chain of two: the one you set last is
+    /// next, and the other says so, its Set as Next no longer checked.
+    @Test func ofTwoNextsThatComeToBeInOneMissionTheOneYouSetLastIs() throws {
+        let apart = OrderFacts(pullRequests: [
+            Self.ado(4101), Self.ado(4102, into: "users/robin/part-4101"), Self.ado(4103), Self.ado(4104, into: "users/robin/part-4103"),
+        ])
+        let none = DeclaredOrders()
+        var changes = OrderChanges()
+        try changes.apply(.setNext(Self.pr(4103), in: .chain(Self.pr(4103)), true), missions: Self.missions(apart, none, changes), orders: none, now: t(60))
+        try changes.apply(.setNext(Self.pr(4101), in: .chain(Self.pr(4101)), true), missions: Self.missions(apart, none, changes), orders: none, now: t(70))
+
+        let joined = OrderFacts(pullRequests: [
+            Self.ado(4101), Self.ado(4102, into: "users/robin/part-4101"), Self.ado(4103, into: "users/robin/part-4102"),
+            Self.ado(4104, into: "users/robin/part-4103"),
+        ])
+        let missions = Self.missions(joined, none, changes)
+        let chain = try Self.mission(.chain(Self.pr(4101)), in: missions)
+        #expect(try Self.step(4101, in: chain).standing == .next)
+        #expect(try Self.step(4103, in: chain).notes.contains(.nextSince(Self.pr(4101))))
+        #expect(OrderText.note(.nextSince(Self.pr(4101)), of: Self.pr(4103))
+            == "You set !4101 as next to merge here later, so your ‘next to merge’ doesn't hold")
+        #expect(MissionChoices.of(Self.pr(4101), missions: missions, changes: changes, orders: none).next == .isSet)
+        #expect(MissionChoices.of(Self.pr(4103), missions: missions, changes: changes, orders: none).next == .stacked(on: Self.pr(4102)))
+    }
 }

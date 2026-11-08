@@ -617,6 +617,8 @@ public enum OrderNote: Equatable, Sendable {
     case placementGone(MissionKey)
     /// It waits for this one, which you set as next to merge.
     case afterYourNext(ItemRef)
+    /// It doesn't wait for this one, which you set as next to merge: you took that away.
+    case notAfterYourNext(ItemRef)
     /// Its order, told by that session when known, puts it after this one, which goes after it: BriefBar set that aside.
     case setAside(ItemRef, by: ItemRef?, through: Circle)
     /// Its order, told by that session when known, puts it after this one, which waits for it through stacked branches and
@@ -635,6 +637,9 @@ public enum OrderNote: Equatable, Sendable {
     case nextDoesntHold(ItemRef, retarget: Bool)
     /// You set it as next to merge in that mission, which it isn't in now, or which is gone, its order forgotten.
     case nextElsewhere(MissionKey)
+    /// You set this one as next to merge here after it, such as in a chain that came to be one with another: that one's
+    /// next, and yours doesn't hold.
+    case nextSince(ItemRef)
     /// An order changed its place after you had: it shows the order's, until you put yours back.
     case orderChangedIt(OrderOverride)
 
@@ -654,8 +659,8 @@ public enum OrderNote: Equatable, Sendable {
     /// the details' order line says, and what a row with no order known marks.
     public var isAboutYourChanges: Bool {
         switch self {
-        case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .afterYourNext, .yoursDoesntHold, .nextDoesntHold,
-             .nextElsewhere, .orderChangedIt, .yourNextGoesFirst:
+        case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .afterYourNext, .notAfterYourNext, .yoursDoesntHold,
+             .nextDoesntHold, .nextElsewhere, .nextSince, .orderChangedIt, .yourNextGoesFirst:
             return true
         case .setAside(_, _, let circle):
             return circle == .yours || circle == .yourChanges
@@ -1497,11 +1502,22 @@ extension Board {
         }
         var chosen: ItemRef?
         if let next {
+            // Another you set as next here that holds, such as in a chain that came to be one with another: the one you set
+            // last is the one, and the others say so.
+            for ref in refs where ref != next && status(ref).isOpen && layer.holding[ref]?.first.map(group.names) == true {
+                added[ref, default: []].append(.nextSince(next))
+            }
             if let blocked {
                 added[next, default: []].append(.nextDoesntHold(blocked, retarget: status(blocked) == .merged))
             } else {
                 chosen = next
                 added[next, default: []].append(.yourNext(layer.changedAt(next)))
+                // What you took away from waiting for yours says so, as your change to it: but its order's line, which says so
+                // itself (`tookAway`).
+                for ref in refs where ref != next && layer.holding[ref]?.notAfter.contains(next) == true
+                    && !(own.contains(ref) && plan?.entry(for: ref)?.after.contains(next) == true) {
+                    added[ref, default: []].append(.notAfterYourNext(next))
+                }
                 // Every line the missions made before kept, other orders' between this one's pull requests too: what waits for
                 // nothing here waits for yours, unless that goes round with them.
                 let everywhere = lines.orders().merging(lines.next()) { $0.union($1) }
@@ -1867,6 +1883,8 @@ public enum OrderText {
             return "Its mission is gone: you'd put it here"
         case .afterYourNext(let next):
             return "You set \(next.orderLabel(near: ref)) as next to merge"
+        case .notAfterYourNext(let next):
+            return "You took away its waiting for \(next.orderLabel(near: ref)), which you set as next to merge"
         case .setAside(let earlier, let session, let circle):
             let label = earlier.orderLabel(near: ref)
             switch circle {
@@ -1902,6 +1920,8 @@ public enum OrderText {
             if let title = names.title(mission) { return "You set it as next to merge in ‘\(title)’, which it isn't in now" }
             if case .plan = mission { return "Its order is gone: you'd set it as next to merge there" }
             return "The mission you set it as next to merge in is gone"
+        case .nextSince(let later):
+            return "You set \(later.orderLabel(near: ref)) as next to merge here later, so your ‘next to merge’ doesn't hold"
         case .orderChangedIt(let override):
             return overridden(override, of: ref, names: names)
         }

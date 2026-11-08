@@ -781,15 +781,15 @@ extension OrderChanges {
             edited.remove(ref)
         }
         // One for each mission: the others set as next there aren't anymore, and one beside its order that you set as next
-        // only goes back beside it.
+        // only goes back beside it. Also one an order went against since, which stays as that order left it but for that:
+        // should BriefBar forget that order, it doesn't come back as a second next there.
         func clearOtherFirsts(named key: MissionKey, in mission: OrderMission?, besides ref: ItemRef) throws {
             for other in edited.all where other.ref != ref {
-                guard let first = other.first, mission.map({ Self.names($0, first) }) ?? (first == key), other.holds(in: orders)
-                else { continue }
+                guard let first = other.first, mission.map({ Self.names($0, first) }) ?? (first == key) else { continue }
                 var cleared = other
                 cleared.first = nil
                 cleared.detachIfDone()
-                try keep(cleared)
+                try keep(cleared, stamped: other.holds(in: orders))
             }
         }
 
@@ -1083,13 +1083,14 @@ public struct MissionChoices: Equatable, Sendable {
             )
         }
         // The one you set as next there, by your change that holds, whether or not a stacked branch lets it be or BriefBar can
-        // see it now.
+        // see it now; but not one you set before another there that's next instead (`nextSince`).
         let isSet = change.map { change in
             change.holds(in: orders) && change.first.map { OrderChanges.names(shown, $0) } == true
         } ?? false
+        let isSince = step.notes.contains { if case .nextSince = $0 { true } else { false } }
         let next: Next = if step.status.hasEnded {
             .ended
-        } else if isSet {
+        } else if isSet && !isSince {
             .isSet
         } else if let open = OrderChanges.openStacked(under: step) {
             .stacked(on: open)
