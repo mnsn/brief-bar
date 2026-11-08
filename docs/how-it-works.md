@@ -1628,20 +1628,28 @@ VoiceOver's actions on it (`CommentLine`): only one whose author is the identity
 and that someone wrote, of type `text` or of none, not a code change's (`ReviewComment.isEditable`); system comments and
 deleted ones are never read. **Edit** opens your reply's composer in place of what the comment says
 (`ThreadReplyComposer.editing`), the details' one composer in place (`CopilotComposing.edit(_:in:)`), with Fix Grammar,
-**Cancel**, which Esc presses, and **Save**, which ⌘Return presses. It holds what the comment says as Azure DevOps keeps
-it, each mention as the name it shows, as the details named it as they read the thread, by its identities and the authors
-of comments they leave out too (`ReviewComment.mentionNames`), and saves those names as mentions again (`CommentEditing`):
-a mention whose name
+**✕**, which Esc presses, which closes it and keeps what you wrote, as Reply's does, **Cancel**, which keeps the comment
+as it was and forgets what you wrote, and **Save**, which ⌘Return presses. It holds what the comment says as Azure
+DevOps keeps it, each mention as the name it shows, as the details named it as they read the thread, by its identities
+and the authors of comments they leave out too (`ReviewComment.mentionNames`), and saves those names as mentions again
+(`CommentEditing`): a mention whose name
 isn't known, that two of them share, that the comment says as text too, or that wouldn't come back as it was, stays as
 Azure DevOps keeps it, `@<…>`, so that what you leave as it was goes as it was. What you write is kept as you type
 (`ThreadChanges.keepEdit`), in memory only, once it says something else than what you began with, with what the comment
 said then (`ThreadChanges.EditDraft`), until it's saved or you cancel, which forgets it, as turning the setting off,
-Azure DevOps stopping or someone else signing in do. Opened again, the edit has what you wrote, while the comment still
-says what it said as you began; once it says something else, as edited elsewhere, it starts again from what it says
-now, and what you wrote goes (`ThreadChanges.startEditing`): saved, it would put back what the comment said. Its names go
-back as the mentions they showed as you began, though the comment changed meanwhile. Saving is a `PATCH` of what the
-comment says alone, `content` (`ADOWrite.editComment`), unless it says what you began with, or what the comment says now,
-when nothing goes; Azure DevOps answers with the comment as it keeps it, which shows at once in its place
+Azure DevOps stopping or someone else signing in do. Closed with ✕ or Esc, or as something else opens, it stays, and
+opened again, the edit has what you wrote, whatever the comment says now (`ThreadChanges.startEditing`). Its names go
+back as the mentions they showed as you began, though the comment changed meanwhile. Once the comment says something
+else than it did as you began, as edited in Azure DevOps or in another window, which a refresh or a read again brings,
+and something else than what you wrote, your edit says so under its field, with what the comment says now, as it opens
+or as the comment changes, which VoiceOver hears too (`CommentChangedNotice`, `ThreadChanges.changedSince`): saved, your
+edit would replace what it says now, which you haven't seen, so **Save** sends nothing then, and says so again. **Start
+Over** puts what the comment says now in your edit, in place of what you wrote, and begins again from it
+(`ThreadChanges.startOver`); **Save Anyway** saves your edit over the version it shows, and that one only: once the
+comment changes again, your edit says so again. An edit of yours that may have gone, as one Azure DevOps didn't answer
+in time, isn't a change elsewhere, though the thread has it (`EditAttempt`). Saving is a `PATCH` of what the comment
+says alone, `content` (`ADOWrite.editComment`), unless it says what you began with, or what the comment says now, when
+nothing goes; Azure DevOps answers with the comment as it keeps it, which shows at once in its place
 (`ThreadChange.edited`), but never over a later edit of it, as one made elsewhere that a read had before the answer
 came, as Azure DevOps dates each edit, then or as the list reads it again (`PRDetails.apply`); with **· Edited** after
 when it was written, from its
@@ -1670,7 +1678,8 @@ called off before it goes as the setting goes off, and settling once it's gone, 
 nothing as it settles when someone else signed in meanwhile (`ThreadChanges.settling`, `lifetime`). One that may have
 been made, as one Azure DevOps didn't answer in time, has its pull request read again; and the same edit goes again
 only once its thread, read again first, says the comment doesn't say it (`ThreadChanges.EditAttempt`, a fingerprint of
-what it said, `digest`), and the deletion only once the thread still has the comment, and the pull request is still open
+what it said, `digest`), nor something else since you began, which shows then, for your edit to say so as above, and the
+deletion only once the thread still has the comment, and the pull request is still open
 in your lists: nothing goes while the thread can't be read (`ADOWriteProblem.unconfirmed`). One the thread says was made
 shows at once, as the thread has it, over an edit of the comment from before, or the reply that added it, which the list
 would otherwise show until a snapshot had them, which none will. One that didn't happen says why on the thread (`ADOWriteProblem`), or, an
@@ -1683,17 +1692,24 @@ those and of the reply that added the comment, so that none puts back what it sa
 
 In your reply and your edit, the Mac checks your spelling as you type, in the system's languages, and the right-click
 menu suggests words (`spellChecked()`). SwiftUI's `TextEditor` turns its text view's continuous spell checking on only
-with autocorrection (`autocorrectionDisabled(false)`), and sets both again each time it updates the editor, as you
-type: so a view behind it, as big as it is, finds its text view, the one there, and turns autocorrection off again
-each time SwiftUI turns it on (`SpellCheckingProbe`, with key-value observing), with text replacement, smart quotes and
-dashes, which would change code, links and mentions as you type, and grammar checking, which Fix Grammar does when you
-ask. The editor, its focus, its size, its shortcuts and what you wrote are as they were.
+with autocorrection (`autocorrectionDisabled(false)`), and sets both again each time it updates the editor, as you type:
+so a view behind it, as big as it is, finds its text view, the one there (`SpellCheckingProbe`), and keeps off there
+what corrects, replaces or substitutes text by itself, autocorrection, text replacement, smart quotes and dashes, which
+would change code, links and mentions as you type, and grammar checking, which Fix Grammar does when you ask
+(`ProbeView.kept`). Key-value observing tells it at once when SwiftUI, as you type, or the editor's right-click menu's
+Substitutions turn one on. As the system's settings of the first four change, `NSSpellChecker` posts a notification,
+which each text view hears, and takes the new setting from, without telling key-value observers: so the probe hears them
+too, and turns them off again once the text view has (`systemSettingChanges`). Until it has found the text view, SwiftUI
+checks and corrects nothing there (`autocorrectionDisabled(true)`); should it find none in a second, in a window, as
+with an editor that isn't a text view, the log says so, with nothing of what's written: spelling and autocorrection stay
+off there, and text replacement, smart quotes and dashes follow the system's settings. The editor, its focus, its size,
+its shortcuts and what you wrote are as they were.
 
-`--render` draws, in the demo, your comment on the first thread that waits on you with its **⋯** menu open (a picture
-of it, `MenuPicture`, since `--render` can't draw a menu, which macOS draws in a window of its own), as you edit it, as
-you delete it, and when it couldn't be deleted; then, from a list of its own with it made as the demo makes it, the
-comment edited (`threadChangeRenderings`). The underlines spelling draws don't show in its pictures, whose windows are
-offscreen.
+`--render` draws, in the demo, your comment on the first thread that waits on you with its **⋯** menu open (a picture of
+it, `MenuPicture`, since `--render` can't draw a menu, which macOS draws in a window of its own), as you edit it, once
+it changed since you began, as you delete it, and when it couldn't be deleted; then, from a list of its own with it made
+as the demo makes it, the comment edited (`threadChangeRenderings`). The underlines spelling draws don't show in its
+pictures, whose windows are offscreen.
 
 #### A pull request's tags
 

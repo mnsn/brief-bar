@@ -489,9 +489,12 @@ request, has **⋯** at the end of its line, with **Edit** and **Delete…**, wh
 its thread's, and so do VoiceOver's actions on it: not someone else's, nor a comment Azure DevOps added for a code
 change. **Edit** opens what it says in place of it, in a field like Reply's, its @mentions as the names they show, which
 go back as mentions: **Save**, or ⌘Return, saves it in Azure DevOps, as you, and it shows as soon as Azure DevOps
-answers, with **· Edited** after when you wrote it; **Cancel**, or Esc, keeps it as it was, and forgets what you
-changed. What you change stays while BriefBar runs, if you open something else before you save it, until the comment
-changes in Azure DevOps, when Edit starts again from what it says now. **Fix Grammar** is there too, as in a reply.
+answers, with **· Edited** after when you wrote it; **Cancel** keeps it as it was, and forgets what you changed. **✕**
+or Esc closes the field and keeps what you changed, as for a reply, and so does opening something else: it stays while
+BriefBar runs, until you save it or cancel. If the comment changes meanwhile, in Azure DevOps or another window, your
+edit says so, with what it says now, and **Save** saves nothing, which would replace that without you seeing it:
+**Start Over** puts what it says now in your edit, in place of what you wrote, and **Save Anyway** replaces it with your
+edit. **Fix Grammar** is there too, as in a reply.
 **Delete…** asks first, under the comment, saying that Azure DevOps deletes it, as you, and that it can't be undone:
 **Delete** deletes it, and **Cancel**, or Esc, keeps it. Azure DevOps keeps a deleted comment, marked deleted, and
 doesn't show it, and deletes its thread once none of its comments is left, so the comment leaves its thread at once, and
@@ -506,7 +509,8 @@ own made-up pull requests.
 **Spelling.** In your reply, and in a comment you edit, the Mac checks your spelling as you type, in the languages
 your Mac uses: it underlines the words it doesn't know, and a right-click on one suggests others. It never corrects
 anything by itself, though, nor makes quotes curly or dashes long, nor replaces text, so your code, links and @mentions
-stay as you type them, and it leaves grammar to **Fix Grammar**.
+stay as you type them, whatever your Mac's settings for them, even as they change; and it leaves grammar to **Fix
+Grammar**.
 
 **See and change a pull request's tags.** A pull request's tags show under its heading in its details, after its branch
 and who wrote it, as a work item's details show its own, in the order of their names: those of your pull requests and
