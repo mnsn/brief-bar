@@ -620,13 +620,15 @@ struct CopilotComposerView: View {
         return notes
     }
 
-    /// What Send to Session does, as things stand.
+    /// What Send to Session does, as things stand: a Push & Reply doesn't go while a turn runs in the session, which could
+    /// change what BriefBar checked it would push (`CopilotTasksStore.turnProblem`).
     private var sendDetail: String {
         switch reach {
         case .listening?:
-            return target?.appSession?.isRunning == true
-                ? "Copilot takes the prompt once it's done what it's doing."
-                : "Copilot takes the prompt in the session now."
+            guard target?.appSession?.isRunning == true else { return "Copilot takes the prompt in the session now." }
+            return pullRequest?.1 == .pushAndReply
+                ? "Copilot is running a turn in it: send this once that's done, so BriefBar checks what it would push."
+                : "Copilot takes the prompt once it's done what it's doing."
         case .loads?:
             return "Opens the session in Copilot, and sends the prompt there."
         case .noListener(inApp: false)?:

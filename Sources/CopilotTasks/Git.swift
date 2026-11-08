@@ -69,9 +69,22 @@ public struct Git: Sendable {
         return repository
     }
 
+    /// Fails unless the folder is in a local clone of the PR's repository, by its origin, whatever branch new work would
+    /// start from there, which a check of what it would push doesn't need (`checkPush(in:source:target:)`).
+    public func checkClone(at folder: URL, of pullRequest: TaskPullRequest) async throws {
+        guard let root = try? await run(["-C", folder.path, "rev-parse", "--show-toplevel"], timeout: 30), !root.isEmpty else {
+            throw GitError.notARepository(folder.path)
+        }
+        try await validate(root: URL(fileURLWithPath: root, isDirectory: true), for: pullRequest)
+    }
+
     func validate(_ repository: GitRepository, for pullRequest: TaskPullRequest) async throws {
+        try await validate(root: repository.root, for: pullRequest)
+    }
+
+    private func validate(root: URL, for pullRequest: TaskPullRequest) async throws {
         // Read the configured URL, before a credential helper's insteadOf rewrite.
-        let remote = try await run(["-C", repository.root.path, "config", "--get", "remote.origin.url"], timeout: 30)
+        let remote = try await run(["-C", root.path, "config", "--get", "remote.origin.url"], timeout: 30)
         guard pullRequest.matches(remote: remote) else {
             throw GitError.wrongRepository("\(pullRequest.organization)/\(pullRequest.project)/\(pullRequest.repository)")
         }

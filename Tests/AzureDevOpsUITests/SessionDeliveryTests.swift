@@ -252,7 +252,9 @@ private final class TakenAt: Sendable {
     /// A clone of the pull request's repository, as Azure DevOps names it, that fetches from one on disk: release/x and the
     /// pull request's branch started from main's first commit, and main went a commit further. The clone is detached at the
     /// branch, with main merged in, as resolving its conflicts against main left it.
-    private func resolvedAgainstMain(in home: URL) async throws -> URL {
+    /// - Parameter keepsItsBaseBranch: false for a clone with none of origin/HEAD, origin/main and origin/master, as one
+    ///   whose default branch is develop, where no new work could start (`GitError.noOrigin`).
+    private func resolvedAgainstMain(in home: URL, keepsItsBaseBranch: Bool = true) async throws -> URL {
         struct GitFailed: Error { let message: String }
         let environment = ["PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"]
         func git(_ arguments: [String]) async throws {
@@ -282,7 +284,24 @@ private final class TakenAt: Sendable {
         try await git(["-C", checkout.path, "config", "url.\(origin.path).insteadOf", remote])
         try await git(["-C", checkout.path, "checkout", "--quiet", "--detach", "origin/\(pullRequest.sourceBranch)"])
         try await git(["-C", checkout.path] + identity + ["merge", "--quiet", "--no-edit", "origin/main"])
+        if !keepsItsBaseBranch {
+            try await git(["-C", checkout.path, "symbolic-ref", "--delete", "refs/remotes/origin/HEAD"])
+            try await git(["-C", checkout.path, "update-ref", "-d", "refs/remotes/origin/main"])
+        }
         return checkout
+    }
+
+    /// Runs SQL in the app's database.
+    private func sql(_ statements: String, home: URL) throws {
+        var handle: OpaquePointer?
+        guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
+        defer { sqlite3_close(handle) }
+        guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
+    }
+
+    /// The sessions that run a turn now, as the app's database flags them; none of the others.
+    private func turns(running ids: [String], home: URL) throws {
+        try sql("UPDATE sessions SET is_running = (id IN (\(ids.map { "'\($0)'" }.joined(separator: ", "))));", home: home)
     }
 
     /// Push & Reply goes once what the folder the session works in would push is checked, against the branch its prompt
@@ -303,10 +322,16 @@ private final class TakenAt: Sendable {
         ext.start()
         defer { ext.stop() }
         try hold(session, home: home)
-        try work(session, in: try await resolvedAgainstMain(in: home), home: home)
-        // The window opened once the pull request merged into release/x, and its prompt names it.
+        // A clone where no new work could start, which the check doesn't need.
+        let checkout = try await resolvedAgainstMain(in: home, keepsItsBaseBranch: false)
+        let git = Git(executable: URL(fileURLWithPath: "/usr/bin/git"), environment: ["PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        await #expect(throws: GitError.noOrigin("checkout")) { try await git.repository(at: checkout) }
+        try work(session, in: checkout, home: home)
+        // The window opened once the pull request merged into release/x, and its prompt names it, as Azure DevOps does.
         var retargeted = pullRequest
         retargeted.targetBranch = "release/x"
+        var target = "release/x"
+        store.readTarget = { _ in target }
 
         let refused = await store.deliver("Push and reply", to: choice(session), checkingPush: retargeted)
         #expect(refused == .notSent("‘Fix the totals’ holds a merge that release/x doesn't have, so nothing went. Fix the pull request in a new session."))
@@ -325,7 +350,8 @@ private final class TakenAt: Sendable {
         #expect(why.hasPrefix("BriefBar couldn't check what ‘Fix the totals’ would push, so nothing went: "))
         #expect(ext.received.isEmpty && copied.isEmpty)
 
-        try work(session, in: home.appendingPathComponent("checkout", isDirectory: true), home: home)
+        try work(session, in: checkout, home: home)
+        target = "main"
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
         #expect(ext.received == ["Push and reply"])
         #expect(copied.isEmpty)
@@ -358,6 +384,7 @@ private final class TakenAt: Sendable {
             looks += 1
             return retargeted || looks >= retargetedAt ? "release/x" : "main"
         }
+        store.readTarget = { _ in "main" }
         let refused = SessionDelivery.notSent(
             "The pull request merges into release/x now, not the branch this prompt names, so nothing went. Close this window and open it again, for a prompt that names release/x."
         )
@@ -401,6 +428,119 @@ private final class TakenAt: Sendable {
         ext.start()
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
         #expect(ext.received == ["Push and reply"])
+    }
+
+    /// A Push & Reply whose prompt names main doesn't go when Azure DevOps says, right before git checks what it would push,
+    /// or right after, that the pull request merges into release/x, though the list hasn't read that yet; nor when it can't
+    /// be read.
+    @Test(.timeLimit(.minutes(1)))
+    func sendsNoPushWhenAzureDevOpsSaysThePullRequestMergesIntoAnotherBranch() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        ext.start()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        try work(session, in: try await resolvedAgainstMain(in: home), home: home)
+        // What Azure DevOps says, read by read: once the answers run out, it can't be read.
+        var answers: [String] = []
+        var reads: [String] = []
+        var asked: Set<PRKey> = []
+        store.readTarget = { key in
+            asked.insert(key)
+            let answer = answers.isEmpty ? "unread" : answers.removeFirst()
+            reads.append(answer)
+            guard answer != "unread" else { throw ADOError.offline }
+            return answer
+        }
+        let refused = SessionDelivery.notSent(CopilotTasksStore.retargetedMessage("release/x"))
+
+        answers = ["release/x"]
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(reads == ["release/x"])
+        (answers, reads) = (["main", "release/x"], [])
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(reads == ["main", "release/x"])
+        (answers, reads) = (["main"], [])
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest)
+            == .notSent("BriefBar couldn't read which branch the pull request merges into, so nothing went: \(ADOError.offline)"))
+        #expect(reads == ["main", "unread"])
+        #expect(ext.received.isEmpty && requests(home).isEmpty)
+
+        (answers, reads) = (["main", "main"], [])
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        #expect(reads == ["main", "main"])
+        #expect(ext.received == ["Push and reply"])
+        #expect(asked == [PRKey(pullRequest.organization, pullRequest.id)])
+        // Nothing else reads it.
+        #expect(await store.deliver("Fix the comments", to: choice(session)) == .sent)
+        #expect(reads == ["main", "main"])
+    }
+
+    /// A Push & Reply doesn't go while Copilot runs a turn in the session, or another of the app's sessions runs one in the
+    /// checkout it works in, as the app's database says then: what that turn changes, such as a merge, would go with the
+    /// push, unchecked. Before git checks; and from right before the request is written until the session's extension takes
+    /// it, which BriefBar takes back then. Once no turn runs there, it goes.
+    @Test(.timeLimit(.minutes(1)))
+    func sendsNoPushWhileATurnRunsInTheSessionOrItsCheckout() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        store.readTarget = { _ in "main" }
+        // Listening, but it takes nothing until it starts.
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        let checkout = try await resolvedAgainstMain(in: home)
+        try work(session, in: checkout, home: home)
+        // Another of the app's sessions, working in a folder of the same checkout.
+        let other = "c6666666-6666-4666-8666-66666666666d"
+        try database(at: home, forks: [])
+        try sql("""
+            INSERT INTO sessions (id, title, session_type, created_at, updated_at)
+                VALUES ('\(other)', 'Something else', 'project', '2026-10-01T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
+            INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at)
+                VALUES ('w-other', 'shop', '\(other)', 'something-else', 'Something else', '2026-10-27T10:00:00.000Z');
+            """, home: home)
+        let docs = checkout.appendingPathComponent("docs", isDirectory: true)
+        try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
+        try work(other, in: docs, home: home)
+        let itsOwn = SessionDelivery.notSent(
+            "Copilot is running a turn in ‘Fix the totals’, so nothing went: what that turn changes would go with the push, unchecked. Send it again once that turn is done."
+        )
+        let another = SessionDelivery.notSent(
+            "Another Copilot session is running a turn in the checkout ‘Fix the totals’ works in, so nothing went: what that turn changes would go with the push, unchecked. Send it again once that's done."
+        )
+
+        try turns(running: [session], home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == itsOwn)
+        try turns(running: [other], home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == another)
+        #expect(requests(home).isEmpty)
+
+        // A turn that starts once the request is written, before the extension takes it.
+        try turns(running: [], home: home)
+        let sending = Task { await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) }
+        for _ in 0..<2000 where requests(home).isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!requests(home).isEmpty)
+        try turns(running: [session], home: home)
+        #expect(await sending.value == itsOwn)
+        #expect(requests(home).isEmpty)
+        #expect(store.deliveringFolders.isEmpty && store.delivering.isEmpty)
+        #expect(ext.received.isEmpty)
+
+        // Anything else, such as a fix, goes while another session runs a turn there, as before.
+        ext.start()
+        try turns(running: [other], home: home)
+        #expect(await store.deliver("Fix the comments", to: choice(session)) == .sent)
+        try turns(running: [], home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        #expect(ext.received == ["Fix the comments", "Push and reply"])
     }
 
     /// A prompt about comments is kept as sent from when delivering it started, before the session's extension took it:
