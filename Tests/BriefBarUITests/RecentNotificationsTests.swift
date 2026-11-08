@@ -1,6 +1,7 @@
 import BriefBarCore
 import Foundation
 import Testing
+import UserNotifications
 @testable import BriefBarUI
 
 @MainActor
@@ -106,6 +107,29 @@ import Testing
         #expect(!saved.contains("Fix the checkout total"))
         #expect(!saved.contains("dev.azure.com"))
     }
+
+    /// A notification's button, such as Fix with Copilot…, stays with it on the page, for its right-click menu; and
+    /// Notification Center gets a category for each button registered, whose one action brings BriefBar to the front.
+    @Test func theButtonStaysWithItsNotification() {
+        let recent = RecentNotifications(defaults: MemoryDefaults(), isDemo: false)
+        let notifier = Notifier(recent: recent, posts: false)
+        let fix = NotificationButton(id: "fixWithCopilot", title: "Fix with Copilot…")
+        var withButton = note("a")
+        withButton.button = fix
+        notifier.post([withButton, note("b")])
+        #expect(recent.history.entries.first { $0.id == "a" }?.button == fix)
+        #expect(recent.history.entries.first { $0.id == "b" }?.button == nil)
+        // Posting one registers its button, once.
+        #expect(notifier.buttons == [fix])
+        notifier.register([fix])
+        #expect(notifier.buttons == [fix])
+
+        let category = Notifier.category(for: fix)
+        #expect(category.identifier == Notifier.categoryIdentifier(for: fix))
+        #expect(category.actions.map(\.identifier) == ["fixWithCopilot"])
+        #expect(category.actions.map(\.title) == ["Fix with Copilot…"])
+        #expect(category.actions.first?.options.contains(.foreground) == true)
+    }
 }
 
 @MainActor
@@ -148,6 +172,24 @@ import Testing
         #expect(opened == [click])
         // Well after the click, opening BriefBar again is just that.
         #expect(!notifier.handleReopen(at: clickedAt.addingTimeInterval(10)))
+    }
+
+    /// A click on a notification's button opens as a click on the notification does, once BriefBar is in front, saying
+    /// which button it was; a click on the notification, or dismissing it, is no button's.
+    @Test func aButtonsClickSaysWhichButton() {
+        let (notifier, _) = makeNotifier(wait: Self.longWait)
+        var opened: [NotificationClick] = []
+        notifier.onOpen = { opened.append($0) }
+        let clickedAt = Date()
+        let click = NotificationClick(id: "a", source: .azureDevOps, userInfo: ["pullRequest": "contoso/4071"], button: "fixWithCopilot")
+        notifier.clicked(click, at: clickedAt)
+        #expect(opened.isEmpty)
+        #expect(notifier.handleReopen(at: clickedAt.addingTimeInterval(0.1)))
+        #expect(opened.map(\.button) == ["fixWithCopilot"])
+
+        #expect(Notifier.button(clicked: "fixWithCopilot") == "fixWithCopilot")
+        #expect(Notifier.button(clicked: UNNotificationDefaultActionIdentifier) == nil)
+        #expect(Notifier.button(clicked: UNNotificationDismissActionIdentifier) == nil)
     }
 
     @Test func aClickOpensAnywayWhenBriefBarDoesntComeToTheFront() async {

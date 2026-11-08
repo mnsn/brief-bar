@@ -192,11 +192,15 @@ public actor PulseEngine {
         public var concurrency: Int
         /// Follows the pipelines that run after you merge a pull request, while Done keeps it.
         public var followMerges: Bool
+        /// How long a pull request read by its link (`setLinkedPullRequests`) that couldn't be read, or was closed, waits
+        /// before it's read again: an hour for the app's, which only lists them, and none for `--wait`, which reads its one
+        /// at its own pace (`waiting(interval:)`).
+        public var retryLinkedAfter: TimeInterval
 
         public init(
             organizations: [String], interval: TimeInterval = 60, keepDoneFor: TimeInterval = 86_400,
             inactiveAfter: TimeInterval? = 14 * 86_400, planner: RefreshPlanner.Options = RefreshPlanner.Options(),
-            concurrency: Int = 4, followMerges: Bool = true
+            concurrency: Int = 4, followMerges: Bool = true, retryLinkedAfter: TimeInterval = 3_600
         ) {
             self.organizations = organizations
             self.interval = interval
@@ -205,6 +209,7 @@ public actor PulseEngine {
             self.planner = planner
             self.concurrency = concurrency
             self.followMerges = followMerges
+            self.retryLinkedAfter = retryLinkedAfter
         }
     }
 
@@ -770,7 +775,8 @@ public actor PulseEngine {
 
     /// Reads the pull requests people sent you that aren't in your lists, ten a refresh: the ones never read
     /// first, then the ones read, or tried, longest ago. Each stays listed as it was last read in between. One that's
-    /// closed or couldn't be read is tried again an hour later. Once Azure DevOps asks to slow down, the rest wait for the
+    /// closed or couldn't be read is tried again once `retryLinkedAfter` has gone by, an hour for the app. Once Azure
+    /// DevOps asks to slow down, the rest wait for the
     /// next refresh. A link that spells an organization in other letters is to the pull request in your lists: `PRKey`
     /// ignores their case, as Azure DevOps does. One in an organization in a directory the Azure CLI isn't signed in to
     /// waits with the others there, and its turn comes round again behind the rest, rather than an hour later, since
@@ -789,8 +795,9 @@ public actor PulseEngine {
         func turn(_ key: PRKey) -> Date {
             max(linked[key]?.readAt ?? .distantPast, linkedWaiting[key.organization.lowercased()]?.triedAt ?? .distantPast)
         }
+        let retryAfter = configuration.retryLinkedAfter
         let due = wanted
-            .filter { linkedFailures[$0].map { date.timeIntervalSince($0) > 3_600 } ?? true }
+            .filter { linkedFailures[$0].map { date.timeIntervalSince($0) >= retryAfter } ?? true }
             .sorted { (turn($0), $0) < (turn($1), $1) }
         var tried: Set<String> = []
         var fetched = 0

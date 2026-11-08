@@ -81,6 +81,78 @@ import BriefBarCore
         #expect(snapshot.closedLinks.isEmpty)
     }
 
+    /// One pull request read on its own, as `--wait` reads it, without any organization's lists: as yours, with its details,
+    /// and, after a read that failed, read again as soon as the engine says (`retryLinkedAfter`), a minute later rather
+    /// than the app's hour.
+    @Test func oneReadOnItsOwnIsReadAgainAsSoonAsItSays() async throws {
+        let clock = Mutex(t(0))
+        let server = StubServer()
+        server.serveOrganization()
+        let fails = Mutex(true)
+        server.on("/contoso/_apis/git/pullrequests/8") { _ in
+            fails.withLock { $0 } ? .status(500) : .json(Fixture.pullRequest(8))
+        }
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: [], retryLinkedAfter: minute),
+            now: { clock.withLock { $0 } }
+        ) { _ in }
+        await engine.setLinkedPullRequests([PRKey(Fixture.org, 8)])
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().records.isEmpty)
+        let reads = { server.requests.filter { $0.url?.path.hasSuffix("/pullrequests/8") == true }.count }
+        let failed = reads()
+        #expect(failed == 1)
+
+        // Half a minute later, it isn't asked for again.
+        fails.withLock { $0 = false }
+        clock.withLock { $0 = t(30) }
+        await engine.refreshNow()
+        #expect(reads() == failed)
+
+        // A minute after it failed, it is.
+        clock.withLock { $0 = t(minute) }
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.map(\.id.number) == [8])
+        #expect(snapshot.records.first?.role == .author)
+        #expect(snapshot.records.first?.details != nil)
+        #expect(snapshot.problem == nil)
+        // No organization's lists were read.
+        #expect(!server.requests.contains { $0.url?.query?.contains("searchCriteria") == true })
+    }
+
+    /// `--wait`'s engine reads its pull request, and the details, at every refresh, however soon after the last: as its last
+    /// read before a timeout comes, less than a minute after the one before. One it couldn't read, at the next refresh.
+    @Test func waitingReadsAllOfItAtEveryRefresh() async throws {
+        let clock = Mutex(t(0))
+        let server = StubServer()
+        server.serveOrganization()
+        let fails = Mutex(true)
+        server.on("/contoso/_apis/git/pullrequests/8") { _ in
+            fails.withLock { $0 } ? .status(500) : .json(Fixture.pullRequest(8))
+        }
+        let engine = PulseEngine(
+            client: server.client(), configuration: .waiting(interval: minute), now: { clock.withLock { $0 } }
+        ) { _ in }
+        await engine.setLinkedPullRequests([PRKey(Fixture.org, 8)])
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().records.isEmpty)
+
+        fails.withLock { $0 = false }
+        clock.withLock { $0 = t(1) }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().records.first?.details?.fetchedAt == t(1))
+
+        clock.withLock { $0 = t(56) }
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.first?.details?.fetchedAt == t(56))
+        #expect(snapshot.records.first?.role == .author)
+        #expect(server.requests.filter { $0.url?.path.hasSuffix("/pullrequests/8") == true }.count == 3)
+        #expect(server.requests.filter { $0.url?.path.hasSuffix("/threads") == true }.count == 2)
+        #expect(!server.requests.contains { $0.url?.query?.contains("searchCriteria") == true })
+    }
+
     /// Azure DevOps ignores the letter case of an organization's name: a link that spells it differently is to the pull
     /// request found in your lists, which is listed once, as it was found, and isn't read again by its link.
     @Test func aLinkThatSpellsTheOrganizationDifferentlyIsThePullRequestFound() async throws {

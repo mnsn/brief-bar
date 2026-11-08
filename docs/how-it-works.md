@@ -2870,6 +2870,17 @@ Changing a setting or time passing never causes a notification. Clicking one ope
 about, in Azure DevOps, or in the pull request's details with **Open Pull Requests in BriefBar** on, and marks the
 pull request seen.
 
+With **Send Work to Copilot** on, a notification about your pull request that says what Copilot can fix
+(`PulseNotification.Fix`), a build that failed, merge conflicts, or a comment, a reply, a mention or a vote that
+wants changes, has a button, **Fix with Copilot…**, while the pull request's Actions menu would offer that task
+(`PRStore.copilotCan`): never on someone else's, nor while Copilot's last task on it is under way. Notification
+Center shows a button through the notification's category, one for each button, which BriefBar registers as Azure
+DevOps starts, before it posts any (`Notifier.register`). Clicking it
+brings BriefBar to the front, and asks again: while Copilot can still do that, it sees the pull request and opens
+the Send to Copilot window with the task's prompt, going where BriefBar would send it, as the menu does; otherwise it
+opens the notification, as a click on it does. A click that starts BriefBar waits for the list's first read, a minute
+at most (`PRStore.onceLoaded`). The Notifications page keeps each entry's button, in its right-click menu.
+
 ### The brief
 
 Azure DevOps' own brief, at the top of its list and its page, picks, in code, the newest pull
@@ -3341,6 +3352,39 @@ post a distributed notification that says only that something changed (`AgentCha
 program can see it go by, so a running BriefBar reads those two lists again at once, and again when
 Azure DevOps starts. The demo keeps them in memory.
 
+### Waiting on a pull request
+
+`BriefBar --wait` waits on one of your pull requests for an agent (`WaitCLI` in `Sources/AzureDevOpsUI`): one that
+started it in the background and ended its turn, which its end then wakes, so a session can wait on a build without
+BriefBar or you sending it a prompt. It takes
+the pull request's link, or its number with `--org` or the one organization the app reads, and `--timeout`, in
+minutes: 90 unless it says otherwise, and 120 at most, since a session that waits stays busy, and wakes up whatever
+the result, a full prompt to read again for a pipeline that may run an hour and pass. For those, the notification's
+**Fix with Copilot…** is the way back ([Notifications](#notifications)). `pull_request` gives agents the command for
+each of your open pull requests, with this copy of BriefBar's path.
+
+It reads only that pull request, every minute, with a `PulseEngine` of its own that has no organizations and the pull
+request linked, as the app reads one you watch: the pull request, its policies and its threads, three GETs, and once
+each failed build's timeline. It reads all of them each time it's asked (`PulseEngine.Configuration.waiting`), rather
+than once the app's planner finds the details due, a minute after the last read, so its last read, which its timeout
+brings sooner, still sees what changed in the last minute; and one it couldn't read, at the next, rather than an hour
+later as in the app (`retryLinkedAfter`). Its first read is where it starts from, and each later one is compared with it
+(`WaitOutcome`): a build that blocks the pull request and ran since, as another run, or the same one retried, which
+finishes later, ends it at once when it fails, and once all have passed and none is queued or running; merge conflicts
+end it even when it had them as it began, since no build runs until they're resolved; and so does a comment that
+waits on you, as Needs You counts it, that wasn't there when it began: in an open thread, someone else's, not a bot's,
+such as a build service's or a code scanner's, after your last word there, matched by thread and comment, so an edit
+isn't news. It prints
+a line for each, a failed build first, then conflicts, comments and a build that passed, the pull request's link, and
+each one's prompt as `pull_request_prompt` writes it for an agent's checkout, and exits with the first one's code: 0
+the build passed, 4 a build failed, 5 comments, 6 conflicts. It exits with 7 once the pull request is completed or
+abandoned, with 3 at its timeout, saying what still runs, with 2 on wrong usage or for a pull request that isn't yours,
+and with 1 when it can't read it: five reads in a row that fail, or a pull request you may no longer read. A read
+counts only once the details were read again (`PRDetails.fetchedAt`), since one that fails leaves the pull request as
+it was. Like `--mcp`, it runs only from a shell and only while agents and Azure DevOps are on in the app, checked
+before each read, so turning either off stops it. `--demo --wait` waits a second for the demo's one change, Priya's
+comment on !4091.
+
 ### Its Copilot plugin
 
 BriefBar's plugin for Copilot (`Resources/CopilotPlugin`) gives the GitHub Copilot app's sessions, and
@@ -3413,16 +3457,21 @@ session's question, plan or permission for you: it offers to open the session, w
 answers in at most four short lines, with their links: where it stands and what you can do now, what's
 done, by people and by Copilot, what's left and who has it, and who it waits on; then it offers one
 next step, and starts nothing. Given a pull request's number, it calls `pull_request`, and it tries
-that before asking for a link when `work_item` finds nothing.
+that before asking for a link when `work_item` finds nothing. Once it pushes to a pull request, it ends its
+turn rather than wait on the pipeline or the reviewers: BriefBar's notifications tell you. It waits only when
+its next step needs a short build's result, with the command `pull_request` gives
+([above](#waiting-on-a-pull-request)), in the background, with a timeout a few minutes longer than the build usually takes, and acts
+on what it prints only within what you asked; it doesn't start waiting again after a timeout unless you ask.
 
 `CopilotPluginTests` checks the plugin's manifests, that the skill's frontmatter values are plain YAML
 scalars, which a colon and a space would end, and that the skill names only tools that
 `BriefBar --mcp` lists, their arguments and values, and the app's tools it uses, and every tool
 BriefBar has; that it stops only for what BriefBar answers when agents are off
 (`AgentAccess.refusal`), not when a source is; that it checks a pull request with `pull_request`
-before it starts a session for it, forks one or sends one a message; and that it offers the session
+before it starts a session for it, forks one or sends one a message; that it offers the session
 `pull_request` names beside a new one, asks unless you said which, forks only the session it talks in,
-and gives the same prompt wherever the work goes.
+and gives the same prompt wherever the work goes; and that it ends its turn after a push, waiting only on a
+short build, with a timeout.
 
 ### Its extension for the app's sessions
 

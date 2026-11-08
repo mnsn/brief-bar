@@ -102,7 +102,11 @@ final class AppModel: ObservableObject {
             // One that only counted the updates: the Notifications page lists them, while the window has it.
             if click.sumsUp, self.openNotificationsPage() { return }
             guard let source = click.source, self.state(of: source) == .on else { return }
-            self.source(source)?.openNotification(click.userInfo)
+            if let button = click.button {
+                self.source(source)?.notificationButton(button, userInfo: click.userInfo)
+            } else {
+                self.source(source)?.openNotification(click.userInfo)
+            }
         }
 
         // Opening something hands focus to another app; don't leave a list hanging open.
@@ -508,6 +512,15 @@ final class AppModel: ObservableObject {
         services.notifier.removeDelivered(entry.id)
         guard state(of: entry.source) == .on else { return }
         source(entry.source)?.openNotificationInWindow(entry.userInfo)
+    }
+
+    /// Does what a notification's button on the Notifications page says, from its right-click menu, as clicking that button
+    /// in Notification Center does.
+    func press(_ button: NotificationButton, of entry: NotificationHistory.Entry) {
+        services.recentNotifications.markSeen(entry.id)
+        services.notifier.removeDelivered(entry.id)
+        guard state(of: entry.source) == .on else { return }
+        source(entry.source)?.notificationButton(button.id, userInfo: entry.userInfo)
     }
 
     /// Whether a window has a page for `section`: not once you've hidden it from windows.

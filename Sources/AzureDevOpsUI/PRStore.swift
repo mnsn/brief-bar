@@ -56,6 +56,9 @@ final class PRStore: ObservableObject {
     /// What the details read of one of a pull request's builds, while it's open there, as its check and the pull request are
     /// now (`BuildInvestigationStore.current`): Fix the Build's prompt quotes it, rather than only its errors.
     var investigation: (_ check: Check, _ pullRequest: PullRequest) -> BuildInvestigation? = { _, _ in nil }
+    /// Whether Copilot can do this with a pull request now, as its Actions menu would offer: its notifications about what
+    /// Copilot can fix then have Fix with Copilot…. Set by the source, which has Copilot's store.
+    var offersCopilot: (_ key: PRKey, _ action: PullRequestAction) -> Bool = { _, _ in false }
 
     let settings: AppSettings
     let summarizer: Summarizer
@@ -714,30 +717,45 @@ final class PRStore: ObservableObject {
                     Log.app.info("Announcing \(news.count) update(s)")
                     // A few notifications at most, but the Notifications page lists every update, the newest first.
                     let plan = NotificationPlanner.collapse(news)
-                    let summary = plan.summary.map { [Self.notification($0, sumsUp: true)] } ?? []
-                    let more = plan.summarized.map { Self.notification($0) }
-                    notifier.post(plan.shown.map { Self.notification($0) } + summary, more: more)
+                    let summary = plan.summary.map { [notification($0, sumsUp: true)] } ?? []
+                    let more = plan.summarized.map { notification($0) }
+                    notifier.post(plan.shown.map { notification($0) } + summary, more: more)
                 }
             }
             announced = sorted
         }
     }
 
-    /// A pull request's news, as a notification that opens it.
-    private static func notification(_ note: PulseNotification, sumsUp: Bool = false) -> BriefBarNotification {
+    /// A pull request's news, as a notification that opens it: about your pull request, with Fix with Copilot… when Copilot
+    /// can fix what it says, as its Actions menu would offer now (`offersCopilot`).
+    private func notification(_ note: PulseNotification, sumsUp: Bool = false) -> BriefBarNotification {
         var info: [String: String] = [:]
         if let url = note.url { info["url"] = url.absoluteString }
         if let key = note.key { info["pullRequest"] = key.description }
+        var button: NotificationButton?
+        if let key = note.key, let fix = note.fix {
+            let action = PullRequestAction(fixing: fix)
+            if offersCopilot(key, action) {
+                info[Self.copilotActionKey] = action.rawValue
+                button = Self.copilotButton
+            }
+        }
         return BriefBarNotification(
             id: note.id, source: .azureDevOps, state: note.state, title: note.title, subtitle: note.subtitle, body: note.body,
-            thread: note.url?.absoluteString ?? "azure-devops", userInfo: info, sumsUp: sumsUp
+            thread: note.url?.absoluteString ?? "azure-devops", userInfo: info, sumsUp: sumsUp, button: button
         )
     }
+
+    /// On a notification about your pull request, when Copilot can fix what it says: it opens the composer, as the Actions
+    /// menu does. One button for comments, a build and conflicts, as short as a banner needs; the composer names the task.
+    static let copilotButton = NotificationButton(id: "fixWithCopilot", title: "Fix with Copilot…")
+    /// What Fix with Copilot… asks Copilot to do, in its notification's information: a `PullRequestAction`.
+    static let copilotActionKey = "copilotAction"
 
     /// The demo's news so far, for the Notifications page, each as of when it happened. None outside the demo.
     var demoNotifications: [(notification: BriefBarNotification, date: Date)] {
         guard mode == .demo else { return [] }
-        return DemoData.notifications(for: items).map { (Self.notification($0), $0.at) }
+        return DemoData.notifications(for: items).map { (notification($0), $0.at) }
     }
 
     // MARK: Changes in Azure DevOps
@@ -1010,6 +1028,28 @@ final class PRStore: ObservableObject {
         return PullRequestTasks.actions(for: record, canShip: canShip)
     }
 
+    /// Whether Copilot can do this with a pull request now, as its Actions menu offers it (`PullRequestCopilotMenuItems`):
+    /// with Send Work to Copilot on, among what it can do with it, while its last task there isn't under way.
+    func copilotCan(_ action: PullRequestAction, _ item: PRSnapshot, copilot: CopilotTasksStore) -> Bool {
+        guard copilot.isOn, copilot.latest(forPullRequest: item.key)?.status.phase.isActive != true else { return false }
+        return copilotActions(for: item, continuable: copilot.continuable(forPullRequest: item.key)).contains(action)
+    }
+
+    /// Does `body` once the list was read the first time, with what it read: at once, if it was; or after `seconds` without
+    /// it. For what a notification's button asks, as its click starts BriefBar. What stops it while it waits; nil when it
+    /// didn't wait.
+    func onceLoaded(within seconds: Int, _ body: @escaping @MainActor () -> Void) -> AnyCancellable? {
+        guard !hasLoaded else {
+            body()
+            return nil
+        }
+        // Each refresh is sent once the list has what it read, unlike `hasLoaded`, which changes before.
+        return refreshed
+            .first { [weak self] in MainActor.assumeIsolated { self?.hasLoaded != false } }
+            .timeout(.seconds(seconds), scheduler: DispatchQueue.main)
+            .sink { _ in MainActor.assumeIsolated { body() } } receiveValue: { _ in }
+    }
+
     /// Writes the prompts for what Copilot should do with a pull request, then opens the composer with them: for a failed
     /// build, once each failed build's errors have been read; for its conflicts, with the files that conflict, once its
     /// details read them (`conflicts`). Each takes on what its prompt does, for each to say what became of it
@@ -1087,5 +1127,16 @@ final class PRStore: ObservableObject {
             record, dismissedCutoff: settings.dismissedCutoff(for: record.id), read: settings.readThreads(of: record.id),
             account: settings.account, threads: threads
         )
+    }
+}
+
+extension PullRequestAction {
+    /// What Copilot does about what a notification says it could fix (Fix with Copilot…).
+    init(fixing fix: PulseNotification.Fix) {
+        switch fix {
+        case .comments: self = .fixComments
+        case .build: self = .fixBuild
+        case .conflicts: self = .resolveConflicts
+        }
     }
 }

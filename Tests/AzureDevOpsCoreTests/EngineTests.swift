@@ -299,6 +299,43 @@ import BriefBarCore
         #expect(NotificationPlanner.plan(previous: before, current: after, notBefore: t(0)).isEmpty)
     }
 
+    /// What Copilot could fix, for Fix with Copilot…: on your pull requests, a build that failed, merge conflicts, and the
+    /// comments a comment, a reply, a mention or a vote that wants changes is about. Nothing else, and nothing on others'.
+    @Test func saysWhatCopilotCouldFixOnlyOfYourPullRequests() {
+        let before = (1...5).map { snapshot($0, group: .waiting) } + [snapshot(6, group: .toReview, role: .reviewer)]
+        let comment = PREvent(id: "c7.1", kind: .comment, at: t(12), actor: "Priya Shah", text: "Rename it", threadId: 7)
+        let mention = PREvent(id: "c8.1", kind: .mention, at: t(13), actor: "Alex Kim", text: "@Robin Diaz?", threadId: 8)
+        let vote = PREvent(id: "v4", kind: .changesRequested, at: t(14), actor: "Chen Li")
+        let approval = PREvent(id: "v5", kind: .approved, at: t(15), actor: "Dana Whitfield")
+        let commits = PREvent(id: "n6", kind: .newCommits, at: t(16), count: 2)
+        let rejected = PREvent(id: "v7", kind: .rejected, at: t(17), actor: "Sam Rivera")
+        let theirs = PREvent(id: "c9.1", kind: .reply, at: t(18), actor: "Sam Rivera", text: "Done", threadId: 9)
+        let after = [
+            snapshot(1, group: .failing, reason: .buildFailed, headline: "Build failed", since: t(10)),
+            snapshot(2, group: .failing, reason: .conflicts, headline: "Merge conflicts", since: t(10)),
+            snapshot(3, group: .failing, reason: .checkFailed, headline: "Check failed", since: t(10)),
+            snapshot(4, group: .needsYou, reason: .mentioned, events: [comment, mention, reply, vote, rejected]),
+            snapshot(5, group: .ready, reason: .readyToComplete, events: [approval], headline: "Ready to complete"),
+            snapshot(6, group: .needsYou, reason: .replied, role: .reviewer, events: [theirs, commits]),
+        ]
+        let notes = NotificationPlanner.news(previous: before, current: after) { _ in t(0) }
+        func fix(_ number: Int, _ title: String) -> PulseNotification.Fix?? {
+            notes.first { $0.key?.number == number && $0.title == title }.map(\.fix)
+        }
+        #expect(fix(1, "Build failed") == .build)
+        #expect(fix(2, "Merge conflicts") == .conflicts)
+        #expect(fix(3, "Check failed") == .some(nil))
+        #expect(fix(4, "Priya Shah commented") == .comments)
+        #expect(fix(4, "Alex Kim mentioned you") == .comments)
+        #expect(fix(4, "Sam Rivera replied") == .comments)
+        #expect(fix(4, "Chen Li is waiting for you") == .comments)
+        #expect(fix(4, "Sam Rivera rejected it") == .some(nil))
+        #expect(fix(5, "Ready to complete") == .some(nil))
+        #expect(fix(6, "Sam Rivera replied") == .some(nil))
+        #expect(fix(6, "New commits") == .some(nil))
+        #expect(notes.count == 11)
+    }
+
     @Test func aPullRequestSeenForTheFirstTimeOnlyAnnouncesNewEvents() {
         let request = PREvent(id: "r3", kind: .reviewRequest, at: t(20), actor: "Sam Rivera", text: "Required reviewer")
         let after = [snapshot(5, group: .needsYou, reason: .reviewRequested, role: .reviewer, events: [request])]

@@ -255,6 +255,22 @@ import Testing
         #expect(section.components(separatedBy: "> Work on Azure DevOps pull request !NUMBER, LINK").count == 2)
     }
 
+    /// Once it pushed, the agent ends its turn rather than waiting on a pipeline, which can run an hour: BriefBar tells the
+    /// user. It waits only on a short build, with the command `pull_request` gives and a timeout, and never again on its own.
+    @Test func skillWaitsOnlyOnAShortBuild() throws {
+        let text = try String(contentsOf: Self.skill, encoding: .utf8)
+        let section = try #require(Self.section("Waiting on a pull request", in: text))
+        let paragraphs = section.components(separatedBy: "\n\n").map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        let ends = try #require(paragraphs.firstIndex { $0.contains("don't wait for its pipeline") }, "The skill waits on pipelines")
+        #expect(paragraphs[ends].contains("end your turn") && paragraphs[ends].contains("Fix with Copilot…"))
+        let waits = try #require(paragraphs.firstIndex { $0.contains("`pull_request` gives the command") })
+        #expect(ends < waits)
+        let how = paragraphs[waits]
+        #expect(how.contains("only when your next step needs a short build's result"))
+        #expect(how.contains("in the background") && how.contains("`--timeout`") && how.contains("120 at most"))
+        #expect(how.contains("data") && how.contains("don't start it again unless the user asks"))
+    }
+
     /// When agents are off or paused, no tool of BriefBar's answers, so the agent stops. When only a source is off,
     /// `needs_me` still has the others, under their own headings, so the agent shows them.
     @Test func skillStopsOnlyWhenAgentsAreOff() throws {

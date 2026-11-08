@@ -224,7 +224,10 @@ the model that writes a summary with the rest, and BriefBar keeps none of it.
 Azure DevOps posts notifications for what's new on your pull requests, and for the work you send to
 Copilot, as it starts and when it ends ([below](#azure-devops)). Clicking one opens what it's about,
 such as the comment or the run, in front of BriefBar: in Azure DevOps, or, for a pull request, in its
-details in BriefBar's window, with **Open Pull Requests in BriefBar** on.
+details in BriefBar's window, with **Open Pull Requests in BriefBar** on. With **Send Work to Copilot**
+on, one about your pull request whose build failed, that has merge conflicts, or where someone
+commented, replied, mentioned you or wants changes has **Fix with Copilot…** too, which opens the
+Send to Copilot window with the fix's prompt ([below](#azure-devops)).
 
 **Notifications Page**, in **Settings › General**, lists what BriefBar notified you of on a page of
 its own in BriefBar's window, right after the Overview, so you can see what you missed: a banner that
@@ -233,7 +236,7 @@ and each update of a refresh that had more than its notifications show ("3 more 
 updates", which opens the page). It's off until you turn it on. Each entry says what it means for
 you, ✋, ✕ or ✓, when it came, and with a dot, that you haven't seen it yet. Click one to open what
 it's about, as its notification would, but a pull request's right there in the window, in its details,
-or right-click it to remove it; **Clear All** empties the
+or right-click it for **Fix with Copilot…**, when its notification had it, or to remove it; **Clear All** empties the
 page. The page shows only while it lists something. BriefBar keeps the entries for a day, or for 4
 hours or 3 days (**Keep Notifications For**), in memory only: the page starts empty when BriefBar
 restarts or updates.
@@ -785,6 +788,15 @@ off **Needs You**; one that comes while you check the prompt, in a thread you ta
 reopened meanwhile, still needs you. Comments are written by whoever wrote them, and go to an agent that
 may run any command: send only what you'd hand to Copilot yourself.
 
+**Fix with Copilot…** on a notification does the same from Notification Center: on one that says your
+pull request's build failed, it has merge conflicts, or someone commented, replied, mentioned you or wants
+changes, it opens this window with **Fix the Build**, **Resolve Conflicts** or **Fix Comments**, going
+where that pull request's work goes, as its menu would. It's there only while its menu would offer that
+action, so not while Copilot's last task on the pull request is still under way; and if that changed since
+the notification came, clicking it opens the notification instead. A click that starts BriefBar opens
+the window once BriefBar has read your pull requests. The pull request is seen, as opening it would see it.
+Nothing goes to Copilot until you send it from the window.
+
 #### Sending to a session that's already there
 
 A task doesn't have to start a new session. The window's session menu, under **Where It Goes**, lists the ones it can go to
@@ -949,6 +961,19 @@ requests to use it. Titles, comments and Copilot's notes come word for word from
 and an agent may act on what they say: keep its permissions to what you'd allow anyway. If an update gives agents more, they wait until you've seen what they get now, as a source
 does. `BriefBar --mcp --demo` answers with made-up data, whatever your settings.
 
+**Waiting on a pull request.** For one of your open pull requests, `pull_request` also gives the
+command that waits on it, `BriefBar --wait <link> --timeout <minutes>`, for an agent to start in the
+background. It reads that pull request every minute, with GET requests as the app does, and ends on
+its next build's result, comments that wait on you, merge conflicts or its closing, and prints what
+happened, with the prompt to fix it, as `pull_request_prompt` gives it; or at its timeout, 90 minutes
+unless it says otherwise and two hours at most. Its exit code says which: 0 the build passed, 1 it
+couldn't read it, 2 wrong usage, 3 the timeout, 4 a build failed, 5 comments, 6 conflicts, 7 completed or
+abandoned. It works only from a shell, like `--mcp`, and only while agents and Azure DevOps are on in
+BriefBar. A session that waits stays busy, and wakes up whatever the result, so BriefBar's skill waits
+only on a short build that the next step needs: for a pipeline that runs an hour, the session ends its
+turn, and the notification brings you **Fix with Copilot…** if it fails ([above](#azure-devops)).
+`BriefBar --demo --wait 4091` waits a second for a made-up comment.
+
 ### In the GitHub Copilot app
 
 Once agents are on, **Install** in **Settings › Agents › Copilot plugin** adds BriefBar's plugin to
@@ -969,6 +994,9 @@ agents off removes it; if Copilot can't, the page says so, with **Try Again**. I
   prompt of the same Copilot action, and does what it allows: it changes files there, resolving
   conflicts commits the merge, and only **Push & Reply**, sent to that same session, pushes and replies
   as you. In the Copilot CLI, the work happens where you are.
+- Once a session pushes, it ends its turn rather than wait on the pipeline. It waits, with
+  `BriefBar --wait` and a timeout, only on a short build that its next step needs, and doesn't start
+  waiting again on its own.
 - **/briefbar 5101**, or "how's 5101 going?", answers in four short lines, with their links: where the
   work item stands and what you can do now, what's done, by people and by Copilot, what's left and who
   has it, and who it waits on. Then it offers a next step, and starts nothing until you say so.
@@ -1427,6 +1455,7 @@ APP="/Applications/BriefBar.app/Contents/MacOS/BriefBar"   # ~/Applications afte
 "$APP" --teams                    # Azure DevOps: your teams, and which have a sprint going on today
 "$APP" --sprint                   # Azure DevOps: your team's current sprint
 "$APP" --pipelines                # Azure DevOps: the pipelines you pinned, with their latest runs
+"$APP" --wait <link> --timeout 15 # Azure DevOps, for agents: wait on one of your pull requests
 "$APP" --check-updater            # that the updater can't use BriefBar's permissions
 log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --style compact
 log show --last 1d --predicate 'subsystem == "org.sparkle-project.Sparkle"' --style compact   # updates

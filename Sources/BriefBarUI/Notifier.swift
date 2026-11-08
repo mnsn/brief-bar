@@ -19,10 +19,13 @@ package struct BriefBarNotification: Sendable {
     /// It counts others, which aren't posted, such as "3 more pull request updates": the Notifications page lists those
     /// instead of it (`Notifier.post`'s `more`), and clicking it opens that page, while the window has it.
     package var sumsUp: Bool
+    /// A button beside opening it, such as Fix with Copilot…: a click on it goes to its source
+    /// (`BriefBarSource.notificationButton`), and the Notifications page has it in the entry's right-click menu.
+    package var button: NotificationButton?
 
     package init(
         id: String, source: SourceID, state: ItemState? = nil, title: String, subtitle: String? = nil, body: String,
-        thread: String, userInfo: [String: String] = [:], sumsUp: Bool = false
+        thread: String, userInfo: [String: String] = [:], sumsUp: Bool = false, button: NotificationButton? = nil
     ) {
         self.id = id
         self.source = source
@@ -33,6 +36,7 @@ package struct BriefBarNotification: Sendable {
         self.thread = thread
         self.userInfo = userInfo
         self.sumsUp = sumsUp
+        self.button = button
     }
 }
 
@@ -44,12 +48,16 @@ package struct NotificationClick: Sendable, Equatable {
     package var userInfo: [String: String]
     /// It counted others, which the Notifications page lists.
     package var sumsUp: Bool
+    /// The ID of the notification's button that was clicked, rather than the notification itself; nil for a click on the
+    /// notification.
+    package var button: String?
 
-    package init(id: String, source: SourceID?, userInfo: [String: String] = [:], sumsUp: Bool = false) {
+    package init(id: String, source: SourceID?, userInfo: [String: String] = [:], sumsUp: Bool = false, button: String? = nil) {
         self.id = id
         self.source = source
         self.userInfo = userInfo
         self.sumsUp = sumsUp
+        self.button = button
     }
 }
 
@@ -73,6 +81,8 @@ package final class Notifier: NSObject, ObservableObject {
     private static let reopenWindow: TimeInterval = 2
     private let center: UNUserNotificationCenter?
     private var requestedAuthorization = false
+    /// The buttons sources registered, each Notification Center's category of its own.
+    package private(set) var buttons: Set<NotificationButton> = []
     /// The click whose notification opens once BriefBar is in front.
     private var pendingClick: NotificationClick?
     private var clickedAt: Date?
@@ -124,11 +134,46 @@ package final class Notifier: NSObject, ObservableObject {
         }
     }
 
+    /// Makes buttons available to notifications, before any posts one: Notification Center shows a notification's button
+    /// only once it has its category, which it keeps for every notification BriefBar posts.
+    package func register(_ buttons: [NotificationButton]) {
+        let all = self.buttons.union(buttons)
+        guard all != self.buttons else { return }
+        self.buttons = all
+        center?.setNotificationCategories(Set(all.map(Self.category(for:))))
+    }
+
+    /// The category whose one action is the button: clicking it brings BriefBar to the front, as clicking the notification
+    /// does, for what it opens.
+    nonisolated static func category(for button: NotificationButton) -> UNNotificationCategory {
+        UNNotificationCategory(
+            identifier: categoryIdentifier(for: button),
+            actions: [UNNotificationAction(identifier: button.id, title: button.title, options: [.foreground])],
+            intentIdentifiers: [], options: []
+        )
+    }
+
+    nonisolated static func categoryIdentifier(for button: NotificationButton) -> String {
+        "briefBarButton.\(button.id)"
+    }
+
+    /// The button a response to a notification clicked: its action's identifier, unless it clicked the notification itself
+    /// or dismissed it.
+    nonisolated static func button(clicked actionIdentifier: String) -> String? {
+        switch actionIdentifier {
+        case UNNotificationDefaultActionIdentifier, UNNotificationDismissActionIdentifier: return nil
+        default: return actionIdentifier
+        }
+    }
+
     /// Posts notifications, and lists them on the Notifications page, the newest first, as they come: all but one that
     /// counts others (`sumsUp`), whose updates come in `more`, listed after them without being posted. They're listed even
     /// when macOS doesn't show them, such as when notifications are off for BriefBar.
     package func post(_ notes: [BriefBarNotification], more: [BriefBarNotification] = []) {
         recent.record(notes.filter { !$0.sumsUp } + more)
+        // In case its source didn't register it first: a notification posted before Notification Center has its category
+        // shows without it.
+        register(notes.compactMap(\.button))
         guard let center, !notes.isEmpty else { return }
         requestAuthorization()
         for note in notes {
@@ -142,6 +187,7 @@ package final class Notifier: NSObject, ObservableObject {
             info[Self.sourceKey] = note.source.rawValue
             if note.sumsUp { info[Self.sumsUpKey] = "1" }
             content.userInfo = info
+            if let button = note.button { content.categoryIdentifier = Self.categoryIdentifier(for: button) }
             let request = UNNotificationRequest(identifier: note.id, content: content, trigger: nil)
             center.add(request) { error in
                 if let error {
@@ -233,7 +279,10 @@ extension Notifier: UNUserNotificationCenterDelegate {
         }
         let source = info.removeValue(forKey: Self.sourceKey).flatMap(SourceID.init(rawValue:))
         let sumsUp = info.removeValue(forKey: Self.sumsUpKey) != nil
-        let click = NotificationClick(id: response.notification.request.identifier, source: source, userInfo: info, sumsUp: sumsUp)
+        let click = NotificationClick(
+            id: response.notification.request.identifier, source: source, userInfo: info, sumsUp: sumsUp,
+            button: Self.button(clicked: response.actionIdentifier)
+        )
         await MainActor.run {
             clicked(click)
         }

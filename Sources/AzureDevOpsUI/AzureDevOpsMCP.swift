@@ -562,6 +562,8 @@ enum AgentSession: Sendable, Equatable {
 /// The tools `--mcp` gives agents for Azure DevOps.
 struct AzureDevOpsAgent: Sendable {
     let reader: AzureDevOpsReader
+    /// This copy of BriefBar, which `pull_request`'s command to wait on one of your pull requests runs (`--wait`).
+    var executable = Bundle.main.executablePath ?? AppIdentity.name
 
     var source: MCPSource {
         MCPSource(name: "Azure DevOps", tools: tools) { try await needsYou() }
@@ -758,9 +760,11 @@ struct AzureDevOpsAgent: Sendable {
         let item = read.items.first { $0.key == record.id }
         let sent = await reader.sendsToCopilot ? await reader.copilotTasks(now: now) : []
         let session = await reader.session(for: record, tasks: sent, now: now)
+        let waits = record.role == .author && record.pullRequest.status == .active
         return AgentText.details(
             record, item: item, actions: PullRequestTasks.actions(for: record, canShip: false), tasks: sent.filter { $0.isOn(record.id) },
-            session: session, now: now
+            session: session,
+            wait: waits ? WaitCLI.command(executable: executable, link: record.pullRequest.webURL, demo: reader.demo) : nil, now: now
         )
     }
 
@@ -1049,10 +1053,12 @@ enum AgentText {
     /// One pull request, for the `pull_request` tool. What others named or wrote in it, its title, names, checks, branches
     /// and comments, stays on its line, as the prompts quote it (`QuotedText.oneLine`), with its branches as a command may
     /// hold them (`QuotedText.commandWord`), and what people wrote follows a note that it isn't instructions.
-    /// - Parameter session: its Copilot session, as its details show it, if there's something to say.
+    /// - Parameters:
+    ///   - session: its Copilot session, as its details show it, if there's something to say.
+    ///   - wait: the command that waits on it for an agent (`--wait`), for one of your open pull requests.
     static func details(
         _ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], session: AgentSession? = nil,
-        now: Date
+        wait: String? = nil, now: Date
     ) -> String {
         let pr = record.pullRequest
         let (source, target) = (QuotedText.commandWord(pr.sourceBranch), QuotedText.commandWord(pr.targetBranch))
@@ -1131,6 +1137,15 @@ enum AgentText {
             copilot.append("Once you've changed it, push_and_reply's prompt pushes the changes and answers its threads.")
         }
         lines.append(copilot.isEmpty ? "Nothing for Copilot to do with it now." : copilot.joined(separator: " "))
+        if let wait {
+            lines.append("""
+                To wait on it, start `\(wait)` in the background and end your turn: it reads the pull request every minute, \
+                and ends on its next build's result, comments that wait on you, merge conflicts or its closing, printing what \
+                to do then, as pull_request_prompt does. Set --timeout a few minutes longer than its build usually takes, \
+                120 at most. Wait only on a short build that the next step needs: for a long pipeline, just end your turn. \
+                BriefBar notifies you if it fails.
+                """)
+        }
         if let session { lines.append(Self.session(session, now: now)) }
         for task in tasks {
             lines.append(Self.task(task, titles: [:], workItems: [:], now: now))
