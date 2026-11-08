@@ -435,6 +435,49 @@ import Testing
         #expect(facts[read.id.linkRef]?.isListed == false)
     }
 
+    /// Someone else's that Needs You brings back is yours to review again, whatever your vote: new commits since you
+    /// voted, or someone sending it to you in a chat.
+    @Test func newCommitsOrAChatBringSomeoneElsesBackToYourReview() throws {
+        let order = Self.onOrder()
+        let ref = PRKey("Contoso", 4088).linkRef
+        let voted = Date(timeIntervalSince1970: 1_791_000_200)
+        func record(_ yours: Vote, pushed: Bool = false, sent: Bool = false) -> PRRecord {
+            var record = Self.record(4088, role: .reviewer, author: Self.priya, reviewers: [Reviewer(person: Self.me, vote: yours)])
+            record.details?.activity = [Activity(threadId: 1, kind: .vote, at: voted, actor: Self.me, vote: yours)]
+            if pushed {
+                record.details?.activity.append(Activity(
+                    threadId: 2, kind: .push, at: voted.addingTimeInterval(600), actor: Self.priya, commitCount: 2
+                ))
+            }
+            if sent {
+                record.chatLinks = [ChatLink(
+                    link: PullRequestLink(organization: "Contoso", project: "Storefront", repository: "shop-web", number: 4088),
+                    app: "com.microsoft.teams2", sender: Self.sam.name, sentAt: voted.addingTimeInterval(900), notificationKey: "sam-4088"
+                )]
+            }
+            return record
+        }
+        // Approved, with nothing since: nothing on it is yours.
+        Self.tell(order, [record(.approved)])
+        #expect(order.stage(of: ref) == nil)
+
+        // Priya pushes since: it's yours to review again.
+        Self.tell(order, [record(.approved, pushed: true)])
+        let again = try #require(order.stage(of: ref))
+        #expect(again.stage == .yourReview)
+        #expect(StageText.why(again, name: { _ in nil }) == "New commits by Priya")
+
+        // Having wanted changes, her new commits are yours to review, rather than still waited for.
+        Self.tell(order, [record(.waitingForAuthor, pushed: true)])
+        #expect(order.stage(of: ref)?.stage == .yourReview)
+
+        // Sam sends it to you in Teams after you approved it.
+        Self.tell(order, [record(.approved, sent: true)])
+        let sent = try #require(order.stage(of: ref))
+        #expect(sent.stage == .yourReview)
+        #expect(StageText.why(sent, name: { _ in nil }) == "Sam sent it in Teams")
+    }
+
     // MARK: From the coordinator's review
 
     /// A pull request as the lists read it, with its details' checks when given.
@@ -541,6 +584,21 @@ import Testing
         let reading = try #require(order.stage(of: record.id.linkRef))
         #expect(reading.stage == .yourReview)
         #expect(StageText.why(reading, name: { _ in nil }) == "Copilot is pre-reviewing it")
+    }
+
+    /// A Board card says what failed once: where its stage's words say it after their reason, "Copilot is writing it ·
+    /// build failed", it has no ✕ of its own, and VoiceOver doesn't hear it twice.
+    @Test func aBoardCardSaysAFailureOnce() throws {
+        let order = Self.onOrder()
+        let failing = Self.record(4088, checks: [Check(name: "shop-web CI", kind: .build, state: .failed)])
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let item = try #require(PRClassifier.snapshot(for: failing, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now))
+        #expect(item.group == .failing)
+        Self.tell(order, [failing], tasks: [Self.task(on: 4088, .fixBuild, .working)])
+        let reading = try #require(order.stage(of: failing.id.linkRef))
+        #expect(StageText.why(reading, name: { _ in nil }) == "Copilot is writing it · build failed")
+        #expect(PullRequestBoardCard.flags(item, reading: reading).isEmpty)
+        #expect(PullRequestBoardCard.details(item, reading: reading, order: nil, ordering: order) == ["shop-web"])
     }
 
     // MARK: The Board

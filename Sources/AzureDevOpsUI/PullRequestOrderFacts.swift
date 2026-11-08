@@ -234,8 +234,15 @@ final class PullRequestOrderFacts {
             let mine = pr.reviewer(me)
             if mine?.vote.wantsChanges == true {
                 facts.youWantChanges = "Waiting for \(pr.author.firstName)'s changes"
+            }
+            // What brings it back to you, as Needs You has it, whatever your vote: someone sent it to you in a chat, or new
+            // commits came since your vote. Else it asks you while you haven't voted or declined.
+            if let sentInChat {
+                facts.asksYou = sentInChat
+            } else if item?.pendingEvents.contains(where: { $0.kind == .newCommits }) == true {
+                facts.asksYou = "New commits by \(pr.author.firstName)"
             } else if mine?.hasDeclined != true, mine.map({ $0.vote == Vote.none }) ?? true {
-                facts.asksYou = sentInChat ?? "\(pr.author.firstName) asked you"
+                facts.asksYou = "\(pr.author.firstName) asked you"
             }
         case .linked:
             // Only while what someone sent you still needs you: once you've answered it, it's not on your board.
