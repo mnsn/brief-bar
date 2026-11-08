@@ -769,9 +769,9 @@ public enum OrderBoard {
     /// Each session's order is a mission of its own, however many a session told, even when they share pull requests.
     /// The pull requests no order names group by what BriefBar sees: those stacked with only one order's pull requests
     /// show with it, apart from what it names; then, with what they're stacked with, by the story their work items are
-    /// for: apart in the one order with a pull request of its own for that story that hasn't merged or closed, or else as
-    /// that story's mission, two or more; others stacked together are a stack of their own; the rest group by the session
-    /// they were opened under, two or more, with no order. A pull request alone isn't shown, nor a story's.
+    /// for: apart in the one unfinished order with a pull request of its own for that story, or else as that story's
+    /// mission, two or more; others stacked together are a stack of their own; the rest group by the session they were
+    /// opened under, two or more, with no order. A pull request alone isn't shown, nor a story's.
     /// - Parameter focus: the mission you keep on top.
     public static func missions(
         facts: OrderFacts, orders: DeclaredOrders, evidence: OrderEvidence, focus: MissionKey? = nil, now: Date = Date()
@@ -800,12 +800,12 @@ public enum OrderBoard {
                 alone += component
             }
         }
-        // An order claims its story's other pull requests only until its own for that story have all merged or closed: one
-        // whose pull requests for it all ended leaves the story's new ones to go as they would without it. An order is
-        // finished only then too. (One BriefBar can't see claims nothing either way, as its story isn't known then.)
+        // An order claims the stories of all its pull requests, merged ones included, until it's finished: until each has
+        // merged or closed, as far as BriefBar knows, one it can't see counting as neither. A finished order leaves its
+        // stories' new pull requests to go as they would without it.
         var plansByStory: [ItemRef: Set<UUID>] = [:]
-        for plan in orders.plans {
-            for ref in plan.refs where !board.status(ref).hasEnded {
+        for plan in orders.plans where plan.refs.contains(where: { !board.status($0).hasEnded }) {
+            for ref in plan.refs {
                 for story in board.stories(of: ref) { plansByStory[story.ref, default: []].insert(plan.id) }
             }
         }

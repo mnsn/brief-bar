@@ -158,8 +158,8 @@ import Testing
     }
 
     /// An order whose own pull requests for a story all merged no longer claims the story's new ones: they're the story's
-    /// own mission, as without it, rather than "Same story · not in this order" under a finished order. One of its own
-    /// for the story that hasn't merged or closed keeps them.
+    /// own mission, as without it, rather than "Same story · not in this order" under a finished order. One of its pull
+    /// requests that hasn't merged or closed keeps them.
     @Test func aFinishedOrderLeavesItsStorysNewPullRequestsToTheStory() throws {
         var orders = DeclaredOrders()
         try orders.apply(OrderRequest(entries: [
@@ -175,6 +175,28 @@ import Testing
 
         missions = Self.missions(Self.facts([
             Self.ado(4101, [Self.task(5102, rank: 1)], state: .merged), Self.ado(4102, [Self.task(5103, rank: 2)]),
+        ] + new), orders)
+        #expect(missions.map(\.key) == [.plan(planID)])
+        #expect(missions.first?.sameStory.map(\.ref) == [Self.pr(4105), Self.pr(4106)])
+    }
+
+    /// An order that isn't finished claims the stories of all its pull requests, merged ones included, and one BriefBar
+    /// can't see leaves it unfinished: a story's new pull requests show with it, though its own for the story merged.
+    @Test func anUnfinishedOrderClaimsTheStoriesOfItsMergedPullRequestsToo() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [
+            .init(link: OrderPlansTests.link(4101)), .init(link: OrderPlansTests.link(4102), after: ["4101"]),
+        ]), now: t(0), newID: planID)
+        let new = [Self.ado(4105, [Self.task(5104, rank: 3)]), Self.ado(4106, [Self.task(5105, rank: 4)])]
+        // !4101, for the story, merged and still listed; !4102 isn't listed, and BriefBar never saw it merge.
+        var missions = Self.missions(Self.facts([Self.ado(4101, [Self.task(5102, rank: 1)], state: .merged)] + new), orders)
+        #expect(missions.map(\.key) == [.plan(planID)])
+        #expect(missions.first?.isFinished == false)
+        #expect(missions.first?.sameStory.map(\.ref) == [Self.pr(4105), Self.pr(4106)])
+
+        // !4102 open, for another story.
+        missions = Self.missions(Self.facts([
+            Self.ado(4101, [Self.task(5102, rank: 1)], state: .merged), Self.ado(4102, [Self.task(5131, rank: 1, of: 5130)]),
         ] + new), orders)
         #expect(missions.map(\.key) == [.plan(planID)])
         #expect(missions.first?.sameStory.map(\.ref) == [Self.pr(4105), Self.pr(4106)])
