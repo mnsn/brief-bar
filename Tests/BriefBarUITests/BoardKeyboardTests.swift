@@ -53,6 +53,30 @@ import Testing
         }
     }
 
+    /// How long a card a key moved is owed the keyboard's focus, as the test has it: each move's wait lasts until the test
+    /// ends it, rather than the app's ten seconds.
+    @MainActor
+    private final class FocusWaits {
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        /// How many ended: each counts as the move's wait goes on, and before the Board stops owing its card the focus.
+        private(set) var ended = 0
+
+        /// How many moves wait now.
+        var count: Int { waiting.count }
+
+        func wait() async {
+            await withCheckedContinuation { waiting.append($0) }
+            ended += 1
+        }
+
+        /// Ends every move's wait.
+        func end() {
+            let waits = waiting
+            waiting = []
+            for wait in waits { wait.resume() }
+        }
+    }
+
     /// The details a click shows: on a narrow page, or at a bigger text size, over the Board, which they disable then, as
     /// `DetailsSplit` does, with a field to type in.
     @MainActor
@@ -77,7 +101,7 @@ import Testing
         @ObservedObject var details: Details
         @ObservedObject var late: Late
         let drawn: Drawn
-        let focusWait: Duration
+        let waits: FocusWaits?
 
         var body: some View {
             let kinds: Set<ItemRef.Kind> = [.pullRequest]
@@ -103,7 +127,7 @@ import Testing
                 },
                 shownOnTop: details.hasPageOver ? nil : details.shown,
                 setAsNext: nil, notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000),
-                focusWait: focusWait
+                focusWait: waits.map { waits in { @MainActor in await waits.wait() } }
             )
             .disabled(covered)
             .overlay(alignment: .topTrailing) {
@@ -165,17 +189,15 @@ import Testing
     }
 
     /// Shows the Board in a window while `body` runs, once its card is drawn.
-    /// - Parameter focusWait: how long a card a key moved is owed the keyboard's focus, as long as in the app by default.
+    /// - Parameter waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as
+    ///   in the app.
     private static func showing(
-        _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(),
-        focusWait: Duration = OrderBoardView.owedFocusWait,
+        _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(), waits: FocusWaits? = nil,
         _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ drawn: Drawn) async throws -> Void
     ) async throws {
         _ = NSApplication.shared
         let drawn = Drawn()
-        let host = NSHostingView(
-            rootView: Board(order: order, details: details, late: late, drawn: drawn, focusWait: focusWait)
-        )
+        let host = NSHostingView(rootView: Board(order: order, details: details, late: late, drawn: drawn, waits: waits))
         let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_200, height: 500), styleMask: .borderless,
                                backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -185,6 +207,8 @@ import Testing
         window.orderFrontRegardless()
         window.makeKey()
         defer {
+            // No move waits on once the test's done.
+            waits?.end()
             window.contentView = nil
             window.close()
         }
@@ -254,16 +278,13 @@ import Testing
     }
 
     /// One the Board draws in its new column only once the move's wait ended, as in a lane you fold and unfold later, is
-    /// owed the keyboard no more: it doesn't take it.
-    @Test(.disabled("""
-        Flaky on CI: it times a 300 ms wait against fixed sleeps, so on a slow runner the wait can end after the \
-        redraw, as in v0.18.0's release build (run 42516738182). Turn it back on once it waits on the wait's end, \
-        not on time.
-        """))
-    func aMovedCardTheBoardDrawsOnlyAfterItsWaitDoesntTakeTheKeyboard() async throws {
+    /// owed the keyboard no more: it doesn't take it. The test ends the wait itself, and lets the Board draw the card once
+    /// it has ended.
+    @Test func aMovedCardTheBoardDrawsOnlyAfterItsWaitDoesntTakeTheKeyboard() async throws {
         let order = Self.order()
         let late = Late()
-        try await Self.showing(order, late: late, focusWait: .milliseconds(300)) { window, host, drawn in
+        let waits = FocusWaits()
+        try await Self.showing(order, late: late, waits: waits) { window, host, drawn in
             Self.click(at: try #require(drawn.frame), in: host)
             try await until("the click to show its details") { drawn.shown == 1 }
             late.column = .yourReview
@@ -271,9 +292,12 @@ import Testing
                 Self.press(.rightArrow, command: true, in: window)
                 return order.stage(of: Self.ref)?.stage == .yourReview
             }
-            try await Task.sleep(for: .milliseconds(800))
+            try await until("the move to wait for the card to be drawn in its new column") { waits.count == 1 }
+            waits.end()
+            try await until("the move's wait to end") { waits.ended == 1 }
             late.release(redrawing: order)
             try await until("the card drawn in Your review") { drawn.columns[Self.ref] == .yourReview }
+            // A card that took the keyboard would take it as it appears, a moment after it's drawn.
             try await Task.sleep(for: .milliseconds(300))
             Self.press(.rightArrow, command: true, in: window)
             try await Task.sleep(for: .milliseconds(300))
