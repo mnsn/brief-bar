@@ -304,6 +304,17 @@ import Testing
 
     /// A card a key moved is owed the keyboard's focus until it takes it, drawn anew in its new column, or until that move's
     /// wait for it ends: not when the last move's wait ends just after the next key, which owes it the focus anew.
+    /// A move owes its card the keyboard's focus only where it takes it to another column of the board: not one it leaves
+    /// in its column, as one set as next that still waits, which keeps the focus, nor one it takes off the board.
+    @Test func aMoveOwesTheFocusOnlyWhereItTakesTheCardToAnotherColumn() {
+        let moved = StageReading(stage: .yourReview, why: .set)
+        #expect(OrderBoardView.owesFocus(after: moved, leaving: .inProgress))
+        #expect(!OrderBoardView.owesFocus(after: moved, leaving: .yourReview))
+        #expect(!OrderBoardView.owesFocus(after: StageReading(stage: .waits, why: .waitsFor([], words: "After !4102")), leaving: .waits))
+        #expect(!OrderBoardView.owesFocus(after: StageReading(stage: .teammateReview, why: .finishedReview, isOnBoard: false), leaving: .yourReview))
+        #expect(!OrderBoardView.owesFocus(after: nil, leaving: .yourReview))
+    }
+
     @Test func aCardIsOwedTheFocusUntilItTakesItOrItsOwnMovesWaitEnds() {
         var owed = OwedFocus<ItemRef>()
         let first = owed.owe(Self.ref(4093))

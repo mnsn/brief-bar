@@ -9,11 +9,14 @@ package struct StageRefusal: Equatable, Sendable {
     package let why: String
     /// How its stage read as it couldn't leave it: once it reads otherwise, it's said no more.
     package let reading: StageReading
+    /// Why it didn't move; false for where it still waits once it did (`PullRequestOrder.stillWaits`).
+    package let isRefusal: Bool
 
-    package init(ref: ItemRef, why: String, reading: StageReading) {
+    package init(ref: ItemRef, why: String, reading: StageReading, isRefusal: Bool = true) {
         self.ref = ref
         self.why = why
         self.reading = reading
+        self.isRefusal = isRefusal
     }
 }
 
@@ -40,19 +43,21 @@ package struct StageRefusalLine: View {
 
     package var body: some View {
         if let why = order.stageRefusal(of: ref) {
-            Line(text: why) { order.stageRefusal = nil }
+            Line(text: why, isRefusal: order.stageRefusal?.isRefusal ?? true) { order.stageRefusal = nil }
         }
     }
 
-    /// Why a card couldn't move: under its lane on the Board, and under its stage track in its details.
+    /// Why a card couldn't move, or where it still waits once it did: under its lane on the Board, and under its stage
+    /// track in its details.
     struct Line: View {
         let text: String
+        var isRefusal = true
         let dismiss: () -> Void
 
         var body: some View {
             HStack(spacing: 6) {
-                Image(systemName: "nosign")
-                    .foregroundStyle(.orange)
+                Image(systemName: isRefusal ? "nosign" : "info.circle")
+                    .foregroundStyle(isRefusal ? Color.orange : Color.secondary)
                 Text(text + ".")
                     .foregroundStyle(.secondary)
                     // In full, however big the text: in the narrow details, a reason takes a few lines.
