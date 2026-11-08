@@ -937,7 +937,7 @@ to the Copilot CLI, as turning agents on does, and is checked once it's there. F
 |---|---|
 | `needs_me` | What the menu bar counts, in each source: pull requests that need you, fail or are ready to complete, pinned pipelines that failed, Copilot sessions waiting for you |
 | `pull_requests` | Your pull requests by group, each with why it's there and its link |
-| `pull_request` | One pull request: votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, as its details show it, and why, or the ones it asks you to choose from |
+| `pull_request` | One pull request: the branch it merges into, as Azure DevOps says when you ask, votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, as its details show it, and why, or the ones it asks you to choose from |
 | `pull_request_prompt` | The prompt of **Fix Comments**, **Fix the Build**, **Resolve Conflicts**, **Pre-review** or **Push & Reply**, for the agent to follow where it works |
 | `pipelines` | Your pinned pipelines, and the ones after your merges |
 | `sprint` | Your team's sprint, or only your part of it |

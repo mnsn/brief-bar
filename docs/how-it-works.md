@@ -2359,10 +2359,14 @@ with one request for the pull request right before git checks and one right afte
 is asked too, as you send it, before the launcher starts, as each of those reads answers, since a read may answer from
 before a retarget the list has read meanwhile, and until the prompt is sent or copied. Once either says
 another, nothing goes, and BriefBar says to open the window again, for a prompt that names it
-(`CopilotTasksStore.retargetProblem`, `LaunchError.retargeted`). Nor does a Push & Reply go to one of the app's
-sessions while Copilot runs a turn in it, or another of the app's sessions runs one in the checkout it works in, as the
-app's database says (`CopilotTasksStore.turnProblem`): the prompt would wait for that turn, whose changes, a merge to
-fix the build, say, would go with it, unchecked. BriefBar reads that before git checks and again after, right before
+(`CopilotTasksStore.retargetProblem`, `LaunchError.retargeted`); when Azure DevOps names another branch than the list
+has read, the list reads the pull request again then, rather than at its next refresh, so that the window, opened again,
+names that one (`CopilotTasksStore.rereadPullRequest`, `PRStore.reread(_:)`). Nor does a Push & Reply go to one of the
+app's sessions while Copilot runs a turn in it, or another of the app's sessions runs one in the checkout it works in,
+as the app's database says (`CopilotTasksStore.turnProblem`): the prompt would wait for that turn, whose changes, a
+merge to fix the build, say, would go with it, unchecked. Nor while BriefBar can't tell, as when that database can't be
+read, or doesn't say which sessions run one, as when the app keeps that another way now
+(`AppSessions.running(home:strictly:)`). BriefBar reads that before git checks and again after, right before
 it copies the prompt, or writes the request for the session's extension and then, at most once a second, until the
 extension takes it, taking the request back if a turn starts; the composer says to send it once the turn is done. A
 turn that starts in that last second, or once the extension took the prompt, before the prompt's own turn, is left to
@@ -2371,14 +2375,15 @@ nothing goes either; the check needs only the clone's `origin`, not a branch new
 (`Git.checkClone(at:of:)`).
 
 Copilot checks too, as late as it can: Push & Reply's prompt has it commit, then, right before it pushes, and again
-after a rebase when a push is rejected, read the pull request with BriefBar's `pull_request` tool or Azure DevOps
-tools, when it has them, and stop if it merges into another branch now or they can't tell; check what each merge in
+after a rebase when a push is rejected, read the pull request with BriefBar's `pull_request` tool, which reads the
+branch it merges into again each time it's asked ([below](#agents)), or with Azure DevOps tools, when it has them, and
+stop if it merges into another branch now or they can't tell; check what each merge in
 `origin/<branch>..HEAD` merged in, as BriefBar does; and push the commit it checked, by its ID,
 `git push origin <commit>:refs/heads/<branch>`, so that nothing committed after the check goes. Without such tools
 it goes on BriefBar's reads, from right before it started. The push has no lease (`--force-with-lease`): a lease lets
 git move the branch to any commit while its tip is the one it names, even one that drops what's on it, where a plain
-push only ever adds to the branch and is rejected once it moved; and BriefBar writes the prompt before it checks, so
-the prompt can't name the tip BriefBar saw.
+push only ever adds to the branch and is rejected once it moved, unless it was moved back; and BriefBar writes the
+prompt before it checks, so the prompt can't name the tip BriefBar saw.
 
 **A session that's already there.** The composer's session menu, under **Where It Goes**, also lists the sessions a task can
 go to instead of a new one (`SessionChoice`), read as it opens, and only while **Send Work to Copilot**
@@ -3357,9 +3362,12 @@ It's a command-line mode like `--json`, with the same rules:
   pull requests sent in chats. In Needs You, what you've seen that still waits on you says so. One
   `PulseEngine` serves the whole session (`AzureDevOpsReader`): a tool reads again only
   when what it has is a minute old, as the app does at its most often, so calls one after another share
-  a read. A read that failed in a way you can fix, such as a sign-in that expired, isn't kept, so the
-  next call reads again. The pinned pipelines and the sprint are read the same way, when a tool needs
-  them. Each read runs on its own, so a call the agent cancels doesn't cut short what the next one gets.
+  a read; but `pull_request` reads the branch the pull request merges into again each time, with one
+  request, since an agent checks it right before it pushes, and says it can't tell when it can't read it
+  (`AzureDevOpsReader.targetNow(of:)`). A read that failed in a way you can fix, such as a sign-in that
+  expired, isn't kept, so the next call reads again. The pinned pipelines and the sprint are read the
+  same way, when a tool needs them. Each read runs on its own, so a call the agent cancels doesn't cut
+  short what the next one gets.
 - Copilot's sessions come from the app's database and the sessions' logs, as `--json` reads them. For
   another source's tool, it also reads where each session's work goes (`SessionLinks`) and, for the
   sessions it tells of, what Copilot recorded of their work (`SessionAccount`), whether Show Links is on
