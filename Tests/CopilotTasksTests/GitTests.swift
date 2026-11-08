@@ -111,6 +111,41 @@ import Testing
         #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") == .clean)
     }
 
+    /// A merge the pull request's branch has already, pushed before, which this push doesn't bring, as git fetches the branch
+    /// now, whatever the checkout last saw of it: the commit on top of it is the work to push.
+    @Test(.timeLimit(.minutes(1)))
+    func takesAMergeTheBranchHasAlready() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        try await fixture.git(["-C", fixture.checkout.path] + Self.identity + ["merge", "--quiet", "--no-edit", "origin/main"])
+        // Pushed by its URL, so the checkout's origin/<branch> stays where it was, until checkPush fetches it.
+        try await fixture.git(["-C", fixture.checkout.path, "push", "--quiet", fixture.origin.path, "HEAD:refs/heads/\(Self.source)"])
+        let merge = try await git.run(["-C", fixture.checkout.path, "rev-parse", "HEAD"], timeout: 30)
+        let tracking = ["-C", fixture.checkout.path, "rev-parse", "refs/remotes/origin/\(Self.source)"]
+        #expect(try await git.run(tracking, timeout: 30) != merge)
+        try await commit("The fix", to: "fix.txt", in: fixture.checkout, fixture)
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") == .clean)
+        #expect(try await git.run(tracking, timeout: 30) == merge)
+    }
+
+    /// An octopus merge, of release/x's work and main's at once: each branch it merged in has to be in the target, not only
+    /// the first.
+    @Test(.timeLimit(.minutes(1)))
+    func findsAnOctopusMergeOfWhatTheTargetDoesntHave() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        let seed = fixture.folder.appendingPathComponent("seed")
+        try await fixture.git(["-C", seed.path, "checkout", "--quiet", "release/x"])
+        try await commit("A release fix", to: "release.txt", in: seed, fixture)
+        try await fixture.git(["-C", seed.path, "push", "--quiet", fixture.origin.path, "release/x"])
+        try await fixture.git(["-C", fixture.checkout.path, "fetch", "--quiet", "origin"])
+        try await fixture.git(["-C", fixture.checkout.path] + Self.identity + ["merge", "--quiet", "--no-edit", "origin/release/x", "origin/main"])
+        let parents = try await git.run(["-C", fixture.checkout.path, "rev-list", "--parents", "--max-count=1", "HEAD"], timeout: 30)
+        #expect(parents.split(separator: " ").count == 4)
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "release/x") == .foreignMerge)
+        #expect(try await git.checkPush(in: fixture.checkout, source: Self.source, target: "main") == .foreignMerge)
+    }
+
     /// A merge of the pull request's own branch, whichever way, merges in what the target doesn't have: pulled into the
     /// work, or merged into main's latest, which on a target with no merges of its own looks the same in history, and
     /// would push main's work to the branch.
