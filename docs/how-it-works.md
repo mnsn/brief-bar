@@ -1643,11 +1643,13 @@ back as the mentions they showed as you began, though the comment changed meanwh
 else than it did as you began, as edited in Azure DevOps or in another window, which a refresh or a read again brings,
 and something else than what you wrote, your edit says so under its field, with what the comment says now, as it opens
 or as the comment changes, which VoiceOver hears too (`CommentChangedNotice`, `ThreadChanges.changedSince`): saved, your
-edit would replace what it says now, which you haven't seen, so **Save** sends nothing then, and says so again. **Start
-Over** puts what the comment says now in your edit, in place of what you wrote, and begins again from it
-(`ThreadChanges.startOver`); **Save Anyway** saves your edit over the version it shows, and that one only: once the
-comment changes again, your edit says so again. An edit of yours that may have gone, as one Azure DevOps didn't answer
-in time, isn't a change elsewhere, though the thread has it (`EditAttempt`). Saving is a `PATCH` of what the comment
+edit would replace what it says now, which you haven't seen, so **Save** sends nothing then, as the notice says, and
+VoiceOver hears so again. **Start Over** puts what the comment says now in your edit, in place of what you wrote, and
+begins again from it (`ThreadChanges.startOver`); **Save Anyway** saves your edit over the version it shows, and that
+one only: once the comment changes again, your edit says so again. An edit of yours that may have gone, as one Azure
+DevOps didn't answer in time, isn't a change elsewhere, though the thread has it (`EditAttempt`). It tells only what
+BriefBar has read: Save doesn't read the comment again first, so an edit made in Azure DevOps since BriefBar last read
+the pull request, Save replaces. Saving is a `PATCH` of what the comment
 says alone, `content` (`ADOWrite.editComment`), unless it says what you began with, or what the comment says now, when
 nothing goes; Azure DevOps answers with the comment as it keeps it, which shows at once in its place
 (`ThreadChange.edited`), but never over a later edit of it, as one made elsewhere that a read had before the answer
