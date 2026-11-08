@@ -1459,7 +1459,10 @@ pull request in another session forgets it, so clearing that task doesn't bring 
 app's sessions its work could go to, not one of its tasks' or of BriefBar's own, that Show Links shows began to tell
 BriefBar it's working on it after you chose, so it doesn't come back once that session stops saying so: the app
 forgets it as it sees that, while Send Work to Copilot is on (`CopilotTasksStore.forgetChoicesToldSince`), so one that
-began and stopped saying so while BriefBar wasn't running, or Send Work to Copilot was off, leaves it be. It keeps when
+began and stopped saying so while BriefBar wasn't running, or Send Work to Copilot was off, leaves it be. The app's
+sessions are those its database lists, as the line reads them, read off the main thread only once one may have taken
+your choice's place, so that a session only Copilot's list has, such as one of the Copilot CLI's when there's no
+database to read, never does. It keeps when
 you chose, though, marked as given way (`PullRequestSessionChoice.givenWay`), with what you chose for an older
 BriefBar's `--mcp`, which reads it as before: while a session that began to say so since does, that session goes on
 taking its place, ahead of a task that started before you chose, and two such ask which; once none does, the rest
@@ -3332,7 +3335,8 @@ nothing it does is saved; with the environment
 from the app's settings, only while it's on: the links you made, and, with Updates from Copilot Sessions on too, what
 sessions told BriefBar they work on and opened, with when each began to say it works on something, for the sessions
 Copilot's part of `--mcp` lists, as the app's Copilot list has them (`MCPRelated.sessionListing`), which it asks only
-once a session told BriefBar something of that pull request, and which says nothing while Copilot is off. Like the
+once a session told BriefBar something of that pull request, and which says nothing while Copilot is off; both settings
+are checked again once it has, in case either was turned off meanwhile. Like the
 composer, it reads the Copilot
 app's database read-only, the folder each of its sessions works in and, for mentions, their logs, and
 nothing at all while Send Work to Copilot is off or in the demo, whose composer reads no sessions. Its

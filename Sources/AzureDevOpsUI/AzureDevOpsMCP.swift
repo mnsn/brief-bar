@@ -411,8 +411,9 @@ actor AzureDevOpsReader {
     /// What Show Links knows of a pull request's sessions while it's on, as the app's settings keep it: the links you made;
     /// and, with Updates from Copilot Sessions on too, what sessions told BriefBar they work on and opened, as Show Links
     /// shows it, for the sessions Copilot's list has now (`MCPRelated.sessionListing`), which is asked, since it reads
-    /// every session, only once a session told BriefBar something of this pull request. The ones Copilot records and those
-    /// by branch, the app's database says (`CopilotTasksStore.reasons`).
+    /// every session, only once a session told BriefBar something of this pull request; both settings are checked again
+    /// after that wait, as either may have been turned off meanwhile. The ones Copilot records and those by branch, the
+    /// app's database says (`CopilotTasksStore.reasons`).
     private func links(of pullRequest: ItemRef, now: Date) async -> (graph: LinkGraph, told: SessionReports) {
         guard defaults.bool(forKey: Links.enabledKey) else { return (LinkGraph(), SessionReports()) }
         var edits = LinkEdits.load(from: defaults)
@@ -422,6 +423,8 @@ actor AzureDevOpsReader {
         guard told.reports.values.contains(where: { $0.workingOn.contains(pullRequest) || $0.opened[pullRequest] != nil }),
               let listing = await MCPRelated.sessionListing()
         else { return (LinkGraph(edits: edits), SessionReports()) }
+        guard defaults.bool(forKey: Links.enabledKey) else { return (LinkGraph(), SessionReports()) }
+        guard SessionUpdatesSetting.isOn(in: defaults) else { return (LinkGraph(edits: edits), SessionReports()) }
         return (LinkGraph(links: told.links(listing, now: now), edits: edits), told)
     }
 

@@ -230,7 +230,12 @@ package final class AzureDevOpsSource: BriefBarSource {
         services.links.$graph.map { _ in () }
             .merge(with: services.sessionUpdates.$reports.map { _ in () }, copilot.settings.$copilotEnabled.map { _ in () })
             .receive(on: DispatchQueue.main)
-            .sink { [weak copilot] _ in MainActor.assumeIsolated { copilot?.forgetChoicesToldSince() } }
+            .sink { [weak copilot] _ in
+                MainActor.assumeIsolated {
+                    guard let copilot else { return }
+                    Task { await copilot.forgetChoicesToldSince() }
+                }
+            }
             .store(in: &cancellables)
         self.copilot = copilot
         workLinks = WorkLinksStore(

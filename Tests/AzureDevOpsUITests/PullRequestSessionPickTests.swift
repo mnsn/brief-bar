@@ -19,6 +19,9 @@ import Testing
     private let linked = "66666666-6666-4666-8666-666666666666"
     private let other = "77777777-7777-4777-8777-777777777777"
     private let key = PRKey("Contoso", 4071)
+    /// The sessions the Copilot app lists, as its database has them: all of these, BriefBar's tasks' too, as when you opened
+    /// them there.
+    private var apps: Set<String> { [fixing, opener, onBranch, recorded, linked, other] }
 
     private func run(_ id: String, startedAgo: TimeInterval, workItem: Int? = nil, opened: Int? = nil) -> CopilotRun {
         CopilotRun(
@@ -371,19 +374,23 @@ import Testing
         settings.choose(session: nil, for: elsewhere, at: now.addingTimeInterval(-60))
         telling(linked, began: -300, on: key)
         telling(other, began: -30, on: key)
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.copilotPullRequestSessions.count == 2)
 
         // Another session since, on this one only.
         telling(recorded, began: -10, on: key)
         settings.copilotEnabled = false
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.copilotPullRequestSessions.count == 2)
         settings.copilotEnabled = true
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.chosenSession(for: key)?.session == ItemRef.session(other))
         told[key.linkRef] = [LinkedSession(id: recorded, origins: [.session], isThrough: false, began: now.addingTimeInterval(-10))]
-        store.forgetChoicesToldSince()
+        // Not by one the app doesn't list, which no window could send its work to, as a session of the Copilot CLI's that
+        // Copilot's list has when the app's database can't be read.
+        store.forgetChoicesToldSince(among: apps.subtracting([recorded]))
+        #expect(settings.chosenSession(for: key)?.isReplaced == false)
+        store.forgetChoicesToldSince(among: apps)
         // Its session is forgotten, and when you chose kept, in the preferences too; what you chose stays in it for an older
         // BriefBar's `--mcp`, which reads it as before.
         let givenWay = try #require(PullRequestSessionChoice(pullRequest: key, session: other, date: now.addingTimeInterval(-60))).givenWay()
@@ -392,20 +399,20 @@ import Testing
         #expect(AppSettings(defaults: defaults, now: now).copilotPullRequestSessions == settings.copilotPullRequestSessions)
         let text = String(decoding: try #require(defaults.data(forKey: SettingsKey.copilotPullRequestSessions)), as: UTF8.self)
         #expect(text.contains(#""replaced":true"#) && text.contains(other))
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.chosenSession(for: key) == givenWay)
 
         // A session of BriefBar's own says so, for another pull request's task, which the app doesn't have: nothing.
         settings.copilotRuns = [run(fixing, startedAgo: 3_600)]
         told[elsewhere.linkRef] = [LinkedSession(id: fixing, origins: [.session], isThrough: false, began: now.addingTimeInterval(-10))]
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.chosenSession(for: elsewhere)?.isReplaced == false)
         // Linked only through another pull request, or without saying so: nothing.
         told[elsewhere.linkRef] = [
             LinkedSession(id: linked, origins: [], isThrough: true, began: now.addingTimeInterval(-10)),
             LinkedSession(id: recorded, origins: [.copilot], isThrough: false, began: now.addingTimeInterval(-10)),
         ]
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.chosenSession(for: elsewhere)?.isReplaced == false)
     }
 
@@ -439,20 +446,20 @@ import Testing
         settings.choose(session: other, for: elsewhere, at: now.addingTimeInterval(-60))
 
         telling(linked, fixing, on: key)
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.chosenSession(for: key)?.isReplaced == false)
         // Once its worktree is gone, it's not its task's, but one of the app's sessions like any other.
         try FileManager.default.removeItem(at: folder)
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.chosenSession(for: key)?.isReplaced == true)
 
         telling(fixing, on: elsewhere)
         #expect(store.toldSince(elsewhere.linkRef).isEmpty)
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.chosenSession(for: elsewhere)?.isReplaced == false)
         telling(recorded, on: elsewhere)
         #expect(store.toldSince(elsewhere.linkRef) == [recorded: now.addingTimeInterval(-10)])
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.chosenSession(for: elsewhere)?.isReplaced == true)
     }
 
@@ -475,7 +482,7 @@ import Testing
             app(linked, [.toldBriefBar], active: -60, told: try #require(claims[linked]).timeIntervalSince(now)),
         ]
         #expect(PullRequestSession.pick(choices, chosen: settings.chosenSession(for: key), lastTask: lastTask) == .session(choices[2], .toldBriefBar))
-        store.forgetChoicesToldSince()
+        store.forgetChoicesToldSince(among: apps)
         #expect(settings.chosenSession(for: key)?.isReplaced == true)
         #expect(PullRequestSession.pick(choices, chosen: settings.chosenSession(for: key), lastTask: lastTask) == .session(choices[2], .toldBriefBar))
 

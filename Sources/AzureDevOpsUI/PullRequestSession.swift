@@ -412,23 +412,42 @@ extension CopilotTasksStore {
     /// a day. When you chose stays (`PullRequestSessionChoice.givenWay`), so that while a session that began to say so since
     /// does, it goes on taking its place, ahead of an earlier task, and two such ask which. Only while Send Work to Copilot
     /// is on, as it sees it, and as Show Links shows what sessions told; and only for the sessions the pull request's work
-    /// could go to there, as it picks them: not those of its own tasks, which its last task decides on
-    /// (`AppSettings.forgetChosenSession(for:supersededBy:)`), nor BriefBar's own (`toldSince(of:)`).
-    func forgetChoicesToldSince() {
-        guard isOn, !settings.copilotPullRequestSessions.isEmpty else { return }
-        var replaced = false
-        let choices = settings.copilotPullRequestSessions.map { chosen -> PullRequestSessionChoice in
-            guard !chosen.isReplaced else { return chosen }
-            var told = toldSince(chosen.pullRequest).filter { $0.value > chosen.date }
-            guard !told.isEmpty else { return chosen }
+    /// could go to there, as it picks them: the app's, as its database lists them, read off the main thread only once one
+    /// may have taken its place, so that a session only Copilot's list has, such as one of the Copilot CLI's when the app's
+    /// database can't be read, never does; not those of its own tasks, which its last task decides on
+    /// (`AppSettings.forgetChosenSession(for:supersededBy:)`), nor BriefBar's own (`toldSince(of:)`). In the demo, those Show
+    /// Links links, which are all it has.
+    func forgetChoicesToldSince() async {
+        guard isOn, !choicesGivingWay(among: nil).isEmpty else { return }
+        var listed: Set<String>?
+        if mode == .live {
+            let home = appHome
+            listed = await Task.detached(priority: .utility) { Set(((try? AppSessions.load(home: home)) ?? []).map(\.id)) }.value
+        }
+        forgetChoicesToldSince(among: listed)
+    }
+
+    /// Forgets what you chose once one of these sessions, the app's, by their IDs, took its place; one of those Show Links
+    /// links, for nil, as in the demo.
+    func forgetChoicesToldSince(among listed: Set<String>?) {
+        guard isOn else { return }
+        let replaced = choicesGivingWay(among: listed)
+        guard !replaced.isEmpty else { return }
+        settings.copilotPullRequestSessions = settings.copilotPullRequestSessions.map { replaced.contains($0) ? $0.givenWay() : $0 }
+    }
+
+    /// What you chose that one of these sessions took the place of, as Show Links shows them: one that began to tell
+    /// BriefBar it's working on the pull request after you chose, not one of its tasks', unless the one you chose says so
+    /// too.
+    private func choicesGivingWay(among listed: Set<String>?) -> [PullRequestSessionChoice] {
+        settings.copilotPullRequestSessions.filter { chosen in
+            guard !chosen.isReplaced else { return false }
+            var told = toldSince(chosen.pullRequest).filter { $0.value > chosen.date && (listed?.contains($0.key) ?? true) }
+            guard !told.isEmpty else { return false }
             let tasks = taskSessionIDs(forPullRequest: chosen.pullRequest)
             told = told.filter { !tasks.contains($0.key) }
-            guard !told.isEmpty, chosen.session.map({ told[$0.id] == nil }) ?? true else { return chosen }
-            replaced = true
-            return chosen.givenWay()
+            return !told.isEmpty && (chosen.session.map { told[$0.id] == nil } ?? true)
         }
-        guard replaced else { return }
-        settings.copilotPullRequestSessions = choices
     }
 
     /// The latest task BriefBar started on a pull request, that got as far as starting, whatever its session and however

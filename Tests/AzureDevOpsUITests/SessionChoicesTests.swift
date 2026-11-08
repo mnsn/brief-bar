@@ -202,6 +202,34 @@ private struct DatabaseError: Error {
         #expect(own.filter { $0.toldSince != nil }.map(\.id) == [linkedChat])
     }
 
+    /// What you chose gives way only to a session the app's database lists, as the window lists them, read only once one
+    /// may have taken its place: not to one only Copilot's list has, such as a session of the Copilot CLI's when there's no
+    /// database to read.
+    @Test func onlyTheAppsSessionsTakeYourChoicesPlace() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let store = store(home: home)
+        let key = PRKey("contoso", 4071)
+        let began = now
+        store.settings.choose(session: other, for: key, at: now.addingTimeInterval(-60))
+        store.linkedSessions = { [onBranch] ref in
+            ref == key.linkRef ? [LinkedSession(id: onBranch, origins: [.session], isThrough: false, began: began)] : []
+        }
+        await store.forgetChoicesToldSince()
+        #expect(store.settings.chosenSession(for: key)?.isReplaced == false)
+        try database(at: home, sessions: [(other, "Docs", "project", "main", "docs", nil, "2026-10-28T10:00:00.000Z")])
+        await store.forgetChoicesToldSince()
+        #expect(store.settings.chosenSession(for: key)?.isReplaced == false)
+
+        try FileManager.default.removeItem(at: home.appendingPathComponent("data.db"))
+        try database(at: home, sessions: [
+            (other, "Docs", "project", "main", "docs", nil, "2026-10-28T10:00:00.000Z"),
+            (onBranch, "Fix the totals", "project", "fix-totals", "shop", nil, "2026-10-27T10:00:00.000Z"),
+        ])
+        await store.forgetChoicesToldSince()
+        #expect(store.settings.chosenSession(for: key)?.isReplaced == true)
+    }
+
     /// A session that told BriefBar it's working on the pull request, as Show Links has it with Updates from Copilot
     /// Sessions on, goes with it for that, besides its other reasons, with when it began to say so.
     @Test func aSessionThatToldBriefBarItsWorkingOnItGoesWithIt() throws {
