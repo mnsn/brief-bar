@@ -36,7 +36,7 @@ commit() {
 # notes <branch> <time> <notes>: a pull request's branch, from main, with its notes in changes/<branch>.md.
 notes() {
     in_repo checkout --quiet -b "$1" main
-    write "changes/$1.md" "$3"
+    write "changes/$1-20260101-000000.md" "$3"
     commit "Add $1" "$2"
     in_repo checkout --quiet main
 }
@@ -163,7 +163,7 @@ After this update: Azure DevOps keeps the stages you set, and Copilot reads whic
 request's stage."
 notes missions 2026-01-10T12:00:00 "- **Change a mission yourself.** A pull request's menu has **Mission**."
 in_repo checkout --quiet -b edits main
-write changes/edits.md "- **Edit your comments.** With **Make Changes in Azure DevOps** on, your own comments have **Edit**.
+write changes/edits-20260101-000000.md "- **Edit your comments.** With **Make Changes in Azure DevOps** on, your own comments have **Edit**.
 
 ## Descriptions
 
@@ -229,9 +229,9 @@ expect Resources/Info.plist "${PLIST_1_0_0/1.0.0/1.1.0}"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$REPO/Resources/Info.plist")" == 1.1.0 ]] ||
     fail "Info.plist doesn't read as version 1.1.0."
 [[ "$(cd "$REPO" && ls changes)" == README.md ]] || fail "the notes aren't all gone, or README.md is: $(ls "$REPO/changes")"
-grep -qF "  changes/missions.md
-  changes/stages.md
-  changes/edits.md" "$WORK/out" || fail "it didn't say the order it found: $(cat "$WORK/out")"
+grep -qF "  changes/missions-20260101-000000.md
+  changes/stages-20260101-000000.md
+  changes/edits-20260101-000000.md" "$WORK/out" || fail "it didn't say the order it found: $(cat "$WORK/out")"
 in_repo commit --quiet --all --message "Prepare BriefBar 1.1.0"
 in_repo tag v1.1.0
 prepare --check || fail "--check refused a release: $(cat "$WORK/err")"
@@ -245,14 +245,14 @@ merge late 2026-01-12T11:00:00
 merge edits 2026-01-12T12:00:00
 in_repo checkout --quiet v1.1.0
 prepare --check || fail "--check refused the release's tag: $(cat "$WORK/err")"
-write changes/next.md "- **Next.** Written on a branch that starts at the tag, not committed yet."
+write changes/next-20260101-000000.md "- **Next.** Written on a branch that starts at the tag, not committed yet."
 prepare --check || fail "--check refused, at the tag, notes not committed yet: $(cat "$WORK/err")"
-rm "$REPO/changes/next.md"
+rm "$REPO/changes/next-20260101-000000.md"
 in_repo checkout --quiet main
 prepare --check || fail "--check refused, on main after a release, the notes of the next: $(cat "$WORK/err")"
 PREPARED_COMMIT="$(in_repo rev-parse --short v1.1.0)"
 in_repo tag --force v1.1.0 main > /dev/null
-check_refuses "v1.1.0 is tagged on a commit with notes that its section of CHANGELOG.md doesn't have: changes/late.md."
+check_refuses "v1.1.0 is tagged on a commit with notes that its section of CHANGELOG.md doesn't have: changes/late-20260101-000000.md."
 grep -qF "Tag the release's own commit instead, $PREPARED_COMMIT (\"Prepare BriefBar 1.1.0\")" "$WORK/err" ||
     fail "refusing the tag, --check didn't name the release's own commit: $(cat "$WORK/err")"
 
@@ -312,14 +312,14 @@ have.** Drafts show. ## 1.0.0"
 # Two notes that one merge brings go by name; a note renamed on main counts from its rename, as the one added there.
 make_repo
 in_repo checkout --quiet -b stack main
-write changes/b-second.md "- **Second.** By name."
-write changes/a-first.md "- **First.** By name."
+write changes/b-second-20260101-000000.md "- **Second.** By name."
+write changes/a-first-20260101-000000.md "- **First.** By name."
 commit "Add both" 2026-01-10T10:00:00
 in_repo checkout --quiet main
 merge stack 2026-01-11T10:00:00
 notes later 2026-01-09T10:00:00 "- **Third.** Merged last."
 merge later 2026-01-12T10:00:00
-in_repo mv changes/b-second.md changes/b-renamed.md
+in_repo mv changes/b-second-20260101-000000.md changes/b-renamed-20260101-000000.md
 commit "Rename a note" 2026-01-13T10:00:00
 prepare --main main 1.1.0 2026-02-01 || fail "it refused notes merged together: $(cat "$WORK/err")"
 expect CHANGELOG.md "# Changelog
@@ -341,10 +341,10 @@ notes on-main 2026-01-10T10:00:00 "- **On main.** Merged first."
 merge on-main 2026-01-11T10:00:00
 in_repo checkout --quiet -b batch main
 in_repo checkout --quiet -b written-first batch
-write changes/written-first.md "- **Written first.** Into the batch."
+write changes/written-first-20260101-000000.md "- **Written first.** Into the batch."
 commit "Add written-first" 2026-01-12T10:00:00
 in_repo checkout --quiet -b written-second batch
-write changes/written-second.md "- **Written second.** Into the batch."
+write changes/written-second-20260101-000000.md "- **Written second.** Into the batch."
 commit "Add written-second" 2026-01-12T11:00:00
 in_repo checkout --quiet batch
 merge written-second 2026-01-13T10:00:00
@@ -368,9 +368,9 @@ notes good 2026-01-10T10:00:00 "- **Good.** Notes."
 merge good 2026-01-11T10:00:00
 # refuses_notes <what's said> <notes>: a pull request's notes, which --check doesn't accept, nor would a release.
 refuses_notes() {
-    write changes/bad.md "$2"
-    check_refuses "changes/bad.md:$1"
-    rm "$REPO/changes/bad.md"
+    write changes/bad-20260101-000000.md "$2"
+    check_refuses "changes/bad-20260101-000000.md:$1"
+    rm "$REPO/changes/bad-20260101-000000.md"
 }
 refuses_notes "1: has a heading other than ## Descriptions" "# Edit your comments
 
@@ -426,14 +426,17 @@ After this update: nothing changed."
 refuses_notes "1: has no notes" ""
 refuses_notes "1: has a tab" "- **Edit.**	Them."
 write changes/notes.txt "Not a note."
-check_refuses "changes/notes.txt isn't a notes file"
+check_refuses "changes/notes.txt isn't named like a notes file"
 rm "$REPO/changes/notes.txt"
+write changes/my-branch.md "- **Unstamped.** Named after its branch alone, which another pull request could use too."
+check_refuses "changes/my-branch.md isn't named like a notes file: its branch, then the UTC date and time it was made"
+rm "$REPO/changes/my-branch.md"
 
 in_repo checkout --quiet -b bad main
-write changes/bad.md "- **Bad.** A note.
+write changes/bad-20260101-000000.md "- **Bad.** A note.
 And not."
 commit "Add bad notes" 2026-01-12T10:00:00
-refuses "changes/bad.md:2: isn't a bullet" --main main 1.1.0 2026-02-01
+refuses "changes/bad-20260101-000000.md:2: isn't a bullet" --main main 1.1.0 2026-02-01
 in_repo checkout --quiet main
 
 in_repo checkout --quiet -b raised main
@@ -477,7 +480,7 @@ check_refuses "CHANGELOG.md isn't as v1.0.0 left it: only a release changes it."
 in_repo checkout --quiet main
 
 in_repo checkout --quiet -b described main
-write changes/described.md "## Descriptions
+write changes/described-20260101-000000.md "## Descriptions
 
 Copilot: sessions.
 
@@ -507,9 +510,9 @@ in_repo checkout --quiet -b behind v1.0.0
 refuses "HEAD doesn't have all of main" --main main 1.1.0 2026-02-01
 in_repo checkout --quiet main
 
-write changes/untracked.md "- **Untracked.** Not committed."
-refuses "?? changes/untracked.md" --main main 1.1.0 2026-02-01
-rm "$REPO/changes/untracked.md"
+write changes/untracked-20260101-000000.md "- **Untracked.** Not committed."
+refuses "?? changes/untracked-20260101-000000.md" --main main 1.1.0 2026-02-01
+rm "$REPO/changes/untracked-20260101-000000.md"
 printf '<!-- Not committed. -->\n' >> "$REPO/Resources/Info.plist"
 refuses " M Resources/Info.plist" --main main 1.1.0 2026-02-01
 in_repo checkout --quiet -- Resources/Info.plist

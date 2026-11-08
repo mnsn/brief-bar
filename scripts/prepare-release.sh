@@ -337,15 +337,17 @@ last_release() {
     echo "${BASH_REMATCH[1]}"
 }
 
-# The notes files in changes/, by name, each named after its pull request's branch. changes/README.md isn't one.
+# The notes files in changes/, by name, each named after its pull request's branch and the UTC date and time it was
+# made, so that two pull requests from one branch never write the same file. changes/README.md isn't one.
 notes_files() {
     local path
-    local pattern="^$NOTES/[A-Za-z0-9][A-Za-z0-9._-]*\\.md\$"
+    local pattern="^$NOTES/[A-Za-z0-9][A-Za-z0-9._-]*-[0-9]{8}-[0-9]{6}\\.md\$"
     [[ -d "$NOTES" ]] || fail "$NOTES/ is missing."
     for path in "$NOTES"/*; do
         [[ -e "$path" && "$path" != "$NOTES/README.md" ]] || continue
         [[ -f "$path" && "$path" =~ $pattern ]] ||
-            fail "$path isn't a notes file: $NOTES/ holds files named after branches, such as $NOTES/my-branch-20261108-021500.md."
+            fail "$path isn't named like a notes file: its branch, then the UTC date and time it was made, such as" \
+                "$NOTES/my-branch-20261108-021500.md (date -u +%Y%m%d-%H%M%S)."
         [[ -s "$path" ]] || fail "$path is empty."
         echo "$path"
     done
