@@ -412,6 +412,8 @@ import Testing
             "Sorry - I can't name this mission", "Sorry can't help with that", "Apologies — the titles don't say",
             "Apologize, I can't name it", "As an on-device model, I can't name this", "As a helpful assistant, I can't name this",
             "I see no common theme here", "No name fits these titles", "Cannot determine a name", "Not enough information",
+            "Unable to do that", "Unable to do this.", "Unable to fulfil this request",
+            "As an on-device model without context, I can't",
             // Chatter around a name.
             "Here it is: Checkout coupons", "Here you go: Checkout coupons", "Here: Checkout coupons", "Sure thing! Checkout coupons",
             "Sure — Checkout coupons", "Sure - Checkout coupons", "Okay — Checkout coupons", "Of course — Checkout coupons",
@@ -419,7 +421,7 @@ import Testing
             "I propose Checkout coupons", "I named it Checkout coupons", "I went with Checkout coupons", "How about: Checkout coupons",
             "I made it Checkout coupons", "I gave it the name Checkout coupons", "I titled it Checkout coupons",
             // What holds a name's place.
-            "N/A", "None", "Unknown", "Untitled", "\"None.\"",
+            "N/A", "None", "Unknown", "Untitled", "\"None.\"", "Untitled mission", "Unnamed mission",
         ] {
             #expect(MissionNaming.clean(chatter) == nil, "\(chatter)")
         }
@@ -431,7 +433,8 @@ import Testing
             "Mission names: guided generation", "Mission: Impossible export", "Checkout: coupons and totals", "I-9 forms",
             "IT onboarding", "IPv6 support", "I18n for checkout", "Intune enrollment", "Title bar polish",
             "Here and now banner", "Certainly feature flag", "Of course list redesign", "Unable to load the cart",
-            "Okay-button fix", "None of the above option", "Not enough stock warning",
+            "Okay-button fix", "None of the above option", "Not enough stock warning", "Untitled drafts cleanup",
+            "Unknown title fix",
         ] {
             #expect(MissionNaming.clean(name) == name, "\(name)")
         }
