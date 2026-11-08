@@ -84,6 +84,9 @@ final class PRStore: ObservableObject {
     /// The reads of pull requests after changes to their threads (`changed`, `mayHaveChanged`, `threadsReadAgain`), under
     /// way, by their IDs: stopping calls them off.
     private var changeReads: [UUID: Task<[ReviewThread]?, Never>] = [:]
+    /// The reads of which branch pull requests merge into (`readTarget(of:)`), under way, by their IDs: stopping calls them
+    /// off.
+    private var targetReads: [UUID: Task<String, any Error>] = [:]
     private var ticker: Timer?
     private var monitor: NetworkMonitor?
     private var chatMonitor: ChatLinkMonitor?
@@ -417,6 +420,8 @@ final class PRStore: ObservableObject {
         accessChecks = [:]
         changeReads.values.forEach { $0.cancel() }
         changeReads = [:]
+        targetReads.values.forEach { $0.cancel() }
+        targetReads = [:]
         // Stops reading Notification Center; what it found stays until Azure DevOps is turned off.
         chatMonitor?.stop()
         chatMonitor = nil
@@ -951,13 +956,44 @@ final class PRStore: ObservableObject {
         return settings.watchedKeys.contains(key) ? record.watched() : record
     }
 
+    /// Reads which branch a pull request merges into, in place of Azure DevOps: a test's stand-in, or nil for Azure DevOps.
+    var readPullRequestTarget: (@Sendable (PRKey) async throws -> String)?
+
+    /// How many reads of which branch pull requests merge into are under way, for tests.
+    var targetReadsUnderWay: Int { targetReads.count }
+
     /// The branch a pull request merges into, as Azure DevOps says now, read with one request: what a Push & Reply checks
-    /// what it would push against, right before it goes, since the list may not have read a retarget yet. Throws when it
-    /// can't be read, as in the demo.
+    /// what it would push against, right before it goes, since the list may not have read a retarget yet. In a task that
+    /// stopping calls off (`targetReads`). Throws when it can't be read: in the demo, once stopped, as when Azure DevOps is
+    /// turned off, and when it's stopped meanwhile, whatever the read said.
     func readTarget(of key: PRKey) async throws -> String {
-        guard mode == .live else { throw CopilotTasksStore.TargetUnread() }
-        let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
-        return PullRequest(organization: key.organization, dto).targetBranch
+        guard mode == .live, !isStopped else { throw CopilotTasksStore.TargetUnread() }
+        let read: @Sendable (PRKey) async throws -> String
+        if let readPullRequestTarget {
+            read = readPullRequestTarget
+        } else {
+            let client = client
+            read = { key in
+                let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
+                return PullRequest(organization: key.organization, dto).targetBranch
+            }
+        }
+        let id = UUID()
+        let task = Task {
+            try Task.checkCancellation()
+            return try await read(key)
+        }
+        targetReads[id] = task
+        defer { targetReads[id] = nil }
+        let target: String
+        do {
+            target = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+        } catch {
+            if isStopped { throw CopilotTasksStore.TargetUnread() }
+            throw error
+        }
+        guard !isStopped else { throw CopilotTasksStore.TargetUnread() }
+        return target
     }
 
     /// When you last looked at a pull request, as far as BriefBar remembers.

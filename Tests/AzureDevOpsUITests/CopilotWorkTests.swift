@@ -3,6 +3,7 @@ import BriefBarCore
 import BriefBarUI
 import CopilotTasks
 import Foundation
+import Synchronization
 import Testing
 @testable import AzureDevOpsUI
 
@@ -913,6 +914,34 @@ import Testing
         #expect(await store.freshTargetProblem(next)
             == "BriefBar couldn't read which branch the pull request merges into, so nothing went: \(ADOError.offline)")
         #expect(reread == [key, key])
+    }
+
+    /// The list reads which branch a pull request merges into in a task that stopping calls off, as turning Azure DevOps
+    /// off does: what a read under way answers then doesn't count, and once stopped, nothing's read.
+    @Test func stoppingCallsOffAReadOfWhichBranchAPullRequestMergesInto() async throws {
+        let list = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .live)
+        list.readPullRequestTarget = { _ in "main" }
+        #expect(try await list.readTarget(of: key) == "main")
+        #expect(list.targetReadsUnderWay == 0)
+
+        let (started, startedOne) = AsyncStream<Void>.makeStream()
+        let reads = Mutex(0)
+        list.readPullRequestTarget = { _ in
+            reads.withLock { $0 += 1 }
+            startedOne.yield()
+            // It answers once it's called off, as an answer already on its way would.
+            while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+            return "release/x"
+        }
+        let reading = Task { try await list.readTarget(of: key) }
+        for await _ in started { break }
+        #expect(list.targetReadsUnderWay == 1)
+        list.stop()
+        #expect(list.targetReadsUnderWay == 0)
+        await #expect(throws: CopilotTasksStore.TargetUnread.self) { try await reading.value }
+        // Stopped, nothing more is read.
+        await #expect(throws: CopilotTasksStore.TargetUnread.self) { try await list.readTarget(of: key) }
+        #expect(reads.withLock { $0 } == 1)
     }
 
     // MARK: Prompts to the Copilot app's sessions
