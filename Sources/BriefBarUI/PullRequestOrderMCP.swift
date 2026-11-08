@@ -30,13 +30,17 @@ package enum PullRequestOrderMCP {
     ///   - copilotOn: whether GitHub Copilot is on in the app, asked with each stage set: what a session sets shows only
     ///     while the Copilot app lists it.
     ///   - announce: tells the app its orders, or what sessions set, changed.
+    ///   - demoStages: where the demo keeps what sessions set, for Azure DevOps' tools to read.
     package static func tools(
         defaults: UserDefaults, demo: Bool, sourcesOn: @escaping @Sendable () -> Set<ItemRef.Kind>, session: String?,
         stages: MCPStages? = nil, copilotOn: @escaping @Sendable () -> Bool = { true },
-        announce: @escaping @Sendable () -> Void = AgentChanges.post, now: @escaping @Sendable () -> Date = { Date() }
+        announce: @escaping @Sendable () -> Void = AgentChanges.post, now: @escaping @Sendable () -> Date = { Date() },
+        demoStages: DemoSessionStages? = nil
     ) -> [MCPTool] {
         guard demo || PullRequestOrderSetting.isOn(in: defaults) else { return [] }
-        let keeper = OrderKeeper(settings: OrderKeeper.Settings(defaults), demo: demo, announce: announce)
+        let keeper = OrderKeeper(
+            settings: OrderKeeper.Settings(defaults), demo: demo, announce: announce, demoStages: demo ? demoStages : nil
+        )
         let session = session.flatMap(ItemRef.session)
         let reasons = ReviewReason.allCases.map(\.rawValue)
         var tools = [
@@ -494,11 +498,14 @@ actor OrderKeeper {
     private let defaults: UserDefaults
     let demo: Bool
     private let announce: @Sendable () -> Void
+    /// Where the demo keeps what sessions set, for Azure DevOps' tools to read.
+    private let demoStages: DemoSessionStages?
 
-    init(settings: Settings, demo: Bool, announce: @escaping @Sendable () -> Void) {
+    init(settings: Settings, demo: Bool, announce: @escaping @Sendable () -> Void, demoStages: DemoSessionStages? = nil) {
         defaults = settings.defaults
         self.demo = demo
         self.announce = announce
+        self.demoStages = demoStages
     }
 
     var orders: DeclaredOrders {
@@ -553,6 +560,7 @@ actor OrderKeeper {
         before?.expire(now: now)
         let after = SessionStages.change(session, in: defaults, now: now, body)
         if after != before ?? SessionStage(session: session), !demo { announce() }
+        demoStages?.keep(SessionStages.load(from: defaults, now: now))
         return (before, after)
     }
 }

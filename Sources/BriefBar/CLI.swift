@@ -250,7 +250,8 @@ enum CLI {
         """
 
     /// Pull Request Order's tools, while it's on in the app, as it's off until you turn it on; the demo's always are, and
-    /// keep their orders, and the stages they're told, in memory. An order says which Copilot session told it: the one
+    /// keep their orders, and the stages they're told, in memory, the stages where Azure DevOps' tools read them
+    /// (`CommandLineOptions.demoStages`). An order says which Copilot session told it: the one
     /// that started `--mcp`, as the Copilot CLI says, unless the agent names another; a stage, only that one.
     /// - Parameter stages: what Azure DevOps tells of its pull requests' stages, with it among the sources, for
     ///   `pull_request_stage`, which is there only with it.
@@ -274,7 +275,7 @@ enum CLI {
         }
         return PullRequestOrderMCP.tools(
             defaults: defaults, demo: demo, sourcesOn: sourcesOn, session: Attribution.environment["COPILOT_AGENT_SESSION_ID"],
-            stages: stages, copilotOn: copilotOn
+            stages: stages, copilotOn: copilotOn, demoStages: options.demoStages
         )
     }
 

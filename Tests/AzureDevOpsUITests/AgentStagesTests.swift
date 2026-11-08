@@ -66,6 +66,27 @@ import Testing
         #expect(retry.contains("\n- Its stage: Your review: ‘Retry backoff’ says it's ready (set 1d ago).\n"))
     }
 
+    /// In the demo, the stage a session sets through `pull_request_stage` shows in `pull_request` after, in the same
+    /// `--mcp`, as in the app, where Azure DevOps' tools read it (`CommandLineOptions.demoStages`).
+    @Test func theDemoShowsTheStageASessionSet() async throws {
+        let options = CommandLineOptions(arguments: ["--demo", "--mcp"], demo: true)
+        let source = try #require(AzureDevOpsCommandLine.mcp(options))
+        let order = PullRequestOrderMCP.tools(
+            defaults: MemoryDefaults(), demo: true, sourcesOn: { [.pullRequest] }, session: DemoPullRequestOrder.retryBackoff.id,
+            stages: source.stages, demoStages: options.demoStages
+        )
+        let setStage = try #require(order.first { $0.name == "pull_request_stage" })
+        let pullRequest = try #require(source.tools.first { $0.name == "pull_request" })
+        try await MCPRelated.$tellers.withValue([Self.copilot]) {
+            _ = try await setStage.run(.object([
+                "pull_requests": .array([.int(4105)]), "organization": .string(DemoData.organization),
+                "stage": .string("in_progress"),
+            ]))
+            let details = try await pullRequest.run(.object(["pull_request": .int(4105)]))
+            #expect(details.contains("\n- Its stage: In progress: ‘Retry backoff’ is on it (set just now, after you)."))
+        }
+    }
+
     /// Nothing of stages while Pull Request Order is off, and `pull_request_prompt`'s prompts don't ask for them.
     @Test func noStagesWhilePullRequestOrderIsOff() async throws {
         let off = AzureDevOpsReader(demo: false, organizations: [], defaults: MemoryDefaults())

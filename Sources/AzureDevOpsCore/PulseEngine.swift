@@ -675,9 +675,11 @@ public actor PulseEngine {
                 tagsCarried.formUnion(lists.tags.keys)
             case .failure(let error):
                 errors.append((organization: organization, error: error))
-                // Keep what we had until it can be read again, however its name was spelled then.
+                // Keep what its lists had until they can be read again, however its name was spelled then. One read by its
+                // link is read by it again, or kept as it was, with when it was (`addLinked`): carried here, it would lose
+                // that, and look as fresh as anything read since.
                 let name = organization.lowercased()
-                for (key, item) in active where key.organization.lowercased() == name { listed[key] = item }
+                for (key, item) in active where key.organization.lowercased() == name && linked[key] == nil { listed[key] = item }
                 for (key, pr) in done where key.organization.lowercased() == name { completed[key] = pr }
                 tagsCarried.formUnion(tagsListed.filter { $0.organization.lowercased() == name })
             case nil:

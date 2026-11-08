@@ -8,9 +8,12 @@ extension AzureDevOpsCommandLine {
     /// `--mcp`: Azure DevOps for agents. They read what the app shows, with its settings and what you've seen in it,
     /// and change only which pull requests you watch and which pipelines you pin. The demo keeps those in memory.
     package static func mcp(_ options: CommandLineOptions) -> MCPSource? {
+        let demoStages = options.demoStages
         let options = Options(options)
         let defaults = options.demo ? MemoryDefaults() : appDefaults ?? MemoryDefaults()
-        let reader = AzureDevOpsReader(demo: options.demo, organizations: options.organizations, defaults: defaults)
+        let reader = AzureDevOpsReader(
+            demo: options.demo, organizations: options.organizations, defaults: defaults, demoStages: demoStages
+        )
         return AzureDevOpsAgent(reader: reader).source
     }
 }
@@ -50,10 +53,12 @@ actor AzureDevOpsReader {
     private let appHome: URL?
     /// Tells the app its settings changed.
     private let announce: @Sendable () -> Void
+    /// What sessions set through the demo's `pull_request_stage`, which it keeps in memory.
+    private let demoStages: DemoSessionStages?
 
     init(
         demo: Bool, organizations: [String], defaults: UserDefaults, client: ADOClient? = nil, appHome: URL? = nil,
-        announce: @escaping @Sendable () -> Void = AgentChanges.post
+        announce: @escaping @Sendable () -> Void = AgentChanges.post, demoStages: DemoSessionStages? = nil
     ) {
         self.demo = demo
         named = organizations
@@ -61,6 +66,7 @@ actor AzureDevOpsReader {
         self.client = demo ? nil : client ?? ADOClient(tokens: AzureDevOpsCommandLine.tokens(defaults))
         self.appHome = appHome
         self.announce = announce
+        self.demoStages = demoStages
     }
 
     // MARK: Pull requests
@@ -118,7 +124,7 @@ actor AzureDevOpsReader {
             return OrderKept(
                 orders: DemoPullRequestOrder.orders(now: now), evidence: DemoPullRequestOrder.evidence(now: now),
                 focus: DemoPullRequestOrder.focus, changes: DemoPullRequestOrder.changes(now: now), marks: StageMarks(),
-                sessionStages: SessionStages(), demoMarks: DemoPullRequestOrder.stages(now: now),
+                sessionStages: demoStages?.stages ?? SessionStages(), demoMarks: DemoPullRequestOrder.stages(now: now),
                 demoSessionMarks: DemoPullRequestOrder.sessionStages(now: now)
             )
         }

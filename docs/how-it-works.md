@@ -1217,7 +1217,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
-| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
@@ -3859,14 +3859,15 @@ and Merged, which come only from what BriefBar sees, and everything while Azure 
 off. Before it sets a stage, it reads each pull request again, one GET each, so that what would end it is kept as it is
 now (`AzureDevOpsAgent.stages(of:)`, `StageRules.mark`), and set as of when it's read them; clearing reads nothing. Just
 before it keeps anything, it checks again that agents, Azure DevOps, Copilot and Pull Request Order are still on, as
-reading takes a while (`OrderKeeper.changeStages`, `MCPStages.refusal`). It answers with what BriefBar shows now,
-set by that session, and, where it replaced a stage you set that still stood, that you can put yours back; and names
-those it didn't set, such as one no list has now, one that merged or one that was abandoned. The order tools' answers
-also tell the session what you changed in its orders that still holds (`OrderText.userChanges`), to keep, and that a
-later change of its that goes against one shows instead of yours, until you put yours back. Their answers name pull
-requests by number and organization, never by title; none of them makes or undoes your changes, or answers with
-missions. `--mcp` only reads what you set and changed; each session's stages are its own (see [A pull request's
-stage](#a-pull-requests-stage)), and the demo keeps them in memory.
+reading takes a while (`OrderKeeper.changeStages`, `MCPStages.refusal`). It answers with what BriefBar shows now, set by
+that session, and, where it replaced a stage you set that still stood, that you can put yours back; and names those it
+didn't set, such as one no list has now, one that merged or one that was abandoned. The order tools' answers also tell
+the session what you changed in its orders that still holds (`OrderText.userChanges`), to keep, and that a later change
+of its that goes against one shows instead of yours, until you put yours back. Their answers name pull requests by
+number and organization, never by title; none of them makes or undoes your changes, or answers with missions. `--mcp`
+only reads what you set and changed; each session's stages are its own (see [A pull request's
+stage](#a-pull-requests-stage)), and the demo keeps them in memory, where its `needs_me` and `pull_request` read them
+(`CommandLineOptions.demoStages`).
 
 What tells sessions to call it, so nobody has to ask: `--mcp`'s instructions, while it's listed; the tools'
 descriptions; Pull Request Order's skill, `briefbar-pr-order`, which says the session that did the work tells its stage,
