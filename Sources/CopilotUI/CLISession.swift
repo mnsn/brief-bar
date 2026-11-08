@@ -8,7 +8,8 @@ import CopilotTasks
 /// `ghapp://` links. A session a CLI still has open (`SessionLock`) is in the terminal that CLI runs in, which comes to the
 /// front: going on with it in a second one would fork its history. Any other goes on in Terminal with `copilot --resume`,
 /// in the folder it works in, as **Continue in Terminal** does for a task BriefBar sent. While it starts there, before its
-/// CLI holds it, another click opens nothing more (`Starting`).
+/// CLI holds it, another click opens nothing more (`Starting`). Each list of sessions opens them with an `Opener` of its
+/// own, which stops as it does.
 @MainActor
 enum CLISession {
     /// How a session opens.
@@ -32,77 +33,86 @@ enum CLISession {
         /// Writes a script, and opens it in Terminal: false when nothing opened it.
         var launch: @MainActor (_ contents: String, _ file: URL) throws -> Bool = { try CLISession.launch($0, at: $1) }
         /// Brings up the app a process runs in.
-        var show: @MainActor (pid_t) -> Void = { CLISession.bringUp($0) }
+        var show: @MainActor (pid_t) -> Void = { CLISession.bringUp($0, say: CLISession.alert) }
         /// Tells you what went wrong.
         var say: @MainActor (_ message: String, _ information: String) -> Void = { CLISession.alert($0, $1) }
     }
-
-    static var effects = Effects()
-    /// The sessions being opened in Terminal now.
-    private static var starting = Starting()
 
     static func way(for id: String, paths: CopilotPaths, holder: @MainActor (URL) -> pid_t?) -> Way {
         holder(paths.sessionDirectory(id)).map(Way.show) ?? .resume
     }
 
-    /// Opens the session: the task that opens it in Terminal, when one starts.
-    @discardableResult
-    static func open(_ id: String, paths: CopilotPaths) -> Task<Void, Never>? {
-        // A session's ID is a UUID, which names its folder in lowercase.
-        guard let id = ItemRef.session(id)?.id else { return nil }
-        switch way(for: id, paths: paths, holder: effects.holder) {
-        case .show(let pid):
-            starting.end(id)
-            effects.show(pid)
-            return nil
-        case .resume:
-            // Its CLI may not hold it yet: a second one would fork its history.
-            guard starting.begin(id) else { return nil }
-            let round = starting.round
-            return Task { await resume(id, paths: paths, round: round) }
-        }
-    }
+    /// Opens sessions for a list of them (`SessionStore`), and stops opening them as it stops: what it's opening is its
+    /// own, which nothing else stops.
+    @MainActor
+    final class Opener {
+        var effects: Effects
+        /// The sessions being opened in Terminal now.
+        private var starting = Starting()
 
-    /// Stops opening sessions in Terminal, when Copilot is turned off or BriefBar quits: one that's still finding
-    /// `copilot` reads nothing more of its session, and opens nothing.
-    static func stop() {
-        starting.stopAll()
-    }
+        init(effects: Effects = Effects()) {
+            self.effects = effects
+        }
 
-    /// Goes on with it in a new Terminal window: `copilot`, as your login shell finds it, resumes it in its folder, from
-    /// the Copilot folder BriefBar found it in. Only while opening hasn't stopped since `round` (`stop()`).
-    private static func resume(_ id: String, paths: CopilotPaths, round: Int) async {
-        let environment = await effects.environment()
-        // Copilot was turned off meanwhile.
-        guard starting.round == round else { return }
-        // A CLI may have opened it meanwhile.
-        if case .show(let pid) = way(for: id, paths: paths, holder: effects.holder) {
+        /// Opens the session: the task that opens it in Terminal, when one starts.
+        @discardableResult
+        func open(_ id: String, paths: CopilotPaths) -> Task<Void, Never>? {
+            // A session's ID is a UUID, which names its folder in lowercase.
+            guard let id = ItemRef.session(id)?.id else { return nil }
+            switch way(for: id, paths: paths, holder: effects.holder) {
+            case .show(let pid):
+                starting.end(id)
+                effects.show(pid)
+                return nil
+            case .resume:
+                // Its CLI may not hold it yet: a second one would fork its history.
+                guard starting.begin(id) else { return nil }
+                let round = starting.round
+                return Task { await resume(id, paths: paths, round: round) }
+            }
+        }
+
+        /// Stops opening sessions in Terminal, when Copilot is turned off or BriefBar quits: one that's still finding
+        /// `copilot` reads nothing more of its session, and opens nothing.
+        func stop() {
+            starting.stopAll()
+        }
+
+        /// Goes on with it in a new Terminal window: `copilot`, as your login shell finds it, resumes it in its folder, from
+        /// the Copilot folder BriefBar found it in. Only while opening hasn't stopped since `round` (`stop()`).
+        private func resume(_ id: String, paths: CopilotPaths, round: Int) async {
+            let environment = await effects.environment()
+            // Copilot was turned off meanwhile.
+            guard starting.round == round else { return }
+            // A CLI may have opened it meanwhile.
+            if case .show(let pid) = way(for: id, paths: paths, holder: effects.holder) {
+                starting.end(id)
+                return effects.show(pid)
+            }
+            let command = manualCommand(id, home: paths.root, environment: environment)
+            guard let copilot = effects.locate(environment) else {
+                starting.end(id)
+                return effects.say("BriefBar couldn't find the Copilot CLI", "Open the session in Terminal yourself with \(command).")
+            }
+            guard let folder = effects.folder(id, paths.root) else {
+                starting.end(id)
+                return effects.say(
+                    "The session's folder isn't there anymore",
+                    "Copilot worked on it in a folder that's gone, such as a worktree that was removed. To go on with it anyway, run \(command) in Terminal."
+                )
+            }
+            let file = script(for: id)
+            let contents = CopilotCommand.resumeScript(copilot: copilot, sessionId: id, directory: folder, home: paths.root, file: file)
+            do {
+                if try effects.launch(contents, file) { return }
+            } catch {
+                // Not its description, which names the file, and so the session.
+                let error = error as NSError
+                Log.app.error("Couldn't open a Copilot CLI session in Terminal: \(error.domain, privacy: .public) \(error.code)")
+            }
             starting.end(id)
-            return effects.show(pid)
+            effects.say("The session didn't open in Terminal", "Open it in Terminal yourself with \(command).")
         }
-        let command = manualCommand(id, home: paths.root, environment: environment)
-        guard let copilot = effects.locate(environment) else {
-            starting.end(id)
-            return effects.say("BriefBar couldn't find the Copilot CLI", "Open the session in Terminal yourself with \(command).")
-        }
-        guard let folder = effects.folder(id, paths.root) else {
-            starting.end(id)
-            return effects.say(
-                "The session's folder isn't there anymore",
-                "Copilot worked on it in a folder that's gone, such as a worktree that was removed. To go on with it anyway, run \(command) in Terminal."
-            )
-        }
-        let file = script(for: id)
-        let contents = CopilotCommand.resumeScript(copilot: copilot, sessionId: id, directory: folder, home: paths.root, file: file)
-        do {
-            if try effects.launch(contents, file) { return }
-        } catch {
-            // Not its description, which names the file, and so the session.
-            let error = error as NSError
-            Log.app.error("Couldn't open a Copilot CLI session in Terminal: \(error.domain, privacy: .public) \(error.code)")
-        }
-        starting.end(id)
-        effects.say("The session didn't open in Terminal", "Open it in Terminal yourself with \(command).")
     }
 
     /// The command to open a session yourself: with `COPILOT_HOME` when your shell's isn't the Copilot folder BriefBar
@@ -134,12 +144,13 @@ enum CLISession {
         return true
     }
 
-    /// Brings the app the CLI runs in to the front, such as Terminal: the one macOS holds responsible for it.
-    static func bringUp(_ pid: pid_t) {
+    /// Brings the app the CLI runs in to the front, such as Terminal: the one macOS holds responsible for it. Says so when
+    /// it can't.
+    static func bringUp(_ pid: pid_t, say: @MainActor (_ message: String, _ information: String) -> Void) {
         guard let responsible = Responsibility.responsible(for: pid), responsible.pid != pid,
               let app = NSRunningApplication(processIdentifier: responsible.pid), let url = app.bundleURL
         else {
-            return effects.say(
+            return say(
                 "The session is open in another terminal",
                 "The Copilot CLI has it open where BriefBar can't bring it up, such as in tmux or over SSH. Go on with it there: opening it in a second terminal would fork its history."
             )
