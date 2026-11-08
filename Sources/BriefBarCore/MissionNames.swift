@@ -242,6 +242,11 @@ public struct MissionNameInputs: Hashable, Sendable {
         self.sessions = sessions
     }
 
+    /// Every title it's asked from, its current name first.
+    public var titles: [String] {
+        [current, story].compactMap { $0 } + workItems + pullRequests + sessions
+    }
+
     /// What it's named from, without its current name, which changes as it's named: it's asked again only when this does.
     public var basis: MissionNameInputs {
         var basis = self
@@ -333,9 +338,11 @@ public enum MissionNaming {
 
     /// The answer as a name: its first line, without quotes, labels, markdown or the full stop, of a few words, in sentence
     /// case; nil when that leaves nothing a name could be, or when the answer isn't a name but talks about one, such as
-    /// "Here's a name for the mission:" or "How about Checkout coupons?", or declines, such as "I'm sorry, but I can't help
-    /// with that."
-    public static func clean(_ answer: String) -> String? {
+    /// "Here's a name for the mission:" or "How about “Checkout coupons”?", or declines, such as "I'm sorry, but I can't
+    /// help with that." One that opens with the same word but goes on as a name does, as "Sorry page redesign", is a name.
+    /// - Parameter titles: what it was named from: a question one of them asks, as "Why is checkout slow?", can be its name,
+    ///   and a first word in small letters that one starts with, as "npm" in "npm audit fixes", stays so.
+    public static func clean(_ answer: String, titles: [String] = []) -> String? {
         var line = answer.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
         // Markdown's code, bold and a heading's marks, but a hash within a name, as in "C# modernization".
         line = line.replacingOccurrences(of: "`", with: "").replacingOccurrences(of: "**", with: "")
@@ -346,7 +353,7 @@ public enum MissionNaming {
         guard !line.hasSuffix(":"), !isChatter(line) else { return nil }
         while let first = line.first, "\"“'‘".contains(first) { line.removeFirst() }
         while let last = line.last, "\"”'’".contains(last) { line.removeLast() }
-        guard !line.hasSuffix("?") else { return nil }
+        guard !line.hasSuffix("?") || titles.contains(where: { $0.localizedCaseInsensitiveContains(line) }) else { return nil }
         while let last = line.last, "\"”'’.!:;,".contains(last) { line.removeLast() }
         line = line.trimmingCharacters(in: .whitespaces)
         let words = line.split(whereSeparator: { $0.isWhitespace })
@@ -355,39 +362,53 @@ public enum MissionNaming {
         if name.count > mostAnswerCharacters {
             name = String(name.prefix(mostAnswerCharacters)).trimmingCharacters(in: .whitespaces)
         }
-        // Sentence case, as it's asked for and doesn't always give: a first word all in small letters starts with a
-        // capital, though not "iOS".
-        if let first = words.first, first.allSatisfy(\.isLowercase) {
+        // Sentence case, as it's asked for and doesn't always give: an answer all in small letters starts with a capital,
+        // but where a title starts with its first word so, as "npm audit fixes" or "chore: eslint upgrade" do.
+        if let first = words.first, !line.contains(where: \.isUppercase), !titles.contains(where: { starts($0, with: first) }) {
             name = name.prefix(1).uppercased() + name.dropFirst()
         }
         return name
     }
 
-    /// A label an answer starts with: "Name:", "Title:", "Mission:", or up to two words before one of them, as in "The
-    /// mission's name:" or "Suggested name:", or "Suggested:".
-    static var label: Regex<Substring> { /^(?i)(?:[\p{L}'’]+\s+){0,2}(?:names?|titles?|missions?|suggestions?|suggested)\s*:\s*/ }
+    /// Whether a title has this word, as written, where a capital would go: at its start, or after a colon. Elsewhere, as in
+    /// "Speed up the checkout page", a word in small letters is only in its sentence.
+    static func starts(_ title: String, with word: Substring) -> Bool {
+        title.split(separator: ":").contains { part in
+            part.split(whereSeparator: \.isWhitespace).first?.trimmingCharacters(in: .punctuationCharacters) == String(word)
+        }
+    }
 
-    /// How an answer that isn't a name opens, lowercased, a whole word or words: one that talks about the name, or
-    /// declines to give one. "i" is "I" itself, "I'll" and "I’m" too.
-    static let chatter = [
-        "here", "sure", "certainly", "of course", "okay", "i", "my apologies", "sorry", "unfortunately", "unable",
-        "suggested", "how about",
-    ]
+    /// A label an answer starts with, as a whole: "Name:", "Title:", "Mission name:", "The mission's name:", "Suggested
+    /// name:" or "Suggestion:"; not words a name starts with, as in "Display name: validation" or "Mission: Impossible
+    /// export".
+    static var label: Regex<Substring> {
+        /^(?i)(?:(?:the\s+)?(?:mission(?:'s|’s)?\s+|suggested\s+|new\s+|proposed\s+)?(?:name|title)|suggest(?:ed|ion))\s*:\s*/
+    }
 
-    /// How such an answer opens, whatever follows: "Apologies", "Apologize".
-    static let chatterStems = ["apolog"]
+    /// How an answer that isn't a name opens, lowercased, with its apostrophes straight: one that talks about the name, as
+    /// "Here's", "Sure!" or "How about “…", or declines to give one, as "I'm sorry", "I can't", "Apologies," or "Unable to
+    /// determine…". Not a name that opens with the same word: "Here maps integration", "Sure Start rollout", "Okay button
+    /// fix", "Sorry page redesign", "I nuovi pagamenti", "Unable to sign in fix", "Suggested replies in Teams", "Apology
+    /// emails", "As a service model rollout" or "How about page cleanup".
+    static var chatter: [Regex<Substring>] {
+        [
+            /^here(?:'s|\s+(?:is|are)\b)/,
+            /^(?:sure|certainly|of course|okay|ok|absolutely)\s*[,.!:;]/,
+            /^(?:sorry|apologies|my apologies)\s*(?:[,.!:;]|$|(?:but|i|that|for)\b)/,
+            /^unfortunately\b/,
+            /^i(?:'(?:m|ll|ve|d)\b|\s+(?:am|will|would|can|cannot|can't|could|couldn't|do|don't|apologi[sz]e|think|suggest|recommend|have|need|believe|regret|must|should|won't)\b)/,
+            /^unable\s*(?:[,.!:;]|$|to\s+(?:determine|provide|generate|create|suggest|come up|name|help|assist|answer|comply|fulfill|complete|process|give|offer|decide)\b)/,
+            /^suggest(?:ed|ion)?\s+(?:name|title)\b/,
+            /^how about\s*["“'‘]/,
+            /^as an?\s+(?:ai|assistant|language model|large language model)\b/,
+        ]
+    }
 
     /// Whether a line opens as an answer that isn't a name does, whatever quotes it opens with: "Here's", "Sure!",
     /// "I’m sorry", "I'll call it", "As an AI language model", but not "Heredoc fixes", "iOS widgets" or "I/O retries".
     static func isChatter(_ line: String) -> Bool {
         let opening = line.drop { "\"“'‘".contains($0) }.lowercased().replacingOccurrences(of: "’", with: "'")
-        if chatterStems.contains(where: opening.hasPrefix) { return true }
-        if opening.firstMatch(of: /^as an? (?:[a-z'-]+ ){0,3}(?:model|ai|assistant)\b/) != nil { return true }
-        return chatter.contains { words in
-            guard opening.hasPrefix(words) else { return false }
-            guard let next = opening.dropFirst(words.count).first else { return true }
-            return !(next.isLetter || next.isNumber || next == "-" || next == "/")
-        }
+        return chatter.contains { opening.firstMatch(of: $0) != nil }
     }
 
     /// Whether what a mission is named from is all read: Show Links, while a source reads stories, has read the work items

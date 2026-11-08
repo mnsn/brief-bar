@@ -395,10 +395,32 @@ import Testing
             "I apologize, but I cannot fulfill this request.", "My apologies, I can't name this.",
             "I don't have enough information to name this mission.", "I'll call it Checkout coupons", "Unable to determine a name.",
             "How about “Checkout coupons”?", "Apologies, the titles don't say.", "As an AI language model, I can't name this.",
-            "Checkout coupons?",
+            "Checkout coupons?", "Why is checkout slow?", "Sorry but I can't", "Okay, here it is: Checkout coupons", "Unable.",
+            "Here is the name: Checkout coupons", "Suggested name Checkout coupons", "Of course! Checkout coupons",
+            "I would call it Checkout coupons", "As an assistant, I can't name this.", "I've named it Checkout coupons",
         ] {
             #expect(MissionNaming.clean(chatter) == nil, "\(chatter)")
         }
+        // A name that opens as such an answer would, but goes on as a name does, is a name, with what it starts with.
+        for name in [
+            "Suggested replies in Teams", "Unable to sign in fix", "Apology emails", "Apologize dialog copy", "I nuovi pagamenti",
+            "As a service model rollout", "How about page cleanup", "Here maps integration", "Sure Start rollout",
+            "Okay button fix", "Sorry page redesign", "Display name: validation", "Fix title: wrap long names",
+            "Mission names: guided generation", "Mission: Impossible export", "Checkout: coupons and totals", "I-9 forms",
+            "IT onboarding", "IPv6 support", "I18n for checkout", "Intune enrollment", "Title bar polish",
+        ] {
+            #expect(MissionNaming.clean(name) == name, "\(name)")
+        }
+        // A question one of its titles asks can be its name; and a first word in small letters that one starts with, or
+        // has after a colon, stays so. Elsewhere in a title, a word in small letters is only in its sentence.
+        #expect(MissionNaming.clean("Why is checkout slow?", titles: ["Speed up the checkout page", "Why is checkout slow?"]) == "Why is checkout slow?")
+        #expect(MissionNaming.clean("is the cache warm?", titles: ["Is the cache warm? Measure it"]) == "Is the cache warm?")
+        #expect(MissionNaming.clean("npm audit fixes", titles: ["npm audit fixes for the web app"]) == "npm audit fixes")
+        #expect(MissionNaming.clean("eslint upgrade", titles: ["chore: eslint, prettier and tsc upgrades"]) == "eslint upgrade")
+        #expect(MissionNaming.clean("npm audit fixes") == "Npm audit fixes")
+        #expect(MissionNaming.clean("checkout speed", titles: ["Speed up the checkout page"]) == "Checkout speed")
+        // Only an answer all in small letters is made sentence case: one with capitals of its own keeps them as they are.
+        #expect(MissionNaming.clean("checkout for iOS") == "checkout for iOS")
         let long = MissionNaming.clean(String(repeating: "x", count: 100))
         #expect(long?.count == MissionNaming.mostAnswerCharacters)
     }

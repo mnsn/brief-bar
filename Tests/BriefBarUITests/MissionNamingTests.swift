@@ -311,6 +311,24 @@ fileprivate final class Viewer {}
         order.stopShowing(in: viewer)
     }
 
+    /// The answer is made a name with what the mission was named from: a question one of its titles asks can be its name.
+    @Test func aQuestionOneOfItsTitlesAsksCanBeItsName() async throws {
+        let clock = Clock()
+        let model = Model()
+        model.answer = .success("Why is checkout slow?")
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order, firstTitle: "Why is checkout slow?")
+        let mission = try #require(order.missions.first)
+        let viewer = Viewer()
+        Self.show([mission.key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { order.modelNames[mission.key] != nil })
+        #expect(order.title(of: mission) == "Why is checkout slow?" && order.naming(of: mission) == .appleIntelligence)
+        order.stopShowing(in: viewer)
+    }
+
     @Test func anAnswerForWhatChangedOrWentMeanwhileDoesntCountAndItsAskedAgain() async throws {
         let clock = Clock()
         let model = Model()

@@ -157,7 +157,7 @@ package final class MissionNamer {
             switch answer {
             case .success(let text):
                 asked[request.key] = request.inputs.basis
-                if let name = MissionNaming.clean(text) {
+                if let name = MissionNaming.clean(text, titles: request.inputs.titles) {
                     named(request.key, name)
                 } else {
                     Log.app.info("A mission keeps its name: Apple Intelligence's answer wasn't one")
