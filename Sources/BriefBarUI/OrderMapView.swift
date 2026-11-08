@@ -52,6 +52,10 @@ package struct MissionBand: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .background(GlassCard(cornerRadius: 18))
+                if order.said.contains(where: { $0.mission == mission.key }) {
+                    OrderUndoLine(order: order, in: mission.key)
+                        .padding(.horizontal, 12)
+                }
             }
             .id(mission.key)
         } else {
@@ -98,6 +102,7 @@ struct OrderMapGrid: View {
         let height = metrics.y(rows) - metrics.rowGap
         let lit = hovered.map { OrderLine.related(to: $0, by: map.lines) }
         let steps = Dictionary(mission.steps.map { ($0.ref, $0) }, uniquingKeysWith: { first, _ in first })
+        let names = order.names
         ZStack(alignment: .topLeading) {
             lanes(metrics, width: width)
             columnTitles(metrics)
@@ -113,7 +118,9 @@ struct OrderMapGrid: View {
                     OrderMapNode(
                         step: step, item: order.describe(node.ref), isSelected: isSelected(node.ref),
                         isDimmed: lit.map { !$0.contains(node.ref) } ?? false, width: metrics.nodeWidth, height: metrics.nodeHeight,
-                        workers: order.sessionsWorking(on: node.ref).compactMap(order.describe),
+                        workers: order.sessionsWorking(on: node.ref).compactMap(order.describe), names: names,
+                        elsewhere: OrderText.elsewhere(step, in: mission, missions: order.missions, names: names),
+                        menu: MissionMenuContext.of(node.ref, order: order, mission: mission.key),
                         stage: order.drawnStage(of: step),
                         stageWords: order.stage(of: node.ref).map(stageWords)
                     ) {
@@ -258,6 +265,12 @@ struct OrderMapNode: View {
     let height: CGFloat
     /// The sessions that told BriefBar they're working on it now (`SessionUpdates`).
     var workers: [LinkedItem] = []
+    /// What names sessions and missions in what it says.
+    var names: OrderNames = .none
+    /// What it waits for that the Map doesn't show, with no line there, and where that is (`OrderText.elsewhere`).
+    var elsewhere: String? = nil
+    /// Its Mission menu, on its right-click and as VoiceOver's actions; nil for one you can't change, such as GitHub's.
+    var menu: MissionMenuContext? = nil
     /// Its stage, whose color it takes; nil for one with none.
     var stage: PullRequestStage?
     /// Its stage, why and who set it, as VoiceOver says it and its tooltip shows it.
@@ -275,9 +288,17 @@ struct OrderMapNode: View {
             HStack(spacing: 7) {
                 OrderNodeMark(step.standing.marker, stage: stage)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(step.ref.shortOrderLabel)
-                        .font(size: 11, weight: .semibold)
-                        .monospacedDigit()
+                    HStack(spacing: 3) {
+                        Text(step.ref.shortOrderLabel)
+                            .font(size: 11, weight: .semibold)
+                            .monospacedDigit()
+                        if step.isYours {
+                            Image(systemName: "pencil")
+                                .font(size: 9, weight: .semibold)
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        }
+                    }
                     Text(item?.title ?? OrderText.capsule(step) ?? "")
                         .font(size: 10.5)
                         .foregroundStyle(.secondary)
@@ -304,9 +325,16 @@ struct OrderMapNode: View {
         .disabled(!canOpen)
         .opacity(isDimmed ? 0.45 : 1)
         .help(help)
+        .contextMenu {
+            if let menu { MissionMenu(step.ref, context: menu) }
+        }
         .accessibilityLabel([step.ref.shortOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "))
-        .accessibilityValue(([item?.status, stageWords?.spoken, OrderText.sentence(of: step)].compactMap { $0 } + workerLines).joined(separator: ", "))
+        .accessibilityValue(
+            ([item?.status, stageWords?.spoken, OrderText.sentence(of: step, names: names), elsewhere].compactMap { $0 } + workerLines)
+                .joined(separator: ", ")
+        )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .missionActions(step.ref, context: menu)
     }
 
     /// Whether clicking it can show it or open it, as its placeholder row's click can: a source that's on lists it, or it's
@@ -316,7 +344,8 @@ struct OrderMapNode: View {
     }
 
     private var help: String {
-        ([[step.ref.fullOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "), item?.status, stageWords?.shown, OrderText.sentence(of: step)]
+        ([[step.ref.fullOrderLabel, item?.title].compactMap { $0 }.joined(separator: " "), item?.status, stageWords?.shown,
+          OrderText.sentence(of: step, names: names), elsewhere]
             .compactMap { $0 } + workerLines)
             .joined(separator: "\n")
     }

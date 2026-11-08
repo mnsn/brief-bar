@@ -12,7 +12,10 @@ import Foundation
 ///   which GitHub's demo lists), to be reviewed after it, and the emails' (!4118, which the demo doesn't list, so BriefBar
 ///   can't see whether it merged).
 ///
-/// And the stage you set on the one-click checkout's prototype (!4105), a draft nobody reviews yet: Teammate's review, two
+/// And your changes to them (`OrderChanges`): you set the order status rename (!4079) as next to merge, two hours ago, so
+/// it no longer waits for the retry, which waits for it; and you made a mission of your own of the delivery estimates
+/// (!4088) and the one-click checkout's prototype (!4105), which you put after them.
+/// And the stage you set on the one-click checkout's prototype, a draft nobody reviews yet: Teammate's review, two
 /// hours ago, so it says to find a reviewer.
 enum DemoPullRequestOrder {
     static let paymentsID = UUID(uuidString: "b81f4e27-6a3c-4d95-8e10-3c7a9d2f4b66")!
@@ -29,7 +32,10 @@ enum DemoPullRequestOrder {
     static let accountPage = pullRequest(4093)
     static let checkoutPage = ItemRef.gitHubPullRequest(repository: "contoso/shop-web", number: 412)
     static let emails = pullRequest(4118)
+    static let deliveryEstimates = pullRequest(4088)
     static let oneClickCheckout = pullRequest(4105)
+    /// Your mission of the delivery estimates and the one-click checkout.
+    static let mineID = UUID(uuidString: "6c2e9f41-8b3d-4a57-9e12-0d4f7b3a5c88")!
 
     static func pullRequest(_ number: Int) -> ItemRef {
         .pullRequest(organization: DemoData.organization, number: number)
@@ -73,5 +79,21 @@ enum DemoPullRequestOrder {
     /// The stages you set: the one-click checkout's prototype, for a teammate's review, two hours ago.
     static func stages(now: Date) -> [ItemRef: StageMark] {
         [oneClickCheckout: StageMark(stage: .teammateReview, at: now.addingTimeInterval(-2 * 3_600))]
+    }
+
+    /// Your changes: the order status rename set as next to merge, and a mission of your own.
+    static func changes(now: Date) -> OrderChanges {
+        let orders = orders(now: now)
+        let mine = OrderPlacement.into(.mine(mineID))
+        return OrderChanges([
+            OrderChange(
+                ref: statusRename, first: .plan(paymentsID), changedAt: now.addingTimeInterval(-2 * 3_600),
+                replaced: OrderPlace(of: statusRename, in: orders)
+            ),
+            OrderChange(ref: deliveryEstimates, placement: mine, changedAt: now.addingTimeInterval(-50 * 60)),
+            OrderChange(
+                ref: oneClickCheckout, after: [deliveryEstimates], placement: mine, changedAt: now.addingTimeInterval(-49 * 60)
+            ),
+        ])
     }
 }

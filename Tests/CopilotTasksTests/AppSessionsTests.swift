@@ -221,6 +221,80 @@ import Testing
         #expect(throws: (any Error).self) { try AppSessions.load(home: home.appendingPathComponent("nowhere")) }
     }
 
+    /// Runs SQL in a stand-in for the app's `data.db`, making it if it isn't there.
+    private func sql(_ statements: String, home: URL) throws {
+        var handle: OpaquePointer?
+        guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw TestError("no database") }
+        defer { sqlite3_close(handle) }
+        guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else {
+            throw TestError(String(cString: sqlite3_errmsg(handle)))
+        }
+    }
+
+    /// Which of the app's sessions run a turn, by its own flag. Strictly, for a check that mustn't take what it can't tell
+    /// for none, it reads the flag alone: whatever else the app changes of what the session list reads, the flag is read as
+    /// the app keeps it. It can't tell when the database can't be read, even one that's there but out of reach, or doesn't
+    /// keep the flag, or say it for a session as a flag, 0 or 1, as BriefBar reads it; and with nothing at all where the
+    /// database goes, as without the Copilot app, none of the app's sessions runs one.
+    @Test func readsWhichSessionsRunATurnStrictlyByTheirFlagAlone() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let file = home.appendingPathComponent("data.db")
+        // None without the database; the session list can't be read, as before. Nothing makes one.
+        #expect(try AppSessions.running(home: home, strictly: true).isEmpty)
+        #expect(throws: (any Error).self) { try AppSessions.running(home: home) }
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        // One it can't read.
+        try Data("Not a database".utf8).write(to: file)
+        #expect(throws: AppSessions.TurnsUnknown.unreadable) { try AppSessions.running(home: home, strictly: true) }
+        #expect(AppSessions.TurnsUnknown.unreadable.description == "the Copilot app's database couldn't be read.")
+        try FileManager.default.removeItem(at: file)
+
+        try database(at: home)
+        #expect(try AppSessions.running(home: home) == [opener])
+        #expect(try AppSessions.running(home: home, strictly: true) == [opener])
+        // There, but out of reach, as in a folder BriefBar may not read: it can't tell, rather than say none runs one.
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: home.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: home.path) }
+        #expect(throws: AppSessions.TurnsUnknown.unreadable) { try AppSessions.running(home: home, strictly: true) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: home.path)
+        #expect(try AppSessions.running(home: home, strictly: true) == [opener])
+        // Not an archived one, however its flag stayed.
+        try sql("UPDATE sessions SET is_running = 1 WHERE id = '\(archived)';", home: home)
+        #expect(try AppSessions.running(home: home, strictly: true) == [opener])
+        // Its workspaces gone, or kept another way: the session list goes without the flag, and tells of none; the flag is
+        // read as the app keeps it.
+        try sql("DROP TABLE workspace_pull_request_links; DROP TABLE workspaces;", home: home)
+        #expect(Set(try AppSessions.load(home: home).map(\.id)) == [chat, opener])
+        #expect(try AppSessions.running(home: home).isEmpty)
+        #expect(try AppSessions.running(home: home, strictly: true) == [opener])
+
+        // An app that doesn't record which sessions are archived as BriefBar reads it: every session's flag.
+        try FileManager.default.removeItem(at: file)
+        try sql("""
+            CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, is_running INTEGER);
+            INSERT INTO sessions (id, is_running) VALUES ('\(opener)', 1), ('\(archived)', 1), ('\(chat)', 0);
+            """, home: home)
+        #expect(Set(try AppSessions.running(home: home, strictly: true)) == [opener, archived])
+        // One that doesn't say it for a session.
+        try sql("INSERT INTO sessions (id, is_running) VALUES ('6c7d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e04', NULL);", home: home)
+        #expect(throws: AppSessions.TurnsUnknown.unsaid) { try AppSessions.running(home: home, strictly: true) }
+        // Nor one that says it otherwise than as a flag, 0 or 1, as an app that kept it as text would: not as idle.
+        try sql("UPDATE sessions SET is_running = 'true' WHERE id = '6c7d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e04';", home: home)
+        #expect(throws: AppSessions.TurnsUnknown.unsaid) { try AppSessions.running(home: home, strictly: true) }
+        // An app that keeps it another way: its sessions have no flag to read.
+        try FileManager.default.removeItem(at: file)
+        try sql("""
+            CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL, archived_at TEXT);
+            INSERT INTO sessions (id, title, session_type, created_at, updated_at)
+                VALUES ('\(opener)', 'Fix the checkout total', 'project', '2026-10-20T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
+            """, home: home)
+        #expect(try AppSessions.load(home: home).map(\.id) == [opener])
+        #expect(try AppSessions.running(home: home).isEmpty)
+        #expect(throws: AppSessions.TurnsUnknown.unsaid) { try AppSessions.running(home: home, strictly: true) }
+    }
+
     @Test func findsTheFolderASessionWorksInWithoutFollowingLinks() throws {
         let home = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -247,5 +321,41 @@ import Testing
         #expect(!AppSessions.isOpen(opener, home: home))
         try Data().write(to: state.appendingPathComponent("inuse.\(getpid()).lock"))
         #expect(AppSessions.isOpen(opener, home: home))
+    }
+
+    /// What you pasted in a session, a prompt BriefBar copied for you: the first message since it was copied that holds it,
+    /// as you sent it or as Copilot was told it, with your own words around it and its lines broken otherwise; not one sent
+    /// before, nor a subagent's, nor another message; and not through a symbolic link.
+    @Test func findsWhereYouPastedAPrompt() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let state = home.appendingPathComponent("session-state/\(opener)", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        let copied = Date(timeIntervalSince1970: 1_800_000_000)
+        func message(_ field: String, _ text: String, at seconds: Int, agent: Bool = false) throws -> String {
+            let stamp = copied.addingTimeInterval(TimeInterval(seconds)).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+            let data = String(decoding: try JSONSerialization.data(withJSONObject: [field: text]), as: UTF8.self)
+            return #"{"type":"user.message","data":\#(data),"timestamp":"\#(stamp)"\#(agent ? #","agentId":"a1""# : "")}"#
+        }
+        let prompt = "Fix the comment on thread 11.\n\nThen run the tests."
+        let lines = [
+            try message("content", prompt, at: -60),
+            try message("content", "What does this change do?", at: 10),
+            try message("content", prompt, at: 15, agent: true),
+            #"{"type":"assistant.message","data":{"content":"Fix the comment on thread 11. Then run the tests."},"timestamp":"2027-01-15T08:00:20.000Z"}"#,
+            try message("transformedContent", "<context/>\nPlease: Fix the comment   on thread 11.\nThen run the tests.\nThanks", at: 30),
+            try message("content", prompt, at: 40),
+        ]
+        try Data(lines.joined(separator: "\n").utf8).write(to: state.appendingPathComponent("events.jsonl"))
+        #expect(AppSessions.pasted(prompt, in: opener, home: home, since: copied) == copied.addingTimeInterval(30))
+        #expect(AppSessions.pasted(prompt, in: opener, home: home, since: copied.addingTimeInterval(31)) == copied.addingTimeInterval(40))
+        #expect(AppSessions.pasted("Fix the build.", in: opener, home: home, since: copied) == nil)
+        #expect(AppSessions.pasted(" \n", in: opener, home: home, since: copied) == nil)
+        #expect(AppSessions.pasted(prompt, in: "../\(opener)", home: home, since: copied) == nil)
+        // A log that's a symbolic link says nothing.
+        let other = home.appendingPathComponent("session-state/\(chat)", isDirectory: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: other.appendingPathComponent("events.jsonl"), withDestinationURL: state.appendingPathComponent("events.jsonl"))
+        #expect(AppSessions.pasted(prompt, in: chat, home: home, since: copied) == nil)
     }
 }

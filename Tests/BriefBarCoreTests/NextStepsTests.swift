@@ -581,8 +581,8 @@ import Testing
             == .refused("Stacked on !4101: retarget it in Azure DevOps first"))
     }
 
-    /// Its order puts it after one that comes after its base, so it names neither the base nor the branch: what its changes
-    /// show against still does.
+    /// Its order puts it after one that comes after its base, without naming the base: its branch still puts it after the
+    /// base, and what its changes show against still refuses it.
     @Test func aBaseItsOrderPutsBeforeItOnlyThroughAnotherStillRefusesIt() {
         let missions = Self.missions(
             [OrderBoardTests.ado(4101, from: "robin/base"),
@@ -594,7 +594,8 @@ import Testing
             ]
         )
         let step = missions[0].steps.first { $0.ref == Self.pr(4103) }
-        #expect(step?.prerequisites.map(\.ref) == [Self.pr(4102)])
+        #expect(step?.prerequisites.map(\.ref) == [Self.pr(4102), Self.pr(4101)])
+        #expect(step?.prerequisites.last?.origins == [.branch])
         #expect(step?.notes.contains { if case .orderDisagrees = $0 { true } else { false } } == false)
         #expect(missions[0].stackedBases(of: Self.pr(4103)) == [Self.pr(4101)])
         #expect(BoardRules.move(Self.waiting(4103, in: missions), to: .canMerge, isYours: true, missionChanges: true, missions: missions)

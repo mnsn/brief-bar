@@ -98,8 +98,8 @@ Sources/TeamsCore/             Teams' notifications and read markers, the unread
 Sources/AzureDevOpsCore/       Azure DevOps: sign-in with the Azure CLI, the client (networking),
                                the engines (pull requests, sprint, pipelines), groups, notifications, the
                                brief, and the links people send you in chats
-Sources/GitHubCore/            GitHub: sign-in with the GitHub CLI, the client (networking: one read-only
-                               GraphQL query), and the pull requests' groups
+Sources/GitHubCore/            GitHub: sign-in with the GitHub CLI, for each account it's signed in to, the client
+                               (networking: one read-only GraphQL query each), and the pull requests' groups
 Sources/CopilotCore/           the Copilot app's database and event logs, and session statuses
 Sources/CopilotTasks/          Send Work to Copilot: the prompt, your login shell's environment, finding
                                the Copilot CLI, the git worktree, starting a run and following it from
@@ -282,6 +282,13 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - **Tests leave nothing behind.** They write only to temporary directories, and keep settings in
   `MemorySettings`, or `MemoryDefaults` where code takes a `UserDefaults`: a UserDefaults suite leaves
   a file in `~/Library/Preferences`, even once removed.
+- **Tests open nothing on your Mac.** BriefBar opens links, files and apps, shows files in the Finder,
+  puts text on the clipboard, and asks in alerts and panels only through `ThisMac`, which refuses each in
+  a test process (`ThisMacPlaceTests` checks that nothing else does them). A test stands in for what its
+  code would do there, as `showForTests` does for showing a session in the Copilot app, and a suite whose
+  code can get there has `.opensNothing`, which fails a test that doesn't. It sees what the test's task
+  does, and the tasks it starts: code that gets there in a detached task carries `ThisMac.noting` into it,
+  as delivery's sender does.
 - **Never block a thread while waiting for async work.** Swift's cooperative pool has a thread per core,
   so code that blocks one of them until a task finishes (on a semaphore, say) can hang where there are
   few cores, as on CI's runners, and blocking the main actor that way hangs as soon as the task needs

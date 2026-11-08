@@ -154,7 +154,7 @@ import Testing
         #expect(!order.isYours(Self.ref(4999)))
 
         // A drop that sets a stage is yours to undo; nothing on the board changed a stage by itself.
-        #expect(order.lastChange == nil)
+        #expect(order.lastStageChange == nil)
         #expect(order.setStage(.teammateReview, of: Self.ref(4131)) == .done)
         #expect(order.board(kinds: [.pullRequest]).upNext.slots.first?.kind == .yourReview)
         order.undo()
@@ -312,7 +312,7 @@ import Testing
         #expect(order.board(kinds: Self.kinds).lanes.map(\.kind) == [.notInAMission])
 
         StageCommand.finishedReview(Self.ref(4088), order: order, undo: .lane)
-        let changed = order.lastChange?.ref
+        let changed = order.lastStageChange?.ref
         #expect(changed == Self.ref(4088))
         for (lanes, kind) in [(BoardLanes.missions, BoardLane.Kind.notInAMission), (.none, .all)] {
             let board = order.board(kinds: Self.kinds, lanes: lanes)
@@ -337,9 +337,9 @@ import Testing
         let key = try #require(missions.first?.key)
         let lane = try #require(board.lane(for: key))
         #expect(!lane.cards.contains { $0.ref == Self.ref(4088) })
-        let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastChange?.ref)
+        let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastStageChange?.ref)
         #expect(undoRefs.contains(Self.ref(4088)))
-        #expect(board.lanes(keepingUndoOf: order.lastChange?.ref, missions: missions) == board.lanes)
+        #expect(board.lanes(keepingUndoOf: order.lastStageChange?.ref, missions: missions) == board.lanes)
     }
 
     // MARK: The view

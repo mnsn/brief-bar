@@ -9,7 +9,7 @@ package enum GitHubCommandLine: SourceCommandLine {
     package static var descriptionVersion: Int { GitHubSource.descriptionVersion }
     package static let usage = """
         GitHub:
-          Reads github.com with the GitHub CLI's sign-in (gh auth login), read-only.
+          Reads github.com as each account the GitHub CLI is signed in to (gh auth login), read-only.
           Set \(GitHubCLILocator.overrideVariable) to the gh to use, when it isn't on your PATH.
         """
 
@@ -24,12 +24,13 @@ package enum GitHubCommandLine: SourceCommandLine {
     /// The made-up pull requests, or yours: one read, as the app makes each refresh.
     private static func load(_ options: CommandLineOptions) -> Loaded {
         if options.demo { return Loaded(load: GitHubDemoData.load()) }
-        let client = GitHubClient(tokens: GitHubCLITokenProvider())
+        let reader = GitHubAccountsReader()
         return wait {
             do {
-                return Loaded(load: try await GitHubReader.load(client: client))
+                return Loaded(load: try await reader.load())
             } catch {
-                return Loaded(problem: GitHubProblem.from(error))
+                // No account could be read, of more than one: what's left of the list, as the app shows it.
+                return Loaded(load: (error as? GitHubAccountsReader.Failure)?.load, problem: GitHubProblem.from(error))
             }
         }
     }
@@ -42,6 +43,8 @@ package enum GitHubCommandLine: SourceCommandLine {
 
     private struct Output: Encodable {
         var login: String?
+        /// Every account it read as, the GitHub CLI's active one first.
+        var logins: [String]
         var pullRequests: [GitHubPRSnapshot]
         var counts: GitHubGroupCounts
         /// By section, the counts by state that a menu-bar item can add up across sources.
@@ -54,7 +57,7 @@ package enum GitHubCommandLine: SourceCommandLine {
     package static func json(_ options: CommandLineOptions) -> [String: Any]? {
         let loaded = load(options)
         return jsonObject(Output(
-            login: loaded.load?.login, pullRequests: loaded.items, counts: loaded.counts,
+            login: loaded.load?.login, logins: loaded.load?.logins ?? [], pullRequests: loaded.items, counts: loaded.counts,
             states: [SectionID.githubPullRequests.rawValue: loaded.counts.states], notice: loaded.load?.notice,
             moreThanShown: loaded.load?.moreThanShown ?? false, problem: loaded.problem?.message
         ))
@@ -62,8 +65,10 @@ package enum GitHubCommandLine: SourceCommandLine {
 
     private static func printTable(_ loaded: Loaded) {
         if let problem = loaded.problem { print("! \(problem.message)") }
-        if let notice = loaded.load?.notice { print("! \(notice)") }
-        if let login = loaded.load?.login { print("Signed in to the GitHub CLI as \(login)") }
+        if let notice = loaded.load?.notice {
+            for line in notice.split(separator: "\n") { print("! \(line)") }
+        }
+        if let logins = loaded.load?.logins, !logins.isEmpty { print("Signed in to the GitHub CLI as \(GitHubAccount.names(logins))") }
         let counts = loaded.counts
         print(GitHubPRGroup.allCases.map { "\($0.rawValue) \(counts[$0])" }.joined(separator: " · "))
         let now = Date()
@@ -96,7 +101,7 @@ package enum GitHubCommandLine: SourceCommandLine {
             return false
         }
         let queue = DispatchQueue(label: "BriefBar.GitHub.watch")
-        let printer = GitHubWatchPrinter(client: GitHubClient(tokens: GitHubCLITokenProvider()))
+        let printer = GitHubWatchPrinter(reader: GitHubAccountsReader())
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: 60, leeway: .seconds(5))
         timer.setEventHandler { printer.poll() }
@@ -107,12 +112,15 @@ package enum GitHubCommandLine: SourceCommandLine {
     }
 }
 
-/// Prints only the pull requests whose group or status changed.
+/// Prints only the pull requests whose group or status changed, and what's wrong as it changes.
 private final class GitHubWatchPrinter: @unchecked Sendable {
-    private let client: GitHubClient
+    private let reader: GitHubAccountsReader
     private let lock = NSLock()
     private var isPolling = false
     private var problem: String?
+    /// The notice's lines, as the last list had them: each is printed once, as it comes, such as why an account couldn't
+    /// be read.
+    private var notices: [String] = []
     private var previous: [String: GitHubPRSnapshot] = [:]
     private let formatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -120,8 +128,8 @@ private final class GitHubWatchPrinter: @unchecked Sendable {
         return formatter
     }()
 
-    init(client: GitHubClient) {
-        self.client = client
+    init(reader: GitHubAccountsReader) {
+        self.reader = reader
     }
 
     func poll() {
@@ -130,11 +138,11 @@ private final class GitHubWatchPrinter: @unchecked Sendable {
             isPolling = true
             return true
         }) else { return }
-        let client = client
+        let reader = reader
         Task {
             let result: Result<GitHubLoad, Error>
             do {
-                result = .success(try await GitHubReader.load(client: client))
+                result = .success(try await reader.load())
             } catch {
                 result = .failure(error)
             }
@@ -146,25 +154,35 @@ private final class GitHubWatchPrinter: @unchecked Sendable {
         lock.withLock {
             defer { isPolling = false }
             let now = formatter.string(from: Date())
+            let load: GitHubLoad
             switch result {
             case .failure(let error):
                 let message = GitHubProblem.from(error).message
                 if message != problem { Swift.print("\(now)  ! \(message)") }
                 problem = message
-            case .success(let load):
+                // No account could be read, of more than one: what's left of the list. Otherwise it stays as it was.
+                guard let left = (error as? GitHubAccountsReader.Failure)?.load else { return }
+                load = left
+            case .success(let read):
                 problem = nil
-                var current: [String: GitHubPRSnapshot] = [:]
-                for item in load.items {
-                    current[item.id] = item
-                    let old = previous[item.id]
-                    guard old?.group != item.group || old?.headline != item.headline else { continue }
-                    Swift.print("\(now)  \(item.group.rawValue.padding(toLength: 16, withPad: " ", startingAt: 0)) \(item.headline): \(item.pullRequest.reference) \(item.pullRequest.title.prefix(70))")
-                }
-                for (id, old) in previous where current[id] == nil {
-                    Swift.print("\(now)  gone             \(old.pullRequest.reference) \(old.pullRequest.title.prefix(70))")
-                }
-                previous = current
+                load = read
             }
+            let lines = load.notice.map { $0.split(separator: "\n").map(String.init) } ?? []
+            for line in lines where !notices.contains(line) {
+                Swift.print("\(now)  ! \(line)")
+            }
+            notices = lines
+            var current: [String: GitHubPRSnapshot] = [:]
+            for item in load.items {
+                current[item.id] = item
+                let old = previous[item.id]
+                guard old?.group != item.group || old?.headline != item.headline else { continue }
+                Swift.print("\(now)  \(item.group.rawValue.padding(toLength: 16, withPad: " ", startingAt: 0)) \(item.headline): \(item.pullRequest.reference) \(item.pullRequest.title.prefix(70))")
+            }
+            for (id, old) in previous where current[id] == nil {
+                Swift.print("\(now)  gone             \(old.pullRequest.reference) \(old.pullRequest.title.prefix(70))")
+            }
+            previous = current
         }
     }
 }

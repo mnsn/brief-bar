@@ -222,7 +222,10 @@ struct CopilotComposerView: View {
         // Until the sessions are found: where a composer in place chose; else the last task's, as it was kept, with the
         // prompt for where it works, and sent to it in the Copilot app if it's one of the app's sessions.
         var initial = session?.choice ?? continuing.map { run in
-            SessionChoice(kind: .task(run), name: run.action?.title ?? "Its last task", place: nil, lastActive: run.startedAt, reasons: [.earlierTask])
+            SessionChoice(
+                kind: .task(run), name: run.action?.title(taken: run.taken) ?? "Its last task", place: nil, lastActive: run.startedAt,
+                reasons: [.earlierTask]
+            )
         }
         var delivery: Delivery = initial?.opensInApp == true ? .session : .cli
         switch start {
@@ -292,6 +295,11 @@ struct CopilotComposerView: View {
     /// Push & Reply ships what an earlier run changed: only in its session, and its worktree.
     private var mustContinue: Bool { pullRequest?.1 == .pushAndReply }
 
+    /// A Push & Reply that replies on no thread, as of a build's fix alone: it only pushes, and says so.
+    private var onlyPushes: Bool {
+        pullRequest?.1 == .pushAndReply && PullRequestAction.pushAndReply.title(taking: parts) != PullRequestAction.pushAndReply.title
+    }
+
     /// Send to a Fork is there for the session: the Copilot app can fork it, and it isn't for Push & Reply, which ships what
     /// its last task changed only in that task's session and worktree. A fork would push a copy of those changes from a
     /// worktree of its own, and leave them uncommitted where they are.
@@ -347,9 +355,9 @@ struct CopilotComposerView: View {
     /// What it does, in Copilot's colors, and what it's for. Dragging it moves the window.
     private var header: some View {
         HStack(alignment: .center, spacing: 14) {
-            ComposerTile(symbol: pullRequest?.1.symbol ?? "paperplane.fill", fill: .copilot, size: 44)
+            ComposerTile(symbol: onlyPushes ? "arrow.up.circle.fill" : pullRequest?.1.symbol ?? "paperplane.fill", fill: .copilot, size: 44)
             VStack(alignment: .leading, spacing: 4) {
-                Text(pullRequest.map { "\($0.1.title) with Copilot" } ?? "Send to Copilot")
+                Text(pullRequest.map { "\($0.1.title(taking: parts)) with Copilot" } ?? "Send to Copilot")
                     .font(size: 20, weight: .bold)
                     .lineLimit(1)
                 HStack(spacing: 6) {
@@ -612,13 +620,15 @@ struct CopilotComposerView: View {
         return notes
     }
 
-    /// What Send to Session does, as things stand.
+    /// What Send to Session does, as things stand: a Push & Reply doesn't go while a turn runs in the session, which could
+    /// change what BriefBar checked it would push (`CopilotTasksStore.turnProblem`).
     private var sendDetail: String {
         switch reach {
         case .listening?:
-            return target?.appSession?.isRunning == true
-                ? "Copilot takes the prompt once it's done what it's doing."
-                : "Copilot takes the prompt in the session now."
+            guard target?.appSession?.isRunning == true else { return "Copilot takes the prompt in the session now." }
+            return pullRequest?.1 == .pushAndReply
+                ? "Copilot is running a turn in it: send this once that's done, so BriefBar checks what it would push."
+                : "Copilot takes the prompt once it's done what it's doing."
         case .loads?:
             return "Opens the session in Copilot, and sends the prompt there."
         case .noListener(inApp: false)?:
@@ -810,6 +820,8 @@ struct CopilotComposerView: View {
         switch pullRequest?.1 {
         case nil:
             text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It pushes a branch and opens a pull request, as you."
+        case .pushAndReply? where onlyPushes:
+            text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It commits and pushes the pull request's branch, as you, and replies on none of its threads."
         case .pushAndReply?:
             text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It commits, pushes the pull request's branch, and replies on its threads, as you."
         case .review?:
@@ -1113,7 +1125,7 @@ struct CopilotComposerView: View {
                 "Choose your local clone of \($0.0.organization)/\($0.0.project)/\($0.0.repository). BriefBar will remember it for this repository's pull requests."
             } ?? ""
         if let current = repository?.root { panel.directoryURL = current.deletingLastPathComponent() }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard ThisMac.ask(panel) == .OK, let url = panel.url else { return }
         check(url)
     }
 
@@ -1140,21 +1152,30 @@ struct CopilotComposerView: View {
     }
 
     /// What a prompt sent to one of the Copilot app's sessions, or to a fork of it, is about, for each to say what became of
-    /// it: a fix of some of its threads, builds or conflicts, or Push & Reply.
+    /// it: a fix of some of its threads, builds or conflicts, or Push & Reply, even of none of them, which pushes what the
+    /// session changed, for the fixes there to say they're pushed.
     private func aboutParts(to session: String?) -> SentPrompt.About? {
         let parts = sentParts(to: session)
-        guard !parts.isEmpty, case .pullRequest(let pullRequest, let action) = subject else { return nil }
+        guard case .pullRequest(let pullRequest, let action) = subject, !parts.isEmpty || action == .pushAndReply else { return nil }
         let purpose: SentPrompt.Purpose
         switch action {
         case .fixComments, .fixBuild, .resolveConflicts: purpose = .fix
         case .pushAndReply: purpose = .pushAndReply
         case .review: return nil
         }
-        return SentPrompt.About(pullRequest: PRKey(pullRequest.organization, pullRequest.id), purpose: purpose, parts: parts)
+        return SentPrompt.About(
+            pullRequest: PRKey(pullRequest.organization, pullRequest.id), purpose: purpose, parts: parts, target: pullRequest.targetBranch
+        )
     }
 
     private func send() {
         guard canSend else { return }
+        // The prompt names the branch the pull request merged into as the window wrote it, which BriefBar checks what the
+        // session would push against: once the list has read another, it doesn't go.
+        if case .pullRequest(let pullRequest, .pushAndReply) = subject, let problem = store.retargetProblem(pullRequest) {
+            deliveryProblem = problem
+            return
+        }
         let options = CopilotRunOptions(model: model.trimmingCharacters(in: .whitespaces), effort: effort)
         guard let target else {
             guard let folder = repository?.root else { return }
@@ -1214,8 +1235,10 @@ struct CopilotComposerView: View {
         let saidItWouldCopy = reach?.sends(forking: forking) == false
         // A fork is a session of its own, whose fixes aren't the session's.
         let about = aboutParts(to: forking ? nil : target.id)
+        // Push & Reply goes only once what the session's folder would push is checked.
+        let pushing: TaskPullRequest? = if case .pullRequest(let pullRequest, .pushAndReply) = subject { pullRequest } else { nil }
         sending(Task {
-            let result = await store.deliver(text, to: target, forking: forking, handOff: handOff, about: about)
+            let result = await store.deliver(text, to: target, forking: forking, handOff: handOff, about: about, checkingPush: pushing)
             // The window closed, or shows another task: it was stopped.
             guard !Task.isCancelled else { return }
             isDelivering = false
@@ -1290,7 +1313,7 @@ struct CopilotModelMenu: View {
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
         NSApp.activate()
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        guard ThisMac.ask(alert) == .alertFirstButtonReturn else { return nil }
         let model = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         return model.isEmpty ? nil : model
     }

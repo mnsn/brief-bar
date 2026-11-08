@@ -344,7 +344,8 @@ import Testing
     }
 
     /// An order that puts nothing before one stacked on another of its own still waits for that one, ready to complete or
-    /// not, until BriefBar sees it merge: completing it first would merge it into the other's branch.
+    /// not, until BriefBar sees it merge, then holds until it's retargeted: completing it first would merge it into the
+    /// other's branch.
     @Test func oneStackedOnAnotherOfItsOrderWaitsForItWhateverTheOrderSays() throws {
         let pullRequests = [
             OrderBoardTests.ado(4101, from: "robin/rounding"), OrderBoardTests.ado(4102, from: "robin/cart", into: "robin/rounding"),
@@ -360,11 +361,16 @@ import Testing
             [OrderBoardTests.ado(4101, from: "robin/rounding", state: .merged), pullRequests[1]],
             plan: [.init(ref: Self.pr(4101)), .init(ref: Self.pr(4102))]
         )
-        #expect(StageOrder.of(Self.pr(4102), in: merged) == .free)
+        #expect(StageOrder.of(Self.pr(4102), in: merged) == .holds("!4101 merged: retarget it to main"))
+        let retargeted = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/rounding", state: .merged), OrderBoardTests.ado(4102, from: "robin/cart")],
+            plan: [.init(ref: Self.pr(4101)), .init(ref: Self.pr(4102))]
+        )
+        #expect(StageOrder.of(Self.pr(4102), in: retargeted) == .free)
     }
 
     /// One whose order names only it waits for the pull request whose branch it targets, until BriefBar sees that one
-    /// merge, whether no order names that one or another order does.
+    /// merge, then holds until it's retargeted, whether no order names that one or another order does.
     @Test func oneStackedOnAPullRequestItsOrderDoesntNameWaitsForIt() throws {
         let parent = OrderBoardTests.ado(4101, from: "robin/rounding")
         let child = OrderBoardTests.ado(4102, from: "robin/cart", into: "robin/rounding")
@@ -385,7 +391,12 @@ import Testing
         #expect(StageOrder.of(Self.pr(4102), in: twoOrders) == .waits([Self.pr(4101)], words: "After !4101 · stacked"))
 
         let merged = Self.missions([OrderBoardTests.ado(4101, from: "robin/rounding", state: .merged), child], plan: [.init(ref: Self.pr(4102))])
-        #expect(StageOrder.of(Self.pr(4102), in: merged) == .free)
+        #expect(StageOrder.of(Self.pr(4102), in: merged) == .holds("!4101 merged: retarget it to main"))
+        let retargeted = Self.missions(
+            [OrderBoardTests.ado(4101, from: "robin/rounding", state: .merged), OrderBoardTests.ado(4102, from: "robin/cart")],
+            plan: [.init(ref: Self.pr(4102))]
+        )
+        #expect(StageOrder.of(Self.pr(4102), in: retargeted) == .free)
     }
 
     @Test func anOrderToCheckHoldsIt() {

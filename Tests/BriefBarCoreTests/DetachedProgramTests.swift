@@ -20,15 +20,21 @@ import Testing
         defer { try? FileManager.default.removeItem(at: folder) }
         let output = folder.appendingPathComponent("run.log")
         try Data("earlier\n".utf8).write(to: output)
+        // It runs until this file is gone, which this test removes once it has seen it running, however long that
+        // takes.
+        let held = folder.appendingPathComponent("held")
+        try Data().write(to: held)
         let (exits, onExit) = exitStream()
         let handle = try DetachedProgram.start(
-            URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "echo out; echo err >&2; sleep 0.3; exit 3"],
+            URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "echo out; echo err >&2; while [ -e \"$0\" ]; do sleep 0.05; done; exit 3", held.path],
             environment: ["PATH": "/usr/bin:/bin"], output: output, queue: DispatchQueue(label: "DetachedProgramTests"),
             onExit: onExit
         )
         #expect(Responsibility.isResponsibleForItself(handle.pid) == true)
         #expect(handle.startedAt != nil)
         #expect(DetachedProgram.isRunning(handle))
+        try FileManager.default.removeItem(at: held)
         var iterator = exits.makeAsyncIterator()
         #expect(await iterator.next() == 3)
         #expect(!DetachedProgram.isRunning(handle))

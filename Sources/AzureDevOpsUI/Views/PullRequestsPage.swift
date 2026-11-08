@@ -105,10 +105,17 @@ struct PullRequestsPage: View {
                         rest: { AnyView(groups($0, showsBrief: false)) }, board: board,
                         showByStatus: { settings.pullRequestOrder = .status }, now: store.now
                     )
-                } else if shownOrder.isByDate {
-                    byDate
                 } else {
-                    groups(store.items)
+                    // What you changed last of a mission, from a row's Mission menu: By Status has no mission's card to say it.
+                    if ordering.isOn, !ordering.said.isEmpty {
+                        OrderUndoLine(order: ordering)
+                            .padding(.horizontal, 4)
+                    }
+                    if shownOrder.isByDate {
+                        byDate
+                    } else {
+                        groups(store.items)
+                    }
                 }
                 // The Board has your own idle ones among its cards, and counts the rest.
                 if !showsBoard {
@@ -131,14 +138,17 @@ struct PullRequestsPage: View {
 
     /// A pull request's card on the Board: what it shows, its menu as its row's, and what VoiceOver says of it.
     private func boardCard(_ item: PRSnapshot, _ card: BoardCard) -> BoardCardContent {
-        let order = card.step.map { OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready) }
+        let order = card.step.map {
+            OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready, names: ordering.names)
+        }
         return BoardCardContent(
             view: AnyView(PullRequestBoardCard(item: item, card: card, order: order, ordering: ordering, now: store.now)),
             menu: AnyView(Group {
                 Button("Show Details") { select(item) }
                 Button("Open in Azure DevOps") { store.open(item) }
                 PullRequestMenuItems(
-                    item: item, openSource: source(item), dismiss: dismissing(item), stopWatching: watching(item), ordering: ordering
+                    item: item, openSource: source(item), dismiss: dismissing(item), stopWatching: watching(item),
+                    mission: missionMenu(item, in: card.mission), ordering: ordering
                 )
             }),
             label: "!\(item.key.number) \(item.title)",
@@ -163,10 +173,16 @@ struct PullRequestsPage: View {
     private func rowOrder(_ item: PRSnapshot) -> OrderRowContext? {
         guard ordering.isOn else { return nil }
         let byMission = shownOrder == .byMission
-        return OrderRowContext.of(item.key.linkRef, in: ordering.missions, isReady: item.group == .ready, open: byMission ? nil : { key in
+        let open: ((MissionKey) -> Void)? = byMission ? nil : { key in
             settings.pullRequestOrder = .byMission
             ordering.reveal(key, kinds: PullRequestsByMission.kinds)
-        })
+        }
+        return OrderRowContext.of(item.key.linkRef, in: ordering.missions, isReady: item.group == .ready, open: open, names: ordering.names)
+    }
+
+    /// A row's Mission menu, while Pull Request Order is on: from the mission whose card it's in, By Mission.
+    private func missionMenu(_ item: PRSnapshot, in mission: MissionKey? = nil) -> MissionMenuContext? {
+        MissionMenuContext.of(item.key.linkRef, order: ordering, mission: mission, undo: shownOrder == .byMission ? .byMission : .top)
     }
 
     /// Shows a pull request's details, which sees it, as opening it does.
@@ -291,7 +307,8 @@ struct PullRequestsPage: View {
         return PRRowView(
             item: item, now: store.now, showsActions: true, showsCreated: showsCreated, isSelected: isSelected(item),
             openSource: source(item), stopWatching: watching(item), dismiss: dismissing(item), showDetails: { select(item) },
-            order: order ?? rowOrder(item), stage: stage, ordering: ordering.isOn ? ordering : nil
+            order: order ?? rowOrder(item), mission: missionMenu(item, in: order?.mission), stage: stage,
+            ordering: ordering.isOn ? ordering : nil
         ) { store.open(item) }
     }
 
@@ -324,7 +341,7 @@ struct PullRequestsPage: View {
                         ForEach(idle) { item in
                             PRRowView(item: item, now: store.now, compact: true, showsActions: true, showsCreated: shownOrder.isByDate,
                                       isSelected: isSelected(item), openSource: source(item), stopWatching: watching(item),
-                                      showDetails: { select(item) }, order: rowOrder(item)) { store.open(item) }
+                                      showDetails: { select(item) }, order: rowOrder(item), mission: missionMenu(item)) { store.open(item) }
                                 .padding(.horizontal, 6)
                         }
                     }

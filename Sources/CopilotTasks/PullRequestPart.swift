@@ -65,11 +65,27 @@ public struct TakenPart: Sendable, Codable, Equatable, Hashable {
     public var ended: RunPhase?
     /// A Push & Reply took it on, to push its fix, and, for a thread its prompt listed, to reply on it; nil for a fix.
     public var ships: Bool?
+    /// For the conflicts, the pull request's target branch as it took them on: with another, they're other conflicts. Nil
+    /// for the rest, and for conflicts BriefBar kept before it had this.
+    public var target: String?
 
-    public init(_ part: PullRequestPart, since: Date, ended: RunPhase? = nil, ships: Bool? = nil) {
+    public init(_ part: PullRequestPart, since: Date, ended: RunPhase? = nil, ships: Bool? = nil, target: String? = nil) {
         self.part = part
         self.since = since
         self.ended = ended
         self.ships = ships
+        self.target = target
+    }
+}
+
+/// A Push & Reply that ran in a task's session before it, on the same pull request (`CopilotRun.pushes`): when it started,
+/// and how it ended. It committed and pushed all that the session had changed by then, whatever its prompt listed.
+public struct SessionPush: Sendable, Codable, Equatable, Hashable {
+    public var since: Date
+    public var ended: RunPhase
+
+    public init(since: Date, ended: RunPhase) {
+        self.since = since
+        self.ended = ended
     }
 }

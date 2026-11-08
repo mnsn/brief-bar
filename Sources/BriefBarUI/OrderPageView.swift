@@ -38,8 +38,9 @@ package struct MissionsBody: View {
     let board: PullRequestBoard?
     /// A card's content on the Board, as the page draws it.
     let card: ((BoardCard) -> BoardCardContent?)?
-    /// Set as Next to Merge, for a card dropped from Waits onto Can merge: nil until you can change missions yourself.
-    let setAsNext: ((ItemRef) -> Void)?
+    /// Set as Next to Merge in a mission, for a card dropped from Waits onto Can merge: nil where you can't change missions
+    /// yourself.
+    let setAsNext: ((ItemRef, MissionKey) -> Void)?
     /// Lists the page By Status, for what isn't on the Board.
     let showByStatus: (() -> Void)?
     let now: Date
@@ -52,7 +53,7 @@ package struct MissionsBody: View {
         place: @escaping (ItemRef) -> String?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, shownOnTop: ItemRef? = nil,
         rest: @escaping ([ItemRef]) -> AnyView,
-        board: PullRequestBoard? = nil, card: ((BoardCard) -> BoardCardContent?)? = nil, setAsNext: ((ItemRef) -> Void)? = nil,
+        board: PullRequestBoard? = nil, card: ((BoardCard) -> BoardCardContent?)? = nil, setAsNext: ((ItemRef, MissionKey) -> Void)? = nil,
         showByStatus: (() -> Void)? = nil, now: Date = Date()
     ) {
         self.view = view
@@ -75,6 +76,13 @@ package struct MissionsBody: View {
         self.now = now
     }
 
+    /// The missions whose card, or lane on the Board, shows what you changed last in them, and why BriefBar didn't make a
+    /// change there: the rest show at the top of the page.
+    /// - Parameter board: the Board, as it shows; nil in List and on the Map.
+    package static func showingTheirChanges(_ missions: [OrderMission], board: PullRequestBoard?) -> Set<MissionKey> {
+        board.map { Set($0.lanes.compactMap(\.mission)) } ?? Set(missions.map(\.key))
+    }
+
     /// The missions a page of these kinds shows.
     package static func missions(_ all: [OrderMission], kinds: Set<ItemRef.Kind>) -> [OrderMission] {
         all.filter { $0.shows(kinds) }
@@ -95,6 +103,13 @@ package struct MissionsBody: View {
         let missionLanes = board?.mode == .missions ? board : nil
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 18) {
+                // What you changed last of a mission, and why BriefBar didn't make a change, when no mission's card or lane
+                // here shows it, such as one you moved out of missions.
+                let shown = Self.showingTheirChanges(missions, board: view == .board ? board : nil)
+                if ordering.said.contains(where: { OrderUndoLine.shows($0, about: nil, in: nil, outside: shown) }) {
+                    OrderUndoLine(order: ordering, outside: shown)
+                        .padding(.horizontal, 4)
+                }
                 if missions.isEmpty, view != .board {
                     noMissions
                 }
@@ -175,7 +190,7 @@ package struct MissionsBody: View {
         if let described = ordering.describe(ref) {
             if described.show?() != true { described.open?() }
         } else if ref.kind == .gitHubPullRequest, let url = URL(string: "https://github.com/\(ref.scope)/pull/\(ref.id)") {
-            NSWorkspace.shared.open(url)
+            ThisMac.open(url)
         }
     }
 

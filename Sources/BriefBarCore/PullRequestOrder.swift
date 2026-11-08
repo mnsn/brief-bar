@@ -240,6 +240,10 @@ extension ItemRef {
 
 /// Why one pull request merges after another.
 public enum OrderOrigin: Hashable, Sendable {
+    /// You put it after the other, with Merge After (`OrderChanges`).
+    case yours
+    /// You set the other as next to merge, and it waited for nothing that hasn't merged.
+    case yourNext
     /// A session's order says so, at this revision of it.
     case declared(revision: Int)
     /// It targets the other's branch.
@@ -247,18 +251,26 @@ public enum OrderOrigin: Hashable, Sendable {
     /// They're next to each other in a GitHub stack: its number, and the later one's place in it, of how many.
     case gitHubStack(number: Int, position: Int, size: Int)
 
-    /// Whether BriefBar sees it in their branches, a GitHub stack or one targeting the other's branch, rather than an
-    /// order's say: merging one before the other would merge it into the other's branch.
+    /// A session's order says so.
+    var isDeclared: Bool {
+        if case .declared = self { return true }
+        return false
+    }
+
+    /// It's stacked on the other: its branch or a GitHub stack says so, a fact that only retargeting changes. Merging one
+    /// before the other would merge it into the other's branch.
     public var isStacked: Bool {
         switch self {
-        case .declared: false
-        case .branch, .gitHubStack: true
+        case .branch, .gitHubStack: return true
+        case .yours, .yourNext, .declared: return false
         }
     }
 
-    /// Which says the most, for the one a row names first: a session's order, then GitHub's stack, then a branch.
+    /// Which says the most, for the one a row names first: you, then a session's order, then GitHub's stack, then a branch.
     var rank: Int {
         switch self {
+        case .yours: return -2
+        case .yourNext: return -1
         case .declared: return 0
         case .gitHubStack: return 1
         case .branch: return 2
@@ -273,7 +285,7 @@ public enum OrderOrigin: Hashable, Sendable {
         switch self {
         case .declared(let revision): return revision
         case .gitHubStack(let number, _, _): return number
-        case .branch: return 0
+        case .branch, .yours, .yourNext: return 0
         }
     }
 }
@@ -429,22 +441,35 @@ enum OrderGraph {
 // MARK: - Missions
 
 /// Which group of pull requests a mission is, so that Focus finds it again: a session's order, by the ID BriefBar gave it;
-/// a GitHub stack; a chain of branches, by its earliest pull request; or the pull requests opened under a session.
+/// a GitHub stack; a chain of branches, by its earliest pull request; the pull requests opened under a session; or a
+/// mission of your own, by the ID BriefBar gave it as you made it.
 public enum MissionKey: Hashable, Sendable, CustomStringConvertible {
     case plan(UUID)
     /// `owner/name`, lowercased, and the stack's number.
     case stack(repository: String, number: Int)
     case chain(ItemRef)
     case family(ItemRef)
+    /// A mission of your own, made with Move to Mission ▸ New Mission (`OrderChanges`).
+    case mine(UUID)
 
-    /// `plan/<id>`, `stack/octo/storefront/41`, `chain/pullRequest/contoso/4101`, `family/session//<id>`: what the
-    /// preferences keep.
+    /// One BriefBar works out, from what it sees: a stack, a chain or a session's pull requests. Not an order, nor one of
+    /// yours.
+    public var isWorkedOut: Bool {
+        switch self {
+        case .stack, .chain, .family: true
+        case .plan, .mine: false
+        }
+    }
+
+    /// `plan/<id>`, `stack/octo/storefront/41`, `chain/pullRequest/contoso/4101`, `family/session//<id>`, `mine/<id>`: what
+    /// the preferences keep.
     public var description: String {
         switch self {
         case .plan(let id): return "plan/\(id.uuidString.lowercased())"
         case .stack(let repository, let number): return "stack/\(repository)/\(number)"
         case .chain(let ref): return "chain/\(ref.description)"
         case .family(let ref): return "family/\(ref.description)"
+        case .mine(let id): return "mine/\(id.uuidString.lowercased())"
         }
     }
 
@@ -469,6 +494,9 @@ public enum MissionKey: Hashable, Sendable, CustomStringConvertible {
         case "family":
             guard let ref = ItemRef(rest), ref.kind == .session else { return nil }
             self = .family(ref)
+        case "mine":
+            guard let id = UUID(uuidString: rest) else { return nil }
+            self = .mine(id)
         default:
             return nil
         }
@@ -570,12 +598,110 @@ public enum OrderMarker: Equatable, Sendable {
 public enum OrderNote: Equatable, Sendable {
     /// Its changes show against this one's branch, which may still change.
     case showsAgainst(ItemRef)
-    /// BriefBar sees this one go before it, which its order doesn't say: the order decides.
+    /// BriefBar sees this one go before it, which its order doesn't say: it's stacked on it, so it merges after it all the
+    /// same.
     case orderDisagrees(ItemRef, OrderOrigin)
     /// It's in these other orders too.
     case alsoIn([UUID])
     /// Stacked with one of the order's pull requests: it comes after that one, or before it.
     case stackedWith(ItemRef, comesAfter: Bool, OrderOrigin)
+    /// You set it as next to merge, then.
+    case yourNext(Date)
+    /// You put it after these, then.
+    case yourAfter([ItemRef], Date)
+    /// The session that told its order, when known, puts it after this one, which you took away.
+    case tookAway(ItemRef, by: ItemRef?)
+    /// You moved it here, then, from that mission when known.
+    case moved(from: MissionKey?, Date)
+    /// The mission you put it in is gone, its order forgotten or its pull requests gone: it stays with the others you put
+    /// there, as a mission of yours.
+    case placementGone(MissionKey)
+    /// It waits for this one, which you set as next to merge.
+    case afterYourNext(ItemRef)
+    /// It doesn't wait for this one, which you set as next to merge: you took that away.
+    case notAfterYourNext(ItemRef)
+    /// Its order, told by that session when known, puts it after this one, which goes after it: BriefBar set that aside.
+    case setAside(ItemRef, by: ItemRef?, through: Circle)
+    /// Its order, told by that session when known, puts it after this one, which waits for it through stacked branches and
+    /// another mission's order: BriefBar set that aside.
+    case goesRound(ItemRef, by: ItemRef?)
+    /// Its order, told by that session when known, puts it after this one, which waits for it since you set that one as next
+    /// to merge in that mission: BriefBar set that aside, as yours goes before a session's order.
+    case yourNextGoesFirst(ItemRef, by: ItemRef?, next: ItemRef, in: MissionKey)
+    /// Its order puts it after this one, and that order puts this one after it, directly or through other orders' lines:
+    /// each mission keeps its own order's, so check the order.
+    case ordersGoRound(ItemRef, order: UUID, direct: Bool)
+    /// This one is stacked on it, or waits for it, now: your "after" it doesn't hold.
+    case yoursDoesntHold(ItemRef, stacked: Bool)
+    /// It's stacked on this one now, which hasn't merged, or which merged while it still targets its branch: your "next to
+    /// merge" doesn't hold, until that one merges or you retarget it.
+    case nextDoesntHold(ItemRef, retarget: Bool)
+    /// You set it as next to merge in that mission, which it isn't in now, or which is gone, its order forgotten.
+    case nextElsewhere(MissionKey)
+    /// You set this one as next to merge here after it, such as in a chain that came to be one with another: that one's
+    /// next, and yours doesn't hold.
+    case nextSince(ItemRef)
+    /// An order changed its place after you had: it shows the order's, until you put yours back.
+    case orderChangedIt(OrderOverride)
+
+    /// What makes the one its order puts it after go after it, for `setAside`.
+    public enum Circle: Equatable, Sendable {
+        /// Stacked branches alone: it's stacked on it.
+        case stacked
+        /// Its order's other lines and stacked branches.
+        case itsOrder
+        /// You put that one after it.
+        case yours
+        /// Your changes, with others.
+        case yourChanges
+    }
+
+    /// Whether it's about your changes, or about an order's later change or a stacked branch going against one of yours: what
+    /// the details' order line says, and what a row with no order known marks.
+    public var isAboutYourChanges: Bool {
+        switch self {
+        case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .afterYourNext, .notAfterYourNext, .yoursDoesntHold,
+             .nextDoesntHold, .nextElsewhere, .nextSince, .orderChangedIt, .yourNextGoesFirst:
+            return true
+        case .setAside(_, _, let circle):
+            return circle == .yours || circle == .yourChanges
+        case .showsAgainst, .orderDisagrees, .alsoIn, .stackedWith, .goesRound, .ordersGoRound:
+            return false
+        }
+    }
+}
+
+/// An order that changed a pull request's place after you had (`OrderChange.holds`).
+public struct OrderOverride: Equatable, Sendable {
+    /// What the order says of it now.
+    public enum Now: Equatable, Sendable {
+        case after([ItemRef])
+        case anyTime
+        /// Its order doesn't name it anymore.
+        case out
+    }
+
+    /// What you'd changed.
+    public enum Yours: Equatable, Sendable {
+        case next
+        case after([ItemRef])
+        case tookAway([ItemRef])
+        case moved
+    }
+
+    /// The session that told the order, when known.
+    public var by: ItemRef?
+    /// When the order last changed.
+    public var at: Date
+    public var now: Now
+    public var yours: Yours
+
+    public init(by: ItemRef?, at: Date, now: Now, yours: Yours) {
+        self.by = by
+        self.at = at
+        self.now = now
+        self.yours = yours
+    }
 }
 
 /// A pull request in a mission.
@@ -595,10 +721,15 @@ public struct OrderStep: Equatable, Sendable {
     public var notes: [OrderNote]
     /// The session that opened it, or works on it, the first BriefBar knows of: its lane in the Map. Nil when none is known.
     public var session: ItemRef?
+    /// A change of yours decides where it stands, its own or the one you set as next (`OrderChanges`): its capsule has ✎.
+    public var isYours: Bool
+    /// You changed its own place, and that holds: set it as next, put it after another or took one away, or moved it.
+    public var isChangedByYou: Bool
 
     public init(
         ref: ItemRef, number: Int? = nil, status: OrderStatus, standing: OrderStanding, prerequisites: [OrderPrerequisite] = [],
-        directPrerequisites: [ItemRef] = [], review: ReviewTiming? = nil, notes: [OrderNote] = [], session: ItemRef? = nil
+        directPrerequisites: [ItemRef] = [], review: ReviewTiming? = nil, notes: [OrderNote] = [], session: ItemRef? = nil,
+        isYours: Bool = false, isChangedByYou: Bool = false
     ) {
         self.ref = ref
         self.number = number
@@ -609,6 +740,8 @@ public struct OrderStep: Equatable, Sendable {
         self.review = review
         self.notes = notes
         self.session = session
+        self.isYours = isYours
+        self.isChangedByYou = isChangedByYou
     }
 
     /// Whether it comes right after that one, with nothing between them.
@@ -618,15 +751,20 @@ public struct OrderStep: Equatable, Sendable {
 
     /// Whether it's stacked on that one: it targets that one's branch, or comes right after it in a GitHub stack.
     public func isStacked(on other: ItemRef) -> Bool {
-        prerequisites.first { $0.ref == other }?.origins.contains { origin in
-            if case .declared = origin { return false }
-            return true
-        } ?? false
+        prerequisites.first { $0.ref == other }?.origins.contains(where: \.isStacked) ?? false
+    }
+
+    /// Its note that two orders put it and another in opposite orders (`OrderNote.ordersGoRound`), when they do: its order
+    /// needs checking, as its capsule's ⚠ and its stage say.
+    public var ordersGoRound: OrderNote? {
+        notes.first { note in
+            if case .ordersGoRound = note { true } else { false }
+        }
     }
 }
 
-/// Pull requests that go together, in their order: a session's order, a stack BriefBar sees, or the pull requests opened
-/// under a session, whose order nobody told BriefBar.
+/// Pull requests that go together, in their order: a session's order, a stack BriefBar sees, the pull requests opened
+/// under a session, whose order nobody told BriefBar, or a mission of your own.
 public struct OrderMission: Identifiable, Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         /// A session's order: who said it was theirs, for information only, and when it last changed.
@@ -635,6 +773,8 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
         case stack
         /// Pull requests opened under this session, whose order nobody told BriefBar.
         case family(session: ItemRef)
+        /// Pull requests you put together, with New Mission; or those you'd put in a mission that's gone since, by its key.
+        case mine
     }
 
     public var key: MissionKey
@@ -681,49 +821,111 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
         if case .family = kind { return true }
         return false
     }
+
+    /// Whether it's a mission of your own.
+    public var isMine: Bool {
+        kind == .mine
+    }
+
+    /// Whether any of its pull requests has a place in an order: not a group whose order nobody knows, whatever became of
+    /// its pull requests.
+    public var hasOrder: Bool {
+        steps.contains { step in
+            switch step.standing {
+            case .unordered: return false
+            // One that merged, closed or can't be seen, with no place in an order and nothing before it.
+            case .merged, .closed, .notVisible: return step.number != nil || !step.prerequisites.isEmpty
+            default: return true
+            }
+        }
+    }
+
+    /// How many of its pull requests you changed the place of, in a way that holds, those stacked with them that its order
+    /// doesn't name too.
+    public var changedByYou: Int {
+        (steps + attached).filter(\.isChangedByYou).count
+    }
 }
 
 // MARK: - The board
 
-/// The missions to show, from what the sources show now, the orders sessions told BriefBar, and what BriefBar saw become
-/// of their pull requests.
+/// The missions to show, from what the sources show now, the orders sessions told BriefBar, what BriefBar saw become of
+/// their pull requests, and your changes to them.
 public enum OrderBoard {
     /// Each session's order is a mission of its own, however many a session told, even when they share pull requests.
     /// The pull requests no order names group by what BriefBar sees: those stacked with only one order's pull requests
     /// show with it, apart from what it names; others stacked together are a stack of their own; the rest group by the
-    /// session they were opened under, two or more, with no order. A pull request alone isn't shown.
+    /// session they were opened under, two or more, with no order. A pull request alone isn't shown. Your changes come over
+    /// it all, those that hold (`OrderChange.holds`): a pull request you moved shows only where you put it, and those you
+    /// put in a mission of your own, or in one that's gone, together; then what you set as next, put after another or took
+    /// away. What decides what a pull request merges after: stacked branches, which nobody changes but by retargeting;
+    /// then yours; then its order's. What goes round in a circle with those before it is set aside, with a note.
+    /// What BriefBar sees each pull request stacked on, by its branch or a GitHub stack, those in no mission included: for
+    /// what a change can't go against (`OrderChanges.apply`, `MissionChoices.of`).
+    public static func stacked(_ facts: OrderFacts) -> [ItemRef: Set<ItemRef>] {
+        var before: [ItemRef: Set<ItemRef>] = [:]
+        for edge in OrderInference.edges(facts).keys {
+            before[edge.after, default: []].insert(edge.before)
+        }
+        return before
+    }
+
     /// - Parameter focus: the mission you keep on top.
     public static func missions(
-        facts: OrderFacts, orders: DeclaredOrders, evidence: OrderEvidence, focus: MissionKey? = nil, now: Date = Date()
+        facts: OrderFacts, orders: DeclaredOrders, evidence: OrderEvidence, focus: MissionKey? = nil,
+        changes: OrderChanges = OrderChanges(), now: Date = Date()
     ) -> [OrderMission] {
         let board = Board(facts: facts, evidence: evidence)
-        var plansByRef: [ItemRef: [UUID]] = [:]
-        for plan in orders.plans {
-            for ref in plan.refs { plansByRef[ref, default: []].append(plan.id) }
-        }
-        var attached: [UUID: [ItemRef]] = [:]
-        var stacks: [[ItemRef]] = []
-        var alone: [ItemRef] = []
-        for component in board.components(of: board.known.subtracting(plansByRef.keys)) {
-            var touched: Set<UUID> = []
-            for ref in component {
-                for neighbor in board.neighbors(of: ref) { touched.formUnion(plansByRef[neighbor] ?? []) }
-            }
-            if touched.count == 1, let plan = touched.first {
-                attached[plan, default: []] += component
-            } else if component.count > 1 {
-                stacks.append(component)
-            } else {
-                alone += component
+        let layer = Layer(changes: changes, orders: orders, board: board)
+        // The lines each mission keeps, its order's and the one you set as next's, for those made after it: a line that goes
+        // round with them through stacked branches, from one mission to another, is set aside. Those you set one as next in
+        // come first, so that yours goes before a session's order there too.
+        let groups = board.groups(orders: orders, layer: layer)
+        let hasNext = { (group: Board.Group) in group.refs.contains { layer.holding[$0]?.first.map(group.names) == true } }
+        var lines = Board.Lines()
+        var missions: [OrderMission] = []
+        for group in groups.filter(hasNext) + groups.filter({ !hasNext($0) }) {
+            if let mission = board.mission(of: group, orders: orders, layer: layer, now: now, lines: &lines) {
+                missions.append(mission)
             }
         }
-        var missions = orders.plans.map { board.mission(for: $0, orders: orders, attached: attached[$0.id] ?? [], now: now) }
-        missions += stacks.map(board.stackMission)
-        missions += board.familyMissions(alone)
+        let built = missions
+        // What you set as next in a mission it isn't in now, or that's gone: wherever it shows, it says so, beside an order
+        // that doesn't name it too.
+        func nextElsewhere(_ ref: ItemRef) -> OrderNote? {
+            guard let first = layer.holding[ref]?.first,
+                  !built.contains(where: { OrderChanges.names($0, first) && $0.steps.contains { $0.ref == ref } })
+            else { return nil }
+            return .nextElsewhere(first)
+        }
         for index in missions.indices {
             missions[index].isFocused = missions[index].key == focus
+            for step in missions[index].steps.indices {
+                if let note = nextElsewhere(missions[index].steps[step].ref) { missions[index].steps[step].notes.append(note) }
+            }
+            for step in missions[index].attached.indices {
+                if let note = nextElsewhere(missions[index].attached[step].ref) { missions[index].attached[step].notes.append(note) }
+            }
+            // What the missions made after it found its order's lines go round with.
+            guard let notes = lines.notes[missions[index].key] else { continue }
+            for step in missions[index].steps.indices {
+                for note in notes[missions[index].steps[step].ref] ?? [] where !missions[index].steps[step].notes.contains(note) {
+                    missions[index].steps[step].notes.append(note)
+                }
+            }
         }
         return missions.sorted(by: showsFirst)
+    }
+
+    /// What your change to a pull request in no mission says: that an order went against it, or that you set it as next in a
+    /// mission it isn't in now, or that's gone; for its details, where no mission's card shows it.
+    public static func notes(outside ref: ItemRef, missions: [OrderMission], changes: OrderChanges, orders: DeclaredOrders) -> [OrderNote] {
+        guard let change = changes[ref] else { return [] }
+        guard change.holds(in: orders) else { return change.overridden(in: orders).map { [.orderChangedIt($0)] } ?? [] }
+        if let first = change.first, !missions.contains(where: { OrderChanges.names($0, first) && $0.contains(ref) }) {
+            return [.nextElsewhere(first)]
+        }
+        return []
     }
 
     /// The one you focus on first, then those still going, then those with an order; the most pressing for you first, then
@@ -952,111 +1154,239 @@ private struct Board {
     }
 }
 
+// MARK: Your changes
+
+/// Your changes as they apply now: those that hold (`OrderChange.holds`), where they put pull requests, and what you put
+/// each after, without what goes round in a circle with stacked branches, or with yours made before it.
+private struct Layer {
+    let changes: OrderChanges
+    let holding: [ItemRef: OrderChange]
+    let placed: [ItemRef: OrderPlacement]
+    /// What you put each pull request after, that holds.
+    let yours: [ItemRef: [ItemRef]]
+    /// What you put each after that can't hold, as it waits for it now; `stacked` when by a stacked branch alone.
+    let dropped: [ItemRef: [(ref: ItemRef, stacked: Bool)]]
+    /// What goes before each, for circles: every stacked branch BriefBar sees, and yours that hold.
+    let before: [ItemRef: Set<ItemRef>]
+
+    init(changes: OrderChanges, orders: DeclaredOrders, board: Board) {
+        self.changes = changes
+        let holding = changes.holding(in: orders)
+        self.holding = holding
+        placed = holding.compactMapValues(\.placement)
+        var before = board.before
+        var yours: [ItemRef: [ItemRef]] = [:]
+        var dropped: [ItemRef: [(ref: ItemRef, stacked: Bool)]] = [:]
+        for change in holding.values.sorted(by: { ($0.changedAt, $0.ref) < ($1.changedAt, $1.ref) }) where !change.isFirst {
+            for earlier in change.after where earlier != change.ref {
+                if Board.isBefore(change.ref, earlier, in: before) {
+                    dropped[change.ref, default: []].append((earlier, Board.isBefore(change.ref, earlier, in: board.before)))
+                } else {
+                    before[change.ref, default: []].insert(earlier)
+                    yours[change.ref, default: []].append(earlier)
+                }
+            }
+        }
+        self.yours = yours
+        self.dropped = dropped
+        self.before = before
+    }
+
+    /// When a pull request's change was made, for those you put in a mission to show in the order you put them there.
+    func changedAt(_ ref: ItemRef) -> Date {
+        holding[ref]?.changedAt ?? .distantPast
+    }
+}
+
 // MARK: Building missions
 
 extension Board {
-    /// A session's order: its pull requests in the order it gave, those it puts nothing before or after last, numberless;
-    /// with the pull requests it doesn't name that are stacked with its own, apart.
-    func mission(for plan: OrderPlan, orders: DeclaredOrders, attached: [ItemRef], now: Date) -> OrderMission {
-        let refs = plan.refs
-        let place = Dictionary(refs.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
-        var prerequisites: [ItemRef: [ItemRef]] = [:]
-        var dependents: Set<ItemRef> = []
-        for entry in plan.entries {
-            prerequisites[entry.ref] = entry.after
-            dependents.formUnion(entry.after)
+    /// A mission's pull requests, before their order: an order's, a stack's, those opened under a session, or yours.
+    struct Group {
+        enum Kind {
+            case plan(OrderPlan)
+            case stack
+            case family(ItemRef)
+            case mine
         }
-        let (order, cycles) = OrderGraph.ordered(refs, before: prerequisites) { place[$0, default: 0] < place[$1, default: 0] }
-        let inCycle = cycleMembers(cycles)
-        let anyTime = Set(refs.filter { prerequisites[$0, default: []].isEmpty && !dependents.contains($0) })
-        let earlier = Self.ancestry(prerequisites)
-        var steps: [OrderStep] = []
-        for ref in order where !anyTime.contains(ref) {
-            guard let entry = plan.entry(for: ref) else { continue }
-            steps.append(step(
-                entry, of: plan, orders: orders, number: steps.count + 1, hasDependents: dependents.contains(ref), cycle: inCycle[ref],
-                earlier: earlier
-            ))
+
+        var key: MissionKey
+        var kind: Kind
+        /// Its own: an order's pull requests but those you moved elsewhere, a stack's, those opened under a session.
+        var members: [ItemRef]
+        /// Those you put in it that aren't its own, as you put them there.
+        var placed: [ItemRef] = []
+        /// Pull requests its order doesn't name that are stacked with its own.
+        var attached: [ItemRef] = []
+
+        var refs: [ItemRef] { members + placed }
+
+        var plan: OrderPlan? {
+            if case .plan(let plan) = kind { return plan }
+            return nil
         }
-        for entry in plan.entries where anyTime.contains(entry.ref) {
-            steps.append(step(entry, of: plan, orders: orders, number: nil, hasDependents: false, cycle: nil, earlier: earlier))
+
+        var isStack: Bool {
+            if case .stack = kind { return true }
+            return false
         }
-        let group = Set(refs).union(attached)
-        let isFinished = !steps.isEmpty && steps.allSatisfy { $0.status.hasEnded }
-        return OrderMission(
-            key: .plan(plan.id),
-            kind: .declared(id: plan.id, revision: plan.revision, declaredBy: plan.declaredBy, updatedAt: plan.updatedAt),
-            steps: steps, attached: attached.sorted(by: isEarlier).map { attachedStep($0, among: group) }, cycles: cycles,
-            isFocused: false, isFinished: isFinished,
-            isStale: !isFinished && now.timeIntervalSince(plan.updatedAt) > DeclaredOrders.staleAfter,
-            attention: attention(refs), date: plan.updatedAt, sessions: sessions(of: steps.map(\.ref) + attached, first: plan.declaredBy)
-        )
+
+        /// Whether it's the stack you put a pull request in: by its key, or a chain by one of its pull requests.
+        func isStack(_ target: MissionKey) -> Bool {
+            guard isStack else { return false }
+            if key == target { return true }
+            if case .chain(let anchor) = target { return members.contains(anchor) }
+            return false
+        }
+
+        /// Whether a change names it: by its key, or a chain by one of its own pull requests.
+        func names(_ target: MissionKey) -> Bool {
+            key == target || isStack(target)
+        }
     }
 
-    /// One of a session's order's pull requests: what the order puts before it, with what BriefBar sees too; and where
-    /// BriefBar sees one of the order's own go before it when the order doesn't say so, which the order decides.
-    func step(
-        _ entry: OrderPlan.Entry, of plan: OrderPlan, orders: DeclaredOrders, number: Int?, hasDependents: Bool, cycle: [ItemRef]?,
-        earlier: [ItemRef: Set<ItemRef>]
-    ) -> OrderStep {
-        let ref = entry.ref
-        let prerequisites = entry.after.map { earlier in
-            OrderPrerequisite(ref: earlier, origins: [.declared(revision: plan.revision)] + origins(earlier, ref), status: status(earlier))
+    /// The lines the missions made so far kept, for those made after them to go by: their orders', by the order that said
+    /// each first, and the ones you set as next's, by the mission you set each in; with what the later ones found their
+    /// orders' lines go round with, for the earlier ones' pull requests to say too.
+    struct Lines {
+        /// By pull request, what goes before it, and the order that said so.
+        var declared: [ItemRef: [ItemRef: UUID]] = [:]
+        /// The ones you set as next, in the order their missions were made: where, and what waits for each there.
+        var nexts: [(mission: MissionKey, next: ItemRef, waiting: Set<ItemRef>)] = []
+        /// Notes for the pull requests of the missions made before, by mission.
+        var notes: [MissionKey: [ItemRef: [OrderNote]]] = [:]
+
+        /// Orders' lines, by pull request, what goes before it; but those between two of these.
+        func orders(besides members: Set<ItemRef> = []) -> [ItemRef: Set<ItemRef>] {
+            var graph: [ItemRef: Set<ItemRef>] = [:]
+            for (later, earlier) in declared {
+                let kept = members.contains(later) ? Set(earlier.keys).subtracting(members) : Set(earlier.keys)
+                if !kept.isEmpty { graph[later] = kept }
+            }
+            return graph
         }
-        var notes = showsAgainst(ref)
-        for earlier in before[ref, default: []].sorted() where plan.contains(earlier) && !plan.puts(earlier, before: ref) {
-            if let origin = origins(earlier, ref).first { notes.append(.orderDisagrees(earlier, origin)) }
+
+        /// The ones you set as next's lines, by pull request, what goes before it: every mission's, or that one's.
+        func next(in mission: MissionKey? = nil) -> [ItemRef: Set<ItemRef>] {
+            var graph: [ItemRef: Set<ItemRef>] = [:]
+            for set in nexts where mission == nil || set.mission == mission {
+                for ref in set.waiting { graph[ref, default: []].insert(set.next) }
+            }
+            return graph
         }
-        let others = orders.plans.filter { $0.id != plan.id && $0.contains(ref) }.map(\.id)
-        if !others.isEmpty { notes.append(.alsoIn(others)) }
-        return OrderStep(
-            ref: ref, number: number, status: status(ref),
-            standing: standing(
-                of: ref, prerequisites: entry.after, hasDependents: hasDependents, declared: true, cycle: cycle, earlier: earlier
-            ),
-            prerequisites: prerequisites, directPrerequisites: Self.nearest(entry.after, earlier: earlier), review: review(entry.review),
-            notes: notes, session: openers[ref]?.first
-        )
     }
 
-    /// A pull request the order doesn't name, with how it's stacked with the others.
-    func attachedStep(_ ref: ItemRef, among group: Set<ItemRef>) -> OrderStep {
-        var notes: [OrderNote] = []
-        for earlier in before[ref, default: []].sorted() where group.contains(earlier) {
-            if let origin = origins(earlier, ref).first { notes.append(.stackedWith(earlier, comesAfter: true, origin)) }
+    /// The lines by which one goes before the other, from it on, through as few others as there are; nil when it doesn't.
+    static func route(from earlier: ItemRef, to later: ItemRef, in before: [ItemRef: Set<ItemRef>]) -> [OrderEdge]? {
+        var towards: [ItemRef: ItemRef] = [:]
+        var queue = [later]
+        var seen: Set<ItemRef> = [later]
+        var index = 0
+        while index < queue.count {
+            let ref = queue[index]
+            index += 1
+            for previous in before[ref, default: []].sorted() where seen.insert(previous).inserted {
+                towards[previous] = ref
+                guard previous == earlier else {
+                    queue.append(previous)
+                    continue
+                }
+                var edges: [OrderEdge] = []
+                var at = earlier
+                while let after = towards[at] {
+                    edges.append(OrderEdge(at, after))
+                    at = after
+                }
+                return edges
+            }
         }
-        for later in after[ref, default: []].sorted() where group.contains(later) {
-            if let origin = origins(ref, later).first { notes.append(.stackedWith(later, comesAfter: false, origin)) }
-        }
-        return OrderStep(ref: ref, status: status(ref), standing: .notInOrder, notes: notes, session: openers[ref]?.first)
+        return nil
     }
 
-    /// Pull requests BriefBar sees stacked together that no order names, in their order, each with a place: a GitHub
-    /// stack, by its number, or a chain of branches, by its earliest pull request.
-    func stackMission(_ refs: [ItemRef]) -> OrderMission {
-        let members = Set(refs)
-        var prerequisites: [ItemRef: [ItemRef]] = [:]
-        var dependents: Set<ItemRef> = []
-        for ref in refs {
-            let earlier = before[ref, default: []].filter(members.contains).sorted(by: isEarlier)
-            prerequisites[ref] = earlier
-            dependents.formUnion(earlier)
+    /// Whether one goes before the other, directly or through others, by `before`.
+    static func isBefore(_ earlier: ItemRef, _ later: ItemRef, in before: [ItemRef: Set<ItemRef>]) -> Bool {
+        isBefore(earlier, later, in: before, [:])
+    }
+
+    /// Whether one goes before the other, directly or through others, by either.
+    static func isBefore(
+        _ earlier: ItemRef, _ later: ItemRef, in before: [ItemRef: Set<ItemRef>], _ more: [ItemRef: Set<ItemRef>]
+    ) -> Bool {
+        var pending = Array(before[later, default: []].union(more[later, default: []]))
+        var seen: Set<ItemRef> = []
+        while let ref = pending.popLast() {
+            if ref == earlier { return true }
+            guard seen.insert(ref).inserted else { continue }
+            pending += before[ref, default: []].union(more[ref, default: []])
         }
-        let (order, cycles) = OrderGraph.ordered(refs, before: prerequisites, isEarlier: isEarlier)
-        let inCycle = cycleMembers(cycles)
-        let ancestors = Self.ancestry(prerequisites)
-        let steps = order.enumerated().map { index, ref in
-            let earlier = prerequisites[ref, default: []]
-            return OrderStep(
-                ref: ref, number: index + 1, status: status(ref),
-                standing: standing(
-                    of: ref, prerequisites: earlier, hasDependents: dependents.contains(ref), declared: false, cycle: inCycle[ref],
-                    earlier: ancestors
-                ),
-                prerequisites: earlier.map { OrderPrerequisite(ref: $0, origins: origins($0, ref), status: status($0)) },
-                directPrerequisites: Self.nearest(earlier, earlier: ancestors), notes: showsAgainst(ref), session: openers[ref]?.first
-            )
+        return false
+    }
+
+    /// The missions' pull requests: each order's, but those you moved elsewhere, with those you put in it; then the pull
+    /// requests no order names, by what BriefBar sees, but those you moved, which join the stack, the chain or the pull
+    /// requests opened under a session you put them in; then those you put in a mission of your own, or in one that's gone,
+    /// together, by its key.
+    func groups(orders: DeclaredOrders, layer: Layer) -> [Group] {
+        let placed = layer.placed
+        let placedRefs = placed.keys.sorted { lhs, rhs in
+            let (left, right) = (layer.changedAt(lhs), layer.changedAt(rhs))
+            return left != right ? left < right : lhs < rhs
         }
+        var groups: [Group] = []
+        var plansByRef: [ItemRef: [UUID]] = [:]
+        for plan in orders.plans {
+            let key = MissionKey.plan(plan.id)
+            let members = plan.refs.filter { placed[$0].map { $0 == .into(key) } ?? true }
+            let added = placedRefs.filter { placed[$0] == .into(key) && !plan.contains($0) }
+            for ref in members + added { plansByRef[ref, default: []].append(plan.id) }
+            groups.append(Group(key: key, kind: .plan(plan), members: members, placed: added))
+        }
+        // A chain you put pull requests in, by one of its own, stays a chain while that one's left.
+        let anchors = Set(placed.values.compactMap { placement -> ItemRef? in
+            if case .into(.chain(let anchor)) = placement { return anchor }
+            return nil
+        })
+        var attached: [UUID: [ItemRef]] = [:]
+        var stacks: [[ItemRef]] = []
+        var alone: [ItemRef] = []
+        for component in components(of: known.subtracting(plansByRef.keys).subtracting(placed.keys)) {
+            var touched: Set<UUID> = []
+            for ref in component {
+                for neighbor in neighbors(of: ref) { touched.formUnion(plansByRef[neighbor] ?? []) }
+            }
+            if touched.count == 1, let plan = touched.first {
+                attached[plan, default: []] += component
+            } else if component.count > 1 || anchors.contains(component[0]) {
+                stacks.append(component)
+            } else {
+                alone += component
+            }
+        }
+        for index in groups.indices {
+            if let plan = groups[index].plan { groups[index].attached = attached[plan.id] ?? [] }
+        }
+        groups += stacks.map(stackGroup)
+        var families = familyGroups(alone)
+        var own: [Group] = []
+        for ref in placedRefs {
+            guard case .into(let target)? = placed[ref] else { continue }
+            if case .plan(let id) = target, orders.plan(id) != nil { continue }
+            if let index = groups.firstIndex(where: { $0.isStack(target) }) {
+                groups[index].placed.append(ref)
+            } else if let index = families.firstIndex(where: { $0.key == target }) {
+                families[index].placed.append(ref)
+            } else if let index = own.firstIndex(where: { $0.key == target }) {
+                own[index].placed.append(ref)
+            } else {
+                own.append(Group(key: target, kind: .mine, members: [], placed: [ref]))
+            }
+        }
+        return groups + families.filter { $0.refs.count > 1 } + own
+    }
+
+    /// Pull requests BriefBar sees stacked together that no order names: a GitHub stack, by its number, or a chain of
+    /// branches, by its earliest pull request.
+    func stackGroup(_ refs: [ItemRef]) -> Group {
         let stacks = refs.compactMap { facts.pullRequests[$0]?.stack }
         let key: MissionKey
         if let stack = stacks.min(by: { ($0.number, $0.repository) < ($1.number, $1.repository) }) {
@@ -1064,18 +1394,14 @@ extension Board {
         } else {
             key = .chain(refs.min(by: isEarlier) ?? refs[0])
         }
-        return OrderMission(
-            key: key, kind: .stack, steps: steps, attached: [], cycles: cycles, isFocused: false,
-            isFinished: steps.allSatisfy { $0.status.hasEnded }, isStale: false, attention: attention(refs), date: newest(refs),
-            sessions: sessions(of: order, first: nil)
-        )
+        return Group(key: key, kind: .stack, members: refs)
     }
 
     /// Open pull requests that no order names and that BriefBar sees stacked with none, grouped one level up from the
     /// session that opened each: under the session that coordinates it, or else the one that started it, or else that
-    /// session itself. Never higher, since a session at the top may coordinate a project's work for months. Only two or
-    /// more together, with no order.
-    func familyMissions(_ refs: [ItemRef]) -> [OrderMission] {
+    /// session itself. Never higher, since a session at the top may coordinate a project's work for months. However many,
+    /// for you to put others with them: only two or more together are a mission.
+    func familyGroups(_ refs: [ItemRef]) -> [Group] {
         var groups: [ItemRef: [ItemRef]] = [:]
         for ref in refs {
             guard facts.pullRequests[ref]?.state.isOpen == true,
@@ -1083,15 +1409,325 @@ extension Board {
             else { continue }
             groups[opener.coordinator ?? opener.parent ?? opener.ref, default: []].append(ref)
         }
-        return groups.keys.sorted().compactMap { session in
-            guard let refs = groups[session]?.sorted(by: isEarlier), refs.count > 1 else { return nil }
-            return OrderMission(
-                key: .family(session), kind: .family(session: session),
-                steps: refs.map { OrderStep(ref: $0, status: status($0), standing: .unordered, session: openers[$0]?.first) },
-                attached: [], cycles: [], isFocused: false, isFinished: false, isStale: false, attention: attention(refs),
-                date: newest(refs), sessions: sessions(of: refs, first: session)
+        return groups.keys.sorted().map { session in
+            Group(key: .family(session), kind: .family(session), members: (groups[session] ?? []).sorted(by: isEarlier))
+        }
+    }
+
+    /// A mission, from its pull requests: what goes before each, their order, where each stands, and what each says. Nil
+    /// when you moved all its pull requests elsewhere.
+    ///
+    /// What goes before a pull request: the pull requests it's stacked on, wherever they are; what you put it after,
+    /// wherever that is; its order's, but what you took away and what you moved elsewhere. Of its order's, what goes round
+    /// in a circle with stacked branches or yours is set aside, with a note, as is what goes round with them and the lines
+    /// of the missions made before it, from one mission to another, the ones you set as next's first. The one you set as next
+    /// goes first, and what waits for nothing that hasn't merged waits for it, but what goes before it that way. An order's
+    /// line that goes round with another order's between two of its own pull requests stays, as each order says what it
+    /// says of its own, and both say so. An order's pull request with nothing before or after it merges any time, as its
+    /// order says; one BriefBar or you put with others has no order known, while it's open.
+    /// - Parameter lines: the lines the missions made before it kept; it adds its own, and notes for theirs.
+    func mission(
+        of group: Group, orders: DeclaredOrders, layer: Layer, now: Date, lines: inout Lines
+    ) -> OrderMission? {
+        let refs = group.refs
+        guard !refs.isEmpty else { return nil }
+        let members = Set(refs)
+        let own = Set(group.members)
+        let plan = group.plan
+        var prerequisites: [ItemRef: [ItemRef]] = [:]
+        var why: [OrderEdge: [OrderOrigin]] = [:]
+        var added: [ItemRef: [OrderNote]] = [:]
+        // What goes before each, for circles: every stacked branch, yours that hold, and what's added here.
+        var before = layer.before
+        func add(_ earlier: ItemRef, before ref: ItemRef, _ origins: [OrderOrigin]) {
+            let edge = OrderEdge(earlier, ref)
+            if why[edge] == nil { prerequisites[ref, default: []].append(earlier) }
+            for origin in origins where why[edge]?.contains(origin) != true {
+                why[edge, default: []].append(origin)
+            }
+            before[ref, default: []].insert(earlier)
+        }
+        // Set as Next, in this mission: the latest you set that holds.
+        let next = refs.filter { ref in
+            layer.holding[ref]?.first.map(group.names) == true && status(ref).isOpen
+        }.max { lhs, rhs in
+            let (left, right) = (layer.changedAt(lhs), layer.changedAt(rhs))
+            return left != right ? left < right : lhs > rhs
+        }
+        // What it's stacked on that hasn't merged, or that merged while it still targets that one's branch: while there's one,
+        // your next doesn't hold, and its order's lines stay.
+        let blocked = next.flatMap { next in
+            self.before[next, default: []].sorted(by: isEarlier).first { earlier in
+                status(earlier) != .merged || stillTargets(next, branchOf: earlier)
+            }
+        }
+        // Other missions' lines: the ones you set as next's, and their orders', but those between two of this one's pull
+        // requests, which its own order says for itself.
+        let otherOrders = lines.orders(besides: members)
+        let elsewhere = otherOrders.merging(lines.next()) { $0.union($1) }
+        if let plan {
+            // What goes before each by stacked branches and the order's lines kept so far, without yours: for what a line that
+            // goes round is set aside by.
+            var withoutYours = self.before
+            for ref in group.members where blocked != nil || ref != next {
+                guard let entry = plan.entry(for: ref) else { continue }
+                let tookAway = layer.holding[ref]?.notAfter ?? []
+                for earlier in entry.after where members.contains(earlier) && !tookAway.contains(earlier) {
+                    if Self.isBefore(ref, earlier, in: before) {
+                        let circle: OrderNote.Circle = if Self.isBefore(ref, earlier, in: self.before) {
+                            .stacked
+                        } else if Self.isBefore(ref, earlier, in: withoutYours) {
+                            .itsOrder
+                        } else if layer.yours[earlier]?.contains(ref) == true {
+                            .yours
+                        } else {
+                            .yourChanges
+                        }
+                        added[ref, default: []].append(.setAside(earlier, by: plan.declaredBy, through: circle))
+                    } else if Self.isBefore(ref, earlier, in: before, otherOrders) {
+                        added[ref, default: []].append(.goesRound(earlier, by: plan.declaredBy))
+                    } else if Self.isBefore(ref, earlier, in: before, elsewhere),
+                              let set = lines.nexts.first(where: { set in
+                                  Self.isBefore(ref, earlier, in: before, otherOrders.merging(lines.next(in: set.mission)) { $0.union($1) })
+                              }) ?? lines.nexts.first {
+                        // What you set as next in another mission goes first.
+                        added[ref, default: []].append(.yourNextGoesFirst(earlier, by: plan.declaredBy, next: set.next, in: set.mission))
+                    } else {
+                        add(earlier, before: ref, [.declared(revision: plan.revision)])
+                        withoutYours[ref, default: []].insert(earlier)
+                    }
+                }
+            }
+        }
+        for ref in refs {
+            for earlier in layer.yours[ref] ?? [] {
+                add(earlier, before: ref, [.yours])
+            }
+        }
+        for ref in refs {
+            for earlier in self.before[ref, default: []].sorted(by: isEarlier) {
+                add(earlier, before: ref, origins(earlier, ref))
+            }
+        }
+        var chosen: ItemRef?
+        if let next {
+            // Another you set as next here that holds, such as in a chain that came to be one with another: the one you set
+            // last is the one, and the others say so.
+            for ref in refs where ref != next && status(ref).isOpen && layer.holding[ref]?.first.map(group.names) == true {
+                added[ref, default: []].append(.nextSince(next))
+            }
+            if let blocked {
+                added[next, default: []].append(.nextDoesntHold(blocked, retarget: status(blocked) == .merged))
+            } else {
+                chosen = next
+                added[next, default: []].append(.yourNext(layer.changedAt(next)))
+                // What you took away from waiting for yours says so, as your change to it: but its order's line, which says so
+                // itself (`tookAway`).
+                for ref in refs where ref != next && layer.holding[ref]?.notAfter.contains(next) == true
+                    && !(own.contains(ref) && plan?.entry(for: ref)?.after.contains(next) == true) {
+                    added[ref, default: []].append(.notAfterYourNext(next))
+                }
+                // Every line the missions made before kept, other orders' between this one's pull requests too: what waits for
+                // nothing here waits for yours, unless that goes round with them.
+                let everywhere = lines.orders().merging(lines.next()) { $0.union($1) }
+                var waiting: Set<ItemRef> = []
+                for ref in refs where ref != next && status(ref).isOpen && layer.holding[ref]?.notAfter.contains(next) != true {
+                    guard prerequisites[ref, default: []].allSatisfy({ status($0).hasEnded }),
+                          !Self.isBefore(ref, next, in: before, everywhere)
+                    else { continue }
+                    add(next, before: ref, [.yourNext])
+                    added[ref, default: []].append(.afterYourNext(next))
+                    waiting.insert(ref)
+                }
+                lines.nexts.append((group.key, next, waiting))
+            }
+        }
+        if let plan {
+            // Its order's lines that go round with another order's between two of its own pull requests: each mission keeps
+            // its own order's, and both say so.
+            let graph = before.merging(lines.orders()) { $0.union($1) }.merging(lines.next()) { $0.union($1) }
+            for ref in group.members {
+                for earlier in prerequisites[ref, default: []] where why[OrderEdge(earlier, ref)]?.contains(where: \.isDeclared) == true {
+                    guard let route = Self.route(from: ref, to: earlier, in: graph),
+                          let line = route.first(where: { lines.declared[$0.after]?[$0.before] != nil }),
+                          let other = lines.declared[line.after]?[line.before]
+                    else { continue }
+                    let direct = route.count == 1
+                    added[ref, default: []].append(.ordersGoRound(earlier, order: other, direct: direct))
+                    let note = OrderNote.ordersGoRound(line.before, order: plan.id, direct: direct)
+                    if lines.notes[.plan(other)]?[line.after]?.contains(note) != true {
+                        lines.notes[.plan(other), default: [:]][line.after, default: []].append(note)
+                    }
+                }
+            }
+            for ref in refs {
+                for earlier in prerequisites[ref, default: []]
+                where why[OrderEdge(earlier, ref)]?.contains(where: \.isDeclared) == true && lines.declared[ref]?[earlier] == nil {
+                    lines.declared[ref, default: [:]][earlier] = plan.id
+                }
+            }
+        }
+
+        let within = prerequisites.mapValues { $0.filter(members.contains) }
+        let dependents = Set(within.values.flatMap { $0 })
+        // The one you set as next is next, though nothing else waits for it.
+        let loose = refs.filter { prerequisites[$0, default: []].isEmpty && !dependents.contains($0) && $0 != chosen }
+        let anyTime = plan == nil ? [] : Set(loose.filter(own.contains))
+        let unordered = Set(loose.filter { !anyTime.contains($0) && !(group.isStack && own.contains($0)) })
+        let place = Dictionary(refs.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let goesFirst: (ItemRef, ItemRef) -> Bool = switch group.kind {
+        case .plan, .mine: { place[$0, default: 0] < place[$1, default: 0] }
+        case .stack, .family: isEarlier
+        }
+        let (order, cycles) = OrderGraph.ordered(refs, before: within, isEarlier: goesFirst)
+        let inCycle = cycleMembers(cycles)
+        let ancestry = Self.ancestry(prerequisites)
+        // Whether your change to a pull request does something here: not one set as next in another mission only, nor one that
+        // takes away only what nothing here puts it after.
+        func changesHere(_ ref: ItemRef) -> Bool {
+            guard let change = layer.holding[ref] else { return false }
+            if !change.after.isEmpty || change.placement != nil || change.first.map(group.names) == true { return true }
+            let entry = own.contains(ref) ? plan?.entry(for: ref) : nil
+            return change.notAfter.contains { entry?.after.contains($0) == true || $0 == chosen }
+        }
+        func step(_ ref: ItemRef, number: Int?) -> OrderStep {
+            let earlier = prerequisites[ref, default: []]
+            let entry = own.contains(ref) ? plan?.entry(for: ref) : nil
+            // One whose order nobody knows says so while it's open; one that merged, closed or can't be seen says that.
+            let stands: OrderStanding = unordered.contains(ref) && status(ref).isOpen ? .unordered : standing(
+                of: ref, prerequisites: earlier, hasDependents: dependents.contains(ref) || ref == chosen,
+                declared: !(group.isStack && own.contains(ref)), cycle: inCycle[ref], earlier: ancestry
+            )
+            let origins = earlier.map { OrderOrigin.ordered(why[OrderEdge($0, ref)] ?? []) }
+            return OrderStep(
+                ref: ref, number: number, status: status(ref), standing: stands,
+                prerequisites: zip(earlier, origins).map { OrderPrerequisite(ref: $0, origins: $1, status: status($0)) },
+                directPrerequisites: Self.nearest(earlier, earlier: ancestry), review: review(entry?.review),
+                notes: notes(of: ref, in: group, entry: entry, orders: orders, layer: layer) + (added[ref] ?? [])
+                    + yourNotes(of: ref, in: group, entry: entry, orders: orders, layer: layer),
+                session: openers[ref]?.first,
+                isYours: changesHere(ref) || origins.contains { $0.contains(.yours) || $0.contains(.yourNext) },
+                isChangedByYou: changesHere(ref)
             )
         }
+        var steps: [OrderStep] = []
+        for ref in order where !anyTime.contains(ref) && !unordered.contains(ref) {
+            steps.append(step(ref, number: steps.count + 1))
+        }
+        for ref in refs where anyTime.contains(ref) {
+            steps.append(step(ref, number: nil))
+        }
+        for ref in order where unordered.contains(ref) {
+            steps.append(step(ref, number: nil))
+        }
+
+        let kind: OrderMission.Kind
+        let date: Date?
+        let first: ItemRef?
+        var isStale = false
+        let isFinished = steps.allSatisfy { $0.status.hasEnded }
+        switch group.kind {
+        case .plan(let plan):
+            kind = .declared(id: plan.id, revision: plan.revision, declaredBy: plan.declaredBy, updatedAt: plan.updatedAt)
+            date = plan.updatedAt
+            first = plan.declaredBy
+            isStale = !isFinished && now.timeIntervalSince(plan.updatedAt) > DeclaredOrders.staleAfter
+        case .stack:
+            kind = .stack
+            date = newest(refs)
+            first = nil
+        case .family(let session):
+            kind = .family(session: session)
+            date = newest(refs)
+            first = session
+        case .mine:
+            kind = .mine
+            date = [newest(refs), refs.compactMap { layer.holding[$0]?.changedAt }.max()].compactMap { $0 }.max()
+            first = nil
+        }
+        let group = group
+        return OrderMission(
+            key: group.key, kind: kind, steps: steps,
+            attached: group.attached.sorted(by: isEarlier).map {
+                attachedStep($0, among: members.union(group.attached), in: group, orders: orders, layer: layer)
+            },
+            cycles: cycles, isFocused: false, isFinished: isFinished, isStale: isStale, attention: attention(refs), date: date,
+            sessions: sessions(of: steps.map(\.ref) + group.attached, first: first)
+        )
+    }
+
+    /// What a pull request says of itself in its mission, as facts: its changes show against an open pull request's branch;
+    /// it's stacked on one its order doesn't put before it; it's in other orders too.
+    func notes(of ref: ItemRef, in group: Group, entry: OrderPlan.Entry?, orders: DeclaredOrders, layer: Layer) -> [OrderNote] {
+        if case .family = group.kind { return [] }
+        var notes = showsAgainst(ref)
+        guard let plan = group.plan, entry != nil else { return notes }
+        for earlier in before[ref, default: []].sorted() where plan.contains(earlier) && !plan.puts(earlier, before: ref) {
+            if let origin = origins(earlier, ref).first { notes.append(.orderDisagrees(earlier, origin)) }
+        }
+        let others = orders.plans.filter { $0.id != plan.id && $0.contains(ref) }.map(\.id)
+        if !others.isEmpty, layer.placed[ref] == nil { notes.append(.alsoIn(others)) }
+        return notes
+    }
+
+    /// What your change to a pull request says: what you put it after, what you took away, where you moved it, and, once
+    /// an order changed its place since, that it shows the order's.
+    func yourNotes(of ref: ItemRef, in group: Group, entry: OrderPlan.Entry?, orders: DeclaredOrders, layer: Layer) -> [OrderNote] {
+        guard let change = layer.holding[ref] else {
+            return layer.changes[ref]?.overridden(in: orders).map { [.orderChangedIt($0)] } ?? []
+        }
+        var notes: [OrderNote] = []
+        if let kept = layer.yours[ref], !kept.isEmpty { notes.append(.yourAfter(kept, change.changedAt)) }
+        for dropped in layer.dropped[ref] ?? [] {
+            notes.append(.yoursDoesntHold(dropped.ref, stacked: dropped.stacked))
+        }
+        if let entry, let plan = group.plan {
+            for earlier in change.notAfter where entry.after.contains(earlier) {
+                notes.append(.tookAway(earlier, by: plan.declaredBy))
+            }
+        }
+        if case .into(let target)? = change.placement {
+            if case .mine = group.kind, target == group.key, !Self.isOwn(target) {
+                notes.append(.placementGone(target))
+            } else if !change.isAttached {
+                notes.append(.moved(from: change.from, change.changedAt))
+            }
+        }
+        return notes
+    }
+
+    /// Whether a key is a mission of your own's, rather than one that's gone.
+    static func isOwn(_ key: MissionKey) -> Bool {
+        if case .mine = key { return true }
+        return false
+    }
+
+    /// A pull request the order doesn't name, with how it's stacked with the others, and what it's stacked on and what you
+    /// put it after, wherever those are, for what its Mission menu offers; and what your change to it says, as one in the
+    /// order does: what you put it after, that an order went against it, ✎.
+    func attachedStep(_ ref: ItemRef, among shown: Set<ItemRef>, in group: Group, orders: DeclaredOrders, layer: Layer) -> OrderStep {
+        var notes: [OrderNote] = []
+        var prerequisites: [OrderPrerequisite] = []
+        let yours = layer.yours[ref] ?? []
+        for earlier in before[ref, default: []].sorted() {
+            if shown.contains(earlier), let origin = origins(earlier, ref).first {
+                notes.append(.stackedWith(earlier, comesAfter: true, origin))
+            }
+            let origins = OrderOrigin.ordered(origins(earlier, ref) + (yours.contains(earlier) ? [.yours] : []))
+            prerequisites.append(OrderPrerequisite(ref: earlier, origins: origins, status: status(earlier)))
+        }
+        for earlier in yours where before[ref]?.contains(earlier) != true {
+            prerequisites.append(OrderPrerequisite(ref: earlier, origins: [.yours], status: status(earlier)))
+        }
+        for later in after[ref, default: []].sorted() where shown.contains(later) {
+            if let origin = origins(ref, later).first { notes.append(.stackedWith(later, comesAfter: false, origin)) }
+        }
+        let isChanged = layer.holding[ref].map { !$0.after.isEmpty } ?? false
+        return OrderStep(
+            ref: ref, status: status(ref), standing: .notInOrder, prerequisites: prerequisites,
+            notes: notes + yourNotes(of: ref, in: group, entry: nil, orders: orders, layer: layer), session: openers[ref]?.first,
+            isYours: isChanged, isChangedByYou: isChanged
+        )
     }
 }
 
@@ -1212,17 +1848,28 @@ public enum OrderText {
         }
     }
 
-    /// A note, as a fact: "Its changes show against !4101's branch, which may still change".
-    public static func note(_ note: OrderNote, of ref: ItemRef) -> String {
+    /// A note, as a fact: "Its changes show against !4101's branch, which may still change", "You set it as next to merge ·
+    /// 2h", "‘Fix the payments bugs’ puts it after !4102; you took that away".
+    /// - Parameter names: what names sessions and missions, and the time, for how long ago; without them, the words do
+    ///   without.
+    public static func note(_ note: OrderNote, of ref: ItemRef, names: OrderNames = .none) -> String {
+        func ago(_ date: Date) -> String {
+            names.now.map { " · \(Elapsed.short(since: date, now: $0))" } ?? ""
+        }
+        func teller(_ session: ItemRef?) -> String {
+            session.flatMap(names.name).map { "‘\($0)’" } ?? "Its order"
+        }
         switch note {
         case .showsAgainst(let earlier):
             return "Its changes show against \(earlier.orderLabel(near: ref))'s branch, which may still change"
         case .orderDisagrees(let earlier, let origin):
             let label = earlier.orderLabel(near: ref)
             if case .gitHubStack(let number, _, _) = origin {
-                return "GitHub stack \(number) puts it after \(label); its order doesn't"
+                return "GitHub stack \(number) puts it after \(label), though its order doesn't"
             }
-            return "It targets \(label)'s branch; its order doesn't put it after \(label)"
+            // A chain Azure DevOps' branches only suggest may be wrong: a pull request can leave it.
+            let remedy = ref.kind == .pullRequest ? ". If they don't go together, Move to Mission ▸ Not in a Mission takes it out" : ""
+            return "It targets \(label)'s branch, so it merges after \(label), though its order doesn't say so\(remedy)"
         case .alsoIn(let plans):
             return plans.count == 1 ? "Also in another order" : "Also in \(plans.count) other orders"
         case .stackedWith(let other, let comesAfter, let origin):
@@ -1231,13 +1878,89 @@ public enum OrderText {
                 return "\(comesAfter ? "After" : "Before") \(label) in GitHub stack \(number)"
             }
             return comesAfter ? "Targets \(label)'s branch" : "\(label) targets its branch"
+        case .yourNext(let date):
+            return "You set it as next to merge\(ago(date))"
+        case .yourAfter(let refs, let date):
+            return "You put it after \(list(refs, near: ref))\(ago(date))"
+        case .tookAway(let earlier, let session):
+            return "\(teller(session)) puts it after \(earlier.orderLabel(near: ref)); you took that away"
+        case .moved(let from, let date):
+            let mission = from.flatMap(names.title).map { " from ‘\($0)’" } ?? ""
+            return "You moved it here\(mission)\(ago(date))"
+        case .placementGone(let key):
+            if case .plan = key { return "Its order is gone: you'd put it here" }
+            return "Its mission is gone: you'd put it here"
+        case .afterYourNext(let next):
+            return "You set \(next.orderLabel(near: ref)) as next to merge"
+        case .notAfterYourNext(let next):
+            return "You took away its waiting for \(next.orderLabel(near: ref)), which you set as next to merge"
+        case .setAside(let earlier, let session, let circle):
+            let label = earlier.orderLabel(near: ref)
+            switch circle {
+            case .stacked: return "\(teller(session)) puts it after \(label), but \(label) is stacked on it"
+            case .itsOrder: return "\(teller(session)) puts it after \(label), but \(label) waits for it through its order and a stacked branch"
+            case .yours: return "\(teller(session)) puts it after \(label); you put \(label) after it"
+            case .yourChanges: return "\(teller(session)) puts it after \(label), but \(label) waits for it through your changes"
+            }
+        case .goesRound(let earlier, let session):
+            let label = earlier.orderLabel(near: ref)
+            return "\(teller(session)) puts it after \(label), but \(label) waits for it through another mission"
+        case .yourNextGoesFirst(let earlier, let session, let next, let mission):
+            let label = earlier.orderLabel(near: ref)
+            let place = names.title(mission).map { "‘\($0)’" } ?? "another mission"
+            return next == ref
+                ? "\(teller(session)) puts it after \(label), but you set it as next to merge in \(place)"
+                : "\(teller(session)) puts it after \(label), but \(label) waits for it since you set "
+                    + "\(next.orderLabel(near: ref)) as next to merge in \(place)"
+        case .ordersGoRound(let other, let order, let direct):
+            let label = other.orderLabel(near: ref)
+            let name = names.title(.plan(order)).map { "‘\($0)’" }
+            return direct
+                ? "\(name ?? "Another order") puts \(label) after it: check the order"
+                : "\(label) waits for it through \(name ?? "another order"): check the order"
+        case .yoursDoesntHold(let earlier, let stacked):
+            let label = earlier.orderLabel(near: ref)
+            return "\(label) \(stacked ? "is stacked on it" : "waits for it") now, so your ‘after \(label)’ doesn't hold"
+        case .nextDoesntHold(let earlier, false):
+            return "Stacked on \(earlier.orderLabel(near: ref)) now, so your ‘next to merge’ doesn't hold"
+        case .nextDoesntHold(let earlier, true):
+            return "\(earlier.orderLabel(near: ref)) merged: your ‘next to merge’ holds once you retarget it"
+        case .nextElsewhere(let mission):
+            if let title = names.title(mission) { return "You set it as next to merge in ‘\(title)’, which it isn't in now" }
+            if case .plan = mission { return "Its order is gone: you'd set it as next to merge there" }
+            return "The mission you set it as next to merge in is gone"
+        case .nextSince(let later):
+            return "You set \(later.orderLabel(near: ref)) as next to merge here later, so your ‘next to merge’ doesn't hold"
+        case .orderChangedIt(let override):
+            return overridden(override, of: ref, names: names)
         }
     }
 
-    /// Why one merges after the other, for a tooltip: "Its order says so (revision 3)", "It targets !4101's branch",
-    /// "GitHub stack 41, 3 of 4".
+    /// An order that changed a pull request's place after you had: "‘Fix the payments bugs’ put it after !4102 · 5m, after
+    /// you'd set it as next".
+    public static func overridden(_ override: OrderOverride, of ref: ItemRef, names: OrderNames = .none) -> String {
+        let who = override.by.flatMap(names.name).map { "‘\($0)’" } ?? "Its order"
+        let did = switch override.now {
+        case .after(let refs): "put it after \(list(refs, near: ref))"
+        case .anyTime: "said it can merge any time"
+        case .out: "took it out of its order"
+        }
+        let yours = switch override.yours {
+        case .next: "set it as next"
+        case .after(let refs): "put it after \(list(refs, near: ref))"
+        case .tookAway(let refs): "taken \(list(refs, near: ref)) away"
+        case .moved: "moved it"
+        }
+        let ago = names.now.map { " · \(Elapsed.short(since: override.at, now: $0))" } ?? ""
+        return "\(who) \(did)\(ago), after you'd \(yours)"
+    }
+
+    /// Why one merges after the other, for a tooltip: "You put it after !4101", "Its order says so (revision 3)", "It
+    /// targets !4101's branch", "GitHub stack 41, 3 of 4".
     public static func origin(_ origin: OrderOrigin, earlier: ItemRef, later: ItemRef) -> String {
         switch origin {
+        case .yours: return "You put it after \(earlier.orderLabel(near: later))"
+        case .yourNext: return "You set \(earlier.orderLabel(near: later)) as next to merge"
         case .declared(let revision): return "Its order says so (revision \(revision))"
         case .branch: return "It targets \(earlier.orderLabel(near: later))'s branch"
         case .gitHubStack(let number, let position, let size): return "GitHub stack \(number), \(position) of \(size)"

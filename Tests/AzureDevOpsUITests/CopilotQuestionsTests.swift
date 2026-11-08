@@ -10,7 +10,7 @@ import Testing
 /// Explain asks a session about a thread aside, through the Copilot CLI, and shows its answer under the thread: in memory
 /// only, until you dismiss it or Send Work to Copilot is turned off. The demo makes its answers up.
 @MainActor
-@Suite struct CopilotQuestionsTests {
+@Suite(.opensNothing) struct CopilotQuestionsTests {
     private let key = PRKey("contoso", 4102)
     private let session = "2f8a4c6e-1b3d-4e5f-8a7b-9c0d1e2f3a14"
 

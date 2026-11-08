@@ -5,7 +5,8 @@ import SwiftUI
 
 /// What a pull request's menus have after opening it, in its row's and in its details: summarizing it, the message it was
 /// sent in, taking it off Needs You, what Copilot can do with it while Send Work to Copilot is on, its stage while Pull
-/// Request Order shows one, its links, and no longer watching it.
+/// Request Order shows one, and its mission while Pull Request Order is on, on the window's pages, its links, and no longer
+/// watching it.
 struct PullRequestMenuItems: View {
     let item: PRSnapshot
     /// Opens the message it was sent in; nil when it wasn't.
@@ -14,6 +15,8 @@ struct PullRequestMenuItems: View {
     var dismiss: (() -> Void)?
     /// Stops watching it; nil when you don't watch it.
     var stopWatching: (() -> Void)?
+    /// Its Mission menu, on the window's pages while Pull Request Order is on; nil elsewhere, as in the menu bar's list.
+    var mission: MissionMenuContext? = nil
     /// Pull Request Order, for Stage ▸, while it's on, for a full row; nil otherwise.
     var ordering: PullRequestOrder? = nil
 
@@ -27,9 +30,14 @@ struct PullRequestMenuItems: View {
             Button("Remove from Needs You", action: dismiss)
         }
         PullRequestCopilotMenuItems(item: item)
-        // A group of its own, as its order's is: what Pull Request Order says of it.
+        // A group of its own, as its order's is: what Pull Request Order says of it, its stage, then its mission.
         if let ordering {
             StageSubmenu(ref: item.key.linkRef, order: ordering)
+        }
+        if let mission {
+            // Its own group, unless Stage ▸ began it.
+            if ordering?.offersStageMenu(for: item.key.linkRef) != true { Divider() }
+            MissionMenu(item.key.linkRef, context: mission)
         }
         LinkMenuItems(item.key.linkRef)
         if item.isWatched, let stopWatching {
@@ -48,6 +56,7 @@ struct PullRequestDetailsMenuItems: View {
     let isListed: Bool
 
     @EnvironmentObject private var store: PRStore
+    /// Observed, so that its menu follows Pull Request Order as it's turned on or off.
     @EnvironmentObject private var ordering: PullRequestOrder
 
     var body: some View {
@@ -61,6 +70,7 @@ struct PullRequestDetailsMenuItems: View {
                 openSource: item.chatSource == nil ? nil : { store.openSource(item) },
                 dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil,
                 stopWatching: item.isWatched ? { store.stopWatching(item) } : nil,
+                mission: MissionMenuContext.of(item.key.linkRef, order: ordering, undo: .details),
                 ordering: ordering.isOn ? ordering : nil
             )
         } else {

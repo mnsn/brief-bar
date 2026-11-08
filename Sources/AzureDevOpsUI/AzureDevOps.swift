@@ -9,7 +9,7 @@ enum AzureDevOps {
     static let installCLIPage = URL(string: "https://learn.microsoft.com/cli/azure/install-azure-cli-macos")!
 
     static func open(_ url: URL) {
-        NSWorkspace.shared.open(url)
+        ThisMac.open(url)
     }
 
     /// The "My pull requests" page of the first organization.
@@ -32,7 +32,7 @@ enum AzureDevOps {
             let file = directory.appendingPathComponent("Sign in to Azure CLI.command")
             try script.write(to: file, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
-            NSWorkspace.shared.open(file)
+            ThisMac.open(file)
         } catch {
             Log.app.error("Couldn't start az login: \(error.localizedDescription, privacy: .public)")
         }

@@ -59,11 +59,28 @@ public enum OrderCapsuleTone: Equatable, Sendable {
 }
 
 extension OrderText {
+    /// What a step waits for that its mission's Map doesn't show, as its capsule names it, and where that is: "After !4101 ·
+    /// stacked, in ‘Cart’". Nil when it waits for none.
+    /// - Parameter missions: as By Mission shows them, to say where each is.
+    public static func elsewhere(_ step: OrderStep, in mission: OrderMission, missions: [OrderMission], names: OrderNames = .none) -> String? {
+        let shown = Set(mission.steps.map(\.ref))
+        let waits = step.prerequisites.filter { !$0.status.hasEnded && !shown.contains($0.ref) }
+        guard !waits.isEmpty else { return nil }
+        return waits.map { prerequisite in
+            let stacked = prerequisite.origins.contains(where: \.isStacked) ? " · stacked" : ""
+            let place = OrderBoard.mission(of: prerequisite.ref, in: missions).flatMap { other -> String? in
+                guard other.key != mission.key else { return nil }
+                return names.title(other.key) ?? title(of: other, name: names.name)
+            }
+            return "After \(prerequisite.ref.orderLabel(near: step.ref))\(stacked)\(place.map { ", in ‘\($0)’" } ?? "")"
+        }.joined(separator: ". ")
+    }
+
     /// A row's capsule's tone. One that waits for others turns orange when its source says it's ready to complete, so it
-    /// isn't completed out of order.
+    /// isn't completed out of order; and one that two orders put before and after another, as its order needs checking.
     /// - Parameter isReady: its source says it's ready to complete.
     public static func tone(of step: OrderStep, isReady: Bool) -> OrderCapsuleTone {
-        if step.standing.needsChecking { return .warning }
+        if step.standing.needsChecking || step.ordersGoRound != nil { return .warning }
         if step.standing.waitsForOthers { return isReady ? .warning : .waiting }
         switch step.standing {
         case .next: return .next
@@ -74,14 +91,16 @@ extension OrderText {
 
     /// What a row's capsule says in full, for its tooltip and for VoiceOver: where it stands in its order, why, and when its
     /// session suggests reviewing it. Nil for one in a group with no order.
-    /// - Parameter isReady: its source says it's ready to complete.
-    public static func sentence(of step: OrderStep, isReady: Bool = false) -> String? {
+    /// - Parameters:
+    ///   - isReady: its source says it's ready to complete.
+    ///   - names: what names sessions and missions, and the time, for what your changes and orders' later ones say.
+    public static func sentence(of step: OrderStep, isReady: Bool = false, names: OrderNames = .none) -> String? {
         var parts: [String] = []
         if let standing = standing(step) {
             parts.append(isReady && step.standing.waitsForOthers ? "\(standing) · completing it now would go against its order" : standing)
         }
         for note in step.notes {
-            parts.append(Self.note(note, of: step.ref))
+            parts.append(Self.note(note, of: step.ref, names: names))
         }
         if let review = step.review {
             parts.append(Self.review(review, of: step.ref))
@@ -90,18 +109,46 @@ extension OrderText {
     }
 }
 
+/// What the order's words name beside pull requests' numbers: sessions by their names, missions by their titles, and how
+/// long ago something changed, when there's a time to say it from.
+public struct OrderNames {
+    public var name: (ItemRef) -> String?
+    public var title: (MissionKey) -> String?
+    public var now: Date?
+
+    public init(name: @escaping (ItemRef) -> String? = { _ in nil }, title: @escaping (MissionKey) -> String? = { _ in nil }, now: Date? = nil) {
+        self.name = name
+        self.title = title
+        self.now = now
+    }
+
+    /// Numbers alone.
+    public static var none: OrderNames { OrderNames() }
+}
+
 extension OrderBoard {
     /// The mission a pull request's capsule speaks for, and its step there: the first, as they're sorted, that has it in
-    /// its order, else the first it's stacked with. Nil when it's in none, or only in a group with no order, which has no
-    /// capsule.
+    /// its order, else the first it's stacked with, else the first with no order known where a change of yours says
+    /// something of it, such as that you moved it there, for its quiet ✎. Nil when it's in none, or only in a group with no
+    /// order that says nothing of yours, which has no capsule.
     public static func step(for ref: ItemRef, in missions: [OrderMission]) -> (mission: OrderMission, step: OrderStep)? {
-        for mission in missions where !mission.isFamily {
-            if let step = mission.steps.first(where: { $0.ref == ref }) { return (mission, step) }
+        for mission in missions {
+            if let step = mission.steps.first(where: { $0.ref == ref && $0.standing != .unordered }) { return (mission, step) }
         }
         for mission in missions where !mission.isFamily {
             if let step = mission.attached.first(where: { $0.ref == ref }) { return (mission, step) }
         }
+        for mission in missions {
+            if let step = mission.steps.first(where: { $0.ref == ref && $0.notes.contains { $0.isAboutYourChanges } }) {
+                return (mission, step)
+            }
+        }
         return nil
+    }
+
+    /// The mission a pull request is in, whatever it says of it, for its Mission menu: the first, as they're sorted.
+    public static func mission(of ref: ItemRef, in missions: [OrderMission]) -> OrderMission? {
+        missions.first { $0.contains(ref) }
     }
 }
 
@@ -139,7 +186,7 @@ extension OrderText {
             if let declaredBy, let session = name(declaredBy) { return session }
         case .family(let session):
             if let session = name(session) { return session }
-        case .stack:
+        case .stack, .mine:
             break
         }
         let first = mission.steps.first { $0.status != .merged && $0.status != .closed } ?? mission.steps.first
@@ -148,21 +195,37 @@ extension OrderText {
     }
 
     /// What kind of group a mission is, after its title: "GitHub stack 41", "Stacked branches", "Opened under one session ·
-    /// no order known"; nil for a session's order, whose header says who told it.
+    /// no order known", "Your mission"; then "changed by you" when you changed where some of its pull requests go. Nil for
+    /// a session's order you didn't change, whose header says who told it.
     public static func kind(of mission: OrderMission) -> String? {
-        switch mission.key {
-        case .plan: return nil
-        case .stack(_, let number): return "GitHub stack \(number)"
-        case .chain: return "Stacked branches"
-        case .family: return "No order known"
+        let kind: String?
+        if mission.isMine {
+            kind = "Your mission"
+        } else {
+            switch mission.key {
+            case .plan: kind = nil
+            case .stack(_, let number): kind = "GitHub stack \(number)"
+            case .chain: kind = "Stacked branches"
+            // You put an order on some of them, or others with them.
+            case .family: kind = mission.changedByYou > 0 ? nil : "No order known"
+            case .mine: kind = "Your mission"
+            }
         }
+        guard mission.changedByYou > 0, !mission.isMine else { return kind }
+        return [kind, "changed by you"].compactMap { $0 }.joined(separator: " · ")
     }
 
-    /// Who told a session's order, and when: "Told by ‘Ship the cart’ · revision 3"; nil for any other mission.
+    /// Who told a session's order, and when: "Told by ‘Ship the cart’ · revision 3", with "you changed 2 of its pull
+    /// requests" when you did; for another mission you changed, only that. Nil for any other.
     public static func told(_ mission: OrderMission, name: (ItemRef) -> String?) -> String? {
-        guard case .declared(_, let revision, let declaredBy, _) = mission.kind else { return nil }
+        let changed = mission.changedByYou
+        let yours = changed == 0 || mission.isMine ? nil
+            : "you changed \(changed == 1 ? "1 of its pull requests" : "\(changed) of its pull requests")"
+        guard case .declared(_, let revision, let declaredBy, _) = mission.kind else {
+            return yours.map { $0.prefix(1).uppercased() + $0.dropFirst() }
+        }
         let who = declaredBy.flatMap(name).map { "Told by ‘\($0)’" } ?? "Told by a session"
-        return revision > 1 ? "\(who) · revision \(revision)" : who
+        return [who, revision > 1 ? "revision \(revision)" : nil, yours].compactMap { $0 }.joined(separator: " · ")
     }
 
     /// "1 session", "3 sessions".
@@ -259,5 +322,55 @@ extension OrderLine {
             }
         }
         return related
+    }
+}
+
+// MARK: - Your changes
+
+extension OrderEdit {
+    /// The pull requests it's about.
+    public var refs: [ItemRef] {
+        switch self {
+        case .setNext(let ref, _, _), .mergeAfter(let ref, _, _, _), .undo(let ref), .putBack(let ref): return [ref]
+        case .move(let refs, _, _): return refs
+        case .undoMission: return []
+        }
+    }
+}
+
+extension OrderText {
+    /// What you did, for the Undo line after it: "You set !4079 as next to merge", "You moved !4079 to ‘Coupon cleanup’".
+    /// - Parameter newMission: it moved them to a mission of your own it made.
+    public static func did(_ edit: OrderEdit, names: OrderNames = .none, newMission: Bool = false) -> String {
+        func title(_ key: MissionKey) -> String? {
+            names.title(key).map { "‘\($0)’" }
+        }
+        switch edit {
+        case .setNext(let ref, _, let on):
+            return on ? "You set \(ref.shortOrderLabel) as next to merge" : "\(ref.shortOrderLabel) isn't set as next to merge anymore"
+        case .mergeAfter(let ref, let other, _, let on):
+            let label = other.orderLabel(near: ref)
+            return on ? "You put \(ref.shortOrderLabel) after \(label)" : "\(ref.shortOrderLabel) doesn't merge after \(label) anymore"
+        case .move(let refs, .into(let key), _):
+            let moved = list(refs)
+            if newMission { return "You made a mission of \(moved)" }
+            return "You moved \(moved) to \(title(key) ?? "another mission")"
+        case .move(let refs, .outside, _):
+            return "You took \(list(refs)) out of missions"
+        case .undo(let ref):
+            return "You undid your changes to \(ref.shortOrderLabel)"
+        case .undoMission(let key):
+            return "You undid your changes to \(title(key) ?? "this mission")"
+        case .putBack(let ref):
+            return "You put your change to \(ref.shortOrderLabel) back"
+        }
+    }
+
+    /// What VoiceOver hears after a change of yours, with where its Undo is: "You set 4079 as next to merge. Undo is in its
+    /// mission."
+    /// - Parameter undo: where Undo is, "in its mission".
+    public static func spoken(_ said: String, undo: String?) -> String {
+        let sentence = said.replacingOccurrences(of: "!", with: "")
+        return undo.map { "\(sentence). Undo is \($0)." } ?? sentence
     }
 }

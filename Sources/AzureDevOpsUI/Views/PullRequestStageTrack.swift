@@ -19,7 +19,7 @@ struct PullRequestStageTrack: View {
     var body: some View {
         if ordering.isOn, let reading = ordering.stage(of: item.key.linkRef) {
             track(reading)
-        } else if ordering.isOn, ordering.lastChange?.ref == item.key.linkRef {
+        } else if ordering.isOn, ordering.lastStageChange?.ref == item.key.linkRef {
             // Your last change left it without a stage, such as someone else's that asks nothing of you once BriefBar
             // decides: Undo stays where you made it.
             StageUndoLine(refs: [item.key.linkRef], order: ordering)
