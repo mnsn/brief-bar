@@ -43,6 +43,37 @@ import Testing
         #expect(readable(defaults).contains("contoso/7"))
     }
 
+    /// The stage you set on one listed only because someone sent it to you stays in memory, as what you've seen of it
+    /// does; one you watch is kept, as what you've seen of it is.
+    @Test func theStageYouSetOnOneSentToYouStaysOutOfThePreferences() {
+        let defaults = preferences(enabled: true)
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { self.now })
+        let records = [sentInChat, yours].map { key in
+            PRRecord(pullRequest: PullRequest(
+                key: key, title: "Pull request \(key.number)", author: Person(id: "dana", name: "Dana Whitfield"), createdAt: now,
+                projectId: "shop", projectName: "Shop", repositoryId: "web", repositoryName: "web"
+            ), role: .linked, me: "robin")
+        }
+        // Both listed, as one that needs you and one you watch are.
+        let stages = PullRequestOrderFacts.stages(records, items: [], tasks: [], watched: [yours]).mapValues { facts in
+            var listed = facts
+            listed.isListed = true
+            return listed
+        }
+        order.publish(.azureDevOps, stages: stages, account: "robin@contoso.com")
+        let before = readable(defaults)
+
+        #expect(order.setStage(.yourReview, of: sentInChat.linkRef) == .done)
+        #expect(order.stage(of: sentInChat.linkRef)?.stage == .yourReview)
+        #expect(readable(defaults) == before)
+
+        #expect(order.setStage(.yourReview, of: yours.linkRef) == .done)
+        let after = readable(defaults)
+        #expect(after.contains("contoso/9"))
+        #expect(!after.contains("contoso/7"))
+    }
+
     private func savedSeen(in defaults: MemoryDefaults) throws -> SeenState {
         try JSONDecoder().decode(SeenState.self, from: try #require(defaults.data(forKey: SettingsKey.seen)))
     }

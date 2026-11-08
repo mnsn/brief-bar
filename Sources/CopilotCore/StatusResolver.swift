@@ -88,6 +88,21 @@ public struct SessionSnapshot: Sendable, Equatable, Identifiable, Codable {
     }
 }
 
+extension SessionSnapshot {
+    /// What it does to a pull request's stage (`StageSession`): at work, waiting for you, or how it ended, which an idle one
+    /// keeps (`reason`): finished only when its last turn did, never when it was interrupted, failed or stopped responding,
+    /// nor when BriefBar can't tell.
+    public var stageActivity: StageSession.Activity {
+        switch phase {
+        case .needsYou: .waitsForYou
+        case .running: .working
+        case .done: .finished
+        case .stopped: .stopped
+        case .idle: reason == .finished ? .finished : .stopped
+        }
+    }
+}
+
 /// Another session that a session's row refers to, by its ID and the name the list shows it by.
 public struct RelatedSession: Sendable, Equatable, Codable {
     public var id: String

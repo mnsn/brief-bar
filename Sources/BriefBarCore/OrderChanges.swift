@@ -298,7 +298,8 @@ public enum OrderChangeError: Error, Equatable, CustomStringConvertible {
     /// It merged or closed.
     case ended
 
-    /// Without a full stop: the line that says it beside your last change's Undo ends it, as it does what you did.
+    /// Without a full stop: the line that says it beside your last change's Undo ends it, as it does what you did. The
+    /// Board's Waits onto Can merge says Set as Next to Merge's in the same words (`OrderMission.whyNotNext`).
     public var description: String {
         switch self {
         case .full:
@@ -306,10 +307,11 @@ public enum OrderChangeError: Error, Equatable, CustomStringConvertible {
         case .waitsForIt(let other):
             return "\(other.shortOrderLabel) waits for it, so it can't merge after \(other.shortOrderLabel)"
         case .stacked(let other):
-            return "Stacked on \(other.shortOrderLabel): it can't merge before it unless you retarget it"
+            let place = other.kind == .gitHubPullRequest ? "on GitHub" : "in Azure DevOps"
+            return "Stacked on \(other.shortOrderLabel): retarget it \(place) first"
         case .retarget(let merged, let branch):
             let label = merged.shortOrderLabel
-            return "\(label) merged: retarget it to \(branch ?? "the branch \(label) merged into") first"
+            return "\(label) merged: retarget it to \(branch ?? "the branch \(label) merged into")"
         case .notInAMission:
             return "It isn't in a mission: move it to one first"
         case .ended:
@@ -799,8 +801,7 @@ extension OrderChanges {
             var change = current(ref)
             if on {
                 guard !step.status.hasEnded else { throw OrderChangeError.ended }
-                if let stacked = Self.openStacked(under: step) { throw OrderChangeError.stacked(on: stacked) }
-                if let (merged, branch) = Self.retarget(of: step) { throw OrderChangeError.retarget(after: merged, to: branch) }
+                if let notNext = mission.notNext(ref) { throw notNext }
                 change.first = key
                 change.after = []
                 change.notAfter = []
@@ -939,11 +940,6 @@ extension OrderChanges {
         if let step = mission.steps.first(where: { $0.ref == ref }) { return (mission, step, false) }
         if let step = mission.attached.first(where: { $0.ref == ref }) { return (mission, step, true) }
         throw OrderChangeError.notInAMission
-    }
-
-    /// What a pull request is stacked on that BriefBar hasn't seen merge, open, closed or out of sight: it can't merge first.
-    static func openStacked(under step: OrderStep) -> ItemRef? {
-        step.prerequisites.first { $0.origins.contains(where: \.isStacked) && $0.status != .merged }?.ref
     }
 
     /// What a pull request was stacked on that merged, while it still targets that one's branch: retarget it first. Its
@@ -1092,12 +1088,12 @@ public struct MissionChoices: Equatable, Sendable {
             .ended
         } else if isSet && !isSince {
             .isSet
-        } else if let open = OrderChanges.openStacked(under: step) {
-            .stacked(on: open)
-        } else if let (merged, branch) = OrderChanges.retarget(of: step) {
-            .retarget(after: merged, to: branch)
         } else {
-            .offered
+            switch shown.notNext(ref) {
+            case .stacked(let open)?: .stacked(on: open)
+            case .retarget(let merged, let branch)?: .retarget(after: merged, to: branch)
+            default: .offered
+            }
         }
         // What it can go after, and what it goes after now, whatever became of that, for you to take it away.
         guard withPrerequisites else {

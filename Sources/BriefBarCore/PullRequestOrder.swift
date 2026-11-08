@@ -257,7 +257,8 @@ public enum OrderOrigin: Hashable, Sendable {
         return false
     }
 
-    /// It's stacked on the other: its branch or a GitHub stack says so, a fact that only retargeting changes.
+    /// It's stacked on the other: its branch or a GitHub stack says so, a fact that only retargeting changes. Merging one
+    /// before the other would merge it into the other's branch.
     public var isStacked: Bool {
         switch self {
         case .branch, .gitHubStack: return true
@@ -751,6 +752,14 @@ public struct OrderStep: Equatable, Sendable {
     /// Whether it's stacked on that one: it targets that one's branch, or comes right after it in a GitHub stack.
     public func isStacked(on other: ItemRef) -> Bool {
         prerequisites.first { $0.ref == other }?.origins.contains(where: \.isStacked) ?? false
+    }
+
+    /// Its note that two orders put it and another in opposite orders (`OrderNote.ordersGoRound`), when they do: its order
+    /// needs checking, as its capsule's ⚠ and its stage say.
+    public var ordersGoRound: OrderNote? {
+        notes.first { note in
+            if case .ordersGoRound = note { true } else { false }
+        }
     }
 }
 

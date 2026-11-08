@@ -92,6 +92,8 @@ import Testing
         #expect(throws: OrderChangeError.stacked(on: Self.pr(4101))) {
             try changes.apply(.setNext(Self.pr(4102), in: .plan(planID), true), missions: missions, orders: orders, now: t(60))
         }
+        // The Board's Waits onto Can merge refuses it in the same words.
+        #expect(try Self.mission(.plan(planID), in: missions).whyNotNext(Self.pr(4102)) == "Stacked on !4101: retarget it in Azure DevOps first")
         #expect(throws: OrderChangeError.stacked(on: Self.pr(4101))) {
             try changes.apply(.mergeAfter(Self.pr(4102), Self.pr(4101), in: .plan(planID), false), missions: missions, orders: orders)
         }
@@ -102,7 +104,7 @@ import Testing
             try changes.apply(.mergeAfter(Self.pr(4101), Self.pr(4102), in: .plan(planID), true), missions: missions, orders: orders)
         }
         #expect(OrderChangeError.stacked(on: Self.pr(4101)).description
-            == "Stacked on !4101: it can't merge before it unless you retarget it")
+            == "Stacked on !4101: retarget it in Azure DevOps first")
         #expect(changes.isEmpty)
     }
 
@@ -800,7 +802,8 @@ import Testing
         #expect(throws: OrderChangeError.retarget(after: Self.pr(4101), to: "main")) {
             try changes.apply(.setNext(Self.pr(4102), in: .plan(planID), true), missions: missions, orders: orders)
         }
-        #expect(OrderChangeError.retarget(after: Self.pr(4101), to: "main").description == "!4101 merged: retarget it to main first")
+        #expect(OrderChangeError.retarget(after: Self.pr(4101), to: "main").description == "!4101 merged: retarget it to main")
+        #expect(mission.whyNotNext(Self.pr(4102)) == "!4101 merged: retarget it to main")
         #expect(mission.attached.map(\.ref) == [Self.pr(4105)])
         #expect(MissionChoices.of(Self.pr(4105), missions: missions, changes: changes, orders: orders).next
             == .retarget(after: Self.pr(4103), to: nil))
@@ -947,6 +950,32 @@ import Testing
             == "‘Search’ puts !4102 after it: check the order")
         #expect(OrderText.note(.ordersGoRound(Self.pr(4102), order: otherID, direct: false), of: Self.pr(4101))
             == "!4102 waits for it through another order: check the order")
+
+        // Neither can merge first: each one's stage holds, saying why, and its capsule turns orange, as for an order to check.
+        #expect(StageOrder.of(Self.pr(4101), in: missions) == .holds("Another order puts !4102 after it: check the order"))
+        #expect(StageOrder.of(Self.pr(4102), in: missions) == .holds("Another order puts !4101 after it: check the order"))
+        #expect(OrderText.tone(of: first, isReady: false) == .warning && OrderText.tone(of: second, isReady: false) == .warning)
+    }
+
+    /// One its order doesn't name, under one of its pull requests and stacked on one you moved into a mission of your own,
+    /// waits for that one in its stage all the same: what it's stacked on goes first, wherever you put it.
+    @Test func oneUnderAnOrdersPullRequestWaitsForWhatItsStackedOnThatYouMovedAway() throws {
+        let orders = try tell([(4101, [])])
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a", into: "users/robin/e"),
+            OrderBoardTests.ado(4105, from: "users/robin/e", into: "users/robin/f"), OrderBoardTests.ado(4106, from: "users/robin/f"),
+        ])
+        var changes = OrderChanges()
+        #expect(try Self.mission(.plan(planID), in: Self.missions(facts, orders, changes)).attached.map(\.ref) == [Self.pr(4105), Self.pr(4106)])
+        let mine = UUID(uuidString: "33333333-4444-4555-8666-777777777777")!
+        try changes.apply(
+            .move([Self.pr(4106)], to: .into(.mine(mine)), from: .plan(planID)), missions: Self.missions(facts, orders, changes),
+            orders: orders, now: t(60)
+        )
+        let missions = Self.missions(facts, orders, changes)
+        #expect(try Self.mission(.plan(planID), in: missions).attached.map(\.ref) == [Self.pr(4105)])
+        #expect(try Self.mission(.mine(mine), in: missions).steps.map(\.ref) == [Self.pr(4106)])
+        #expect(StageOrder.of(Self.pr(4105), in: missions) == .waits([Self.pr(4106)], words: "After !4106 · stacked"))
     }
 
     /// Three orders whose lines go round only together, each between pull requests the last one has too: the last one and

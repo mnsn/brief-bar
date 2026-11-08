@@ -192,11 +192,6 @@ extension CopilotQuestions.Question {
 }
 
 extension SpokenText {
-    /// Says it to VoiceOver, wherever the keyboard is, as what you asked Copilot ends.
-    static func announce(_ text: String) {
-        AccessibilityNotification.Announcement(text).post()
-    }
-
     /// What became of something of a pull request that Copilot works on or was asked about, as VoiceOver hears it: each view
     /// that shows it hears of it, as its details beside the list and its page over a work item's do in two windows, or the
     /// rows of a build that two policies run, but VoiceOver hears it once (`announce(_:once:)`).

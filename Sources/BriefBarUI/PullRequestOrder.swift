@@ -20,21 +20,53 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var orders = DeclaredOrders()
     /// Your changes to missions, those kept in memory included: none while it's off.
     @Published package private(set) var changes = OrderChanges()
-    /// Your last change, for its Undo line, until your next one or until you dismiss it.
-    @Published package private(set) var lastChange: OrderLastChange?
+    /// Your last change, to a pull request's stage or to a mission, for Undo, which puts back exactly what it touched: one
+    /// at a time, so that a change of either kind replaces Undo of the other, in memory only, until your next change, Undo,
+    /// or you dismiss it.
+    @Published package private(set) var lastChange: LastChange?
     /// Why BriefBar didn't make the change you asked for last, beside your last change's Undo, which stays: until your next
     /// change, Undo, or you dismiss it.
     @Published package private(set) var refusal: OrderLastChange?
-    /// By Mission's view, List or Map, on both Pull Requests pages.
+    /// Your last change, when it was to a stage: what the Stage menu's Undo, the details' and the Board's Undo lines show.
+    package var lastStageChange: StageChange? { lastChange?.stage }
+    /// Your last change, when it was to a mission: what a mission's Undo line shows.
+    package var lastOrderChange: OrderLastChange? { lastChange?.order }
+    /// By Mission's view, List, Map or the Board, on both Pull Requests pages: GitHub's shows List for the Board
+    /// (`view(offering:)`).
     @Published package private(set) var view: OrderView
     /// The mission a row's capsule asked By Mission to show, until it has.
     @Published package var revealed: MissionKey?
+    /// The Board's lanes: one for each mission, or one for every card.
+    @Published package private(set) var lanes: BoardLanes
+    /// Whether you folded Up Next.
+    @Published package private(set) var isUpNextFolded: Bool
+    /// The column Up Next's "2 more ›" asked the Board to show, until it has.
+    @Published package var revealedColumn: PullRequestStage?
+    /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
+    /// (`StageRefusalLine`), until the Board shows again. In memory only.
+    @Published package var stageRefusal: StageRefusal?
+    /// Each pull request's stage, where it is in its flow, as BriefBar works it out from what its source shows, or as you or
+    /// a session set it: for the pull requests whose source tells their stages, Azure DevOps'; none while it's off.
+    @Published package private(set) var stages: [ItemRef: StageReading] = [:]
+    /// The kinds of pull request whose source tells their stages now, Azure DevOps': their missions draw merged ones in
+    /// Merged's color.
+    private var stagedKinds: Set<ItemRef.Kind> = []
 
     private let defaults: UserDefaults
     private let isDemo: Bool
     private let now: () -> Date
     /// What BriefBar saw become of the pull requests that orders and your changes name, and of the one you focus on.
     private var evidence = OrderEvidence()
+    /// The stages you set, for each Azure DevOps account (`order.stages`).
+    private var marks = StageMarks()
+    /// The stages you set for pull requests listed only because someone sent them to you, or before BriefBar knew which
+    /// account signed in: in memory only, each with when a list last had it, so that they go after 30 days as those
+    /// kept do. They count with those toward the most an account keeps, and stay, unused, while Pull Request Order is off.
+    /// One waits here too while its account has no room: one set before BriefBar knew the account, or put back by Undo.
+    private var marksInMemory: [ItemRef: StageMarks.Entry] = [:]
+    /// The account each source last told while it knew one: the stages you set in memory, and Undo, are that account's.
+    /// Turning Pull Request Order off keeps it, so that once it's on again, another account still forgets them.
+    private var accounts: [SourceID: String] = [:]
     /// Your changes about pull requests listed only because someone sent them in a chat, which never go to the
     /// preferences: kept while BriefBar runs, Pull Request Order off or on.
     private var changesInMemory = OrderChanges()
@@ -61,13 +93,17 @@ package final class PullRequestOrder: ObservableObject {
     package static let timeCheckInterval: TimeInterval = 3_600
 
     /// What a source told: its pull requests and sessions, how its things look, for what shows them, what each of its
-    /// sessions told BriefBar it works on, which the Map shows, and which of its pull requests it lists only because
-    /// someone sent them in a chat.
+    /// sessions told BriefBar it works on, which the Map shows, what its pull requests' stages are worked out from, with
+    /// the account it read them with, and which of its pull requests it lists only because someone sent them in a chat.
     private struct Told {
         var pullRequests: [OrderPullRequest]
         var sessions: [OrderSession]
         var items: [ItemRef: LinkedItem]
         var working: [ItemRef: [ItemRef]] = [:]
+        var stages: [ItemRef: StageFacts] = [:]
+        var account: String?
+        /// What each of its sessions does, as the source can tell it: how one that ended ended, which how it looks can't.
+        var activities: [ItemRef: StageSession.Activity] = [:]
         var inMemory: Set<ItemRef> = []
     }
 
@@ -80,18 +116,49 @@ package final class PullRequestOrder: ObservableObject {
         self.now = now
         isOn = isDemo || PullRequestOrderSetting.isOn(in: defaults)
         view = OrderView.load(from: defaults)
+        lanes = BoardLanes.load(from: defaults)
+        isUpNextFolded = UpNext.isFolded(in: defaults)
         if isOn { load() }
     }
 
-    /// List or Map, remembered for both pages.
+    /// List, Map or the Board, remembered for both pages.
     package func setView(_ view: OrderView) {
         guard view != self.view else { return }
         self.view = view
         view.save(to: defaults)
     }
 
-    /// Asks By Mission to show a mission, as clicking a row's capsule does.
-    package func reveal(_ key: MissionKey) {
+    /// The view a page that offers these shows: the one you chose, or List where it doesn't offer that one, as GitHub's page
+    /// doesn't offer the Board. Showing List there doesn't save it: Azure DevOps' page still shows the Board.
+    package func view(offering views: [OrderView]) -> OrderView {
+        view.shown(offering: views)
+    }
+
+    /// The Board's lanes, remembered.
+    package func setLanes(_ lanes: BoardLanes) {
+        guard lanes != self.lanes else { return }
+        self.lanes = lanes
+        lanes.save(to: defaults)
+    }
+
+    /// Folds or unfolds Up Next, remembered.
+    package func setUpNextFolded(_ folded: Bool) {
+        guard folded != isUpNextFolded else { return }
+        isUpNextFolded = folded
+        UpNext.setFolded(folded, in: defaults)
+    }
+
+    /// Shows the Board at a column, as Up Next's "2 more ›" does: By Mission's Board, remembered, scrolled to it.
+    package func revealColumn(_ stage: PullRequestStage) {
+        setView(.board)
+        revealedColumn = stage
+    }
+
+    /// Asks By Mission to show a mission, as clicking a row's capsule does. On a page that shows the Board with Lanes: None,
+    /// which has no lane for it, the Board shows a lane for each mission again, remembered, as choosing Missions does.
+    /// - Parameter kinds: the kinds of pull request the page lists, for the view it shows.
+    package func reveal(_ key: MissionKey, kinds: Set<ItemRef.Kind>) {
+        if view(offering: OrderView.offered(for: kinds)) == .board { setLanes(.missions) }
         revealed = key
     }
 
@@ -103,7 +170,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Pull Request Order, in Settings. On, it reads the orders and changes it kept, and the sources tell it what they show;
-    /// off, it forgets all that, in memory only.
+    /// off, it forgets all that, in memory only, but for the stages you set, which it keeps, unused: those in memory too,
+    /// with the account each source told last, so that one that tells another once it's on again forgets them.
     package func setOn(_ on: Bool) {
         guard on != isOn else { return }
         defaults.set(on, forKey: PullRequestOrderSetting.defaultsKey)
@@ -123,6 +191,9 @@ package final class PullRequestOrder: ObservableObject {
             lastChange = nil
             refusal = nil
             missions = []
+            marks = StageMarks()
+            stages = [:]
+            stagedKinds = []
         }
     }
 
@@ -130,6 +201,7 @@ package final class PullRequestOrder: ObservableObject {
         orders = DeclaredOrders.load(from: defaults)
         evidence = OrderEvidence.load(from: defaults).merging(evidenceInMemory)
         focus = OrderFocus.load(from: defaults)
+        marks = StageMarks.load(from: defaults)
         changes = OrderChanges.load(from: defaults).merging(changesInMemory)
         // The demo's agents keep their orders in their own memory.
         if !isDemo, agentChanges == nil {
@@ -146,10 +218,13 @@ package final class PullRequestOrder: ObservableObject {
         rebuild()
     }
 
-    /// Looks again at what time alone changes, as its clock does every hour: orders that went stale, and those that
-    /// finished long enough ago to go.
+    /// Looks again at what time alone changes, as its clock does every hour: orders that went stale, those that finished
+    /// long enough ago to go, and the stages you set for pull requests no list has had for 30 days, kept or in memory.
     package func timePassed() {
         guard isOn else { return }
+        let date = now()
+        if marks.forgetUnlisted(now: date) { marks.save(to: defaults) }
+        marksInMemory = marksInMemory.filter { !$0.value.isUnlisted(at: date) }
         rebuild()
     }
 
@@ -166,28 +241,42 @@ package final class PullRequestOrder: ObservableObject {
 
     /// What a source shows now, while it's on: the pull requests it lists, with what an order needs of each, the sessions
     /// it knows, how its things look, for what shows them, what each session told BriefBar it works on now
-    /// (`SessionUpdates`), which changes no mission, and the pull requests it lists only because someone sent them in a
-    /// chat, whose changes stay in memory. It replaces what the source told before. Nothing's kept while Pull Request Order
-    /// is off.
+    /// (`SessionUpdates`), which changes no mission, what its pull requests' stages are worked out from, with the account
+    /// it read them with, whose stages you set apply, and how each of its sessions ended, when it can tell, and the pull
+    /// requests it lists only because someone sent them in a chat, whose changes stay in memory. It replaces what the source
+    /// told before. Once it tells another account than the one it told last, the stages you set that BriefBar kept in
+    /// memory for its pull requests go, and so does Undo of one: they were the other account's. Nothing's kept while Pull
+    /// Request Order is off.
     package func publish(
         _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = [],
-        working: [ItemRef: [ItemRef]] = [:], inMemory: Set<ItemRef> = []
+        working: [ItemRef: [ItemRef]] = [:], stages: [ItemRef: StageFacts] = [:], account: String? = nil,
+        sessionActivities: [ItemRef: StageSession.Activity] = [:], inMemory: Set<ItemRef> = []
     ) {
         guard isOn else { return }
         var byRef: [ItemRef: LinkedItem] = [:]
         for item in items where byRef[item.ref] == nil {
             byRef[item.ref] = item
         }
-        let new = Told(pullRequests: pullRequests, sessions: sessions, items: byRef, working: working, inMemory: inMemory)
+        let new = Told(
+            pullRequests: pullRequests, sessions: sessions, items: byRef, working: working, stages: stages,
+            account: account?.lowercased(), activities: sessionActivities, inMemory: inMemory
+        )
         let old = told[source]
         let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions
-        guard !sameFacts || old?.items != new.items || old?.working != new.working || old?.inMemory != new.inMemory else { return }
+        let sameStages = old?.stages == new.stages && old?.account == new.account && old?.activities == new.activities
+        guard !sameFacts || !sameStages || old?.items != new.items || old?.working != new.working
+            || old?.inMemory != new.inMemory else { return }
         objectWillChange.send()
+        if let account = new.account {
+            if let was = accounts[source], was != account { forgetInMemory(ItemRef.Kind.of(source)) }
+            accounts[source] = account
+        }
         told[source] = new
         sentInChats.formUnion(inMemory)
         sentInChats.subtract(Set(pullRequests.map(\.ref)).subtracting(inMemory))
         if old?.inMemory != new.inMemory || !sameFacts { keep(changes) }
-        if !sameFacts { rebuild() }
+        // How a session looks says whether it works now, which stages follow.
+        if sameFacts { restage() } else { rebuild() }
     }
 
     /// A source stopped: what it showed goes, and its pull requests can't be seen until it's on again.
@@ -200,8 +289,8 @@ package final class PullRequestOrder: ObservableObject {
 
     /// Forgets a source's things when you turn it off, as each source forgets what it kept, whether Pull Request Order is on
     /// or not: its pull requests' places in every order, which goes up a revision, the orders left with none, what BriefBar
-    /// saw become of them, your changes to them and those that put pull requests in its missions, and the mission you focus
-    /// on, when it's theirs.
+    /// saw become of them, your changes to them and those that put pull requests in its missions, the mission you focus on,
+    /// when it's theirs, and the stages you set for its pull requests.
     package func forget(_ source: SourceID) {
         let kinds = ItemRef.Kind.of(source)
         guard !kinds.isEmpty else { return }
@@ -221,6 +310,10 @@ package final class PullRequestOrder: ObservableObject {
         let focus = OrderFocus.load(from: defaults)
         let kept = OrderFocus.kept(focus, in: orders, changes: changes, forgetting: kinds)
         if kept != focus { OrderFocus.save(kept, to: defaults) }
+        var marks = StageMarks.load(from: defaults)
+        if marks.forget(kinds) { marks.save(to: defaults) }
+        forgetInMemory(kinds)
+        accounts[source] = nil
         // What's left goes in before the source's pull requests leave the missions, so that rebuilding then, which can save
         // what it keeps, saves none of what was forgotten back.
         if isOn {
@@ -229,7 +322,8 @@ package final class PullRequestOrder: ObservableObject {
             self.evidence = evidence
             self.changes = changes
             self.focus = kept
-            lastChange = nil
+            self.marks = marks
+            if lastOrderChange != nil { lastChange = nil }
             refusal = nil
         }
         withdraw(source)
@@ -302,9 +396,23 @@ package final class PullRequestOrder: ObservableObject {
         focus = nil
         changes = OrderChanges()
         changesInMemory = OrderChanges()
-        lastChange = nil
+        if lastOrderChange != nil { lastChange = nil }
         refusal = nil
         rebuild()
+    }
+
+    /// The demo's stages, as if you'd set them then, on those of its pull requests whose source told their stages and that
+    /// you haven't set: only in the demo, while it's on. Each keeps what would end it as the pull request is now, as one
+    /// you set does (`StageRules.mark`).
+    package func tellDemo(stages demo: [ItemRef: StageMark]) {
+        guard isDemo, isOn else { return }
+        var kept = false
+        for (ref, set) in demo.sorted(by: { $0.key < $1.key }) {
+            guard let facts = stageFacts[ref], yourMark(of: ref, facts: facts) == nil else { continue }
+            let mark = StageRules.mark(set.stage, at: set.at, facts: facts)
+            if keep(mark, of: ref, facts: facts) { kept = true }
+        }
+        if kept { restage() }
     }
 
     /// The demo's orders, as if its sessions had told them, unless it has them, with what BriefBar saw become of their pull
@@ -426,27 +534,8 @@ package final class PullRequestOrder: ObservableObject {
             touched: touched, evidence: seen
         )
         refusal = nil
-        lastChange = last
+        lastChange = .order(last)
         return last
-    }
-
-    /// Undo: puts back exactly what your last change touched.
-    @discardableResult
-    package func undoLastChange() -> Bool {
-        guard isOn, let last = lastChange, last.canUndo else { return false }
-        var changed = changes
-        changed.restore(last.touched)
-        lastChange = nil
-        refusal = nil
-        evidence = evidence.merging(last.evidence)
-        keep(changed)
-        rebuild()
-        return true
-    }
-
-    /// × beside the Undo line: it goes, and your change stays.
-    package func dismissLastChange() {
-        lastChange = nil
     }
 
     /// × beside why BriefBar didn't make a change: it goes.
@@ -457,7 +546,7 @@ package final class PullRequestOrder: ObservableObject {
     /// What the Undo lines say, the latest first: why BriefBar didn't make the change you asked for last, then your last
     /// change, with Undo.
     package var said: [OrderLastChange] {
-        [refusal, lastChange].compactMap { $0 }
+        [refusal, lastOrderChange].compactMap { $0 }
     }
 
     /// The mission whose card shows what an edit did, so that Undo is where you are: the one you changed it in, else where
@@ -543,13 +632,13 @@ package final class PullRequestOrder: ObservableObject {
         }
         // What Undo would put back can name pull requests no change of yours names now: what BriefBar sees become of them
         // goes with it, in memory, for as long as Undo is there.
-        if let last = lastChange, last.canUndo {
+        if let last = lastOrderChange, last.canUndo {
             let named = OrderChanges(last.touched.values.compactMap { $0 }).subjects
             var seen = last.evidence
             for observation in facts.observations where named.contains(observation.ref) {
                 seen.observe(observation, at: date)
             }
-            if seen != last.evidence { lastChange = last.seeing(seen) }
+            if seen != last.evidence { lastChange = .order(last.seeing(seen)) }
         }
         let finished = orders.removeFinished(evidence: evidence, now: date)
         if !finished.isEmpty {
@@ -582,11 +671,11 @@ package final class PullRequestOrder: ObservableObject {
             facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date
         )
         var anchored = self.changes
-        let pending = OrderChanges(lastChange?.touched.values.compactMap { $0 } ?? [])
+        let pending = OrderChanges(lastOrderChange?.touched.values.compactMap { $0 } ?? [])
         let renamed = anchored.moveAnchors(in: missions, orders: orders, alsoFor: pending)
         if !renamed.isEmpty {
             // What Undo would put back names those chains as they're named now too, though no change of yours names them.
-            if let last = lastChange { lastChange = last.renamingChains(renamed) }
+            if let last = lastOrderChange { lastChange = .order(last.renamingChains(renamed)) }
             if anchored != self.changes {
                 keep(anchored)
                 missions = OrderBoard.missions(
@@ -611,7 +700,373 @@ package final class PullRequestOrder: ObservableObject {
         }
         cachedNames = nil
         if missions != self.missions { self.missions = missions }
+        restage()
     }
+
+    // MARK: Stages
+
+    /// A pull request's stage, while Pull Request Order is on and its source tells stages.
+    package func stage(of ref: ItemRef) -> StageReading? {
+        stages[ref]
+    }
+
+    /// Whether you opened a pull request, as its source tells for its stage: only yours can be set to Teammate's review.
+    package func isYours(_ ref: ItemRef) -> Bool {
+        stageFacts[ref]?.isYours ?? false
+    }
+
+    /// Who opened someone else's pull request, by their first name, as its source tells for its stage.
+    package func author(of ref: ItemRef) -> String? {
+        stageFacts[ref]?.author
+    }
+
+    /// Why a pull request can't be set to Teammate's review, wherever you'd set it: someone else's asks for its own reviews,
+    /// and Finished My Review takes it off your board instead. Nil for yours, or one whose source tells no stage.
+    package func whyNotTeammateReview(_ ref: ItemRef) -> String? {
+        guard let facts = stageFacts[ref], !facts.isYours else { return nil }
+        return StageText.whyNotTeammateReview(author: facts.author)
+    }
+
+    /// The Board, Up Next and each mission's next steps, for a page of these kinds, with its lanes as you chose them, or
+    /// these.
+    package func board(kinds: Set<ItemRef.Kind>, lanes: BoardLanes? = nil) -> PullRequestBoard {
+        PullRequestBoard.make(stages: stages, missions: missions, kinds: kinds, lanes: lanes ?? self.lanes)
+    }
+
+    /// The stage a mission's graph colors a pull request by: its own, or Merged for one BriefBar saw merge whose source
+    /// tells stages, listed or not, so every merged one on Azure DevOps' page reads alike; nil for one with none, such as
+    /// GitHub's, which show as they did.
+    package func drawnStage(of step: OrderStep) -> PullRequestStage? {
+        if let reading = stages[step.ref] { return reading.stage }
+        return step.status == .merged && stagedKinds.contains(step.ref.kind) ? .merged : nil
+    }
+
+    /// The time, as it tells stages' ages: "You set it 2h ago".
+    package var currentDate: Date { now() }
+
+    /// Whether a pull request's Stage menu has anything for it: its stage, until it merged, or Undo of your last change,
+    /// which was to it, even once it has no stage left to show, such as someone else's that asks nothing of you.
+    package func offersStageMenu(for ref: ItemRef) -> Bool {
+        if lastStageChange?.ref == ref { return true }
+        guard let reading = stages[ref] else { return false }
+        return reading.stage != .merged
+    }
+
+    /// Whether BriefBar keeps a stage you set, on or off: for Forget Stages… in Settings.
+    package var keepsStages: Bool {
+        defaults.object(forKey: StageMarks.defaultsKey) != nil || !marksInMemory.isEmpty
+    }
+
+    /// The stages you set that BriefBar keeps, for each account, as many as there are, whatever lists have them now.
+    package var keptStagesCount: Int {
+        StageMarks.load(from: defaults).accounts.values.reduce(0) { $0 + $1.count } + marksInMemory.count
+    }
+
+    /// Sets a pull request's stage, as you choose it, In progress, Your review or Teammate's review, which stands until
+    /// something ends it (`StageRules.stands`) or you change it; Teammate's review is Finished My Review. Undo puts back
+    /// what it replaced. A pull request listed only because someone sent it to you keeps it in memory only. Refused, saying
+    /// why, while Pull Request Order is off, for a stage only BriefBar sets, for one no list that tells stages has now, or
+    /// for a new one once the account keeps the most.
+    @discardableResult
+    package func setStage(_ stage: PullRequestStage, of ref: ItemRef) -> StageChange.Outcome {
+        guard isOn else { return .refused(StageChange.orderIsOff) }
+        guard stage.isSettable else { return .refused(StageText.whyNotSettable(stage) ?? StageChange.setByBriefBar) }
+        guard let facts = stageFacts[ref], facts.isListed else { return .refused(StageChange.notListed) }
+        guard facts.state.isOpen else { return .refused(facts.state == .merged ? StageChange.merged : StageChange.closed) }
+        let before = yourMark(of: ref, facts: facts)
+        if let before, before.stage == stage, stages[ref]?.mark == before { return .unchanged }
+        let mark = StageRules.mark(stage, at: now(), facts: facts)
+        guard keep(mark, of: ref, facts: facts) else {
+            return .refused(
+                "BriefBar keeps up to \(StageMarks.mostPerAccount) stages you set. Let BriefBar decide one you no longer need first."
+            )
+        }
+        lastChange = .stage(StageChange(ref: ref, before: before, after: stage))
+        refusal = nil
+        restage()
+        return .done
+    }
+
+    /// Finished My Review: it's your teammates' turn, on yours; on someone else's, it leaves your board until something new
+    /// needs you there.
+    @discardableResult
+    package func finishedReview(_ ref: ItemRef) -> StageChange.Outcome {
+        setStage(.teammateReview, of: ref)
+    }
+
+    /// Put Yours Back: the stage you set, which a session's later change replaced, is the latest again.
+    @discardableResult
+    package func putYoursBack(_ ref: ItemRef) -> StageChange.Outcome {
+        guard let yours = stages[ref]?.replaced else { return .unchanged }
+        return setStage(yours.stage, of: ref)
+    }
+
+    /// Let BriefBar Decide: forgets the stage you set, and BriefBar works it out again. Unchanged when you set none.
+    @discardableResult
+    package func letBriefBarDecide(_ ref: ItemRef) -> StageChange.Outcome {
+        guard isOn, let facts = stageFacts[ref], let before = yourMark(of: ref, facts: facts) else { return .unchanged }
+        forgetMark(of: ref, facts: facts)
+        lastChange = .stage(StageChange(ref: ref, before: before, after: nil))
+        refusal = nil
+        restage()
+        return .done
+    }
+
+    /// Undo: puts back exactly what your last change touched, whichever it was, a stage's or a mission's; true when it
+    /// did. Why BriefBar refused a change goes with it.
+    @discardableResult
+    package func undo() -> Bool {
+        switch lastChange {
+        case .stage(let change)?: undo(change)
+        case .order(let last)?: undo(last)
+        case nil: false
+        }
+    }
+
+    /// Puts back exactly the stage your last change replaced, or none. What it puts back is kept even once the account
+    /// keeps the most, as when Let BriefBar Decide made room that one waiting in memory took: it waits there in turn, until
+    /// the account has room.
+    private func undo(_ change: StageChange) -> Bool {
+        guard isOn, let facts = stageFacts[change.ref] else {
+            lastChange = nil
+            return false
+        }
+        lastChange = nil
+        refusal = nil
+        if let before = change.before {
+            if !keep(before, of: change.ref, facts: facts) {
+                marksInMemory[change.ref] = StageMarks.Entry(mark: before, listedAt: now())
+            }
+        } else {
+            forgetMark(of: change.ref, facts: facts)
+        }
+        restage()
+        return true
+    }
+
+    /// Puts back exactly what your last change to a mission touched.
+    private func undo(_ last: OrderLastChange) -> Bool {
+        guard isOn, last.canUndo else { return false }
+        var changed = changes
+        changed.restore(last.touched)
+        lastChange = nil
+        refusal = nil
+        evidence = evidence.merging(last.evidence)
+        keep(changed)
+        rebuild()
+        return true
+    }
+
+    /// Takes the Undo line away, as × beside it does: your change stays.
+    package func dismissLastChange() {
+        lastChange = nil
+    }
+
+    /// Forget Stages…: every stage you set, with every account, on or off. What sessions set is theirs (18d).
+    package func forgetStages() {
+        objectWillChange.send()
+        StageMarks.forgetAll(in: defaults)
+        marks = StageMarks()
+        marksInMemory = [:]
+        if lastStageChange != nil { lastChange = nil }
+        restage()
+    }
+
+    /// What the sources that are on tell of their pull requests' stages, the first source's of each.
+    private var stageFacts: [ItemRef: StageFacts] {
+        var all: [ItemRef: StageFacts] = [:]
+        for source in SourceID.allCases {
+            for (ref, facts) in told[source]?.stages ?? [:] where all[ref] == nil {
+                all[ref] = facts
+            }
+        }
+        return all
+    }
+
+    /// The account whose stages apply, as the source that tells a pull request's stage says.
+    private func account(of ref: ItemRef) -> String? {
+        SourceID.allCases.lazy.compactMap { self.told[$0] }.first { $0.stages[ref] != nil }?.account
+    }
+
+    /// Whether a stage you set for it stays in memory: one listed only because someone sent it to you in a chat, as what
+    /// you've seen of it does, or one BriefBar doesn't know the account of yet.
+    private func keepsInMemory(_ ref: ItemRef, facts: StageFacts) -> Bool {
+        facts.role == .sentToYou || account(of: ref) == nil
+    }
+
+    private func yourMark(of ref: ItemRef, facts: StageFacts) -> StageMark? {
+        if let entry = marksInMemory[ref] { return entry.mark }
+        guard !keepsInMemory(ref, facts: facts), let account = account(of: ref) else { return nil }
+        return marks.mark(of: ref, for: account)
+    }
+
+    /// Keeps the stage you set, in place of the one it had: false for a new one once the account keeps the most
+    /// already, counting those in memory, so that one in memory always has room with the account once it can go there.
+    private func keep(_ mark: StageMark, of ref: ItemRef, facts: StageFacts) -> Bool {
+        let account = account(of: ref)
+        let isNew = marksInMemory[ref] == nil && account.flatMap { marks.mark(of: ref, for: $0) } == nil
+        guard !isNew || keptCount(of: ref.kind, for: account) < StageMarks.mostPerAccount else { return false }
+        if !keepsInMemory(ref, facts: facts), let account, marks.set(mark, of: ref, for: account, at: now()) {
+            marksInMemory[ref] = nil
+            marks.save(to: defaults)
+        } else {
+            // One only sent to you, one whose account BriefBar doesn't know yet, or one kept here before it knew, until
+            // the account has room for it.
+            marksInMemory[ref] = StageMarks.Entry(mark: mark, listedAt: now())
+        }
+        return true
+    }
+
+    /// How many stages you set an account keeps, with those in memory for pull requests of this kind, its source's.
+    private func keptCount(of kind: ItemRef.Kind, for account: String?) -> Int {
+        (account.map { marks.count(for: $0) } ?? 0) + marksInMemory.keys.filter { $0.kind == kind }.count
+    }
+
+    private func forgetMark(of ref: ItemRef, facts: StageFacts) {
+        marksInMemory[ref] = nil
+        if let account = account(of: ref), marks.clear(ref, for: account) { marks.save(to: defaults) }
+    }
+
+    /// Forgets the stages you set that BriefBar kept in memory for pull requests of these kinds, and Undo of one.
+    private func forgetInMemory(_ kinds: Set<ItemRef.Kind>) {
+        marksInMemory = marksInMemory.filter { !kinds.contains($0.key.kind) }
+        if let change = lastStageChange, kinds.contains(change.ref.kind) { lastChange = nil }
+    }
+
+    /// Each pull request's stage again: from what its source tells, the sessions on it, the stage you set while it
+    /// stands, and its order. A stage you set that no longer stands, or whose pull request merged or closed, goes; one
+    /// kept in memory before BriefBar knew the account, or while it was only sent to you, is kept with the account once
+    /// it can be, and one kept with the account goes into memory once it's only sent to you, such as when you stop
+    /// watching it; and what lists have now is noted, for what no list has had for 30 days to go: in memory each time,
+    /// and once a day for those kept. Only those a list has show a stage: what was set on one it still reads, but no
+    /// list has, still ends as it moves on.
+    private func restage() {
+        guard isOn else {
+            if !stages.isEmpty { stages = [:] }
+            stagedKinds = []
+            return
+        }
+        let all = stageFacts
+        stagedKinds = Set(all.keys.map(\.kind))
+        let sessionsOn = sessionsOnPullRequests()
+        var readings: [ItemRef: StageReading] = [:]
+        var changed = false
+        for (ref, facts) in all {
+            let sessions = Self.merged(facts.sessions, sessionsOn[ref] ?? [])
+            if let memory = marksInMemory[ref], !keepsInMemory(ref, facts: facts), let account = account(of: ref),
+               marks.set(memory.mark, of: ref, for: account, at: memory.listedAt) {
+                marksInMemory[ref] = nil
+                changed = true
+            } else if facts.role == .sentToYou, let account = account(of: ref), let saved = marks.entry(of: ref, for: account) {
+                if marksInMemory[ref] == nil { marksInMemory[ref] = saved }
+                if marks.clear(ref, for: account) { changed = true }
+            }
+            var mine = yourMark(of: ref, facts: facts)
+            if let mark = mine, !facts.state.isOpen || !StageRules.stands(mark, facts: facts, sessions: sessions) {
+                marksInMemory[ref] = nil
+                if let account = account(of: ref), marks.clear(ref, for: account) { changed = true }
+                mine = nil
+            }
+            guard facts.isListed else { continue }
+            marksInMemory[ref]?.listedAt = now()
+            let order = StageOrder.of(ref, in: missions)
+            if let reading = StageRules.reading(facts: facts, sessions: sessions, marks: [mine].compactMap { $0 }, order: order) {
+                readings[ref] = reading
+            }
+        }
+        var listed: [String: Set<ItemRef>] = [:]
+        for (ref, facts) in all where facts.isListed && facts.role != .sentToYou {
+            if let account = account(of: ref) { listed[account, default: []].insert(ref) }
+        }
+        for (account, refs) in listed where marks.listed(refs, for: account, at: now()) {
+            changed = true
+        }
+        if changed { marks.save(to: defaults) }
+        if readings != stages { stages = readings }
+    }
+
+    /// The Copilot app's sessions on each pull request, as their source tells them: those that opened it or work on it, as
+    /// the app records them, and those that told BriefBar they work on it, each with what it does now, or how it ended, as
+    /// its source tells it, and since when; none it doesn't say how.
+    private func sessionsOnPullRequests() -> [ItemRef: [StageSession]] {
+        var on: [ItemRef: Set<ItemRef>] = [:]
+        for told in told.values {
+            for session in told.sessions {
+                for ref in session.pullRequests { on[ref, default: []].insert(session.ref) }
+            }
+            for (session, refs) in told.working {
+                for ref in refs { on[ref, default: []].insert(session) }
+            }
+        }
+        var activities: [ItemRef: StageSession.Activity] = [:]
+        for told in told.values {
+            activities.merge(told.activities) { first, _ in first }
+        }
+        return on.mapValues { sessions in
+            sessions.sorted().compactMap { session in
+                describe(session).map { item in
+                    StageSession(ref: session, activity: activities[session] ?? Self.activity(item.state), since: item.date)
+                }
+            }
+        }
+    }
+
+    /// What a session does, as the state it counts in says, when its source doesn't say: at work, waiting for you,
+    /// finished, or else stopped. One without a state, such as one gone idle, says nothing of how it ended, so it counts as
+    /// stopped, which says nothing of its pull request.
+    static func activity(_ state: ItemState?) -> StageSession.Activity {
+        switch state {
+        case .running?: .working
+        case .needsYou?: .waitsForYou
+        case .done?: .finished
+        case .failing?, nil: .stopped
+        }
+    }
+
+    /// The sessions a source knows of on a pull request, with the Copilot app's, each once. One both know, such as a task
+    /// BriefBar sent that you went on with in the Copilot app, does what the app says once that's later, unless the app
+    /// can't tell how it ended; the source's still names it and says whether it reviews.
+    static func merged(_ own: [StageSession], _ others: [StageSession]) -> [StageSession] {
+        let theirs = Dictionary(others.map { ($0.ref, $0) }) { first, _ in first }
+        let known = Set(own.map(\.ref))
+        let reconciled = own.map { session in
+            guard let other = theirs[session.ref], other.activity != .stopped, let since = other.since,
+                  session.since.map({ since > $0 }) ?? true else { return session }
+            var now = session
+            now.activity = other.activity
+            now.since = since
+            return now
+        }
+        return reconciled + others.filter { !known.contains($0.ref) }
+    }
+}
+
+/// Your last change to a pull request's stage, for Undo: the stage you'd set before it, and what you set.
+package struct StageChange: Equatable, Sendable {
+    package enum Outcome: Equatable, Sendable {
+        case done
+        case unchanged
+        /// Why it couldn't be.
+        case refused(String)
+    }
+
+    package var ref: ItemRef
+    /// The stage you'd set before, which Undo puts back; nil when you'd set none.
+    package var before: StageMark?
+    /// What you set; nil for Let BriefBar Decide.
+    package var after: PullRequestStage?
+
+    /// "Moved !4093 to Teammate's review".
+    package var words: String {
+        StageText.moved(ref, to: after)
+    }
+
+    /// Why a stage can't be set, as VoiceOver hears it with a beep.
+    package static let orderIsOff = "Pull Request Order is off: turn it on in Settings › Pull Requests"
+    package static let setByBriefBar = "BriefBar sets that stage itself"
+    package static let notListed = "BriefBar doesn't list that pull request now"
+    package static let merged = "It merged: its stage doesn't change now"
+    package static let closed = "It's closed: its stage doesn't change now"
 }
 
 /// Your last change to a mission, for its Undo line until your next one or until you dismiss it, in memory only; or why
@@ -647,5 +1102,23 @@ package struct OrderLastChange: Equatable {
             said: said, refs: refs, mission: mission, touched: touched.mapValues { change in change.map { undo[$0.ref] ?? $0 } },
             evidence: evidence
         )
+    }
+}
+
+/// Your last change, for Undo, which puts back exactly what it touched: a pull request's stage, or a mission.
+package enum LastChange: Equatable {
+    case stage(StageChange)
+    case order(OrderLastChange)
+
+    /// The change to a stage, when it's one.
+    package var stage: StageChange? {
+        guard case .stage(let change) = self else { return nil }
+        return change
+    }
+
+    /// The change to a mission, when it's one.
+    package var order: OrderLastChange? {
+        guard case .order(let change) = self else { return nil }
+        return change
     }
 }

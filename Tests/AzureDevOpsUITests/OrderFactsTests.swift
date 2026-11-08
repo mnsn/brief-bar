@@ -1,12 +1,14 @@
 import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
+import CopilotTasks
 import Foundation
+import SwiftUI
 import Testing
 @testable import AzureDevOpsUI
 
 @MainActor
-@Suite struct OrderFactsTests {
+@Suite(.opensNothing) struct OrderFactsTests {
     private static let me = DemoData.me
 
     private static func pullRequest(
@@ -221,6 +223,529 @@ import Testing
         #expect(OrderText.capsule(rounding) == "After !4102")
         #expect(steps[DemoPullRequestOrder.legacyCoupons]?.review == .after([DemoPullRequestOrder.couponRounding], .sameCode))
         #expect(OrderBoard.step(for: DemoPullRequestOrder.retry, in: order.missions)?.mission.key == DemoPullRequestOrder.focus)
+    }
+
+    // MARK: Stages
+
+    private static let sam = Person(id: "5A1B0000-0000-4000-8000-0000000000AA", name: "Sam Rivera")
+    private static let priya = Person(id: "5A1B0000-0000-4000-8000-0000000000BB", name: "Priya Shah")
+
+    /// A pull request's stage's facts, as the lists read it, with its details' checks when given.
+    private static func stageFacts(
+        _ number: Int, role: PRRole = .author, author: Person = me, reviewers: [Reviewer] = [], checks: [Check]? = nil,
+        merge: String? = "succeeded"
+    ) -> StageFacts? {
+        let pr = PullRequest(
+            key: PRKey("Contoso", number), title: "Pull request \(number)", author: author,
+            createdAt: Date(timeIntervalSince1970: 1_791_000_000), projectId: "7A0C4E1D", projectName: "Storefront",
+            repositoryId: "Repository-Shop", repositoryName: "shop-web", mergeStatus: merge, reviewers: reviewers,
+            sourceCommit: "c\(number)"
+        )
+        let details = checks.map { PRDetails(fetchedAt: Date(timeIntervalSince1970: 1_791_000_100), fingerprint: pr.fingerprint, checks: $0) }
+        return PullRequestOrderFacts.stageFacts(PRRecord(pullRequest: pr, role: role, details: details, me: me.id), item: nil, tasks: [])
+    }
+
+    /// Asked to review someone else's, you're asked until you vote or decline; wanting changes, you wait for theirs.
+    @Test func aReviewerWhoHasntVotedIsAsked() throws {
+        func facts(_ vote: Vote, declined: Bool = false) throws -> StageFacts {
+            try #require(Self.stageFacts(
+                4110, role: .reviewer, author: Self.sam,
+                reviewers: [Reviewer(person: Self.me, vote: vote, hasDeclined: declined), Reviewer(person: Self.priya, vote: .approved)]
+            ))
+        }
+        let asked = try facts(.none)
+        #expect(asked.asksYou == "Sam asked you")
+        // Its votes are your own: Priya's approval isn't among them.
+        #expect(asked.role == .reviewer && asked.othersVoted && asked.votes == "0")
+        #expect(try facts(.approved).asksYou == nil)
+        #expect(try facts(.approved).votes == "10")
+        #expect(try facts(.none, declined: true).asksYou == nil)
+        #expect(try facts(.none, declined: true).votes == "0d")
+        let wanting = try facts(.waitingForAuthor)
+        #expect(wanting.asksYou == nil && wanting.youWantChanges == "Waiting for Sam's changes")
+        #expect(wanting.votes == "-5")
+    }
+
+    /// Yours says what holds it up as What's Left does: what failed, who wants changes, the reviewer it requires before how
+    /// many approvals, or that it's ready; with nobody else asked, it waits for nobody.
+    @Test func yoursSaysWhatHoldsItUp() throws {
+        let build = Check(name: "shop-web CI", kind: .build, state: .passed)
+        let approvals = Check(name: "Minimum number of reviewers", kind: .reviewers, state: .pending, minimumApprovers: 2)
+
+        let failing = try #require(Self.stageFacts(4088, reviewers: [Reviewer(person: Self.priya, vote: .approved)],
+                                                   checks: [Check(name: "shop-web CI", kind: .build, state: .failed)]))
+        #expect(failing.failure == "Build failed" && !failing.isReady)
+
+        let conflicts = try #require(Self.stageFacts(4079, reviewers: [Reviewer(person: Self.sam, vote: .none)], checks: [build], merge: "conflicts"))
+        #expect(conflicts.failure == "Merge conflicts")
+
+        let changes = try #require(Self.stageFacts(4060, reviewers: [Reviewer(person: Self.priya, vote: .waitingForAuthor)], checks: [build]))
+        #expect(changes.changesWanted == "Priya wants changes" && changes.failure == nil)
+
+        let waiting = try #require(Self.stageFacts(
+            4102, reviewers: [Reviewer(person: Self.sam, vote: .none, isRequired: true), Reviewer(person: Self.priya, vote: .approved)],
+            checks: [build, approvals]
+        ))
+        #expect(waiting.waitingFor == "Waiting on Sam" && !waiting.isReady)
+        // Only the votes cast: Sam, asked but not voting yet, isn't among them.
+        #expect(waiting.votes == "10" && waiting.commit == "c4102")
+
+        let ready = try #require(Self.stageFacts(
+            4091, reviewers: [Reviewer(person: Self.priya, vote: .approved), Reviewer(person: Self.sam, vote: .approved)],
+            checks: [build, Check(name: "Minimum number of reviewers", kind: .reviewers, state: .passed, minimumApprovers: 2)]
+        ))
+        #expect(ready.isReady && ready.failure == nil && ready.changesWanted == nil)
+
+        let alone = try #require(Self.stageFacts(4105, checks: [build]))
+        #expect(alone.waitingFor == nil && !alone.othersVoted && alone.votes == "")
+    }
+
+    /// One you watch keeps what you set on it, as what you've seen of it is kept; one only sent to you doesn't.
+    @Test func oneYouWatchIsWatchedRatherThanSentToYou() {
+        let watched = PRKey("contoso", 4113)
+        let records = [4113, 4114].map { number in
+            PRRecord(pullRequest: Self.pullRequest(number, from: "dana/\(number)", author: Self.sam), role: .linked, me: Self.me.id)
+        }
+        let facts = PullRequestOrderFacts.stages(records, items: [], tasks: [], watched: [watched])
+        #expect(facts[watched.linkRef]?.role == .watching)
+        #expect(facts[PRKey("contoso", 4114).linkRef]?.role == .sentToYou)
+    }
+
+    /// A task BriefBar sent to Copilot is a session on its pull request: at work while it gets ready or works, then done or
+    /// stopped, since its status changed, called "Copilot" as its row is.
+    @Test func aTaskSentToCopilotIsASessionOnIt() throws {
+        let started = Date(timeIntervalSince1970: 1_791_000_000)
+        func session(_ phase: RunPhase) throws -> StageSession {
+            let entry = CopilotTaskEntry(
+                id: "3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a", workItem: nil, onPullRequest: nil, action: .fixBuild,
+                options: CopilotModel.standard, startedAt: started, status: RunStatus(phase: phase, since: started.addingTimeInterval(60)),
+                pullRequest: nil, run: nil
+            )
+            return try #require(PullRequestOrderFacts.session(entry))
+        }
+        #expect(try session(.preparing).activity == .working)
+        #expect(try session(.working).activity == .working)
+        #expect(try session(.finished).activity == .finished)
+        #expect(try session(.failed).activity == .stopped)
+        #expect(try session(.stopped).activity == .stopped)
+        let working = try session(.working)
+        #expect(working.name == "Copilot" && working.since == started.addingTimeInterval(60))
+        #expect(working.ref == ItemRef.session("3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a"))
+    }
+
+    /// The demo's pull requests each have the stage the mockup shows for its kind: what a session asks, a review asked or
+    /// sent in Teams, a teammate's review with the reviewer it requires, what failed, what waits for its order, your
+    /// changes, and the one-click checkout's prototype you set for a teammate's review two hours ago, with nobody asked.
+    @Test func theDemosPullRequestsEachHaveTheirStage() async throws {
+        let store = await Self.demoStore()
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+        order.tellDemo(
+            DemoPullRequestOrder.orders(now: store.now), evidence: DemoPullRequestOrder.evidence(now: store.now),
+            focus: DemoPullRequestOrder.focus, changes: DemoPullRequestOrder.changes(now: store.now)
+        )
+
+        facts.publish()
+
+        /// "Your review: Alex asked you".
+        func stage(_ number: Int) -> String? {
+            order.stage(of: .pullRequest(organization: DemoData.organization, number: number)).map { reading in
+                reading.stage.title + ": " + StageText.why(reading, name: { _ in nil })
+            }
+        }
+        #expect(stage(4097) == "Your review: Alex asked you")
+        #expect(stage(4110) == "Your review: Jordan asked you")
+        #expect(stage(4071) == "Your review: Chen asked you")
+        #expect(stage(4113) == "Your review: Dana sent it in Teams")
+        #expect(stage(4102) == "Teammate's review: Waiting on Sam")
+        #expect(stage(4088) == "In progress: Build failed")
+        #expect(stage(4079) == "In progress: Merge conflicts")
+        #expect(stage(4060) == "In progress: Waiting for Sam's changes")
+        #expect(stage(4091) == "Waits for another PR: After !4102")
+        #expect(stage(4085) == "Merged: Merged")
+        #expect(stage(4108) == nil)
+        let prototype = try #require(order.stage(of: DemoPullRequestOrder.oneClickCheckout))
+        #expect(prototype.stage == .teammateReview && prototype.why == .findReviewer)
+        #expect(prototype.mark?.at == store.now.addingTimeInterval(-2 * 3_600))
+    }
+
+    // MARK: From Copilot's review
+
+    /// Before its details are read, or where they couldn't be, yours fails as the list says its merge does.
+    @Test func yoursFailsAsTheListSaysItsMergeDoesBeforeItsDetailsAreRead() throws {
+        #expect(try #require(Self.stageFacts(4079, merge: "conflicts")).failure == "Merge conflicts")
+        #expect(try #require(Self.stageFacts(4080, merge: "failure")).failure == "Merge failed")
+        #expect(try #require(Self.stageFacts(4081, merge: "rejectedByPolicy")).failure == "Merge rejected")
+        #expect(try #require(Self.stageFacts(4082)).failure == nil)
+    }
+
+    /// With no review that holds it up, what's left of yours is its own work: In progress, with What's Left's first item. A
+    /// reviewer policy of another name counts as a review while it's pending.
+    @Test func withNoReviewHoldingItUpWhatsLeftIsYoursToDo() throws {
+        let running = Check(name: "shop-web CI", kind: .build, state: .running)
+        let sam = [Reviewer(person: Self.sam, vote: .none)]
+
+        let notApplying = try #require(Self.stageFacts(
+            4099, reviewers: sam, checks: [running, Check(name: "Minimum number of reviewers", kind: .reviewers, state: .notApplicable)]
+        ))
+        #expect(notApplying.leftAfterReviews == "Build running")
+
+        let passed = try #require(Self.stageFacts(4100, reviewers: sam, checks: [running, Check(name: "Code owners", kind: .reviewers, state: .passed)]))
+        #expect(passed.leftAfterReviews == "Build running")
+
+        let pending = try #require(Self.stageFacts(4101, reviewers: sam, checks: [running, Check(name: "Code owners", kind: .reviewers, state: .pending)]))
+        #expect(pending.leftAfterReviews == nil)
+        #expect(pending.waitingFor == "Code owners")
+
+        // Before its details are read, nothing's said to be left.
+        #expect(try #require(Self.stageFacts(4102, reviewers: sam)).leftAfterReviews == nil)
+    }
+
+    /// Every task sent to Copilot on it counts, not only the newest: an older one still at work keeps it in progress.
+    @Test func everyTaskOnItCountsNotOnlyTheNewest() throws {
+        let started = Date(timeIntervalSince1970: 1_791_000_000)
+        let record = PRRecord(pullRequest: Self.pullRequest(4088, from: "robin/estimates"), role: .author, me: Self.me.id)
+        let tasks = (0..<4).map { index in
+            CopilotTaskEntry(
+                id: "3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0\(index)", workItem: nil,
+                onPullRequest: PullRequestReference(
+                    organization: "Contoso", project: "Storefront", repository: "shop-web", id: 4088, sourceBranch: "robin/estimates"
+                ),
+                action: .fixBuild, options: CopilotModel.standard, startedAt: started.addingTimeInterval(Double(-index * 60)),
+                status: RunStatus(phase: index == 3 ? .working : .finished, since: started), pullRequest: nil, run: nil
+            )
+        }
+        let facts = try #require(PullRequestOrderFacts.stages([record], items: [], tasks: tasks)[record.id.linkRef])
+        #expect(facts.sessions.count == 4)
+        #expect(facts.sessions.contains { $0.activity == .working })
+        let reading = StageRules.reading(facts: facts, sessions: facts.sessions, marks: [], order: .free)
+        #expect(reading?.stage == .inProgress)
+    }
+
+    /// Only one a list shows is listed: one the lists still read but don't show, such as one sent to you in a chat once you
+    /// answered it, isn't.
+    @Test func onlyOneAListShowsIsListed() throws {
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let shown = PRRecord(pullRequest: Self.pullRequest(4093, from: "robin/dark-mode"), role: .author, me: Self.me.id)
+        let read = PRRecord(pullRequest: Self.pullRequest(4113, from: "jordan/checkout", author: Self.sam), role: .linked, me: Self.me.id)
+        let row = try #require(PRClassifier.snapshot(for: shown, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now))
+        #expect(PRClassifier.snapshot(for: read, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now) == nil)
+
+        let facts = PullRequestOrderFacts.stages([shown, read], items: [row], tasks: [])
+        #expect(facts[shown.id.linkRef]?.isListed == true)
+        #expect(facts[read.id.linkRef]?.isListed == false)
+    }
+
+    /// Someone else's that Needs You brings back is yours to review again, whatever your vote: new commits since you
+    /// voted, or someone sending it to you in a chat.
+    @Test func newCommitsOrAChatBringSomeoneElsesBackToYourReview() throws {
+        let order = Self.onOrder()
+        let ref = PRKey("Contoso", 4088).linkRef
+        let voted = Date(timeIntervalSince1970: 1_791_000_200)
+        func record(_ yours: Vote, pushed: Bool = false, sent: Bool = false) -> PRRecord {
+            var record = Self.record(4088, role: .reviewer, author: Self.priya, reviewers: [Reviewer(person: Self.me, vote: yours)])
+            record.details?.activity = [Activity(threadId: 1, kind: .vote, at: voted, actor: Self.me, vote: yours)]
+            if pushed {
+                record.details?.activity.append(Activity(
+                    threadId: 2, kind: .push, at: voted.addingTimeInterval(600), actor: Self.priya, commitCount: 2
+                ))
+            }
+            if sent {
+                record.chatLinks = [ChatLink(
+                    link: PullRequestLink(organization: "Contoso", project: "Storefront", repository: "shop-web", number: 4088),
+                    app: "com.microsoft.teams2", sender: Self.sam.name, sentAt: voted.addingTimeInterval(900), notificationKey: "sam-4088"
+                )]
+            }
+            return record
+        }
+        // Approved, with nothing since: nothing on it is yours.
+        Self.tell(order, [record(.approved)])
+        #expect(order.stage(of: ref) == nil)
+
+        // Priya pushes since: it's yours to review again.
+        Self.tell(order, [record(.approved, pushed: true)])
+        let again = try #require(order.stage(of: ref))
+        #expect(again.stage == .yourReview)
+        #expect(StageText.why(again, name: { _ in nil }) == "New commits by Priya")
+
+        // Having wanted changes, her new commits are yours to review, rather than still waited for.
+        Self.tell(order, [record(.waitingForAuthor, pushed: true)])
+        #expect(order.stage(of: ref)?.stage == .yourReview)
+
+        // Sam sends it to you in Teams after you approved it.
+        Self.tell(order, [record(.approved, sent: true)])
+        let sent = try #require(order.stage(of: ref))
+        #expect(sent.stage == .yourReview)
+        #expect(StageText.why(sent, name: { _ in nil }) == "Sam sent it in Teams")
+    }
+
+    // MARK: From the coordinator's review
+
+    /// A pull request as the lists read it, with its details' checks when given.
+    private static func record(
+        _ number: Int, role: PRRole = .author, author: Person = me, reviewers: [Reviewer] = [], checks: [Check]? = [Check(
+            name: "shop-web CI", kind: .build, state: .passed
+        )]
+    ) -> PRRecord {
+        let pr = PullRequest(
+            key: PRKey("Contoso", number), title: "Pull request \(number)", author: author,
+            createdAt: Date(timeIntervalSince1970: 1_791_000_000), projectId: "7A0C4E1D", projectName: "Storefront",
+            repositoryId: "Repository-Shop", repositoryName: "shop-web", reviewers: reviewers, sourceCommit: "c\(number)"
+        )
+        let details = checks.map { PRDetails(fetchedAt: Date(timeIntervalSince1970: 1_791_000_100), fingerprint: pr.fingerprint, checks: $0) }
+        return PRRecord(pullRequest: pr, role: role, details: details, me: me.id)
+    }
+
+    /// Tells Pull Request Order what the lists read of these, each one listed, as the app does.
+    private static func tell(_ order: PullRequestOrder, _ records: [PRRecord], tasks: [CopilotTaskEntry] = []) {
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let rows = records.compactMap { PRClassifier.snapshot(for: $0, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now) }
+        #expect(rows.count == records.count)
+        order.publish(.azureDevOps, stages: PullRequestOrderFacts.stages(records, items: rows, tasks: tasks), account: "robin@contoso.com")
+    }
+
+    private static func onOrder() -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        return PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_791_100_000) })
+    }
+
+    private static func task(on number: Int, _ action: PullRequestAction, _ phase: RunPhase) -> CopilotTaskEntry {
+        let started = Date(timeIntervalSince1970: 1_791_050_000)
+        return CopilotTaskEntry(
+            id: "4e3d2c1b-0a9f-4e8d-9c7b-6a5f4e3d2c1\(number % 10)", workItem: nil,
+            onPullRequest: PullRequestReference(
+                organization: "Contoso", project: "Storefront", repository: "shop-web", id: number, sourceBranch: "feature"
+            ),
+            action: action, options: CopilotModel.standard, startedAt: started, status: RunStatus(phase: phase, since: started),
+            pullRequest: nil, run: nil
+        )
+    }
+
+    /// Asking someone to review yours after Finished My Review keeps it: only a vote they cast ends it.
+    @Test func askingSomeoneToReviewYoursKeepsFinishedMyReview() throws {
+        let order = Self.onOrder()
+        let ref = PRKey("Contoso", 4093).linkRef
+        let done = [Self.task(on: 4093, .fixBuild, .finished)]
+        Self.tell(order, [Self.record(4093)], tasks: done)
+        #expect(order.stage(of: ref).map { StageText.why($0, name: { _ in nil }) } == "Copilot finished")
+        #expect(order.finishedReview(ref) == .done)
+        #expect(order.stage(of: ref)?.why == .findReviewer)
+
+        // You add Priya, as Add Reviewers in Azure DevOps lets you: she hasn't voted.
+        Self.tell(order, [Self.record(4093, reviewers: [Reviewer(person: Self.priya, vote: .none, isRequired: true)])], tasks: done)
+        let asked = try #require(order.stage(of: ref))
+        #expect(asked.stage == .teammateReview && asked.isSetByYou)
+        #expect(StageText.why(asked, name: { _ in nil }) == "Waiting on Priya")
+
+        // Her vote ends it.
+        Self.tell(order, [Self.record(4093, reviewers: [Reviewer(person: Self.priya, vote: .approved, isRequired: true)])], tasks: done)
+        #expect(order.stage(of: ref)?.isSetByYou == false)
+    }
+
+    /// On someone else's, your own vote ends Finished My Review, and co-reviewers' votes don't.
+    @Test func yourOwnVoteEndsFinishedMyReviewOnSomeoneElses() throws {
+        let order = Self.onOrder()
+        let ref = PRKey("Contoso", 4088).linkRef
+        func reviewers(_ yours: Vote, sam: Vote) -> [Reviewer] {
+            [Reviewer(person: Self.me, vote: yours), Reviewer(person: Self.sam, vote: sam)]
+        }
+        Self.tell(order, [Self.record(4088, role: .reviewer, author: Self.priya, reviewers: reviewers(.none, sam: .none))])
+        #expect(order.stage(of: ref)?.stage == .yourReview)
+        #expect(order.finishedReview(ref) == .done)
+        #expect(order.stage(of: ref)?.isOnBoard == false)
+
+        // Sam votes: it's still off your board.
+        Self.tell(order, [Self.record(4088, role: .reviewer, author: Self.priya, reviewers: reviewers(.none, sam: .approved))])
+        #expect(order.stage(of: ref)?.isOnBoard == false)
+        #expect(order.stage(of: ref)?.isSetByYou == true)
+
+        // You vote Wait for Author: it waits for Priya's changes.
+        Self.tell(order, [Self.record(4088, role: .reviewer, author: Self.priya, reviewers: reviewers(.waitingForAuthor, sam: .approved))])
+        let waiting = try #require(order.stage(of: ref))
+        #expect(waiting.stage == .inProgress && !waiting.isSetByYou)
+        #expect(StageText.why(waiting, name: { _ in nil }) == "Waiting for Priya's changes")
+
+        // Approving instead leaves nothing for you on it.
+        let other = PRKey("Contoso", 4089).linkRef
+        Self.tell(order, [Self.record(4089, role: .reviewer, author: Self.priya, reviewers: reviewers(.none, sam: .none))])
+        order.finishedReview(other)
+        Self.tell(order, [Self.record(4089, role: .reviewer, author: Self.priya, reviewers: reviewers(.approved, sam: .none))])
+        #expect(order.stage(of: other) == nil)
+    }
+
+    /// Pre-review is a review: it writes nothing.
+    @Test func aPreReviewTaskIsAReview() throws {
+        #expect(try #require(PullRequestOrderFacts.session(Self.task(on: 4088, .review, .working))).isReview)
+        #expect(try #require(PullRequestOrderFacts.session(Self.task(on: 4088, .fixBuild, .working))).isReview == false)
+        // While it runs, someone else's stays yours to review.
+        let order = Self.onOrder()
+        let record = Self.record(4088, role: .reviewer, author: Self.priya, reviewers: [Reviewer(person: Self.me, vote: .none)])
+        Self.tell(order, [record], tasks: [Self.task(on: 4088, .review, .working)])
+        let reading = try #require(order.stage(of: record.id.linkRef))
+        #expect(reading.stage == .yourReview)
+        #expect(StageText.why(reading, name: { _ in nil }) == "Copilot is pre-reviewing it")
+    }
+
+    /// A Board card says what failed once: where its stage's words say it after their reason, "Copilot is writing it ·
+    /// build failed", it has no ✕ of its own, and VoiceOver doesn't hear it twice.
+    @Test func aBoardCardSaysAFailureOnce() throws {
+        let order = Self.onOrder()
+        let failing = Self.record(4088, checks: [Check(name: "shop-web CI", kind: .build, state: .failed)])
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let item = try #require(PRClassifier.snapshot(for: failing, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now))
+        #expect(item.group == .failing)
+        Self.tell(order, [failing], tasks: [Self.task(on: 4088, .fixBuild, .working)])
+        let reading = try #require(order.stage(of: failing.id.linkRef))
+        #expect(StageText.why(reading, name: { _ in nil }) == "Copilot is writing it · build failed")
+        #expect(PullRequestBoardCard.flags(item, reading: reading).isEmpty)
+        #expect(PullRequestBoardCard.details(item, reading: reading, order: nil, ordering: order) == ["shop-web"])
+    }
+
+    // MARK: The Board
+
+    /// Someone else's says whose it is, by first name, for why it can't go to a teammate's review; yours names nobody.
+    @Test func someoneElsesSaysWhoseItIs() throws {
+        #expect(try #require(Self.stageFacts(4110, role: .reviewer, author: Self.sam)).author == "Sam")
+        #expect(try #require(Self.stageFacts(4088)).author == nil)
+        let sent = PRRecord(pullRequest: Self.pullRequest(4113, from: "dana/4113", author: Self.priya), role: .linked, me: Self.me.id)
+        #expect(PullRequestOrderFacts.stages([sent], items: [], tasks: [])[sent.id.linkRef]?.author == "Priya")
+    }
+
+    /// The Board counts only the cards it draws, those the list shows: one that merged that the lists read but don't show
+    /// isn't counted in Merged.
+    @Test func theBoardCountsOnlyWhatTheListShows() throws {
+        let (order, _) = try Self.order()
+        let records = [(4085, PullRequest.Status.completed), (4086, .completed), (4093, .active)].map { number, status in
+            PRRecord(pullRequest: Self.pullRequest(number, from: "robin/\(number)", status: status), role: .author, me: Self.me.id)
+        }
+        let now = Date(timeIntervalSince1970: 1_791_010_000)
+        let rows = try records.filter { $0.pullRequest.key.number != 4086 }.map { record in
+            try #require(PRClassifier.snapshot(for: record, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now))
+        }
+        order.publish(
+            .azureDevOps, pullRequests: records.compactMap { PullRequestOrderFacts.pullRequest($0.pullRequest, attention: nil) },
+            stages: PullRequestOrderFacts.stages(records, items: rows, tasks: []), account: "robin@contoso.com"
+        )
+
+        let board = order.board(kinds: [.pullRequest])
+        let listed = Set(rows.map(\.key.linkRef))
+        #expect(board.counts[.merged] == 1)
+        #expect(board.refs == listed)
+        #expect(board.counts.values.reduce(0, +) == board.refs.count)
+        let cards = board.lanes.flatMap { lane in lane.columns.values.flatMap { $0 } }
+        #expect(Set(cards.map(\.ref)) == listed)
+        #expect(Set(cards.filter { $0.stage == .merged }.map(\.ref)) == [.pullRequest(organization: "contoso", number: 4085)])
+    }
+
+    /// In the demo too, every card the Board counts is one its page draws.
+    @Test func theDemosBoardCountsWhatItDraws() async throws {
+        let store = await Self.demoStore()
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+        order.tellDemo(
+            DemoPullRequestOrder.orders(now: store.now), evidence: DemoPullRequestOrder.evidence(now: store.now),
+            focus: DemoPullRequestOrder.focus
+        )
+        facts.publish()
+
+        let board = order.board(kinds: [.pullRequest])
+        #expect(board.counts[.merged] ?? 0 > 0)
+        #expect(board.refs.isSubset(of: Set(store.items.map(\.key.linkRef))))
+        #expect(board.counts.values.reduce(0, +) == board.refs.count)
+    }
+
+    /// On a Board card in Can merge or Waits, the stage's words say where its order puts it: it has no capsule, and VoiceOver
+    /// doesn't hear its order again. One with no order known still shows the quiet ✎ of a change of yours, and VoiceOver
+    /// hears what it says.
+    @Test func aBoardCardKeepsWhatAChangeOfYoursSaysWhereItHasNoOrder() throws {
+        let order = Self.onOrder()
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let item = try #require(
+            PRClassifier.snapshot(for: Self.record(4130), seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now)
+        )
+        let ref = item.key.linkRef
+        let reading = StageReading(stage: .canMerge, why: .ready(autoComplete: false))
+        let moved = OrderRowContext(
+            step: OrderStep(ref: ref, status: .open, standing: .unordered, notes: [.moved(from: nil, now)]), isReady: true
+        )
+        let next = OrderRowContext(step: OrderStep(ref: ref, status: .open, standing: .next), isReady: true)
+        let said = try #require(moved.sentence)
+        #expect(PullRequestBoardCard.details(item, reading: reading, order: moved, ordering: order) == [said, "shop-web"])
+        #expect(PullRequestBoardCard.details(item, reading: reading, order: next, ordering: order) == ["shop-web"])
+
+        let copilot = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo, notifier: nil)
+        func height(_ context: OrderRowContext?) -> CGFloat {
+            let card = PullRequestBoardCard(
+                item: item, card: BoardCard(ref: ref, reading: reading), order: context, ordering: order, now: now
+            )
+            return NSHostingView(rootView: card.frame(width: 220).environmentObject(copilot)).fittingSize.height
+        }
+        #expect(height(moved) > height(nil) + 8)
+        #expect(abs(height(next) - height(nil)) < 0.5)
+    }
+
+    /// The page hands the Board its Set as Next to Merge, which a drop from Waits onto Can merge and ⌘← do: it sets it as
+    /// next in that mission, as Mission ▸ does, and it can merge. VoiceOver hears its Undo is in its mission's lane, or, with
+    /// a lane for every card, which shows no mission's, at the top, as the card's Mission menu says too.
+    @Test func theBoardSetsItAsNextInItsMissionAndSaysWhereUndoIs() throws {
+        let (order, _) = try Self.order()
+        let first = ItemRef.pullRequest(organization: "contoso", number: 4085)
+        let later = ItemRef.pullRequest(organization: "contoso", number: 4093)
+        order.publish(
+            .azureDevOps,
+            pullRequests: [first, later].map { ref in
+                OrderPullRequest(
+                    ref: ref, repository: "contoso/7a0c4e1d/repository-shop", sourceBranch: "robin/\(ref.id)", targetBranch: "main",
+                    author: Self.me.id, createdAt: Date(timeIntervalSince1970: 1_791_000_000)
+                )
+            },
+            stages: [first: StageFacts(role: .author), later: StageFacts(role: .author, isReady: true)],
+            account: "robin@contoso.com"
+        )
+        let mission = try #require(order.missions.first { $0.contains(later) }?.key)
+        #expect(order.stage(of: later)?.stage == .waits)
+        PullRequestsByMission.setAsNext(order)(later, mission, .byMission)
+        #expect(order.lastOrderChange?.mission == mission && order.lastOrderChange?.said == "You set !4093 as next to merge")
+        #expect(order.stage(of: later)?.stage == .canMerge)
+
+        #expect(MissionMenuContext.UndoPlace.onBoard(.missions) == .byMission)
+        #expect(MissionMenuContext.UndoPlace.onBoard(BoardLanes.none) == .top)
+        let edit = OrderEdit.setNext(later, in: mission, true)
+        #expect(MissionMenuContext(order: order, mission: mission, undo: .byMission).undoPlace(of: edit, in: mission) == "in its mission")
+        #expect(MissionMenuContext(order: order, mission: mission, undo: .top).undoPlace(of: edit, in: mission) == "at the top of the list")
+    }
+
+    /// A Board card in Can merge says, to VoiceOver too, that you set it as next to merge, and in Waits that an order went
+    /// against your change, as its row does: the stage's words say neither. One whose order alone places it says nothing
+    /// more there.
+    @Test func aBoardCardKeepsWhatAChangeOfYoursSaysOnCanMergeAndWaits() throws {
+        let order = Self.onOrder()
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let item = try #require(
+            PRClassifier.snapshot(for: Self.record(4130), seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now)
+        )
+        let ref = item.key.linkRef
+        let other = ItemRef.pullRequest(organization: "contoso", number: 4131)
+        let canMerge = StageReading(stage: .canMerge, why: .ready(autoComplete: false))
+        let yours = OrderRowContext(
+            step: OrderStep(ref: ref, status: .open, standing: .next, notes: [.yourNext(now)], isYours: true, isChangedByYou: true),
+            isReady: true
+        )
+        let set = try #require(yours.sentence)
+        #expect(PullRequestBoardCard.details(item, reading: canMerge, order: yours, ordering: order) == [set, "shop-web"])
+
+        let waits = StageReading(stage: .waits, why: .waitsFor([other], words: "After !4131"))
+        let override = OrderOverride(by: nil, at: now, now: .after([other]), yours: .next)
+        let overridden = OrderRowContext(
+            step: OrderStep(ref: ref, status: .open, standing: .waiting(open: [other], unknown: []), notes: [.orderChangedIt(override)]),
+            isReady: true
+        )
+        let against = try #require(overridden.sentence)
+        #expect(against.contains("after you'd set it as next"))
+        #expect(PullRequestBoardCard.details(item, reading: waits, order: overridden, ordering: order) == [against, "shop-web"])
+        let theirs = OrderRowContext(step: OrderStep(ref: ref, status: .open, standing: .waiting(open: [other], unknown: [])), isReady: true)
+        #expect(PullRequestBoardCard.details(item, reading: waits, order: theirs, ordering: order) == ["shop-web"])
     }
 
     /// Your made-up changes in the demo hold over its orders: the order status rename goes first, the retry waits for it, and

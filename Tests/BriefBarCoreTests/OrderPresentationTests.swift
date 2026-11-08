@@ -39,7 +39,10 @@ import Testing
 
         defaults.set("graph", forKey: OrderView.defaultsKey)
         #expect(OrderView.load(from: defaults) == .list)
-        #expect(OrderView.allCases.map(\.title) == ["List", "Map"])
+        #expect(OrderView.allCases.map(\.title) == ["List", "Map", "Board"])
+
+        OrderView.board.save(to: defaults)
+        #expect(OrderView.load(from: defaults) == .board)
     }
 
     // MARK: A row's capsule

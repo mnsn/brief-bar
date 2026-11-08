@@ -33,6 +33,15 @@ package struct OrderRowContext {
         OrderText.sentence(of: step, isReady: isReady, names: names)
     }
 
+    /// Whether this stage's words already say where its order puts it, so that its capsule would only repeat them: Can merge
+    /// and Waits, for one its order places. Never where a change of yours speaks of it, such as that you set it as next, with
+    /// ✎, or that an order went against yours, in its tooltip and to VoiceOver, which no stage says; nor for one with no
+    /// order known, whose quiet ✎ says what a change of yours says of it.
+    package func isSaid(by stage: PullRequestStage) -> Bool {
+        guard stage == .canMerge || stage == .waits else { return false }
+        return step.standing != .unordered && !step.notes.contains(where: \.isAboutYourChanges)
+    }
+
     /// The row of a pull request in the missions, if one has it in its order or is stacked with it.
     /// - Parameter open: shows the mission in By Mission; nil where it shows already.
     package static func of(
@@ -107,20 +116,24 @@ package struct OrderCapsule: View {
 // MARK: - The graph's marks
 
 /// A pull request's node in the graph, for where it stands: filled for next to merge, outlined while it waits, dotted for
-/// any time, ✓ once merged, an orange ! when its order needs checking.
+/// any time, ✓ once merged, an orange ! when its order needs checking. With a stage, it's in the stage's color, and its
+/// shape still says where it stands.
 package struct OrderNodeMark: View {
     let marker: OrderMarker
     /// Its diameter, before the text size scales it.
     var size: CGFloat = 9
     /// Dimmed while hovering lights up others.
     var isDimmed = false
+    /// Its stage, whose color it takes; nil for one with none.
+    var stage: PullRequestStage?
 
     @Environment(\.textScale) private var textScale
 
-    package init(_ marker: OrderMarker, size: CGFloat = 9, isDimmed: Bool = false) {
+    package init(_ marker: OrderMarker, size: CGFloat = 9, isDimmed: Bool = false, stage: PullRequestStage? = nil) {
         self.marker = marker
         self.size = size
         self.isDimmed = isDimmed
+        self.stage = stage
     }
 
     package var body: some View {
@@ -135,13 +148,13 @@ package struct OrderNodeMark: View {
     private func mark(_ diameter: CGFloat) -> some View {
         switch marker {
         case .next:
-            Circle().fill(Color.accentColor)
+            Circle().fill(stage?.color ?? Color.accentColor)
         case .waiting:
-            Circle().strokeBorder(Color.secondary, lineWidth: max(1.2, diameter / 7))
+            Circle().strokeBorder(stage?.color ?? Color.secondary, lineWidth: max(1.2, diameter / 7))
         case .anyTime:
-            Circle().strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: max(1.2, diameter / 7), dash: [1.6, 1.6]))
+            Circle().strokeBorder(stage?.color ?? Color.secondary, style: StrokeStyle(lineWidth: max(1.2, diameter / 7), dash: [1.6, 1.6]))
         case .merged:
-            symbol("checkmark", on: .green)
+            symbol("checkmark", on: stage?.color ?? .green)
         case .closed:
             symbol("xmark", on: .gray)
         case .check:
@@ -188,7 +201,7 @@ package struct MissionHeader: View {
             titleLine
             Spacer(minLength: 8)
             if !mission.isFamily {
-                OrderProgressBar(mission: mission)
+                OrderProgressBar(mission: mission, stage: order.drawnStage(of:))
                 Text(OrderText.progress(mission))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -298,11 +311,19 @@ extension OrderMission.Kind {
     }
 }
 
-/// A mission's progress: one segment for each of its pull requests, green once merged, grey once closed.
+/// A mission's progress: one segment for each of its pull requests, in its order, merged ones first, green once merged,
+/// grey once closed; where they have stages, each in its stage's color, and its tooltip counts them.
 package struct OrderProgressBar: View {
     let mission: OrderMission
+    /// The stage a pull request's segment takes the color of; nil for one with none.
+    let stage: (OrderStep) -> PullRequestStage?
 
     @Environment(\.textScale) private var textScale
+
+    package init(mission: OrderMission, stage: @escaping (OrderStep) -> PullRequestStage? = { _ in nil }) {
+        self.mission = mission
+        self.stage = stage
+    }
 
     /// At most this wide, at 100% text, whatever its count: past 11 pull requests its parts narrow to fit, and past about
     /// 40, it's one bar, filled as far as they merged.
@@ -317,22 +338,25 @@ package struct OrderProgressBar: View {
     }
 
     package var body: some View {
-        let steps = mission.steps
+        let steps = Self.inOrder(mission.steps)
+        let stages = steps.map(stage)
         let widest = Self.widest * textScale
+        let counts = StageText.counts(stages.compactMap { $0 })
         Group {
             if let parts = Self.parts(steps.count) {
                 HStack(spacing: parts.gap * textScale) {
-                    ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+                    ForEach(Array(zip(steps, stages).enumerated()), id: \.offset) { _, segment in
                         Capsule()
-                            .fill(color(step))
+                            .fill(color(segment.0, stage: segment.1))
                             .frame(width: parts.width * textScale, height: 4 * textScale)
                     }
                 }
             } else {
                 let merged = CGFloat(steps.filter { $0.status == .merged }.count) / CGFloat(steps.count)
                 let closed = CGFloat(steps.filter { $0.status == .closed }.count) / CGFloat(steps.count)
+                let mergedColor = stages.contains(.merged) ? PullRequestStage.merged.color : Color.green
                 HStack(spacing: 0) {
-                    Rectangle().fill(Color.green).frame(width: widest * merged)
+                    Rectangle().fill(mergedColor).frame(width: widest * merged)
                     Rectangle().fill(Color.gray.opacity(0.6)).frame(width: widest * closed)
                     Rectangle().fill(Color.secondary.opacity(0.25))
                 }
@@ -340,10 +364,21 @@ package struct OrderProgressBar: View {
                 .clipShape(Capsule())
             }
         }
-        .accessibilityHidden(true)
+        .help(counts ?? "")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Stages")
+        .accessibilityValue(counts ?? "")
+        .accessibilityHidden(counts == nil)
     }
 
-    private func color(_ step: OrderStep) -> Color {
+    /// Its pull requests as its segments show them: those that merged first, so it fills from the left, then the rest in
+    /// their order.
+    package static func inOrder(_ steps: [OrderStep]) -> [OrderStep] {
+        steps.filter { $0.status == .merged } + steps.filter { $0.status != .merged }
+    }
+
+    private func color(_ step: OrderStep, stage: PullRequestStage?) -> Color {
+        if let stage { return stage.color }
         switch step.status {
         case .merged: return .green
         case .closed: return .gray.opacity(0.6)
@@ -388,25 +423,169 @@ struct OrderSessionsMenu: View {
     }
 }
 
-// MARK: - List and Map
+// MARK: - A mission's next steps
 
-/// List | Map, in the page's header while it lists By Mission.
+/// A mission's next steps that are yours, under its header in List, on the Map and on the Board: "Next for you:" and a chip
+/// for each, in its stage's color, which shows that pull request: "Review !4093", "Find a reviewer: !4079". With none, what
+/// it waits for, quietly: "Waiting for Priya (!4091)".
+package struct MissionNextStepsLine: View {
+    let lane: BoardLane
+    @ObservedObject var order: PullRequestOrder
+    let select: (ItemRef) -> Void
+
+    @Environment(\.textScale) private var textScale
+
+    package init(lane: BoardLane, order: PullRequestOrder, select: @escaping (ItemRef) -> Void) {
+        self.lane = lane
+        self.order = order
+        self.select = select
+    }
+
+    package var body: some View {
+        let steps = lane.nextSteps
+        if !steps.isEmpty {
+            FlowLayout(spacing: 6, lineSpacing: 4) {
+                Text("Next for you:")
+                    .font(size: 11.5, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 2)
+                ForEach(steps) { step in
+                    chip(step)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Next for you")
+        } else if let waiting = lane.waiting(name: order.name(of:)) {
+            HStack(spacing: 4) {
+                Image(systemName: "hourglass")
+                Text(waiting)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .accessibilityLabel(Self.spokenWaiting(lane, order: order) ?? waiting)
+            }
+            .font(size: 11.5)
+            .foregroundStyle(.secondary)
+            .help(waiting)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func chip(_ step: MissionNextStep) -> some View {
+        let reading = lane.cards.first { $0.ref == step.ref }?.reading
+        let why = reading.map { StageText.why($0, name: order.name(of:)) }
+        return Button {
+            select(step.ref)
+        } label: {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(step.stage.color)
+                    .frame(width: 7 * textScale, height: 7 * textScale)
+                Text(step.title)
+                    .lineLimit(1)
+            }
+            .font(size: 11.5, weight: .medium)
+            .foregroundStyle(step.stage.textColor)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(step.stage.color.opacity(0.14)))
+            .overlay(Capsule().strokeBorder(step.stage.color.opacity(0.5), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help([[step.title, order.name(of: step.ref)].compactMap { $0 }.joined(separator: " "), why, "Click to see its details"]
+            .compactMap { $0 }.joined(separator: "\n"))
+        .accessibilityLabel(step.title)
+        .accessibilityValue(Self.spoken(step, in: lane, order: order))
+        .accessibilityHint("Shows its details")
+    }
+
+    /// What VoiceOver hears after a chip's title: its pull request's name, and why, a second reason after a pause,
+    /// "Cart asks you, build failed", where its tooltip says "‘Cart’ asks you · build failed".
+    package static func spoken(_ step: MissionNextStep, in lane: BoardLane, order: PullRequestOrder) -> String {
+        let reading = lane.cards.first { $0.ref == step.ref }?.reading
+        let why = reading.map { StageText.why($0, name: order.name(of:), then: ", ") }
+        return SpokenText.unquoted([order.name(of: step.ref), why].compactMap { $0 }.joined(separator: ", "))
+    }
+
+    /// What VoiceOver hears of what a mission waits for, with a second reason after a pause: "Cart is writing it, build
+    /// failed (!4093)".
+    package static func spokenWaiting(_ lane: BoardLane, order: PullRequestOrder) -> String? {
+        lane.waiting(name: order.name(of:), then: ", ").map(SpokenText.unquoted)
+    }
+}
+
+// MARK: - List, Map and the Board
+
+/// List | Map | Board, in the page's header while it lists By Mission: the views the page offers, the Board on Azure DevOps'
+/// page only. A page that shows List where you chose a view it doesn't offer saves nothing until you pick one there.
 package struct OrderViewPicker: View {
     @ObservedObject var order: PullRequestOrder
+    /// The views the page offers.
+    let views: [OrderView]
     /// The view a picture shows; nil for the one you chose.
     let shown: OrderView?
 
-    package init(order: PullRequestOrder, shown: OrderView? = nil) {
+    package init(order: PullRequestOrder, views: [OrderView] = [.list, .map], shown: OrderView? = nil) {
+        self.order = order
+        self.views = views
+        self.shown = shown
+    }
+
+    package var body: some View {
+        let current = shown ?? order.view(offering: views)
+        SegmentedPicker("By Mission View", selection: Binding(get: { current }, set: { view in
+            Self.choose(view, showing: current, order: order)
+        }), segments: views.map { view in
+            SegmentedPicker<OrderView>.Segment(view, title: view.title, systemImage: Self.symbol(view))
+        })
+        .fixedSize()
+        .help(views.contains(.board)
+            ? "List: each mission's pull requests in their order, with the graph beside them. Map: each mission in merge waves. Board: a column for each stage, a lane for each mission"
+            : "List: each mission's pull requests in their order, with the graph beside them. Map: each mission in merge waves")
+    }
+
+    /// A view you pick, while the page shows `current`: what the page shows already saves nothing, so picking GitHub's List,
+    /// which it shows where you chose the Board, leaves the Board for Azure DevOps' page.
+    package static func choose(_ view: OrderView, showing current: OrderView, order: PullRequestOrder) {
+        if view != current { order.setView(view) }
+    }
+
+    static func symbol(_ view: OrderView) -> String {
+        switch view {
+        case .list: "list.bullet"
+        case .map: "map"
+        case .board: "rectangle.split.3x1"
+        }
+    }
+}
+
+/// Lanes: Missions | None, in the page's header while it shows the Board: a lane for each mission, or every card in one.
+package struct BoardLanesPicker: View {
+    @ObservedObject var order: PullRequestOrder
+    /// The lanes a picture shows; nil for those you chose.
+    let shown: BoardLanes?
+
+    @Environment(\.showsSymbolsAlone) private var showsSymbolsAlone
+
+    package init(order: PullRequestOrder, shown: BoardLanes? = nil) {
         self.order = order
         self.shown = shown
     }
 
     package var body: some View {
-        SegmentedPicker("By Mission View", selection: Binding(get: { shown ?? order.view }, set: { order.setView($0) }), segments: [
-            .init(.list, title: OrderView.list.title, systemImage: "list.bullet"),
-            .init(.map, title: OrderView.map.title, systemImage: "map"),
-        ])
-        .fixedSize()
-        .help("List: each mission's pull requests in their order, with the graph beside them. Map: each mission in merge waves")
+        HStack(spacing: 6) {
+            if !showsSymbolsAlone {
+                Text("Lanes")
+                    .font(size: 12)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            SegmentedPicker("Board Lanes", selection: Binding(get: { shown ?? order.lanes }, set: { order.setLanes($0) }), segments: [
+                .init(.missions, title: BoardLanes.missions.title, systemImage: "rectangle.stack"),
+                .init(.none, title: BoardLanes.none.title, systemImage: "rectangle"),
+            ])
+            .fixedSize()
+        }
+        .help("Lanes: one for each mission, or None, every card in one")
     }
 }

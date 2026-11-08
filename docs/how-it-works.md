@@ -1318,39 +1318,159 @@ its age. Idle's, folded below it, are in the same order; Done's, closed already,
 Counts, the brief, notifications, widgets and lists by state stay by status.
 
 **Changing a mission yourself.** With Pull Request Order on, an Azure DevOps pull request's **Mission** menu, in its
-row's menu, its details and a Map node's right-click, changes where it goes By Mission (`OrderChanges`): **Set as Next
-to Merge**, one for each mission, so that what waited for nothing there waits for it; **Merge After ▸**, to check or
-uncheck what it merges after; and **Move to Mission ▸**, into another mission, named by what lasts (an order by its ID,
-a chain of branches by one of its pull requests, the pull requests opened under a session by that session), a **New
-Mission** of your own, or **Not in a Mission**. A stacked branch is a fact: it counts wherever it leads, in a session's
-order and from one mission to another, where the Map puts the pull request a wave on and says where the other is; only
-retargeting changes it, and Set as Next waits for the one it's stacked on to merge and for the retarget. Then come your
-changes, then sessions' orders: an order's line that would go round with them is set aside and says so, also when it
-goes round through another mission, such as with what you set as next there. Two orders that put the same pull requests
-the other way round each keep their own, and both say so, for you to check the order. Your changes are a layer, kept by
-pull request and never written into an order, so sessions go on telling theirs. Each keeps the place the orders gave the
-pull request when you made it, and a session's later change wins only where it goes against yours: a revision told after
-yours that names it in another mission than the one you moved it to, takes it out of the order you moved it to or
-changed it in, or puts it after what you took away, or after anything where you set it as next, also in a stack, a chain
-or a session's pull requests that it takes it out of, shows instead, says so, and **Put Yours Back** makes yours hold
-again. One that moves it toward yours, such as an order taking out what you moved out of it, naming what you moved into
-its mission, or naming as you had them what you changed among a stack's, a chain's or a session's pull requests, where
-what you set there goes over to that order (your next only while no other of yours is next there, and back to where you
-set it once the order no longer names it), or one that changes what you didn't, becomes what yours replaced, and yours
-holds; so does telling the same order again, or as it was when you made yours, whatever it said between, and a revision
-told before yours that BriefBar saw only after. An order forgotten since is no change. One limit: an order that takes in
-only the one you set as next among a stack's, a chain's or a session's pull requests takes your next with it, and the
-others wait for it only where they're stacked on it, with no note, as BriefBar doesn't keep which were with it when you
-set it. A row with no order known shows a quiet ✎ where your change says something of it, such as that you moved it
-there, or that the order you set it as next in is gone; and one beside an order that doesn't name it, stacked with its
-pull requests, shows your change as any row does: what you put it after, with ✎, that the mission you set it as next in
-is gone, or that an order went against it, with Put Yours Back. **Undo** takes back your last change, in memory only,
-and shows in the card you made it in, or at the top of the list once that card is gone; a change BriefBar refuses says
-why beside it. BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never titles,
-those about a pull request sent to you in a chat in memory only; at most 500, refusing more rather than dropping one;
-each until two weeks after BriefBar saw its pull requests merge or close. Turning a source off forgets those about its
-pull requests, turning Pull Request Order off keeps them, unused, and **Forget All Orders…** forgets them. Nothing goes
-to Azure DevOps.
+row's menu, its details, a Map node's right-click and a Board card's menu, changes where it goes By Mission
+(`OrderChanges`): **Set as Next to Merge**, one for each mission, so that what waited for nothing there waits for it;
+**Merge After ▸**, to check or uncheck what it merges after; and **Move to Mission ▸**, into another mission, named by
+what lasts (an order by its ID, a chain of branches by one of its pull requests, the pull requests opened under a
+session by that session), a **New Mission** of your own, or **Not in a Mission**. A stacked branch is a fact: it
+counts wherever it leads, in a session's order and from one mission to another, where the Map puts the pull request a
+wave on and says where the other is; only retargeting changes it, and Set as Next waits for the one it's stacked on to
+merge and for the retarget. Then come your changes, then sessions' orders: an order's line that would go round with
+them is set aside and says so, also when it goes round through another mission, such as with what you set as next
+there. Two orders that put the same pull requests the other way round each keep their own, and both say so, for you to
+check the order. Your changes are a layer, kept by pull request and never written into an order, so sessions go on
+telling theirs. Each keeps the place the orders gave the pull request when you made it, and a session's later change
+wins only where it goes against yours: a revision told after yours that names it in another mission than the one you
+moved it to, takes it out of the order you moved it to or changed it in, or puts it after what you took away, or after
+anything where you set it as next, also in a stack, a chain or a session's pull requests that it takes it out of,
+shows instead, says so, and **Put Yours Back** makes yours hold again. One that moves it toward yours, such as an
+order taking out what you moved out of it, naming what you moved into its mission, or naming as you had them what you
+changed among a stack's, a chain's or a session's pull requests, where what you set there goes over to that order
+(your next only while no other of yours is next there, and back to where you set it once the order no longer names
+it), or one that changes what you didn't, becomes what yours replaced, and yours holds; so does telling the same order
+again, or as it was when you made yours, whatever it said between, and a revision told before yours that BriefBar saw
+only after. An order forgotten since is no change. One limit: an order that takes in only the one you set as next
+among a stack's, a chain's or a session's pull requests takes your next with it, and the others wait for it only where
+they're stacked on it, with no note, as BriefBar doesn't keep which were with it when you set it. A row with no order
+known shows a quiet ✎ where your change says something of it, such as that you moved it there, or that the order you
+set it as next in is gone; and one beside an order that doesn't name it, stacked with its pull requests, shows your
+change as any row does: what you put it after, with ✎, that the mission you set it as next in is gone, or that an
+order went against it, with Put Yours Back. **Undo** takes back your last change, to a mission or to a stage, one at a
+time, in memory only; a change to a mission shows its Undo in the card you made it in, or in its mission's lane on the
+Board, or at the top of the list once that card is gone, or with the Board's Lanes: None. A change BriefBar refuses
+says why beside it. BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never
+titles, those about a pull request sent to you in a chat in memory only; at most 500, refusing more rather than
+dropping one; each until two weeks after BriefBar saw its pull requests merge or close. Turning a source off forgets
+those about its pull requests, turning Pull Request Order off keeps them, unused, and **Forget All Orders…** forgets
+them. Nothing goes to Azure DevOps.
+
+### A pull request's stage
+
+With Pull Request Order on, each Azure DevOps pull request also has a stage (`PullRequestStage`), where it is in its
+flow, which a row's colored label shows, in the window, the menu bar's list and the Overview, and its details as a
+track. `StageRules` works it out from what the lists already read (`PullRequestOrderFacts.stageFacts`), the Copilot
+sessions on it (the tasks BriefBar sent to Copilot, and the Copilot app's sessions that opened it or say they work on
+it; a task you went on with in the Copilot app does what the app says since, unless the app can't tell how it ended),
+what you set, and its order. The first rule that applies decides:
+
+| When | Stage | Says |
+|---|---|---|
+| BriefBar saw it merge | Merged | **Merged** |
+| Yours: a session writes it, or waits for you, since what you set | In progress | **‘Cart’ is writing it**, **‘Cart’ asks you** |
+| Someone else's: Copilot's pre-review runs, since what you set | Your review | **Copilot is pre-reviewing it** |
+| You set one, and it still holds | What you set | **Find a reviewer**, **Waiting on Sam**, **You set it 2h ago** |
+| Someone else's: you're asked, someone sent it to you, or new commits came since your vote | Your review | **Sam asked you**, **Priya sent it in Teams**, **New commits by Sam** |
+| Someone else's: you want changes | In progress | **Waiting for Sam's changes** |
+| Yours: a required item failed, or someone wants changes | In progress | **Build failed**, **Merge conflicts**, **Sam wants changes** |
+| Yours: a session that worked on it finished, and nobody else voted | Your review | **‘Cart’ finished** |
+| Yours: a draft | In progress | **Draft** |
+| Yours: ready to complete, and its order lets it | Can merge | **Complete it** |
+| Yours: ready to complete, after one BriefBar hasn't seen merge | Waits for another PR | **After !4102** |
+| Yours: ready to complete, still targeting the branch of one that merged, or its order needs checking, or another order puts what it waits for after it | Waits for another PR | **!4101 merged: retarget it to main**, **Check the order**, **Another order puts !4102 after it: check the order** |
+| Yours: reviewed, with something else left | In progress | What's Left's first item |
+| Yours: otherwise | Teammate's review | Who it waits for, as What's Left says it, or **Find a reviewer** |
+
+On yours, where a session or a stage you set decides its stage while a required item failed, its words say the failure
+too, after their reason, **‘Cart’ asks you · build failed**, wherever they show: its row, its tooltip and its details,
+Up Next, and its mission's next step or what the mission waits for; VoiceOver hears it after a pause. Someone else's
+pull request that asks nothing of you has no stage. Beside Can merge and Waits, whose words say where its order puts
+it, a row or a card shows its order capsule only where a change of yours speaks of it (`OrderRowContext.isSaid(by:)`):
+✎ **Next to merge** for one you set as next, or, for one an order went against yours, its capsule, which says so in
+its tooltip and to VoiceOver, with Put Yours Back in its menu. You can set In progress, Your review or Teammate's
+review; Can merge, Waits and Merged come only from what Azure DevOps and the order show. What you set holds until the
+pull request moves on (`StageRules.stands`): In progress until new commits come, or a session writing it finishes (a
+review, such as Copilot's pre-review, ends nothing); Teammate's review, on yours, until the votes others cast change
+(a digest of the votes, never who cast them), so asking someone else to review it keeps it, and, on someone else's,
+until your own vote changes or new commits come; Your review until you change it; merging or closing ends any.
+**Finished My Review** sets Teammate's review: on someone else's, it takes it off your board until you vote in Azure
+DevOps, or something new needs you there. Sessions never put someone else's pull request in progress. BriefBar never
+votes or changes anything in Azure DevOps for a stage.
+
+What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one entry
+for each pull request: its number, the stage, when, and only what would end it (`StageRules.mark`): the commit, for In
+progress and for Teammate's review on someone else's, and the votes, for Teammate's review alone, on yours their digest,
+how many of each others cast, never who, on someone else's your own vote; Your review keeps neither. For a pull request
+listed only because someone sent it to you in a chat, it's kept in memory only, as what you've seen of it is. Either
+way, an account keeps up to 500, those in memory counted with the others, and one no list has had for 30 days goes; what
+Undo puts back once there's no room waits in memory until there is. **Forget Stages…** forgets them all, and turning
+Azure DevOps off forgets its own; turning Pull Request Order off keeps them, unused, those in memory too. Stages change
+no group, count, notification or brief: they only label rows.
+
+### What's next, and the Board
+
+Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
+works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
+lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`), so Up Next's pull
+request is always the first in its column's order, which wears **Next** on the Board. The mission you focus on comes first
+in each stage, but in In progress, what needs you comes before it, so that Fix next is always its column's first:
+
+| Stage | Which comes first |
+|---|---|
+| In progress | What needs you, Fix next's, the mission you focus on first among it: a session that asks you, then a build that failed, then changes someone wants, the oldest first; then the rest, the mission you focus on first, as By Mission lists them |
+| Your review | The mission you focus on; then the one that has waited longest, one that others build on as long as the longest waiting of those that wait for it, directly or through others, in any mission, as none of them can merge before it; of those that waited as long, the one more build on |
+| Teammate's review | The mission you focus on; then Find a reviewer, then the earliest in its mission's merge order |
+| Can merge | The mission you focus on; then next to merge, then any time, then those with no order; the oldest first, then as By Mission lists them |
+| Waits | The mission you focus on; then the one closest to merging: one merge away when what it waits for can merge, one more for each that waits itself |
+| Merged | The mission you focus on; then the latest first |
+
+Only an open pull request its order numbers has a place in its mission's merge order (`BoardCard.position`): one that
+merges any time, one in a group with no order, such as a family's, and one stacked with the order's without being in
+it have none, and come after those that have one, as By Mission lists them. What waits for a pull request follows its
+steps' prerequisites and what they're stacked on, such as a base the order doesn't name that a step's changes show
+against (`BoardCard.waitingForIt`, `OrderMission.stackedBases(of:)`), not those places, as two lines in one order don't
+wait for each other. It's only between open pull requests: nothing waits through one that merged or closed, as its order
+then lets what comes after it merge, or holds it until you check the order. A mission's lane counts how long those in
+other missions have waited, as Up Next does.
+A pull request in two missions has a card in each lane, and counts once. On the Board (`OrderBoardView`), a card drags
+with SwiftUI's `draggable`, carrying its reference and a token made for that drag alone (`BoardDrag`), so a column takes
+only a card dragged from its own board, never text from another app that names a pull request. A drop, and the columns
+that light up as you drag, act on the card as the board has it then, looked up again (`BoardMoves`), not as it was when
+the drag started. A click, or Tab, gives a card the keyboard's focus as a text field takes it, whatever the Mac's
+keyboard navigation, and it keeps it as it moves: drawn anew in its new column, it takes the focus back, which each move
+owes it for a second, so that a key that comes just as the last move's second ends doesn't lose it (`OwedFocus`). ⌘→ and
+⌘← move it to the next or previous stage you can set, and from Waits, ⌘← to Can merge. Return or Space shows its
+details, as a click does. Where the details cover the Board (`DetailsSplit`),
+it's disabled, and none of its cards can have the focus: a key monitor of its window (`BoardKeys`) takes ⌘→ and ⌘← for
+the card of the pull request whose own details show, in the lane you clicked it in, else in that of the mission whose
+order holds it, as for details shown from Up Next, but not from a text field you type in, nor while a page is over
+them, such as a linked pull request's, whose card isn't that one, or a file's, which doesn't show its stage
+(`PullRequestDetailsStore.shownOnTop`). That card has the focus once they close. A move it can't make, the details say
+why under its stage track (`StageRefusalLine`), as the line under its lane can't be seen; each goes once its stage
+changes, from anywhere, and the details' once the Board shows again. A change it makes to a mission says its Undo is
+beside it, in the details' order line. Like the monitor, a card takes ⌘ alone: ⇧⌘→ is another shortcut. `BoardRules`
+decides what a move does: In progress, Your review and Teammate's review are set as you set them
+from a stage's menu; someone else's pull request can't go to Teammate's review, there, in its menus or in VoiceOver's
+actions, as it asks its own reviewers, and Finished My Review takes it off your board instead; Can merge, Waits and Merged
+come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge
+in its lane's mission, only where that mission's order holds it, as its stage says (`StageOrder.holders(of:in:)`): in
+another's lane, set as next there, it would still wait, so the lane says where it waits, "It waits in ‘Payments’: set
+it as next there"; with Lanes: None, a card that waits is the mission's that holds it, and keeps its place among those
+of the mission you focus on, where it's in that one too. Where two missions' orders hold it, it's set as next in the
+lane's, and still waits in the other's, which its lane says, as VoiceOver does: "It still waits for !4102 in
+‘Payments’" (`BoardText.stillWaits`). Only one mission has a pull request as next, so set as next there, it would wait
+in the first again; that mission's Merge After takes away what it waits for. None is set as next while
+stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
+(`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card
+off it: in its mission's lane, which has Undo for all its pull requests, as List's card does, or in a lane of those in
+no mission, kept for it (`PullRequestBoard.lanes(keepingUndoOf:missions:)`), and with Lanes: None in the one lane,
+kept for it once no card is left in it. A row's order capsule, clicked in another sort, shows its mission's lane on
+the Board, as it shows the mission in List and on the Map; with Lanes: None, which has no lane for it, the Board shows
+a lane for each mission again, remembered (`PullRequestOrder.reveal(_:kinds:)`). The page scrolls the lane, the first
+too, just under the column titles, which stay at the page's top over the cards while it shows the board: offset as it
+scrolls (`PinnedTitles`), not a lazy stack's pinned header, which loses the lanes' places when the page narrows while
+scrolled down the board, as when the details open beside it. The Board, its lanes and whether Up Next is folded are
+kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
+`order.boardLanes` and `order.upNextFolded`.
 
 ### A pull request's details
 

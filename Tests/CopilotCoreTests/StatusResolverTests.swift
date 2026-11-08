@@ -394,3 +394,33 @@ private let finishedTurn = [Line.userMessage(at: t(1)), Line.assistantMessage(at
         verify(unlisted(.finished, detail: "  "), .done, .finished, since: t(3))
     }
 }
+
+/// What a session does to a pull request's stage: by how it ended, which an idle one keeps, never by whether it's still
+/// highlighted.
+@Suite struct SessionStageActivityTests {
+    private func session(_ reason: StatusReason, isSeen: Bool) -> SessionSnapshot {
+        StatusResolver.snapshot(
+            unlisted: "s1", name: "Cart", place: nil, reason: reason, detail: nil, since: t(0), now: t(60), isSeen: isSeen
+        )
+    }
+
+    @Test func anIdleSessionFinishedOnlyWhenItsLastTurnDid() {
+        #expect(session(.finished, isSeen: false).phase == .done)
+        #expect(session(.finished, isSeen: false).stageActivity == .finished)
+        #expect(session(.finished, isSeen: true).phase == .idle)
+        #expect(session(.finished, isSeen: true).stageActivity == .finished)
+        for ended in [StatusReason.interrupted, .failed, .unresponsive] {
+            #expect(session(ended, isSeen: false).stageActivity == .stopped)
+            #expect(session(ended, isSeen: true).phase == .idle)
+            #expect(session(ended, isSeen: true).stageActivity == .stopped)
+        }
+        #expect(session(.idle, isSeen: true).stageActivity == .stopped)
+    }
+
+    @Test func oneAtWorkOrAskingIsBusy() {
+        #expect(session(.working, isSeen: false).stageActivity == .working)
+        #expect(session(.starting, isSeen: false).stageActivity == .working)
+        #expect(session(.question, isSeen: false).stageActivity == .waitsForYou)
+        #expect(session(.permission, isSeen: false).stageActivity == .waitsForYou)
+    }
+}

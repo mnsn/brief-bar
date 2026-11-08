@@ -27,8 +27,23 @@ package struct MissionsBody: View {
     /// What clicking one of its pull requests' node does: what clicking its row does. False for one the page doesn't
     /// list, which then opens where it lives.
     let select: (ItemRef) -> Bool
+    /// The pull request whose own details show, with nothing over them, such as a linked item's page or a file's: while
+    /// they cover the Board, its card is the one ⌘→ and ⌘← move. Nil on a page that has no Board.
+    let shownOnTop: ItemRef?
     /// The pull requests in no mission, as the page groups them by status.
     let rest: ([ItemRef]) -> AnyView
+    /// The Board, with Up Next and each mission's next steps, which the page works out once as it draws: a lane for each
+    /// mission, but on the Board with Lanes: None. Nil on a page whose pull requests have no stages, which offers no Board and
+    /// shows no next steps.
+    let board: PullRequestBoard?
+    /// A card's content on the Board, as the page draws it.
+    let card: ((BoardCard) -> BoardCardContent?)?
+    /// Set as Next to Merge in a mission, for a card dropped from Waits onto Can merge: nil where you can't change missions
+    /// yourself.
+    let setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?
+    /// Lists the page By Status, for what isn't on the Board.
+    let showByStatus: (() -> Void)?
+    let now: Date
 
     @EnvironmentObject private var services: AppServices
 
@@ -36,7 +51,11 @@ package struct MissionsBody: View {
         view: OrderView, ordering: PullRequestOrder, kinds: Set<ItemRef.Kind>, elsewhere: String, openElsewhere: (() -> Void)?,
         listed: [ItemRef], apart: [ItemRef] = [], row: @escaping (OrderStep, MissionKey) -> AnyView?,
         place: @escaping (ItemRef) -> String?,
-        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, rest: @escaping ([ItemRef]) -> AnyView
+        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, shownOnTop: ItemRef? = nil,
+        rest: @escaping ([ItemRef]) -> AnyView,
+        board: PullRequestBoard? = nil, card: ((BoardCard) -> BoardCardContent?)? = nil,
+        setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)? = nil,
+        showByStatus: (() -> Void)? = nil, now: Date = Date()
     ) {
         self.view = view
         self.ordering = ordering
@@ -49,7 +68,20 @@ package struct MissionsBody: View {
         self.place = place
         self.isSelected = isSelected
         self.select = select
+        self.shownOnTop = shownOnTop
         self.rest = rest
+        self.board = board
+        self.card = card
+        self.setAsNext = setAsNext
+        self.showByStatus = showByStatus
+        self.now = now
+    }
+
+    /// The missions whose card, or lane on the Board, shows what you changed last in them, and why BriefBar didn't make a
+    /// change there: the rest show at the top of the page.
+    /// - Parameter board: the Board, as it shows; nil in List and on the Map.
+    package static func showingTheirChanges(_ missions: [OrderMission], board: PullRequestBoard?) -> Set<MissionKey> {
+        board.map { Set($0.lanes.compactMap(\.mission)) } ?? Set(missions.map(\.key))
     }
 
     /// The missions a page of these kinds shows.
@@ -62,25 +94,30 @@ package struct MissionsBody: View {
         missions.contains { $0.contains(ref) }
     }
 
+    /// Where the Board starts, which Up Next's "2 more ›" scrolls to.
+    private static let boardTop = "board"
+
     package var body: some View {
         let missions = Self.missions(ordering.missions, kinds: kinds)
         let rest = listed.filter { !Self.isIn(missions, $0) }
+        // Each mission's next steps, as its lane on the Board has them, where its pull requests have stages.
+        let missionLanes = board?.mode == .missions ? board : nil
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 18) {
-                // What you changed last, and why BriefBar didn't make a change, when no mission's card here shows it, such as one
-                // you moved out of missions.
-                let shown = Set(missions.map(\.key))
+                // What you changed last of a mission, and why BriefBar didn't make a change, when no mission's card or lane
+                // here shows it, such as one you moved out of missions.
+                let shown = Self.showingTheirChanges(missions, board: view == .board ? board : nil)
                 if ordering.said.contains(where: { OrderUndoLine.shows($0, about: nil, in: nil, outside: shown) }) {
                     OrderUndoLine(order: ordering, outside: shown)
                         .padding(.horizontal, 4)
                 }
-                if missions.isEmpty {
+                if missions.isEmpty, view != .board {
                     noMissions
                 }
                 switch view {
                 case .list:
                     ForEach(missions) { mission in
-                        card(mission)
+                        missionCard(mission, lane: missionLanes?.lane(for: mission.key))
                     }
                     if !rest.isEmpty {
                         Text("Not in a mission")
@@ -93,23 +130,38 @@ package struct MissionsBody: View {
                 case .map:
                     ForEach(missions) { mission in
                         MissionBand(
-                            mission: mission, place: place(of: mission), links: services.links,
-                            order: ordering, isSelected: isSelected, select: open, list: { AnyView(card(mission)) }
+                            mission: mission, place: place(of: mission), links: services.links, order: ordering,
+                            lane: missionLanes?.lane(for: mission.key), isSelected: isSelected, select: open,
+                            list: { AnyView(missionCard(mission, lane: missionLanes?.lane(for: mission.key))) }
                         )
                     }
                     let undrawn = OrderMap.undrawn(listed + apart, in: missions)
                     NotInAMissionLine(inNoMission: undrawn.inNoMission, notInOrder: undrawn.notInOrder) { ordering.setView(.list) }
+                case .board:
+                    if let board, let card {
+                        OrderBoardView(
+                            board: board, missions: missions, order: ordering, elsewhere: elsewhere, openElsewhere: openElsewhere,
+                            place: place(of:), card: card, isSelected: isSelected, select: { ref in _ = select(ref) },
+                            shownOnTop: shownOnTop, setAsNext: setAsNext, notOnBoard: board.notOnBoard(listed + apart),
+                            showByStatus: showByStatus, now: now
+                        )
+                        .id(Self.boardTop)
+                    }
                 }
             }
             .onChange(of: ordering.revealed) { _, key in reveal(key, with: proxy) }
-            .onAppear { reveal(ordering.revealed, with: proxy) }
+            .onAppear {
+                reveal(ordering.revealed, with: proxy)
+                revealBoard(ordering.revealedColumn, with: proxy)
+            }
+            .onChange(of: ordering.revealedColumn) { _, stage in revealBoard(stage, with: proxy) }
         }
     }
 
-    private func card(_ mission: OrderMission) -> MissionCard {
+    private func missionCard(_ mission: OrderMission, lane: BoardLane?) -> MissionCard {
         MissionCard(
             mission: mission, kinds: kinds, place: place(of: mission), elsewhere: elsewhere, openElsewhere: openElsewhere,
-            order: ordering
+            order: ordering, lane: lane, select: { ref in _ = select(ref) }
         ) { step in
             row(step, mission.key)
         }
@@ -144,10 +196,19 @@ package struct MissionsBody: View {
     }
 
     private func reveal(_ key: MissionKey?, with proxy: ScrollViewProxy) {
-        guard let key else { return }
+        // The Board shows it itself, once its lane is laid out.
+        guard let key, view != .board else { return }
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(key, anchor: .top) }
             ordering.revealed = nil
+        }
+    }
+
+    /// Up Next's "2 more ›": the page scrolls to the Board, which scrolls sideways to the column.
+    private func revealBoard(_ stage: PullRequestStage?, with proxy: ScrollViewProxy) {
+        guard stage != nil, view == .board else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(Self.boardTop, anchor: .top) }
         }
     }
 }

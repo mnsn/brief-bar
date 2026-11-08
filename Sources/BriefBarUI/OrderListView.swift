@@ -6,8 +6,8 @@ import SwiftUI
 // Sapling's smartlog, Graphite's `gt log` and VS Code's Source Control Graph draw one.
 
 /// A mission's card in List: its header, the line its merged pull requests fold into, its rows with the graph beside them,
-/// a quiet row for each one the page's source doesn't list, how many another page lists, and the pull requests stacked
-/// with its own that its order doesn't name.
+/// a quiet row for each one the page's source doesn't list, how many another page lists, the pull requests stacked with
+/// its own that its order doesn't name, and, after you changed one's stage, what you did, with Undo.
 package struct MissionCard: View {
     let mission: OrderMission
     /// The kinds of pull request the page lists.
@@ -20,6 +20,10 @@ package struct MissionCard: View {
     /// A pull request's row as the page draws it; nil for one it doesn't list.
     let row: (OrderStep) -> AnyView?
     @ObservedObject var order: PullRequestOrder
+    /// Its lane on the Board, for its next steps under its header; nil where its pull requests have no stages.
+    let lane: BoardLane?
+    /// What a next step's click does: what its row's does.
+    let select: (ItemRef) -> Void
 
     @LocalState private var showsFolded = false
     @LocalState private var hovered: ItemRef?
@@ -27,7 +31,8 @@ package struct MissionCard: View {
 
     package init(
         mission: OrderMission, kinds: Set<ItemRef.Kind>, place: String?, elsewhere: String, openElsewhere: (() -> Void)?,
-        order: PullRequestOrder, row: @escaping (OrderStep) -> AnyView?
+        order: PullRequestOrder, lane: BoardLane? = nil, select: @escaping (ItemRef) -> Void = { _ in },
+        row: @escaping (OrderStep) -> AnyView?
     ) {
         self.mission = mission
         self.kinds = kinds
@@ -35,6 +40,8 @@ package struct MissionCard: View {
         self.elsewhere = elsewhere
         self.openElsewhere = openElsewhere
         self.order = order
+        self.lane = lane
+        self.select = select
         self.row = row
     }
 
@@ -46,6 +53,10 @@ package struct MissionCard: View {
         let width = gutter.map { OrderGutterRowView.width(lanes: $0.laneCount, scale: textScale) } ?? 0
         VStack(alignment: .leading, spacing: 6) {
             MissionHeader(mission: mission, order: order, place: place)
+            if let lane {
+                MissionNextStepsLine(lane: lane, order: order, select: select)
+                    .padding(.horizontal, 4)
+            }
             VStack(alignment: .leading, spacing: 0) {
                 if !folded.isEmpty {
                     foldedLine(folded, width: width)
@@ -55,7 +66,9 @@ package struct MissionCard: View {
                 }
                 let outside = mission.count(outside: kinds)
                 if outside > 0 {
-                    elsewhereLine(outside, width: width)
+                    OrderElsewhereLine(count: outside, elsewhere: elsewhere, open: openElsewhere)
+                        .padding(.leading, max(width, 6) + 8)
+                        .padding(.vertical, 6)
                 }
                 let attached = mission.attached.filter { kinds.contains($0.ref.kind) }
                 if !attached.isEmpty {
@@ -67,6 +80,10 @@ package struct MissionCard: View {
                         .padding(.trailing, 12)
                         .padding(.vertical, 6)
                 }
+                StageUndoLine(refs: Set((mission.steps + mission.attached).map(\.ref)), order: order)
+                    .padding(.leading, max(width, 6) + 8)
+                    .padding(.trailing, 12)
+                    .padding(.vertical, 6)
             }
             .padding(.vertical, 4)
             .background(GlassCard(cornerRadius: 18))
@@ -89,7 +106,8 @@ package struct MissionCard: View {
         .background(alignment: .topLeading) {
             if let gutterRow {
                 OrderGutterRowView(
-                    row: gutterRow, marker: step.standing.marker, nodeY: (divided ? 1 : 0) + 3 + 6 + 10 * textScale, lit: lit
+                    row: gutterRow, marker: step.standing.marker, stage: order.drawnStage(of: step),
+                    nodeY: (divided ? 1 : 0) + 3 + 6 + 10 * textScale, lit: lit
                 )
                 .frame(width: width)
             }
@@ -109,7 +127,7 @@ package struct MissionCard: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(folded.contains { order.drawnStage(of: $0) == .merged } ? PullRequestStage.merged.color : .green)
                 Text(OrderText.folded(folded))
                 Image(systemName: "chevron.right")
                     .font(size: 9, weight: .bold)
@@ -124,32 +142,6 @@ package struct MissionCard: View {
         .padding(.vertical, 6)
         .help(showsFolded ? "Fold the ones that merged or closed" : "Show the ones that merged or closed")
         .accessibilityLabel(showsFolded ? "Hide \(OrderText.folded(folded))" : "Show \(OrderText.folded(folded))")
-    }
-
-    @ViewBuilder
-    private func elsewhereLine(_ count: Int, width: CGFloat) -> some View {
-        let text = OrderText.elsewhere(count, on: elsewhere)
-        Group {
-            if let openElsewhere {
-                Button(action: openElsewhere) {
-                    HStack(spacing: 4) {
-                        Text(text)
-                        Image(systemName: "chevron.right")
-                            .font(size: 9, weight: .bold)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Show its other pull requests on \(elsewhere)'s Pull Requests page")
-            } else {
-                Text(text)
-                    .help("Its other pull requests are on \(elsewhere)")
-            }
-        }
-        .font(size: 11.5, weight: .medium)
-        .foregroundStyle(.secondary)
-        .padding(.leading, max(width, 6) + 8)
-        .padding(.vertical, 6)
     }
 
     private func attachedRows(_ steps: [OrderStep], width: CGFloat) -> some View {
@@ -168,6 +160,43 @@ package struct MissionCard: View {
                     .padding(.vertical, 3)
             }
         }
+    }
+}
+
+/// How many of a mission's pull requests another page lists, "+1 on GitHub ›", which opens that page where it can.
+package struct OrderElsewhereLine: View {
+    let count: Int
+    /// The page that lists them, "GitHub".
+    let elsewhere: String
+    let open: (() -> Void)?
+
+    package init(count: Int, elsewhere: String, open: (() -> Void)?) {
+        self.count = count
+        self.elsewhere = elsewhere
+        self.open = open
+    }
+
+    package var body: some View {
+        let text = OrderText.elsewhere(count, on: elsewhere)
+        Group {
+            if let open {
+                Button(action: open) {
+                    HStack(spacing: 4) {
+                        Text(text)
+                        Image(systemName: "chevron.right")
+                            .font(size: 9, weight: .bold)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Show its other pull requests on \(elsewhere)'s Pull Requests page")
+            } else {
+                Text(text)
+                    .help("Its other pull requests are on \(elsewhere)")
+            }
+        }
+        .font(size: 11.5, weight: .medium)
+        .foregroundStyle(.secondary)
     }
 }
 
@@ -228,6 +257,8 @@ struct OrderPlaceholderRow: View {
 struct OrderGutterRowView: View {
     let row: OrderGutter.Row
     let marker: OrderMarker
+    /// Its stage, whose color its node takes; nil for one with none.
+    var stage: PullRequestStage?
     /// Where its node is, from the row's top: beside its title.
     let nodeY: CGFloat
     /// What hovering a row lights up; nil while none is hovered.
@@ -251,7 +282,7 @@ struct OrderGutterRowView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            OrderNodeMark(marker, isDimmed: lit.map { !$0.contains(row.ref) } ?? false)
+            OrderNodeMark(marker, isDimmed: lit.map { !$0.contains(row.ref) } ?? false, stage: stage)
                 .offset(x: x(row.lane, scale) - node / 2, y: nodeY - node / 2)
         }
         .accessibilityHidden(true)
