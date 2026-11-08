@@ -212,7 +212,7 @@ struct OrderPlaceholderRow: View {
         guard step.ref.kind == .gitHubPullRequest, let url = URL(string: "https://github.com/\(step.ref.scope)/pull/\(step.ref.id)") else {
             return nil
         }
-        return { NSWorkspace.shared.open(url) }
+        return { ThisMac.open(url) }
     }
 }
 

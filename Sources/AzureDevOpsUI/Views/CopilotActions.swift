@@ -552,8 +552,7 @@ struct CopilotAnswerCard: View {
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 4)
                 iconButton("doc.on.doc", help: "Copy the answer", label: "Copy the Answer") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(answer, forType: .string)
+                    ThisMac.copy(answer)
                     SpokenText.announce("Copied the answer")
                 }
                 if let open {

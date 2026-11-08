@@ -365,9 +365,9 @@ final class PRStore: ObservableObject {
     /// Opens the message that sent the pull request: the exact message in Teams, or the app otherwise.
     func openSource(_ item: PRSnapshot) {
         guard let source = item.chatSource else { return }
-        if let url = source.messageURL, NSWorkspace.shared.open(url) { return }
+        if let url = source.messageURL, ThisMac.open(url) { return }
         if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: source.app) {
-            NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+            ThisMac.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
         }
     }
 

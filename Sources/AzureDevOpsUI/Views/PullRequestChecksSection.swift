@@ -137,7 +137,7 @@ private struct CheckRow: View {
                 }
                 if let url = run.url {
                     Button {
-                        NSWorkspace.shared.open(url)
+                        ThisMac.open(url)
                     } label: {
                         Image(systemName: "arrow.up.forward.app")
                             .font(size: 11.5, weight: .medium)
@@ -255,9 +255,9 @@ private struct CheckRow: View {
             Divider()
         }
         if let url = run.url {
-            Button("Open Run in Azure DevOps") { NSWorkspace.shared.open(url) }
+            Button("Open Run in Azure DevOps") { ThisMac.open(url) }
             if let investigation = look?.investigation, let log = investigation.log {
-                Button("Open Log in Azure DevOps") { NSWorkspace.shared.open(investigation.logPage(for: log.stepId)) }
+                Button("Open Log in Azure DevOps") { ThisMac.open(investigation.logPage(for: log.stepId)) }
             }
             Button("Copy Link") { PullRequestDetailsPanel.copy(url.absoluteString) }
         }

@@ -321,8 +321,7 @@ struct ComposerCopyButton: View {
 
     private func copy() {
         // In place of everything there, whatever its type, so nothing you copied before is pasted instead.
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        ThisMac.copy(text)
         copied = text
         copies += 1
         AccessibilityNotification.Announcement("Copied the prompt").post()

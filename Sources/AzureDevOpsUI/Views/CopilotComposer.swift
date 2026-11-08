@@ -1125,7 +1125,7 @@ struct CopilotComposerView: View {
                 "Choose your local clone of \($0.0.organization)/\($0.0.project)/\($0.0.repository). BriefBar will remember it for this repository's pull requests."
             } ?? ""
         if let current = repository?.root { panel.directoryURL = current.deletingLastPathComponent() }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard ThisMac.ask(panel) == .OK, let url = panel.url else { return }
         check(url)
     }
 
@@ -1313,7 +1313,7 @@ struct CopilotModelMenu: View {
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
         NSApp.activate()
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        guard ThisMac.ask(alert) == .alertFirstButtonReturn else { return nil }
         let model = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         return model.isEmpty ? nil : model
     }

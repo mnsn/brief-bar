@@ -1037,12 +1037,12 @@ final class CopilotTasksStore: ObservableObject {
 
     func showWorktree(_ entry: CopilotTaskEntry) {
         guard let run = entry.run else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([run.worktree])
+        ThisMac.showInFinder([run.worktree])
     }
 
     func showOutput(_ entry: CopilotTaskEntry) {
         guard let run = entry.run, run.isValid, !LocalFile.isLink(output(of: run)) else { return }
-        NSWorkspace.shared.open(output(of: run))
+        ThisMac.open(output(of: run))
     }
 
     /// Goes on with Copilot's session in Terminal, in its worktree, to ask for more or see what it did. `copilot` is
@@ -1059,7 +1059,7 @@ final class CopilotTasksStore: ObservableObject {
                 alert.messageText = "The session didn't open in Terminal"
                 alert.informativeText = "Copilot is working in it, or in its checkout, now. Continue in Terminal once that's done."
                 NSApp.activate()
-                alert.runModal()
+                ThisMac.ask(alert)
                 return
             }
             let isOpen = AppSessions.isOpen(run.id, home: CopilotCLI.home(environment: environment)) || AppSessions.isOpen(run.id, home: appHome)
@@ -1068,7 +1068,7 @@ final class CopilotTasksStore: ObservableObject {
                 return
             }
             guard let copilot = CopilotCLI.locate(environment: environment) else {
-                NSAlert(error: LaunchError.copilotNotFound).runModal()
+                ThisMac.ask(NSAlert(error: LaunchError.copilotNotFound))
                 return
             }
             let script = CopilotCommand.resumeScript(copilot: copilot, sessionId: run.id, directory: run.worktree, subject: run.subjectName)
@@ -1079,7 +1079,7 @@ final class CopilotTasksStore: ObservableObject {
                 let file = directory.appendingPathComponent("Copilot \(run.onPullRequest.map { "PR \($0.id)" } ?? run.workItem.map { String($0.id) } ?? "task").command")
                 try script.write(to: file, atomically: true, encoding: .utf8)
                 try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
-                NSWorkspace.shared.open(file)
+                ThisMac.open(file)
             } catch {
                 Log.app.error("Couldn't open Copilot's session in Terminal: \(error.localizedDescription, privacy: .public)")
             }
@@ -1105,7 +1105,7 @@ final class CopilotTasksStore: ObservableObject {
             alert.addButton(withTitle: "Remove")
             alert.addButton(withTitle: "Cancel")
             NSApp.activate()
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            guard ThisMac.ask(alert) == .alertFirstButtonReturn else { return }
             do {
                 try await deleteWorktree(of: run)
             } catch let error as WorktreeInUse {
@@ -1116,13 +1116,13 @@ final class CopilotTasksStore: ObservableObject {
                 alert.informativeText = "\(error)\n\nRemove it anyway, with any changes that aren't committed?"
                 alert.addButton(withTitle: "Remove Anyway")
                 alert.addButton(withTitle: "Cancel")
-                guard alert.runModal() == .alertFirstButtonReturn else { return }
+                guard ThisMac.ask(alert) == .alertFirstButtonReturn else { return }
                 do {
                     try await deleteWorktree(of: run, force: true)
                 } catch let error as WorktreeInUse {
                     return Self.sayNotRemoved(error.reason)
                 } catch {
-                    NSAlert(error: error).runModal()
+                    ThisMac.ask(NSAlert(error: error))
                     return
                 }
             }
@@ -1174,7 +1174,7 @@ final class CopilotTasksStore: ObservableObject {
         alert.messageText = "The worktree wasn't removed"
         alert.informativeText = reason
         NSApp.activate()
-        alert.runModal()
+        ThisMac.ask(alert)
     }
 }
 

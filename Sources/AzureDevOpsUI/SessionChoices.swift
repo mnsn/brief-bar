@@ -1,6 +1,7 @@
 import AppKit
 import AzureDevOpsCore
 import BriefBarCore
+import BriefBarUI
 import CopilotTasks
 import Foundation
 
@@ -458,7 +459,7 @@ extension CopilotTasksStore {
     @discardableResult
     static func openInApp(_ id: String) -> Bool {
         guard ItemRef.session(id) != nil, let url = URL(string: "ghapp://sessions/\(id)") else { return false }
-        return NSWorkspace.shared.open(url)
+        return ThisMac.open(url)
     }
 
     /// Opens a session in the Copilot app, and says so when it can't.
@@ -468,6 +469,6 @@ extension CopilotTasksStore {
         alert.messageText = "The session didn't open in Copilot"
         alert.informativeText = "No app on this Mac opens the Copilot app's sessions. Install or open the GitHub Copilot app, then try again."
         NSApp.activate()
-        alert.runModal()
+        ThisMac.ask(alert)
     }
 }

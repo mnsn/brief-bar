@@ -12,7 +12,7 @@ enum GitHub {
     /// Opens a GitHub page in the browser: only a web address, never another kind of link.
     static func open(_ url: URL) {
         guard url.scheme == "https" else { return }
-        NSWorkspace.shared.open(url)
+        ThisMac.open(url)
     }
 
     /// Opens Terminal running `gh auth login`, which signs in through the browser. BriefBar picks the sign-in up
@@ -33,7 +33,7 @@ enum GitHub {
             let file = directory.appendingPathComponent("Sign in to GitHub CLI.command")
             try script.write(to: file, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
-            NSWorkspace.shared.open(file)
+            ThisMac.open(file)
         } catch {
             Log.app.error("Couldn't start gh auth login: \(error.localizedDescription, privacy: .public)")
         }

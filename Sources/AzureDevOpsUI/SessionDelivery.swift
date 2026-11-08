@@ -1,6 +1,7 @@
 import AppKit
 import AzureDevOpsCore
 import BriefBarCore
+import BriefBarUI
 import CopilotTasks
 import Foundation
 import Synchronization
@@ -545,8 +546,7 @@ extension CopilotTasksStore {
     /// Puts the text on the clipboard, and shows the session the way it found it shows (`showing`): false when it didn't.
     private func copyAndShow(_ text: String, in id: String, _ way: Showing) -> Bool {
         if let openForTests { return openForTests(id, text) }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        ThisMac.copy(text)
         return Self.reveal(id, way)
     }
 
@@ -676,7 +676,7 @@ extension CopilotTasksStore {
         else { return false }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        ThisMac.openApplication(at: url, configuration: configuration)
         return true
     }
 }

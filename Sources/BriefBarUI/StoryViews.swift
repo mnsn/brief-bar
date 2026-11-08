@@ -1324,7 +1324,7 @@ private struct RunRow: View {
         // One with a page opens it; one without reads as text, not as a button that's off.
         if let url = run.url {
             Button {
-                NSWorkspace.shared.open(url)
+                ThisMac.open(url)
             } label: {
                 content(opens: true)
             }

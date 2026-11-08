@@ -515,7 +515,7 @@ private struct CopilotOptionsForm: View {
         panel.canCreateDirectories = true
         panel.prompt = "Choose"
         panel.message = "Choose where Copilot's worktrees go, each in a folder named after its repository."
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard ThisMac.ask(panel) == .OK, let url = panel.url else { return }
         settings.copilotWorktreesFolder = url.path
     }
 }

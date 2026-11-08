@@ -120,7 +120,7 @@ package final class Notifier: NSObject, ObservableObject {
     /// System Settings › Notifications, at BriefBar.
     package static func openSystemSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(AppIdentity.bundleIdentifier)") {
-            NSWorkspace.shared.open(url)
+            ThisMac.open(url)
         }
     }
 

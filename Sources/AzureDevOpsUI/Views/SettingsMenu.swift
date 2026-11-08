@@ -368,12 +368,12 @@ enum WatchPrompt {
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
         NSApp.activate()
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard ThisMac.ask(alert) == .alertFirstButtonReturn else { return }
         guard let link = PullRequestLink.find(in: field.stringValue).first else {
             let error = NSAlert()
             error.messageText = "That isn't a link to a pull request"
             error.informativeText = "Copy it from the pull request's page in Azure DevOps: it ends in /pullrequest/ and its number."
-            error.runModal()
+            ThisMac.ask(error)
             return
         }
         store.watch(link)
@@ -414,12 +414,12 @@ enum OrganizationPrompt {
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
         NSApp.activate()
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard ThisMac.ask(alert) == .alertFirstButtonReturn else { return }
         guard let name = OrganizationDiscovery.name(from: field.stringValue) else {
             let error = NSAlert()
             error.messageText = "That isn't an organization name"
             error.informativeText = "Names are letters, digits and hyphens, like the contoso in dev.azure.com/contoso."
-            error.runModal()
+            ThisMac.ask(error)
             return
         }
         guard !settings.isWatching(name) else { return }
@@ -438,7 +438,7 @@ enum OrganizationPrompt {
                 alert.addButton(withTitle: "Not Now")
             }
             NSApp.activate()
-            if alert.runModal() == .alertFirstButtonReturn, let tenant = access.signInTenant {
+            if ThisMac.ask(alert) == .alertFirstButtonReturn, let tenant = access.signInTenant {
                 store.signIn(toTenant: tenant)
             }
         }

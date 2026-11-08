@@ -335,7 +335,7 @@ struct OrderSessionsMenu: View {
         if let open = order.describe(session)?.open {
             open()
         } else if let url = URL(string: "ghapp://sessions/\(session.id)") {
-            NSWorkspace.shared.open(url)
+            ThisMac.open(url)
         }
     }
 }
