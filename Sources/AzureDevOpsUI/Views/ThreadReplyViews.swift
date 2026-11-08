@@ -333,9 +333,9 @@ struct ThreadChangeProblemLine: View {
 /// its model; ✕ or Esc closes it, keeping what you wrote until you send it. As it opens, the details scroll to show it all.
 /// Nothing goes until you click. Editing a comment of yours (`editing`), it's the same, in place of what the comment says,
 /// with what it says, but for Save, which ⌘Return presses, and Cancel, which keeps the comment as it was and forgets what
-/// you wrote; ✕ or Esc keeps it, until you save it or cancel. When the comment changed since you began, as in Azure DevOps
-/// or another window, it says so, with what it says now, Start Over and Save Anyway (`CommentChangedNotice`): Save alone
-/// sends nothing then. The Mac checks your spelling as you type, but corrects nothing by itself (`spellChecked()`).
+/// you wrote; ✕ or Esc keeps it, until you save it or cancel. When the comment changed since you began, in Azure DevOps or
+/// another window, it says so, with all of what it says now, Start Over and Save Anyway (`CommentChangedNotice`), and Save
+/// is dimmed. The Mac checks your spelling as you type, but corrects nothing by itself (`spellChecked()`).
 struct ThreadReplyComposer: View {
     let thread: PullRequestPanel.Thread
     let item: PRSnapshot
@@ -400,8 +400,8 @@ struct ThreadReplyComposer: View {
         return sending == .edit(comment: editing.comment.id)
     }
 
-    /// Editing a comment that changed since you began, unseen, as in Azure DevOps or another window, the comment as it is
-    /// now: your edit says so, and Save sends nothing (`ThreadChanges.changedSince`).
+    /// Editing a comment that changed since you began, unseen, in Azure DevOps or another window, the comment as it is now:
+    /// your edit says so, and Save is dimmed (`ThreadChanges.changedSince`).
     private var changedSince: ReviewComment? {
         guard let editing, let editBase,
               changes.changedSince(editBase, now: editing.comment, editing: text, replacing: replacing, on: key)
@@ -418,6 +418,9 @@ struct ThreadReplyComposer: View {
     private var isFixing: Bool { fixing != nil }
     private var isBlank: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var canSend: Bool { !isBlank && !isSending && !isFixing }
+    /// Save, and ⌘Return: as Reply, but not while your edit says its comment changed since you began, which Save would
+    /// replace unseen. Save Anyway, there, replaces it.
+    private var canSave: Bool { canSend && changedSince == nil }
 
     /// What the second button does to the thread as it replies: resolves an open one, or reactivates a resolved one, as
     /// Azure DevOps' own does.
@@ -480,11 +483,9 @@ struct ThreadReplyComposer: View {
             if let suggestion, text != suggestion.original { self.suggestion = nil }
         }
         .onAppear(perform: appear)
-        // VoiceOver hears it as it changes, as when a refresh brings what someone saved meanwhile.
-        .onChange(of: changedSince?.kept) { old, now in
-            if Self.announcesChange(from: old, to: now) {
-                SpokenText.announce(ThreadChanges.changedSentence + " " + ThreadChanges.changedChoices)
-            }
+        // VoiceOver hears it as it shows, once for each version, as when a refresh brings what someone saved meanwhile.
+        .onChange(of: changedSince?.kept) {
+            if let changedSince, let commentKey { changes.sayChanged(changedSince, on: commentKey) }
         }
         // Fix Grammar is this reply's own: it stops as the reply closes. What it sends isn't: a reply you sent goes on.
         // Off screen, as a file's page scrolls it away while keeping what it holds: Fix Grammar stops, and nothing waits on it
@@ -500,13 +501,6 @@ struct ThreadReplyComposer: View {
     /// The composer, for the details to scroll to as it opens: one is open at a time.
     static let scrollID = "thread-reply-composer"
 
-    /// Whether VoiceOver hears that the comment you edit changed since you began, as what it says now goes from `old` to
-    /// `now` (`changedSince`): as your edit first says so, and each time it says something else again, which Save Anyway
-    /// would replace then; not as your edit stops saying so.
-    static func announcesChange(from old: String?, to now: String?) -> Bool {
-        now != nil && now != old
-    }
-
     private func appear() {
         guard !hasAppeared else { return }
         hasAppeared = true
@@ -521,9 +515,13 @@ struct ThreadReplyComposer: View {
             editBase = started.base
             text = started.text
             isFocused = !isRendering
-            // Opened again on what you wrote before it changed: VoiceOver hears so too.
-            if changes.changedSince(started.base, now: editing.comment, editing: started.text, on: key) {
-                SpokenText.announce(ThreadChanges.changedSentence + " " + ThreadChanges.changedChoices)
+            // Opened again on what you wrote before the comment changed: VoiceOver hears so again, once. `onChange` doesn't
+            // hear what changes as it opens, and doesn't repeat it later (`ThreadChanges.sayChanged`).
+            if let commentKey {
+                changes.hearChangesAgain(commentKey)
+                if changes.changedSince(started.base, now: editing.comment, editing: started.text, on: key) {
+                    changes.sayChanged(editing.comment, on: commentKey)
+                }
             }
         } else {
             text = changes.draft(key)
@@ -632,8 +630,10 @@ struct ThreadReplyComposer: View {
                 Button { save() } label: { ControlLabel("Save") }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .help("Save your comment as you edited it, in Azure DevOps, as you (⌘Return)")
-                    .disabled(!canSend)
+                    .help(changedSince == nil
+                        ? "Save your comment as you edited it, in Azure DevOps, as you (⌘Return)"
+                        : "Your comment changed since you began: Start Over, or Save Anyway")
+                    .disabled(!canSave)
             }
         }
         .controlSize(.small)
@@ -689,6 +689,8 @@ struct ThreadReplyComposer: View {
                 }
             } else if isDemo {
                 note("Markdown. The demo changes only its made-up pull requests: nothing goes to Azure DevOps.", symbol: "info.circle")
+            } else if changedSince != nil {
+                note("Markdown. ⌥⌘Return saves it anyway, in Azure DevOps, as you.", symbol: "info.circle")
             } else {
                 note(editing == nil ? "Markdown. ⌘Return replies in Azure DevOps, as you." : "Markdown. ⌘Return saves it in Azure DevOps, as you.",
                      symbol: "info.circle")
@@ -733,9 +735,9 @@ struct ThreadReplyComposer: View {
 
     /// Saves your comment as you edited it, its names as the mentions they showed as you began; in place of what it says now,
     /// once you chose Save Anyway (`chosen`), only while it says what it did then. That choice counts only once your edit can
-    /// be saved: otherwise, nothing changes, and the notice stays.
+    /// be saved: otherwise, nothing changes, and the notice stays. Save alone, while the notice shows, saves nothing.
     private func save(replacing chosen: String? = nil) {
-        guard canSend, let editing, let editBase else {
+        guard chosen == nil ? canSave : canSend, let editing, let editBase else {
             NSSound.beep()
             return
         }
@@ -764,7 +766,7 @@ struct ThreadReplyComposer: View {
         editBase = started.base
         text = started.text
         isFocused = true
-        SpokenText.announce("Started over from what your comment says now")
+        changes.speak("Started over from what your comment says now")
     }
 
     /// Closes your edit: your comment stays as it was, and what you wrote goes, with what went wrong with it.

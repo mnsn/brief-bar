@@ -315,6 +315,39 @@ import Testing
         #expect(changes.changedSince(started.base, now: theirs, editing: "Capped it at 30 seconds.", on: threadKey))
     }
 
+    /// VoiceOver hears that a comment you edit changed since you began once for each version of it, though each edit that
+    /// shows it says so, in one window or two; a Save refused for a version it heard of says only that your edit wasn't
+    /// saved, and one refused for a version it didn't, both; and an edit opened again hears it again, once.
+    @Test func voiceOverHearsEachVersionOfAChangedCommentOnce() throws {
+        final class Spoken {
+            var said: [String] = []
+        }
+        let (store, changes, _, _) = live()
+        let spoken = Spoken()
+        changes.speak = { spoken.said.append($0) }
+        var now = try comments(store).mine
+        let draft = ThreadChanges.CommentKey(thread: ThreadChanges.Key(pullRequest: key, thread: 11), comment: now.id)
+        now.text = "Capped it at a minute."
+        now.markdown = now.text
+        changes.sayChanged(now, on: draft)
+        changes.sayChanged(now, on: draft)
+        changes.sayChanged(now, on: draft, unsaved: true)
+        var later = now
+        later.text = "Capped it at two minutes."
+        later.markdown = later.text
+        changes.sayChanged(later, on: draft, unsaved: true)
+        changes.sayChanged(later, on: draft)
+        changes.hearChangesAgain(draft)
+        changes.sayChanged(later, on: draft)
+        let changed = ThreadChanges.changedSentence, unsaved = ThreadChanges.unsavedSentence, choices = ThreadChanges.changedChoices
+        #expect(spoken.said == [
+            changed + " " + choices,
+            unsaved,
+            changed + " " + unsaved + " " + choices,
+            changed + " " + choices,
+        ])
+    }
+
     /// An edit that may have gone, checked by reading its thread again, finds the comment as you began; but a refresh that
     /// came while it was read brought it edited elsewhere: nothing goes, which would replace what BriefBar has read unseen,
     /// and the list keeps what the refresh brought.

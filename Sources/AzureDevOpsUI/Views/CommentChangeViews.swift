@@ -80,9 +80,10 @@ struct CommentDeleteConfirmation: View {
 
 // MARK: - Your edit, of a comment that changed since
 
-/// In your edit of a comment of yours that changed since you began, as in Azure DevOps or another window, unseen, as your edit
-/// hides what it says: that it did, and what it says now, with Start Over, which puts that in your edit in place of what you
-/// wrote, and Save Anyway, which replaces it with your edit. Save alone sends nothing then (`ThreadChanges.changedSince`).
+/// In your edit of a comment of yours that changed since you began, in Azure DevOps or another window, unseen, as your edit
+/// hides what it says: that it did, and all of what it says now, which is what Save Anyway replaces, with Start Over (⌥⌘R),
+/// which puts that in your edit in place of what you wrote, and Save Anyway (⌥⌘Return), which replaces it with your edit.
+/// Save is dimmed then (`ThreadChanges.changedSince`).
 struct CommentChangedNotice: View {
     /// The comment as it is now.
     let now: ReviewComment
@@ -93,11 +94,7 @@ struct CommentChangedNotice: View {
     let startOver: () -> Void
     let saveAnyway: () -> Void
 
-    /// How many of its blocks show, from the first: Start Over shows all of it.
-    static let shownBlocks = 4
-
     var body: some View {
-        let blocks = RichText(markdown: now.markdown).blocks.count
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -113,17 +110,13 @@ struct CommentChangedNotice: View {
                 Text("It says now:")
                     .font(size: 11)
                     .foregroundStyle(.secondary)
-                CommentBody(markdown: now.markdown, isQuiet: false, shownBlocks: Self.shownBlocks)
+                // All of it: Save Anyway replaces all of it.
+                CommentBody(markdown: now.markdown, isQuiet: false)
                     .equatable()
                     .padding(.leading, 9)
                     .overlay(alignment: .leading) {
                         Capsule().fill(Color.primary.opacity(0.18)).frame(width: 2.5)
                     }
-                if blocks > Self.shownBlocks {
-                    Text("And more: Start Over shows all of it.")
-                        .font(size: 11)
-                        .foregroundStyle(.secondary)
-                }
             }
             .accessibilityElement(children: .combine)
             Text(ThreadChanges.changedChoices)
@@ -134,11 +127,13 @@ struct CommentChangedNotice: View {
                 Spacer(minLength: 0)
                 Button(action: startOver) { ControlLabel("Start Over") }
                     .buttonStyle(.bordered)
-                    .help("Put what your comment says now in your edit, in place of what you wrote")
+                    .keyboardShortcut("r", modifiers: [.command, .option])
+                    .help("Put what your comment says now in your edit, in place of what you wrote (⌥⌘R)")
                     .disabled(isSending)
                 Button(action: saveAnyway) { ControlLabel("Save Anyway") }
                     .buttonStyle(.bordered)
-                    .help("Replace what your comment says now with your edit, in Azure DevOps, as you")
+                    .keyboardShortcut(.return, modifiers: [.command, .option])
+                    .help("Replace what your comment says now with your edit, in Azure DevOps, as you (⌥⌘Return)")
                     .disabled(!canSave)
             }
             .controlSize(.small)

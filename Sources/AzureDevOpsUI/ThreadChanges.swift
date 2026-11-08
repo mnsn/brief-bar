@@ -64,6 +64,9 @@ final class ThreadChanges: ObservableObject {
     /// What you wrote in place of your comments, by comment, once it says something else than what each said as you began
     /// (`EditDraft`), until you save it or cancel. Not published either.
     private var edits: [CommentKey: EditDraft] = [:]
+    /// The version of each comment you edit that VoiceOver last heard changed since you began (`sayChanged`), by a
+    /// fingerprint of what it says.
+    private var spokenChanges: [CommentKey: SHA256.Digest] = [:]
     /// When you resolved each thread you did here: what waited on you in it until then doesn't anymore, though its details
     /// show what was new as it was when they showed it (`waiting(_:of:)`).
     private var resolved: [Key: Date] = [:]
@@ -128,6 +131,9 @@ final class ThreadChanges: ObservableObject {
     /// Reads a pull request again, after a change that may have been made though Azure DevOps didn't say how: the list's
     /// (`PRStore.mayHaveChanged`); a test's stand-in.
     var readAgain: @MainActor (PRKey) -> Void
+    /// What VoiceOver hears of your edits as their comments change (`sayChanged`), and as you start one over: said as
+    /// `SpokenText` says it; a test's stand-in.
+    var speak: @MainActor (String) -> Void = { SpokenText.announce($0) }
     /// For the demo's made-up comments, and when you resolved a thread.
     var now: () -> Date = Date.init
 
@@ -253,9 +259,32 @@ final class ThreadChanges: ObservableObject {
 
     /// What your edit says, and VoiceOver hears, when the comment changed since you began it (`changedSince`), and what you
     /// can do then.
-    static let changedSentence = "This comment changed since you began editing it, as in Azure DevOps or another window."
+    static let changedSentence = "This comment changed since you began editing it, in Azure DevOps or another window."
     static let changedChoices = "Start Over puts what it says now in your edit, in place of what you wrote. Save Anyway replaces it "
         + "with your edit; Save doesn't."
+
+    /// VoiceOver hears that a comment you edit changed since you began it, as `now` (`changedSince`): once for each version
+    /// of it, though each of your edits that shows it says so, in one window or two, and Save, refused for it (`unsaved`),
+    /// says so too. Refused for a version VoiceOver heard of, it hears only that your edit wasn't saved.
+    func sayChanged(_ now: ReviewComment, on key: CommentKey, unsaved: Bool = false) {
+        let version = Self.digest(now.kept)
+        let heard = spokenChanges[key] == version
+        spokenChanges[key] = version
+        switch (heard, unsaved) {
+        case (true, false): return
+        case (true, true): speak(Self.unsavedSentence)
+        case (false, false): speak(Self.changedSentence + " " + Self.changedChoices)
+        case (false, true): speak(Self.changedSentence + " " + Self.unsavedSentence + " " + Self.changedChoices)
+        }
+    }
+
+    /// Your edit of a comment opened: VoiceOver hears again, once, that the comment changed since you began, though it heard
+    /// of that version before.
+    func hearChangesAgain(_ key: CommentKey) {
+        spokenChanges[key] = nil
+    }
+
+    static let unsavedSentence = "Your edit wasn't saved."
 
     /// Dismisses what a thread says went wrong.
     func dismiss(_ key: Key) {
@@ -467,7 +496,7 @@ final class ThreadChanges: ObservableObject {
         }
         // Changed since you began, unseen: nothing goes, which would replace it, and your edit says so.
         if changedSince(base, now: known, editing: text, replacing: accepted, on: key) {
-            SpokenText.announce(Self.changedSentence + " Your edit wasn't saved. " + Self.changedChoices)
+            sayChanged(known, on: draft, unsaved: true)
             return false
         }
         let generation = generation, lifetime = lifetime, account = account
@@ -500,7 +529,7 @@ final class ThreadChanges: ObservableObject {
             // over what the list showed, for your edit to say what it says now.
             if changedSince(base, now: read, editing: text, replacing: accepted, on: key) {
                 store.changed(pullRequest, by: ThreadChange(thread: thread.id, edited: [read]))
-                SpokenText.announce(Self.changedSentence + " Your edit wasn't saved. " + Self.changedChoices)
+                sayChanged(read, on: draft, unsaved: true)
                 return false
             }
             // Nor once the list has something else since you began, as a refresh brought meanwhile, though the thread, read
@@ -508,7 +537,7 @@ final class ThreadChanges: ObservableObject {
             if let latest = store.record(for: pullRequest)?.details?.threads.first(where: { $0.id == thread.id })?
                 .comments.first(where: { $0.id == comment.id }),
                 changedSince(base, now: latest, editing: text, replacing: accepted, on: key) {
-                SpokenText.announce(Self.changedSentence + " Your edit wasn't saved. " + Self.changedChoices)
+                sayChanged(latest, on: draft, unsaved: true)
                 return false
             }
             // Its pull request may have closed, or left your lists, while its thread was read.
@@ -753,6 +782,7 @@ final class ThreadChanges: ObservableObject {
         inFlight = [:]
         drafts = [:]
         edits = [:]
+        spokenChanges = [:]
         // What's left of a change still settling: a reply's status after it doesn't go.
         states = states.filter { settling[$0.key] != nil }.mapValues { state in
             if case .sending(.reply) = state { return .sending(.reply(then: nil)) }
