@@ -125,7 +125,7 @@ final class PullRequestOrderFacts {
             items: store.items.map { describe($0, showToReview: showToReview) } + stories.workItems.map(describe),
             stages: Self.stages(store.records, items: store.items, tasks: tasks, watched: settings.watchedKeys),
             account: settings.account, inMemory: Self.sentInChats(store.records, watched: settings.watchedKeys),
-            readsStories: stories.areRead, listed: store.hasLoaded
+            readsStories: stories.areRead, listed: store.hasListed
         )
         tellDemoStages()
     }

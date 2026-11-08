@@ -132,6 +132,18 @@ fileprivate final class SplitViewer {}
         Set(((mission?.steps ?? []) + (mission?.attached ?? [])).map(\.ref))
     }
 
+    /// You kept the mission together as its question says it's made now.
+    static func keptAsMade(_ question: MissionSplitQuestion, by order: PullRequestOrder) -> Bool {
+        guard let makeup = question.makeup else { return order.keptTogether.keeps(question.key) }
+        return order.keptTogether.entries[question.key]?.makeups[makeup.tells] == makeup.digest
+    }
+
+    /// Two hours go by, as `KeptTogether.settleFor` counts them, and the service looks again, as its clock does.
+    fileprivate static func twoHoursPass(_ order: PullRequestOrder, clock: SplitClock) {
+        clock.advance(KeptTogether.settleFor)
+        order.timePassed()
+    }
+
     /// What you kept together is kept: its suggestion doesn't show, nor is Apple Intelligence asked it again once settled.
     fileprivate static func stillKept(
         _ key: MissionKey, in order: PullRequestOrder, model: SplitModel, clock: SplitClock, viewer: SplitViewer,
@@ -227,7 +239,7 @@ fileprivate final class SplitViewer {}
         #expect(Self.refs(of: mission).count == 4)
         #expect(!order.missions.contains { $0.key == new.key })
         let question = try #require(order.splitQuestion(for: mission))
-        #expect(order.keptTogether.keeps(key, makeup: question.makeup))
+        #expect(Self.keptAsMade(question, by: order))
         #expect(defaults.data(forKey: KeptTogether.defaultsKey) != nil)
         #expect(order.suggestedSplit(for: mission) == nil)
         // Suggested Split… shows it again, as it still holds, without asking again.
@@ -302,7 +314,7 @@ fileprivate final class SplitViewer {}
         let back = try #require(Self.mission(mission.key, in: order))
         #expect(Self.refs(of: back).count == 4)
         let question = try #require(order.splitQuestion(for: back))
-        #expect(order.keptTogether.keeps(mission.key, makeup: question.makeup))
+        #expect(Self.keptAsMade(question, by: order))
         #expect(order.suggestedSplit(for: back) == nil)
         order.stopShowing(in: viewer)
     }
@@ -399,8 +411,9 @@ fileprivate final class SplitViewer {}
     }
 
     /// Turning Show Links or Copilot off, which only leaves BriefBar telling less of what a mission is made of, doesn't bring
-    /// back a suggestion you kept together, then or as they're on again: what it's made of each way is kept with it, and
-    /// compared only with what it was made of the same way. Nor does keeping one together while Show Links is off.
+    /// back a suggestion you kept together, then or as they're on again: what it's made of each way is kept with it once
+    /// told so for two hours, and compared only with what it was made of the same way. Nor does keeping one together while
+    /// Show Links is off.
     @Test func turningShowLinksOrCopilotOffKeepsWhatYouKeptTogether() async throws {
         let clock = SplitClock()
         let model = SplitModel()
@@ -413,8 +426,12 @@ fileprivate final class SplitViewer {}
         }
         Self.tell(order, readsStories: false)
         try await stillKept("Show Links off")
+        Self.twoHoursPass(order, clock: clock)
+        try await stillKept("Show Links off for two hours")
         order.withdraw(.copilot)
         try await stillKept("Copilot off too")
+        Self.twoHoursPass(order, clock: clock)
+        try await stillKept("Copilot off too for two hours")
         Self.tellCopilot(order)
         Self.tell(order)
         try await stillKept("Both on again")
@@ -440,6 +457,7 @@ fileprivate final class SplitViewer {}
         _ = order.keepTogether(unread)
         #expect(KeptTogether.load(from: defaults).entries[key]?.makeups.keys.map(\.stories) == [false])
         Self.tell(order)
+        Self.twoHoursPass(order, clock: clock)
         #expect(KeptTogether.load(from: defaults).entries[key]?.makeups.count == 2)
         try await stillKept("Show Links on, once kept while off")
         #expect(model.splitPrompts.count == asked)
@@ -448,7 +466,7 @@ fileprivate final class SplitViewer {}
 
     /// Right after BriefBar starts, the sources tell Pull Request Order what they show before they've listed it, as
     /// nothing, and Copilot its sessions before it read which pull requests they opened: what you kept together isn't
-    /// counted till they have, so it holds, and nothing's saved.
+    /// counted till they have, however long that takes, as while offline, so it holds, and nothing's saved.
     @Test func keepTogetherHoldsAsBriefBarStartsWhileTheSourcesListWhatTheyShow() async throws {
         let clock = SplitClock()
         let model = SplitModel()
@@ -460,9 +478,14 @@ fileprivate final class SplitViewer {}
 
         let order = Self.service(defaults, clock: clock)
         order.namer = model.namer(clock: clock)
+        // Before any source tells anything, for two hours: nothing told of it, nothing kept.
+        Self.twoHoursPass(order, clock: clock)
+        #expect(order.keptTogether.entries[key]?.makeups.count == 1)
         order.publish(.azureDevOps, readsStories: true, listed: false)
         order.publish(.copilot, listed: false)
         #expect(order.missions.map(\.key) == [key])
+        Self.twoHoursPass(order, clock: clock)
+        #expect(order.keptTogether.entries[key] != nil)
         Self.tell(order)
         order.publish(.copilot, items: [MissionNamingTests.item(Self.session, "Checkout coupons and agents")], listed: false)
         #expect(order.keptTogether.entries[key] != nil)
@@ -475,7 +498,8 @@ fileprivate final class SplitViewer {}
     }
 
     /// Show Links decides which pull requests opened under a session are its mission: with it off, those for a story join
-    /// the others. What you kept together holds as it goes off and on again, and a change while it's off still counts.
+    /// the others. What you kept together holds as it goes off and on again, and a change while it's off still counts, once
+    /// it has lasted two hours.
     @Test func keepTogetherHoldsForASessionsPullRequestsAsShowLinksChangesWhichTheyAre() async throws {
         let clock = SplitClock()
         let model = SplitModel()
@@ -519,9 +543,13 @@ fileprivate final class SplitViewer {}
         try await stillKept("Show Links on again")
         tell(readsStories: false, all)
         try await stillKept("Off again")
-        // Off, and the session opened another: made of something else, so it's asked again.
+        Self.twoHoursPass(order, clock: clock)
+        try await stillKept("Off for two hours")
+        // Off, and the session opened another: made of something else, so it's asked again once that's lasted two hours.
         let asked = model.splitPrompts.count
         tell(readsStories: false, all + [4104])
+        try await stillKept("Another, just now")
+        Self.twoHoursPass(order, clock: clock)
         #expect(order.keptTogether.entries[key] == nil)
         Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
@@ -624,7 +652,7 @@ fileprivate final class SplitViewer {}
         Self.tell(order)
         mission = try #require(Self.mission(key, in: order))
         let question = try #require(order.splitQuestion(for: mission))
-        #expect(order.keptTogether.keeps(key, makeup: question.makeup))
+        #expect(Self.keptAsMade(question, by: order))
         Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
@@ -687,6 +715,7 @@ fileprivate final class SplitViewer {}
         order.namer = model.namer(clock: clock)
         tell(order, pending: true)
         #expect(Self.mission(key, in: order)?.isFinished == true)
+        Self.twoHoursPass(order, clock: clock)
         #expect(order.keptTogether.entries[key] != nil)
         tell(order, pending: false)
         try await Self.stillKept(key, in: order, model: model, clock: clock, viewer: viewer, "All read")
@@ -740,7 +769,7 @@ fileprivate final class SplitViewer {}
         #expect(!order.missions.contains { if case .mine = $0.key { true } else { false } })
         let question = try #require(order.splitQuestion(for: taken))
         #expect(question.isWorthAsking)
-        #expect(order.keptTogether.keeps(key, makeup: question.makeup))
+        #expect(Self.keptAsMade(question, by: order))
         // Shown, it isn't asked about.
         Self.show([key], in: viewer, by: order)
         clock.advance(MissionNamer.settleFor)

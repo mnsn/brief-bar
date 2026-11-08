@@ -705,7 +705,7 @@ package final class PullRequestOrder: ObservableObject {
         }
         let splits = onScreen.compactMap { key -> MissionNamer.SplitRequest? in
             guard let mission = missions.first(where: { $0.key == key }), let question = splitQuestion(for: mission),
-                  question.isWorthAsking, splitsShownAgain.contains(key) || !keptTogether.keeps(key, makeup: question.makeup)
+                  question.isWorthAsking, splitsShownAgain.contains(key) || !keptTogether.keeps(key)
             else { return nil }
             return MissionNamer.SplitRequest(question: question)
         }
@@ -753,10 +753,10 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// The split Apple Intelligence suggests for a mission, while it holds for what the mission is made of now: none while
-    /// you keep it together as it's made now, unless you asked to see it again with Suggested Split….
+    /// you keep it together, unless you asked to see it again with Suggested Split….
     package func suggestedSplit(for mission: OrderMission) -> MissionSplit? {
         guard isOn, let split = splits[mission.key], let question = splitQuestion(for: mission), split.holds(for: question),
-              splitsShownAgain.contains(mission.key) || !keptTogether.keeps(mission.key, makeup: question.makeup)
+              splitsShownAgain.contains(mission.key) || !keptTogether.keeps(mission.key)
         else { return nil }
         return split
     }
@@ -810,8 +810,9 @@ package final class PullRequestOrder: ObservableObject {
         return OrderText.splitDone(box, undo: undo)
     }
 
-    /// Keep Together: the suggestion goes, and comes back only once what the mission is made of changes, as BriefBar keeps
-    /// (`order.splits`); Suggested Split… shows it again meanwhile. What VoiceOver hears after it.
+    /// Keep Together: the suggestion goes, and comes back only once the mission has been made of something else for
+    /// `KeptTogether.settleFor`, as BriefBar keeps (`order.splits`); Suggested Split… shows it again meanwhile. What
+    /// VoiceOver hears after it.
     @discardableResult
     package func keepTogether(_ mission: OrderMission) -> String {
         guard isOn, let question = splitQuestion(for: mission) else { return OrderText.keptTogether }
@@ -823,11 +824,11 @@ package final class PullRequestOrder: ObservableObject {
         return OrderText.keptTogether
     }
 
-    /// Whether a mission's ⋯ offers Suggested Split…: you kept its suggestion together, as it's made now, and BriefBar still
-    /// has it, or Apple Intelligence can be asked it again, as after BriefBar restarted.
+    /// Whether a mission's ⋯ offers Suggested Split…: you kept its suggestion together, and BriefBar still has it for what
+    /// the mission is made of now, or Apple Intelligence can be asked it again, as after BriefBar restarted.
     package func offersSuggestedSplit(_ mission: OrderMission) -> Bool {
         guard isOn, !splitsShownAgain.contains(mission.key), let question = splitQuestion(for: mission),
-              keptTogether.keeps(mission.key, makeup: question.makeup)
+              keptTogether.keeps(mission.key)
         else { return false }
         if let split = splits[mission.key], split.holds(for: question) { return true }
         return question.isWorthAsking && namer?.canAsk == true
@@ -865,7 +866,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// What you kept together, as the missions change: each follows its mission as Focus does, by `successor`; those of
-    /// orders BriefBar no longer keeps go, and those whose missions are made of something else now; and the time since
+    /// orders BriefBar no longer keeps go, and those whose missions have been made of something else for
+    /// `KeptTogether.settleFor`; and the time since
     /// BriefBar last saw a mission counts against it while BriefBar could see it, at most two hours at a time. Then a pull
     /// request a split moved that an order took since counts as Keep Together for the mission it's in.
     private func keepKeptTogether(following successor: (MissionKey) -> MissionKey?, facts: OrderFacts, at date: Date) {
@@ -892,13 +894,12 @@ package final class PullRequestOrder: ObservableObject {
         let kindsOn = kindsOn
         if kept.account(seen: Set(missions.map(\.key)), makeups: makeups, canSee: { key in
             MissionNames.canSee(key, plans: plans, kindsOn: kindsOn, readsStories: facts.seesStories)
-        }, elapsed: elapsed) {
+        }, elapsed: elapsed, at: date) {
             changed = true
         }
-        if kept != keptTogether {
-            objectWillChange.send()
-            keptTogether = kept
-        }
+        // Nothing shows how long one has differed.
+        if kept.entries != keptTogether.entries { objectWillChange.send() }
+        keptTogether = kept
         if changed { kept.save(to: defaults) }
         let takenBack = Set(changes.all.filter { $0.bySplit && !$0.holds(in: orders) }.map(\.ref))
         if let known = splitsTakenBack { keepTogether(splitBack: takenBack.subtracting(known)) }

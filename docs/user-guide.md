@@ -377,8 +377,8 @@ its Focus and the name you gave it, and where the others go: to a new mission of
 for two or more; out of missions for one; or into the mission you split off it before. Click a number for that pull
 request's details. The button says what it does, such as **Split in Two**, **Split in Three** or **Take Out !4120**, and
 does it as one change of yours, with **Undo**; **Keep Together** keeps the suggestion away until what the mission is
-made of changes, its pull requests, their work items and story, or the sessions that opened them, not a title alone, nor
-Show Links or Copilot turned off or on. Undo counts as Keep Together, and so does a session's order that takes back what a
+made of has changed for two hours, its pull requests, their work items and story, or the sessions that opened them, not
+a title alone, nor Show Links or Copilot turned off or on, nor a read that fails for a while. Undo counts as Keep Together, and so does a session's order that takes back what a
 split moved, so the two don't undo each other. Meanwhile, **Suggested Split…** in the mission's **⋯** shows it again.
 Apple Intelligence never splits a mission itself, and nothing moves until you click. It looks at a story's mission, a
 session's order and the pull requests opened under a session, with three open Azure DevOps pull requests or more, never
@@ -1410,7 +1410,7 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   added to pull requests, up to 20 for each project, to suggest them; with Pull Request Order, the names you give
   missions with **Rename…**, up to 200, each forgotten once its mission hasn't shown for 14 days, and the suggested
   splits you kept together, as digests of what their missions are made of, never a title, up to 200, each forgotten
-  once its mission changes or hasn't shown for 14 days; and its settings.
+  once its mission has been made of something else for two hours or hasn't shown for 14 days; and its settings.
   Turning a source off deletes what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
   are on: your Azure DevOps pull requests and their comments, pipelines, sprint, a work item's

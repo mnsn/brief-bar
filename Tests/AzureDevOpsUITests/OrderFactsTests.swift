@@ -119,6 +119,12 @@ import Testing
         let waiting = try #require(order.missions.first)
         let unread = try #require(order.splitQuestion(for: waiting))
         #expect(unread.makeup == nil)
+        // A first refresh that could read no organization's lists, as before the network's up, listed nothing yet.
+        store.receive(PulseSnapshot(organizations: [DemoData.organization], problem: .offline, hasLoaded: true))
+        facts.publish()
+        let offline = try #require(order.missions.first)
+        let none = try #require(order.splitQuestion(for: offline))
+        #expect(store.hasLoaded && !store.hasListed && none.makeup == nil)
 
         await store.loadOnce()
         facts.publish()
