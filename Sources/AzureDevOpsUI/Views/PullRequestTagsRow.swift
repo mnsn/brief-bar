@@ -463,7 +463,7 @@ struct PullRequestTagsRow: View {
         } else if let name = PullRequestTag.name(typed) {
             add(name)
         } else {
-            NSSound.beep()
+            ThisMac.beep()
         }
         return .handled
     }
@@ -472,7 +472,7 @@ struct PullRequestTagsRow: View {
     private func add(_ name: String) {
         guard preview == nil else { return }
         guard !changes.isSending(key) else {
-            NSSound.beep()
+            ThisMac.beep()
             return
         }
         changes.dismiss(key)

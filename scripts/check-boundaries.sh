@@ -5,8 +5,8 @@
 # - Only BriefBarCore starts programs, through ProcessRunner and RunningProgram, which keep them from using
 #   BriefBar's privacy permissions, Full Disk Access included.
 # - Only ThisMac (Sources/BriefBarUI/ThisMac.swift) opens links, files, apps and System Settings, brings another app
-#   forward, shows files in the Finder, writes the clipboard, asks in alerts and panels, and makes SwiftUI's links and
-#   what opens them: in a test process it refuses each, so that no test does any of them on your Mac.
+#   forward, shows files in the Finder, writes the clipboard, asks in alerts and panels, beeps, and makes SwiftUI's
+#   links and what opens them: in a test process it refuses each, so that no test does any of them on your Mac.
 # The app's binary combines every module, so this reads the debug build's object files, module by
 # module: what their code calls, however it's spelled. (A release build's cross-module optimization could inline one
 # module's code into another's.) Every module in Sources must have them, or it fails.
@@ -23,7 +23,8 @@ PROCESS_MODULE="BriefBarCore"
 PROCESSES='^_(posix_spawnp?|popen|system|execv|execve|execvp|execl|execle|execlp|fork|vfork)$|NSTask|NSUser[A-Za-z]*Task|NSAppleScript|OSAScript'
 THIS_MAC_MODULE="BriefBarUI"
 THIS_MAC="ThisMac"
-# What only ThisMac does: the Objective-C messages the code sends for each of them, and the SwiftUI types it uses.
+# What only ThisMac does: the Objective-C messages the code sends for each of them, the SwiftUI types it uses, and the
+# functions that beep.
 ON_THIS_MAC='^_objc_msgSend\$('
 ON_THIS_MAC+='open(URL|URLs|File|Application|SystemSettings)[A-Za-z:]*|launchApplication[A-Za-z:]*|'  # links, files, apps
 ON_THIS_MAC+='activateWithOptions:|activateFromApplication:options:|'                                # another app forward
@@ -33,9 +34,11 @@ ON_THIS_MAC+='runModal[A-Za-z:]*|beginModalSessionForWindow:|'                  
 ON_THIS_MAC+='beginSheetModalForWindow:[A-Za-z:]*|beginWithCompletionHandler:'                      # their sheets too
 # SwiftUI's Link, and OpenURLAction, what opens links, Link's and those in text, as its environment value sets it.
 ON_THIS_MAC+=')$|^_\$s7SwiftUI4LinkV|13OpenURLActionV'
+# The alert sound: AppKit's NSBeep, Swift's NSSound.beep(), which calls it, and Audio Toolbox's ways to play it.
+ON_THIS_MAC+='|^_NSBeep$|So7NSSoundC6AppKitE4beep|^_AudioServicesPlay(Alert|System)Sound'
 # What each of ThisMac's own object files has to show, one of each kind, or that build's compiled code no longer says
 # what this looks for, as with another compiler, and this check couldn't see what its code does.
-THIS_MAC_SHOWS='^_objc_msgSend\$openURL:$ ^_\$s7SwiftUI4LinkV 13OpenURLActionV'
+THIS_MAC_SHOWS='^_objc_msgSend\$openURL:$ ^_\$s7SwiftUI4LinkV 13OpenURLActionV ^_NSBeep$|So7NSSoundC6AppKitE4beep'
 
 LIST="$(mktemp)"
 SYMBOLS="$(mktemp)"
@@ -143,4 +146,4 @@ else
     done <<< "$THIS_MAC_OBJECTS"
 fi
 $FAILED && exit 1
-echo "check-boundaries passed: only ${NETWORK_MODULES// / and } use networking APIs, only $PROCESS_MODULE starts programs, and only $THIS_MAC opens, copies or asks anything on your Mac ($(echo $MODULES | wc -w | tr -d ' ') modules)"
+echo "check-boundaries passed: only ${NETWORK_MODULES// / and } use networking APIs, only $PROCESS_MODULE starts programs, and only $THIS_MAC opens, copies or asks anything, or beeps, on your Mac ($(echo $MODULES | wc -w | tr -d ' ') modules)"

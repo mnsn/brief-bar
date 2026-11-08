@@ -1,3 +1,4 @@
+import AppKit
 import BriefBarCore
 import Foundation
 import Testing
@@ -20,6 +21,15 @@ struct TestError: Error, CustomStringConvertible {
 
     init(_ description: String) {
         self.description = description
+    }
+}
+
+/// A window for a test that presses keys, where a key nothing takes goes quietly. AppKit beeps for one, as in the app's
+/// windows: out loud, on the Mac that runs the tests, as for each key a test presses again until a card takes it.
+class TestWindow: NSWindow {
+    override func noResponder(for eventSelector: Selector) {
+        guard eventSelector != #selector(NSResponder.keyDown(with:)) else { return }
+        super.noResponder(for: eventSelector)
     }
 }
 

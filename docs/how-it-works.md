@@ -1482,7 +1482,7 @@ what you set, and its order. The first rule that applies decides:
 | Yours: a draft | In progress | **Draft** |
 | Yours: ready to complete, and its order lets it | Can merge | **Complete it** |
 | Yours: ready to complete, after one BriefBar hasn't seen merge | Waits for another PR | **After !4102** |
-| Yours: ready to complete, still targeting the branch of one that merged, or its order needs checking, or another order puts what it waits for after it | Waits for another PR | **!4101 merged: retarget it to main**, **Check the order**, **Another order puts !4102 after it: check the order** |
+| Yours: ready to complete, still targeting the branch of one that merged, or its order needs checking, or another order puts what it waits for after it | Waits for another PR | **!4101 merged: retarget it to main**, **Check the order**, **‘Payments’ puts !4102 after it: check the order**, naming that order's mission as its header does, at once as you or Apple Intelligence rename it (agents get **Another order**) |
 | Yours: reviewed, with something else left | In progress | What's Left's first item |
 | Yours: otherwise | Teammate's review | Who it waits for, as What's Left says it, or **Find a reviewer** |
 
@@ -1569,8 +1569,14 @@ waits for !4102 in ‘Payments’: its Mission ▸ Merge After there takes that 
 BriefBar refused the change, as with 500 changes kept. Only one mission has a pull request as next, so set as next in
 the other, it would wait in the first again, back and forth, and with Lanes: None for ever, as its one card is the other's
 then: the Board doesn't, in either lane, and says "It's next to merge in ‘Checkout’ and still waits for !4102 in
-‘Payments’: …" (`BoardRules.move`), where the order it's next in puts it after one BriefBar hasn't seen merge; its Mission
-menu's Set as Next to Merge still moves it. None is set as next while
+‘Payments’: …" (`BoardRules.move`), where the order it's next in would hold it again; it names the lane's mission
+where it waits in that one. BriefBar works that out for each other mission that holds it, from the missions as they'd
+be, made as they are now with your next there instead (`OrderBoard.nextsHeldAgain`): the first's lines that your next
+there set aside come back, that mission's next can set one of them aside, and what you moved out of the first, or put
+after it with Merge After, holds it there no more. So with three, it's set as next in a third whose next sets aside
+the first's line, though the second's wouldn't; in a lane whose mission doesn't hold it, as the one it's next in
+doesn't, the Board says it still waits. Its Mission menu's Set as Next to Merge
+still moves it. None is set as next while
 stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
 (`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card
 off it: in its mission's lane, which has Undo for all its pull requests, as List's card does, or in a lane of those in
@@ -4244,14 +4250,14 @@ when BriefBar does.
 - `scripts/check-boundaries.sh` reads each module's object files and fails unless only
   `AzureDevOpsCore` and `GitHubCore` use networking APIs, and only `BriefBarCore` starts programs. It also fails unless
   only `ThisMac`, in `BriefBarUI`, opens links, files, apps and System Settings, brings another app forward, shows
-  files in the Finder, writes the clipboard, asks in alerts and panels, and makes SwiftUI's links and what opens them:
-  in a test process it refuses each, so no test does any of them on your Mac. It goes by what the compiled code calls,
-  the Objective-C messages it sends and the SwiftUI types it uses, so a call however it's spelled, through a variable or
-  an extension, counts. Links in text, such as a comment's, open with what the view around them sets, which the
-  compiled code doesn't show: `RichTextView`, the one view with such links, opens them through `ThisMac`. It
-  also fails if those stop using them, since the check could no longer tell, and if a module in `Sources` has no
-  object files, as when a build stopped partway. It reads BriefBar's own modules, the updater's included, not
-  Sparkle, whose requests are only for updates.
+  files in the Finder, writes the clipboard, asks in alerts and panels, beeps, and makes SwiftUI's links and what opens
+  them: in a test process it refuses each, so no test does any of them on your Mac. It goes by what the compiled code
+  calls, the Objective-C messages it sends, the SwiftUI types it uses and the functions that beep, so a call however
+  it's spelled, through a variable or an extension, counts. Links in text, such as a comment's, open with what the view
+  around them sets, which the compiled code doesn't show: `RichTextView`, the one view with such links, opens them
+  through `ThisMac`. It also fails if those stop using them, since the check could no longer tell, and if a module in
+  `Sources` has no object files, as when a build stopped partway. It reads BriefBar's own modules, the updater's
+  included, not Sparkle, whose requests are only for updates.
 - `WriteTests` checks that the only changes BriefBar can make in Azure DevOps are those `ADOWrite` lists, each as it's
   sent, and that nothing else in `AzureDevOpsCore` makes a request or sets a method but GET
   ([Replying and setting a thread's status](#replying-and-setting-a-threads-status),

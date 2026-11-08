@@ -186,8 +186,11 @@ package struct OrderBoardView: View {
     let now: Date
     /// A mission's lane came into the page's sight, or left it: Apple Intelligence names the missions on screen.
     let see: (MissionKey, Bool) -> Void
-    /// How long a card a key moved is owed the keyboard's focus, for the board to draw it in its new column: ten seconds.
-    let focusWait: Duration
+    /// How long a card a key moved is owed the keyboard's focus, for the board to draw it in its new column: until this
+    /// ends, as a test ends it itself; nil for the app's wait, `owedFocusWait`.
+    let focusWait: (@MainActor () async -> Void)?
+    /// The app's wait for that: ten seconds.
+    package static let owedFocusWait: Duration = .seconds(10)
 
     /// The card you drag, or dragged last: only what this drag carries drops.
     @LocalState private var drag: BoardDrag?
@@ -226,7 +229,7 @@ package struct OrderBoardView: View {
         place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, shownOnTop: ItemRef?,
         setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?,
-        now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in }, focusWait: Duration = .seconds(10)
+        now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in }, focusWait: (@MainActor () async -> Void)? = nil
     ) {
         self.board = board
         self.missions = missions
@@ -768,7 +771,7 @@ package struct OrderBoardView: View {
     /// keyboard's focus, where the board can take it.
     private func keyMove(_ ref: ItemRef, in lane: BoardLane.Kind, forward: Bool, moves: BoardMoves, keepsFocus: Bool = true) {
         guard let (card, move) = moves.key(ref, in: lane, forward: forward) else {
-            NSSound.beep()
+            ThisMac.beep()
             return
         }
         _ = apply(move, to: card, in: lane, keepsFocus: keepsFocus)
@@ -817,7 +820,7 @@ package struct OrderBoardView: View {
         case .stays:
             return false
         case .refused(let why):
-            NSSound.beep()
+            ThisMac.beep()
             SpokenText.announce(why)
             say(why, about: card.ref, in: lane)
             return false
@@ -848,7 +851,11 @@ package struct OrderBoardView: View {
         }
         let move = refocus.owe(spot)
         Task { @MainActor [focusWait] in
-            try? await Task.sleep(for: focusWait)
+            if let focusWait {
+                await focusWait()
+            } else {
+                try? await Task.sleep(for: Self.owedFocusWait)
+            }
             refocus.waitEnded(move)
         }
     }

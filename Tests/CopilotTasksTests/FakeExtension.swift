@@ -22,6 +22,9 @@ final class FakeExtension: Sendable {
         case failed(String, String)
         /// After a while.
         indirect case after(Duration, Answer)
+        /// Once the test says so, looking every `lookEvery`: as when it stops BriefBar, or turns it off, before BriefBar
+        /// hears how it went, however slow the tests' threads are.
+        indirect case once(@Sendable () -> Bool, Answer)
         /// Never: as if it ended as it handled it.
         case never
     }
@@ -125,6 +128,9 @@ final class FakeExtension: Sendable {
             return
         case .after(let delay, let then):
             try? await Task.sleep(for: delay)
+            return await respond(then, to: request, requestId: requestId)
+        case .once(let ready, let then):
+            while !ready() { try? await Task.sleep(for: Self.lookEvery) }
             return await respond(then, to: request, requestId: requestId)
         case .done(let fork):
             fields["ok"] = true

@@ -551,6 +551,26 @@ private final class Clock {
         #expect(!order.missions.contains { $0.key == mine } && last.mission == nil)
     }
 
+    /// Undo Your Changes to It, from the Mission menu of a pull request in two missions, says its Undo is in the card you
+    /// chose it in: not the first that has it.
+    @Test func undoYourChangesToItInTheSecondOfTwoMissionsSaysItThere() throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
+            [.init(link: Self.link(4102)), .init(link: Self.link(4101), after: ["4102"])],
+            numbers: [4100, 4101, 4102], ready: [4101]
+        )
+        let firstHasIt = try #require(OrderBoard.mission(of: Self.ref(4101), in: order.missions)?.key)
+        let chosen = try #require(StageOrder.holders(of: Self.ref(4101), in: order.missions).first { $0 != firstHasIt })
+        MissionMenuContext.setAsNext(Self.ref(4101), in: chosen, order: order)
+        #expect(order.changes[Self.ref(4101)]?.first == chosen)
+        #expect(order.missions.first { $0.key == firstHasIt }?.contains(Self.ref(4101)) == true)
+
+        MissionMenuContext(order: order, mission: chosen).change(.undo(Self.ref(4101)))
+
+        #expect(order.changes[Self.ref(4101)] == nil)
+        #expect(order.lastOrderChange?.mission == chosen)
+    }
+
     /// An order an agent tells that goes against your change shows instead once BriefBar reads it again, and still does after
     /// BriefBar starts again, with Put Yours Back.
     @Test func anOrderAnAgentToldAgainstYoursShowsInsteadForGood() throws {
@@ -1091,23 +1111,37 @@ private final class Clock {
     }
 
     private static let otherID = UUID(uuidString: "22222222-3333-4444-8555-666666666666")!
+    private static let thirdID = UUID(uuidString: "33333333-4444-4555-8666-777777777777")!
 
-    /// Two sessions' orders, the first's then the other's, of pull requests you opened, these ready to complete, and these
-    /// closed without merging.
+    /// Two sessions' orders, the first's then the other's, and a third's where there is one, of pull requests you opened,
+    /// these ready to complete, and these closed without merging.
+    /// - Parameters:
+    ///   - third: a third session's order, told after the other's.
+    ///   - targets: those stacked on another, by the one whose branch they target.
+    ///   - defaults: the preferences they're kept in.
     private static func twoOrders(
-        _ first: [OrderRequest.Entry], _ other: [OrderRequest.Entry], numbers: [Int], ready: Set<Int>, closed: Set<Int> = [],
-        changes: OrderChanges = OrderChanges()
+        _ first: [OrderRequest.Entry], _ other: [OrderRequest.Entry], third: [OrderRequest.Entry]? = nil, numbers: [Int],
+        ready: Set<Int>, closed: Set<Int> = [], targets: [Int: Int] = [:], changes: OrderChanges = OrderChanges(),
+        defaults: MemoryDefaults = MemoryDefaults()
     ) throws -> PullRequestOrder {
-        let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
         changes.save(to: defaults)
         var orders = DeclaredOrders()
         try orders.apply(OrderRequest(entries: first), now: Date(timeIntervalSince1970: 1_791_900_000), newID: planID)
         try orders.apply(OrderRequest(entries: other), now: Date(timeIntervalSince1970: 1_791_900_001), newID: otherID)
+        if let third {
+            try orders.apply(OrderRequest(entries: third), now: Date(timeIntervalSince1970: 1_791_900_002), newID: thirdID)
+        }
         orders.save(to: defaults)
         let order = Self.service(defaults)
         order.publish(
-            .azureDevOps, pullRequests: numbers.map { Self.ado($0, from: "robin/\($0)", state: closed.contains($0) ? .closed : .open) },
+            .azureDevOps,
+            pullRequests: numbers.map { number in
+                Self.ado(
+                    number, from: "robin/\(number)", into: targets[number].map { "robin/\($0)" } ?? "main",
+                    state: closed.contains(number) ? .closed : .open
+                )
+            },
             stages: Dictionary(uniqueKeysWithValues: numbers.map { number in
                 (Self.ref(number), StageFacts(role: .author, isReady: ready.contains(number), votes: "0", commit: "c\(number)"))
             }),
@@ -1266,6 +1300,16 @@ private final class Clock {
         let frees = "its Mission ▸ Merge After there takes that away"
         #expect(order.stillWaits(Self.ref(4101), nextIn: one) == "It still waits for \(waitsFor(two)) in ‘\(try title(two))’: \(frees)")
         #expect(order.stillWaits(Self.ref(4101), nextIn: two) == nil)
+        // Nor in a mission it isn't next in, where it never is.
+        #expect(order.stillWaits(Self.ref(4101), nextIn: .mine(UUID())) == nil)
+        // What VoiceOver hears of a change BriefBar refused is only why, though one of yours has it next there.
+        let refused = try #require(order.change(.setNext(Self.ref(4101), in: .mine(UUID()), true)))
+        #expect(!refused.canUndo)
+        let again = OrderEdit.setNext(Self.ref(4101), in: one, true)
+        #expect(
+            MissionMenuContext(order: order, mission: one).spoken(refused, of: again) == OrderText.spoken(refused.said, undo: nil)
+        )
+        order.dismissRefusal()
 
         // With a lane for every card, its one card is the other's now: ⌘← doesn't set it as next there.
         let why = BoardMove.refused(
@@ -1286,6 +1330,175 @@ private final class Clock {
         let other = Self.ref(two == .plan(Self.planID) ? 4100 : 4102)
         order.change(.mergeAfter(Self.ref(4101), other, in: two, false))
         #expect(order.stage(of: Self.ref(4101))?.stage == .canMerge)
+    }
+
+    /// Once you moved what the first's order puts it after out of the first, or put that one after it with Merge After, set
+    /// as next there, the Board sets it as next in the other, where it doesn't wait in the first again.
+    @Test(arguments: [false, true])
+    func onceYouFreedItInTheFirstTheBoardSetsItAsNextInTheOther(byMergeAfter: Bool) throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
+            [.init(link: Self.link(4102)), .init(link: Self.link(4101), after: ["4102"])],
+            numbers: [4100, 4101, 4102], ready: [4101]
+        )
+        let first = MissionKey.plan(Self.planID), other = MissionKey.plan(Self.otherID)
+        let moves = {
+            BoardMoves(board: order.board(kinds: [.pullRequest], lanes: .missions), missions: order.missions, order: order, missionChanges: true)
+        }
+        let mission = { order.missions.first { $0.key == first } }
+        MissionMenuContext.setAsNext(Self.ref(4101), in: first, order: order)
+        #expect(order.nextsHeldAgain == [Self.ref(4101): [other: first]])
+        let held = moves().key(Self.ref(4101), in: .mission(other), forward: false)?.move
+        #expect(held != .setAsNext(other) && held?.isTaken == false)
+
+        if byMergeAfter {
+            order.change(.mergeAfter(Self.ref(4100), Self.ref(4101), in: first, true))
+        } else {
+            order.change(.move([Self.ref(4100)], to: .into(.mine(UUID())), from: first))
+            #expect(mission()?.contains(Self.ref(4100)) == false)
+        }
+
+        #expect(order.nextsHeldAgain.isEmpty)
+        #expect(moves().key(Self.ref(4101), in: .mission(other), forward: false)?.move == .setAsNext(other))
+        MissionMenuContext.setAsNext(Self.ref(4101), in: other, order: order)
+        #expect(order.stage(of: Self.ref(4101))?.stage == .canMerge)
+        #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions).isEmpty)
+    }
+
+    /// Your next in the first keeps a line of the first's order that goes round with what that order puts it after: !4102
+    /// after it, while !4100, which it comes after, is stacked on !4102. Set as next in the other instead, that line would be
+    /// set aside rather than its own, and it would wait for !4100 in the first again: the Board doesn't, as the Mission
+    /// menu's Set as Next to Merge shows.
+    @Test func whereYourNextKeepsALineThatWouldGoRoundTheBoardDoesntSetItAsNextInTheOther() throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"]), .init(link: Self.link(4102), after: ["4101"])],
+            [.init(link: Self.link(4103)), .init(link: Self.link(4101), after: ["4103"])],
+            numbers: [4100, 4101, 4102, 4103], ready: [4101], targets: [4100: 4102]
+        )
+        let first = MissionKey.plan(Self.planID), other = MissionKey.plan(Self.otherID)
+        MissionMenuContext.setAsNext(Self.ref(4101), in: first, order: order)
+        #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions) == [other])
+        #expect(order.nextsHeldAgain == [Self.ref(4101): [other: first]])
+        let moves = BoardMoves(board: order.board(kinds: [.pullRequest], lanes: .missions), missions: order.missions, order: order, missionChanges: true)
+        let move = moves.key(Self.ref(4101), in: .mission(other), forward: false)?.move
+        #expect(move != .setAsNext(other) && move?.isTaken == false)
+
+        MissionMenuContext.setAsNext(Self.ref(4101), in: other, order: order)
+        #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions) == [first])
+        #expect(order.stage(of: Self.ref(4101))?.stage == .waits)
+        // And back: set as next in the first again, the other's order would hold it again.
+        #expect(order.nextsHeldAgain == [Self.ref(4101): [first: other]])
+        // None while Pull Request Order is off.
+        order.setOn(false)
+        #expect(order.nextsHeldAgain.isEmpty)
+    }
+
+    /// A next an order went against since is no next of yours: where both orders hold it then, nothing says it's next in the
+    /// first.
+    @Test func aNextAnOrderWentAgainstIsntOneTheFirstWouldHoldAgain() throws {
+        let defaults = MemoryDefaults()
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
+            [.init(link: Self.link(4102)), .init(link: Self.link(4101), after: ["4102"])],
+            numbers: [4100, 4101, 4102], ready: [4101], defaults: defaults
+        )
+        let first = MissionKey.plan(Self.planID)
+        MissionMenuContext.setAsNext(Self.ref(4101), in: first, order: order)
+        #expect(order.nextsHeldAgain == [Self.ref(4101): [.plan(Self.otherID): first]])
+
+        // The first's session tells its order again, a day later, with !4101 after !4102 too.
+        var orders = DeclaredOrders.load(from: defaults)
+        _ = try orders.apply(
+            OrderRequest(plan: Self.planID.uuidString, revision: 1, entries: [
+                .init(link: Self.link(4100)), .init(link: Self.link(4102)), .init(link: Self.link(4101), after: ["4100", "4102"]),
+            ]),
+            now: Date(timeIntervalSince1970: 1_792_086_400)
+        )
+        orders.save(to: defaults)
+        order.reloadOrders()
+
+        #expect(order.changes[Self.ref(4101)]?.holds(in: order.orders) == false)
+        #expect(Set(StageOrder.holders(of: Self.ref(4101), in: order.missions)) == [first, .plan(Self.otherID)])
+        #expect(order.nextsHeldAgain.isEmpty)
+    }
+
+    /// Where its next in the other would set aside the first's line, as yours goes before a session's order, the Board sets
+    /// it as next there: !4100, which the first puts it after, is in the other too, where it would wait for it.
+    @Test func whereItsNextInTheOtherWouldSetAsideTheFirstsLineTheBoardSetsItAsNextThere() throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
+            [.init(link: Self.link(4102)), .init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4102"])],
+            numbers: [4100, 4101, 4102], ready: [4101]
+        )
+        let first = MissionKey.plan(Self.planID), other = MissionKey.plan(Self.otherID)
+        MissionMenuContext.setAsNext(Self.ref(4101), in: first, order: order)
+        #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions) == [other])
+        #expect(order.nextsHeldAgain.isEmpty)
+        let moves = BoardMoves(board: order.board(kinds: [.pullRequest], lanes: .missions), missions: order.missions, order: order, missionChanges: true)
+        #expect(moves.key(Self.ref(4101), in: .mission(other), forward: false)?.move == .setAsNext(other))
+
+        MissionMenuContext.setAsNext(Self.ref(4101), in: other, order: order)
+        #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions).isEmpty)
+        #expect(order.stage(of: Self.ref(4101))?.stage == .canMerge)
+    }
+
+    /// With three missions, whether the first's order would hold it again depends on the one it's set as next in: in the
+    /// second, which hasn't !4100, the first's line after !4100 comes back. Where the third has !4100 and !4102, its next
+    /// there sets aside both the first's line and the second's: the Board sets it as next there, where it can merge, and
+    /// says where it still waits only in the second's lane. Where the third hasn't them, it says so in both lanes, each
+    /// naming its own mission.
+    @Test(arguments: [true, false])
+    func withThreeMissionsTheBoardSetsItAsNextInTheOneWhoseNextFreesIt(thirdHasThem: Bool) throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
+            [.init(link: Self.link(4102)), .init(link: Self.link(4101), after: ["4102"])],
+            third: (thirdHasThem ? [.init(link: Self.link(4100)), .init(link: Self.link(4102))] : [])
+                + [.init(link: Self.link(4103)), .init(link: Self.link(4101), after: ["4103"])],
+            numbers: [4100, 4101, 4102, 4103], ready: [4101]
+        )
+        let first = MissionKey.plan(Self.planID), second = MissionKey.plan(Self.otherID), third = MissionKey.plan(Self.thirdID)
+        MissionMenuContext.setAsNext(Self.ref(4101), in: first, order: order)
+        #expect(Set(StageOrder.holders(of: Self.ref(4101), in: order.missions)) == [second, third])
+        #expect(order.nextsHeldAgain == [Self.ref(4101): thirdHasThem ? [second: first] : [second: first, third: first]])
+
+        let title = { (key: MissionKey) throws -> String in
+            let mission = try #require(order.missions.first { $0.key == key })
+            return order.names.title(key) ?? OrderText.title(of: mission, name: order.names.name)
+        }
+        let stillWaits = { (key: MissionKey, number: Int) throws -> BoardMove in
+            let (next, waits) = (try title(first), try title(key))
+            return .refused(
+                "It's next to merge in ‘\(next)’ and still waits for !\(number) in ‘\(waits)’: its Mission ▸ Merge After there takes that away"
+            )
+        }
+        let moves = BoardMoves(board: order.board(kinds: [.pullRequest], lanes: .missions), missions: order.missions, order: order, missionChanges: true)
+        let (inSecond, inThird) = (try stillWaits(second, 4102), thirdHasThem ? BoardMove.setAsNext(third) : try stillWaits(third, 4103))
+        #expect(moves.key(Self.ref(4101), in: .mission(second), forward: false)?.move == inSecond)
+        #expect(moves.key(Self.ref(4101), in: .mission(third), forward: false)?.move == inThird)
+        guard thirdHasThem else { return }
+
+        MissionMenuContext.setAsNext(Self.ref(4101), in: third, order: order)
+        #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions).isEmpty)
+        #expect(order.stage(of: Self.ref(4101))?.stage == .canMerge)
+    }
+
+    /// Where two orders go round, the stage names the other as its mission's header does, as soon as you rename it or give
+    /// it BriefBar's name back, though nothing BriefBar knows of the pull requests changed.
+    @Test func theStageNamesAnOrderThatGoesRoundAsSoonAsYouRenameIt() throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4101), after: ["4102"]), .init(link: Self.link(4102))],
+            [.init(link: Self.link(4101)), .init(link: Self.link(4102), after: ["4101"])],
+            numbers: [4101, 4102], ready: [4101, 4102]
+        )
+        let other = try #require(order.missions.first { $0.key == .plan(Self.otherID) })
+        let briefBars = try #require(order.names.title(other.key))
+        let says = { (name: String) -> StageWhy in .orderHolds("‘\(name)’ puts !4102 after it: check the order") }
+        #expect(order.stage(of: Self.ref(4101))?.why == says(briefBars))
+
+        #expect(order.rename(other, to: "Payments") == .named)
+        #expect(order.stage(of: Self.ref(4101))?.why == says("Payments"))
+        order.useBriefBarsName(other.key)
+        #expect(order.stage(of: Self.ref(4101))?.why == says(briefBars))
     }
 
     /// Where its order no longer puts it after one that hasn't merged, set as next there, the Board sets it as next in the
