@@ -329,6 +329,40 @@ fileprivate final class Viewer {}
         order.stopShowing(in: viewer)
     }
 
+    /// Turning Azure DevOps off forgets every name Apple Intelligence gave missions from its titles, and the answer under
+    /// way: a Copilot session's mission's too, though its key names no Azure DevOps pull request.
+    @Test func turningAzureDevOpsOffForgetsAppleIntelligencesNamesOfASessionsMission() async throws {
+        for late in [false, true] {
+            let clock = Clock()
+            let model = Model()
+            let order = Self.service(clock: clock)
+            order.namer = model.namer(clock: clock)
+            order.publish(.copilot, sessions: [OrderSession(ref: Self.session, pullRequests: [Self.pr(4113), Self.pr(4105)])],
+                          items: [Self.item(Self.session, "Checkout work session")])
+            order.publish(.azureDevOps, pullRequests: [Self.ado(4113, nil), Self.ado(4105, nil)], items: [
+                Self.item(Self.pr(4113), "Speed up the checkout page"), Self.item(Self.pr(4105), "Prototype one-click checkout"),
+            ])
+            let family = MissionKey.family(Self.session)
+            #expect(order.missions.map(\.key) == [family])
+            model.holds = late
+            let viewer = Viewer()
+            Self.show([family], in: viewer, by: order)
+            clock.advance(MissionNamer.settleFor)
+            order.namer?.next()
+            if late {
+                try #require(await Self.eventually { model.prompts.count == 1 })
+                order.forget(.azureDevOps)
+                model.release()
+                try await Task.sleep(for: .milliseconds(100))
+            } else {
+                try #require(await Self.eventually { order.modelNames[family] == "Faster checkout" })
+                order.forget(.azureDevOps)
+            }
+            #expect(order.modelNames.isEmpty, "late: \(late)")
+            order.stopShowing(in: viewer)
+        }
+    }
+
     @Test func anAnswerForWhatChangedOrWentMeanwhileDoesntCountAndItsAskedAgain() async throws {
         let clock = Clock()
         let model = Model()

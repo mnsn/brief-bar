@@ -280,8 +280,11 @@ package final class PullRequestOrder: ObservableObject {
             lastChange = nil
             refusal = nil
             yourNames = names
+            // Apple Intelligence names only missions with an Azure DevOps pull request, from their titles: as Azure DevOps
+            // goes, all its names go, and the answer under way, a session's mission's too, whose key names none.
             let forgets = { (key: MissionKey) in
-                MissionNames.forgets(key, kinds: kinds, keepingPlans: plans, keepingMine: changes.ownMissions)
+                kinds.contains(.pullRequest)
+                    || MissionNames.forgets(key, kinds: kinds, keepingPlans: plans, keepingMine: changes.ownMissions)
             }
             modelNames = modelNames.filter { !forgets($0.key) }
             namer?.forget(where: forgets)
