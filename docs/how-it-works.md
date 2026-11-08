@@ -63,7 +63,7 @@ Microsoft Teams' helper processes report Teams as theirs. So, once BriefBar has 
 program it started would have it too. That includes:
 
 - the Azure CLI, a Python program in a folder you can write to (`/opt/homebrew/bin`),
-- the GitHub CLI, for its sign-in's token ([below](#github)),
+- the GitHub CLI, for the accounts it's signed in to and their tokens ([below](#github)),
 - your login shell, which BriefBar asks where `az` and `gh` are, and which runs your shell's startup
   files,
 - the Copilot CLI and git, when you send a work item to Copilot
@@ -478,7 +478,8 @@ Each source tells about its own things (`ItemStories`, the sources' tellers), on
 Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again when its
 row changes, a minute later, or once more of it is read, such as a work item's details as they show
 (`ItemStories.invalidate`), and forgotten a quarter of an hour after it was told, when its source stops or someone else
-signs in to its CLI, the Azure CLI or GitHub's, or no one does, with the summaries made of them, or when Show Links goes
+signs in to its CLI, the Azure CLI or GitHub's, or no one does, or the GitHub CLI's accounts change, with the summaries
+made of them, or when Show Links goes
 off. Views ask as they update, as they show and each minute, in the middle of AppKit's layout, where each change to what
 they show marks their window for another pass, and AppKit throws past as many passes as the window has views: so what
 they ask is taken up on the main actor's next turn, once for each thing however often it's asked
@@ -623,7 +624,8 @@ couldn't be written again stays as it was, lighter only if it's out of date too,
 Apple Intelligence is busy or took too long.", and under that, **Choose Model…** for a model that isn't on
 your plan, and **Try Again**; ✕ then hides it as it was. One that couldn't be written at all says "Couldn't summarize:
 …", with the same, and its ✕ closes it, since nothing's kept. VoiceOver says "Summary ready" and what it's of, once,
-however many places show it. Your name comes from Azure DevOps, or else from your GitHub login.
+however many places show it. Your name comes from Azure DevOps, or else from your GitHub login, the GitHub CLI's active
+account's.
 
 While Summaries is off and Show Links is on, a line where its card would be, in Where It Stands once something's linked
 and under a page's heading, offers it (`SummaryOffer`): "AI can tell you where this stands, in a few lines.", whichever
@@ -3117,20 +3119,44 @@ GitHub.
 
 ### Signing in
 
-BriefBar uses the GitHub CLI's sign-in, never a personal access token of its own:
+BriefBar uses the GitHub CLI's sign-in, never a personal access token of its own. It reads every account the GitHub CLI
+is signed in to on github.com, which `gh` lists, from version 2.81 (`GitHubCLIAccounts`):
 
 ```sh
-gh auth token --hostname github.com
+gh auth status --json hosts --hostname github.com
 ```
 
-`gh` prints the token it keeps in the keychain (`GitHubCLITokenProvider`). BriefBar keeps it in memory
-only, for half an hour, then asks again, in case you signed in as someone else, and asks again right
-away if GitHub rejects it. Concurrent requests share one run of `gh`, which is limited to 30 seconds,
+and gets each one's token by its login (`GitHubCLITokenProvider`):
+
+```sh
+gh auth token --hostname github.com --user <login>
+```
+
+`gh` lists its active account first, and prints the token it keeps in the keychain. An account whose token `gh` doesn't
+keep, as one in `GH_TOKEN`, or whose login it can't say, can only be its active one: its token comes without `--user`.
+As `gh` lists its accounts, it checks each one with GitHub, a request each, so BriefBar keeps the list for half an hour,
+as it does tokens, and lists them sooner only when you click **Refresh Now**, when `gh` has no token for an account it
+listed, as once you sign it out of one, and, for ten minutes after **Sign In…** or **Add Account…**, at each read, every
+minute, until an account it didn't read shows, not just the same ones in another order (`GitHubStore.waitForSignIn`).
+When `gh` can't list its accounts, as one
+older than 2.81 can't, or lists none, as a signed-out one does, BriefBar reads its active account, as it did before it
+read more, and reading that says what's wrong; it keeps that from a `gh` too old to list them, for half an hour, and
+asks again at the next read otherwise. When listing them fails otherwise, as when `gh` takes longer than 30 seconds on a
+network that doesn't answer, BriefBar reads the accounts it last listed, so what it read of each stays, and lists them
+again at the next read.
+
+BriefBar keeps each token in memory only, for half an hour, then asks again, in case you signed in as someone else, and
+asks again right away if GitHub rejects it. Concurrent requests share one run of `gh`, which is limited to 30 seconds,
 with prompts, update checks and colors turned off (`GH_PROMPT_DISABLED`, `GH_NO_UPDATE_NOTIFIER`,
-`NO_COLOR`). Turning GitHub off cancels the read that waits for a token: a run of `gh` under way stops
+`NO_COLOR`). Turning GitHub off cancels the read that waits for a token or the accounts: a run of `gh` under way stops
 once no request waits for it, and a request that gave up gets no token, so it reaches nothing, not even
 memory. It tells a signed-out CLI from other failures by what `gh` prints. **Sign In…** opens
-Terminal to run `gh auth login --hostname github.com --web`.
+Terminal to run `gh auth login --hostname github.com --web`. **Add Account…**, on GitHub's page in Settings while
+you're signed in, runs it too, then `gh auth switch` back to the account `gh` used, as `gh auth login` makes the one you
+sign in to its active account in Terminal too (`GitHub.signInScript`). Terminal asks `gh` which account that is as it
+starts (`gh config get --host github.com user`), so it's the one you use then, even if you switched since BriefBar last
+listed them; when `gh` uses none, nothing switches. When it can't switch back, it says so, with what `gh` said, and
+the `gh auth switch` that would.
 
 As with `az`, BriefBar looks for `gh` in `/opt/homebrew/bin`, `/usr/local/bin` and the other usual
 places, then asks your login shell (`command -v gh`), and both are responsible for themselves (see
@@ -3139,8 +3165,9 @@ another one. Only github.com is read, not GitHub Enterprise Server.
 
 ### Where the data comes from
 
-Each refresh is one request: a POST of the same GraphQL query (`PullRequestQuery`) to
-`https://api.github.com/graphql`. GitHub's GraphQL API takes reads and writes alike as POSTs, so the
+Each refresh is one request for each account, all at once (`GitHubAccountsReader`): a POST of the same GraphQL query
+(`PullRequestQuery`) to `https://api.github.com/graphql`, with that account's token. GitHub's GraphQL API takes reads
+and writes alike as POSTs, so the
 query is fixed text with only its search strings and a count as variables, and a test checks that it
 has no mutation. It asks for two searches, 50 pull requests each:
 
@@ -3162,14 +3189,32 @@ It refreshes every 2 minutes by default (**Refresh Every** in its settings), whe
 last read is more than 10 seconds old, and every minute while you need to sign in or are offline, so a
 fix shows soon. When GitHub asks it to slow down, it sends nothing until the time GitHub gave:
 `Retry-After` for its secondary limits, in seconds or as the date to wait until (`RetryAfter`), the hourly
-limit's reset (`x-ratelimit-reset`), or a minute when GitHub only says so in words. At the default, that's 30
-requests an hour, a small part of GitHub's hourly limit for the GraphQL API.
+limit's reset (`x-ratelimit-reset`), or a minute when GitHub only says so in words. Each account has its own limits, so
+that wait holds only the account GitHub asked it of, and the others are read meanwhile, even when none could be read
+last time: BriefBar stops reading altogether only when GitHub asked that as every account, until the soonest of their
+times (`GitHubAccountsReader.Failure`), and even then **Refresh Now** and the wait after **Sign In…** or **Add
+Account…** list the accounts and read, so that one you sign in to shows, while each account's own wait holds what it
+would send. At the default, that's 30
+requests an hour for each account, a small part of GitHub's hourly limit for the GraphQL API.
 
 When GitHub answers with errors alongside what it could read, such as an organization that uses SAML
 single sign-on the GitHub CLI isn't authorized for, the list shows what it read with a note saying
-why the rest is missing. An empty list says **All quiet** only when the last read worked and read every
-pull request there is (`GitHubStore.isAllQuiet`): not before a read has worked, nor while it says you're
-offline, GitHub can't be reached or some pull requests couldn't be read.
+why the rest is missing, which, with more than one account, names the account it's about. An empty list says **All
+quiet** only when the last read worked and read every pull request there is (`GitHubStore.isAllQuiet`): not before a
+read has worked, nor while it says you're offline, GitHub can't be reached or some pull requests couldn't be read.
+
+With more than one account, the list has each pull request once, as yours when it's yours as any of them
+(`GitHubClassifier.merged`), and its foot names every account. When some accounts can be read and others can't, it
+says, beside the others' pull requests, why each of those couldn't, and keeps what it last read of it, but not when
+it takes signing in to that account again: GitHub rejected even a fresh token of it, or `gh` has none for it. When no
+account can be read, the list is what it would be if only some couldn't: what it last read of each, on the same terms,
+with why each couldn't. What's wrong with it, as when BriefBar read one, is why the first one couldn't, the active
+account, or, when that one takes signing in again, the next one that doesn't, and that isn't said twice
+(`GitHubAccountsReader.Failure`). When every account takes signing in again, the list asks you to sign in and shows
+nothing, as it does for one. One account that can't be read keeps its last list, as before, unless the read before
+listed more: then the others' pull requests go, as they would if it could be read. Two accounts that turn out to be one,
+such as the active one's token, which `gh` can't say whose it is, and the account it's from, are listed once, as
+the one read just now, if either was.
 
 ### How a pull request's group is decided
 
@@ -3182,16 +3227,19 @@ offline, GitHub can't be reached or some pull requests couldn't be read.
   approved (or, without a decision, a reviewer's latest review approves it, a deleted account's too); and
   **Waiting** for reviews otherwise.
 
-A pull request that's both yours and asks for your review is listed once, as yours. To Review and
+A pull request that's both yours and asks for your review is listed once, as yours, whichever of your accounts it's
+yours as and asks. To Review and
 Changes Requested count as needing you, Failing as something wrong and Ready to Merge as done or
 ready; Waiting isn't counted.
 
 ### Limits
 
 - Review requests to a team you're in aren't listed, only those to you by name, as with Azure DevOps.
-- Only the 50 most recently changed of each search are read; when there are more to review, the list
+- Only the 50 most recently changed of each search are read, for each account; when there are more to review, the list
   has **More on GitHub**.
 - Pull requests in organizations that use SAML single sign-on need the GitHub CLI authorized for them.
+- Your accounts are those the GitHub CLI is signed in to on github.com: BriefBar keeps no list of its own, so there's
+  no reading only some of them, and signing `gh` out of one (`gh auth logout --user <login>`) stops it being read.
 - There are no notifications, and nothing is saved: the list is read again each time, and kept in
   memory only.
 

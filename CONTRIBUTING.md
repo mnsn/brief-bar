@@ -98,8 +98,8 @@ Sources/TeamsCore/             Teams' notifications and read markers, the unread
 Sources/AzureDevOpsCore/       Azure DevOps: sign-in with the Azure CLI, the client (networking),
                                the engines (pull requests, sprint, pipelines), groups, notifications, the
                                brief, and the links people send you in chats
-Sources/GitHubCore/            GitHub: sign-in with the GitHub CLI, the client (networking: one read-only
-                               GraphQL query), and the pull requests' groups
+Sources/GitHubCore/            GitHub: sign-in with the GitHub CLI, for each account it's signed in to, the client
+                               (networking: one read-only GraphQL query each), and the pull requests' groups
 Sources/CopilotCore/           the Copilot app's database and event logs, and session statuses
 Sources/CopilotTasks/          Send Work to Copilot: the prompt, your login shell's environment, finding
                                the Copilot CLI, the git worktree, starting a run and following it from

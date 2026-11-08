@@ -69,6 +69,23 @@ enum Fixture {
         (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
     }
 
+    /// What `gh auth status --json hosts --hostname github.com` prints for these accounts, in this order: who each is,
+    /// whether it's active, and where its token comes from (`keyring`, the settings file's path, or `GH_TOKEN`).
+    static func accounts(_ accounts: [(login: String, active: Bool, source: String)]) -> String {
+        let entries = accounts.map { account -> [String: Any] in
+            [
+                "state": "success", "active": account.active, "host": "github.com", "login": account.login,
+                "tokenSource": account.source, "scopes": "gist, read:org, repo, workflow", "gitProtocol": "https",
+            ]
+        }
+        return String(decoding: data(["hosts": ["github.com": entries]]), as: UTF8.self)
+    }
+
+    /// The accounts, the first active, each with its token in the keychain.
+    static func accounts(_ logins: [String]) -> String {
+        accounts(logins.enumerated().map { (login: $1, active: $0 == 0, source: "keyring") })
+    }
+
     /// A pull request decoded from GitHub's JSON, as the app reads it.
     static func decoded(_ object: [String: Any]) throws -> GitHubPullRequest {
         GitHubPullRequest(try GitHubJSON.decoder().decode(APIPullRequest.self, from: data(object)))

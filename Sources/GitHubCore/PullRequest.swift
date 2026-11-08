@@ -250,6 +250,13 @@ public enum GitHubClassifier {
         return sorted(snapshots)
     }
 
+    /// Each pull request once, from every account's list, as yours when it's yours as any of them, in the list's order.
+    public static func merged(_ lists: [[GitHubPRSnapshot]]) -> [GitHubPRSnapshot] {
+        let all = lists.joined()
+        var seen = Set<String>()
+        return sorted((all.filter { $0.role == .author } + all.filter { $0.role != .author }).filter { seen.insert($0.id).inserted })
+    }
+
     /// By group, then the most recently changed first.
     public static func sorted(_ snapshots: [GitHubPRSnapshot]) -> [GitHubPRSnapshot] {
         snapshots.sorted { lhs, rhs in
@@ -347,6 +354,8 @@ public enum GitHubProblem: Sendable, Equatable {
     }
 
     public static func from(_ error: Error, now: Date = Date()) -> GitHubProblem {
+        // No account could be read: why the first one couldn't, other than for a sign-in.
+        if let failure = error as? GitHubAccountsReader.Failure { return from(failure.error, now: now) }
         var unwrapped: any Error = error
         if let authError = error as? GitHubAuthError { unwrapped = GitHubError.auth(authError) }
         guard let gitHubError = unwrapped as? GitHubError else { return .unreachable(unwrapped.localizedDescription) }
