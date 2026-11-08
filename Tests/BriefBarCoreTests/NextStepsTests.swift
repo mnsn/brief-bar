@@ -41,12 +41,15 @@ import Testing
         )
     }
 
+    /// Each pull request's stage, by its number.
+    static func refs(_ stages: [Int: StageReading]) -> [ItemRef: StageReading] {
+        Dictionary(uniqueKeysWithValues: stages.map { (pr($0.key), $0.value) })
+    }
+
     static func board(
         _ stages: [Int: StageReading], missions: [OrderMission] = [], lanes: BoardLanes = .missions
     ) -> PullRequestBoard {
-        PullRequestBoard.make(
-            stages: Dictionary(uniqueKeysWithValues: stages.map { (pr($0.key), $0.value) }), missions: missions, kinds: kinds, lanes: lanes
-        )
+        PullRequestBoard.make(stages: refs(stages), missions: missions, kinds: kinds, lanes: lanes)
     }
 
     /// The numbers of a column's cards, in their order, across the board as Lanes: None has them.
@@ -203,7 +206,7 @@ import Testing
         #expect(waiting(4302) == Set([4303, 4305, 4306].map(Self.pr)))
         #expect(waiting(4301) == Set([4302, 4303, 4305, 4306].map(Self.pr)))
 
-        let waited = BoardOrder.waitedLongest(cards)
+        let waited = BoardOrder.waitedLongest(cards, stages: Self.refs(stages))
         #expect([4301, 4302, 4303, 4304, 4305, 4306].map { waited[Self.pr($0)] } == [t(20), t(20), t(20), t(10), t(30), t(30)])
         #expect(Self.column(.yourReview, stages, missions: [order]) == ["!4304", "!4301", "!4302", "!4303", "!4305", "!4306"])
     }
@@ -245,6 +248,47 @@ import Testing
             4702: Self.reading(.yourReview, asked, at: 10),
         ]
         #expect(Self.column(.yourReview, stages, missions: [order]) == ["!4700", "!4701", "!4702"])
+    }
+
+    /// The same, in a mission `OrderBoard.missions` builds: the order doesn't name the base, and its first pull request's
+    /// changes show against the base's branch, which its step notes, whether or not its prerequisites name the base too.
+    @Test func aBaseTheOrderDoesntNameTakesTheWaitOfThoseItsChangesShowAgainst() {
+        let missions = Self.missions(
+            [OrderBoardTests.ado(4700, from: "robin/base"),
+             OrderBoardTests.ado(4701, from: "robin/totals", into: "robin/base"),
+             OrderBoardTests.ado(4702, from: "robin/tax")],
+            plan: [.init(ref: Self.pr(4701)), .init(ref: Self.pr(4702), after: [Self.pr(4701)])]
+        )
+        #expect(missions.count == 1)
+        #expect(missions.first?.attached.map(\.ref) == [Self.pr(4700)])
+        let asked = StageWhy.asked("Sam asked you")
+        let stages: [Int: StageReading] = [
+            4700: Self.reading(.yourReview, asked, at: 50), 4701: Self.reading(.yourReview, asked, at: 30),
+            4702: Self.reading(.yourReview, asked, at: 10),
+        ]
+        #expect(Self.column(.yourReview, stages, missions: missions) == ["!4700", "!4701", "!4702"])
+    }
+
+    /// A mission's lane counts the waits of those in other missions that build on its pull requests, as Up Next does: its
+    /// order, its Next and its next steps agree with Up Next's. !4101 → !4105, with !4102 any time, and !4105 → !4106 in
+    /// another order; !4106 has waited longest, then !4102, !4105 and !4101, which takes !4106's wait through !4105.
+    @Test func aLaneCountsTheWaitsOfThoseInOtherMissionsThatBuildOnItsPullRequests() throws {
+        let first = Self.mission([
+            Self.step(4101, .next, place: 1), Self.step(4105, place: 2, after: [4101]), Self.step(4102, .anyTime),
+        ])
+        let second = Self.mission([Self.step(4105, .next, place: 1), Self.step(4106, place: 2, after: [4105])])
+        let asked = StageWhy.asked("Sam asked you")
+        let stages: [Int: StageReading] = [
+            4106: Self.reading(.yourReview, asked, at: 10), 4102: Self.reading(.yourReview, asked, at: 20),
+            4105: Self.reading(.yourReview, asked, at: 30), 4101: Self.reading(.yourReview, asked, at: 40),
+        ]
+        let board = Self.board(stages, missions: [first, second])
+        #expect(board.upNext.slots.first { $0.kind == .yourReview }?.card.ref == Self.pr(4101))
+        let lane = try #require(board.lane(for: first.key))
+        #expect(lane.cards(in: .yourReview).map(\.ref.shortOrderLabel) == ["!4101", "!4105", "!4102"])
+        #expect(lane.nextSteps.first?.title == "Review !4101")
+        #expect(board.lane(for: second.key)?.cards(in: .yourReview).map(\.ref.shortOrderLabel) == ["!4105", "!4106"])
+        #expect(Self.column(.yourReview, stages, missions: [first, second]) == ["!4101", "!4105", "!4106", "!4102"])
     }
 
     /// Only an open pull request its order numbers has a place in its merge order, among what's left to merge; one that

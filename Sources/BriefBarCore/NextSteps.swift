@@ -24,8 +24,8 @@ public struct BoardCard: Equatable, Sendable, Identifiable {
     /// Its place in that mission as By Mission lists it, from 0: its order's steps, then those stacked with them. Only for
     /// which comes first when nothing else tells them apart, never for which merges first.
     public var listIndex: Int?
-    /// The pull requests that wait for it, directly or through others, by their steps' prerequisites, in any mission the
-    /// board shows: those that build on it.
+    /// The pull requests that wait for it, directly or through others, by their steps' prerequisites and what they're
+    /// stacked on, in any mission the board shows: those that build on it.
     public var waitingForIt: Set<ItemRef>
     /// That mission is the one you focus on.
     public var isFocused: Bool
@@ -82,8 +82,8 @@ extension PullRequestStage {
 ///   asks you, then what failed, then changes someone wants, the oldest first; then the rest, the mission you focus on
 ///   first, as By Mission lists them.
 /// - **Your review:** the one that has waited longest; one that others build on as long as the longest waiting of those
-///   that wait for it, by their orders, as none of them can merge before it; of those that waited as long, the one more
-///   build on.
+///   that wait for it, by their orders or what they're stacked on, in any lane, as none of them can merge before it; of
+///   those that waited as long, the one more build on.
 /// - **Teammate's review:** Find a reviewer first, as that's yours to do; then the earliest in its mission's merge order.
 /// - **Can merge:** next to merge first, then any time, then those with no order; the oldest first, then as By Mission
 ///   lists them.
@@ -91,7 +91,8 @@ extension PullRequestStage {
 /// - **Merged:** the latest first.
 public enum BoardOrder {
     /// These cards, all in `stage`, in the order they come in it.
-    /// - Parameter stages: every pull request's stage, for what a card in Waits waits for.
+    /// - Parameter stages: every pull request's stage, for what a card in Waits waits for, and how long those that build on
+    ///   one in Your review have waited, whatever their lane.
     public static func sorted(_ cards: [BoardCard], in stage: PullRequestStage, stages: [ItemRef: StageReading]) -> [BoardCard] {
         switch stage {
         case .inProgress:
@@ -106,7 +107,7 @@ public enum BoardOrder {
                 return isEarlierInMissions(lhs, rhs) ?? isOlder(lhs, rhs)
             }
         case .yourReview:
-            let waited = waitedLongest(cards)
+            let waited = waitedLongest(cards, stages: stages)
             return cards.sorted { lhs, rhs in
                 if lhs.isFocused != rhs.isFocused { return lhs.isFocused }
                 let left = waited[lhs.ref] ?? .distantFuture, right = waited[rhs.ref] ?? .distantFuture
@@ -188,13 +189,16 @@ public enum BoardOrder {
     }
 
     /// Since when each in Your review has waited, as its turn counts it: one that others build on as long as the longest
-    /// waiting of those here that wait for it, directly or through others, as none of them can merge before it.
-    static func waitedLongest(_ cards: [BoardCard]) -> [ItemRef: Date] {
+    /// waiting of those in Your review on the board that wait for it, directly or through others, as none of them can merge
+    /// before it. From every pull request's stage, not only these cards', so that a mission's lane counts those in other
+    /// missions too, and agrees with Up Next.
+    static func waitedLongest(_ cards: [BoardCard], stages: [ItemRef: StageReading]) -> [ItemRef: Date] {
         var waited: [ItemRef: Date] = [:]
         for card in cards {
             var since = card.reading.since ?? .distantFuture
-            for other in cards where card.waitingForIt.contains(other.ref) {
-                since = min(since, other.reading.since ?? .distantFuture)
+            for ref in card.waitingForIt {
+                guard let other = stages[ref], other.stage == .yourReview, other.isOnBoard else { continue }
+                since = min(since, other.since ?? .distantFuture)
             }
             waited[card.ref] = since
         }
@@ -651,14 +655,16 @@ public struct PullRequestBoard: Equatable, Sendable {
         }
     }
 
-    /// For each pull request in these missions, those that wait for it, directly or through others, by their steps'
-    /// prerequisites: across the missions, so that a pull request in two gathers what waits for it in each.
+    /// For each pull request in these missions, those that wait for it, directly or through others: by their steps'
+    /// prerequisites, and by what they're stacked on (`OrderMission.stackedBases(of:)`), as one stacked on a pull request
+    /// its order doesn't name can't merge before it either. Across the missions, so that a pull request in two gathers what
+    /// waits for it in each.
     static func waiters(in missions: [OrderMission]) -> [ItemRef: Set<ItemRef>] {
         var direct: [ItemRef: Set<ItemRef>] = [:]
         for mission in missions {
             for step in mission.steps + mission.attached {
-                for prerequisite in step.prerequisites where prerequisite.ref != step.ref {
-                    direct[prerequisite.ref, default: []].insert(step.ref)
+                for earlier in step.prerequisites.map(\.ref) + mission.stackedBases(of: step.ref) where earlier != step.ref {
+                    direct[earlier, default: []].insert(step.ref)
                 }
             }
         }
