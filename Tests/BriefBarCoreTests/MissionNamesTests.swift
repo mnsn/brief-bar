@@ -371,16 +371,27 @@ import Testing
         #expect(MissionNaming.clean("**Coupon totals and tests**") == "Coupon totals and tests")
         #expect(MissionNaming.clean("“Gift card payments”!") == "Gift card payments")
         #expect(MissionNaming.clean("\n\n  The mission's name: Faster checkout  ") == "Faster checkout")
-        #expect(MissionNaming.clean("one two three four five six seven eight nine ten") == "one two three four five six seven eight")
+        #expect(MissionNaming.clean("one two three four five six seven eight nine ten") == "One two three four five six seven eight")
         #expect(MissionNaming.clean("  \n ") == nil)
         #expect(MissionNaming.clean("\"!\"") == nil)
         #expect(MissionNaming.clean("Heredoc fixes") == "Heredoc fixes")
         #expect(MissionNaming.clean("Surefire checkout") == "Surefire checkout")
-        // An answer that talks about the name, or declines to give one, is none: the mission keeps the name it has.
+        // A label it starts with goes, however it's written.
+        #expect(MissionNaming.clean("Suggested name: Checkout coupons") == "Checkout coupons")
+        #expect(MissionNaming.clean("**Name:** Checkout coupons") == "Checkout coupons")
+        // In sentence case, as it's asked for, though not where a first word has capitals of its own.
+        #expect(MissionNaming.clean("checkout redesign") == "Checkout redesign")
+        #expect(MissionNaming.clean("iOS widgets") == "iOS widgets")
+        #expect(MissionNaming.clean("I/O retries") == "I/O retries")
+        // An answer that talks about the name, asks, or declines to give one, is none: the mission keeps the name it has.
         for chatter in [
             "Here's a name for the mission:\n\nCheckout coupons", "Sure! Checkout coupons", "**Certainly.** Checkout coupons",
             "I'm sorry, but I can't help with that.", "I’m sorry, I can’t help with that", "“Sorry, I can't name this mission.”",
             "I cannot name this mission.", "Unfortunately, the titles don't say.", "Suggested name:",
+            "I apologize, but I cannot fulfill this request.", "My apologies, I can't name this.",
+            "I don't have enough information to name this mission.", "I'll call it Checkout coupons", "Unable to determine a name.",
+            "How about “Checkout coupons”?", "Apologies, the titles don't say.", "As an AI language model, I can't name this.",
+            "Checkout coupons?",
         ] {
             #expect(MissionNaming.clean(chatter) == nil, "\(chatter)")
         }

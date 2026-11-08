@@ -318,20 +318,21 @@ public enum MissionNaming {
         return parts.compactMap { $0 }.joined(separator: "\n") + "\n\nThe mission's name:"
     }
 
-    /// The answer as a name: its first line, without quotes, labels, markdown or the full stop, of a few words; nil when
-    /// that leaves nothing a name could be, or when the answer isn't a name but talks about one, such as "Here's a name for
-    /// the mission:", or declines, such as "I'm sorry, but I can't help with that."
+    /// The answer as a name: its first line, without quotes, labels, markdown or the full stop, of a few words, in sentence
+    /// case; nil when that leaves nothing a name could be, or when the answer isn't a name but talks about one, such as
+    /// "Here's a name for the mission:" or "How about Checkout coupons?", or declines, such as "I'm sorry, but I can't help
+    /// with that."
     public static func clean(_ answer: String) -> String? {
         var line = answer.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
-        for label in ["Name:", "Mission name:", "The mission's name:", "Mission:", "Title:"]
-        where line.lowercased().hasPrefix(label.lowercased()) {
-            line = String(line.dropFirst(label.count)).trimmingCharacters(in: .whitespaces)
-        }
         line = line.replacingOccurrences(of: "`", with: "").replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "#", with: "").trimmingCharacters(in: .whitespaces)
         if line.hasPrefix("- ") { line = String(line.dropFirst(2)) }
+        // A label it starts with, such as "Name:" or "Suggested name:".
+        if let lead = line.firstMatch(of: label) { line = String(line[lead.range.upperBound...]) }
         guard !line.hasSuffix(":"), !isChatter(line) else { return nil }
         while let first = line.first, "\"“'‘".contains(first) { line.removeFirst() }
+        while let last = line.last, "\"”'’".contains(last) { line.removeLast() }
+        guard !line.hasSuffix("?") else { return nil }
         while let last = line.last, "\"”'’.!:;,".contains(last) { line.removeLast() }
         line = line.trimmingCharacters(in: .whitespaces)
         let words = line.split(whereSeparator: { $0.isWhitespace })
@@ -340,23 +341,38 @@ public enum MissionNaming {
         if name.count > mostAnswerCharacters {
             name = String(name.prefix(mostAnswerCharacters)).trimmingCharacters(in: .whitespaces)
         }
+        // Sentence case, as it's asked for and doesn't always give: a first word all in small letters starts with a
+        // capital, though not "iOS".
+        if let first = words.first, first.allSatisfy(\.isLowercase) {
+            name = name.prefix(1).uppercased() + name.dropFirst()
+        }
         return name
     }
 
-    /// How an answer that isn't a name opens, lowercased: one that talks about the name, or declines to give one.
+    /// A label an answer starts with: "Name:", "Title:", "Mission:", or up to two words before one of them, as in "The
+    /// mission's name:" or "Suggested name:", or "Suggested:".
+    static var label: Regex<Substring> { /^(?i)(?:[\p{L}'’]+\s+){0,2}(?:names?|titles?|missions?|suggestions?|suggested)\s*:\s*/ }
+
+    /// How an answer that isn't a name opens, lowercased, a whole word or words: one that talks about the name, or
+    /// declines to give one. "i" is "I" itself, "I'll" and "I’m" too.
     static let chatter = [
-        "here", "sure", "certainly", "of course", "okay", "i'm", "i am", "i'd", "i would", "sorry", "i can't", "i cannot",
-        "i can not", "i won't", "unfortunately", "as an ai",
+        "here", "sure", "certainly", "of course", "okay", "i", "my apologies", "sorry", "unfortunately", "unable",
+        "suggested", "how about",
     ]
 
-    /// Whether a line opens as an answer that isn't a name does, a whole word or words at its start, whatever quotes it
-    /// opens with: "Here's", "Sure!", "I’m sorry", but not "Heredoc fixes".
+    /// How such an answer opens, whatever follows: "Apologies", "Apologize".
+    static let chatterStems = ["apolog"]
+
+    /// Whether a line opens as an answer that isn't a name does, whatever quotes it opens with: "Here's", "Sure!",
+    /// "I’m sorry", "I'll call it", "As an AI language model", but not "Heredoc fixes", "iOS widgets" or "I/O retries".
     static func isChatter(_ line: String) -> Bool {
         let opening = line.drop { "\"“'‘".contains($0) }.lowercased().replacingOccurrences(of: "’", with: "'")
+        if chatterStems.contains(where: opening.hasPrefix) { return true }
+        if opening.firstMatch(of: /^as an? (?:[a-z'-]+ ){0,3}(?:model|ai|assistant)\b/) != nil { return true }
         return chatter.contains { words in
             guard opening.hasPrefix(words) else { return false }
             guard let next = opening.dropFirst(words.count).first else { return true }
-            return !(next.isLetter || next.isNumber || next == "-")
+            return !(next.isLetter || next.isNumber || next == "-" || next == "/")
         }
     }
 
