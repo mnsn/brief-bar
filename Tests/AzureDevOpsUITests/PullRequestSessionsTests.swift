@@ -687,6 +687,33 @@ import Testing
         #expect(checked == 0 && read == 0)
     }
 
+    /// A pull request that's completed while its details show goes nowhere from the next turn on: what was read for it goes,
+    /// with Show Links off, there's no session to show, and how work would reach one isn't checked anymore.
+    @Test func goesNowhereOnceItsCompletedWhileItsDetailsShow() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        sessions.refreshEvery = refresh
+        let (item, record) = try await pullRequest()
+        var current = record
+        sessions.record = { $0 == item.key ? current : nil }
+        var checked = 0
+        sessions.deliveryCheckedForTests = { _ in checked += 1 }
+        let following = followOnScreen(sessions, item, record: record)
+        defer { following.cancel() }
+        try await until { sessions.session(for: item.key)?.delivery != nil }
+        #expect(sessions.session(for: item.key)?.canChoose == true)
+
+        // Completed, as the list reads it now. A read under way may still end, and finds it completed.
+        current.pullRequest.status = .completed
+        let checkedThen = checked
+        try await until { sessions.session(for: item.key) == nil }
+        #expect(sessions.session(for: item.key) == nil)
+        #expect(checked == checkedThen)
+    }
+
     /// Turned off, as when Azure DevOps stops, a search of the logs for mentions under way stops before the next log; and a
     /// search whose task is cancelled, such as one for details that closed, reads none.
     @Test func stopsASearchUnderWayWhenItStops() async throws {
