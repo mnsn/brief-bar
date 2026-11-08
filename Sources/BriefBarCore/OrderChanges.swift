@@ -694,13 +694,15 @@ extension OrderChanges {
             if touched[ref] == nil { touched[ref] = .some(change) }
             edited.remove(ref)
         }
-        // One for each mission: the others set as next there aren't anymore.
+        // One for each mission: the others set as next there aren't anymore, and one beside its order that you set as next
+        // only goes back beside it.
         func clearOtherFirsts(named key: MissionKey, in mission: OrderMission?, besides ref: ItemRef) throws {
             for other in edited.all where other.ref != ref {
                 guard let first = other.first, mission.map({ Self.names($0, first) }) ?? (first == key), other.holds(in: orders)
                 else { continue }
                 var cleared = other
                 cleared.first = nil
+                cleared.detachIfDone()
                 try keep(cleared)
             }
         }

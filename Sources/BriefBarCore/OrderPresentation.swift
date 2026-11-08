@@ -113,14 +113,20 @@ public struct OrderNames {
 
 extension OrderBoard {
     /// The mission a pull request's capsule speaks for, and its step there: the first, as they're sorted, that has it in
-    /// its order, else the first it's stacked with. Nil when it's in none, or only in a group with no order, which has no
-    /// capsule.
+    /// its order, else the first it's stacked with, else the first with no order known where a change of yours says
+    /// something of it, such as that you moved it there, for its quiet ✎. Nil when it's in none, or only in a group with no
+    /// order that says nothing of yours, which has no capsule.
     public static func step(for ref: ItemRef, in missions: [OrderMission]) -> (mission: OrderMission, step: OrderStep)? {
         for mission in missions {
             if let step = mission.steps.first(where: { $0.ref == ref && $0.standing != .unordered }) { return (mission, step) }
         }
         for mission in missions where !mission.isFamily {
             if let step = mission.attached.first(where: { $0.ref == ref }) { return (mission, step) }
+        }
+        for mission in missions {
+            if let step = mission.steps.first(where: { $0.ref == ref && $0.notes.contains { $0.isAboutYourChanges } }) {
+                return (mission, step)
+            }
         }
         return nil
     }

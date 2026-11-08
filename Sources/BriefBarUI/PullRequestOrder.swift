@@ -500,7 +500,7 @@ package final class PullRequestOrder: ObservableObject {
     /// The missions again, from what the sources show, the orders and your changes: first keeping what the sources show
     /// become of the pull requests that orders or your changes name, or that you focus on, and forgetting the orders and
     /// changes that finished long enough ago; then moving a chain you put pull requests in on to another of its pull
-    /// requests, as the one it's named by ends.
+    /// requests, as the one it's named by ends, and Focus on a chain on to the chain its pull requests are in now.
     private func rebuild() {
         guard isOn else {
             if !missions.isEmpty { missions = [] }
@@ -569,6 +569,19 @@ package final class PullRequestOrder: ObservableObject {
             if let last = lastChange { lastChange = last.renamingChains(renamed) }
             if anchored != self.changes {
                 keep(anchored)
+                missions = OrderBoard.missions(
+                    facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date
+                )
+            }
+        }
+        // Focus on a chain follows its pull requests to the chain they're in now, as it's named by another of them: once the
+        // one it was named by ended or moved out, or came back with Undo.
+        if case .chain? = focus, let key = focus, !missions.contains(where: { $0.key == key }),
+           let was = self.missions.first(where: { $0.key == key }) {
+            let open = Set(was.steps.filter { $0.status.isOpen }.map(\.ref))
+            if let now = missions.first(where: { $0.kind == .stack && $0.steps.contains { open.contains($0.ref) } }) {
+                focus = now.key
+                OrderFocus.save(now.key, to: defaults)
                 missions = OrderBoard.missions(
                     facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date
                 )

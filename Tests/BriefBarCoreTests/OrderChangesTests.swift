@@ -279,7 +279,9 @@ import Testing
         let moved = try Self.step(4102, in: family)
         let names = OrderNames(title: { $0 == .plan(planID) ? "Fix the payments bugs" : nil })
         #expect(moved.notes.map { OrderText.note($0, of: moved.ref, names: names) } == ["You moved it here from ‘Fix the payments bugs’"])
-        #expect(moved.isYours && OrderBoard.step(for: Self.pr(4102), in: missions) == nil)
+        // By Status gives its row a quiet ✎ that says so, and shows its mission.
+        #expect(moved.isYours && OrderBoard.step(for: Self.pr(4102), in: missions)?.mission.key == .family(opener))
+        #expect(OrderBoard.step(for: Self.pr(4110), in: missions) == nil)
 
         // Merge After orders it among them; the rest still have no order known.
         try changes.apply(.mergeAfter(Self.pr(4102), Self.pr(4110), in: .family(opener), true), missions: missions, orders: orders, now: t(70))
@@ -1312,5 +1314,23 @@ import Testing
             full.prerequisites = []
             #expect(quick == full)
         }
+    }
+
+    /// Setting another as next where you'd set one beside its order takes that one back beside it, leaving nothing of yours.
+    @Test func anotherSetAsNextTakesOneBesideItsOrderBackBesideIt() throws {
+        let orders = try tell([(4100, []), (4102, [])])
+        let facts = OrderFacts(pullRequests: [
+            Self.ado(4100), OrderBoardTests.ado(4101, from: "users/robin/a"),
+            OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+        ])
+        var changes = OrderChanges()
+        try changes.apply(.setNext(Self.pr(4101), in: .plan(planID), true), missions: Self.missions(facts, orders, changes), orders: orders, now: t(60))
+        let touched = try changes.apply(
+            .setNext(Self.pr(4100), in: .plan(planID), true), missions: Self.missions(facts, orders, changes), orders: orders, now: t(70)
+        )
+        #expect(changes[Self.pr(4101)] == nil && changes[Self.pr(4100)]?.first == .plan(planID))
+        #expect(try Self.mission(.plan(planID), in: Self.missions(facts, orders, changes)).attached.map(\.ref) == [Self.pr(4101)])
+        changes.restore(touched)
+        #expect(changes[Self.pr(4101)]?.isAttached == true && changes[Self.pr(4100)] == nil)
     }
 }

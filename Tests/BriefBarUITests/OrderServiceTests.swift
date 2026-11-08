@@ -783,4 +783,24 @@ private final class Clock {
         #expect(step?.status == .merged && step?.standing == .merged)
         #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)]?.outcome == .merged)
     }
+
+    /// Focus on a chain follows its pull requests as the chain is named by another of them: when you move the one it's named
+    /// by out of missions, and back with Undo.
+    @Test func focusOnAChainFollowsItAsItsNamedByAnother() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4200))])
+        let order = Self.service(defaults)
+        let chain = [Self.ado(4101, from: "robin/a"), Self.ado(4102, from: "robin/b", into: "robin/a"), Self.ado(4103, from: "robin/c", into: "robin/b")]
+        order.publish(.azureDevOps, pullRequests: chain + [Self.ado(4130, from: "sam/search")])
+        order.setFocus(.chain(Self.ref(4101)))
+        order.change(.move([Self.ref(4130)], to: .into(.chain(Self.ref(4101))), from: nil))
+        order.change(.move([Self.ref(4101)], to: .outside, from: nil))
+
+        #expect(order.focus == .chain(Self.ref(4102)) && OrderFocus.load(from: defaults) == .chain(Self.ref(4102)))
+        #expect(order.missions.first?.key == .chain(Self.ref(4102)) && order.missions.first?.isFocused == true)
+        #expect(order.missions.first?.contains(Self.ref(4130)) == true)
+
+        #expect(order.undoLastChange())
+        #expect(order.focus == .chain(Self.ref(4101)) && OrderFocus.load(from: defaults) == .chain(Self.ref(4101)))
+        #expect(order.missions.first?.key == .chain(Self.ref(4101)) && order.missions.first?.isFocused == true)
+    }
 }
