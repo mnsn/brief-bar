@@ -299,7 +299,9 @@ public enum MissionNaming {
             return String(flat.prefix(mostCharacters))
         }
         func quoted(_ title: String) -> String {
-            "“\(QuotedText.oneLine(title))”"
+            // Its own curly quotes made straight, so that none of them ends its quote.
+            let inside = QuotedText.oneLine(title).replacingOccurrences(of: "“", with: "\"").replacingOccurrences(of: "”", with: "\"")
+            return "“\(inside)”"
         }
         func list(_ heading: String, _ titles: [String], most: Int) -> String? {
             var seen: Set<String> = []
