@@ -26,16 +26,19 @@ public struct EngineSnapshot: Sendable, Equatable {
     /// There's a Copilot folder, but nothing at all where the app's database goes, as on a Mac with only the Copilot CLI,
     /// which keeps none; not a database that's there but can't be reached. Looked at on every read that fails.
     public var databaseMissing: Bool
+    /// It was read with where each session's work goes (`SessionEngine.setReadsLinks`).
+    public var readsLinks: Bool
 
     public init(
         records: [SessionRecord] = [], view: AppViewState = AppViewState(), problem: String? = nil, listedByApp: Bool = true,
-        databaseMissing: Bool = false
+        databaseMissing: Bool = false, readsLinks: Bool = false
     ) {
         self.records = records
         self.view = view
         self.problem = problem
         self.listedByApp = listedByApp
         self.databaseMissing = databaseMissing
+        self.readsLinks = readsLinks
     }
 }
 
@@ -284,7 +287,8 @@ public final class SessionEngine: @unchecked Sendable {
             return SessionRecord(meta: meta, log: reader?.isLoaded == true ? reader?.state : nil)
         }
         return EngineSnapshot(
-            records: records, view: view, problem: problem, listedByApp: metadataFromDatabase, databaseMissing: databaseMissing
+            records: records, view: view, problem: problem, listedByApp: metadataFromDatabase, databaseMissing: databaseMissing,
+            readsLinks: readsLinks
         )
     }
 

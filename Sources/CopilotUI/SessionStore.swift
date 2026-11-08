@@ -15,6 +15,9 @@ final class SessionStore: ObservableObject {
     @Published private(set) var now = Date()
     @Published private(set) var problem: String?
     @Published private(set) var hasLoaded = false
+    /// What it lists was read with where each session's work goes, as Pull Request Order needs: till then, after it starts
+    /// or begins reading that, which pull requests each session opened can't be told.
+    @Published private(set) var hasReadLinks = false
     /// The tasks in `sessions`, by their sessions' IDs: what their rows open, and their menus.
     @Published private(set) var tasks: [String: SentTask] = [:]
     /// The Copilot app is on this Mac. Without it, sessions are the Copilot CLI's, and open in a terminal (`CLISession`).
@@ -76,6 +79,7 @@ final class SessionStore: ObservableObject {
         guard let paths else {
             problem = "There's no made-up Copilot data. Run make demo-data, or set \(CopilotPaths.directoryVariable)."
             hasLoaded = true
+            hasReadLinks = true
             return
         }
         let engine = SessionEngine(paths: paths) { [weak self] state in
@@ -140,6 +144,7 @@ final class SessionStore: ObservableObject {
         counts = PhaseCounts()
         problem = nil
         hasLoaded = false
+        hasReadLinks = false
         // A session still being opened in Terminal opens nothing now.
         cliSessions.stop()
     }
@@ -241,6 +246,7 @@ final class SessionStore: ObservableObject {
     func receive(_ state: EngineSnapshot) {
         self.state = state
         hasLoaded = true
+        if hasReadLinks != state.readsLinks { hasReadLinks = state.readsLinks }
         updateProblem()
         // Before the sessions, which Pull Request Order reads them with.
         updateOrderSessions()

@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Pull Request Order, on the Pull Requests page in Settings, as rows of its form: off until you turn it on, what it does and
 /// reads; Forget All Orders…, which forgets, on or off, every order sessions told BriefBar, what it saw become of their
-/// pull requests, the mission you focus on, your changes to missions, and the names you gave missions; and Forget
-/// Stages…, which forgets the stages you set.
+/// pull requests, the mission you focus on, your changes to missions, the names you gave missions and the suggested splits
+/// you kept together; and Forget Stages…, which forgets the stages you set.
 package struct PullRequestOrderSettingView: View {
     @ObservedObject private var order: PullRequestOrder
     /// Tells the rest of the app, such as Agents, which adds Pull Request Order's skill to Copilot while both are on.
@@ -31,7 +31,9 @@ package struct PullRequestOrderSettingView: View {
         otherwise: for that, Show Links also reads the parent and place in the backlog of the work items linked to your \
         pull requests, and what those stories are when BriefBar hasn't read them already. While Apple Intelligence is \
         on, it names each mission on this Mac, from its pull requests', work items' and sessions' titles; you can rename \
-        one. While it's on, BriefBar also reads, from GitHub, each pull request's base branch, whether it's from a fork, \
+        one. Apple Intelligence also suggests splitting a mission whose pull requests look like different work; nothing \
+        moves until you click Split. BriefBar keeps the suggestions you keep together, until you forget them. While it's \
+        on, BriefBar also reads, from GitHub, each pull request's base branch, whether it's from a fork, \
         its repository's default branch and its place in a stack, in its usual refresh; and, from the Copilot app, which \
         pull request each session opened. On Azure DevOps' pull requests, in the window and the menu bar, it also shows \
         each one's stage, In progress, Your review, Teammate's review, Can merge or Waits for another PR, as BriefBar \
@@ -60,8 +62,8 @@ package struct PullRequestOrderSettingView: View {
             } message: {
                 Text("""
                     BriefBar forgets every order sessions told it, what it saw become of their pull requests, the mission you \
-                    focus on, your changes to missions, and the names you gave missions. Sessions that name an order are told \
-                    it's forgotten.
+                    focus on, your changes to missions, the names you gave missions, and the suggested splits you kept \
+                    together. Sessions that name an order are told it's forgotten.
                     """)
             }
         Button("Forget Stages…") { confirmsForgetStages = true }

@@ -22,7 +22,7 @@ import Testing
 
     /// A coordinator, and the two sessions it started, which each opened a pull request; as the engine reads them with
     /// where their work goes, or without.
-    private static func state(withLinks: Bool) -> EngineSnapshot {
+    private static func state(withLinks: Bool, readsLinks: Bool? = nil) -> EngineSnapshot {
         func session(_ id: String, _ name: String, coordinator: String? = nil, _ links: [RecordedPullRequest] = []) -> SessionRecord {
             SessionRecord(meta: SessionMeta(
                 id: id, name: name, updatedAt: Date(timeIntervalSince1970: 1_792_000_000), coordinatorSessionId: coordinator,
@@ -33,7 +33,7 @@ import Testing
             session(coordinator, "Ship the cart"),
             session(cart, "Show the cart's total", coordinator: coordinator, [link(4101)]),
             session(rounding, "Round coupon totals", coordinator: coordinator, [link(4102)]),
-        ])
+        ], readsLinks: readsLinks ?? withLinks)
     }
 
     private static func ref(_ id: String) -> ItemRef {
@@ -51,9 +51,10 @@ import Testing
         let store = SessionStore(settings: AppSettings(defaults: MemoryDefaults()), paths: nil)
 
         store.receive(Self.state(withLinks: false))
-        #expect(store.orderSessions.isEmpty)
+        #expect(store.orderSessions.isEmpty && !store.hasReadLinks)
 
         store.receive(Self.state(withLinks: true))
+        #expect(store.hasReadLinks)
         #expect(store.orderSessions == [
             OrderSession(ref: Self.ref(Self.cart), parent: Self.ref(Self.coordinator), coordinator: Self.ref(Self.coordinator),
                          pullRequests: [.pullRequest(organization: "contoso", number: 4101)]),
@@ -62,7 +63,43 @@ import Testing
         ])
 
         store.stop()
-        #expect(store.orderSessions.isEmpty)
+        #expect(store.orderSessions.isEmpty && !store.hasReadLinks)
+    }
+
+    /// Till what Copilot lists was read with where each session's work goes, Pull Request Order can't tell what a mission
+    /// is made of, as its sessions may have opened more of its pull requests: it waits, and isn't asked about a split.
+    @Test func whatAMissionIsMadeOfWaitsTillTheSessionsAreReadWithWhereTheirWorkGoes() async throws {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        let services = AppServices(defaults: defaults, isDemo: false)
+        let source = CopilotSource(services: services, paths: nil)
+        let order = services.pullRequestOrder
+        let story = ItemRef.workItem(organization: "contoso", id: 5100)
+        let pullRequests = [4101, 4102, 4103].map { number in
+            var pullRequest = Self.pullRequest(number)
+            pullRequest.stories = [OrderStory(ref: story, type: "User Story", task: .workItem(organization: "contoso", id: number + 1_000))]
+            pullRequest.workItems = []
+            return pullRequest
+        }
+        order.publish(.azureDevOps, pullRequests: pullRequests, readsStories: true)
+        source.start()
+        func makeup() throws -> MissionSplitQuestion.Makeup? {
+            let mission = try #require(order.missions.first { $0.key == .story(story) })
+            return try #require(order.splitQuestion(for: mission)).makeup
+        }
+        // What starting tells, once.
+        try await Task.sleep(for: .milliseconds(50))
+
+        source.store.receive(Self.state(withLinks: false))
+        #expect(try makeup() == nil)
+        try await Task.sleep(for: .milliseconds(50))
+        // Read with where their work goes, though none changed: it tells that too.
+        source.store.receive(Self.state(withLinks: false, readsLinks: true))
+        for _ in 0..<100 where try makeup() == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(try makeup()?.tells == .init(stories: true, sessions: true))
+        source.stop()
     }
 
     /// While Pull Request Order is on, the pull requests sessions opened under the same coordinator go together, and the

@@ -100,11 +100,15 @@ public struct OrderChange: Equatable, Sendable {
     /// The order that went against it since, as BriefBar saw it: yours doesn't hold from then on, though that order puts it
     /// back where it was, until you put yours back, or BriefBar forgets that order.
     public var overridden: Overridden?
+    /// A split Apple Intelligence suggested, and you confirmed, moved it, from `from` (`OrderEdit.split`): a mission of your
+    /// own it's in keeps the lines of the session's order it was split from among those split off it, and the mission it
+    /// was split from asks it in as a mission split off before. Move to Mission moves it as yours alone again.
+    public var bySplit: Bool
 
     public init(
         ref: ItemRef, first: MissionKey? = nil, after: [ItemRef] = [], notAfter: [ItemRef] = [], placement: OrderPlacement? = nil,
         from: MissionKey? = nil, changedAt: Date, replaced: OrderPlace = OrderPlace(), found: OrderPlace? = nil,
-        overridden: Overridden? = nil
+        overridden: Overridden? = nil, bySplit: Bool = false
     ) {
         self.ref = ref
         self.first = first
@@ -116,6 +120,12 @@ public struct OrderChange: Equatable, Sendable {
         self.replaced = replaced
         self.found = found ?? replaced
         self.overridden = overridden
+        self.bySplit = bySplit
+    }
+
+    /// The mission a split moved it from, while it's where the split put it: nil for any other change.
+    public var splitFrom: MissionKey? {
+        bySplit && placement != nil ? from : nil
     }
 
     /// Set as Next to Merge, in some mission.
@@ -699,9 +709,11 @@ private struct ChangeRecord: Codable {
     var found: [Replaced]?
     var overriddenBy: UUID?
     var overriddenAt: Date?
+    /// A split moved it; nil for any other change.
+    var split: Bool?
 
     private enum CodingKeys: String, CodingKey {
-        case pullRequest, first, after, notAfter, placed, from, changedAt, replaced, found, overriddenBy, overriddenAt
+        case pullRequest, first, after, notAfter, placed, from, changedAt, replaced, found, overriddenBy, overriddenAt, split
     }
 
     init(_ change: OrderChange) {
@@ -716,6 +728,7 @@ private struct ChangeRecord: Codable {
         found = change.found == change.replaced ? nil : Self.records(change.found) ?? []
         overriddenBy = change.overridden?.by
         overriddenAt = change.overridden?.at
+        split = change.bySplit ? true : nil
     }
 
     init(from decoder: Decoder) throws {
@@ -731,6 +744,7 @@ private struct ChangeRecord: Codable {
         found = (try? container.decodeIfPresent([ReplacedLossy].self, forKey: .found))?.compactMap(\.value)
         overriddenBy = try? container.decodeIfPresent(UUID.self, forKey: .overriddenBy)
         overriddenAt = try? container.decodeIfPresent(Date.self, forKey: .overriddenAt)
+        split = try? container.decodeIfPresent(Bool.self, forKey: .split)
     }
 
     private static func records(_ place: OrderPlace) -> [Replaced]? {
@@ -766,7 +780,7 @@ private struct ChangeRecord: Codable {
             ref: pullRequest, first: first.flatMap(MissionKey.init), after: after,
             notAfter: refs(notAfter).filter { !after.contains($0) }, placement: placed.flatMap(OrderPlacement.init),
             from: from.flatMap(MissionKey.init), changedAt: changedAt, replaced: place(replaced ?? []), found: found.map(place),
-            overridden: overridden
+            overridden: overridden, bySplit: split == true
         )
         return change.isEmpty ? nil : change
     }
@@ -806,6 +820,18 @@ private struct RefLossy: Decodable {
 
 // MARK: - Changing
 
+/// What a split does with one of its groups: its pull requests, and where they go, a mission of your own, new or split off
+/// the same mission before, or none.
+public struct OrderSplitMove: Hashable, Sendable {
+    public var refs: [ItemRef]
+    public var to: OrderPlacement
+
+    public init(_ refs: [ItemRef], to: OrderPlacement) {
+        self.refs = refs
+        self.to = to
+    }
+}
+
 /// What you ask of a pull request's Mission menu, or of a mission's.
 public enum OrderEdit: Equatable, Sendable {
     /// Set as Next to Merge in that mission, or not anymore.
@@ -815,6 +841,9 @@ public enum OrderEdit: Equatable, Sendable {
     /// Move to Mission: these, from the mission they're in, if any, into another, a new one of your own, or none. Several
     /// at once, with one Undo.
     case move([ItemRef], to: OrderPlacement, from: MissionKey?)
+    /// Split: the split Apple Intelligence suggested for a mission (`MissionSplit`), as you confirmed it, all at once, with
+    /// one Undo: each group's pull requests from that mission to where it goes, each keeping which mission it was split from.
+    case split(MissionKey, [OrderSplitMove])
     /// Undo Your Changes to It.
     case undo(ItemRef)
     /// Undo Your Changes to This Mission: to its pull requests, those you put in it and those you moved out of it.
@@ -934,6 +963,7 @@ extension OrderChanges {
                 change.notAfter = []
                 change.placement = placement
                 change.from = source
+                change.bySplit = false
                 try keep(change)
             }
             // A chain named by one of these goes on by another of its own pull requests, as when that one ends.
@@ -950,6 +980,22 @@ extension OrderChanges {
 
         case .undo(let ref):
             remove(ref)
+
+        case .split(let source, let moves):
+            // Only the mission's own, which no change of yours puts anywhere (`MissionSplitting`): none of them names a chain
+            // or another mission that would need to go on by another.
+            for move in moves {
+                for ref in move.refs {
+                    var change = current(ref)
+                    change.first = nil
+                    change.after = []
+                    change.notAfter = []
+                    change.placement = move.to
+                    change.from = source
+                    change.bySplit = true
+                    try keep(change)
+                }
+            }
 
         case .undoMission(let key):
             for change in edited.undone(in: key, missions: missions) {

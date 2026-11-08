@@ -56,8 +56,8 @@ final class PullRequestOrderFacts {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] on in MainActor.assumeIsolated { self?.turned(on: on) } }
             .store(in: &cancellables)
-        // Every refresh too: a pull request's branches can change without its row, such as when it's retargeted; and as the
-        // tasks sent to Copilot go, which stages follow.
+        // Every refresh too, the first one with all it lists: a pull request's branches can change without its row, such as
+        // when it's retargeted; and as the tasks sent to Copilot go, which stages follow.
         let tasks = copilot.map { $0.objectWillChange.map { _ in () }.eraseToAnyPublisher() } ?? Empty().eraseToAnyPublisher()
         store.$items.map { _ in () }
             .merge(with: store.refreshed)
@@ -100,13 +100,13 @@ final class PullRequestOrderFacts {
     }
 
     /// The demo's orders, as if its sessions had told them, your made-up changes to its missions, and the names Apple
-    /// Intelligence would give them.
+    /// Intelligence would give them and the split it would suggest.
     private func tellDemo() {
         guard store.mode == .demo else { return }
         let now = store.now
         order.tellDemo(
             DemoPullRequestOrder.orders(now: now), evidence: DemoPullRequestOrder.evidence(now: now), focus: DemoPullRequestOrder.focus,
-            changes: DemoPullRequestOrder.changes(now: now), names: DemoPullRequestOrder.names
+            changes: DemoPullRequestOrder.changes(now: now), names: DemoPullRequestOrder.names, split: DemoPullRequestOrder.split
         )
     }
 
@@ -125,7 +125,7 @@ final class PullRequestOrderFacts {
             items: store.items.map { describe($0, showToReview: showToReview) } + stories.workItems.map(describe),
             stages: Self.stages(store.records, items: store.items, tasks: tasks, watched: settings.watchedKeys),
             account: settings.account, inMemory: Self.sentInChats(store.records, watched: settings.watchedKeys),
-            readsStories: stories.areRead
+            readsStories: stories.areRead, listed: store.hasLoaded
         )
         tellDemoStages()
     }

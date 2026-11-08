@@ -16,7 +16,8 @@ import Foundation
 /// it no longer waits for the retry, which waits for it; and you made a mission of your own of the build agents' upgrade
 /// (!4110) and the slow query log (!4099), which you put after it.
 /// And the stage you set on the one-click checkout's prototype, a draft nobody reviews yet: Teammate's review, two
-/// hours ago, so it says to find a reviewer.
+/// hours ago, so it says to find a reviewer. And the split Apple Intelligence would suggest for the checkout redesign's
+/// mission: taking the delivery estimates out.
 enum DemoPullRequestOrder {
     static let paymentsID = UUID(uuidString: "b81f4e27-6a3c-4d95-8e10-3c7a9d2f4b66")!
     static let id = UUID(uuidString: "d4a7c2e9-5b1f-4c83-9e60-2f8b7d1a3c55")!
@@ -34,6 +35,7 @@ enum DemoPullRequestOrder {
     static let emails = pullRequest(4118)
     static let deliveryEstimates = pullRequest(4088)
     static let oneClickCheckout = pullRequest(4105)
+    static let checkoutSpeed = pullRequest(4113)
     static let buildAgents = pullRequest(4110)
     static let slowQueries = pullRequest(4099)
     /// Your mission of the build agents' upgrade and the slow query log.
@@ -90,6 +92,13 @@ enum DemoPullRequestOrder {
         .story(checkoutRedesign): "Faster checkout",
         .mine(mineID): "Build agents on .NET 9",
     ]
+
+    /// The split Apple Intelligence would suggest for the checkout redesign's mission, made up, as the demo never asks the
+    /// model: the delivery estimates on the product page (!4088) look like other work than the checkout page's speed-up
+    /// (!4113) and one-click checkout (!4105), so they keep the mission, with the name it has, and it goes out of By Mission.
+    static let split: (key: MissionKey, grouping: [Set<ItemRef>], names: [String?]) = (
+        .story(checkoutRedesign), [[checkoutSpeed, oneClickCheckout], [deliveryEstimates]], ["Faster checkout", nil]
+    )
 
     /// The stages you set: the one-click checkout's prototype, for a teammate's review, two hours ago.
     static func stages(now: Date) -> [ItemRef: StageMark] {

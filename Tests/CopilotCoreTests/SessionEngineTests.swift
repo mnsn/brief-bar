@@ -29,6 +29,8 @@ import Testing
             #expect(snapshot.problem == nil)
             #expect(snapshot.listedByApp)
             #expect(!snapshot.databaseMissing)
+            // It says whether it read where each session's work goes.
+            #expect(!snapshot.readsLinks && SessionEngine.loadOnce(paths: paths, links: true).readsLinks)
             let records = Dictionary(uniqueKeysWithValues: snapshot.records.map { ($0.id, $0) })
             #expect(records.keys.sorted() == ["asking", "finished", "fresh"])
             #expect(try #require(records["fresh"]).log == nil)

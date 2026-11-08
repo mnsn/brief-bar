@@ -108,6 +108,25 @@ import Testing
         #expect(order.missions.first?.steps.map(\.status) == [.merged, .unknown(.sourceOff)])
     }
 
+    /// Till the list was read the first time, Pull Request Order can't tell what a mission is made of: none of its pull
+    /// requests are listed yet.
+    @Test func whatAMissionIsMadeOfWaitsTillTheListWasRead() async throws {
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        let (order, _) = try Self.order()
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+
+        facts.publish()
+        let waiting = try #require(order.missions.first)
+        let unread = try #require(order.splitQuestion(for: waiting))
+        #expect(unread.makeup == nil)
+
+        await store.loadOnce()
+        facts.publish()
+        let listed = try #require(order.missions.first)
+        let read = try #require(order.splitQuestion(for: listed))
+        #expect(read.makeup != nil)
+    }
+
     /// Off, it tells nothing.
     @Test func whileOffItTellsNothing() async throws {
         let store = await Self.demoStore()

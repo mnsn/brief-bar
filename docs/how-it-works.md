@@ -56,6 +56,9 @@ leaves the mission's name as it was (`MissionNaming.clean`), by how such an answ
 not a name that opens with the same word, as "Sorry page redesign", and one that holds a name's place, as "N/A" or
 "Untitled"; a question is a name only when a title asks it.
 
+It keeps the suggested splits you kept together too, by mission, as digests of references (`KeptTogether`, under
+`order.splits`), and forgets them the same ways: see [Suggested splits](#suggested-splits).
+
 ## Permissions that macOS grants once
 
 macOS gives some permissions to the whole app, and asks for them only once. That's why BriefBar's own
@@ -1398,6 +1401,64 @@ most 500, refusing more rather than dropping one; each until two weeks after Bri
 close. Turning a source off forgets those about its pull requests,
 turning Pull Request Order off keeps them, unused, and **Forget All Orders…** forgets them. Nothing goes to Azure
 DevOps.
+
+#### Suggested splits
+
+While Apple Intelligence is on, BriefBar asks it, on this Mac (`MissionNamer`, `MissionSplitting`), whether a mission
+that By Mission shows on screen has become different pieces of work: a story's, a session's order, or the pull requests
+opened under a session, which BriefBar or a session put together and which can drift; not a chain or a stack, whose pull
+requests depend on each other, nor one of your own, nor one that finished. Its parts are its open Azure DevOps pull
+requests, joined by every relation BriefBar shows between its pull requests, stacked branches, an order's lines, yours
+and review advice, whatever became of them, so that no suggestion separates related pull requests; each mission of your
+own that a split moved pull requests into from it is one part more, labeled as split off before. Each part goes in the
+question by one title, its first pull request's, else its first work item's: with several, such as a task's beside its
+pull request's, or a stack's, Apple's model split single pieces of work in two, the same in either order, where one each
+split none. A mission is asked about only with three open Azure DevOps pull requests or more, in two parts or more, at
+most 12, each with a title. A part stays where it is when it has a pull request that merged, closed or BriefBar can't
+see, a GitHub one, one you changed, or one a change of yours names a chain by: only open Azure DevOps pull requests that
+no change of yours put anywhere move.
+
+It's asked after the names on screen, one mission at a time, once what the mission is made of has stayed the same for
+five seconds, once the sources have read what they show, and again only when that changes, or BriefBar tells it another
+way, as with Show Links off: its pull requests, their work items and stories, and the sessions that opened them, never a
+title alone. It's asked twice, with the likeliest words: its parts in order after the story or session it's for, then in
+reverse order without it, and only what both answers separate counts; the first answer that sees one piece of work
+settles it. On made-up missions, before this shipped, that suggested splitting none of 40 that were one piece of work,
+also with stacked parts and with their tasks' titles to hand, and caught 6 of 18 that had drifted, each grouped right:
+it's often quiet rather than often wrong. Each title is quoted as data, never a name you gave. The answer comes in a set
+shape, by guided generation (`OnDeviceModel.Shape.split`): whether it's one piece of work, then two or three groups of
+the parts' numbers; one that doesn't place each part once gives no suggestion. Which group keeps the mission, its key,
+its Focus and the name you gave it, BriefBar chooses the same way each time, never the model: the one with what stays,
+else the one with the most open pull requests, then the one opened earliest. Each other group goes into the mission
+split off it before that's in it, else to a new mission of your own when it has two pull requests or more, else out of
+missions. There's no suggestion where what stays is in two groups, a group has two missions split off before, or the one
+that keeps the mission has one: a split never joins missions. Nor is there one that would leave a story's mission, or
+the pull requests opened under a session, with one pull request, merged ones counted, as that's no mission. The groups'
+names, the kept one's unless you named it and each new mission's, are asked as a mission's are, and are the names those
+missions get, Apple Intelligence's, in memory. A suggestion is kept in memory only, and none of it goes to the log, but
+how many groups it has, nor to agents.
+
+**Split** is one change of yours (`OrderEdit.split`), with one **Undo**: each pull request it moves keeps the mission it
+came from (`OrderChange.splitFrom`), and what each waits for doesn't change. A mission split off a session's order keeps
+that order's lines among its pull requests, at the order's latest revision, and Any time only where the whole of that
+order's pull requests went there; from a story's mission or a session's pull requests, it has no order known. **Keep
+Together**, Undo, Undo Your Changes to It or to This Mission, and an order that takes back what a split moved, as a
+session's later change does one you moved, each keep the mission it's in together as it's made now: in the preferences
+(`KeptTogether`, as `order.splits`), by its key, as digests (SHA-256) of what it's made of, never a title, until that
+changes, or two weeks after BriefBar last saw the mission, counted as names' are. What it's made of is what BriefBar can
+tell: with Show Links off, not which story each pull request is for, so those for a story are among the pull requests
+opened under a session; with Copilot off, not who opened them. So it keeps a digest for each way it has told the
+mission, Show Links and Copilot each on or off, and compares each only with what it told the same way: turning either
+off or on isn't a change, and a way it first tells the mission is kept with it, so a change from then on counts. A
+change in the same moment as a way it hadn't told before, as when a pull request's mission changes as Show Links goes
+off, isn't seen. Nothing counts while a source still reads what it shows, as right after BriefBar starts: till Azure
+DevOps has listed its pull requests, Show Links has read what each is for, and Copilot has read which pull requests its
+sessions opened (`OrderFacts.isReading`); nor while Azure DevOps is off. A suggestion on screen holds the same way: told
+another way, by its parts alone. Each follows its mission as Focus does (`OrderBoard.successor`); at most 200, the one
+seen longest ago going first, which only brings back a suggestion you can keep together again. Turning a source off
+forgets those of its missions, turning Pull Request Order off keeps them, their days waiting, and **Forget All Orders…**
+forgets them. **Suggested Split…**, in the mission's **⋯**, shows one you kept together again, asking Apple Intelligence
+again if BriefBar restarted since. A split applies whole: to take part of one, Keep Together, then Move to Mission.
 
 ### A pull request's stage
 
