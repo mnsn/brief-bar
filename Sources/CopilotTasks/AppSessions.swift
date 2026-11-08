@@ -75,10 +75,34 @@ public enum AppSessions {
     }
 
     /// The sessions that run a turn now, by the app's own flag, as its database says now: their IDs. Throws when it can't
-    /// be read.
-    public static func running(home: URL) throws -> [String] {
-        try AppDatabase.load(at: CopilotPaths(root: home).database).sessions
-            .filter { $0.isRunning == true && isSessionID($0.id) }.map(\.id)
+    /// be read; and, `strictly`, for a check that mustn't take what it can't tell for none, `TurnsUnknown`: also when the
+    /// database doesn't say for a session whether it runs one, as when the app keeps that another way now, and BriefBar
+    /// reads it with its fallback (`AppDatabase.fallbackQuery`).
+    public static func running(home: URL, strictly: Bool = false) throws -> [String] {
+        let sessions: [SessionMeta]
+        do {
+            sessions = try AppDatabase.load(at: CopilotPaths(root: home).database).sessions.filter { isSessionID($0.id) }
+        } catch {
+            if strictly { throw TurnsUnknown.unreadable }
+            throw error
+        }
+        if strictly, sessions.contains(where: { $0.isRunning == nil }) { throw TurnsUnknown.unsaid }
+        return sessions.filter { $0.isRunning == true }.map(\.id)
+    }
+
+    /// Why BriefBar can't tell which of the app's sessions run a turn now (`running(home:strictly:)`), as a sentence ends.
+    public enum TurnsUnknown: Error, Equatable, CustomStringConvertible {
+        /// Its database can't be read.
+        case unreadable
+        /// It doesn't say for a session whether it runs one, as BriefBar reads it.
+        case unsaid
+
+        public var description: String {
+            switch self {
+            case .unreadable: return "the Copilot app's database couldn't be read."
+            case .unsaid: return "the Copilot app's database doesn't say which of its sessions run one, as this version of BriefBar reads it."
+            }
+        }
     }
 
     /// Whether the Copilot app, or another program, has the session open now (`SessionLock`): a turn the CLI runs in it

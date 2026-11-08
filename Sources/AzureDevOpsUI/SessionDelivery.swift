@@ -438,11 +438,17 @@ extension CopilotTasksStore {
     }
 
     /// Why a Push & Reply mustn't go to a session now: Copilot runs a turn in it, or another of the app's sessions runs one
-    /// in the checkout it works in, by the app's own flag, as its database says now (`AppSessions.running(home:)`). The
-    /// prompt would wait for that turn, which may change what BriefBar checked, as a merge would. Nil when none does, or
-    /// the database can't be read, as with `anotherSessionRuns(inCheckoutOf:besides:)`.
+    /// in the checkout it works in, by the app's own flag, as its database says now; or BriefBar can't tell, as when that
+    /// database can't be read (`AppSessions.running(home:strictly:)`). The prompt would wait for that turn, which may change
+    /// what BriefBar checked, as a merge would. Nil when none does.
     nonisolated static func turnProblem(_ push: PushOnItsWay, home: URL) -> String? {
-        let running = (try? AppSessions.running(home: home)) ?? []
+        let running: [String]
+        do {
+            running = try AppSessions.running(home: home, strictly: true)
+        } catch {
+            let why = (error as? AppSessions.TurnsUnknown) ?? .unreadable
+            return "BriefBar couldn't tell whether Copilot is running a turn in \(push.name), or in the checkout it works in, so nothing went: \(why)"
+        }
         if running.contains(push.session) {
             return "Copilot is running a turn in \(push.name), so nothing went: what that turn changes would go with the push, unchecked. Send it again once that turn is done."
         }

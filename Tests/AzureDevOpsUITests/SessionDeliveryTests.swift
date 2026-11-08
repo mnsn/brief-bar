@@ -322,6 +322,7 @@ private final class TakenAt: Sendable {
         ext.start()
         defer { ext.stop() }
         try hold(session, home: home)
+        try database(at: home, forks: [])
         // A clone where no new work could start, which the check doesn't need.
         let checkout = try await resolvedAgainstMain(in: home, keepsItsBaseBranch: false)
         let git = Git(executable: URL(fileURLWithPath: "/usr/bin/git"), environment: ["PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
@@ -373,6 +374,7 @@ private final class TakenAt: Sendable {
         try ext.listen()
         defer { ext.stop() }
         try hold(session, home: home)
+        try database(at: home, forks: [])
         try work(session, in: try await resolvedAgainstMain(in: home), home: home)
         // Main until the list reads release/x: from the given look on, or from when the test says.
         var looks = 0
@@ -443,6 +445,7 @@ private final class TakenAt: Sendable {
         ext.start()
         defer { ext.stop() }
         try hold(session, home: home)
+        try database(at: home, forks: [])
         try work(session, in: try await resolvedAgainstMain(in: home), home: home)
         // What Azure DevOps says, read by read: once the answers run out, it can't be read.
         var answers: [String] = []
@@ -539,6 +542,56 @@ private final class TakenAt: Sendable {
         try turns(running: [other], home: home)
         #expect(await store.deliver("Fix the comments", to: choice(session)) == .sent)
         try turns(running: [], home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        #expect(ext.received == ["Fix the comments", "Push and reply"])
+    }
+
+    /// Nor does a Push & Reply go when BriefBar can't tell whether a turn runs there: when the app's database can't be read,
+    /// or doesn't say which sessions run one, as when the app keeps that another way now. Anything else goes, as before; and
+    /// once the database says no turn runs there, so does the push.
+    @Test(.timeLimit(.minutes(1)))
+    func sendsNoPushWhenItCantTellWhetherATurnRuns() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        store.readTarget = { _ in "main" }
+        var copied: [String] = []
+        store.showForTests = { _ in true }
+        store.openForTests = { _, text in copied.append(text); return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        ext.start()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        try work(session, in: try await resolvedAgainstMain(in: home), home: home)
+        func unknown(_ why: AppSessions.TurnsUnknown) -> SessionDelivery {
+            .notSent("BriefBar couldn't tell whether Copilot is running a turn in ‘Fix the totals’, or in the checkout it works in, so nothing went: \(why)")
+        }
+
+        // No database it could read.
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == unknown(.unreadable))
+        #expect(unknown(.unreadable) == .notSent(
+            "BriefBar couldn't tell whether Copilot is running a turn in ‘Fix the totals’, or in the checkout it works in, so nothing went: the Copilot app's database couldn't be read."
+        ))
+        // One that doesn't say which sessions run a turn, as the app's might once it keeps that another way.
+        try sql("""
+            CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL, archived_at TEXT);
+            INSERT INTO sessions (id, title, session_type, created_at, updated_at)
+                VALUES ('\(session)', 'Fix the totals', 'project', '2026-10-01T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
+            """, home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == unknown(.unsaid))
+        // Nor copied for you to paste.
+        CopilotSessionPrompts.set(false, in: store.settings.defaults)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == unknown(.unsaid))
+        CopilotSessionPrompts.set(true, in: store.settings.defaults)
+        #expect(ext.received.isEmpty && requests(home).isEmpty && copied.isEmpty)
+
+        // A fix goes all the same.
+        #expect(await store.deliver("Fix the comments", to: choice(session)) == .sent)
+        // Once it says no turn runs there, the push goes.
+        try FileManager.default.removeItem(at: home.appendingPathComponent("data.db"))
+        try database(at: home, forks: [])
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
         #expect(ext.received == ["Fix the comments", "Push and reply"])
     }

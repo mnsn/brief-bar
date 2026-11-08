@@ -221,6 +221,38 @@ import Testing
         #expect(throws: (any Error).self) { try AppSessions.load(home: home.appendingPathComponent("nowhere")) }
     }
 
+    /// Which of the app's sessions run a turn, by its own flag. Strictly, for a check that mustn't take what it can't tell
+    /// for none, it says it can't tell when the database can't be read, or doesn't say for a session whether it runs one, as
+    /// when the app keeps that another way now and BriefBar reads it with its fallback; otherwise it throws as before, or
+    /// finds none.
+    @Test func saysWhenItCantTellWhichSessionsRunATurn() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        #expect(throws: AppSessions.TurnsUnknown.unreadable) { try AppSessions.running(home: home, strictly: true) }
+        #expect(throws: (any Error).self) { try AppSessions.running(home: home) }
+        #expect(AppSessions.TurnsUnknown.unreadable.description == "the Copilot app's database couldn't be read.")
+
+        try database(at: home)
+        #expect(try AppSessions.running(home: home) == [opener])
+        #expect(try AppSessions.running(home: home, strictly: true) == [opener])
+
+        // An app that keeps it another way: its session list has no flag to read.
+        let changed = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: changed) }
+        var handle: OpaquePointer?
+        try #require(sqlite3_open(changed.appendingPathComponent("data.db").path, &handle) == SQLITE_OK)
+        defer { sqlite3_close(handle) }
+        try #require(sqlite3_exec(handle, """
+            CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL, archived_at TEXT);
+            INSERT INTO sessions (id, title, session_type, created_at, updated_at)
+                VALUES ('\(opener)', 'Fix the checkout total', 'project', '2026-10-20T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
+            """, nil, nil, nil) == SQLITE_OK)
+        #expect(try AppSessions.load(home: changed).map(\.id) == [opener])
+        #expect(try AppSessions.running(home: changed).isEmpty)
+        #expect(throws: AppSessions.TurnsUnknown.unsaid) { try AppSessions.running(home: changed, strictly: true) }
+    }
+
     @Test func findsTheFolderASessionWorksInWithoutFollowingLinks() throws {
         let home = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
