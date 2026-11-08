@@ -372,8 +372,10 @@ actor AzureDevOpsReader {
         guard sendsToCopilot else { return nil }
         let pullRequest = PullRequestTasks.task(for: record)
         let chosen = PullRequestSessionChoice.load(from: defaults, now: now)
+        let known = await links(of: record.id.linkRef, now: now)
         let store = await Self.store(
-            for: pullRequest, runs: runs, chosen: chosen, links: yourLinks(now: now), workItems: workItemTitles(now: now), appHome: appHome
+            for: pullRequest, runs: runs, chosen: chosen, links: known.graph, told: known.told, workItems: workItemTitles(now: now),
+            appHome: appHome
         )
         // The store has a copy of the app's setting: it stops reading once the app's is off, as the app's store does.
         let watch = Task {
@@ -406,23 +408,31 @@ actor AzureDevOpsReader {
         }
     }
 
-    /// The links you made in Show Links, while it's on, as it keeps them in the app's settings. The ones Copilot records and
-    /// those by branch, the app's database says (`CopilotTasksStore.reasons`).
-    private func yourLinks(now: Date) -> LinkGraph {
-        guard defaults.bool(forKey: Links.enabledKey) else { return LinkGraph() }
+    /// What Show Links knows of a pull request's sessions while it's on, as the app's settings keep it: the links you made;
+    /// and, with Updates from Copilot Sessions on too, what sessions told BriefBar they work on and opened, as Show Links
+    /// shows it, for the sessions Copilot's list has now (`MCPRelated.sessionListing`), which is asked, since it reads
+    /// every session, only once a session told BriefBar something of this pull request. The ones Copilot records and those
+    /// by branch, the app's database says (`CopilotTasksStore.reasons`).
+    private func links(of pullRequest: ItemRef, now: Date) async -> (graph: LinkGraph, told: SessionReports) {
+        guard defaults.bool(forKey: Links.enabledKey) else { return (LinkGraph(), SessionReports()) }
         var edits = LinkEdits.load(from: defaults)
         edits.forget(before: now.addingTimeInterval(-LinkEdits.lifetime))
-        return LinkGraph(edits: edits)
+        guard SessionUpdatesSetting.isOn(in: defaults) else { return (LinkGraph(edits: edits), SessionReports()) }
+        let told = SessionReports.load(from: defaults, now: now)
+        guard told.reports.values.contains(where: { $0.workingOn.contains(pullRequest) || $0.opened[pullRequest] != nil }),
+              let listing = await MCPRelated.sessionListing()
+        else { return (LinkGraph(edits: edits), SessionReports()) }
+        return (LinkGraph(links: told.links(listing, now: now), edits: edits), told)
     }
 
     /// A store to find the session with, as the window's store does, that reads as the app's does: over these tasks and the
     /// sessions you chose for pull requests' work, in memory, so nothing it does is saved; with the environment `--mcp`
-    /// started with, rather than your login shell's, which it would have to run; and with the links you made. It starts and
-    /// follows nothing.
+    /// started with, rather than your login shell's, which it would have to run; and with what Show Links knows, and when
+    /// each session that told BriefBar it's working on something began to say so. It starts and follows nothing.
     @MainActor
     private static func store(
         for pullRequest: TaskPullRequest, runs: [CopilotRun], chosen: [PullRequestSessionChoice], links: LinkGraph,
-        workItems: [Int: String], appHome: URL?
+        told: SessionReports, workItems: [Int: String], appHome: URL?
     ) -> CopilotTasksStore {
         let settings = AppSettings(defaults: MemoryDefaults())
         settings.copilotEnabled = true
@@ -436,7 +446,10 @@ actor AzureDevOpsReader {
         store.pullRequestTitle = { $0.matches(organization: pullRequest.organization, id: pullRequest.id) ? pullRequest.title : nil }
         store.linkedSessions = { ref in
             links.visibleConnections(of: ref).filter { $0.item.kind == .session }.map {
-                LinkedSession(id: $0.item.id, origins: $0.origins, isThrough: $0.via != nil)
+                LinkedSession(
+                    id: $0.item.id, origins: $0.origins, isThrough: $0.via != nil,
+                    began: $0.origins.contains(.session) ? told[$0.item]?.workingOnBegan[ref] : nil
+                )
             }
         }
         return store

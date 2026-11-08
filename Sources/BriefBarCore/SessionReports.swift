@@ -23,6 +23,10 @@ public struct SessionReport: Equatable, Sendable {
     public private(set) var workingOn: [ItemRef] = []
     /// When it last told what it works on.
     public private(set) var workingOnSince: Date?
+    /// When it began to say it works on each of those, whatever it told since, until it says it stopped: a session you
+    /// chose for a pull request's work before then gives way to it, and one you chose since stays, however often it tells
+    /// again.
+    public private(set) var workingOnBegan: [ItemRef: Date] = [:]
     /// The pull requests it said it opened, each with when it said so.
     public private(set) var opened: [ItemRef: Date] = [:]
 
@@ -39,11 +43,20 @@ public struct SessionReport: Equatable, Sendable {
     }
 
     /// What it works on now, in place of what it said before: work items and pull requests, each once, the first
-    /// `SessionReports.mostItems`; nothing when it stopped.
+    /// `SessionReports.mostItems`; nothing when it stopped. Each it worked on already keeps when it began.
     public mutating func setWorkingOn(_ refs: [ItemRef], at date: Date) {
         var seen: Set<ItemRef> = []
         workingOn = Array(refs.filter { $0.kind != .session && seen.insert($0).inserted }.prefix(SessionReports.mostItems))
         workingOnSince = date
+        workingOnBegan = Dictionary(uniqueKeysWithValues: workingOn.map { ($0, workingOnBegan[$0] ?? date) })
+    }
+
+    /// When it began each of what it works on, as kept: what it works on keeps it, when it's no later than it last told.
+    fileprivate mutating func keepBegan(_ began: [ItemRef: Date]) {
+        guard let since = workingOnSince else { return }
+        for ref in workingOn {
+            if let date = began[ref], date <= since { workingOnBegan[ref] = date }
+        }
     }
 
     /// Pull requests it opened, with when it said so: the newest `SessionReports.mostOpened` are kept.
@@ -62,6 +75,7 @@ public struct SessionReport: Equatable, Sendable {
         if let since = workingOnSince, now.timeIntervalSince(since) > SessionReports.workingOnLifetime {
             workingOn = []
             workingOnSince = nil
+            workingOnBegan = [:]
         }
         opened = opened.filter { now.timeIntervalSince($0.value) <= SessionReports.openedLifetime }
     }
@@ -69,6 +83,7 @@ public struct SessionReport: Equatable, Sendable {
     /// Forgets these kinds of things, when their source is turned off.
     public mutating func forget(_ kinds: Set<ItemRef.Kind>) {
         workingOn.removeAll { kinds.contains($0.kind) }
+        workingOnBegan = workingOnBegan.filter { !kinds.contains($0.key.kind) }
         opened = opened.filter { !kinds.contains($0.key.kind) }
     }
 }
@@ -174,6 +189,9 @@ public struct SessionReports: Equatable, Sendable {
         var session: String
         var workingOn: [String]
         var since: Date?
+        /// When it began each of what it works on; nil in what was kept before BriefBar kept that, and in what an older
+        /// BriefBar's `--mcp` writes, whose items began, as far as it knows, when it last told them.
+        var began: [String: Date]?
         var opened: [String: Date]
     }
 
@@ -200,7 +218,14 @@ public struct SessionReports: Equatable, Sendable {
         else { return nil }
         var report = SessionReport(session: session)
         let workingOn = record.workingOn.compactMap(ItemRef.init)
-        if let since = record.since { report.setWorkingOn(workingOn, at: since) }
+        if let since = record.since {
+            report.setWorkingOn(workingOn, at: since)
+            var began: [ItemRef: Date] = [:]
+            for (text, date) in record.began ?? [:] {
+                if let ref = ItemRef(text) { began[ref] = date }
+            }
+            report.keepBegan(began)
+        }
         for (text, date) in record.opened {
             if let ref = ItemRef(text) { report.addOpened([ref], at: date) }
         }
@@ -216,6 +241,9 @@ public struct SessionReports: Equatable, Sendable {
         }
         let record = Record(
             session: report.session.description, workingOn: report.workingOn.map(\.description), since: report.workingOnSince,
+            began: report.workingOnBegan.isEmpty ? nil : Dictionary(
+                report.workingOnBegan.map { ($0.key.description, $0.value) }, uniquingKeysWith: { first, _ in first }
+            ),
             opened: Dictionary(report.opened.map { ($0.key.description, $0.value) }, uniquingKeysWith: { first, _ in first })
         )
         let encoder = JSONEncoder()

@@ -217,11 +217,21 @@ package final class AzureDevOpsSource: BriefBarSource {
             store?.items.first { $0.key.number == reference.id && $0.key.organization.caseInsensitiveCompare(reference.organization) == .orderedSame }?.title
         }
         copilot.handedOff = { [weak store] handOff, prompt in store?.sentToCopilot(handOff, prompt: prompt) }
-        copilot.linkedSessions = { [weak links = services.links] ref in
+        copilot.linkedSessions = { [weak links = services.links, weak updates = services.sessionUpdates] ref in
             (links?.connections(of: ref) ?? []).filter { $0.item.ref.kind == .session }.map {
-                LinkedSession(id: $0.item.ref.id, origins: $0.origins, isThrough: $0.via != nil)
+                LinkedSession(
+                    id: $0.item.ref.id, origins: $0.origins, isThrough: $0.via != nil,
+                    began: $0.origins.contains(.session) ? updates?.reports[$0.item.ref]?.workingOnBegan[ref] : nil
+                )
             }
         }
+        // What sessions tell BriefBar they work on, as Show Links shows it, and Send Work to Copilot: a session that began
+        // to tell it after you chose another for a pull request's work takes that one's place for good.
+        services.links.$graph.map { _ in () }
+            .merge(with: services.sessionUpdates.$reports.map { _ in () }, copilot.settings.$copilotEnabled.map { _ in () })
+            .receive(on: DispatchQueue.main)
+            .sink { [weak copilot] _ in MainActor.assumeIsolated { copilot?.forgetChoicesToldSince() } }
+            .store(in: &cancellables)
         self.copilot = copilot
         workLinks = WorkLinksStore(
             links: services.links, stories: services.stories, store: store, sprint: sprint, copilot: copilot, settings: settings

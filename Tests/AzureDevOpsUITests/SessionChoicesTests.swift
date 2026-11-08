@@ -181,18 +181,28 @@ private struct DatabaseError: Error {
         #expect(choices.first { $0.id == linkedChat }?.place == "a chat")
         #expect(choices.first { $0.id == fixing }?.opensInApp == false)
         #expect(choices.first { $0.id == other }?.opensInApp == true)
+        #expect(choices.allSatisfy { $0.toldSince == nil })
+
+        // One that tells BriefBar it's working on it says since when.
+        let began = now.addingTimeInterval(-600)
+        store.linkedSessions = { [linkedChat] _ in [LinkedSession(id: linkedChat, origins: [.you, .session], isThrough: false, began: began)] }
+        let told = await store.sessionChoices(for: subject)
+        #expect(told.filter { $0.toldSince != nil }.map(\.id) == [linkedChat])
+        #expect(told.first { $0.id == linkedChat }?.toldSince == began)
     }
 
     /// A session that told BriefBar it's working on the pull request, as Show Links has it with Updates from Copilot
-    /// Sessions on, goes with it for that, besides its other reasons.
+    /// Sessions on, goes with it for that, besides its other reasons, with when it began to say so.
     @Test func aSessionThatToldBriefBarItsWorkingOnItGoesWithIt() throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
         let store = store(home: home)
-        store.linkedSessions = { [linkedChat, onBranch] _ in
+        let began = now.addingTimeInterval(-600)
+        store.linkedSessions = { [linkedChat, onBranch, other] _ in
             [
-                LinkedSession(id: linkedChat, origins: [.session], isThrough: false),
+                LinkedSession(id: linkedChat, origins: [.session], isThrough: false, began: began),
                 LinkedSession(id: onBranch, origins: [.session, .branch], isThrough: false),
+                LinkedSession(id: other, origins: [], isThrough: true, began: began),
             ]
         }
         let reasons = store.linkedReasons(for: subject)
@@ -200,6 +210,7 @@ private struct DatabaseError: Error {
         #expect(Set(reasons[onBranch] ?? []) == [.toldBriefBar, .onItsBranch])
         #expect(SessionChoice.Reason.toldBriefBar.phrase == "told BriefBar it's working on it")
         #expect(SessionChoice.Reason.recordedByCopilot < .toldBriefBar && SessionChoice.Reason.toldBriefBar < .onItsBranch)
+        #expect(store.toldSince(.pullRequest(organization: "contoso", number: 4071)) == [linkedChat: began])
     }
 
     @Test func findsTheSessionsWhoseLogsMentionIt() async throws {

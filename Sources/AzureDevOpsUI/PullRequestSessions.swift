@@ -465,11 +465,14 @@ final class PullRequestSessions: ObservableObject {
             tasks[index].isOpenInApp = open.contains(tasks[index].id)
         }
         let taskIDs = Set(tasks.map(\.id))
-        let linked = copilot.linkedReasons(for: subject)
+        let links = copilot.linkedSessions(CopilotTasksStore.ref(of: subject))
+        let linked = CopilotTasksStore.reasons(of: links)
+        let told = CopilotTasksStore.toldSince(of: links)
         let apps = found.compactMap { choice -> SessionChoice? in
             guard let session = choice.appSession, !taskIDs.contains(choice.id) else { return nil }
             var choice = choice
             choice.reasons = CopilotTasksStore.reasons(for: session, subject: subject, linked: linked[session.id] ?? [])
+            choice.toldSince = told[session.id]
             return choice
         }
         let all = tasks + CopilotTasksStore.sorted(apps, createdAt: createdAt)
@@ -491,6 +494,7 @@ final class PullRequestSessions: ObservableObject {
     /// source that lists each says of it is all that's known.
     private func linkedChoices(_ key: PRKey) -> [SessionChoice] {
         guard links.isOn else { return [] }
+        let told = copilot.toldSince(key.linkRef)
         let choices = links.connections(of: key.linkRef).filter { $0.item.ref.kind == .session }.map { connection in
             let item = connection.item
             var reasons: Set<SessionChoice.Reason> = []
@@ -508,7 +512,10 @@ final class PullRequestSessions: ObservableObject {
                 id: item.ref.id, name: item.label, branch: item.hint?.branch,
                 isRunning: item.state == .running || item.state == .needsYou, lastActive: item.date
             )
-            return SessionChoice(kind: .app(session), name: item.label, place: item.place, lastActive: item.date, reasons: reasons.sorted())
+            return SessionChoice(
+                kind: .app(session), name: item.label, place: item.place, lastActive: item.date, reasons: reasons.sorted(),
+                toldSince: told[item.ref.id]
+            )
         }
         return CopilotTasksStore.sorted(choices, createdAt: nil)
     }

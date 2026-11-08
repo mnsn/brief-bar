@@ -285,6 +285,10 @@ import Testing
         #expect(try await agent.related(one).map(\.lines.isEmpty) == [false, true])
         // Nothing to look for without a pull request.
         #expect(try await agent.related(MCPRelated.Query(items: [.workItem(organization: "contoso", id: 5101)])).isEmpty)
+        // What it lists, for what sessions told BriefBar to count only for those: both, idle since they were last active.
+        let listing = try #require(try await agent.teller.sessions?())
+        #expect(listing.sessions == [try #require(ItemRef.session(savedItems)), try #require(ItemRef.session(coupons))])
+        #expect(Set(listing.idleSince.keys) == listing.sessions)
     }
 
     /// Runs SQL in a new database.

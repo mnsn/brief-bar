@@ -319,4 +319,28 @@ private final class Output: Sendable {
         #expect(parts[1].problem == "Couldn't read the sessions.")
         #expect(await MCPRelated.ask([], MCPRelated.Query(items: [Self.pullRequest])).isEmpty)
     }
+
+    /// The sessions the sources list, for what sessions told BriefBar, come together from those that list sessions, while
+    /// a tool runs and only while each is on; none at all says nil.
+    @Test func listsTheSessionsOfTheSourcesThatAreOn() async throws {
+        let one = try #require(ItemRef.session("c3e8f1a2-6b4d-4e97-a1c5-2f7d9b0e8a11"))
+        let two = try #require(ItemRef.session("1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b01"))
+        let idle = Date(timeIntervalSince1970: 1_792_317_600)
+        let isOn = Mutex(false)
+        let copilot = MCPSource(
+            name: "GitHub Copilot", tools: [],
+            related: MCPRelated.Teller(title: "Copilot sessions", tell: { _ in [] }, sessions: { SessionReports.Listing(sessions: [one]) })
+        ) { nil }.available(while: { isOn.withLock { $0 } }, refusal: AgentAccess.refusal(source: "GitHub Copilot"))
+        let other = MCPRelated.Teller(
+            title: "Other sessions", tell: { _ in [] }, sessions: { SessionReports.Listing(sessions: [two], idleSince: [two: idle]) }
+        )
+        let tellers = try [#require(copilot.related), Self.sessions, other]
+        #expect(await MCPRelated.sessionListing(tellers) == SessionReports.Listing(sessions: [two], idleSince: [two: idle]))
+        isOn.withLock { $0 = true }
+        #expect(await MCPRelated.sessionListing(tellers) == SessionReports.Listing(sessions: [one, two], idleSince: [two: idle]))
+        #expect(await MCPRelated.sessionListing([Self.sessions]) == nil)
+        #expect(await MCPRelated.sessionListing() == nil)
+        let listed = await MCPRelated.$tellers.withValue(tellers) { await MCPRelated.sessionListing() }
+        #expect(listed?.sessions == [one, two])
+    }
 }

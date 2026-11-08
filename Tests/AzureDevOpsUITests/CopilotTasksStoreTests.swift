@@ -616,6 +616,33 @@ import Testing
         #expect(services.sentTasks.tasks.isEmpty)
     }
 
+    /// While Azure DevOps runs, a session that Show Links shows telling BriefBar it's working on a pull request takes the
+    /// place of the session you chose for its work, for good, once it began to say so after you chose; not before.
+    @Test func aSessionThatBeganToTellBriefBarSinceYouChoseTakesItsPlace() async throws {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
+        source.start()
+        defer { source.stop() }
+        let key = PRKey("contoso", 4088)
+        let session = try #require(ItemRef.session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01"))
+        let chosenAt = Date().addingTimeInterval(-600)
+        source.settings.choose(session: "a3d9c5e1-7b2f-4e84-9c16-5f8e2d0b7a11", for: key, at: chosenAt)
+        var report = SessionReport(session: session)
+        report.setWorkingOn([key.linkRef], at: chosenAt.addingTimeInterval(-60))
+        services.sessionUpdates.tellDemo([report])
+        services.links.publish(.copilot, links: [try #require(ItemLink(session, key.linkRef, origin: .session))], items: [])
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(source.settings.chosenSession(for: key) != nil)
+
+        report.setWorkingOn([], at: chosenAt)
+        report.setWorkingOn([key.linkRef], at: chosenAt.addingTimeInterval(60))
+        services.sessionUpdates.tellDemo([report])
+        for _ in 0..<150 where source.settings.chosenSession(for: key) != nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(source.settings.chosenSession(for: key) == nil)
+    }
+
     /// Clicking the notification that says a task started shows it with your Copilot sessions: in the menu bar, or else a
     /// window.
     @Test func theStartedNotificationShowsTheTaskWithYourSessions() {

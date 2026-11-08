@@ -93,6 +93,10 @@ struct SessionChoice: Identifiable, Equatable {
 
     /// Opened in Copilot, by default, rather than run with the CLI: one of the app's sessions, or one the app has open.
     var opensInApp: Bool { appSession != nil || isOpenInApp || run?.isAppSession == true }
+
+    /// When it began to tell BriefBar it's working on the pull request, while BriefBar shows that: the session you chose
+    /// for its work before then gives way to it (`PullRequestSession.pick`).
+    var toldSince: Date?
 }
 
 extension CopilotTasksStore {
@@ -125,11 +129,13 @@ extension CopilotTasksStore {
         }
         let found = await withTaskCancellationHandler { await reading.value } onCancel: { reading.cancel() }
         guard !Task.isCancelled else { return [] }
-        let linked = linkedReasons(for: subject)
+        let links = linkedSessions(Self.ref(of: subject))
+        let linked = Self.reasons(of: links)
+        let told = Self.toldSince(of: links)
         let apps = found.sessions.map { session in
             SessionChoice(
                 kind: .app(session), name: session.name, place: Self.place(of: session), lastActive: session.lastActive,
-                reasons: Self.reasons(for: session, subject: subject, linked: linked[session.id] ?? [])
+                reasons: Self.reasons(for: session, subject: subject, linked: linked[session.id] ?? []), toldSince: told[session.id]
             )
         }
         var all = tasks + Self.sorted(apps, createdAt: nil)
@@ -184,40 +190,55 @@ extension CopilotTasksStore {
 
     /// BriefBar's sessions for it, whose worktrees are still there, the newest first.
     func taskChoices(for subject: TaskSubject) -> [SessionChoice] {
-        entries.compactMap { entry in
-            guard let run = entry.run, run.isValid, FileManager.default.fileExists(atPath: run.worktree.path) else { return nil }
-            let reason: SessionChoice.Reason
+        tasks { run in
             switch subject {
-            case .workItem(let item):
-                guard run.workItem?.matches(item.reference) == true else { return nil }
-                reason = .earlierTask
-            case .pullRequest(let pullRequest, _):
-                if run.onPullRequest?.matches(organization: pullRequest.organization, id: pullRequest.id) == true {
-                    reason = .earlierTask
-                } else if run.workItem != nil,
-                          run.pullRequest.flatMap({ ItemRef.from(link: $0.absoluteString) })
-                          == .pullRequest(organization: pullRequest.organization, number: pullRequest.id) {
-                    reason = .openedIt
-                } else {
-                    return nil
-                }
+            case .workItem(let item): return run.workItem?.matches(item.reference) == true ? .earlierTask : nil
+            case .pullRequest: return Self.taskReason(of: run, forPullRequest: Self.ref(of: subject))
             }
-            return SessionChoice(
+        }.map { entry, run, reason in
+            SessionChoice(
                 kind: .task(run), name: name(of: entry), place: run.onPullRequest?.repository ?? run.repository.lastPathComponent,
                 lastActive: entry.status.since ?? entry.startedAt, reasons: [reason], isBusy: entry.status.phase.isActive
             )
         }
     }
 
+    /// The sessions of a pull request's task choices (`taskChoices(for:)`), by their IDs.
+    func taskSessionIDs(forPullRequest pullRequest: ItemRef) -> Set<String> {
+        Set(tasks { Self.taskReason(of: $0, forPullRequest: pullRequest) }.map(\.run.id))
+    }
+
+    /// BriefBar's tasks whose worktrees are still there, the newest first, each with why it goes with what `reason` says,
+    /// for those it does.
+    private func tasks(
+        _ reason: (CopilotRun) -> SessionChoice.Reason?
+    ) -> [(entry: CopilotTaskEntry, run: CopilotRun, reason: SessionChoice.Reason)] {
+        entries.compactMap { entry in
+            guard let run = entry.run, run.isValid, FileManager.default.fileExists(atPath: run.worktree.path),
+                  let why = reason(run)
+            else { return nil }
+            return (entry, run, why)
+        }
+    }
+
+    /// Why a task of BriefBar's goes with a pull request: it was on it, or it's the work item's task that opened it; nil
+    /// for neither.
+    static func taskReason(of run: CopilotRun, forPullRequest pullRequest: ItemRef) -> SessionChoice.Reason? {
+        guard pullRequest.kind == .pullRequest, let number = pullRequest.number else { return nil }
+        if run.onPullRequest?.matches(organization: pullRequest.scope, id: number) == true { return .earlierTask }
+        if run.workItem != nil, run.pullRequest.flatMap({ ItemRef.from(link: $0.absoluteString) }) == pullRequest { return .openedIt }
+        return nil
+    }
+
     /// Why Show Links links each session to it, by the session's ID: nothing while it's off.
     func linkedReasons(for subject: TaskSubject) -> [String: [SessionChoice.Reason]] {
-        let ref: ItemRef
-        switch subject {
-        case .workItem(let item): ref = .workItem(organization: item.organization, id: item.id)
-        case .pullRequest(let pullRequest, _): ref = .pullRequest(organization: pullRequest.organization, number: pullRequest.id)
-        }
+        Self.reasons(of: linkedSessions(Self.ref(of: subject)))
+    }
+
+    /// Why Show Links links each of these sessions, by the session's ID.
+    static func reasons(of links: [LinkedSession]) -> [String: [SessionChoice.Reason]] {
         var reasons: [String: [SessionChoice.Reason]] = [:]
-        for link in linkedSessions(ref) {
+        for link in links {
             var why: Set<SessionChoice.Reason> = []
             for origin in link.origins {
                 switch origin {
@@ -232,6 +253,29 @@ extension CopilotTasksStore {
             reasons[link.id, default: []] += why
         }
         return reasons
+    }
+
+    /// When each session that Show Links shows telling BriefBar it's working on this began to say so, by its ID
+    /// (`SessionChoice.toldSince`): nothing while it's off.
+    func toldSince(_ ref: ItemRef) -> [String: Date] {
+        Self.toldSince(of: linkedSessions(ref))
+    }
+
+    /// When each of these sessions that tells BriefBar it's working on what they're linked to began to say so, by its ID.
+    static func toldSince(of links: [LinkedSession]) -> [String: Date] {
+        var since: [String: Date] = [:]
+        for link in links where !link.isThrough && link.origins.contains(.session) {
+            if let began = link.began { since[link.id] = began }
+        }
+        return since
+    }
+
+    /// What a task is for, as Show Links names it.
+    static func ref(of subject: TaskSubject) -> ItemRef {
+        switch subject {
+        case .workItem(let item): return .workItem(organization: item.organization, id: item.id)
+        case .pullRequest(let pullRequest, _): return .pullRequest(organization: pullRequest.organization, number: pullRequest.id)
+        }
     }
 
     /// Why one of the app's sessions goes with it: what the app records, its branch, and what Show Links says.
