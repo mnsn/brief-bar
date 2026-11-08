@@ -186,8 +186,10 @@ package struct OrderBoardView: View {
     let now: Date
     /// A mission's lane came into the page's sight, or left it: Apple Intelligence names the missions on screen.
     let see: (MissionKey, Bool) -> Void
-    /// How long a card a key moved is owed the keyboard's focus, for the board to draw it in its new column: ten seconds.
+    /// How long a card a key moved is owed the keyboard's focus, for the board to draw it in its new column.
     let focusWait: Duration
+    /// The app's wait for that: ten seconds.
+    package static let owedFocusWait: Duration = .seconds(10)
 
     /// The card you drag, or dragged last: only what this drag carries drops.
     @LocalState private var drag: BoardDrag?
@@ -226,7 +228,7 @@ package struct OrderBoardView: View {
         place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, shownOnTop: ItemRef?,
         setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?,
-        now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in }, focusWait: Duration = .seconds(10)
+        now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in }, focusWait: Duration = OrderBoardView.owedFocusWait
     ) {
         self.board = board
         self.missions = missions
