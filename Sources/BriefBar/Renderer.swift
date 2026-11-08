@@ -482,9 +482,9 @@ enum Renderer {
             if model.agents.state == .off {
                 model.agents.useForRendering(on: true)
                 page(.agents, name: "agents-on")
-                // With Send Prompts to Copilot Sessions and Updates from Copilot Sessions on, in one picture, as the
-                // pictures of one render already come close to what SwiftUI can hold.
-                model.agents.useForRendering(on: true, sessionPrompts: true, sessionUpdates: true)
+                // With Send Prompts to Copilot Sessions, Updates from Copilot Sessions and Pull Request Order's skill on, in
+                // one picture, as the pictures of one render already come close to what SwiftUI can hold.
+                model.agents.useForRendering(on: true, sessionPrompts: true, sessionUpdates: true, order: true)
                 page(.agents, name: "agents-on-session-prompts")
                 model.agents.useForRenderingLeftovers()
                 page(.agents, name: "agents-off-leftovers")
