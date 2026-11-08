@@ -285,10 +285,10 @@ private final class TakenAt: Sendable {
         return checkout
     }
 
-    /// Push & Reply goes once what the folder the session works in would push is checked, against the branch the pull
-    /// request merges into now. While it holds a merge of what that branch doesn't have, as when the pull request was
-    /// retargeted after its conflicts were resolved there, nothing's sent, copied or shown; nor while BriefBar can't
-    /// check, as in a folder that isn't a clone of its repository. Against the branch it merged, it goes.
+    /// Push & Reply goes once what the folder the session works in would push is checked, against the branch its prompt
+    /// names. While it holds a merge of what that branch doesn't have, as when the pull request was retargeted after its
+    /// conflicts were resolved there, nothing's sent, copied or shown; nor while BriefBar can't check, as in a folder that
+    /// isn't a clone of its repository. Against the branch it merged, it goes.
     @Test(.timeLimit(.minutes(1)))
     func sendsNoPushOfAMergeTheTargetDoesntHave() async throws {
         let (store, home) = try store()
@@ -304,12 +304,11 @@ private final class TakenAt: Sendable {
         defer { ext.stop() }
         try hold(session, home: home)
         try work(session, in: try await resolvedAgainstMain(in: home), home: home)
-        // The window opened as the pull request merged into main; the list has read since that it merges into release/x.
-        var target: String? = "release/x"
-        let key = PRKey(pullRequest.organization, pullRequest.id)
-        store.currentTarget = { $0 == key ? target : nil }
+        // The window opened once the pull request merged into release/x, and its prompt names it.
+        var retargeted = pullRequest
+        retargeted.targetBranch = "release/x"
 
-        let refused = await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest)
+        let refused = await store.deliver("Push and reply", to: choice(session), checkingPush: retargeted)
         #expect(refused == .notSent("‘Fix the totals’ holds a merge that release/x doesn't have, so nothing went. Fix the pull request in a new session."))
         #expect(ext.received.isEmpty)
         #expect(requests(home).isEmpty)
@@ -319,23 +318,23 @@ private final class TakenAt: Sendable {
         let elsewhere = home.appendingPathComponent("elsewhere", isDirectory: true)
         try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
         try work(session, in: elsewhere, home: home)
-        guard case .notSent(let why) = await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) else {
+        guard case .notSent(let why) = await store.deliver("Push and reply", to: choice(session), checkingPush: retargeted) else {
             Issue.record("BriefBar sent a push it couldn't check")
             return
         }
         #expect(why.hasPrefix("BriefBar couldn't check what ‘Fix the totals’ would push, so nothing went: "))
         #expect(ext.received.isEmpty && copied.isEmpty)
 
-        target = nil
         try work(session, in: home.appendingPathComponent("checkout", isDirectory: true), home: home)
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
         #expect(ext.received == ["Push and reply"])
         #expect(copied.isEmpty)
     }
 
-    /// Checked against main, a Push & Reply doesn't go once the list reads that the pull request merges into release/x,
-    /// before the prompt is sent or copied: while git checks, after BriefBar wrote the prompt for the session's extension
-    /// but before the extension took it, which BriefBar takes back, and right before BriefBar copies it for you to paste.
+    /// A Push & Reply whose prompt names main doesn't go once the list reads that the pull request merges into release/x,
+    /// before the prompt is sent or copied: before git checks, while it does, after BriefBar wrote the prompt for the
+    /// session's extension but before the extension took it, which BriefBar takes back, and right before BriefBar copies it
+    /// for you to paste.
     @Test(.timeLimit(.minutes(1)))
     func sendsNoPushOnceThePullRequestMergesIntoAnotherBranch() async throws {
         let (store, home) = try store()
@@ -360,10 +359,16 @@ private final class TakenAt: Sendable {
             return retargeted || looks >= retargetedAt ? "release/x" : "main"
         }
         let refused = SessionDelivery.notSent(
-            "The pull request now merges into release/x, so nothing went. Send it again, for BriefBar to check ‘Fix the totals’ against release/x."
+            "The pull request merges into release/x now, not the branch this prompt names, so nothing went. Close this window and open it again, for a prompt that names release/x."
         )
 
+        // Read before git checks.
+        retargetedAt = 1
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(looks == 1)
+
         // Read while git checks against main.
+        looks = 0
         retargetedAt = 2
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
         #expect(requests(home).isEmpty)

@@ -21,7 +21,9 @@
   request's branch and the one it merges into, in the folder its session works in, and checks each merge it would push:
   when one merged in what that branch doesn't have, as when Copilot resolved the conflicts against main and the pull
   request was then retargeted to release/x, nothing goes, and BriefBar says why, so you can fix it in a new session.
-  Push & Reply's prompt names the branch it merges into too, and has Copilot stop if it finds a merge of any other.
+  Push & Reply's prompt names the branch it merges into too, and has Copilot stop if it finds a merge of any other; once
+  the pull request merges into another branch than its prompt names, nothing goes either, until you open the window
+  again for a prompt that names it.
 - **Comments you'll paste to Copilot stay on Needs You until you do.** When BriefBar copies a prompt for you to paste in
   a Copilot app session, the comments it quotes leave Needs You once BriefBar sees you pasted it there, not as it's
   copied, nor when you send the session something else. A prompt whose session waits overnight for your answer says to

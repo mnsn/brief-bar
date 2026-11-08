@@ -2343,20 +2343,22 @@ offered once a task that changed files is done.
 resolved the pull request's conflicts against main, without pushing, and the pull request was then retargeted to
 release/x; pushing would bring main's work into it, and only a force push, which the prompts forbid, could take it back.
 So right before a Push & Reply goes, BriefBar checks, in the folder the session works in
-(`Git.checkPush(in:source:target:)`): it fetches the pull request's branch and the one it merges into now, as the list
-last read it, lists the merges in what `origin/<branch>` doesn't have yet, and a merge still in progress
+(`Git.checkPush(in:source:target:)`): it fetches the pull request's branch and the one it merges into, the one the
+prompt names, lists the merges in what `origin/<branch>` doesn't have yet, and a merge still in progress
 (`MERGE_HEAD`), and requires that what each merged in is in `origin/<target>` (as `git merge-base --is-ancestor`
 would). Otherwise nothing goes, and it says why. A merge of the pull request's own branch, as `git pull` makes,
 doesn't pass either: from history alone it can't be told from a merge of the branch into another, and BriefBar's prompts
 rebase rather than merge. For BriefBar's own tasks the launcher checks the session's worktree, or its fork's, before
 Copilot starts (`LaunchError.foreignMerge`), and the task fails with why; for the Copilot app's sessions the window
 checks the folder the session works in before the prompt is sent or copied, and says why it didn't send it
-(`CopilotTasksStore.deliver(_:to:forking:handOff:about:at:checkingPush:)`). Each asks the list again once git is done:
-right before Copilot starts, and until the prompt is sent or copied. Once the list has read that the pull request merges
-into another branch than the one it checked against, nothing goes either, and it says so (`LaunchError.retargeted`,
-`CopilotTasksStore.retargetProblem`). When BriefBar can't check, as in a folder
-that isn't a clone of the pull request's repository, nothing goes either. The prompt names the branch it merges into,
-and has Copilot check the same and stop if it finds a merge of any other branch.
+(`CopilotTasksStore.deliver(_:to:forking:handOff:about:at:checkingPush:)`). The prompt names the branch it merges into,
+as the window wrote it, and has Copilot check the same and stop if it finds a merge of any other branch; so the branch
+BriefBar checks against is the one the prompt names, and a Push & Reply goes only while the list reads that the pull
+request still merges into it: as you send it, before the launcher starts and again once git is done, right before
+Copilot starts, and until the prompt is sent or copied. Once the list has read another, nothing goes either, and BriefBar
+says to open the window again, for a prompt that names it (`CopilotTasksStore.retargetProblem`,
+`LaunchError.retargeted`). When BriefBar can't check, as in a folder that isn't a clone of the pull request's
+repository, nothing goes either.
 
 **A session that's already there.** The composer's session menu, under **Where It Goes**, also lists the sessions a task can
 go to instead of a new one (`SessionChoice`), read as it opens, and only while **Send Work to Copilot**

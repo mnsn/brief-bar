@@ -1168,6 +1168,12 @@ struct CopilotComposerView: View {
 
     private func send() {
         guard canSend else { return }
+        // The prompt names the branch the pull request merged into as the window wrote it, which BriefBar checks what the
+        // session would push against: once the list has read another, it doesn't go.
+        if case .pullRequest(let pullRequest, .pushAndReply) = subject, let problem = store.retargetProblem(pullRequest) {
+            deliveryProblem = problem
+            return
+        }
         let options = CopilotRunOptions(model: model.trimmingCharacters(in: .whitespaces), effort: effort)
         guard let target else {
             guard let folder = repository?.root else { return }

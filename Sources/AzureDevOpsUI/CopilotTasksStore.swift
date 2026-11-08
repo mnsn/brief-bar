@@ -132,15 +132,30 @@ final class CopilotTasksStore: ObservableObject {
     /// there: whether it could. The source's.
     var canShowPullRequest: (PRKey) -> Bool = { _ in false }
     var showPullRequest: (PRKey) -> Bool = { _ in false }
-    /// The branch a pull request merges into now, as the list last read it: what Push & Reply checks a session's merges
-    /// against (`Git.checkPush(in:source:target:)`), however long its window was open. Nil when the list doesn't have it.
-    /// The source's.
+    /// The branch a pull request merges into now, as the list last read it: a Push & Reply goes only while it's the one its
+    /// prompt names, which BriefBar checks the session's merges against (`Git.checkPush(in:source:target:)`), however long
+    /// its window was open. Nil when the list doesn't have it. The source's.
     var currentTarget: (PRKey) -> String? = { _ in nil }
 
     /// The branch a pull request merges into now (`currentTarget`), or, when the list doesn't have it, the one it merged
-    /// into as you sent it.
+    /// into as the window wrote its prompt.
     func targetNow(of pullRequest: TaskPullRequest) -> String {
         currentTarget(PRKey(pullRequest.organization, pullRequest.id)).flatMap { $0.isEmpty ? nil : $0 } ?? pullRequest.targetBranch
+    }
+
+    /// The branch a Push & Reply's pull request merges into now, when the list has read another than the one its prompt
+    /// names, and BriefBar checks what it would push against: `targetBranch`, as the window wrote the prompt. Nil while it
+    /// merges into that one.
+    func retargeted(_ pullRequest: TaskPullRequest) -> String? {
+        let now = targetNow(of: pullRequest)
+        return now == pullRequest.targetBranch ? nil : now
+    }
+
+    /// Why a Push & Reply mustn't go now (`retargeted`): its prompt, and the check of what the session would push, are for
+    /// a branch the pull request no longer merges into. Nil while it merges into that one, or for anything but a push.
+    func retargetProblem(_ pullRequest: TaskPullRequest?) -> String? {
+        guard let pullRequest, let target = retargeted(pullRequest) else { return nil }
+        return "The pull request merges into \(target) now, not the branch this prompt names, so nothing went. Close this window and open it again, for a prompt that names \(target)."
     }
     /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
     var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
@@ -463,13 +478,6 @@ final class CopilotTasksStore: ObservableObject {
     ) -> Date? {
         // Not once Azure DevOps stopped, as it may have while an inline Fix looked for where to send it.
         guard canSend, isOn, !hasStopped, continuing == nil || forking == nil else { return nil }
-        // Push & Reply checks what it would push against the branch the pull request merges into now, which may not be the
-        // one it did as its window opened.
-        var subject = subject
-        if case .pullRequest(var pullRequest, .pushAndReply) = subject {
-            pullRequest.targetBranch = targetNow(of: pullRequest)
-            subject = .pullRequest(pullRequest, .pushAndReply)
-        }
         // A second run in a session Copilot still works in would fork its history; one in a checkout it works in, for another
         // session, would mix their work up, as when two of the Copilot app's sessions share one. A fork works in a worktree
         // of its own, so the session it forks may be busy.
@@ -525,10 +533,12 @@ final class CopilotTasksStore: ObservableObject {
         // Copilot works on its own, and nothing opens: say it's on it, now, rather than once its worktree is ready. A fork,
         // once the CLI made it (`rekey`): the notification goes by its ID, for the one that says how it ended to replace.
         if forking == nil { notifyStarted(entry) }
-        // Asked again once git has checked what it would push, right before Copilot starts.
+        // Push & Reply goes only while the pull request merges into the branch its prompt names, which the launcher checks what
+        // the session would push against: asked again once git has done that, right before Copilot starts.
+        let pushing: TaskPullRequest? = if case .pullRequest(let pullRequest, .pushAndReply) = subject { pullRequest } else { nil }
         var askTarget: (@Sendable () async -> String?)?
-        if case .pullRequest(let pullRequest, .pushAndReply) = subject {
-            askTarget = { [weak self] in await self?.targetNow(of: pullRequest) }
+        if let pushing {
+            askTarget = { [weak self] in await self?.targetNow(of: pushing) }
         }
         let request = CopilotLauncher.Request(
             subject: subject, prompt: prompt, options: options, repository: repository,
@@ -546,6 +556,8 @@ final class CopilotTasksStore: ObservableObject {
                 if let continuing, await anotherSessionRuns(inCheckoutOf: continuing.worktree, besides: id) {
                     throw LaunchError.sharedCheckout
                 }
+                // Retargeted since the window wrote the prompt, or since you sent it.
+                if let pushing, let target = retargeted(pushing) { throw LaunchError.retargeted(target) }
                 var run: CopilotRun
                 if let launchForTests {
                     run = try await launchForTests(request, id, now)

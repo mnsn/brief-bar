@@ -16,7 +16,8 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
     case foreignMerge(target: String)
     /// BriefBar couldn't check what Push & Reply would push: what git said.
     case cantCheckPush(String)
-    /// The pull request merges into another branch now than the one Push & Reply checked the session against: that branch.
+    /// The pull request merges into another branch now than the one Push & Reply's prompt names, and the session was checked
+    /// against (`TaskPullRequest.targetBranch`): that branch.
     case retargeted(String)
 
     public var description: String {
@@ -34,7 +35,7 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
         case .cantCheckPush(let message):
             return "BriefBar couldn't check what this session would push, so Copilot didn't push from it: \(message)"
         case .retargeted(let target):
-            return "The pull request now merges into \(target), so Copilot didn't push from this session. Send Push & Reply again, for BriefBar to check it against \(target)."
+            return "The pull request merges into \(target) now, not the branch its prompt named, so Copilot didn't push from this session. Send Push & Reply again, for a prompt that names \(target)."
         }
     }
 }
@@ -66,8 +67,8 @@ public struct CopilotLauncher: Sendable {
         /// changes that aren't committed, which the fork's worktree doesn't have, as with the CLI's own `/fork worktree`.
         public var forking: CopilotRun?
         /// For Push & Reply, the branch the pull request merges into now, asked once git has checked what the session would
-        /// push against `targetBranch`, right before Copilot starts: when it's another, Copilot doesn't start
-        /// (`LaunchError.retargeted`). Nil when it can't be told.
+        /// push against `targetBranch`, the one its prompt names, right before Copilot starts: when it's another, Copilot
+        /// doesn't start (`LaunchError.retargeted`). Nil when it can't be told.
         public var targetNow: (@Sendable () async -> String?)?
 
         public init(
@@ -242,7 +243,7 @@ public struct CopilotLauncher: Sendable {
                 refusal = .cantCheckPush((error as? GitError)?.description ?? String(describing: error))
             }
             // Again, once git is done, right before Copilot starts: the list may have read meanwhile that the pull request
-            // merges into another branch, which the session wasn't checked against.
+            // merges into another branch than the one the prompt names, and the session was checked against.
             if refusal == nil, let now = await request.targetNow?(), !now.isEmpty, now != pullRequest.targetBranch {
                 refusal = .retargeted(now)
             }

@@ -147,6 +147,7 @@ import Testing
         await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(retargetedMeanwhile, id: resolve.id) { _ in } }
         #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
         #expect(FileManager.default.fileExists(atPath: resolve.worktree.appendingPathComponent("main.txt").path))
+        #expect(LaunchError.retargeted("release/x").description.hasPrefix("The pull request merges into release/x now, not the branch its prompt named"))
 
         let ship = try await launch(launcher, CopilotLauncher.Request(
             subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,

@@ -800,11 +800,11 @@ import Testing
         #expect(store.work(on: .thread(11), of: key)?.session == fork)
     }
 
-    /// Push & Reply checks what it would push against the branch the pull request merges into now, as the list last read
-    /// it, which may not be the one it merged into as its window opened (`Git.checkPush(in:source:target:)`), and asks the
-    /// list again right before Copilot starts (`CopilotLauncher.Request.targetNow`); what else is sent goes as the window
-    /// had it.
-    @Test func pushAndReplyGoesByTheBranchThePullRequestMergesIntoNow() async throws {
+    /// Push & Reply goes only while the pull request merges into the branch its prompt names, as the window wrote it, which
+    /// the launcher checks what the session would push against (`Git.checkPush(in:source:target:)`): once the list has read
+    /// another, nothing starts, and the task says why. The launcher asks the list again right before Copilot starts
+    /// (`CopilotLauncher.Request.targetNow`). Whatever else is sent goes whatever the target.
+    @Test func pushAndReplyGoesOnlyWhileThePullRequestMergesIntoTheBranchItsPromptNames() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = store(settings)
         var launched: [String] = []
@@ -817,10 +817,23 @@ import Testing
         }
         let current = self.key
         store.currentTarget = { $0 == current ? "release/x" : nil }
+        var retargeted = pullRequest
+        retargeted.targetBranch = "release/x"
+        #expect(store.retargetProblem(pullRequest) == "The pull request merges into release/x now, not the branch this prompt names, so nothing went. Close this window and open it again, for a prompt that names release/x.")
+        #expect(store.retargetProblem(retargeted) == nil)
+        #expect(store.retargetProblem(nil) == nil)
+
+        // Its prompt names main: nothing starts, and the task says why.
         let repository = URL(fileURLWithPath: "/tmp/payments-api")
         store.send(.pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard, repository: repository)
-        try await settle { launched.count == 1 }
+        try await settle { store.pending.first?.status.phase == .failed }
+        #expect(store.pending.first?.status.detail == LaunchError.retargeted("release/x").description)
+        #expect(launched.isEmpty)
+        // Fixes go whatever the target; a push whose prompt names release/x goes, and so does one that names main once the
+        // list reads none.
         store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 12", options: CopilotModel.standard, repository: repository, parts: [.thread(12)])
+        try await settle { launched.count == 1 }
+        store.send(.pullRequest(retargeted, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard, repository: repository)
         try await settle { launched.count == 2 }
         store.currentTarget = { _ in "" }
         store.send(.pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard, repository: repository)
@@ -828,13 +841,13 @@ import Testing
         store.currentTarget = { _ in nil }
         store.send(.pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard, repository: repository)
         try await settle { launched.count == 4 }
-        #expect(launched == ["pushAndReply release/x", "fixComments main", "pushAndReply main", "pushAndReply main"])
-        // Asked again, it's what the list has read since; or, once the list doesn't have it, the branch it was checked against.
-        #expect(asks.map { $0 != nil } == [true, false, true, true])
+        #expect(launched == ["fixComments main", "pushAndReply release/x", "pushAndReply main", "pushAndReply main"])
+        // Asked again, it's what the list has read since; or, once the list doesn't have it, the branch the prompt names.
+        #expect(asks.map { $0 != nil } == [false, true, true, true])
         store.currentTarget = { $0 == current ? "release/y" : nil }
-        #expect(await asks[0]?() == "release/y")
+        #expect(await asks[1]?() == "release/y")
         store.currentTarget = { _ in nil }
-        #expect(await asks[0]?() == "release/x")
+        #expect(await asks[1]?() == "release/x")
     }
 
     // MARK: Prompts to the Copilot app's sessions
