@@ -94,7 +94,7 @@ import Testing
     ///   - told: what sessions told BriefBar, with Updates from Copilot Sessions on.
     private func reader(
         home: URL, sending: Bool = true, links: LinkEdits? = nil, chosen: (session: String?, at: Date)? = nil, replaced: Bool = false,
-        told: [SessionReport] = [], defaults: MemoryDefaults = MemoryDefaults()
+        told: [SessionReport] = [], turnsOff setting: String? = nil
     ) -> AzureDevOpsReader {
         // As the app keeps it: Use for This Pull Request, in the line's menu; in preferences of their own, as what the main
         // actor's settings hold can't go to the reader's actor.
@@ -107,6 +107,7 @@ import Testing
             if replaced { settings.copilotPullRequestSessions = settings.copilotPullRequestSessions.map { $0.givenWay() } }
             kept = app.data(forKey: SettingsKey.copilotPullRequestSessions)
         }
+        let defaults = MemoryDefaults()
         defaults.set(sending, forKey: SettingsKey.copilotEnabled)
         if let links {
             links.save(to: defaults)
@@ -116,6 +117,11 @@ import Testing
         if !told.isEmpty {
             defaults.set(true, forKey: SessionUpdatesSetting.defaultsKey)
             for report in told { SessionReports.save(report, to: defaults) }
+        }
+        if let setting {
+            return AzureDevOpsReader(
+                demo: false, organizations: ["contoso"], defaults: TurnedOffAfterFirstRead(setting, of: defaults), appHome: home
+            )
         }
         return AzureDevOpsReader(demo: false, organizations: ["contoso"], defaults: defaults, appHome: home)
     }
@@ -401,15 +407,14 @@ import Testing
         let off = MCPRelated.Teller(title: "Copilot sessions", tell: { _ in [] }, sessions: { throw MCPToolError("GitHub Copilot is off in BriefBar.") })
         #expect(await session(reader(home: home, links: LinkEdits(), told: [opened]), tellers: [off]) == nil)
         #expect(await session(reader(home: home, links: LinkEdits(), told: [opened]), tellers: [listing([elsewhereRef])]) == nil)
-        // Nor once either is turned off in the app while Copilot's list is read.
-        for setting in [Links.enabledKey, SessionUpdatesSetting.defaultsKey] {
-            let defaults = MemoryDefaults()
-            let turningOff = MCPRelated.Teller(title: "Copilot sessions", tell: { _ in [] }, sessions: {
-                defaults.set(false, forKey: setting)
-                return SessionReports.Listing(sessions: [openerRef, elsewhereRef])
-            })
-            #expect(await session(reader(home: home, links: LinkEdits(), told: [opened], defaults: defaults), tellers: [turningOff]) == nil)
-        }
+        // Nor once either is turned off in the app while Copilot's list is read; nor, then, the links you made, once Show
+        // Links is off, though the list couldn't be read.
+        #expect(await session(reader(home: home, links: LinkEdits(), told: [opened], turnsOff: Links.enabledKey)) == nil)
+        #expect(await session(reader(home: home, links: LinkEdits(), told: [opened], turnsOff: SessionUpdatesSetting.defaultsKey)) == nil)
+        var yours = LinkEdits()
+        yours.link(pullRequest, elsewhereRef, at: now)
+        #expect(await session(reader(home: home, links: yours, told: [opened]), tellers: [off])?.suggested?.choice.id == elsewhere)
+        #expect(await session(reader(home: home, links: yours, told: [opened], turnsOff: Links.enabledKey), tellers: [off]) == nil)
 
         var working = SessionReport(session: openerRef)
         working.setWorkingOn([pullRequest], at: now.addingTimeInterval(-600))
@@ -493,4 +498,35 @@ private final class TurnedOffOnceRead: UserDefaults, @unchecked Sendable {
     override func set(_ value: Any?, forKey defaultName: String) {}
 
     override func removeObject(forKey defaultName: String) {}
+}
+
+/// Preferences as the app keeps them, but for one setting, which is turned off in the app once it's been read: as while
+/// an agent's tool waits on Copilot's list.
+private final class TurnedOffAfterFirstRead: UserDefaults, @unchecked Sendable {
+    private let setting: String
+    private let kept: MemoryDefaults
+    private let reads = Mutex(0)
+
+    init(_ setting: String, of kept: MemoryDefaults) {
+        self.setting = setting
+        self.kept = kept
+        super.init(suiteName: nil)!
+    }
+
+    override func object(forKey defaultName: String) -> Any? {
+        if defaultName == setting, reads.withLock({ count in count += 1; return count > 1 }) { return false }
+        return kept.object(forKey: defaultName)
+    }
+
+    override func dictionaryRepresentation() -> [String: Any] {
+        kept.dictionaryRepresentation()
+    }
+
+    override func set(_ value: Any?, forKey defaultName: String) {
+        kept.set(value, forKey: defaultName)
+    }
+
+    override func removeObject(forKey defaultName: String) {
+        kept.removeObject(forKey: defaultName)
+    }
 }

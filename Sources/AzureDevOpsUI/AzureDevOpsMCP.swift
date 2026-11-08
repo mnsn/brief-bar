@@ -373,6 +373,8 @@ actor AzureDevOpsReader {
         let pullRequest = PullRequestTasks.task(for: record)
         let chosen = PullRequestSessionChoice.load(from: defaults, now: now)
         let known = await links(of: record.id.linkRef, now: now)
+        // Again after that wait, which may read Copilot's list: it may have been turned off meanwhile.
+        guard sendsToCopilot else { return nil }
         let store = await Self.store(
             for: pullRequest, runs: runs, chosen: chosen, links: known.graph, told: known.told, workItems: workItemTitles(now: now),
             appHome: appHome
@@ -420,11 +422,12 @@ actor AzureDevOpsReader {
         edits.forget(before: now.addingTimeInterval(-LinkEdits.lifetime))
         guard SessionUpdatesSetting.isOn(in: defaults) else { return (LinkGraph(edits: edits), SessionReports()) }
         let told = SessionReports.load(from: defaults, now: now)
-        guard told.reports.values.contains(where: { $0.workingOn.contains(pullRequest) || $0.opened[pullRequest] != nil }),
-              let listing = await MCPRelated.sessionListing()
-        else { return (LinkGraph(edits: edits), SessionReports()) }
+        guard told.reports.values.contains(where: { $0.workingOn.contains(pullRequest) || $0.opened[pullRequest] != nil }) else {
+            return (LinkGraph(edits: edits), SessionReports())
+        }
+        let listing = await MCPRelated.sessionListing()
         guard defaults.bool(forKey: Links.enabledKey) else { return (LinkGraph(), SessionReports()) }
-        guard SessionUpdatesSetting.isOn(in: defaults) else { return (LinkGraph(edits: edits), SessionReports()) }
+        guard let listing, SessionUpdatesSetting.isOn(in: defaults) else { return (LinkGraph(edits: edits), SessionReports()) }
         return (LinkGraph(links: told.links(listing, now: now), edits: edits), told)
     }
 
