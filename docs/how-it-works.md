@@ -1421,7 +1421,7 @@ what you set, and its order. The first rule that applies decides:
 | Yours: a draft | In progress | **Draft** |
 | Yours: ready to complete, and its order lets it | Can merge | **Complete it** |
 | Yours: ready to complete, after one BriefBar hasn't seen merge | Waits for another PR | **After !4102** |
-| Yours: ready to complete, still targeting the branch of one that merged, or its order needs checking, or another order puts what it waits for after it | Waits for another PR | **!4101 merged: retarget it to main**, **Check the order**, **Another order puts !4102 after it: check the order** |
+| Yours: ready to complete, still targeting the branch of one that merged, or its order needs checking, or another order puts what it waits for after it | Waits for another PR | **!4101 merged: retarget it to main**, **Check the order**, **‘Payments’ puts !4102 after it: check the order**, naming that order's mission as its header does, at once as you or Apple Intelligence rename it (agents get **Another order**) |
 | Yours: reviewed, with something else left | In progress | What's Left's first item |
 | Yours: otherwise | Teammate's review | Who it waits for, as What's Left says it, or **Find a reviewer** |
 
@@ -1508,8 +1508,11 @@ waits for !4102 in ‘Payments’: its Mission ▸ Merge After there takes that 
 BriefBar refused the change, as with 500 changes kept. Only one mission has a pull request as next, so set as next in
 the other, it would wait in the first again, back and forth, and with Lanes: None for ever, as its one card is the other's
 then: the Board doesn't, in either lane, and says "It's next to merge in ‘Checkout’ and still waits for !4102 in
-‘Payments’: …" (`BoardRules.move`), where the order it's next in puts it after one BriefBar hasn't seen merge; its Mission
-menu's Set as Next to Merge still moves it. None is set as next while
+‘Payments’: …" (`BoardRules.move`), where the order it's next in would hold it again. BriefBar works that out from the
+missions as they'd be, made as they are now with your next in the other instead (`OrderBoard.nextsHeldAgain`): the
+first's lines that your next there set aside come back, the other's next can set one of them aside, and what you moved
+out of the first, or put after it with Merge After, holds it there no more. Its Mission menu's Set as Next to Merge
+still moves it. None is set as next while
 stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
 (`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card
 off it: in its mission's lane, which has Undo for all its pull requests, as List's card does, or in a lane of those in

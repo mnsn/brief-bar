@@ -16,6 +16,10 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var isOn: Bool
     /// The missions, as By Mission lists them (`OrderBoard.missions`): none while it's off.
     @Published package private(set) var missions: [OrderMission] = []
+    /// The pull requests you set as next to merge in a session's order whose order would hold them again were they set as
+    /// next in another mission that holds them now, by the mission they're next in (`OrderBoard.nextsHeldAgain`): the
+    /// Board doesn't move where one's next back and forth. None while it's off.
+    @Published package private(set) var nextsHeldAgain: [ItemRef: MissionKey] = [:]
     /// The mission you keep on top: none while it's off.
     @Published package private(set) var focus: MissionKey?
     /// The orders sessions told BriefBar: none while it's off.
@@ -228,6 +232,7 @@ package final class PullRequestOrder: ObservableObject {
             modelNames = [:]
             namer?.stop()
             missions = []
+            nextsHeldAgain = [:]
             marks = StageMarks()
             stages = [:]
             stagedKinds = []
@@ -563,7 +568,7 @@ package final class PullRequestOrder: ObservableObject {
         guard names != yourNames else { return outcome }
         objectWillChange.send()
         yourNames = names
-        cachedNames = nil
+        namesChanged()
         names.save(to: defaults)
         askNames()
         return outcome
@@ -574,7 +579,7 @@ package final class PullRequestOrder: ObservableObject {
         guard isOn, yourNames.name(for: key) != nil else { return }
         objectWillChange.send()
         yourNames.clear(key)
-        cachedNames = nil
+        namesChanged()
         yourNames.save(to: defaults)
         askNames()
     }
@@ -652,7 +657,13 @@ package final class PullRequestOrder: ObservableObject {
     private func modelNamed(_ key: MissionKey, _ name: String) {
         guard isOn, modelNames[key] != name else { return }
         modelNames[key] = name
+        namesChanged()
+    }
+
+    /// A mission's name changed: what names it, and the stages that name it, as where two orders go round.
+    private func namesChanged() {
         cachedNames = nil
+        restage()
     }
 
     // MARK: Your changes to missions
@@ -857,6 +868,7 @@ package final class PullRequestOrder: ObservableObject {
     private func rebuild() {
         guard isOn else {
             if !missions.isEmpty { missions = [] }
+            if !nextsHeldAgain.isEmpty { nextsHeldAgain = [:] }
             stacked = [:]
             return
         }
@@ -966,6 +978,10 @@ package final class PullRequestOrder: ObservableObject {
         keepNames(following: successor, in: missions, facts: facts, at: date)
         forgetModelNames(keepingPlans: Set(orders.plans.map(\.id)), keepingMine: self.changes.ownMissions.union(undoableOwnMissions))
         cachedNames = nil
+        let heldAgain = OrderBoard.nextsHeldAgain(
+            facts: facts, orders: orders, evidence: evidence, changes: self.changes, missions: missions, stacked: stacked, now: date
+        )
+        if heldAgain != nextsHeldAgain { nextsHeldAgain = heldAgain }
         if missions != self.missions { self.missions = missions }
         restage()
         askNames()

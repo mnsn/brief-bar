@@ -53,3 +53,37 @@ extension OrderMission {
         notNext(ref)?.description
     }
 }
+
+extension OrderBoard {
+    /// The pull requests you set as next to merge in a session's order whose order would hold them again were they set as
+    /// next in another mission that holds them now, by the mission they're next in. Only one mission has a pull request as
+    /// next, so set as next there instead, it would only wait in the first again, back and forth: the Board doesn't
+    /// (`BoardRules.move`'s `nextIn`). Worked out from the missions as they'd be then, made as they are now with your next
+    /// there instead: without the first's, so that the lines of its order it set aside come back, and with the other's,
+    /// whose own lines can set one of them aside, as missions with your next are made first.
+    /// - Parameters:
+    ///   - missions: the missions as they are now, made of these (`missions(facts:orders:evidence:focus:changes:now:)`).
+    ///   - stacked: what BriefBar sees each pull request stacked on (`stacked(_:)`).
+    public static func nextsHeldAgain(
+        facts: OrderFacts, orders: DeclaredOrders, evidence: OrderEvidence, changes: OrderChanges, missions: [OrderMission],
+        stacked: [ItemRef: Set<ItemRef>], now: Date
+    ) -> [ItemRef: MissionKey] {
+        var held: [ItemRef: MissionKey] = [:]
+        for (ref, change) in changes.changes {
+            // Only an order has lines your next sets aside, to come back once it goes.
+            guard case .plan? = change.first, let first = change.first, change.holds(in: orders) else { continue }
+            for other in StageOrder.holders(of: ref, in: missions) where other != first {
+                var then = changes
+                guard (try? then.apply(.setNext(ref, in: other, true), missions: missions, orders: orders, stacked: stacked, now: now))
+                    != nil
+                else { continue }
+                let made = Self.missions(facts: facts, orders: orders, evidence: evidence, changes: then, now: now)
+                if StageOrder.holders(of: ref, in: made).contains(first) {
+                    held[ref] = first
+                    break
+                }
+            }
+        }
+        return held
+    }
+}

@@ -36,14 +36,10 @@ package struct BoardMoves {
         )
     }
 
-    /// The mission you set a pull request as next to merge in, by a change that holds, whose order puts it after one
-    /// BriefBar hasn't seen merge: were it next in another, it would wait there again.
+    /// The mission you set a pull request as next to merge in whose order would hold it again were it set as next in
+    /// another that holds it now (`PullRequestOrder.nextsHeldAgain`).
     private func nextHolding(_ ref: ItemRef) -> MissionKey? {
-        guard let change = order.changes[ref], change.holds(in: order.orders), case .plan(let id)? = change.first,
-              let after = order.orders.plan(id)?.entry(for: ref)?.after
-        else { return nil }
-        let merged = Set(order.missions.flatMap { $0.steps + $0.attached }.filter { $0.status == .merged }.map(\.ref))
-        return after.contains { !merged.contains($0) && !change.notAfter.contains($0) } ? change.first : nil
+        order.nextsHeldAgain[ref]
     }
 
     /// What dropping what a drag carries on a column of a lane does, to the card as it is now: nil for anything but this
