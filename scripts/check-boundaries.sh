@@ -108,27 +108,33 @@ for module in $MODULES; do
     done
 done
 
-# ThisMac's boundary is a file's, not a module's: BriefBarUI's other files may not do what it does either.
-THIS_MAC_OBJECT="$(awk -F '\t' -v module="$THIS_MAC_MODULE" -v name="$THIS_MAC" '$1 == module {
-    count = split($2, parts, "/"); if (parts[count] == name ".o" || parts[count] == name ".swift.o") { print $2; exit }
+# ThisMac's boundary is a file's, not a module's: BriefBarUI's other files may not do what it does either. ThisMac's own
+# object files, by their name in either layout: one for each build in .build, and for each architecture.
+THIS_MAC_OBJECTS="$(awk -F '\t' -v module="$THIS_MAC_MODULE" -v name="$THIS_MAC" '$1 == module {
+    count = split($2, parts, "/"); if (parts[count] == name ".o" || parts[count] == name ".swift.o") print $2
 }' "$LIST")"
 # The symbols that do what only ThisMac may, as the symbol table has them: matched alone, then found by their line.
 ON_THIS_MAC_FOUND="$(cut -f 3 "$SYMBOLS" | grep -nE "$ON_THIS_MAC" | cut -d : -f 1 \
     | awk 'NR == FNR { wanted[$1]; next } FNR in wanted' - "$SYMBOLS" || true)"
 while IFS=$'\t' read -r module object; do
+    if [[ -z "$object" ]] || grep -qxF "$object" <<< "$THIS_MAC_OBJECTS"; then
+        continue
+    fi
     name="$(basename "$object")"
-    echo "check-boundaries: $module's ${name%.o} does on your Mac what only $THIS_MAC may, which refuses it in tests:" >&2
+    name="${name%.o}"
+    # With its path, since an older build's object files, left in .build, count too.
+    echo "check-boundaries: $module's ${name%.swift} does on your Mac what only $THIS_MAC may, which refuses it in tests ($object):" >&2
     awk -F '\t' -v object="$object" '$2 == object { print "  " $3 }' <<< "$ON_THIS_MAC_FOUND" | sort -u | head -n 5 >&2
     FAILED=true
-done < <(awk -F '\t' -v this="$THIS_MAC_OBJECT" 'NF == 3 && $2 != this { print $1 "\t" $2 }' <<< "$ON_THIS_MAC_FOUND" | sort -u)
-if [[ -z "$THIS_MAC_OBJECT" ]]; then
+done < <(cut -f 1,2 <<< "$ON_THIS_MAC_FOUND" | sort -u)
+if [[ -z "$THIS_MAC_OBJECTS" ]]; then
     echo "check-boundaries: $THIS_MAC_MODULE has no object file of its own for $THIS_MAC, so this can't tell it from the rest." >&2
     FAILED=true
 else
-    THIS_MAC_SYMBOLS="$(awk -F '\t' -v object="$THIS_MAC_OBJECT" '$2 == object { print $3 }' "$SYMBOLS")"
+    THIS_MAC_SYMBOLS="$(awk -F '\t' 'NR == FNR { ours[$0]; next } $2 in ours { print $3 }' - "$SYMBOLS" <<< "$THIS_MAC_OBJECTS")"
     for shown in $THIS_MAC_SHOWS; do
         if ! grep -qE "$shown" <<< "$THIS_MAC_SYMBOLS"; then
-            echo "check-boundaries: $THIS_MAC's object file has nothing like $shown, so this check can't see what it does anymore." >&2
+            echo "check-boundaries: $THIS_MAC's object files have nothing like $shown, so this check can't see what it does anymore." >&2
             FAILED=true
         fi
     done
