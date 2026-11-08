@@ -160,6 +160,37 @@ import Testing
         #expect(!store.isRefreshing)
     }
 
+    /// GitHub asked every account to slow down: Refresh Now, and the wait after you choose to sign in, still list the
+    /// accounts and read, so that one you sign in to shows. Each account's own wait holds what it would send.
+    @Test func listingTheAccountsAgainReadsWhileGitHubAskedEveryAccountToSlowDown() async throws {
+        let store = liveStore(FakeCLI.missing)
+        store.start()
+        defer { store.stop() }
+        await eventually { store.hasLoaded && !store.isRefreshing }
+        let load = GitHubLoad(login: "robin", logins: ["robin", "robin-oss"], items: [])
+        func slowDown() -> Date {
+            let asked = Date()
+            store.fail(GitHubAccountsReader.Failure(
+                error: GitHubError.throttled(retryAfter: 3_600), load: load, waitsUntil: asked.addingTimeInterval(3_600)
+            ))
+            return asked
+        }
+
+        _ = slowDown()
+        store.refresh(listingAccounts: true)
+        #expect(store.isRefreshing)
+        await eventually { !store.isRefreshing }
+
+        let asked = slowDown()
+        #expect(!store.isDue(at: asked.addingTimeInterval(61)))
+        store.waitForSignIn()
+        let started = try #require(store.lastAttempt)
+        #expect(store.isDue(at: started.addingTimeInterval(61)))
+        store.refresh()
+        #expect(store.isRefreshing)
+        await eventually { !store.isRefreshing }
+    }
+
     @Test func aPopoverOpeningReadsAgainOnlyAfterAWhile() async {
         let store = liveStore(FakeCLI.missing)
         let started = Date()

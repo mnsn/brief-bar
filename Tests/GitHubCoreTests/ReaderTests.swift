@@ -423,6 +423,48 @@ import Testing
         #expect(load.items.map(\.pullRequest.number) == [1])
     }
 
+    /// Of two accounts that turn out to be one, one that couldn't be read just now gives way to the other, which could:
+    /// its list is the one shown, in the first one's place, and nothing says robin couldn't be read.
+    @Test func ofAccountsThatTurnOutToBeOneTheOneReadJustNowIsListed() async throws {
+        let unnamed = StubServer()
+        let named = StubServer()
+        unnamed.reply(.json(Fixture.answer(login: "robin", reviewing: [Fixture.pullRequest(1)])))
+        unnamed.always(.text("oops", status: 502))
+        named.always(.json(Fixture.answer(login: "robin", reviewing: [Fixture.pullRequest(1), Fixture.pullRequest(5)])))
+        let runner = FakeRunner(fallback: .output(Fixture.accounts([("", true, "keyring"), ("kai", false, "keyring"), ("robin", false, "keyring")])))
+        let kai = StubServer()
+        kai.always(.json(Fixture.answer(login: "kai")))
+        let (reader, _) = reader([], servers: ["": unnamed, "kai": kai, "robin": named], runner: runner)
+
+        #expect(try await reader.load().items.map(\.pullRequest.number) == [1])
+        let load = try await reader.load()
+        #expect(load.logins == ["robin", "kai"])
+        #expect(load.items.map(\.pullRequest.number) == [1, 5])
+        #expect(load.notice == nil)
+    }
+
+    /// The GitHub CLI was signed out of one of two accounts, and the one left can't be read just now: what's left of the
+    /// list goes with the failure, so that the other account's pull requests go, as they would if it could be read. After
+    /// that, one account fails as it did before BriefBar read more.
+    @Test func oneAccountLeftOfMoreThatCantBeReadHasTheOthersGo() async throws {
+        let work = StubServer()
+        let own = StubServer()
+        work.reply(.json(Fixture.answer(login: "robin", reviewing: [Fixture.pullRequest(1)])))
+        work.always(.failure(.notConnectedToInternet))
+        own.always(.json(Fixture.answer(login: "robin-oss", authored: [Fixture.pullRequest(3, author: "robin-oss")])))
+        let runner = FakeRunner([.output(Fixture.accounts(["robin", "robin-oss"])), .output(Fixture.accounts(["robin"]))])
+        let (reader, _) = reader([], servers: ["robin": work, "robin-oss": own], runner: runner)
+
+        #expect(try await reader.load().items.count == 2)
+        await reader.listAgain()
+        let failure = try await #require(throws: GitHubAccountsReader.Failure.self) { try await reader.load() }
+        #expect(GitHubProblem.from(failure) == .offline)
+        #expect(failure.load.logins == ["robin"])
+        #expect(failure.load.items.map(\.pullRequest.number) == [1])
+        #expect(failure.load.notice == nil)
+        await #expect(throws: GitHubError.offline) { try await reader.load() }
+    }
+
     /// Turning GitHub off as a token comes: the read gives up, and nothing it read goes anywhere.
     @Test func aReadThatGivesUpReadsNothing() async throws {
         let work = StubServer()

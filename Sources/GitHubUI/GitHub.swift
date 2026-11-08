@@ -37,7 +37,7 @@ enum GitHub {
 
     /// What Terminal runs to sign in: `gh auth login`; and, when `keepingActive`, `gh auth switch` back to the account the
     /// GitHub CLI used just before, which it reads as it starts, so that it's the one you use now, however you last chose
-    /// it. Nothing switches when the GitHub CLI used none.
+    /// it. Nothing switches when the GitHub CLI used none; when it can't switch back, it says so, and how to.
     nonisolated static func signInScript(ghPath: String?, keepingActive: Bool) -> String {
         let gh = ghPath.map(quoted) ?? "gh"
         var lines = [
@@ -55,8 +55,14 @@ enum GitHub {
         ]
         if keepingActive {
             lines += [
-                "    if [[ -n \"$active\" ]] && \(gh) auth switch --hostname github.com --user \"$active\" >/dev/null 2>&1; then",
-                "        echo \"The GitHub CLI goes on using $active in Terminal: gh auth switch changes that.\"",
+                "    if [[ -n \"$active\" ]]; then",
+                "        if switched=\"$(\(gh) auth switch --hostname github.com --user \"$active\" 2>&1)\"; then",
+                "            echo \"The GitHub CLI goes on using $active in Terminal: gh auth switch changes that.\"",
+                "        else",
+                "            print -r -- \"$switched\"",
+                "            echo \"The GitHub CLI couldn't switch back to $active, so in Terminal it uses the account you signed in to.\"",
+                "            echo \"To use $active again: gh auth switch --hostname github.com --user $active\"",
+                "        fi",
                 "    fi",
             ]
         }

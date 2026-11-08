@@ -3127,7 +3127,8 @@ Terminal to run `gh auth login --hostname github.com --web`. **Add Account…**,
 you're signed in, runs it too, then `gh auth switch` back to the account `gh` used, as `gh auth login` makes the one you
 sign in to its active account in Terminal too (`GitHub.signInScript`). Terminal asks `gh` which account that is as it
 starts (`gh config get --host github.com user`), so it's the one you use then, even if you switched since BriefBar last
-listed them; when `gh` uses none, nothing switches.
+listed them; when `gh` uses none, nothing switches. When it can't switch back, it says so, with what `gh` said, and
+the `gh auth switch` that would.
 
 As with `az`, BriefBar looks for `gh` in `/opt/homebrew/bin`, `/usr/local/bin` and the other usual
 places, then asks your login shell (`command -v gh`), and both are responsible for themselves (see
@@ -3163,7 +3164,9 @@ fix shows soon. When GitHub asks it to slow down, it sends nothing until the tim
 limit's reset (`x-ratelimit-reset`), or a minute when GitHub only says so in words. Each account has its own limits, so
 that wait holds only the account GitHub asked it of, and the others are read meanwhile, even when none could be read
 last time: BriefBar stops reading altogether only when GitHub asked that as every account, until the soonest of their
-times (`GitHubAccountsReader.Failure`). At the default, that's 30
+times (`GitHubAccountsReader.Failure`), and even then **Refresh Now** and the wait after **Sign In…** or **Add
+Account…** list the accounts and read, so that one you sign in to shows, while each account's own wait holds what it
+would send. At the default, that's 30
 requests an hour for each account, a small part of GitHub's hourly limit for the GraphQL API.
 
 When GitHub answers with errors alongside what it could read, such as an organization that uses SAML
@@ -3180,7 +3183,10 @@ account can be read, the list is what it would be if only some couldn't: what it
 with why each couldn't. What's wrong with it, as when BriefBar read one, is why the first one couldn't, the active
 account, or, when that one takes signing in again, the next one that doesn't, and that isn't said twice
 (`GitHubAccountsReader.Failure`). When every account takes signing in again, the list asks you to sign in and shows
-nothing, as it does for one.
+nothing, as it does for one. One account that can't be read keeps its last list, as before, unless the read before
+listed more: then the others' pull requests go, as they would if it could be read. Two accounts that turn out to be one,
+such as the active one's token, which `gh` can't say whose it is, and the account it's from, are listed once, as
+the one read just now, if either was.
 
 ### How a pull request's group is decided
 

@@ -217,23 +217,27 @@ import Testing
     }
 
     /// Signing in to another account makes it the GitHub CLI's active one: the one it used as the sign-in started, as `gh`
-    /// says then, goes on being so.
+    /// says then, goes on being so; and when it can't, the script says so, and how to switch back.
     @Test func anotherAccountLeavesTheOneTheCLIUses() throws {
         let script = GitHub.signInScript(ghPath: nil, keepingActive: true)
         let active = try #require(script.range(of: "\nactive=\"$(gh config get --host github.com user 2>/dev/null)\"\n"))
         let login = try #require(script.range(of: "\nif gh auth login --hostname github.com --web; then\n"))
         let back = try #require(script.range(
-            of: "\n    if [[ -n \"$active\" ]] && gh auth switch --hostname github.com --user \"$active\" >/dev/null 2>&1; then\n"
+            of: "\n        if switched=\"$(gh auth switch --hostname github.com --user \"$active\" 2>&1)\"; then\n"
         ))
         #expect(active.lowerBound < login.lowerBound)
         #expect(back.lowerBound > login.upperBound)
-        #expect(script.contains("\n        echo \"The GitHub CLI goes on using $active in Terminal: gh auth switch changes that.\"\n    fi\n"))
+        #expect(script.contains("\n    if [[ -n \"$active\" ]]; then\n"))
+        #expect(script.contains("\n            echo \"The GitHub CLI goes on using $active in Terminal: gh auth switch changes that.\"\n        else\n"))
+        #expect(script.contains("\n            print -r -- \"$switched\"\n"))
+        #expect(script.contains("couldn't switch back to $active, so in Terminal it uses the account you signed in to."))
+        #expect(script.contains("To use $active again: gh auth switch --hostname github.com --user $active\""))
     }
 
     @Test func quotesWhatItRuns() {
         let script = GitHub.signInScript(ghPath: "/Users/o'brien/bin/gh", keepingActive: true)
         #expect(script.contains("active=\"$('/Users/o'\\''brien/bin/gh' config get --host github.com user"))
         #expect(script.contains("if '/Users/o'\\''brien/bin/gh' auth login"))
-        #expect(script.contains("&& '/Users/o'\\''brien/bin/gh' auth switch"))
+        #expect(script.contains("switched=\"$('/Users/o'\\''brien/bin/gh' auth switch"))
     }
 }

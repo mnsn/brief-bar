@@ -76,12 +76,16 @@ public enum GitHubReader {
         var logins: [String] = []
         var loads: [GitHubLoad] = []
         var notices: [String] = []
-        for read in reads {
+        for var read in reads {
             let login = read.load?.login ?? read.account.login
             if !login.isEmpty {
-                // Two accounts that turn out to be one, as when the active one's token is another's: the first.
+                // Two accounts that turn out to be one, as when the active one's token is another's: in the first one's
+                // place, the one read just now, rather than what was read last of one that couldn't be.
                 guard !logins.contains(login) else { continue }
                 logins.append(login)
+                if read.problem != nil, let current = reads.first(where: { $0.problem == nil && $0.load?.login == login }) {
+                    read = current
+                }
             }
             if let load = read.load {
                 loads.append(load)
@@ -108,9 +112,9 @@ public enum GitHubReader {
 /// again; when none can be read, it fails as the first one did, the GitHub CLI's active account, unless that needs you to
 /// sign in again and another doesn't, with what's left of the list when there's more than one (`Failure`).
 public actor GitHubAccountsReader {
-    /// No account could be read, of more than one, and some not for a sign-in: why the first of those couldn't, which the
-    /// list says is wrong, with what's left of the list, as when only some can't be read. Its problem never takes signing
-    /// in again, so the list it comes with isn't one to hide.
+    /// No account could be read, of more than one, or of one left of more, and some not for a sign-in: why the first of
+    /// those couldn't, which the list says is wrong, with what's left of the list, as when only some can't be read. Its
+    /// problem never takes signing in again, so the list it comes with isn't one to hide.
     public struct Failure: Error {
         /// Why the first account that doesn't need signing in again couldn't be read: the GitHub CLI's active one, unless
         /// that one does.
@@ -135,6 +139,8 @@ public actor GitHubAccountsReader {
     private var clients: [String: GitHubClient] = [:]
     /// What each account's last read found, by its key, for when the next one can't read it.
     private var last: [String: GitHubLoad] = [:]
+    /// How many accounts the last read listed.
+    private var accountsRead = 0
 
     public init(
         accounts: GitHubCLIAccounts = GitHubCLIAccounts(),
@@ -185,6 +191,8 @@ public actor GitHubAccountsReader {
         }
         // Given up, as when GitHub is turned off: what was read goes nowhere.
         try Task.checkCancellation()
+        let readMore = accountsRead > 1
+        accountsRead = listed.count
         var reads: [GitHubReader.AccountRead] = []
         var errors: [any Error] = []
         for (account, result) in zip(listed, results) {
@@ -207,8 +215,11 @@ public actor GitHubAccountsReader {
             // What's wrong with the list is the first account's reason, the GitHub CLI's active one's, unless it takes signing
             // in again: then the next one's that doesn't, as what that one read last stays, and that one goes in a notice,
             // as when only some couldn't be read. One account, or every one needing signing in again, fails as BriefBar's
-            // read did before it read more, and its list goes.
-            guard reads.count > 1, let shown = reads.firstIndex(where: { $0.problem?.needsSignIn == false }) else { throw first }
+            // read did before it read more, and its list goes; but one left of more that the last read listed has what's
+            // left go with it, so that the others' pull requests go.
+            guard reads.count > 1 || readMore, let shown = reads.firstIndex(where: { $0.problem?.needsSignIn == false }) else {
+                throw first
+            }
             throw Failure(
                 error: errors[shown], load: GitHubReader.merge(reads, besides: reads[shown].problem),
                 waitsUntil: Self.waitsUntil(reads.compactMap(\.problem))

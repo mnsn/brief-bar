@@ -118,7 +118,9 @@ final class GitHubStore: ObservableObject {
     /// to sign in, and not before GitHub said to.
     func isDue(at date: Date) -> Bool {
         guard mode == .live, isStarted else { return false }
-        if let waitsUntil, date < waitsUntil { return false }
+        // While it waits for you to sign in, it lists the accounts even while GitHub asked every one to slow down, so a new
+        // one shows; each account's own wait still holds what it would send.
+        if let waitsUntil, date < waitsUntil, !isListingAccounts(at: date) { return false }
         guard let lastAttempt else { return true }
         let interval: TimeInterval
         switch problem {
@@ -134,18 +136,19 @@ final class GitHubStore: ObservableObject {
         listsAccountsUntil.map { date < $0 } ?? false
     }
 
-    /// Reads GitHub now, unless a read is under way.
+    /// Reads GitHub now, unless a read is under way, or GitHub asked every account to slow down.
     /// - Parameter listingAccounts: whether to list the GitHub CLI's accounts again first, as Refresh Now does, rather than
-    ///   use the list it keeps for half an hour.
+    ///   use the list it keeps for half an hour. It does even while GitHub asked every account to slow down, so a new one
+    ///   shows; each account's own wait still holds what it would send.
     func refresh(listingAccounts: Bool = false) {
         guard mode == .live, isStarted, task == nil, let reader else { return }
-        if let waitsUntil, Date() < waitsUntil { return }
         let started = Date()
+        let listsAgain = listingAccounts || isListingAccounts(at: started)
+        if let waitsUntil, started < waitsUntil, !listsAgain { return }
         lastAttempt = started
         isRefreshing = true
         let generation = self.generation
         let order = ordersOn()
-        let listsAgain = listingAccounts || isListingAccounts(at: started)
         task = Task { [weak self] in
             let result: Result<GitHubLoad, Error>
             do {
