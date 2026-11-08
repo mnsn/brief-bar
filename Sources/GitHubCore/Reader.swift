@@ -2,16 +2,19 @@ import Foundation
 
 /// What one read of GitHub found.
 public struct GitHubLoad: Sendable, Equatable {
-    /// Who the GitHub CLI is signed in as.
+    /// Who the GitHub CLI is signed in as: the first account read, its active one unless that couldn't be read.
     public var login: String
+    /// Every account it reads as, the GitHub CLI's active one first: `login` alone, unless it's signed in to more.
+    public var logins: [String]
     public var items: [GitHubPRSnapshot]
     /// What GitHub couldn't read, such as an organization's pull requests that need single sign-on.
     public var notice: String?
     /// More pull requests matched than BriefBar reads (`PullRequestQuery.count` of each kind).
     public var moreThanShown: Bool
 
-    public init(login: String, items: [GitHubPRSnapshot], notice: String? = nil, moreThanShown: Bool = false) {
+    public init(login: String, logins: [String]? = nil, items: [GitHubPRSnapshot], notice: String? = nil, moreThanShown: Bool = false) {
         self.login = login
+        self.logins = logins ?? [login]
         self.items = items
         self.notice = notice
         self.moreThanShown = moreThanShown
@@ -46,5 +49,157 @@ public enum GitHubReader {
             return "Some organizations use single sign-on: authorize the GitHub CLI for them to see their pull requests."
         }
         return "Some pull requests couldn't be read: \(first.message.prefix(200))"
+    }
+
+    /// What one account gave a read of every account's: what it read; or, when it couldn't, why, with what its last read
+    /// found, unless it takes signing in again to read it.
+    public struct AccountRead: Sendable, Equatable {
+        public var account: GitHubAccount
+        public var load: GitHubLoad?
+        public var problem: GitHubProblem?
+
+        public init(account: GitHubAccount, load: GitHubLoad?, problem: GitHubProblem? = nil) {
+            self.account = account
+            self.load = load
+            self.problem = problem
+        }
+    }
+
+    /// The list from every account's read, the active one first: each pull request once, as yours when it's yours as any of
+    /// them, with what GitHub couldn't read as each, and which accounts couldn't be read, and why. A single account's is
+    /// its own read, as BriefBar read before more were.
+    public static func merge(_ reads: [AccountRead]) -> GitHubLoad {
+        if reads.count == 1, let only = reads.first, only.problem == nil, let load = only.load { return load }
+        let named = reads.count > 1
+        var logins: [String] = []
+        var loads: [GitHubLoad] = []
+        var notices: [String] = []
+        for read in reads {
+            let login = read.load?.login ?? read.account.login
+            if !login.isEmpty {
+                // Two accounts that turn out to be one, as when the active one's token is another's: the first.
+                guard !logins.contains(login) else { continue }
+                logins.append(login)
+            }
+            if let load = read.load {
+                loads.append(load)
+                if let notice = load.notice { notices.append(named ? "\(login.isEmpty ? "Its active account" : login): \(notice)" : notice) }
+            }
+            if let problem = read.problem {
+                let whose = login.isEmpty ? "the GitHub CLI's active account's" : "\(login)'s"
+                notices.append(problem.needsSignIn
+                    ? "Sign in to the GitHub CLI again to see \(whose) pull requests."
+                    : "Couldn't read \(whose) pull requests: \(problem.message)")
+            }
+        }
+        return GitHubLoad(
+            login: logins.first ?? "", logins: logins, items: GitHubClassifier.merged(loads.map(\.items)),
+            notice: notices.isEmpty ? nil : notices.joined(separator: "\n"), moreThanShown: loads.contains(where: \.moreThanShown)
+        )
+    }
+}
+
+/// Reads the pull requests of every account the GitHub CLI is signed in to on github.com: one request each, at the same
+/// time, each with its own token, and its own wait when GitHub asks BriefBar to slow down. The list has each pull request
+/// once, as yours when it's yours as any of them. When some accounts can't be read and others can, it says which and
+/// why, beside the others' pull requests and what it last read of those it couldn't, unless they need you to sign in
+/// again; when none can be read, it fails as the first one did, the GitHub CLI's active account.
+public actor GitHubAccountsReader {
+    private let accounts: GitHubCLIAccounts
+    private let makeClient: @Sendable (GitHubAccount) -> GitHubClient
+    /// Each account's client, by its key (`key(of:)`), while the GitHub CLI lists it.
+    private var clients: [String: GitHubClient] = [:]
+    /// What each account's last read found, by its key, for when the next one can't read it.
+    private var last: [String: GitHubLoad] = [:]
+
+    public init(
+        accounts: GitHubCLIAccounts = GitHubCLIAccounts(),
+        makeClient: @escaping @Sendable (GitHubAccount) -> GitHubClient = GitHubAccountsReader.client(for:)
+    ) {
+        self.accounts = accounts
+        self.makeClient = makeClient
+    }
+
+    /// A client that reads as `account`, with the GitHub CLI's token for it.
+    public static func client(for account: GitHubAccount) -> GitHubClient {
+        GitHubClient(tokens: GitHubCLITokenProvider(user: account.tokenUser))
+    }
+
+    /// Lists the GitHub CLI's accounts again at the next read, rather than once the list is half an hour old.
+    public func listAgain() async {
+        await accounts.invalidate()
+    }
+
+    /// The `gh` executable, once it has looked for it.
+    public var executablePath: String? {
+        get async { await accounts.executablePath }
+    }
+
+    /// The GitHub CLI's active account's login, as it last listed its accounts, for `gh auth switch` to make it active
+    /// again.
+    public var activeLogin: String? {
+        get async { await accounts.activeLogin }
+    }
+
+    /// Reads the pull requests of every account, in one request each.
+    /// - Parameter order: while Pull Request Order is on: with what an order needs, when GitHub answers that.
+    public func load(order: Bool = false) async throws -> GitHubLoad {
+        let listed = try await accounts.accounts()
+        let keys = Set(listed.map(Self.key(of:)))
+        clients = clients.filter { keys.contains($0.key) }
+        last = last.filter { keys.contains($0.key) }
+        let reading = listed.map { client(for: $0) }
+        let results = await withTaskGroup(of: (Int, Result<GitHubLoad, any Error>).self) { group in
+            for (index, client) in reading.enumerated() {
+                group.addTask {
+                    do {
+                        return (index, .success(try await GitHubReader.load(client: client, order: order)))
+                    } catch {
+                        return (index, .failure(error))
+                    }
+                }
+            }
+            var results = [Result<GitHubLoad, any Error>](repeating: .failure(CancellationError()), count: reading.count)
+            for await (index, result) in group {
+                results[index] = result
+            }
+            return results
+        }
+        // Given up, as when GitHub is turned off: what was read goes nowhere.
+        try Task.checkCancellation()
+        var reads: [GitHubReader.AccountRead] = []
+        var firstError: (any Error)?
+        for (account, result) in zip(listed, results) {
+            let key = Self.key(of: account)
+            switch result {
+            case .success(let load):
+                last[key] = load
+                reads.append(.init(account: account, load: load))
+            case .failure(let error):
+                if error is CancellationError { throw error }
+                firstError = firstError ?? error
+                let problem = GitHubProblem.from(error)
+                if problem.needsSignIn { last[key] = nil }
+                // The GitHub CLI has no token for it anymore: it may have been signed out of it, so list them again.
+                if case .auth(.signedOut)? = error as? GitHubError { await accounts.invalidate() }
+                reads.append(.init(account: account, load: last[key], problem: problem))
+            }
+        }
+        if let firstError, reads.allSatisfy({ $0.problem != nil }) { throw firstError }
+        return GitHubReader.merge(reads)
+    }
+
+    /// The client for `account`: the one it had while it's listed, so its wait when GitHub asked to slow down holds.
+    private func client(for account: GitHubAccount) -> GitHubClient {
+        let key = Self.key(of: account)
+        if let client = clients[key] { return client }
+        let client = makeClient(account)
+        clients[key] = client
+        return client
+    }
+
+    /// What tells accounts apart: the login whose token `gh` gives, or none for the active account's.
+    static func key(of account: GitHubAccount) -> String {
+        account.tokenUser ?? ""
     }
 }

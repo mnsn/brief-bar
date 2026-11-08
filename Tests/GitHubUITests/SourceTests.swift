@@ -51,28 +51,37 @@ import Testing
         #expect(lines.allSatisfy { $0.request == nil })
     }
 
-    /// Someone else signed in to the GitHub CLI, or no one: what was told of its pull requests goes, and is told again as
-    /// the new one when asked; the same one changes nothing.
-    @Test func anotherAccountForgetsWhatWasToldOfGitHub() async throws {
+    /// Someone else signed in to the GitHub CLI, another account or no one: what was told of its pull requests goes, and is
+    /// told again as the new ones when asked; the same ones change nothing.
+    @Test func otherAccountsForgetWhatWasToldOfGitHub() async throws {
         let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
         services.links.setOn(true)
         let source = GitHubSource(services: services)
         source.start()
         defer { source.stop() }
-        let login = try #require(source.store.login)
+        let logins = source.store.logins
+        #expect(logins == [GitHubDemoData.login])
         let item = try #require(source.store.items.first)
         let ref = ItemRef.gitHubPullRequest(repository: item.pullRequest.repository, number: item.pullRequest.number)
         let row = services.links.describe(ref)
         await services.stories.tell([row])
-        source.loginChanged(login)
+        source.loginsChanged(logins)
         #expect(services.stories.story(for: ref) != nil)
-        source.loginChanged("someone-else")
+        source.loginsChanged(["someone-else"])
         #expect(!services.stories.hasTold(ref))
         await services.stories.tell([row])
         #expect(services.stories.story(for: ref) != nil)
-        // Signed out.
-        source.loginChanged(nil)
+        // Signed in to another account too.
+        source.loginsChanged(["someone-else", "robin-oss"])
         #expect(!services.stories.hasTold(ref))
+        await services.stories.tell([row])
+        // Signed out.
+        source.loginsChanged([])
+        #expect(!services.stories.hasTold(ref))
+        // The first sign-in after that changes nothing.
+        await services.stories.tell([row])
+        source.loginsChanged(logins)
+        #expect(services.stories.story(for: ref) != nil)
     }
 
     @Test func showsNothingUntilStartedOrOnceStopped() {
@@ -192,5 +201,33 @@ import Testing
         let groups = PullRequestSettings.groups([(id: source.id, settings: source.pullRequestSettings)])
         #expect(groups == [PullRequestSettings.shared])
         #expect(PullRequestSettings.shared.sources.contains(.github))
+    }
+}
+
+/// What Terminal runs when you sign in to the GitHub CLI, or to another account.
+@Suite struct SignInScriptTests {
+    @Test func signsInThroughTheBrowser() {
+        let script = GitHub.signInScript(ghPath: "/opt/homebrew/bin/gh", keepingActive: nil)
+        #expect(script.hasPrefix("#!/bin/zsh -l\n"))
+        #expect(script.contains("\nif '/opt/homebrew/bin/gh' auth login --hostname github.com --web; then\n"))
+        #expect(script.contains("BriefBar will refresh within a minute"))
+        #expect(!script.contains("auth switch"))
+        #expect(GitHub.signInScript(ghPath: nil, keepingActive: nil).contains("\nif gh auth login --hostname github.com --web; then\n"))
+    }
+
+    /// Signing in to another account makes it the GitHub CLI's active one: the one it used goes on being so.
+    @Test func anotherAccountLeavesTheOneTheCLIUses() throws {
+        let script = GitHub.signInScript(ghPath: nil, keepingActive: "robin")
+        let login = try #require(script.range(of: "gh auth login --hostname github.com --web"))
+        let back = try #require(script.range(of: "gh auth switch --hostname github.com --user 'robin' >/dev/null 2>&1"))
+        #expect(back.lowerBound > login.upperBound)
+        #expect(script.contains("The GitHub CLI goes on using robin in Terminal"))
+    }
+
+    @Test func quotesWhatItRuns() {
+        let script = GitHub.signInScript(ghPath: "/Users/o'brien/bin/gh", keepingActive: "a'b; rm -rf ~")
+        #expect(script.contains("if '/Users/o'\\''brien/bin/gh' auth login"))
+        #expect(script.contains("--user 'a'\\''b; rm -rf ~' >/dev/null"))
+        #expect(script.contains("goes on using abrm-rf in Terminal"))
     }
 }

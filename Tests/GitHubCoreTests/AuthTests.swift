@@ -201,6 +201,215 @@ import Testing
     }
 }
 
+@Suite struct AccountTokenTests {
+    private let gh = "/opt/homebrew/bin/gh"
+
+    @Test func asksForAnotherAccountsTokenByItsLogin() async throws {
+        let runner = FakeRunner([.output("gho_other\n")])
+        let provider = GitHubCLITokenProvider(user: "robin-oss", locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        #expect(try await provider.token() == GitHubToken(value: "gho_other", fetchedAt: referenceDate))
+        #expect(runner.calls.first?.arguments == ["auth", "token", "--hostname", "github.com", "--user", "robin-oss"])
+        #expect(provider.user == "robin-oss")
+    }
+
+    /// `gh auth logout --user` signed the GitHub CLI out of an account it still lists.
+    @Test func anAccountTheCLIHasNoTokenForIsSignedOut() async {
+        let message = "no oauth token found for github.com account robin-oss"
+        let runner = FakeRunner([.output("", status: 1, stderr: message)])
+        let provider = GitHubCLITokenProvider(user: "robin-oss", locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        await #expect(throws: GitHubAuthError.signedOut(message)) { try await provider.token() }
+    }
+
+    @Test func asksForEachTokenByItsLoginUnlessItsInAnEnvironmentVariable() {
+        #expect(GitHubAccount(login: "robin", isActive: true).tokenUser == "robin")
+        #expect(GitHubAccount(login: "kai", isActive: false).tokenUser == "kai")
+        #expect(GitHubAccount(login: "robin", isActive: true, isKept: false).tokenUser == nil)
+        #expect(GitHubAccount(login: "", isActive: true).tokenUser == nil)
+        #expect(GitHubAccount.active.tokenUser == nil)
+    }
+
+    @Test func namesAccountsAsASentenceDoes() {
+        #expect(GitHubAccount.names([]).isEmpty)
+        #expect(GitHubAccount.names(["robin"]) == "robin")
+        #expect(GitHubAccount.names(["robin", "kai"]) == "robin and kai")
+        #expect(GitHubAccount.names(["robin", "kai", "lee"]) == "robin, kai and lee")
+    }
+}
+
+@Suite struct AccountListTests {
+    private let gh = "/opt/homebrew/bin/gh"
+
+    private func list(_ status: Int32, _ stdout: String, _ stderr: String = "") -> (accounts: [GitHubAccount], keeps: Bool) {
+        GitHubCLIAccounts.accounts(from: ProcessResult(status: status, stdout: Data(stdout.utf8), stderr: Data(stderr.utf8)))
+    }
+
+    @Test func listsGitHubDotComsAccountsTheActiveOneFirst() async throws {
+        let runner = FakeRunner([.output(Fixture.accounts([("kai", false, "keyring"), ("robin", true, "/Users/robin/.config/gh/hosts.yml")]))])
+        let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        #expect(try await accounts.accounts() == [GitHubAccount(login: "robin", isActive: true), GitHubAccount(login: "kai", isActive: false)])
+        let call = try #require(runner.calls.first)
+        #expect(call.executable == gh)
+        #expect(call.arguments == ["auth", "status", "--json", "hosts", "--hostname", "github.com"])
+        #expect(call.timeout == 30)
+        #expect(call.environment?["GH_PROMPT_DISABLED"] == "1")
+        #expect(await accounts.executablePath == gh)
+        #expect(await accounts.activeLogin == "robin")
+    }
+
+    @Test func onlyGitHubDotComsAccountsAreListed() {
+        let output = #"{"hosts":{"ghe.example.com":[{"login":"robin-ghe","active":true,"tokenSource":"keyring"}],"github.com":[{"login":"robin","active":true,"tokenSource":"keyring"}]}}"#
+        #expect(list(0, output).accounts.map(\.login) == ["robin"])
+    }
+
+    /// GH_TOKEN holds a token: its account is the active one, and those the GitHub CLI keeps follow, each login once.
+    @Test func aTokenInAnEnvironmentVariableIsTheActiveAccounts() {
+        let listed = list(0, Fixture.accounts([("robin", true, "GH_TOKEN"), ("kai", false, "keyring"), ("robin", false, "keyring")]))
+        #expect(listed.keeps)
+        #expect(listed.accounts == [GitHubAccount(login: "robin", isActive: true, isKept: false), GitHubAccount(login: "kai", isActive: false)])
+        #expect(listed.accounts.map(\.tokenUser) == [nil, "kai"])
+    }
+
+    @Test func tellsATokenInAnEnvironmentVariableFromOneTheCLIKeeps() {
+        for source in ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN"] {
+            #expect(GitHubCLIAccounts.isEnvironmentVariable(source))
+        }
+        for source in ["keyring", "/Users/robin/.config/gh/hosts.yml", "", nil] as [String?] {
+            #expect(!GitHubCLIAccounts.isEnvironmentVariable(source))
+        }
+    }
+
+    /// A token in the keychain without a user in the GitHub CLI's settings: it can't say whose it is.
+    @Test func anUnnamedActiveAccountIsReadWithoutALogin() {
+        let listed = list(0, Fixture.accounts([("", true, "keyring")]))
+        #expect(listed.keeps)
+        #expect(listed.accounts == [GitHubAccount(login: "", isActive: true)])
+        #expect(listed.accounts.first?.tokenUser == nil)
+    }
+
+    @Test func withoutAListTheActiveAccountIsRead() {
+        // Signed out: it lists none, and reading the active account says to sign in. Or it printed something else.
+        for output in [#"{"hosts":{}}"#, #"{"hosts":{"github.com":[]}}"#, "", "not JSON"] {
+            #expect(list(0, output).accounts == [.active])
+            #expect(!list(0, output).keeps)
+        }
+        // Too old to list them: its active account, until it's updated.
+        let old = list(1, "", "unknown flag: --json\n\nUsage:  gh auth status [flags]")
+        #expect(old.accounts == [.active])
+        #expect(old.keeps)
+        // It failed: the active account, and it's asked again next time.
+        #expect(list(1, "", "something broke").accounts == [.active])
+        #expect(!list(1, "", "something broke").keeps)
+    }
+
+    @Test func keepsTheListForHalfAnHour() async throws {
+        let now = Locked(referenceDate)
+        let runner = FakeRunner([.output(Fixture.accounts(["robin"])), .output(Fixture.accounts(["robin", "kai"]))])
+        let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { now.value })
+
+        #expect(try await accounts.accounts().map(\.login) == ["robin"])
+        now.set(t(29 * minute))
+        #expect(try await accounts.accounts().map(\.login) == ["robin"])
+        #expect(runner.calls.count == 1)
+
+        now.set(t(30 * minute))
+        #expect(try await accounts.accounts().map(\.login) == ["robin", "kai"])
+        #expect(runner.calls.count == 2)
+    }
+
+    @Test func listsAgainOnceInvalidated() async throws {
+        let runner = FakeRunner([.output(Fixture.accounts(["robin"])), .output(Fixture.accounts(["kai", "robin"]))])
+        let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        #expect(try await accounts.accounts().map(\.login) == ["robin"])
+        await accounts.invalidate()
+        #expect(try await accounts.accounts().map(\.login) == ["kai", "robin"])
+        #expect(runner.calls.count == 2)
+        #expect(await accounts.activeLogin == "kai")
+    }
+
+    /// Signed out, it's asked again each time, so a sign-in shows at the next read.
+    @Test func aListThatDidntWorkIsntKept() async throws {
+        let runner = FakeRunner([.output(#"{"hosts":{}}"#), .output(Fixture.accounts(["robin"]))])
+        let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        #expect(try await accounts.accounts() == [.active])
+        #expect(await accounts.activeLogin == nil)
+        #expect(try await accounts.accounts().map(\.login) == ["robin"])
+        #expect(runner.calls.count == 2)
+    }
+
+    /// The last account it listed as active stays the one to switch back to, while a list is asked for again.
+    @Test func remembersTheActiveAccountOnceInvalidated() async throws {
+        let runner = FakeRunner([.output(Fixture.accounts(["robin", "kai"])), .output(#"{"hosts":{}}"#)])
+        let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        _ = try await accounts.accounts()
+        await accounts.invalidate()
+        #expect(await accounts.activeLogin == "robin")
+        #expect(try await accounts.accounts() == [.active])
+        #expect(await accounts.activeLogin == "robin")
+    }
+
+    @Test func anOldCLIsActiveAccountIsKept() async throws {
+        let runner = FakeRunner([.output("", status: 1, stderr: "unknown flag: --json")])
+        let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        #expect(try await accounts.accounts() == [.active])
+        #expect(try await accounts.accounts() == [.active])
+        #expect(runner.calls.count == 1)
+        #expect(await accounts.activeLogin == nil)
+    }
+
+    /// Reading the active account then says the GitHub CLI isn't installed.
+    @Test func withoutTheCLIItRunsNothing() async throws {
+        let runner = FakeRunner()
+        let accounts = GitHubCLIAccounts(locator: .fixed(nil), runner: runner, now: { referenceDate })
+
+        #expect(try await accounts.accounts() == [.active])
+        #expect(runner.calls.isEmpty)
+        #expect(await accounts.executablePath == nil)
+    }
+
+    /// If `gh` can't run, it may have been uninstalled or moved: look for it again next time.
+    @Test func looksForTheCLIAgainWhenItCantRun() async throws {
+        let looked = Locked(0)
+        let gh = gh
+        let locator = GitHubCLILocator(environment: [:], candidates: [gh], useLoginShell: false, runner: FakeRunner()) { path in
+            looked.update { $0 += 1 }
+            return path == gh
+        }
+        let runner = FakeRunner([.error("launch failed"), .output(Fixture.accounts(["robin"]))])
+        let accounts = GitHubCLIAccounts(locator: locator, runner: runner, now: { referenceDate })
+
+        #expect(try await accounts.accounts() == [.active])
+        #expect(await accounts.executablePath == nil)
+        #expect(try await accounts.accounts().map(\.login) == ["robin"])
+        #expect(looked.value == 2)
+    }
+
+    /// Turning GitHub off cancels a read while it lists the accounts: the run of `gh` stops, and nothing is kept.
+    @Test(.timeLimit(.minutes(1)))
+    func aCallerThatGivesUpStopsTheRun() async throws {
+        let runner = FakeRunner([.output(Fixture.accounts(["robin"])), .output(Fixture.accounts(["kai"]))], held: true)
+        let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        let listing = Task { try await accounts.accounts() }
+        while runner.calls.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        listing.cancel()
+        while runner.stopped == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        await #expect(throws: CancellationError.self) { try await listing.value }
+        runner.release()
+        #expect(try await accounts.accounts().map(\.login) == ["kai"])
+    }
+}
+
 @Suite struct LocatorTests {
     @Test func anOverrideComesFirst() async {
         let locator = GitHubCLILocator(

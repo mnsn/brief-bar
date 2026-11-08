@@ -15,9 +15,10 @@ import Testing
         #expect(store.isStarted)
         #expect(store.hasLoaded)
         #expect(store.login == GitHubDemoData.login)
+        #expect(store.logins == [GitHubDemoData.login])
         #expect(store.items.count == 8)
         #expect(store.counts.states == StateCounts(needsYou: 3, failing: 2, done: 1))
-        #expect(store.tokens == nil)
+        #expect(store.reader == nil)
         #expect(!store.isDue(at: Date().addingTimeInterval(86_400)))
         store.refresh()
         #expect(!store.isRefreshing)
@@ -35,9 +36,11 @@ import Testing
         #expect(store.counts == GitHubGroupCounts())
         #expect(store.problem == nil)
         #expect(store.login == nil)
+        #expect(store.logins.isEmpty)
         #expect(store.notice == nil)
         #expect(!store.moreThanShown)
         #expect(store.refreshedAt == nil)
+        #expect(store.listsAccountsUntil == nil)
     }
 
     @Test func nothingRunsBeforeItStarts() {
@@ -49,7 +52,7 @@ import Testing
         store.refresh()
         store.refreshIfStale()
         #expect(made.value == 0)
-        #expect(store.tokens == nil)
+        #expect(store.reader == nil)
         #expect(!store.isRefreshing)
         #expect(!store.isDue(at: Date()))
     }
@@ -64,7 +67,7 @@ import Testing
         #expect(store.problem?.needsSignIn == true)
         #expect(store.items.isEmpty)
         #expect(!store.isRefreshing)
-        #expect(store.tokens != nil)
+        #expect(store.reader != nil)
     }
 
     @Test func aSignedOutCLIAsksYouToSignIn() async {
@@ -75,8 +78,9 @@ import Testing
         await eventually { store.hasLoaded }
 
         #expect(store.problem == .signedOut(FakeCLI.signedOut))
-        #expect(runner.calls == [["auth", "token", "--hostname", "github.com"]])
-        #expect(await store.tokens?.executablePath == FakeCLI.path)
+        // It lists no account, so it reads the active one, which says to sign in.
+        #expect(runner.calls == [FakeCLI.listing, FakeCLI.token])
+        #expect(await store.reader?.executablePath == FakeCLI.path)
     }
 
     /// While you need to sign in or you're offline, it tries again every minute, so a fix shows soon.
@@ -190,6 +194,7 @@ import Testing
         #expect(store.items.isEmpty)
         #expect(store.counts == GitHubGroupCounts())
         #expect(store.login == nil)
+        #expect(store.logins.isEmpty)
     }
 
     @Test func otherProblemsKeepTheLastList() {
@@ -202,6 +207,7 @@ import Testing
             #expect(store.problem != nil)
             #expect(store.items.count == 8)
             #expect(store.login == GitHubDemoData.login)
+            #expect(store.logins == [GitHubDemoData.login])
         }
 
         store.receive(GitHubDemoData.load())
@@ -252,6 +258,70 @@ import Testing
         #expect(store.isAllQuiet)
         store.receive(GitHubDemoData.load())
         #expect(!store.isAllQuiet)
+    }
+
+    /// After you choose to sign in, it reads every minute, until the account you sign in to shows, or for ten minutes.
+    @Test func waitingForASignInReadsEveryMinuteUntilItShows() async throws {
+        let store = liveStore(FakeCLI.missing)
+        store.start()
+        defer { store.stop() }
+        await eventually { store.hasLoaded }
+        store.receive(GitHubLoad(login: "robin", items: []))
+        // From when the read started, as `isDue` counts, however late the wait for it ends.
+        let started = try #require(store.lastAttempt)
+        #expect(!store.isDue(at: started.addingTimeInterval(61)))
+
+        store.waitForSignIn()
+        #expect(store.isDue(at: started.addingTimeInterval(61)))
+        #expect(!store.isListingAccounts(at: Date().addingTimeInterval(GitHubStore.signInWait + 1)))
+        // The same accounts: it goes on.
+        store.receive(GitHubLoad(login: "robin", items: []))
+        #expect(store.isListingAccounts(at: Date()))
+        // The one you signed in to shows: every two minutes again.
+        store.receive(GitHubLoad(login: "robin", logins: ["robin", "robin-oss"], items: []))
+        #expect(store.listsAccountsUntil == nil)
+        #expect(!store.isDue(at: started.addingTimeInterval(61)))
+        #expect(store.logins == ["robin", "robin-oss"])
+    }
+
+    @Test func theDemoWaitsForNoSignIn() {
+        let store = GitHubStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        store.start()
+        defer { store.stop() }
+
+        store.waitForSignIn()
+        #expect(store.listsAccountsUntil == nil)
+    }
+
+    /// It keeps the list of the GitHub CLI's accounts for half an hour, but lists them again at each read while it waits
+    /// for you to sign in, and when you refresh now.
+    @Test func listsTheAccountsAgainWhenAskedTo() async throws {
+        // Lists an account, but can't get its token, so nothing connects.
+        let runner = FakeRunner { arguments in
+            arguments == FakeCLI.listing
+                ? ProcessResult(status: 0, stdout: Data(FakeCLI.robin.utf8)) : ProcessResult(status: 1, stderr: Data("something broke".utf8))
+        }
+        let store = liveStore({ FakeCLI.installed(runner) })
+        store.start()
+        defer { store.stop() }
+        func read(listingAccounts: Bool = false) async {
+            await eventually { !store.isRefreshing }
+            store.refresh(listingAccounts: listingAccounts)
+            await eventually { !store.isRefreshing }
+        }
+        func listed() -> Int { runner.calls.filter { $0 == FakeCLI.listing }.count }
+
+        await eventually { store.hasLoaded && !store.isRefreshing }
+        #expect(store.problem == .authFailed("something broke"))
+        #expect(listed() == 1)
+        await read()
+        #expect(listed() == 1)
+        await read(listingAccounts: true)
+        #expect(listed() == 2)
+        store.waitForSignIn()
+        await read()
+        #expect(listed() == 3)
+        #expect(runner.calls.filter { $0 == FakeCLI.token + ["--user", "robin"] }.count == 4)
     }
 
     @Test func groupsTheList() {

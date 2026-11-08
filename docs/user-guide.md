@@ -16,7 +16,7 @@ For a quick tour and download, see the [README](../README.md).
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
 | **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads, their statuses, your own comments, edited or deleted, and pull requests' tags, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply or comment you're writing |
 | **GitHub Copilot** | Which Copilot sessions are running, need you, or have finished or stopped; local CLI sessions when the app isn't installed; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's and CLI's own files under `~/.copilot` | Local Copilot session files | None for tracking; optional Copilot summaries send the selected work's details through the CLI, as described in [Privacy](#privacy) |
-| **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
+| **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in, as each account it's signed in to: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query for each account each refresh |
 
 Only the Azure DevOps and GitHub sources talk to the network for what you see, each only to its own
 service. BriefBar's
@@ -47,10 +47,13 @@ consent.
 - **Copilot** needs nothing.
 - **GitHub** signs in with the GitHub CLI: `brew install gh`, then `gh auth login`, or click
   **Sign In…**, which opens Terminal to run it. BriefBar asks `gh` for its token and keeps it in memory
-  only; it never asks for a personal access token. It lists only pull requests that ask for your review
-  by name, not those asked of a team you're in. If your organization uses SAML single sign-on,
-  authorize the GitHub CLI for it, and the list says so when it can't see an organization's pull
-  requests.
+  only; it never asks for a personal access token. It reads every account the GitHub CLI is signed in
+  to on github.com, such as your work account and your own: to add one, run `gh auth login` again, or
+  click **Add Account…** on GitHub's page in Settings, which keeps the account `gh` uses in Terminal
+  as it was. That takes GitHub CLI 2.81 or later; with an older one, BriefBar reads the account it
+  uses. It lists only pull requests that ask for your review by name, not those asked of a team
+  you're in. If your organization uses SAML single sign-on, authorize the GitHub CLI for it, and the
+  list says so when it can't see an organization's pull requests.
 
 Because macOS asks only once, BriefBar never turns a source on by itself. A source that an update adds
 starts off. If an update makes a source read more than what you agreed to, it pauses until you've
@@ -896,7 +899,7 @@ Sessions to Idle** setting controls whether opening a finished task dismisses it
 The item shows a symbol and count for each group you can act on: orange 👁 to review, orange ✋ changes
 requested, red ✕ failing, and green ✓ ready to merge. It lists open pull requests on github.com that
 ask for your review by name, and your own open pull requests, up to 50 of each, the most recently
-changed first.
+changed first: those of every account the GitHub CLI is signed in to, whose logins its foot shows.
 
 | Group | When |
 |---|---|
@@ -906,9 +909,16 @@ changed first.
 | **Ready to Merge** | Yours, and approved, with its checks passing or none |
 | **Waiting** | Yours, and a draft, waiting for its checks to finish, or waiting for reviews |
 
-A pull request that's both yours and asks for your review shows once, as yours. Click one to open it on
-GitHub. If an organization uses SAML single sign-on and the GitHub CLI isn't authorized for it, the
-list says to authorize it, and shows the rest.
+A pull request that's both yours and asks for your review shows once, as yours, even when it's one of
+your accounts' and asks another of them. Click one to open it on GitHub. If an organization uses SAML
+single sign-on and the GitHub CLI isn't authorized for it, the list says to authorize it, and shows the
+rest. When one of your accounts can't be read, the list says why and shows the others' pull requests,
+with what it last read of that one, unless it takes signing in to that account again.
+
+To add an account, click **Add Account…** on GitHub's page in Settings, or run `gh auth login` in
+Terminal; to stop reading one, sign the GitHub CLI out of it (`gh auth logout --user <login>`). BriefBar
+asks the GitHub CLI which accounts it's signed in to every half hour, and as you click **Refresh Now**;
+after **Sign In…** or **Add Account…**, every minute, until the account you sign in to shows.
 
 ## Agents
 
@@ -1127,7 +1137,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Show Relayed Questions Once | off by default: a question or plan that a coordinating session asks you for another session shows once, on the coordinating session (see [GitHub Copilot](#github-copilot)) |
 | | Nest Sessions Under Their Parents | off by default: a session that another session started shows under it, as in the Copilot app's sidebar, or with a ↳ tag when it's in another group (see [GitHub Copilot](#github-copilot)) |
 | | Show Context Usage | off by default: how full each session's context window is |
-| GitHub | Refresh Every | 1, 2 (default), 5 or 15 minutes: one request each time |
+| GitHub | Refresh Every | 1, 2 (default), 5 or 15 minutes: one request for each account each time |
 
 **Settings › Pull Requests** has the settings about pull requests, each under the sources whose pull
 requests it works with: first those that work with Azure DevOps' and GitHub's, then those that work with
@@ -1167,8 +1177,9 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   with your Azure CLI sign-in, and every request it makes is a GET, but for what you change there
   yourself, below; and the GitHub source, to
   `api.github.com`, with your GitHub CLI sign-in, sending one fixed, read-only GraphQL query each
-  refresh. Neither follows a redirect, so their sign-ins go nowhere else. The GitHub
-  CLI's token stays in memory, and BriefBar never asks for a personal access token. No sign-in of
+  refresh for each account the GitHub CLI is signed in to. Neither follows a redirect, so their
+  sign-ins go nowhere else. The GitHub CLI's tokens stay in memory, and BriefBar never asks for a
+  personal access token. No sign-in of
   BriefBar's own, and no telemetry. `scripts/check-boundaries.sh` checks that no other part of
   BriefBar's code uses networking APIs.
 - **Updates, only if you allow them.** BriefBar's own requests are for its updates, from this

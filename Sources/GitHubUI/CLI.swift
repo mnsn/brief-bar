@@ -9,7 +9,7 @@ package enum GitHubCommandLine: SourceCommandLine {
     package static var descriptionVersion: Int { GitHubSource.descriptionVersion }
     package static let usage = """
         GitHub:
-          Reads github.com with the GitHub CLI's sign-in (gh auth login), read-only.
+          Reads github.com as each account the GitHub CLI is signed in to (gh auth login), read-only.
           Set \(GitHubCLILocator.overrideVariable) to the gh to use, when it isn't on your PATH.
         """
 
@@ -24,10 +24,10 @@ package enum GitHubCommandLine: SourceCommandLine {
     /// The made-up pull requests, or yours: one read, as the app makes each refresh.
     private static func load(_ options: CommandLineOptions) -> Loaded {
         if options.demo { return Loaded(load: GitHubDemoData.load()) }
-        let client = GitHubClient(tokens: GitHubCLITokenProvider())
+        let reader = GitHubAccountsReader()
         return wait {
             do {
-                return Loaded(load: try await GitHubReader.load(client: client))
+                return Loaded(load: try await reader.load())
             } catch {
                 return Loaded(problem: GitHubProblem.from(error))
             }
@@ -42,6 +42,8 @@ package enum GitHubCommandLine: SourceCommandLine {
 
     private struct Output: Encodable {
         var login: String?
+        /// Every account it read as, the GitHub CLI's active one first.
+        var logins: [String]
         var pullRequests: [GitHubPRSnapshot]
         var counts: GitHubGroupCounts
         /// By section, the counts by state that a menu-bar item can add up across sources.
@@ -54,7 +56,7 @@ package enum GitHubCommandLine: SourceCommandLine {
     package static func json(_ options: CommandLineOptions) -> [String: Any]? {
         let loaded = load(options)
         return jsonObject(Output(
-            login: loaded.load?.login, pullRequests: loaded.items, counts: loaded.counts,
+            login: loaded.load?.login, logins: loaded.load?.logins ?? [], pullRequests: loaded.items, counts: loaded.counts,
             states: [SectionID.githubPullRequests.rawValue: loaded.counts.states], notice: loaded.load?.notice,
             moreThanShown: loaded.load?.moreThanShown ?? false, problem: loaded.problem?.message
         ))
@@ -62,8 +64,10 @@ package enum GitHubCommandLine: SourceCommandLine {
 
     private static func printTable(_ loaded: Loaded) {
         if let problem = loaded.problem { print("! \(problem.message)") }
-        if let notice = loaded.load?.notice { print("! \(notice)") }
-        if let login = loaded.load?.login { print("Signed in to the GitHub CLI as \(login)") }
+        if let notice = loaded.load?.notice {
+            for line in notice.split(separator: "\n") { print("! \(line)") }
+        }
+        if let logins = loaded.load?.logins, !logins.isEmpty { print("Signed in to the GitHub CLI as \(GitHubAccount.names(logins))") }
         let counts = loaded.counts
         print(GitHubPRGroup.allCases.map { "\($0.rawValue) \(counts[$0])" }.joined(separator: " · "))
         let now = Date()
@@ -96,7 +100,7 @@ package enum GitHubCommandLine: SourceCommandLine {
             return false
         }
         let queue = DispatchQueue(label: "BriefBar.GitHub.watch")
-        let printer = GitHubWatchPrinter(client: GitHubClient(tokens: GitHubCLITokenProvider()))
+        let printer = GitHubWatchPrinter(reader: GitHubAccountsReader())
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: 60, leeway: .seconds(5))
         timer.setEventHandler { printer.poll() }
@@ -109,7 +113,7 @@ package enum GitHubCommandLine: SourceCommandLine {
 
 /// Prints only the pull requests whose group or status changed.
 private final class GitHubWatchPrinter: @unchecked Sendable {
-    private let client: GitHubClient
+    private let reader: GitHubAccountsReader
     private let lock = NSLock()
     private var isPolling = false
     private var problem: String?
@@ -120,8 +124,8 @@ private final class GitHubWatchPrinter: @unchecked Sendable {
         return formatter
     }()
 
-    init(client: GitHubClient) {
-        self.client = client
+    init(reader: GitHubAccountsReader) {
+        self.reader = reader
     }
 
     func poll() {
@@ -130,11 +134,11 @@ private final class GitHubWatchPrinter: @unchecked Sendable {
             isPolling = true
             return true
         }) else { return }
-        let client = client
+        let reader = reader
         Task {
             let result: Result<GitHubLoad, Error>
             do {
-                result = .success(try await GitHubReader.load(client: client))
+                result = .success(try await reader.load())
             } catch {
                 result = .failure(error)
             }

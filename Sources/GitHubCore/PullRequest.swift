@@ -250,6 +250,13 @@ public enum GitHubClassifier {
         return sorted(snapshots)
     }
 
+    /// Each pull request once, from every account's list, as yours when it's yours as any of them, in the list's order.
+    public static func merged(_ lists: [[GitHubPRSnapshot]]) -> [GitHubPRSnapshot] {
+        let all = lists.joined()
+        var seen = Set<String>()
+        return sorted((all.filter { $0.role == .author } + all.filter { $0.role != .author }).filter { seen.insert($0.id).inserted })
+    }
+
     /// By group, then the most recently changed first.
     public static func sorted(_ snapshots: [GitHubPRSnapshot]) -> [GitHubPRSnapshot] {
         snapshots.sorted { lhs, rhs in
