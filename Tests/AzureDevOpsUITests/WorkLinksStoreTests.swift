@@ -488,6 +488,14 @@ import Testing
         engines.told[0](WorkLinks(workItemsOfPullRequests: [pullRequest: [5181]], workItems: [WorkItemKey(organization, 5181): task]))
         try await until("the story's to read") { workLinks.engineInputs?.parentLookups == [WorkItemKey(organization, 5180)] }
         #expect(workLinks.storiesRead.byPullRequest[pullRequest]?.map(\.ref) == [.workItem(organization: organization, id: 5180)])
+        // A pull request whose work items couldn't be read has none known, rather than keep every story's mission unseen.
+        let unreadable = PRKey(organization, 4114)
+        engines.told[0](WorkLinks(
+            workItemsOfPullRequests: [pullRequest: [5181]], workItems: [WorkItemKey(organization, 5181): task],
+            unreadablePullRequests: [unreadable]
+        ))
+        try await until("it's counted as read") { workLinks.storiesRead.byPullRequest[PRKey(organization.lowercased(), 4114)] == [] }
+        #expect(workLinks.storiesRead.workItemsByPullRequest[PRKey(organization.lowercased(), 4114)] == [])
     }
 
     @Test func anotherAccountForgetsWhatWasReadAsTheLastOne() async throws {

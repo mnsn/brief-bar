@@ -275,6 +275,12 @@ final class WorkLinksStore {
                 if let id = ref.number { named.insert(WorkItemKey(ref.scope, id)) }
             }
         }
+        // One whose work items couldn't be read: none known, rather than keep every story's mission unseen while it fails.
+        for key in read.unreadablePullRequests where read.workItemsOfPullRequests[key] == nil {
+            let pullRequest = PRKey(key.organization.lowercased(), key.number)
+            byPullRequest[pullRequest] = []
+            workItemsByPullRequest[pullRequest] = []
+        }
         let stories = Stories(
             areRead: true, byPullRequest: byPullRequest, workItemsByPullRequest: workItemsByPullRequest,
             workItems: named.sorted().compactMap { known[$0] }

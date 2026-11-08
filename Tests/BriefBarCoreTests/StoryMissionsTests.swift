@@ -759,6 +759,18 @@ import Testing
             OrderBoard.notes(outside: Self.pr(4120), missions: missions, changes: changes, orders: DeclaredOrders(), seesStories: sees)
         }
         #expect(outside(false) == [.nextUnseen(story)] && outside(true) == [.nextElsewhere(story)])
+        // Its own work items read again, while the story's mission shows from its others: it's elsewhere, not unseen, in
+        // its row and in its details.
+        let rereading = Self.facts(chain + [Self.ado(4101, [Self.task(5102, rank: 1)]), Self.ado(4102, [Self.task(5103, rank: 2)]), Self.ado(4120, nil)])
+        #expect(rereading.storiesArePending)
+        let shown = Self.missions(rereading, changes: changes)
+        #expect(Set(shown.map(\.key)) == [.chain(Self.pr(4110)), story])
+        let row = try #require(shown.first { $0.key == .chain(Self.pr(4110)) }?.steps.first { $0.ref == Self.pr(4110) })
+        #expect(row.notes.contains(.nextElsewhere(story)) && !row.notes.contains(.nextUnseen(story)))
+        #expect(
+            OrderBoard.notes(outside: Self.pr(4120), missions: shown, changes: changes, orders: DeclaredOrders(), seesStories: rereading.seesStories)
+                == [.nextElsewhere(story)]
+        )
         // Read, with no pull request for the story anymore: gone.
         let read = Self.facts([Self.ado(4110, [], from: "users/robin/a"), Self.ado(4111, [], from: "users/robin/b", into: "users/robin/a"), Self.ado(4120, [])])
         let gone = try #require(Self.missions(read, changes: changes).first?.steps.first { $0.ref == Self.pr(4110) })

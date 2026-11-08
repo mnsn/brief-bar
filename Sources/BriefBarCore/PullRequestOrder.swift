@@ -994,7 +994,7 @@ public enum OrderBoard {
             guard let first = layer.holding[ref]?.first,
                   !built.contains(where: { OrderChanges.names($0, first) && $0.steps.contains { $0.ref == ref } })
             else { return nil }
-            return elsewhere(first, seesStories: facts.seesStories)
+            return elsewhere(first, seesStories: facts.seesStories, isShown: built.contains { $0.key == first && !$0.isMine })
         }
         for index in missions.indices {
             missions[index].isFocused = missions[index].key == focus
@@ -1028,15 +1028,15 @@ public enum OrderBoard {
         guard let change = changes[ref] else { return [] }
         guard change.holds(in: orders) else { return change.overridden(in: orders).map { [.orderChangedIt($0)] } ?? [] }
         if let first = change.first, !missions.contains(where: { OrderChanges.names($0, first) && $0.contains(ref) }) {
-            return [elsewhere(first, seesStories: seesStories)]
+            return [elsewhere(first, seesStories: seesStories, isShown: missions.contains { $0.key == first && !$0.isMine })]
         }
         return []
     }
 
     /// Where you set it as next to merge, which it isn't in now: gone, or, for a story's while BriefBar can't tell stories'
-    /// missions, unseen.
-    static func elsewhere(_ first: MissionKey, seesStories: Bool) -> OrderNote {
-        if case .story = first, !seesStories { return .nextUnseen(first) }
+    /// missions and doesn't show that one, unseen. Shown, as while its own work items are read again, it's elsewhere.
+    static func elsewhere(_ first: MissionKey, seesStories: Bool, isShown: Bool) -> OrderNote {
+        if case .story = first, !seesStories, !isShown { return .nextUnseen(first) }
         return .nextElsewhere(first)
     }
 

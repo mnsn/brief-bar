@@ -74,6 +74,7 @@ import Testing
         private let all = Mutex<[WorkLinks]>([])
         func add(_ links: WorkLinks) { all.withLock { $0.append(links) } }
         var last: WorkLinks? { all.withLock { $0.last } }
+        var each: [WorkLinks] { all.withLock { $0 } }
     }
 
     private func engine(_ server: StubServer, clock: Clock, published: Published = Published()) -> LinkEngine {
@@ -362,32 +363,55 @@ import Testing
     }
 
     /// While stories are wanted, a pull request's work items that no read answered for yet, with what stories want, are
-    /// pending, and so are those whose read failed, until one answers; one a read leaves out isn't.
+    /// pending, until one answers; one a read leaves out isn't, nor one whose read failed, which gives no story until a read
+    /// gets it, rather than keep its pull request's stories unknown for as long as it fails. A pull request whose work items'
+    /// read failed is unreadable, until a read answers for it.
     @Test func aPullRequestsWorkItemsArePendingUntilAReadAnswersForThem() async {
         let server = StubServer()
         let fails = Mutex(false)
         server.on("/pullRequests/7/workitems", json: Fixture.list([["id": "5102"], ["id": "5103"]]))
         server.on("/pullRequests/8/workitems", json: Fixture.list([["id": "5104"]]))
+        server.on("/pullRequests/9/workitems") { _ in fails.withLock { $0 } ? .status(500) : .json(Fixture.list([["id": "5102"]])) }
         // 5103 and 5104 are left out: deleted, or can't be read.
         server.on("/_apis/wit/workitems") { _ in
             fails.withLock { $0 } ? .status(500) : .json(Fixture.list([WorkFixture.workItem(5102, "Task", "Round coupon totals", parent: 5101)]))
         }
         let clock = Clock()
-        let engine = engine(server, clock: clock)
+        let published = Published()
+        let engine = engine(server, clock: clock, published: published)
         let seven = [PRKey("contoso", 7): Self.place]
-        let both = seven.merging([PRKey("contoso", 8): Self.place]) { $1 }
+        let all = seven.merging([PRKey("contoso", 8): Self.place, PRKey("contoso", 9): Self.place]) { $1 }
         await engine.update(.init(pullRequests: seven))
         #expect(await engine.currentLinks().pendingWorkItems.isEmpty)
         await engine.update(.init(pullRequests: seven, wantsStories: true))
+        // As stories became wanted, until the read with what they want answered.
+        #expect(published.each.contains { $0.pendingWorkItems == [WorkItemKey("contoso", 5102), WorkItemKey("contoso", 5103)] })
         #expect(await engine.currentLinks().pendingWorkItems.isEmpty)
 
+        // Reads that fail: 5104's gives it no story, and !9's work items aren't known.
         fails.withLock { $0 = true }
-        await engine.update(.init(pullRequests: both, wantsStories: true))
-        #expect(await engine.currentLinks().pendingWorkItems == [WorkItemKey("contoso", 5104)])
+        await engine.update(.init(pullRequests: all, wantsStories: true))
+        #expect(await engine.currentLinks().workItemsOfPullRequests[PRKey("contoso", 8)] == [5104])
+        #expect(await engine.currentLinks().pendingWorkItems.isEmpty)
+        #expect(await engine.currentLinks().unreadablePullRequests == [PRKey("contoso", 9)])
+        // While stories aren't wanted, none is.
+        await engine.update(.init(pullRequests: all))
+        #expect(await engine.currentLinks().unreadablePullRequests.isEmpty)
+        await engine.update(.init(pullRequests: all, wantsStories: true))
+        #expect(await engine.currentLinks().unreadablePullRequests == [PRKey("contoso", 9)])
+        #expect(await engine.currentLinks().pendingWorkItems.isEmpty)
         fails.withLock { $0 = false }
         clock.advance(61 * minute)
         await engine.refresh()
+        #expect(await engine.currentLinks().workItemsOfPullRequests[PRKey("contoso", 9)] == [5102])
         #expect(await engine.currentLinks().pendingWorkItems.isEmpty)
+        #expect(await engine.currentLinks().unreadablePullRequests.isEmpty)
+        // Read since, their failures are over: wanted again, they wait for a read again.
+        await engine.update(.init(pullRequests: all))
+        let before = published.each.count
+        await engine.update(.init(pullRequests: all, wantsStories: true))
+        let linked: Set<WorkItemKey> = [WorkItemKey("contoso", 5102), WorkItemKey("contoso", 5103), WorkItemKey("contoso", 5104)]
+        #expect(published.each.dropFirst(before).contains { $0.pendingWorkItems == linked })
     }
 
     @Test func looksUpWhatYouLinkedThatNoListShows() async {

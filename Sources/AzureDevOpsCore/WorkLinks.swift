@@ -34,14 +34,18 @@ public struct WorkLinks: Sendable, Equatable {
     /// wanted, to name their missions.
     public var parents: [WorkItemKey: WorkItem]
     /// While stories are wanted, the work items linked to your pull requests that the sprint doesn't show and that no read
-    /// answered for yet with what stories want, or whose read failed: the stories of their pull requests aren't known until
-    /// then. One a read left out, deleted or that can't be read, isn't among them.
+    /// answered for yet with what stories want: the stories of their pull requests aren't known until then. One a read left
+    /// out, deleted or that can't be read, isn't among them, nor one whose read failed since: it gives no story until a read
+    /// gets it, rather than keep its pull request's unknown, and every story's mission unseen, for as long as it fails.
     public var pendingWorkItems: Set<WorkItemKey>
+    /// While stories are wanted, your pull requests whose work items' read failed and that no read answered for: their
+    /// stories count as read, with none known, until a read gets them.
+    public var unreadablePullRequests: Set<PRKey>
 
     public init(
         workItemsOfPullRequests: [PRKey: [Int]] = [:], pullRequestsOfWorkItems: [WorkItemKey: [PRKey]] = [:],
         workItems: [WorkItemKey: WorkItem] = [:], pullRequests: [PRKey: PullRequest] = [:], parents: [WorkItemKey: WorkItem] = [:],
-        pendingWorkItems: Set<WorkItemKey> = []
+        pendingWorkItems: Set<WorkItemKey> = [], unreadablePullRequests: Set<PRKey> = []
     ) {
         self.workItemsOfPullRequests = workItemsOfPullRequests
         self.pullRequestsOfWorkItems = pullRequestsOfWorkItems
@@ -49,6 +53,7 @@ public struct WorkLinks: Sendable, Equatable {
         self.pullRequests = pullRequests
         self.parents = parents
         self.pendingWorkItems = pendingWorkItems
+        self.unreadablePullRequests = unreadablePullRequests
     }
 
     /// Every link it read, between pull requests and work items.
@@ -501,6 +506,7 @@ public actor LinkEngine {
                     guard readsStories || !wantsStories else { continue }
                     for id in batch {
                         workItemsRead[WorkItemKey(organization, id)] = date
+                        failures["wi \(WorkItemKey(organization, id))"] = nil
                         settle("wi \(WorkItemKey(organization, id))", readAt: date)
                     }
                 } catch {
@@ -609,15 +615,18 @@ public actor LinkEngine {
 
     private func publish() {
         var pending: Set<WorkItemKey> = []
+        var unreadable: Set<PRKey> = []
         if inputs.wantsStories {
             for (pullRequest, ids) in links.workItemsOfPullRequests {
                 for id in ids {
                     let key = WorkItemKey(pullRequest.organization, id)
-                    if workItemsRead[key] == nil, !inputs.sprintItems.contains(key) { pending.insert(key) }
+                    if workItemsRead[key] == nil, !inputs.sprintItems.contains(key), failures["wi \(key)"] == nil { pending.insert(key) }
                 }
             }
+            unreadable = Set(inputs.pullRequests.keys.filter { links.workItemsOfPullRequests[$0] == nil && failures["pr \($0)"] != nil })
         }
         links.pendingWorkItems = pending
+        links.unreadablePullRequests = unreadable
         guard links != lastPublished else { return }
         lastPublished = links
         onChange(links)
