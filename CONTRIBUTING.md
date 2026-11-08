@@ -352,9 +352,9 @@ changed once, with a doc line of what each pull request said, and ends its secti
 what they said after `After this update:`. So between releases, a description on `main` can say more than its version
 did: users install releases, which raise it, so they're asked all the same, but a build from `main` doesn't ask again.
 
-`make test` checks the notes first, and that neither a version nor `CHANGELOG.md` changed since the last release, in a
-second (`scripts/prepare-release.sh --check`); `make release-notes-check`, which CI runs, tests that script too. A new
-source goes in its lists.
+`make test` checks the notes first, and that no version, its numbered doc lines or `CHANGELOG.md` changed since the last
+release, in a second (`scripts/prepare-release.sh --check`); `make release-notes-check`, which CI runs, tests that
+script too. A new source goes in its lists.
 
 A pull request that wrote its notes under `## Unreleased` in `CHANGELOG.md`, or raised a version, moves them as it
 merges `main`:

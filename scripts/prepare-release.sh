@@ -282,25 +282,35 @@ check_declarations() {
     done
 }
 
-# Fails unless each version is the one in the release that tag names, and CHANGELOG.md is as it left it: only a
-# release changes them.
+# A version's history: its number, then its numbered doc lines, from the first that starts with one, such as
+# "/// 2: the sprint.", to the declaration, with any entries that follow on the same lines. The doc text above them
+# isn't part of it.
+HISTORY="$DECLARATION"' { if (start) for (i = start; i <= n; i++) print block[i]; print "= " substr($0, match($0, /[0-9]+$/)); exit }
+    /^ *\/\/\// { block[++n] = $0; if (!start && $0 ~ /^ *\/\/\/ *[0-9]+:/) start = n; next }
+    { n = 0; start = 0 }'
+
+# Fails unless each version, and its numbered doc lines, are those in the release that tag names, and CHANGELOG.md is
+# as it left it: only a release changes them.
 same_as_released() { # <tag>
-    local key file variable line released files=()
-    for key in $SOURCES; do files+=("$(file_of "$key")"); done
-    git grep -E -e "^ +([a-z]+ )*static let [A-Za-z]+ = [0-9]+\$" "$1" -- "${files[@]}" > "$WORK/released" || true
+    local key file variable line now released
     for key in $SOURCES; do
         file="$(file_of "$key")"
         variable="$(variable_of "$key")"
         line="$(declaration "$file" "$variable")"
-        released="$(awk -v prefix="$1:$file:" -v variable="$variable" \
-            "index(\$0, prefix) == 1 { \$0 = substr(\$0, length(prefix) + 1); if ($DECLARATION) print }" "$WORK/released")"
-        if [[ -z "$released" || "$released" == *$'\n'* ]]; then
+        now="$(awk -v variable="$variable" "$HISTORY" "$file")"
+        released="$(git show "$1:$file" 2>/dev/null | awk -v variable="$variable" "$HISTORY" || true)"
+        if [[ "$released" != *"= "[0-9]* ]]; then
             fail "$1 has no line like \"static let $variable = 1\" in $file to compare with."
         fi
-        if [[ "${line##* = }" != "${released##* = }" ]]; then
-            fail "$file's $variable is ${line##* = }, but ${released##* = } in $1: only a release changes it." \
+        if [[ "${line##* = }" != "${released##*= }" ]]; then
+            fail "$file's $variable is ${line##* = }, but ${released##*= } in $1: only a release changes it." \
                 "Put it back, take out the doc line added for it, and say what changed in the pull request's notes," \
                 "under ## Descriptions (\"Release notes\" in CONTRIBUTING.md)."
+        fi
+        if [[ "$now" != "$released" ]]; then
+            fail "$file's numbered doc lines above $variable aren't as $1 has them: only a release changes them, since" \
+                "they say what each version was. Put them back (git show $1:$file has them), and say what changed in" \
+                "the pull request's notes, under ## Descriptions (\"Release notes\" in CONTRIBUTING.md)."
         fi
     done
     if ! git diff --quiet "$1" -- "$CHANGELOG"; then
@@ -394,15 +404,18 @@ if [[ "$CHECK" == 1 ]]; then
     fi
     FILES="$(notes_files)"
     # A release's tag on a commit with notes that the release didn't gather, as when a pull request merged after the
-    # release was prepared and the tag went on the commit that merged it: it would ship that change without its notes,
-    # and without raising the versions of the descriptions it changed. The release workflow's make test runs this on
-    # the tag. It reads the notes committed there, not those you're writing on a branch that starts at the tag.
+    # release was prepared, and the tag went on a commit that has it: it would ship that change without its notes, and
+    # without raising the versions of the descriptions it changed. The release's own commit, which added its section,
+    # has only what it gathered. The release workflow's make test runs this on the tag. It reads the notes committed
+    # there, not those you're writing on a branch that starts at the tag.
     if [[ "$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)" == \
         "$(git rev-parse --verify --quiet "refs/tags/$TAG^{commit}" 2>/dev/null || echo none)" ]]; then
         LEFT="$(git ls-tree -r --name-only "$TAG" -- "$NOTES/" | grep -vxF "$NOTES/README.md" || true)"
         if [[ -n "$LEFT" ]]; then
+            PREPARED="$(git log -1 --format='%h ("%s")' -S"## $LAST - " -- "$CHANGELOG" 2>/dev/null || true)"
             fail "$TAG is tagged on a commit with notes that its section of $CHANGELOG doesn't have: ${LEFT//$'\n'/, }." \
-                "Tag the commit that merged the release instead, or prepare the release again."
+                "Tag the release's own commit instead${PREPARED:+, $PREPARED}, which has only what it gathered:" \
+                "delete the tag here and on origin (git push origin :refs/tags/$TAG), then tag that commit and push it."
         fi
     fi
     if [[ -z "$FILES" ]]; then

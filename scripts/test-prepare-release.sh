@@ -250,8 +250,11 @@ prepare --check || fail "--check refused, at the tag, notes not committed yet: $
 rm "$REPO/changes/next.md"
 in_repo checkout --quiet main
 prepare --check || fail "--check refused, on main after a release, the notes of the next: $(cat "$WORK/err")"
+PREPARED_COMMIT="$(in_repo rev-parse --short v1.1.0)"
 in_repo tag --force v1.1.0 main > /dev/null
 check_refuses "v1.1.0 is tagged on a commit with notes that its section of CHANGELOG.md doesn't have: changes/late.md."
+grep -qF "Tag the release's own commit instead, $PREPARED_COMMIT (\"Prepare BriefBar 1.1.0\")" "$WORK/err" ||
+    fail "refusing the tag, --check didn't name the release's own commit: $(cat "$WORK/err")"
 
 # The sentence that starts After this update names the sources in the app's order, and agents last.
 # release <notes>: a release 1.1.0 of one pull request with those notes, merged.
@@ -448,6 +451,21 @@ commit "Add a doc line for a version" 2026-01-12T10:00:00
 refuses "Sources/CopilotUI/CopilotSource.swift has a doc line for descriptionVersion 3, past its version, 2" \
     --main main 1.1.0 2026-02-01
 check_refuses "Sources/CopilotUI/CopilotSource.swift has a doc line for descriptionVersion 3, past its version, 2"
+in_repo checkout --quiet main
+
+# A numbered doc line changed in place, here with the next version's entry on it, is refused against the last
+# release's tag, whose doc lines say what each version was; the doc text above them can change.
+in_repo checkout --quiet -b inline main
+write Sources/AzureDevOpsUI/AzureDevOpsSource.swift "${AZURE_DEVOPS/the sprint./the sprint. 4: more.}"
+commit "Add an entry to a numbered doc line" 2026-01-12T10:00:00
+refuses "Sources/AzureDevOpsUI/AzureDevOpsSource.swift's numbered doc lines above descriptionVersion aren't as v1.0.0" \
+    --main main 1.1.0 2026-02-01
+check_refuses "Sources/AzureDevOpsUI/AzureDevOpsSource.swift's numbered doc lines above descriptionVersion aren't as"
+in_repo checkout --quiet main
+in_repo checkout --quiet -b preface main
+write Sources/BriefBarCore/AgentAccess.swift "${AGENTS/What agents get./What agents get, and when the release raises it.}"
+commit "Say more above a version" 2026-01-12T10:00:00
+prepare --check || fail "--check refused a change to the doc text above a version: $(cat "$WORK/err")"
 in_repo checkout --quiet main
 
 in_repo checkout --quiet -b edited main
