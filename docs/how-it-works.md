@@ -1350,11 +1350,11 @@ something new needs you there. Sessions never put someone else's pull request in
 changes anything in Azure DevOps for a stage.
 
 What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one
-entry for each pull request: its number, the stage, when, the votes' digest and its commit, up to 500 for each account;
-one no list has had for 30 days goes. For a pull request listed only because someone sent it to you in a chat, it's kept
-in memory only, as what you've seen of it is. **Forget Stages…** forgets them all, and turning Azure DevOps off forgets
-its own; turning Pull Request Order off keeps them, unused. Stages change no group, count, notification or brief: they
-only label rows.
+entry for each pull request: its number, the stage, when, the votes' digest and its commit. For a pull request listed
+only because someone sent it to you in a chat, it's kept in memory only, as what you've seen of it is. Either way, an
+account keeps up to 500, those in memory counted with the others, and one no list has had for 30 days goes. **Forget
+Stages…** forgets them all, and turning Azure DevOps off forgets its own; turning Pull Request Order off keeps them,
+unused, those in memory too. Stages change no group, count, notification or brief: they only label rows.
 
 ### What's next, and the Board
 

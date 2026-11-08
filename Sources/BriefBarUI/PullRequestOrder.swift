@@ -45,9 +45,11 @@ package final class PullRequestOrder: ObservableObject {
     /// The stages you set, for each Azure DevOps account (`order.stages`).
     private var marks = StageMarks()
     /// The stages you set for pull requests listed only because someone sent them to you, or before BriefBar knew which
-    /// account signed in: in memory only.
-    private var marksInMemory: [ItemRef: StageMark] = [:]
+    /// account signed in: in memory only, each with when a list last had it, so that they go after 30 days as those
+    /// kept do. They count with those toward the most an account keeps, and stay, unused, while Pull Request Order is off.
+    private var marksInMemory: [ItemRef: StageMarks.Entry] = [:]
     /// The account each source last told while it knew one: the stages you set in memory, and Undo, are that account's.
+    /// Turning Pull Request Order off keeps it, so that once it's on again, another account still forgets them.
     private var accounts: [SourceID: String] = [:]
     /// What each source told it last.
     private var told: [SourceID: Told] = [:]
@@ -133,7 +135,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Pull Request Order, in Settings. On, it reads the orders it kept, and the sources tell it what they show; off, it
-    /// forgets all that, in memory only.
+    /// forgets all that, in memory only, but for the stages you set, which it keeps, unused: those in memory too, with
+    /// the account each source told last, so that one that tells another once it's on again forgets them.
     package func setOn(_ on: Bool) {
         guard on != isOn else { return }
         defaults.set(on, forKey: PullRequestOrderSetting.defaultsKey)
@@ -151,8 +154,6 @@ package final class PullRequestOrder: ObservableObject {
             focus = nil
             missions = []
             marks = StageMarks()
-            marksInMemory = [:]
-            accounts = [:]
             stages = [:]
             stagedKinds = []
             lastChange = nil
@@ -180,10 +181,12 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Looks again at what time alone changes, as its clock does every hour: orders that went stale, those that finished
-    /// long enough ago to go, and the stages you set for pull requests no list has had for 30 days.
+    /// long enough ago to go, and the stages you set for pull requests no list has had for 30 days, kept or in memory.
     package func timePassed() {
         guard isOn else { return }
-        if marks.forgetUnlisted(now: now()) { marks.save(to: defaults) }
+        let date = now()
+        if marks.forgetUnlisted(now: date) { marks.save(to: defaults) }
+        marksInMemory = marksInMemory.filter { !$0.value.isUnlisted(at: date) }
         rebuild()
     }
 
@@ -574,21 +577,31 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     private func yourMark(of ref: ItemRef, facts: StageFacts) -> StageMark? {
-        if let mark = marksInMemory[ref] { return mark }
+        if let entry = marksInMemory[ref] { return entry.mark }
         guard !keepsInMemory(ref, facts: facts), let account = account(of: ref) else { return nil }
         return marks.mark(of: ref, for: account)
     }
 
-    /// Keeps the stage you set: false when the account keeps the most already.
+    /// Keeps the stage you set, in place of the one it had: false for a new one once the account keeps the most
+    /// already, counting those in memory, so that one in memory always has room with the account once it can go there.
     private func keep(_ mark: StageMark, of ref: ItemRef, facts: StageFacts) -> Bool {
-        if keepsInMemory(ref, facts: facts) {
-            marksInMemory[ref] = mark
-            return true
+        let account = account(of: ref)
+        let isNew = marksInMemory[ref] == nil && account.flatMap { marks.mark(of: ref, for: $0) } == nil
+        guard !isNew || keptCount(of: ref.kind, for: account) < StageMarks.mostPerAccount else { return false }
+        if !keepsInMemory(ref, facts: facts), let account, marks.set(mark, of: ref, for: account, at: now()) {
+            marksInMemory[ref] = nil
+            marks.save(to: defaults)
+        } else {
+            // One only sent to you, one whose account BriefBar doesn't know yet, or one kept here before it knew, until
+            // the account has room for it.
+            marksInMemory[ref] = StageMarks.Entry(mark: mark, listedAt: now())
         }
-        guard let account = account(of: ref), marks.set(mark, of: ref, for: account, at: now()) else { return false }
-        marksInMemory[ref] = nil
-        marks.save(to: defaults)
         return true
+    }
+
+    /// How many stages you set an account keeps, with those in memory for pull requests of this kind, its source's.
+    private func keptCount(of kind: ItemRef.Kind, for account: String?) -> Int {
+        (account.map { marks.count(for: $0) } ?? 0) + marksInMemory.keys.filter { $0.kind == kind }.count
     }
 
     private func forgetMark(of ref: ItemRef, facts: StageFacts) {
@@ -602,12 +615,13 @@ package final class PullRequestOrder: ObservableObject {
         if let change = lastChange, kinds.contains(change.ref.kind) { lastChange = nil }
     }
 
-    /// Each pull request's stage again: from what its source tells, the sessions on it, the stage you set while it stands,
-    /// and its order. A stage you set that no longer stands, or whose pull request merged or closed, goes; one kept in memory
-    /// before BriefBar knew the account, or while it was only sent to you, is kept with the account once it can be, and one
-    /// kept with the account goes into memory once it's only sent to you, such as when you stop watching it; and what lists
-    /// have now is noted, once a day, for what no list has had for 30 days to go. Only those a list has show a stage: what
-    /// was set on one it still reads, but no list has, still ends as it moves on.
+    /// Each pull request's stage again: from what its source tells, the sessions on it, the stage you set while it
+    /// stands, and its order. A stage you set that no longer stands, or whose pull request merged or closed, goes; one
+    /// kept in memory before BriefBar knew the account, or while it was only sent to you, is kept with the account once
+    /// it can be, and one kept with the account goes into memory once it's only sent to you, such as when you stop
+    /// watching it; and what lists have now is noted, for what no list has had for 30 days to go: in memory each time,
+    /// and once a day for those kept. Only those a list has show a stage: what was set on one it still reads, but no
+    /// list has, still ends as it moves on.
     private func restage() {
         guard isOn else {
             if !stages.isEmpty { stages = [:] }
@@ -622,10 +636,10 @@ package final class PullRequestOrder: ObservableObject {
         for (ref, facts) in all {
             let sessions = Self.merged(facts.sessions, sessionsOn[ref] ?? [])
             if let memory = marksInMemory[ref], !keepsInMemory(ref, facts: facts), let account = account(of: ref),
-               marks.set(memory, of: ref, for: account, at: now()) {
+               marks.set(memory.mark, of: ref, for: account, at: memory.listedAt) {
                 marksInMemory[ref] = nil
                 changed = true
-            } else if facts.role == .sentToYou, let account = account(of: ref), let saved = marks.mark(of: ref, for: account) {
+            } else if facts.role == .sentToYou, let account = account(of: ref), let saved = marks.entry(of: ref, for: account) {
                 if marksInMemory[ref] == nil { marksInMemory[ref] = saved }
                 if marks.clear(ref, for: account) { changed = true }
             }
@@ -636,6 +650,7 @@ package final class PullRequestOrder: ObservableObject {
                 mine = nil
             }
             guard facts.isListed else { continue }
+            marksInMemory[ref]?.listedAt = now()
             let order = StageOrder.of(ref, in: missions)
             if let reading = StageRules.reading(facts: facts, sessions: sessions, marks: [mine].compactMap { $0 }, order: order) {
                 readings[ref] = reading

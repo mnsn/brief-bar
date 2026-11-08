@@ -265,6 +265,25 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4093))?.mark == nil)
     }
 
+    /// Turning Pull Request Order off keeps the stages you set in memory too, unused; once it's on again, another
+    /// account still forgets them, as signing in with another while it was off does.
+    @Test func offKeepsThoseInMemoryTooUntilAnotherAccountSignsIn() {
+        let order = Self.service(Self.defaults())
+        Self.tell(order, [4113: StageFacts(role: .sentToYou)])
+        #expect(order.setStage(.yourReview, of: Self.ref(4113)) == .done)
+        order.setOn(false)
+        #expect(order.keepsStages)
+        order.setOn(true)
+        Self.tell(order, [4113: StageFacts(role: .sentToYou)])
+        #expect(order.stage(of: Self.ref(4113))?.isSetByYou == true)
+
+        order.setOn(false)
+        order.setOn(true)
+        Self.tell(order, [4113: StageFacts(role: .sentToYou)], account: "robin@fabrikam.com")
+        #expect(order.stage(of: Self.ref(4113))?.isSetByYou != true)
+        #expect(!order.keepsStages)
+    }
+
     @Test func oneNoListHasHadFor30DaysGoes() {
         let clock = Clock()
         let defaults = Self.defaults()
@@ -282,6 +301,51 @@ private final class Clock {
         let kept = StageMarks.load(from: defaults)
         #expect(kept.mark(of: Self.ref(4093), for: Self.account) == nil)
         #expect(kept.mark(of: Self.ref(4094), for: Self.account) != nil)
+    }
+
+    /// One kept in memory, sent to you in a chat, goes too once no list has had it for 30 days, rather than coming back
+    /// when it's sent to you again; one a list still has stays.
+    @Test func oneInMemoryNoListHasHadFor30DaysGoesToo() {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        Self.tell(order, [4113: StageFacts(role: .sentToYou), 4114: StageFacts(role: .sentToYou)])
+        order.setStage(.yourReview, of: Self.ref(4113))
+        order.setStage(.yourReview, of: Self.ref(4114))
+
+        for _ in 0..<31 {
+            clock.advance(days: 1)
+            Self.tell(order, [4114: StageFacts(role: .sentToYou)])
+            order.timePassed()
+        }
+        Self.tell(order, [4113: StageFacts(role: .sentToYou), 4114: StageFacts(role: .sentToYou)])
+        #expect(order.stage(of: Self.ref(4113))?.isSetByYou != true)
+        #expect(order.stage(of: Self.ref(4114))?.isSetByYou == true)
+        #expect(order.keptStagesCount == 1)
+    }
+
+    /// A stage you set keeps when a list last had its pull request as it moves between memory and the preferences,
+    /// either way, so it still goes 30 days after that.
+    @Test func movingBetweenMemoryAndThePreferencesKeepsWhenAListLastHadIt() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        Self.tell(order, [4113: StageFacts(role: .watching)])
+        order.setStage(.yourReview, of: Self.ref(4113))
+        Self.tell(order, [4093: StageFacts(role: .author)], account: nil)
+        order.setStage(.yourReview, of: Self.ref(4093))
+
+        // 20 days on, no list has either: BriefBar knows the account of one, and the other was only sent to you.
+        clock.advance(days: 20)
+        Self.tell(order, [
+            4093: StageFacts(role: .author, isListed: false), 4113: StageFacts(role: .sentToYou, isListed: false),
+        ])
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account) != nil)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4113), for: Self.account) == nil)
+        #expect(order.keptStagesCount == 2)
+
+        clock.advance(days: 11)
+        order.timePassed()
+        #expect(order.keptStagesCount == 0)
     }
 
     /// Missions draw each pull request in its stage's color, and one BriefBar saw merge in Merged's where its source tells
@@ -418,6 +482,56 @@ private final class Clock {
         // Watched again, it's kept again.
         Self.tell(order, [4113: StageFacts(role: .watching)])
         #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4113), for: Self.account)?.stage == .yourReview)
+    }
+
+    /// The most an account keeps counts those in memory too, so that one kept there is kept with the account once you
+    /// watch it; one you set already can still change.
+    @Test func theMostAnAccountKeepsCountsThoseInMemory() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        var full = StageMarks()
+        for number in 1..<StageMarks.mostPerAccount {
+            _ = full.set(StageMark(stage: .yourReview, at: clock.now), of: Self.ref(number), for: Self.account, at: clock.now)
+        }
+        full.save(to: defaults)
+        let order = Self.service(defaults, clock: clock)
+        Self.tell(order, [4093: StageFacts(role: .author), 4113: StageFacts(role: .sentToYou), 4114: StageFacts(role: .sentToYou)])
+        #expect(order.setStage(.yourReview, of: Self.ref(4113)) == .done)
+
+        // That's the most: a new one is refused, in memory or with the account.
+        let refused = StageChange.Outcome.refused(
+            "BriefBar keeps up to \(StageMarks.mostPerAccount) stages you set. Let BriefBar decide one you no longer need first."
+        )
+        #expect(order.setStage(.yourReview, of: Self.ref(4114)) == refused)
+        #expect(order.setStage(.inProgress, of: Self.ref(4093)) == refused)
+        #expect(order.setStage(.inProgress, of: Self.ref(4113)) == .done)
+
+        // Watched now, it's kept with the account.
+        Self.tell(order, [4093: StageFacts(role: .author), 4113: StageFacts(role: .watching), 4114: StageFacts(role: .sentToYou)])
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4113), for: Self.account)?.stage == .inProgress)
+        #expect(order.keptStagesCount == StageMarks.mostPerAccount)
+    }
+
+    /// One you set before BriefBar knew the account, which keeps the most by then, waits in memory, where you can still
+    /// change it, and is kept with the account once it has room.
+    @Test func oneSetBeforeBriefBarKnewAFullAccountWaitsInMemoryForRoom() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        var full = StageMarks()
+        for number in 1...StageMarks.mostPerAccount {
+            _ = full.set(StageMark(stage: .yourReview, at: clock.now), of: Self.ref(number), for: Self.account, at: clock.now)
+        }
+        full.save(to: defaults)
+        let order = Self.service(defaults, clock: clock)
+        Self.tell(order, [1: StageFacts(role: .author), 4093: StageFacts(role: .author)], account: nil)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        Self.tell(order, [1: StageFacts(role: .author), 4093: StageFacts(role: .author)])
+        #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
+        #expect(order.setStage(.inProgress, of: Self.ref(4093)) == .done)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account) == nil)
+
+        order.letBriefBarDecide(Self.ref(1))
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .inProgress)
     }
 
     /// A merged or closed pull request's stage doesn't change: nothing is kept, and Undo has nothing to undo.
