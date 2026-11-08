@@ -106,6 +106,8 @@ struct PullRequestDetailsContent: View {
                 }
                     .id(PullRequestDetailsStore.Anchor.top)
                 PullRequestSessionLine(item: item)
+                // Its mission, while Pull Request Order is on.
+                PullRequestOrderLine(item: item)
                 // Its summary, of it and what's linked to it, under what it is.
                 PageSummary(ref: ref)
                 if let readiness = panel.readiness, !readiness.items.isEmpty {

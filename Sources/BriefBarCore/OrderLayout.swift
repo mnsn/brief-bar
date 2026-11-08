@@ -233,11 +233,15 @@ public struct OrderMap: Equatable, Sendable {
         let steps = mission.steps
         guard !steps.isEmpty, steps.count <= mostPullRequests else { return nil }
 
-        // Each that hasn't merged or closed comes one wave after the last of what it waits for.
+        // Each that hasn't merged or closed comes one wave after the last of what it waits for; one that waits for a pull
+        // request the Map doesn't show, in another mission or none, at least one wave on, with no line there.
+        let shown = Set(steps.map(\.ref))
         var wave: [ItemRef: Int] = [:]
         for step in steps where !step.status.hasEnded {
-            let earlier = step.prerequisites.filter { !$0.status.hasEnded }.compactMap { wave[$0.ref] }
-            wave[step.ref] = earlier.max().map { $0 + 1 } ?? 0
+            let waiting = step.prerequisites.filter { !$0.status.hasEnded }
+            let earlier = waiting.compactMap { wave[$0.ref] }
+            let elsewhere = waiting.contains { !shown.contains($0.ref) }
+            wave[step.ref] = max(earlier.max().map { $0 + 1 } ?? 0, elsewhere ? 1 : 0)
         }
         let hasEnded = steps.contains { $0.status.hasEnded }
         let columns = (hasEnded ? [Column.ended] : []) + (0..<((wave.values.max() ?? -1) + 1)).map(Column.wave)

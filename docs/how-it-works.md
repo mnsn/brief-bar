@@ -1317,6 +1317,41 @@ Idle's is in one list, by when it was created, the newest or the oldest first, a
 its age. Idle's, folded below it, are in the same order; Done's, closed already, stay the latest first.
 Counts, the brief, notifications, widgets and lists by state stay by status.
 
+**Changing a mission yourself.** With Pull Request Order on, an Azure DevOps pull request's **Mission** menu, in its
+row's menu, its details and a Map node's right-click, changes where it goes By Mission (`OrderChanges`): **Set as Next
+to Merge**, one for each mission, so that what waited for nothing there waits for it; **Merge After ▸**, to check or
+uncheck what it merges after; and **Move to Mission ▸**, into another mission, named by what lasts (an order by its ID,
+a chain of branches by one of its pull requests, the pull requests opened under a session by that session), a **New
+Mission** of your own, or **Not in a Mission**. A stacked branch is a fact: it counts wherever it leads, in a session's
+order and from one mission to another, where the Map puts the pull request a wave on and says where the other is; only
+retargeting changes it, and Set as Next waits for the one it's stacked on to merge and for the retarget. Then come your
+changes, then sessions' orders: an order's line that would go round with them is set aside and says so, also when it
+goes round through another mission, such as with what you set as next there. Two orders that put the same pull requests
+the other way round each keep their own, and both say so, for you to check the order. Your changes are a layer, kept by
+pull request and never written into an order, so sessions go on telling theirs. Each keeps the place the orders gave the
+pull request when you made it, and a session's later change wins only where it goes against yours: a revision told after
+yours that names it in another mission than the one you moved it to, takes it out of the order you moved it to or
+changed it in, or puts it after what you took away, or after anything where you set it as next, also in a stack, a chain
+or a session's pull requests that it takes it out of, shows instead, says so, and **Put Yours Back** makes yours hold
+again. One that moves it toward yours, such as an order taking out what you moved out of it, naming what you moved into
+its mission, or naming as you had them what you changed among a stack's, a chain's or a session's pull requests, where
+what you set there goes over to that order (your next only while no other of yours is next there, and back to where you
+set it once the order no longer names it), or one that changes what you didn't, becomes what yours replaced, and yours
+holds; so does telling the same order again, or as it was when you made yours, whatever it said between, and a revision
+told before yours that BriefBar saw only after. An order forgotten since is no change. One limit: an order that takes in
+only the one you set as next among a stack's, a chain's or a session's pull requests takes your next with it, and the
+others wait for it only where they're stacked on it, with no note, as BriefBar doesn't keep which were with it when you
+set it. A row with no order known shows a quiet ✎ where your change says something of it, such as that you moved it
+there, or that the order you set it as next in is gone; and one beside an order that doesn't name it, stacked with its
+pull requests, shows your change as any row does: what you put it after, with ✎, that the mission you set it as next in
+is gone, or that an order went against it, with Put Yours Back. **Undo** takes back your last change, in memory only,
+and shows in the card you made it in, or at the top of the list once that card is gone; a change BriefBar refuses says
+why beside it. BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never titles,
+those about a pull request sent to you in a chat in memory only; at most 500, refusing more rather than dropping one;
+each until two weeks after BriefBar saw its pull requests merge or close. Turning a source off forgets those about its
+pull requests, turning Pull Request Order off keeps them, unused, and **Forget All Orders…** forgets them. Nothing goes
+to Azure DevOps.
+
 ### A pull request's details
 
 A click on a pull request on the window's page shows its details beside the list, or over it when the page is narrower

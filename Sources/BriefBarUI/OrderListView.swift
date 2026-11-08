@@ -42,7 +42,7 @@ package struct MissionCard: View {
         let mine = mission.steps(of: kinds)
         let folded = mine.filter { $0.status == .merged || $0.status == .closed }
         let shown = showsFolded ? mine : mine.filter { $0.status != .merged && $0.status != .closed }
-        let gutter = mission.isFamily ? nil : OrderGutter(shown)
+        let gutter = mission.hasOrder ? OrderGutter(shown) : nil
         let width = gutter.map { OrderGutterRowView.width(lanes: $0.laneCount, scale: textScale) } ?? 0
         VStack(alignment: .leading, spacing: 6) {
             MissionHeader(mission: mission, order: order, place: place)
@@ -60,6 +60,12 @@ package struct MissionCard: View {
                 let attached = mission.attached.filter { kinds.contains($0.ref.kind) }
                 if !attached.isEmpty {
                     attachedRows(attached, width: width)
+                }
+                if order.said.contains(where: { $0.mission == mission.key }) {
+                    OrderUndoLine(order: order, in: mission.key)
+                        .padding(.leading, max(width, 6) + 8)
+                        .padding(.trailing, 12)
+                        .padding(.vertical, 6)
                 }
             }
             .padding(.vertical, 4)

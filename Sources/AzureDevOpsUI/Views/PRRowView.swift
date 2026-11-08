@@ -34,6 +34,8 @@ struct PRRowView: View {
     var showsInWindow = false
     /// Where it stands in its mission, for its order capsule, on a window's Pull Requests page with Pull Request Order on.
     var order: OrderRowContext? = nil
+    /// Its Mission menu, and VoiceOver's actions for it, on a window's Pull Requests page with Pull Request Order on.
+    var mission: MissionMenuContext? = nil
     /// Opens it in Azure DevOps.
     var action: () -> Void
 
@@ -73,6 +75,7 @@ struct PRRowView: View {
                     SummarizeMenuItems(item.key.linkRef, divided: false)
                     if let open = order?.open { Button("Show Its Mission", action: open) }
                 }
+                .missionActions(item.key.linkRef, context: mission)
                 RowSummary(subject: item.key.linkRef)
                     .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
                     .padding(.trailing, 8)
@@ -186,7 +189,7 @@ struct PRRowView: View {
     }
 
     private var additionalMenuItems: some View {
-        PullRequestMenuItems(item: item, openSource: openSource, dismiss: dismiss, stopWatching: stopWatching)
+        PullRequestMenuItems(item: item, openSource: openSource, dismiss: dismiss, stopWatching: stopWatching, mission: mission)
     }
 
     private var compactLine: String {

@@ -67,6 +67,13 @@ package struct MissionsBody: View {
         let rest = listed.filter { !Self.isIn(missions, $0) }
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 18) {
+                // What you changed last, and why BriefBar didn't make a change, when no mission's card here shows it, such as one
+                // you moved out of missions.
+                let shown = Set(missions.map(\.key))
+                if ordering.said.contains(where: { OrderUndoLine.shows($0, about: nil, in: nil, outside: shown) }) {
+                    OrderUndoLine(order: ordering, outside: shown)
+                        .padding(.horizontal, 4)
+                }
                 if missions.isEmpty {
                     noMissions
                 }
