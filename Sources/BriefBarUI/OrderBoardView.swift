@@ -60,6 +60,8 @@ private struct BoardNotice: Equatable {
     /// The pull request it's about, and how its stage read then: once that changes, from anywhere, it's said no more.
     var ref: ItemRef
     var reading: StageReading?
+    /// Why it didn't move; false for where it still waits once it did.
+    var isRefusal = true
 }
 
 /// How wide the Board's columns are: as wide as the page allows, never narrower than their text needs, Merged narrow while
@@ -184,6 +186,8 @@ package struct OrderBoardView: View {
     let now: Date
     /// A mission's lane came into the page's sight, or left it: Apple Intelligence names the missions on screen.
     let see: (MissionKey, Bool) -> Void
+    /// How long a card a key moved is owed the keyboard's focus, for the board to draw it in its new column: ten seconds.
+    let focusWait: Duration
 
     /// The card you drag, or dragged last: only what this drag carries drops.
     @LocalState private var drag: BoardDrag?
@@ -222,7 +226,7 @@ package struct OrderBoardView: View {
         place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, shownOnTop: ItemRef?,
         setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?,
-        now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in }
+        now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in }, focusWait: Duration = .seconds(10)
     ) {
         self.board = board
         self.missions = missions
@@ -239,6 +243,7 @@ package struct OrderBoardView: View {
         self.showByStatus = showByStatus
         self.now = now
         self.see = see
+        self.focusWait = focusWait
     }
 
     package var body: some View {
@@ -612,7 +617,7 @@ package struct OrderBoardView: View {
     }
 
     private func noticeLine(_ notice: BoardNotice) -> some View {
-        StageRefusalLine.Line(text: notice.text) { self.notice = nil }
+        StageRefusalLine.Line(text: notice.text, isRefusal: notice.isRefusal) { self.notice = nil }
     }
 
     // MARK: Cells
@@ -709,7 +714,7 @@ package struct OrderBoardView: View {
             BoardCardView(
                 card: card, content: content, isNext: board.next[card.stage] == card.ref, isSelected: isSelected(card.ref),
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
-                tookFocus: { refocus.took(spot) },
+                tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
                 select: {
                     // A click gives it the keyboard's focus, which it has back once its details close, should they cover
                     // the board.
@@ -803,9 +808,10 @@ package struct OrderBoardView: View {
             notice = nil
             // Its Undo is beside its mission in the details while they cover the board.
             setAsNext(card.ref, mission, isEnabled ? .onBoard(board.mode) : .details)
-            // Another mission's order that holds it too keeps it waiting: the lane says where, as VoiceOver hears it.
-            if let still = BoardText.stillWaits(card.ref, besides: mission, in: order.missions, names: order.names) {
-                say(still, about: card.ref, in: lane)
+            // Another mission's order that holds it too keeps it waiting: the lane says where, and what frees it, as
+            // VoiceOver hears it; not where BriefBar refused the change, which says why itself.
+            if let still = order.stillWaits(card.ref, nextIn: mission) {
+                say(still, about: card.ref, in: lane, isRefusal: false)
             }
         case .stays:
             return false
@@ -815,28 +821,43 @@ package struct OrderBoardView: View {
             say(why, about: card.ref, in: lane)
             return false
         }
-        if keepsFocus { keepFocus(on: CardSpot(lane: lane, ref: card.ref)) }
+        if keepsFocus { keepFocus(on: CardSpot(lane: lane, ref: card.ref), leaving: card.stage) }
         return true
     }
 
-    /// Why a card didn't move, under its lane until its stage changes; and while the details cover the board, which hides
-    /// that line, under its stage in them.
-    private func say(_ why: String, about ref: ItemRef, in lane: BoardLane.Kind) {
+    /// Why a card didn't move, or where it still waits once it did, under its lane until its stage changes; and while the
+    /// details cover the board, which hides that line, under its stage in them.
+    private func say(_ why: String, about ref: ItemRef, in lane: BoardLane.Kind, isRefusal: Bool = true) {
         let reading = order.stage(of: ref)
-        notice = BoardNotice(lane: lane, text: why, ref: ref, reading: reading)
+        notice = BoardNotice(lane: lane, text: why, ref: ref, reading: reading, isRefusal: isRefusal)
         if !isEnabled, let reading {
-            order.stageRefusal = StageRefusal(ref: ref, why: why, reading: reading)
+            order.stageRefusal = StageRefusal(ref: ref, why: why, reading: reading, isRefusal: isRefusal)
         }
     }
 
-    /// The card keeps the keyboard's focus in its new column: drawn anew there once the board has its new stage, it takes it
-    /// as it appears. Should it not be drawn anew, as when nothing changed, it still has it, and isn't owed it later.
-    private func keepFocus(on spot: CardSpot) {
+    /// The card keeps the keyboard's focus as a move takes it to another column: drawn anew there, it takes the focus back
+    /// as it appears, however long the board takes to draw it, unless another card, or a field you type in, has it by then.
+    /// One the move leaves in its column, as one that still waits, isn't drawn anew and keeps it; one the move takes off the
+    /// board has nowhere to take it back: neither is owed it. Should the board not draw it in its new column within ten
+    /// seconds, as in a lane you fold, it isn't owed it later.
+    private func keepFocus(on spot: CardSpot, leaving column: PullRequestStage) {
+        guard Self.owesFocus(after: order.stage(of: spot.ref), leaving: column) else {
+            refocus.took(spot)
+            return
+        }
         let move = refocus.owe(spot)
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1))
+        Task { @MainActor [focusWait] in
+            try? await Task.sleep(for: focusWait)
             refocus.waitEnded(move)
         }
+    }
+
+    /// Whether a move owes its card the keyboard's focus: where it takes it to another column of the board, where it's
+    /// drawn anew. Not one it leaves in its column, as one that still waits, which keeps it, nor one it takes off the board.
+    /// - Parameter reading: its stage once moved.
+    package static func owesFocus(after reading: StageReading?, leaving column: PullRequestStage) -> Bool {
+        guard let reading else { return false }
+        return reading.isOnBoard && reading.stage != column
     }
 
     private func reveal(_ stage: PullRequestStage?, with proxy: ScrollViewProxy) {
@@ -889,6 +910,8 @@ private struct BoardCardView: View {
     /// Drawn anew in another column by a move it made with the keyboard's focus: it takes the focus back as it appears.
     let takesFocus: Bool
     let tookFocus: () -> Void
+    /// Whether it may take the focus back now: not from a field you type in.
+    let mayTakeFocus: () -> Bool
     let select: () -> Void
     /// The drag's payload, as it starts.
     let drag: () -> String
@@ -952,8 +975,12 @@ private struct BoardCardView: View {
             .onAppear {
                 guard takesFocus else { return }
                 tookFocus()
-                // Once this update is done, which also takes its old card away, and the focus with it.
-                DispatchQueue.main.async { focus.wrappedValue = spot }
+                // Once this update is done, which also takes its old card away, and the focus with it: unless another card,
+                // or a field you type in, took the keyboard while the board drew it here.
+                DispatchQueue.main.async {
+                    guard focus.wrappedValue == nil || focus.wrappedValue == spot, mayTakeFocus() else { return }
+                    focus.wrappedValue = spot
+                }
             }
             .onKeyPress(keys: [.leftArrow, .rightArrow], phases: .down) { press in
                 // ⌘ alone, as the board's key monitor takes it while the details cover the board: ⇧⌘→ is another shortcut.

@@ -242,9 +242,10 @@ public enum StageOrder: Equatable, Sendable {
     /// whether an order names that one, this order or another: completing it before would merge it into that one's
     /// branch. Once that one merged, one still targeting its branch holds until it's retargeted. One that two orders put
     /// before and after another holds, until you check them.
-    public static func of(_ ref: ItemRef, in missions: [OrderMission]) -> StageOrder {
+    /// - Parameter names: what names the other order where two go round; never for agents, who get no mission's name.
+    public static func of(_ ref: ItemRef, in missions: [OrderMission], names: OrderNames = .none) -> StageOrder {
         let statuses = statuses(in: missions)
-        return missions.lazy.compactMap { hold(ref, in: $0, statuses: statuses) }.first ?? .free
+        return missions.lazy.compactMap { hold(ref, in: $0, statuses: statuses, names: names) }.first ?? .free
     }
 
     /// The missions that hold a pull request, the one `of(_:in:)` reads first: where its order puts it after one that
@@ -256,8 +257,10 @@ public enum StageOrder: Equatable, Sendable {
     }
 
     /// What one of the missions says of a pull request, as `of(_:in:)` reads each in turn: nil where it doesn't hold it.
-    public static func hold(_ ref: ItemRef, in mission: OrderMission, among missions: [OrderMission]) -> StageOrder? {
-        hold(ref, in: mission, statuses: statuses(in: missions))
+    public static func hold(
+        _ ref: ItemRef, in mission: OrderMission, among missions: [OrderMission], names: OrderNames = .none
+    ) -> StageOrder? {
+        hold(ref, in: mission, statuses: statuses(in: missions), names: names)
     }
 
     private static func statuses(in missions: [OrderMission]) -> [ItemRef: OrderStatus] {
@@ -271,12 +274,14 @@ public enum StageOrder: Equatable, Sendable {
     }
 
     /// What one mission says of merging a pull request: nil where it doesn't hold it.
-    private static func hold(_ ref: ItemRef, in mission: OrderMission, statuses: [ItemRef: OrderStatus]) -> StageOrder? {
+    private static func hold(
+        _ ref: ItemRef, in mission: OrderMission, statuses: [ItemRef: OrderStatus], names: OrderNames = .none
+    ) -> StageOrder? {
         if let step = mission.steps.first(where: { $0.ref == ref }) {
             // Two orders put it and another in opposite orders, directly or through others' lines: neither can merge
             // first, whatever else it waits for.
             if !step.standing.needsChecking, let round = step.ordersGoRound {
-                return .holds(OrderText.note(round, of: ref))
+                return .holds(OrderText.note(round, of: ref, names: names))
             }
             switch step.standing {
             case .waiting(let open, let unknown):

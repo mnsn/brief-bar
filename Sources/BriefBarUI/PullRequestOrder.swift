@@ -703,17 +703,26 @@ package final class PullRequestOrder: ObservableObject {
     /// Changes a mission as you asked, from a pull request's Mission menu or a mission's ⋯, and says what you did, for its
     /// Undo line and for VoiceOver; or, refused, why, beside your last change's Undo, and changes nothing. Nil when there was
     /// nothing to change.
+    /// - Parameter card: the mission whose card you asked in, where its pull request is in two; nil for the first that has
+    ///   it.
     @discardableResult
-    package func change(_ edit: OrderEdit) -> OrderLastChange? {
+    package func change(_ edit: OrderEdit, in card: MissionKey? = nil) -> OrderLastChange? {
         guard isOn else { return nil }
         // Against the orders as agents last told them, though BriefBar hasn't heard yet: a revision told before your change
         // is what it replaced, not one that goes against it.
         reloadOrders()
         let before = Set(missions.map(\.key))
-        // The card you move a pull request from, as it was, for its Undo line: a chain named by one you move goes on by
-        // another of its own.
+        // The card you move a pull request from, or take back or put back your change to it in, as it was, for its Undo
+        // line: a chain named by one you move goes on by another of its own.
         var source: OrderMission?
-        if case .move(_, _, let from?) = edit { source = missions.first { $0.key == from } }
+        switch edit {
+        case .move(_, _, let from?):
+            source = missions.first { $0.key == from }
+        case .undo(let ref), .putBack(let ref):
+            source = missions.first { $0.key == card && $0.contains(ref) } ?? OrderBoard.mission(of: ref, in: missions)
+        default:
+            break
+        }
         var changed = changes
         let touched: [ItemRef: OrderChange?]
         do {
@@ -746,6 +755,13 @@ package final class PullRequestOrder: ObservableObject {
         return last
     }
 
+    /// Where a pull request you set as next to merge in a mission still waits, as another mission's order holds it too, and
+    /// what frees it (`BoardText.stillWaits`): nil unless it's next there now, as a change BriefBar refused leaves it.
+    package func stillWaits(_ ref: ItemRef, nextIn mission: MissionKey) -> String? {
+        guard let change = changes[ref], change.first == mission, change.holds(in: orders) else { return nil }
+        return BoardText.stillWaits(ref, besides: mission, in: missions, names: names)
+    }
+
     /// × beside why BriefBar didn't make a change: it goes.
     package func dismissRefusal() {
         refusal = nil
@@ -757,24 +773,27 @@ package final class PullRequestOrder: ObservableObject {
         [refusal, lastOrderChange].compactMap { $0 }
     }
 
-    /// The mission whose card shows what an edit did, so that Undo is where you are: the one you changed it in, else where
-    /// its pull request is now. For a Move, the one you moved it from, also once a chain named by what you moved goes on by
-    /// another of its own, else none, for the top of the list: never the card it went to, which can be out of sight.
-    /// - Parameter source: the card you moved it from, as it was before the Move.
+    /// The mission whose card shows what an edit did, so that Undo is where you are: the one you changed it in. For a Move,
+    /// the one you moved it from, and for Undo Your Changes to It and Put Yours Back, the one it was in as you chose it, also
+    /// once a chain named by what you moved goes on by another of its own, else none, for the top of the list: never the
+    /// card it went to, which can be out of sight. Else where its pull request is now.
+    /// - Parameter source: the card you moved it from, or took back or put back your change to it in, as it was before.
     private func cardMission(for edit: OrderEdit, source: OrderMission? = nil) -> MissionKey? {
+        func shown(_ key: MissionKey, besides refs: [ItemRef]) -> MissionKey? {
+            if missions.contains(where: { $0.key == key }) { return key }
+            guard case .chain = key, let source else { return nil }
+            let stayed = Set(source.steps.map(\.ref)).subtracting(refs)
+            return missions.first { $0.kind == .stack && $0.steps.contains { stayed.contains($0.ref) } }?.key
+        }
         switch edit {
         case .undoMission(let key):
             return missions.contains { $0.key == key } ? key : nil
         case .move(let refs, _, let from):
-            guard let from else { return nil }
-            if missions.contains(where: { $0.key == from }) { return from }
-            guard case .chain = from, let source else { return nil }
-            let stayed = Set(source.steps.map(\.ref)).subtracting(refs)
-            return missions.first { $0.kind == .stack && $0.steps.contains { stayed.contains($0.ref) } }?.key
+            return from.flatMap { shown($0, besides: refs) }
+        case .undo(let ref), .putBack(let ref):
+            return source.flatMap { shown($0.key, besides: [ref]) }
         case .setNext(_, let key, _), .mergeAfter(_, _, let key, _):
             if missions.contains(where: { $0.key == key }) { return key }
-        case .undo, .putBack:
-            break
         }
         if let ref = edit.refs.first, let mission = OrderBoard.mission(of: ref, in: missions) { return mission.key }
         return nil
@@ -874,7 +893,11 @@ package final class PullRequestOrder: ObservableObject {
             orders = saved
         }
         var changes = changes
-        if !changes.removeFinished(evidence: evidence, now: date).isEmpty { keep(changes) }
+        var tidied = !changes.removeFinished(evidence: evidence, now: date).isEmpty
+        // Where orders BriefBar no longer keeps put pull requests, and those sent to you only in a chat that no order it keeps
+        // names anymore: references that would outlast everything else BriefBar keeps of them.
+        if changes.forgetPlaces(besides: orders, chatOnly: sentInChats) { tidied = true }
+        if tidied { keep(changes) }
         // The mission you focus on goes once its order finished, or, for one of your own, once no change of yours puts a
         // pull request in it, as Undo or time can take them, and Undo wouldn't bring it back: its name waits as long.
         var isMine = false
@@ -1230,6 +1253,8 @@ package final class PullRequestOrder: ObservableObject {
         let all = stageFacts
         stagedKinds = Set(all.keys.map(\.kind))
         let sessionsOn = sessionsOnPullRequests()
+        // What names an order where two go round, as its mission's header does: only for what this Mac shows.
+        let names = self.names
         var readings: [ItemRef: StageReading] = [:]
         var changed = false
         for (ref, facts) in all {
@@ -1250,7 +1275,7 @@ package final class PullRequestOrder: ObservableObject {
             }
             guard facts.isListed else { continue }
             marksInMemory[ref]?.listedAt = now()
-            let order = StageOrder.of(ref, in: missions)
+            let order = StageOrder.of(ref, in: missions, names: names)
             if let reading = StageRules.reading(facts: facts, sessions: sessions, marks: [mine].compactMap { $0 }, order: order) {
                 readings[ref] = reading
             }

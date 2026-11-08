@@ -17,11 +17,40 @@ import Testing
         override var isKeyWindow: Bool { true }
     }
 
-    /// Where the card's content is drawn, in the window's content view, and how often it was asked to show its details.
+    /// Where the card's content is drawn, in the window's content view, in which column, and how often it was asked to show
+    /// its details.
     @MainActor
     private final class Drawn {
+        /// The last card's drawn, which is the card's where there's one.
         var frame: CGRect?
+        var frames: [ItemRef: CGRect] = [:]
+        var columns: [ItemRef: PullRequestStage] = [:]
+        /// How many of each card's are drawn: two for a moment as it moves.
+        var views: [ItemRef: Int] = [:]
         var shown = 0
+
+        func draw(_ ref: ItemRef, in column: PullRequestStage, at frame: CGRect) {
+            self.frame = frame
+            frames[ref] = frame
+            columns[ref] = column
+        }
+
+        func isDrawn(_ ref: ItemRef) -> Bool {
+            views[ref, default: 0] > 0
+        }
+    }
+
+    /// The column the Board doesn't draw cards in until the test lets it: as a busy Mac draws a moved card in its new column
+    /// late.
+    @MainActor
+    private final class Late: ObservableObject {
+        @Published var column: PullRequestStage?
+
+        /// The Board draws its cards at last, as it does anew when the order it watches changes.
+        func release(redrawing order: PullRequestOrder) {
+            column = nil
+            order.objectWillChange.send()
+        }
     }
 
     /// The details a click shows: on a narrow page, or at a bigger text size, over the Board, which they disable then, as
@@ -33,9 +62,12 @@ import Testing
         @Published var hasPageOver = false
         /// They go over the Board, rather than beside it.
         let covers: Bool
+        /// Beside the Board, they have a field to type in too.
+        let hasField: Bool
 
-        init(covers: Bool = false) {
+        init(covers: Bool = false, hasField: Bool = false) {
             self.covers = covers
+            self.hasField = hasField
         }
     }
 
@@ -43,7 +75,9 @@ import Testing
     private struct Board: View {
         @ObservedObject var order: PullRequestOrder
         @ObservedObject var details: Details
+        @ObservedObject var late: Late
         let drawn: Drawn
+        let focusWait: Duration
 
         var body: some View {
             let kinds: Set<ItemRef.Kind> = [.pullRequest]
@@ -51,10 +85,15 @@ import Testing
             OrderBoardView(
                 board: order.board(kinds: kinds), missions: MissionsBody.missions(order.missions, kinds: kinds), order: order,
                 elsewhere: "GitHub", openElsewhere: nil, place: { _ in nil },
-                card: { [drawn] card in
+                card: { [drawn, late] card in
+                    guard card.stage != late.column else { return nil }
                     let label = "\(card.ref.shortOrderLabel) Totals"
                     let content = Text(label)
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { drawn.frame = $0 }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                            drawn.draw(card.ref, in: card.stage, at: $0)
+                        }
+                        .onAppear { drawn.views[card.ref, default: 0] += 1 }
+                        .onDisappear { drawn.views[card.ref, default: 0] -= 1 }
                     return BoardCardContent(view: AnyView(content), menu: AnyView(EmptyView()), label: label)
                 },
                 isSelected: { [details] in details.shown == $0 },
@@ -63,11 +102,12 @@ import Testing
                     details.shown = ref
                 },
                 shownOnTop: details.hasPageOver ? nil : details.shown,
-                setAsNext: nil, notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000)
+                setAsNext: nil, notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000),
+                focusWait: focusWait
             )
             .disabled(covered)
             .overlay(alignment: .topTrailing) {
-                if covered {
+                if covered || details.hasField && details.shown != nil {
                     TextField("Reply", text: .constant(""))
                         .frame(width: 200)
                 }
@@ -96,7 +136,8 @@ import Testing
     }
 
     /// Pull Request Order, on, with a session's order of !4101, then !4102 after it, which can complete: it waits.
-    private static func ordered() throws -> PullRequestOrder {
+    /// - Parameter firstFails: !4101's build failed: it's In progress, which ⌘→ moves to Your review.
+    private static func ordered(firstFails: Bool = false) throws -> PullRequestOrder {
         let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
         var orders = DeclaredOrders()
@@ -114,7 +155,8 @@ import Testing
                 )
             },
             stages: [
-                .pullRequest(organization: "contoso", number: 4101): StageFacts(role: .author),
+                .pullRequest(organization: "contoso", number: 4101):
+                    firstFails ? StageFacts(role: .author, failure: "Build failed") : StageFacts(role: .author),
                 .pullRequest(organization: "contoso", number: 4102): StageFacts(role: .author, isReady: true),
             ],
             account: "robin@contoso.com"
@@ -123,13 +165,16 @@ import Testing
     }
 
     /// Shows the Board in a window while `body` runs, once its card is drawn.
+    /// - Parameter focusWait: how long a card a key moved is owed the keyboard's focus, as the app's ten seconds by default.
     private static func showing(
-        _ order: PullRequestOrder, details: Details = Details(),
+        _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(), focusWait: Duration = .seconds(10),
         _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ drawn: Drawn) async throws -> Void
     ) async throws {
         _ = NSApplication.shared
         let drawn = Drawn()
-        let host = NSHostingView(rootView: Board(order: order, details: details, drawn: drawn))
+        let host = NSHostingView(
+            rootView: Board(order: order, details: details, late: late, drawn: drawn, focusWait: focusWait)
+        )
         let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_200, height: 500), styleMask: .borderless,
                                backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -180,6 +225,137 @@ import Testing
                 Self.press(.return, in: window)
                 return drawn.shown == 2
             }
+        }
+    }
+
+    /// However long the Board takes to draw a card a key moved in its new column, as on a busy Mac, the card takes the
+    /// keyboard back once it's drawn there, so that the next key moves it on.
+    @Test func aMovedCardTakesTheKeyboardBackHoweverLongTheBoardTakesToDrawIt() async throws {
+        let order = Self.order()
+        let late = Late()
+        try await Self.showing(order, late: late) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details") { drawn.shown == 1 }
+            late.column = .yourReview
+            try await Self.pressUntil("⌘→ to move it") {
+                Self.press(.rightArrow, command: true, in: window)
+                return order.stage(of: Self.ref)?.stage == .yourReview
+            }
+            // Longer than the Board once waited for it.
+            try await Task.sleep(for: .milliseconds(1_500))
+            late.release(redrawing: order)
+            try await until("the card drawn in Your review at last") { drawn.columns[Self.ref] == .yourReview }
+            try await Self.pressUntil("⌘→ to move it on, as it has the keyboard again") {
+                Self.press(.rightArrow, command: true, in: window)
+                return order.stage(of: Self.ref)?.stage == .teammateReview
+            }
+        }
+    }
+
+    /// One the Board draws in its new column only once the move's wait ended, as in a lane you fold and unfold later, is
+    /// owed the keyboard no more: it doesn't take it.
+    @Test func aMovedCardTheBoardDrawsOnlyAfterItsWaitDoesntTakeTheKeyboard() async throws {
+        let order = Self.order()
+        let late = Late()
+        try await Self.showing(order, late: late, focusWait: .milliseconds(300)) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details") { drawn.shown == 1 }
+            late.column = .yourReview
+            try await Self.pressUntil("⌘→ to move it") {
+                Self.press(.rightArrow, command: true, in: window)
+                return order.stage(of: Self.ref)?.stage == .yourReview
+            }
+            try await Task.sleep(for: .milliseconds(800))
+            late.release(redrawing: order)
+            try await until("the card drawn in Your review") { drawn.columns[Self.ref] == .yourReview }
+            try await Task.sleep(for: .milliseconds(300))
+            Self.press(.rightArrow, command: true, in: window)
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(order.stage(of: Self.ref)?.stage == .yourReview, "The card took the keyboard once its wait had ended")
+        }
+    }
+
+    /// Once a moved card has the keyboard back, it's owed it no more: hidden and drawn anew within the move's wait, as when
+    /// you fold its lane and unfold it, it doesn't take it again.
+    @Test func aMovedCardThatTookTheKeyboardBackIsntOwedItAgain() async throws {
+        let order = Self.order()
+        let late = Late()
+        try await Self.showing(order, late: late) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details") { drawn.shown == 1 }
+            try await Self.move(.rightArrow, to: .yourReview, "⌘→ to move it", order: order, drawn: drawn, in: window)
+            try await Self.pressUntil("Return on the card, which has the keyboard back") {
+                Self.press(.return, in: window)
+                return drawn.shown == 2
+            }
+            late.column = .yourReview
+            order.objectWillChange.send()
+            try await until("the card hidden") { !drawn.isDrawn(Self.ref) }
+            late.release(redrawing: order)
+            try await until("the card drawn again") { drawn.isDrawn(Self.ref) }
+            try await Task.sleep(for: .milliseconds(300))
+            Self.press(.return, in: window)
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(drawn.shown == 2, "The card took the keyboard again")
+        }
+    }
+
+    /// A card a key moved doesn't take the keyboard back from a field you went to while the Board drew it in its new column.
+    @Test func aMovedCardDrawnLateLeavesTheKeyboardToAFieldYouWentTo() async throws {
+        let order = Self.order()
+        let details = Details(hasField: true)
+        let late = Late()
+        try await Self.showing(order, details: details, late: late) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details, and a field beside them") {
+                Self.first(NSTextField.self, in: host) != nil
+            }
+            late.column = .yourReview
+            try await Self.pressUntil("⌘→ to move it") {
+                Self.press(.rightArrow, command: true, in: window)
+                return order.stage(of: Self.ref)?.stage == .yourReview
+            }
+            let field = try #require(Self.first(NSTextField.self, in: host))
+            #expect(window.makeFirstResponder(field))
+            late.release(redrawing: order)
+            try await until("the card drawn in Your review") { drawn.columns[Self.ref] == .yourReview }
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(window.firstResponder is NSText, "The card took the keyboard from the field")
+        }
+    }
+
+    /// Nor from another card you went to meanwhile, which Return shows the details of still.
+    @Test func aMovedCardDrawnLateLeavesTheKeyboardToAnotherCardYouWentTo() async throws {
+        let order = try Self.ordered(firstFails: true)
+        let moved = ItemRef.pullRequest(organization: "contoso", number: 4101)
+        let waits = ItemRef.pullRequest(organization: "contoso", number: 4102)
+        #expect(order.stage(of: moved)?.stage == .inProgress && order.stage(of: waits)?.stage == .waits)
+        let details = Details()
+        let late = Late()
+        try await Self.showing(order, details: details, late: late) { window, host, drawn in
+            try await until("both cards") { drawn.frames[moved] != nil && drawn.frames[waits] != nil }
+            Self.click(at: try #require(drawn.frames[moved]), in: host)
+            try await until("the click to show its details") { details.shown == moved }
+            late.column = .yourReview
+            try await Self.pressUntil("⌘→ to move it") {
+                Self.press(.rightArrow, command: true, in: window)
+                return order.stage(of: moved)?.stage == .yourReview
+            }
+            Self.click(at: try #require(drawn.frames[waits]), in: host)
+            try await until("the click on the other card to show its details") { details.shown == waits }
+            // Return shows the details of the card that has the keyboard: the other one, which the click gave it.
+            details.shown = nil
+            try await Self.pressUntil("Return on the other card") {
+                Self.press(.return, in: window)
+                return details.shown == waits
+            }
+            late.release(redrawing: order)
+            try await until("the moved card drawn in Your review") { drawn.columns[moved] == .yourReview }
+            try await Task.sleep(for: .milliseconds(300))
+            details.shown = nil
+            Self.press(.return, in: window)
+            try await until("Return to show the details of the card that has the keyboard") { details.shown != nil }
+            #expect(details.shown == waits, "The moved card took the keyboard from the one you went to")
         }
     }
 
@@ -582,8 +758,15 @@ import Testing
             }
             #expect(order.stage(of: ref)?.stage == .waits)
             let still = try #require(BoardText.stillWaits(ref, besides: holders[0], in: order.missions, names: order.names))
-            #expect(still.hasPrefix("It still waits for !"))
+            #expect(still.hasPrefix("It still waits for !") && still.hasSuffix(": its Mission ▸ Merge After there takes that away"))
             try await until("the details to say where it still waits") { order.stageRefusal(of: ref) == still }
+            #expect(order.stageRefusal?.isRefusal == false)
+            // ⌘← again doesn't set it as next in the other, where it would only wait in the first again: it says why.
+            try await Self.pressUntil("⌘← again to say why it isn't set as next in the other") {
+                Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+                return order.stageRefusal(of: ref)?.hasPrefix("It's next to merge in ‘") == true
+            }
+            #expect(order.stageRefusal?.isRefusal == true && order.changes[ref]?.first == holders[0])
         }
     }
 
@@ -716,9 +899,11 @@ import Testing
 
     /// Keys on the card that has the keyboard's focus, pressed again until what they do is done: the card takes the
     /// focus a moment after a click, Tab, its move or its details closing, later on a busy machine, and a key before
-    /// that goes to no card. A key that reaches the card does what it does as it's pressed, so none does it twice.
-    private static func pressUntil(_ what: String, _ pressed: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+    /// that goes to no card. A key that reaches the card does what it does as it's pressed, so none does it twice. Only for
+    /// a short while from when the card can have the keys, as once it's drawn anew or its details close: a card that has
+    /// them back late fails, as a key you press right away would go nowhere.
+    private static func pressUntil(_ what: String, within limit: Duration = .seconds(2), _ pressed: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: limit)
         while !pressed() {
             guard ContinuousClock.now < deadline else { throw TestError("Timed out waiting for \(what)") }
             try await Task.sleep(for: .milliseconds(50))

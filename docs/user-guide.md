@@ -358,7 +358,8 @@ Tab to it, and press **⌘→** or **⌘←**, to change its stage, which says s
 once the card leaves the board. Drag one from **Waits** onto **Can merge**, or press **⌘←** on it there, to set it as
 next to merge in its lane's mission, where it waits; in another mission's lane, it says where it waits. Where another
 mission's order holds it too, it still waits, and its lane says what for, and where: the **Merge After** of its
-**Mission** menu in that mission's lane takes that away. Where its details cover the Board, in a narrow window or with
+**Mission** menu in that mission's lane, or of its card's with **Lanes: None**, takes that away; the Board doesn't set it
+as next there too, which would only have it wait in the first again. Where its details cover the Board, in a narrow window or with
 bigger text, ⌘→ and ⌘← move the pull request they show, or say under its stage why it can't move, but not from a page
 over the details or a file's page; the card has the keyboard again once they close. While you drag, the columns that
 take it light up, and those that don't say why: only Azure DevOps decides that a pull request can merge or merged, its
