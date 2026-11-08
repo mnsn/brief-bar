@@ -67,13 +67,38 @@ enum BuildCopilot {
     }
 
     /// Its line: "Copilot is fixing this build in the ‘Fix the Build’ task · 9m", with the step it's at, or what Copilot
-    /// said as it ended under it; a click opens where it works, when something can.
-    static func workLine(_ work: CopilotWork, names: CopilotSessionNames, now: Date, navigation: ItemNavigation?) -> some View {
+    /// said as it ended under it; a click opens where it works, when something can; ⋯ has what can be done about it.
+    static func workLine(
+        _ work: CopilotWork, names: CopilotSessionNames, now: Date, navigation: ItemNavigation?, actions: CopilotLineActions
+    ) -> some View {
         let look = work.look
         return CopilotWorkLine(
             symbol: look.symbol, text: names.sentence(work), state: look.state, since: work.since, now: now, subtitle: work.step,
-            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation)
+            detail: work.said, open: names.opener(work.session, isTask: work.isTask, navigation: navigation), actions: actions
         )
+    }
+
+    /// The composer in place that shows on an open build, of the one open on it: only while what shows of its run is of
+    /// the run as its check and pull request are now (`BuildInvestigationStore.current`), so that what it sends, a fix Try
+    /// Again sends as it opens included, quotes the run as it is, not the attempt before, which shows while it's read
+    /// again, as after its failed jobs ran again under the same ID. Till then, one that Try Again opened, from the build's
+    /// row while it was closed, waits for the read, with what it asked (`CopilotDrafts.retries`).
+    static func composer(_ asking: CopilotAsk?, isCurrent: Bool) -> CopilotAsk? {
+        isCurrent ? asking : nil
+    }
+
+    /// Try Again, from its line's menu: Fix's composer on its row, with the words the fix that failed or stopped went with,
+    /// which sends them again, where that fix went, as it opens, if it can go: once the build is open, and its run read.
+    /// One that's open already has to open anew (`CopilotComposerID`).
+    static func tryAgain(
+        _ work: CopilotWork, on line: PullRequestPanel.CheckLine, of key: PRKey, names: CopilotSessionNames, drafts: CopilotDrafts,
+        composing: Binding<CopilotComposing?>
+    ) {
+        guard let part = line.check?.part else { return }
+        let composer = CopilotComposing(part: part, ask: .fix, row: line.id)
+        let words = names.copilot.retryWords(for: work, of: key)
+        drafts.retry(composer, words: words, to: names.retryDestination(of: work))
+        composing.wrappedValue = composer
     }
 
     /// While a session explains why it failed: "Copilot is explaining the failure in ‘Retry backoff’ · 12s", what you
@@ -106,6 +131,9 @@ struct BuildWorkLine: View {
     let now: Date
     /// The build is open, its run read, and says them there.
     let isOpen: Bool
+    /// The composer in place that's open in the builds and checks, which Try Again opens, on the build's row, once it's open.
+    @Binding var composing: CopilotComposing?
+    let drafts: CopilotDrafts
     /// Opens the build, at what a session said.
     let show: () -> Void
 
@@ -114,28 +142,43 @@ struct BuildWorkLine: View {
     @EnvironmentObject private var questions: CopilotQuestions
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.copilotActionsPreview) private var preview
+    @Environment(\.isRendering) private var isRendering
+    @EnvironmentObject private var store: PRStore
+
+    /// Why BriefBar didn't stop what Copilot is at on it itself, until you close it.
+    @LocalState private var stopNote: String?
 
     private var names: CopilotSessionNames {
         CopilotSessionNames(session: sessions.session(for: item.key), copilot: copilot, links: sessions.links)
+    }
+
+    /// Fix is for your own pull requests, as Fix the Build is, while it's open, and Send Work to Copilot is on.
+    private var canFix: Bool {
+        guard copilot.isOn, copilot.canSend || copilot.mode == .demo, let record = store.record(for: item.key) else { return false }
+        return record.role == .author && record.pullRequest.status == .active
     }
 
     var body: some View {
         let work = BuildCopilot.work(on: line, of: item.key, copilot: copilot, preview: preview)
         let question = copilot.isOn ? BuildCopilot.question(about: line, run: line.buildId, of: item.key, questions: questions, preview: preview) : nil
         let shown = isOpen ? nil : Shown(work: work, question: question)
+        let note = isOpen ? nil : stopNote
         VStack(alignment: .leading, spacing: 6) {
             if let shown {
                 if let question = shown.question {
                     questionLine(question)
                 }
                 if let work = shown.work {
-                    BuildCopilot.workLine(work, names: names, now: now, navigation: navigation)
+                    BuildCopilot.workLine(work, names: names, now: now, navigation: navigation, actions: actions(work))
                 }
+            }
+            if let note {
+                CopilotCopiedNote(note: note, symbol: "stop.circle") { stopNote = nil }
             }
         }
         // Under its name and status.
         .padding(.leading, 24)
-        .padding(.top, shown?.isEmpty == false ? 6 : 0)
+        .padding(.top, shown?.isEmpty == false || note != nil ? 6 : 0)
         // VoiceOver hears what became of them as it happens, wherever they are: not what shows as they're read. Once, though
         // the build shows in more than one place, or on two rows, as when two policies run its pipeline.
         .onChange(of: work?.state) { old, state in
@@ -166,6 +209,21 @@ struct BuildWorkLine: View {
                 once: .init(pullRequest: item.key, part: part, run: line.buildId, said: said, since: question.endedAt ?? question.askedAt)
             )
         }
+    }
+
+    /// What its line's menu does: Try Again opens the build, and its Fix composer there, which sends the fix again: only for
+    /// a failed build that opens, whose run, once read, offers Fix.
+    private func actions(_ work: CopilotWork) -> CopilotLineActions {
+        guard let part = line.check?.part else { return CopilotLineActions() }
+        let names = names
+        let opensToFix = line.canInvestigate && line.check?.state == .failed
+        let tryAgain: (() -> Void)? = canFix && opensToFix ? { [line, item, drafts, show] in
+            BuildCopilot.tryAgain(work, on: line, of: item.key, names: names, drafts: drafts, composing: $composing)
+            show()
+        } : nil
+        return names.lineActions(
+            for: work, about: part, of: item.key, isRendering: isRendering, tryAgain: tryAgain, stopped: { stopNote = $0 }
+        )
     }
 
     /// What its line shows, as the build's run would: a session explaining it, then nothing else; what it answered, or why it
@@ -246,10 +304,15 @@ struct BuildCopilotActions<Trailing: View>: View {
     @EnvironmentObject private var investigations: BuildInvestigationStore
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.copilotActionsPreview) private var preview
+    @Environment(\.isRendering) private var isRendering
 
     /// What BriefBar said once it copied a prompt for you to paste, until you close it.
     @LocalState private var copied: String?
+    /// Why BriefBar didn't stop what Copilot is at on it itself, until you close it.
+    @LocalState private var stopNote: String?
     @LocalState private var isAskingInSession = false
+    /// How many times Try Again opened its composer: one open already opens anew, to send again.
+    @LocalState private var tries = 0
     /// Explain or Fix, for the keyboard's focus to go back to once its composer closes.
     @FocusState private var focused: CopilotAsk?
 
@@ -316,13 +379,16 @@ struct BuildCopilotActions<Trailing: View>: View {
                 }
                 // Not while a session explains it, as on a comment.
                 if let work, question?.isAsking != true {
-                    BuildCopilot.workLine(work, names: names, now: now, navigation: navigation)
+                    BuildCopilot.workLine(work, names: names, now: now, navigation: navigation, actions: actions(work))
                 }
                 if let copied {
                     CopilotCopiedNote(note: copied) { self.copied = nil }
                 }
+                if let stopNote {
+                    CopilotCopiedNote(note: stopNote, symbol: "stop.circle") { self.stopNote = nil }
+                }
                 if canAct {
-                    if let asking, let part {
+                    if let asking = BuildCopilot.composer(asking, isCurrent: isCurrent), let part {
                         BuildComposer(
                             ask: asking, line: line, part: part, investigation: investigation, attempt: attempt, item: item,
                             worked: work?.session, drafts: drafts, answer: question?.answer, preview: preview?.composer(about: part),
@@ -331,10 +397,13 @@ struct BuildCopilotActions<Trailing: View>: View {
                             if case .copied(let note)? = result { copied = note }
                             close(asking)
                         }
-                        // A new composer for each, with its own words and where it goes.
-                        .id(asking)
+                        // A new composer for each, with its own words and where it goes, and for each Try Again.
+                        .id(CopilotComposerID(ask: asking, tries: tries))
                     } else {
-                        buttons(hasAnswer: question?.answer != nil)
+                        buttons(
+                            hasAnswer: question?.answer != nil,
+                            isFixing: preview == nil ? part.map { copilot.isFixing($0, of: item.key) } == true : work?.isFixing == true
+                        )
                     }
                 }
             }
@@ -362,7 +431,8 @@ struct BuildCopilotActions<Trailing: View>: View {
         }
     }
 
-    private func buttons(hasAnswer: Bool) -> some View {
+    /// Explain the Failure and Fix; not Fix while Copilot fixes it, or pushes its fix: its line's menu stops that.
+    private func buttons(hasAnswer: Bool, isFixing: Bool) -> some View {
         let nobody = hasNobodyToAsk
         let explainTitle: String = hasAnswer ? "Ask More" : CopilotAsk.explain.title(about: part)
         return HStack(spacing: 8) {
@@ -375,7 +445,7 @@ struct BuildCopilotActions<Trailing: View>: View {
             .focused($focused, equals: .explain)
             .disabled(nobody || !isCurrent)
             .help(isCurrent ? explainHelp(nobody: nobody, hasAnswer: hasAnswer) : BuildCopilot.notCurrentHelp)
-            if canFix {
+            if canFix, !isFixing {
                 Button {
                     open(.fix)
                 } label: {
@@ -407,16 +477,36 @@ struct BuildCopilotActions<Trailing: View>: View {
         return "Ask the Copilot session that worked on it why this build failed, and whether it's this change, a flaky test or the build's infrastructure"
     }
 
-    /// Opens its composer, closing any other in the details, whose words stay for when it opens again.
+    /// Opens its composer, closing any other in the details, whose words stay for when it opens again: for you to send, not
+    /// what Try Again asked of it before.
     private func open(_ ask: CopilotAsk) {
         guard let part else { return }
         copied = nil
-        composing = CopilotComposing(part: part, ask: ask, row: line.id)
+        stopNote = nil
+        let composer = CopilotComposing(part: part, ask: ask, row: line.id)
+        drafts.retries[composer] = nil
+        composing = composer
+    }
+
+    /// What its line's menu does: Try Again opens Fix's composer, anew, which sends the fix again, while you can fix it.
+    private func actions(_ work: CopilotWork) -> CopilotLineActions {
+        guard let part else { return CopilotLineActions() }
+        let names = names
+        let tryAgain: (() -> Void)? = canAct && canFix && isCurrent ? { [line, item, drafts] in
+            copied = nil
+            stopNote = nil
+            BuildCopilot.tryAgain(work, on: line, of: item.key, names: names, drafts: drafts, composing: $composing)
+            tries += 1
+        } : nil
+        return names.lineActions(
+            for: work, about: part, of: item.key, isRendering: isRendering, tryAgain: tryAgain, stopped: { stopNote = $0 }
+        )
     }
 
     /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
     private func close(_ ask: CopilotAsk) {
         guard let part, composing == CopilotComposing(part: part, ask: ask, row: line.id) else { return }
+        drafts.retries[CopilotComposing(part: part, ask: ask, row: line.id)] = nil
         composing = nil
         Task { @MainActor in focused = ask }
     }

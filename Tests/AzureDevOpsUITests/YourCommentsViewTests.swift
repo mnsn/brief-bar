@@ -17,7 +17,7 @@ import Testing
 /// One at a time: each draws a pull request's comments, which on CI's busy runner keeps the main actor busy long enough
 /// that, all at once, they kept the other tests on it waiting past their time limits.
 @MainActor
-@Suite(.serialized) struct YourCommentsViewTests {
+@Suite(.serialized, .opensNothing) struct YourCommentsViewTests {
     /// Which composer the details have open, as the test opens them.
     final class Composing: ObservableObject {
         @Published var open: CopilotComposing?

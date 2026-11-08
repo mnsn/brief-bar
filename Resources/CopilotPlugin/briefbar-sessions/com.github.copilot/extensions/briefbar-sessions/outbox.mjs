@@ -1,6 +1,6 @@
 // BriefBar's outbox, as the extension in one of the GitHub Copilot app's sessions reads it. BriefBar writes a request
-// for a session; the extension in that session claims it, sends the session its prompt or forks the session, and
-// writes the result. It's files in a private folder on this Mac, and nothing else: no network, no sockets. The
+// for a session; the extension in that session claims it, sends the session its prompt, forks the session or stops its
+// turn, and writes the result. It's files in a private folder on this Mac, and nothing else: no network, no sockets. The
 // extension never logs, echoes or keeps a prompt: it only hands it to session.send. docs/how-it-works.md describes
 // the files under "Send work to Copilot" (Sending to a session, or a fork of it), and the extension under "Its
 // extension for the app's sessions".
@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 
 export const VERSION = 1;
 /** What the extension does when BriefBar asks. */
-export const KINDS = Object.freeze(["send", "fork"]);
+export const KINDS = Object.freeze(["send", "fork", "stop"]);
 /** The largest request it reads. */
 export const MOST_BYTES = 256 * 1024;
 /** How long a request may wait to be claimed, at most. */
@@ -290,6 +290,15 @@ export function listen(session, options = {}) {
     }
 
     async function carryOut(request) {
+        if (request.kind === "stop") {
+            // As the app's own Stop: the turn that runs in the session now ends, and the session goes on as it was.
+            try {
+                await session.abort();
+            } catch {
+                return failed("stop_failed", "Copilot didn't stop the session's turn.", "stop");
+            }
+            return { ok: true, kind: "stop" };
+        }
         if (request.kind === "send") {
             let messageId;
             try {
@@ -520,13 +529,13 @@ export function checkRequest(value, { requestId, sessionId, now }) {
     if (value.version !== VERSION) throw new Refusal("invalid", `Its version isn't ${VERSION}.`, kind);
     if (value.requestId !== requestId) throw new Refusal("invalid", "Its requestId isn't the one in its name.", kind);
     if (value.sessionId !== sessionId) throw new Refusal("invalid", "It's for another session.", kind);
-    if (!kind) throw new Refusal("invalid", "Its kind isn't send or fork.");
+    if (!kind) throw new Refusal("invalid", "Its kind isn't send, fork or stop.");
     if (kind === "send") {
         if (typeof value.prompt !== "string" || value.prompt.trim() === "") {
             throw new Refusal("invalid", "A send needs a prompt.", kind);
         }
     } else if (Object.hasOwn(value, "prompt")) {
-        throw new Refusal("invalid", "A fork takes no prompt.", kind);
+        throw new Refusal("invalid", `A ${kind} takes no prompt.`, kind);
     }
     const createdAt = instant(value.createdAt);
     const expiresAt = instant(value.expiresAt);

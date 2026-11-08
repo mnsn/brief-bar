@@ -19,6 +19,52 @@ extension PullRequestAction {
         case .review: false
         }
     }
+
+    /// What it's called for a task that takes on `parts`, what it does: "Push" for a Push & Reply that replies on no thread,
+    /// as one that ships a build's fix alone; else its own title, "Push & Reply".
+    func title(taking parts: [PullRequestPart]) -> String {
+        self == .pushAndReply && !parts.contains(where: { $0.thread != nil }) ? "Push" : title
+    }
+
+    /// What a task of it is called, as its run keeps what it takes on (`CopilotRun.taken`): "Push" for a Push & Reply that
+    /// replies on no thread. One that doesn't record what it takes on replies on the threads Fix Comments lists, as it did.
+    func title(taken: [TakenPart]?) -> String {
+        guard let taken else { return title }
+        return title(taking: taken.filter { $0.ended == nil }.map(\.part))
+    }
+}
+
+extension PRReadiness.Item.Kind {
+    /// What's left that something of a pull request is: its comments, its builds or its conflicts.
+    init(_ part: PullRequestPart) {
+        switch part {
+        case .thread: self = .comments
+        case .build: self = .builds
+        case .conflicts: self = .conflicts
+        }
+    }
+}
+
+extension CopilotTaskEntry {
+    /// What's left of its pull request that it's at while it works, for What's Left to say Copilot's on it: the kinds of what
+    /// it took on and isn't done with (`taken`), such as the threads and builds a Push & Reply ships, not those an earlier
+    /// task in its session took on; for a task that doesn't record what it takes on, whatever its action takes care of.
+    /// Nothing once it's over.
+    var kindsAtWork: Set<PRReadiness.Item.Kind> {
+        guard status.phase.isActive, let action, onPullRequest != nil else { return [] }
+        guard let taken else { return Set([PRReadiness.Item.Kind.comments, .builds, .conflicts].filter(action.takesCare(of:))) }
+        return Set(taken.filter { $0.ended == nil }.map { PRReadiness.Item.Kind($0.part) })
+    }
+
+    /// What it does, by name: its action's title, "Push" for a Push & Reply that replies on no thread; nil for a work item's.
+    var actionTitle: String? {
+        action.map { $0.title(taken: taken) }
+    }
+
+    /// A Push & Reply that replies on no thread, as one that ships a build's fix alone: it only pushes.
+    var onlyPushes: Bool {
+        action == .pushAndReply && actionTitle != action?.title
+    }
 }
 
 /// What Copilot can do with a pull request, and the prompt that asks it to: for the pull requests' rows, and for agents
@@ -51,8 +97,9 @@ enum PullRequestTasks {
     /// the Build the builds that failed, Resolve Conflicts the conflicts, and Push & Reply what it ships, with the threads
     /// its prompt lists; a review, nothing.
     /// - Parameter shipping: for Push & Reply, what the fixes it ships took on, such as one session's: their threads, which
-    ///   its prompt lists alone, and their builds and conflicts. Without any, it lists the threads Fix Comments does.
-    static func parts(_ action: PullRequestAction, for record: PRRecord, shipping: [PullRequestPart] = []) -> [PullRequestPart] {
+    ///   its prompt lists alone, none for a build's fix alone, and their builds and conflicts. Nil for the threads Fix
+    ///   Comments lists, as agents' Push & Reply has it.
+    static func parts(_ action: PullRequestAction, for record: PRRecord, shipping: [PullRequestPart]? = nil) -> [PullRequestPart] {
         switch action {
         case .fixComments:
             return PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map { .thread($0.id) }
@@ -62,16 +109,16 @@ enum PullRequestTasks {
             return [.conflicts]
         case .pushAndReply:
             let threads = PullRequestPrompt.shippedThreads(record, only: shippedThreads(shipping)).prefix(PullRequestPrompt.threadLimit)
-            return threads.map { .thread($0.id) } + shipping.filter { $0.thread == nil }
+            return threads.map { .thread($0.id) } + (shipping ?? []).filter { $0.thread == nil }
         case .review:
             return []
         }
     }
 
     /// The threads a Push & Reply of these fixes ships, which its prompt lists and replies on: theirs, none for a build's
-    /// fix alone; nil, for those Fix Comments lists, without any fixes.
-    static func shippedThreads(_ shipping: [PullRequestPart]) -> [Int]? {
-        shipping.isEmpty ? nil : shipping.compactMap(\.thread)
+    /// fix alone; nil, for those Fix Comments lists, without a scope.
+    static func shippedThreads(_ shipping: [PullRequestPart]?) -> [Int]? {
+        shipping?.compactMap(\.thread)
     }
 
     /// The pull request, as a task sent to Copilot knows it.

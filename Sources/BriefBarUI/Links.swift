@@ -334,13 +334,13 @@ package final class Links: ObservableObject {
             let url = URL(string: "https://github.com/\(ref.scope)/pull/\(ref.id)")
             return LinkedItem(
                 ref: ref, label: "#\(ref.id)", title: "\(ref.scope)#\(ref.id)", symbol: "arrow.triangle.pull", color: .secondary,
-                place: ref.scope, open: url.map { url in { NSWorkspace.shared.open(url) } }
+                place: ref.scope, open: url.map { url in { ThisMac.open(url) } }
             )
         case .session:
             let url = URL(string: "ghapp://sessions/\(ref.id)")
             return LinkedItem(
                 ref: ref, label: "Session", title: "Copilot session", symbol: "waveform.path.ecg", color: .secondary,
-                open: url.map { url in { NSWorkspace.shared.open(url) } }
+                open: url.map { url in { ThisMac.open(url) } }
             )
         }
     }

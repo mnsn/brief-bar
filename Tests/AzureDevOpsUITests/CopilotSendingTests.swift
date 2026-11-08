@@ -8,7 +8,7 @@ import Testing
 
 /// Where a composer in place on a pull request's comments, builds or conflicts sends what you ask, and how it says so.
 @MainActor
-@Suite struct CopilotSendingTests {
+@Suite(.opensNothing) struct CopilotSendingTests {
     private let task = "11111111-1111-4111-8111-111111111111"
     private let app = "2f8a4c6e-1b3d-4e5f-8a7b-9c0d1e2f3a14"
     private let other = "44444444-4444-4444-8444-444444444444"
@@ -58,8 +58,9 @@ import Testing
         let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
         let fix = Task { await sending.fix(sending.commentFix(nil, how: nil, suggestion: nil, excerpt: nil), to: .newSession, choice: nil) }
         fix.cancel()
-        let outcome = await fix.value
-        #expect(outcome == CopilotSending.Outcome.notSent(CopilotSending.calledOff))
+        let sent = await fix.value
+        #expect(sent.outcome == CopilotSending.Outcome.notSent(CopilotSending.calledOff))
+        #expect(sent.takenAt == nil)
         #expect(copilot.pending.isEmpty)
         #expect(settings.copilotRuns.isEmpty)
     }
@@ -82,7 +83,7 @@ import Testing
         let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
         #expect(!sending.isOpen)
         let fix = CopilotSending.Fix(prompts: ("Resolve them.", "Resolve them."), action: .resolveConflicts, parts: [.conflicts], handOff: nil)
-        #expect(await sending.fix(fix, to: .newSession, choice: nil) == .notSent(CopilotSending.pullRequestGone))
+        #expect(await sending.fix(fix, to: .newSession, choice: nil).outcome == .notSent(CopilotSending.pullRequestGone))
         #expect(await sending.explainAsPrompt("Why?", about: .conflicts, to: appChoice(app)) == .notSent(CopilotSending.pullRequestGone))
         #expect(copilot.pending.isEmpty)
         #expect(settings.copilotRuns.isEmpty)
@@ -90,10 +91,28 @@ import Testing
         let done = try #require(prs.items.first { prs.record(for: $0.key)?.pullRequest.status == .completed })
         let completed = CopilotSending(item: done, record: try #require(prs.record(for: done.key)), store: prs, copilot: copilot, session: nil)
         #expect(!completed.isOpen)
-        #expect(await completed.fix(fix, to: .newSession, choice: nil) == .notSent(CopilotSending.pullRequestGone))
+        #expect(await completed.fix(fix, to: .newSession, choice: nil).outcome == .notSent(CopilotSending.pullRequestGone))
         #expect(copilot.pending.isEmpty)
         // Open in your lists, it goes on.
         #expect(CopilotSending(item: listed, record: try #require(prs.record(for: listed.key)), store: prs, copilot: copilot, session: nil).isOpen)
+    }
+
+    /// A thread's fix keeps the change suggested in it that it applies as written, for Try Again to apply it again, and
+    /// none when it doesn't apply one.
+    @Test func aThreadsFixKeepsTheSuggestionItApplies() async throws {
+        let prs = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        await prs.loadOnce()
+        let item = try #require(prs.items.first { prs.record(for: $0.key)?.role == .author && prs.record(for: $0.key)?.details?.threads.isEmpty == false })
+        let record = try #require(prs.record(for: item.key))
+        let thread = try #require(record.details?.threads.first)
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
+        let suggestion = CommentSuggestion(author: Person(id: "sam", name: "Sam Rivera"), commentId: 2, code: "delay = min(delay * 2, cap)")
+        #expect(sending.commentFix(thread, how: nil, suggestion: suggestion, excerpt: nil).suggestion == suggestion)
+        #expect(sending.commentFix(thread, how: nil, suggestion: nil, excerpt: nil).suggestion == nil)
+        #expect(sending.commentFix(nil, how: nil, suggestion: nil, excerpt: nil).suggestion == nil)
     }
 
     /// Sent while the pull request's branches move, as its conflicts are read again, a fix or a question doesn't build on
@@ -144,6 +163,10 @@ import Testing
         #expect(fix.preselected == .session(task))
         // Without one that worked on it, the pull request's.
         #expect(CopilotDestinations.make(pullRequest, worked: nil, ask: .fix).preselected == .session(app))
+        // Its fork is there only while it leads, as Try Again has a fork of it that couldn't start lead: then it's there to
+        // send to (`CopilotPartComposer.retryLead`).
+        #expect(CopilotDestinations.make(pullRequest, worked: nil, ask: .fix).choice(for: .fork(task)) == nil)
+        #expect(CopilotDestinations.make(pullRequest, worked: CopilotDestination.fork(task).sessionID, ask: .fix).choice(for: .fork(task))?.id == task)
         let explain = CopilotDestinations.make(pullRequest, worked: nil, ask: .explain)
         #expect(explain.first.map(\.destination) == [.session(app)])
         #expect(explain.all.allSatisfy { if case .session = $0.destination { true } else { false } })

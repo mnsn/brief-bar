@@ -139,7 +139,7 @@ package struct MissionsBody: View {
         if let described = ordering.describe(ref) {
             if described.show?() != true { described.open?() }
         } else if ref.kind == .gitHubPullRequest, let url = URL(string: "https://github.com/\(ref.scope)/pull/\(ref.id)") {
-            NSWorkspace.shared.open(url)
+            ThisMac.open(url)
         }
     }
 

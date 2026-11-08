@@ -44,6 +44,7 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
             case .sendFailed: return "The session didn't take the prompt" + detail
             case .forkUnavailable: return "The session can't be forked this way, as chats can't."
             case .forkFailed: return "The Copilot app didn't fork the session" + detail
+            case .stopFailed: return "The session didn't stop" + detail
             case .unknown: return "BriefBar's extension in the session couldn't do it" + detail
             case .unreadable: return "BriefBar couldn't read what its extension in the session said."
             }
@@ -203,6 +204,18 @@ public struct SessionSender: Sendable {
         case .success(let found?): return await sendFork(prompt, to: found)
         case .success(nil): return .notSent(unnamed)
         case .failure(let stopped): return .notSent(stopped)
+        }
+    }
+
+    /// Stops the turn that runs in the session now, as the app's own Stop does, through its extension: only one that listens
+    /// in it now, and can (`OutboxRequest.Kind.stop`), as one that started before BriefBar could ask it to can't. It never
+    /// opens or loads the session, whose turn would have stopped with it.
+    public func stop(_ session: String) async -> Result<Void, SendFailure> {
+        guard let listener = liveListener(of: session) else { return .failure(.noListener) }
+        guard listener.kinds.contains(.stop) else { return .failure(.unsupported) }
+        switch await request(.stop(session, now: effects.now())) {
+        case .success: return .success(())
+        case .failure(let why): return .failure(why)
         }
     }
 

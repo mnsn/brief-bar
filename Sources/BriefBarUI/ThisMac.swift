@@ -1,0 +1,92 @@
+import AppKit
+import MachO
+import Synchronization
+
+/// What BriefBar does on your Mac beyond its own windows and files: opening a link, a file or an app, showing files in the
+/// Finder, putting text on the clipboard, and asking in an alert or a panel. All of BriefBar does these through here, and
+/// only here (`ThisMacPlaceTests`), since tests run BriefBar's code on your Mac: in a test process, each is refused,
+/// whether or not the test stands in for it, and noted for the test (`noting`). So no test opens a session in the Copilot
+/// app, a page in your browser or a script in Terminal, brings up an app, replaces what you copied, or waits on an alert
+/// that nobody answers.
+package enum ThisMac {
+    /// Whether this process runs tests: whatever runs them, xctest or swiftpm-testing-helper, they're in a test bundle,
+    /// as `swift test` builds them. The app and its command line never load one.
+    package static let runsTests: Bool = {
+        let name = ProcessInfo.processInfo.processName
+        if name == "xctest" || name == "swiftpm-testing-helper" { return true }
+        return (0..<_dyld_image_count()).contains { index in
+            _dyld_get_image_name(index).map { String(cString: $0).contains(".xctest/") } ?? false
+        }
+    }()
+
+    /// What a test process refused, for the test that did it: what its task, and any task it started, did.
+    @TaskLocal package static var noting: Notes?
+
+    /// What a test process refused: "open <link>", "open <app>", "show <files> in the Finder", "copy <text>",
+    /// "ask <alert's message>", oldest first.
+    package final class Notes: Sendable {
+        private let list = Mutex<[String]>([])
+
+        package init() {}
+
+        package var refused: [String] { list.withLock { $0 } }
+
+        fileprivate func add(_ what: String) {
+            list.withLock { $0.append(what) }
+        }
+    }
+
+    /// Opens a link, a page or a file, in the app that opens it: false when nothing opened it, as in a test.
+    @discardableResult
+    package static func open(_ url: URL) -> Bool {
+        guard !refuses("open \(url.absoluteString)") else { return false }
+        return NSWorkspace.shared.open(url)
+    }
+
+    /// Opens links in an app.
+    package static func open(_ urls: [URL], with app: URL, configuration: NSWorkspace.OpenConfiguration) {
+        guard !refuses("open \(urls.map(\.absoluteString).joined(separator: " ")) with \(app.lastPathComponent)") else { return }
+        NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: configuration)
+    }
+
+    /// Opens an app, or brings it to the front.
+    package static func openApplication(at app: URL, configuration: NSWorkspace.OpenConfiguration) {
+        guard !refuses("open \(app.lastPathComponent)") else { return }
+        NSWorkspace.shared.openApplication(at: app, configuration: configuration)
+    }
+
+    /// Shows files in the Finder, selected.
+    package static func showInFinder(_ files: [URL]) {
+        guard !refuses("show \(files.map(\.path).joined(separator: " ")) in the Finder") else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(files)
+    }
+
+    /// Puts text on the clipboard, in place of what you copied.
+    package static func copy(_ text: String) {
+        guard !refuses("copy \(text)") else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// Asks in an alert, and waits for your answer. In a test, which nobody answers, it's as if you closed it unanswered:
+    /// `.abort`, which no alert of BriefBar's goes on with.
+    @MainActor @discardableResult
+    package static func ask(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        guard !refuses("ask \(alert.messageText)") else { return .abort }
+        return alert.runModal()
+    }
+
+    /// Asks in a panel, such as one to choose a folder, and waits for your answer: in a test, as if you canceled it.
+    @MainActor @discardableResult
+    package static func ask(_ panel: NSSavePanel) -> NSApplication.ModalResponse {
+        guard !refuses("ask \(panel.message)") else { return .cancel }
+        return panel.runModal()
+    }
+
+    /// Whether to refuse it: in a test process, noting it for the test.
+    private static func refuses(_ what: @autoclosure () -> String) -> Bool {
+        guard runsTests else { return false }
+        noting?.add(what())
+        return true
+    }
+}

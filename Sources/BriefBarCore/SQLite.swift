@@ -119,6 +119,17 @@ public struct SQLiteRow {
         sqlite3_column_int64(statement, column) != 0
     }
 
+    /// A flag as SQLite keeps a boolean: an INTEGER, 0 or 1. Nil for anything else, such as NULL, 2 or the text 'true',
+    /// which `bool` would read as false.
+    public func flag(_ column: Int32) -> Bool? {
+        guard sqlite3_column_type(statement, column) == SQLITE_INTEGER else { return nil }
+        switch sqlite3_column_int64(statement, column) {
+        case 0: return false
+        case 1: return true
+        default: return nil
+        }
+    }
+
     public func double(_ column: Int32) -> Double? {
         switch sqlite3_column_type(statement, column) {
         case SQLITE_INTEGER, SQLITE_FLOAT: return sqlite3_column_double(statement, column)

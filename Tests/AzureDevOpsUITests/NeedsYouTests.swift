@@ -10,7 +10,7 @@ import Testing
 /// request off, or sending the comments to Copilot does. With the made-up pull requests, which never use the Azure CLI or
 /// Azure DevOps.
 @MainActor
-@Suite struct NeedsYouTests {
+@Suite(.opensNothing) struct NeedsYouTests {
     /// The demo's pull requests, as of a time of their own. It reads them once and starts nothing, so the comment the
     /// running demo adds a few seconds in never comes, however long a busy runner takes.
     @MainActor

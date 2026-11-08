@@ -83,13 +83,23 @@ import BriefBarCore
 
     @Test func onlyPushAndReplyPushesAndWritesOnThePullRequest() {
         let ship = PullRequestPrompt.pushAndReply(record())
-        #expect(ship.contains("git push origin HEAD:refs/heads/fix-total"))
-        #expect(ship.contains("without force"))
+        // The commit it checked, by its ID, without force.
+        #expect(ship.contains("3. Push the commit you checked, by its ID, without force: git push origin <commit>:refs/heads/fix-total, where <commit> is what git rev-parse HEAD says."))
         #expect(ship.contains("Don't complete, approve or abandon the pull request"))
         // The latest comment of each thread, for reference.
         #expect(ship.contains("1. src/Checkout/Total.cs, line 42 (thread 7)\n   Sam Rivera: Could we round half to even?"))
-        #expect(ship.contains("1. Make sure it builds"))
-        #expect(ship.contains("If that's rejected, rebase on origin/fix-total first"))
+        // Committed first; then, right before each push, after a rebase too, what it would push, and where it goes.
+        #expect(ship.contains("1. Make sure it builds and the tests you ran pass, then commit your changes"))
+        #expect(ship.contains("2. Right before you push, check it. This pull request merges into main: if you have BriefBar's pull_request tool, or Azure DevOps tools, read the pull request with them, and if it merges into another branch now, or they can't tell you, stop and tell me."))
+        #expect(ship.contains("Fetch origin/main and origin/fix-total: whatever a merge in git log --merges origin/fix-total..HEAD merged in must be in origin/main (git merge-base --is-ancestor <parent> origin/main). If you find a merge of any other branch, stop and tell me, and don't push."))
+        #expect(ship.contains("If that's rejected, rebase on origin/fix-total, stop and tell me if that conflicts, and check it again, as above, before you push."))
+        // Without a branch it merges into, there's nothing to check it against.
+        var untargeted = record()
+        untargeted.pullRequest.targetBranch = ""
+        let unchecked = PullRequestPrompt.pushAndReply(untargeted)
+        #expect(!unchecked.contains("Right before you push"))
+        #expect(unchecked.contains("2. Push the commit you checked, by its ID, without force"))
+        #expect(unchecked.contains("If that's rejected, rebase on origin/fix-total first, and stop and tell me if that conflicts."))
         let conflicts = PullRequestPrompt.resolveConflicts(record())
         #expect(conflicts.contains("Fetch origin/main, merge it into this worktree"))
         #expect(conflicts.contains("Don't push"))
@@ -254,8 +264,8 @@ import BriefBarCore
     @Test func pushAndReplyForNoThreadsRepliesOnNone() {
         #expect(PullRequestPrompt.shippedThreads(record(), only: []).isEmpty)
         let ship = PullRequestPrompt.pushAndReply(record(), threads: [])
-        #expect(ship.contains("git push origin HEAD:refs/heads/fix-total"))
-        #expect(ship.contains("3. Don't reply on the pull request's comment threads"))
+        #expect(ship.contains("git push origin <commit>:refs/heads/fix-total, where <commit>"))
+        #expect(ship.contains("4. Don't reply on the pull request's comment threads"))
         #expect(!ship.contains("thread 7") && !ship.contains("thread 9"))
         #expect(!ship.contains("with your Azure DevOps tools"))
         #expect(ship.hasSuffix("End with the commit you pushed."))
@@ -282,6 +292,8 @@ import BriefBarCore
         #expect(ship.contains("git merge-base --is-ancestor origin/fix-total HEAD"))
         #expect(ship.contains("stop and ask me before you commit or push anything"))
         #expect(ship.contains("2. Make sure it builds"))
+        #expect(ship.contains("3. Right before you push, check it. This pull request merges into main:"))
+        #expect(ship.contains("4. Push the commit you checked, by its ID, without force"))
         #expect(ship.contains("If that's rejected, stop and tell me: don't rebase, merge or force."))
         #expect(!ship.contains("rebase on origin"))
         #expect(!ship.contains("worktree"))

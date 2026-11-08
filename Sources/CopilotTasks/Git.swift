@@ -31,6 +31,15 @@ public enum GitError: Error, Sendable, Equatable, CustomStringConvertible {
     }
 }
 
+/// What pushing a checkout to a pull request's branch would merge in (`Git.checkPush(in:source:target:)`).
+public enum PushCheck: Sendable, Equatable {
+    /// No merge, or merges only of what the branch it merges into has.
+    case clean
+    /// A merge of commits the branch it merges into doesn't have, such as another branch's, as when the pull request was
+    /// retargeted after its conflicts were resolved there: the push would bring that branch's work into the pull request.
+    case foreignMerge
+}
+
 /// The git commands a task needs, run with your environment, so credential helpers and Git LFS work as they do in
 /// Terminal.
 public struct Git: Sendable {
@@ -60,9 +69,22 @@ public struct Git: Sendable {
         return repository
     }
 
+    /// Fails unless the folder is in a local clone of the PR's repository, by its origin, whatever branch new work would
+    /// start from there, which a check of what it would push doesn't need (`checkPush(in:source:target:)`).
+    public func checkClone(at folder: URL, of pullRequest: TaskPullRequest) async throws {
+        guard let root = try? await run(["-C", folder.path, "rev-parse", "--show-toplevel"], timeout: 30), !root.isEmpty else {
+            throw GitError.notARepository(folder.path)
+        }
+        try await validate(root: URL(fileURLWithPath: root, isDirectory: true), for: pullRequest)
+    }
+
     func validate(_ repository: GitRepository, for pullRequest: TaskPullRequest) async throws {
+        try await validate(root: repository.root, for: pullRequest)
+    }
+
+    private func validate(root: URL, for pullRequest: TaskPullRequest) async throws {
         // Read the configured URL, before a credential helper's insteadOf rewrite.
-        let remote = try await run(["-C", repository.root.path, "config", "--get", "remote.origin.url"], timeout: 30)
+        let remote = try await run(["-C", root.path, "config", "--get", "remote.origin.url"], timeout: 30)
         guard pullRequest.matches(remote: remote) else {
             throw GitError.wrongRepository("\(pullRequest.organization)/\(pullRequest.project)/\(pullRequest.repository)")
         }
@@ -126,6 +148,74 @@ public struct Git: Sendable {
               (try? await run(["-C", repository.root.path, "cat-file", "-e", "\(commit)^{commit}"], timeout: 30)) != nil
         else { return nil }
         return commit
+    }
+
+    /// Whether pushing a folder's checkout to a pull request's branch, `source`, would merge in only what the branch it
+    /// merges into, `target`, has: what every merge it would push, in what `origin/<source>` doesn't have yet, merged in,
+    /// and what a merge still going on merges in, has to be in `origin/<target>`. A merge of the pull request's own branch,
+    /// as `git pull` makes, doesn't pass either: from history alone it can't be told from one of the pull request's branch
+    /// into another, which would push that other branch's work. Both branches are fetched first, so it goes by where they
+    /// are now. Commits made on the branch, merges aside, are the work to push. Throws when it can't tell: as when what it
+    /// would push has a commit without parents, as where a shallow clone's history stops, which hides whether it's a merge;
+    /// or a merge is going on that it can't read (`mergingIn`).
+    public func checkPush(in folder: URL, source: String, target: String) async throws -> PushCheck {
+        guard !target.isEmpty else { throw GitError.failed("BriefBar doesn't know which branch the pull request merges into.") }
+        for branch in [source, target] where !Self.isBranchName(branch) {
+            throw GitError.failed("“\(branch)” isn't a branch name git takes.")
+        }
+        let sourceRef = "refs/remotes/origin/\(source)"
+        let targetRef = "refs/remotes/origin/\(target)"
+        _ = try await run(
+            ["-C", folder.path, "fetch", "--quiet", "--no-tags", "origin",
+             "+refs/heads/\(source):\(sourceRef)", "+refs/heads/\(target):\(targetRef)"],
+            timeout: 300
+        )
+        // A commit without parents: where a shallow clone's history stops, which git takes for a root, though it may be a
+        // merge, of anything; or the start of history the branch doesn't come from.
+        let parentless = try await run(
+            ["-C", folder.path, "rev-list", "--max-parents=0", "--max-count=1", "HEAD", "^\(sourceRef)", "^\(targetRef)", "--"], timeout: 120
+        )
+        guard parentless.isEmpty else { throw GitError.failed(Self.cutShort) }
+        // Each merge with its parents: the first is the branch it merged into, the others what it merged in. One the target
+        // has merged in only what the target has.
+        let merges = try await run(
+            ["-C", folder.path, "rev-list", "--merges", "--parents", "HEAD", "^\(sourceRef)", "^\(targetRef)", "--"], timeout: 120
+        )
+        let mergedIn = merges.split(whereSeparator: \.isNewline).flatMap { $0.split(separator: " ").dropFirst(2).map(String.init) }
+        var seen = Set<String>()
+        let commits = (mergedIn + (try await mergingIn(folder))).filter { Self.isCommit($0) && seen.insert($0).inserted }
+        // A few hundred at a time, however long the history it would push: any of them the target doesn't have.
+        for start in stride(from: 0, to: commits.count, by: 200) {
+            let outside = try await run(
+                ["-C", folder.path, "rev-list", "--max-count=1"] + commits[start..<min(start + 200, commits.count)] + ["^\(targetRef)", "--"],
+                timeout: 120
+            )
+            if !outside.isEmpty { return .foreignMerge }
+        }
+        return .clean
+    }
+
+    /// Why `checkPush` can't tell what a commit without parents brings in.
+    static let cutShort = "What it would push has a commit without parents, as where a shallow clone's history stops, so BriefBar can't tell what that commit brings in. If it's a shallow clone, fetch the rest of its history first: git fetch --unshallow."
+
+    /// Why `checkPush` can't tell what a merge going on brings in.
+    static let unreadableMerge = "A merge is going on in it, and BriefBar couldn't read what it merges in."
+
+    /// What a merge still going on in a folder's checkout merges in, as its `MERGE_HEAD` lists it: nothing when there's
+    /// none. Throws when one may be going on that BriefBar can't read: a `MERGE_HEAD` that isn't a file it can read, such as
+    /// a link, which it doesn't follow, or that lists anything but commits.
+    func mergingIn(_ folder: URL) async throws -> [String] {
+        let path = try await run(["-C", folder.path, "rev-parse", "--git-path", "MERGE_HEAD"], timeout: 30)
+        let file = path.hasPrefix("/") ? URL(fileURLWithPath: path) : folder.appendingPathComponent(path)
+        guard let data = LocalFile.tail(of: file, maxBytes: 64 * 1024) else {
+            // Nothing there, not even a link: no merge is going on.
+            guard (try? FileManager.default.attributesOfItem(atPath: file.path)) == nil else { throw GitError.failed(Self.unreadableMerge) }
+            return []
+        }
+        let commits = String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard !commits.isEmpty, commits.allSatisfy(Self.isCommit) else { throw GitError.failed(Self.unreadableMerge) }
+        return commits
     }
 
     /// A commit's full ID, as git writes it: 40 hexadecimal digits, or 64 in a SHA-256 repository.
