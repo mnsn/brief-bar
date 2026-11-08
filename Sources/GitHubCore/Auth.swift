@@ -38,14 +38,17 @@ public protocol GitHubTokenProviding: Sendable {
     func invalidate() async
 }
 
-/// Gets the token that the GitHub CLI signed in with (`gh auth login`), with `gh auth token`. It never asks for a
-/// personal access token, and never stores the token: it keeps it in memory for a while, then asks `gh` again.
+/// Gets the token of an account the GitHub CLI signed in to (`gh auth login`), with `gh auth token`: its active
+/// account's, or another's, by its login. It never asks for a personal access token, and never stores the token: it
+/// keeps it in memory for a while, then asks `gh` again.
 public actor GitHubCLITokenProvider: GitHubTokenProviding {
     /// BriefBar reads github.com only, not GitHub Enterprise Server.
     public static let host = "github.com"
     /// How long a token is used before `gh` is asked again, in case you signed in as someone else.
     static let lifetime: TimeInterval = 30 * 60
 
+    /// Whose token it gets: an account's login (`--user`), or nil for the GitHub CLI's active account, whoever that is.
+    public nonisolated let user: String?
     private let locator: GitHubCLILocator
     private let runner: any ProcessRunning
     private let now: @Sendable () -> Date
@@ -54,9 +57,10 @@ public actor GitHubCLITokenProvider: GitHubTokenProviding {
     private var pending: SharedRun?
 
     public init(
-        locator: GitHubCLILocator = GitHubCLILocator(), runner: any ProcessRunning = ProcessRunner(),
+        user: String? = nil, locator: GitHubCLILocator = GitHubCLILocator(), runner: any ProcessRunning = ProcessRunner(),
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        self.user = user
         self.locator = locator
         self.runner = runner
         self.now = now
@@ -101,9 +105,7 @@ public actor GitHubCLITokenProvider: GitHubTokenProviding {
         guard let executable else { throw GitHubAuthError.cliNotFound }
         let result: ProcessResult
         do {
-            result = try await runner.run(
-                executable, arguments: ["auth", "token", "--hostname", Self.host], environment: Self.environment(), timeout: 30
-            )
+            result = try await runner.run(executable, arguments: Self.arguments(user: user), environment: Self.environment(), timeout: 30)
         } catch let error as CancellationError {
             // Stopped, as no caller waits for it anymore: `gh` is where it was.
             throw error
@@ -116,6 +118,12 @@ public actor GitHubCLITokenProvider: GitHubTokenProviding {
             throw Self.error(fromOutput: String(decoding: result.stderr, as: UTF8.self))
         }
         return try Self.parseToken(result.stdout, now: now())
+    }
+
+    /// What `gh` runs with: `gh auth token` for github.com, and the account whose token it prints, unless that's the active
+    /// one.
+    static func arguments(user: String?) -> [String] {
+        ["auth", "token", "--hostname", host] + (user.map { ["--user", $0] } ?? [])
     }
 
     /// A run of `gh` that callers asking at the same time share. Each caller that gives up leaves it, and the last to
@@ -196,6 +204,155 @@ public actor GitHubCLITokenProvider: GitHubTokenProviding {
             return .signedOut(message)
         }
         return .failed(message)
+    }
+}
+
+/// An account the GitHub CLI is signed in to on github.com.
+public struct GitHubAccount: Sendable, Hashable {
+    /// Its login; empty when the GitHub CLI doesn't know whose its token is.
+    public var login: String
+    /// The account `gh` uses unless it's told another: `gh auth switch` changes which.
+    public var isActive: Bool
+    /// Whether the GitHub CLI keeps its token, in the keychain or its own settings, rather than reading it from an
+    /// environment variable such as `GH_TOKEN`: only a token it keeps can be asked for by its login.
+    public var isKept: Bool
+
+    public init(login: String, isActive: Bool, isKept: Bool = true) {
+        self.login = login
+        self.isActive = isActive
+        self.isKept = isKept
+    }
+
+    /// The GitHub CLI's active account, whoever it is: the only one read when the GitHub CLI can't list its accounts.
+    public static let active = GitHubAccount(login: "", isActive: true, isKept: false)
+
+    /// The account to ask `gh auth token` for (`--user`): its login, or nil for the active account's token, when it can't
+    /// be asked for by its login.
+    public var tokenUser: String? {
+        isKept && !login.isEmpty ? login : nil
+    }
+
+    /// Logins as a sentence names them: "robin", "robin and kai", "robin, kai and lee".
+    public static func names(_ logins: [String]) -> String {
+        guard let last = logins.last else { return "" }
+        return logins.count == 1 ? last : logins.dropLast().joined(separator: ", ") + " and " + last
+    }
+}
+
+/// Lists the accounts the GitHub CLI is signed in to on github.com, with `gh auth status --json hosts`, which the GitHub
+/// CLI has from version 2.81. As it lists them, the GitHub CLI checks each one with GitHub, a request each, so a list is
+/// kept for half an hour, as tokens are, unless it's asked to list them again. It never fails: when the GitHub CLI can't
+/// list its accounts, as one that isn't installed, is signed out or is older than that can't, the list is its active
+/// account alone, as BriefBar read before, and reading that says what's wrong. When listing them fails otherwise, as when
+/// `gh` takes longer than it may on a network that doesn't answer, the list is the one the last listing that worked gave,
+/// until one works again, so that what was read of each account isn't lost meanwhile.
+public actor GitHubCLIAccounts {
+    /// How long a list is used before `gh` is asked again, in case you signed in to another account or out of one.
+    static let lifetime = GitHubCLITokenProvider.lifetime
+    static let arguments = ["auth", "status", "--json", "hosts", "--hostname", GitHubCLITokenProvider.host]
+
+    private let locator: GitHubCLILocator
+    private let runner: any ProcessRunning
+    private let now: @Sendable () -> Date
+    private var executable: URL?
+    /// The list, while it's kept: one the GitHub CLI gave, or the active account alone from one too old to give it.
+    private var listed: (accounts: [GitHubAccount], at: Date)?
+    /// What the last listing that worked gave, for one that fails: nil before one works.
+    private var known: [GitHubAccount]?
+
+    public init(
+        locator: GitHubCLILocator = GitHubCLILocator(), runner: any ProcessRunning = ProcessRunner(),
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.locator = locator
+        self.runner = runner
+        self.now = now
+    }
+
+    /// The accounts, the active one first, from memory or a run of `gh`.
+    public func accounts() async throws -> [GitHubAccount] {
+        try Task.checkCancellation()
+        if let listed, now().timeIntervalSince(listed.at) < Self.lifetime { return listed.accounts }
+        let listing = try await list()
+        try Task.checkCancellation()
+        guard let listing else {
+            // Listing them failed: those the last listing that worked gave, and they're listed again at the next call.
+            listed = nil
+            return known ?? [.active]
+        }
+        known = listing.accounts
+        listed = listing.keeps ? (listing.accounts, now()) : nil
+        return listing.accounts
+    }
+
+    /// Forgets the list, so the next call lists the accounts again.
+    public func invalidate() {
+        listed = nil
+    }
+
+    /// The `gh` executable this lists the accounts with, once it has looked for it.
+    public var executablePath: String? { executable?.path }
+
+    /// What `gh` lists, and whether to keep it; nil when listing them failed.
+    private func list() async throws -> (accounts: [GitHubAccount], keeps: Bool)? {
+        if executable == nil {
+            executable = await locator.locate()
+        }
+        guard let executable else { return ([.active], false) }
+        let result: ProcessResult
+        do {
+            result = try await runner.run(
+                executable, arguments: Self.arguments, environment: GitHubCLITokenProvider.environment(), timeout: 30
+            )
+        } catch let error as CancellationError {
+            throw error
+        } catch {
+            // It may have been uninstalled or moved: look again next time.
+            self.executable = nil
+            return nil
+        }
+        return Self.accounts(from: result)
+    }
+
+    /// What `gh auth status --json hosts` printed: github.com's accounts, each once, the active one first, and whether to
+    /// keep them. The active account alone, not kept, when it printed none, as a signed-out GitHub CLI does: until it lists
+    /// some, the active account is read, and reading it says what's wrong. A GitHub CLI too old to list them (`unknown
+    /// flag`) has its active account read until it's updated. Nil when it failed otherwise, as when it took longer than it
+    /// may and was stopped, or printed what BriefBar can't read.
+    static func accounts(from result: ProcessResult) -> (accounts: [GitHubAccount], keeps: Bool)? {
+        guard result.status == 0 else {
+            guard String(decoding: result.stderr, as: UTF8.self).lowercased().contains("unknown flag") else { return nil }
+            return ([.active], true)
+        }
+        guard let status = try? JSONDecoder().decode(Status.self, from: result.stdout) else { return nil }
+        let entries = (status.hosts[GitHubCLITokenProvider.host] ?? []).compactMap(\.value)
+        var seen = Set<String>()
+        // Two entries for one login, as when GH_TOKEN holds a token of an account the GitHub CLI keeps too: the first.
+        let accounts = (entries.filter(\.isActive) + entries.filter { !$0.isActive })
+            .map { GitHubAccount(login: $0.login ?? "", isActive: $0.isActive, isKept: !isEnvironmentVariable($0.tokenSource)) }
+            .filter { seen.insert($0.login).inserted }
+        return accounts.isEmpty ? ([.active], false) : (accounts, true)
+    }
+
+    /// Whether the GitHub CLI read a token from an environment variable, which it names, such as `GH_TOKEN`, rather than
+    /// from the keychain (`keyring`) or its settings file (a path).
+    static func isEnvironmentVariable(_ source: String?) -> Bool {
+        guard let source, !source.isEmpty else { return false }
+        return source.allSatisfy { $0.isUppercase || $0.isNumber || $0 == "_" }
+    }
+
+    /// What `gh auth status --json hosts` prints: each host's accounts, with what BriefBar needs of them.
+    struct Status: Decodable {
+        struct Entry: Decodable {
+            var login: String?
+            var active: Bool?
+            /// Where its token comes from: `keyring`, the settings file's path, or an environment variable's name.
+            var tokenSource: String?
+
+            var isActive: Bool { active ?? false }
+        }
+
+        var hosts: [String: [Lossy<Entry>]]
     }
 }
 

@@ -59,7 +59,7 @@ each source.
 |---|---|
 | **Azure DevOps** | Pull requests needing your reply or review, failures and ready-to-complete work, with what's left before each of yours can complete, sorted by status or by date; your team's sprint and work-item details; pinned pipelines and pipelines after your merges. |
 | **GitHub Copilot** | Sessions running, waiting for your answer, ready for plan review, finished or stopped. Works with the Copilot app, or with local CLI sessions when the app isn't installed. |
-| **GitHub** | Reviews requested from you by name, and your pull requests with changes requested, failing checks, conflicts or approvals. |
+| **GitHub** | Reviews requested from you by name, and your pull requests with changes requested, failing checks, conflicts or approvals, for every account the GitHub CLI is signed in to, such as your work account and your own. |
 | **Microsoft Teams** | Unread one-to-one, group and meeting chats from notifications on your Mac, with optional message previews and on-device summaries. |
 
 Hide what you don't need. To read long descriptions and comments, hold **⌘** and scroll in a window to
@@ -188,7 +188,7 @@ VS Code and Cursor. Agent tools expose Azure DevOps and Copilot data, not Teams 
 | To use | Set up |
 |---|---|
 | **Azure DevOps** | Install the Azure CLI (`brew install azure-cli`) and run `az login`, or use **Sign In…** in Settings. No personal access token. |
-| **GitHub** | Install the GitHub CLI (`brew install gh`) and run `gh auth login`, or use **Sign In…** in Settings. Authorize the CLI for your organization's SSO if needed. |
+| **GitHub** | Install the GitHub CLI (`brew install gh`) and run `gh auth login`, or use **Sign In…** in Settings; **Add Account…** there signs in to another of your accounts. Authorize the CLI for your organization's SSO if needed. |
 | **Copilot sessions** | Your local Copilot app or CLI session files. No extra sign-in for BriefBar to show them. |
 | **Teams** | Grant BriefBar **Full Disk Access** using its setup guide. It reads Teams notifications and local read markers, not your complete chat history. |
 | **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › General**. Summaries use Claude Haiku 5.5 through the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) when it's installed and signed in, or another model you choose there; without it, Apple Intelligence. |

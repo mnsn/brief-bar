@@ -1398,14 +1398,17 @@ extension AzureDevOpsSource {
     /// What your comment says once you edit it in the demo's pictures, as you do and once you saved it.
     private static let renderedEdit = "I went with exponential backoff, starting at 200 ms and doubling each time, up to "
         + "`RetryOptions.MaxDelay`: 30 seconds by default."
+    /// What your comment said as you began to edit it, in the demo's picture of one that changed since, as in Azure DevOps.
+    private static let renderedBegan = "I went with exponential backoff."
 
-    /// The Pull Requests page with the details of the first of your pull requests that needs you, taken to its first thread
-    /// that waits on you, with Reply and its status beside Explain and Fix; your reply open there, with what you wrote,
-    /// with Fix Grammar's suggestion, once you used it, with a Copilot model chosen, and when it couldn't go; a status that
-    /// couldn't be set; your comment there with its ⋯ menu open, as you edit it, as you delete it, and when it couldn't be
-    /// deleted; then, from the demo's list with them made, the thread replied to and resolved, another set to Won't Fix, and
-    /// your comment edited; and Make Changes in Azure DevOps in Settings. In a narrow window too. Each from made-up states,
-    /// through `ThreadChangesPreview`, or made as the demo makes them: nothing's sent.
+    /// The Pull Requests page with the details of the first of your pull requests that needs you, taken to its first
+    /// thread that waits on you, with Reply and its status beside Explain and Fix; your reply open there, with what you
+    /// wrote, with Fix Grammar's suggestion, once you used it, with a Copilot model chosen, and when it couldn't go; a
+    /// status that couldn't be set; your comment there with its ⋯ menu open, as you edit it, once it changed since you
+    /// began, as you delete it, and when it couldn't be deleted; then, from the demo's list with them made, the thread
+    /// replied to and resolved, another set to Won't Fix, and your comment edited; and Make Changes in Azure DevOps in
+    /// Settings. In a narrow window too. Each from made-up states, through `ThreadChangesPreview`, or made as the demo
+    /// makes them: nothing's sent.
     func threadChangeRenderings() -> [(name: String, view: AnyView)] {
         guard let store, store.mode == .demo, let item = renderedPullRequests(store).first, let record = store.record(for: item.key) else {
             return []
@@ -1421,6 +1424,9 @@ extension AzureDevOpsSource {
         let yours: [(name: String, preview: ThreadChangesPreview, sizes: [(suffix: String, size: CGSize)])] = mine.map { mine in [
             ("pull-requests-comment-menu", ThreadChangesPreview(menu: mine), [("", wide), ("-narrow", narrow)]),
             ("pull-requests-comment-edit", ThreadChangesPreview(edits: [mine: .init(text: Self.renderedEdit)]),
+             [("", wide), ("-narrow", narrow)]),
+            // Begun when it said less, and edited since, as in Azure DevOps: it says so, with what it says now.
+            ("pull-requests-comment-changed", ThreadChangesPreview(edits: [mine: .init(text: Self.renderedEdit, began: Self.renderedBegan)]),
              [("", wide), ("-narrow", narrow)]),
             ("pull-requests-comment-delete", ThreadChangesPreview(deleting: mine), [("", wide), ("-narrow", narrow)]),
             ("pull-requests-comment-delete-failed", ThreadChangesPreview(states: [waiting.id: .failed(.notAllowed, .delete(comment: mine.comment))]),
