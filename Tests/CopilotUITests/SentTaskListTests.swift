@@ -190,7 +190,8 @@ import Testing
         let store = SessionStore(settings: AppSettings(defaults: MemoryDefaults()), paths: CopilotPaths(root: folder), sentTasks: sent)
         store.start()
         sent.publish(.azureDevOps, tasks: [task("t1", stage: .working, since: now)])
-        for _ in 0..<150 where store.task(for: "t1") == nil {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while store.task(for: "t1") == nil, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(store.sessions(in: .running).map(\.id) == ["t1"])

@@ -222,7 +222,7 @@ import Testing
     /// byte for byte, whatever a shell would otherwise run in it; backticks at its start stay, and so does a character
     /// nobody sees, a zero-width space, a right-to-left mark or a tag, which Git allows, written out as its bytes in the
     /// prompt, where it's seen. (Git allows no line break in a name.)
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aCommandNamesTheBranchItsWrittenWith() async throws {
         let names = [
             "```topic", "fix$(echo ran)", "main`id`;rm", "it's", "users/robin/fix-total", "{a,b}*", "日本/修正", "fix\u{200B}",

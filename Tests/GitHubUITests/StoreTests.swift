@@ -224,7 +224,7 @@ import Testing
 
     /// Turning GitHub off stops a run of `gh` that's under way, so what it would print reaches nothing. The run would take
     /// longer than the test may, so it ends only when it's stopped, however slow the machine.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func stoppingStopsTheCLIRunUnderWay() async throws {
         let runner = FakeRunner(ProcessResult(status: 1, stderr: Data(FakeCLI.signedOut.utf8)), delay: .seconds(3_600))
         let store = liveStore({ FakeCLI.signedOut(runner) })

@@ -894,7 +894,7 @@ import BriefBarCore
         #expect(until.timeIntervalSinceNow > 100)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func refreshesOnATimerAndWhenAsked() async throws {
         let server = StubServer()
         server.serveOrganization(mine: [Fixture.pullRequest(1)])
@@ -914,7 +914,7 @@ import BriefBarCore
         try await collector.wait("the refresh it asked for") { $0.records.count == 2 && !$0.isRefreshing }
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aWakeBeforeTheWaitStillWakesIt() async {
         let waker = Waker()
         waker.wake()

@@ -12,9 +12,11 @@ import Testing
 
     private static func shopWeb(_ number: Int) -> ItemRef { .gitHubPullRequest(repository: "contoso/shop-web", number: number) }
 
-    /// Waits for what the main queue delivers, as the source hears Pull Request Order turned on or off.
+    /// Waits for what the main queue delivers, as the source hears Pull Request Order turned on or off, for as long as
+    /// a busy machine could need (`waitLimit`).
     private func eventually(_ condition: () -> Bool) async -> Bool {
-        for _ in 0..<300 where !condition() {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !condition(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()
@@ -88,7 +90,7 @@ import Testing
 
     /// Pull Request Order turned on or off while a read is under way: that read used the setting as it was, so a new one
     /// starts with it as it is.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func turningTheOrderOnOrOffDuringAReadReadsAgain() async throws {
         let runner = FakeRunner(ProcessResult(status: 1, stderr: Data(FakeCLI.signedOut.utf8)), delay: .seconds(3_600))
         var on = false

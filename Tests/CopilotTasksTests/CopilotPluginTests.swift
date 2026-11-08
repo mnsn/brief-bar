@@ -361,7 +361,7 @@ import Testing
         }
     }
 
-    @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
     func skillNamesOnlyRealTools() async throws {
         let tools = try await Self.listedTools()
         let names = Set(tools.compactMap { $0["name"] as? String })
@@ -380,7 +380,7 @@ import Testing
 
     /// Pull Request Order's skill names only its tools, what they take, and a session's todos, and tells agents about
     /// every one of its tools.
-    @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
     func orderSkillNamesOnlyItsTools() async throws {
         let tools = try await Self.listedTools().filter { Self.orderTools.contains($0["name"] as? String ?? "") }
         #expect(Set(tools.compactMap { $0["name"] as? String }) == Self.orderTools)
@@ -395,7 +395,7 @@ import Testing
 
     /// Updates from Copilot Sessions' skill names only its tools, what they take, and Pull Request Order's tool, and tells
     /// agents about every one of its tools.
-    @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
     func updatesSkillNamesOnlyItsTools() async throws {
         let tools = try await Self.listedTools().filter { Self.updateTools.contains($0["name"] as? String ?? "") }
         #expect(Set(tools.compactMap { $0["name"] as? String }) == Self.updateTools)

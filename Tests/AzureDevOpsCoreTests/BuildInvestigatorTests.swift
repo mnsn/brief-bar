@@ -1084,7 +1084,7 @@ private actor GatedTokens: AccessTokenProvider {
 
     /// A read whose only caller is called off, as when the details close or show another pull request, is called off too:
     /// it reads nothing more, and whoever asks next reads the run anew.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aReadNobodyWaitsForIsCalledOff() async throws {
         let server = StubServer()
         FailedRun.serve(server)
@@ -1107,7 +1107,7 @@ private actor GatedTokens: AccessTokenProvider {
     }
 
     /// A read two callers wait for goes on when one of them is called off: the other gets it, and it's kept.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aReadAnotherCallerWaitsForGoesOn() async throws {
         let server = StubServer()
         FailedRun.serve(server)
@@ -1128,7 +1128,7 @@ private actor GatedTokens: AccessTokenProvider {
     }
 
     /// A caller called off while it looks at a kept run, one GET, starts no read of it, though the look finds it ran again.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aCallerCalledOffWhileItLooksAtAKeptRunReadsNothingInstead() async throws {
         let server = StubServer()
         FailedRun.serve(server)
@@ -1153,7 +1153,7 @@ private actor GatedTokens: AccessTokenProvider {
     /// A look at a kept run that hasn't run again, whose only caller is called off, as when the details close, is called off
     /// too: the caller comes back at once, with nothing rather than what's kept, which stays, though the look's answer
     /// hasn't come.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aLookNobodyWaitsForIsCalledOff() async throws {
         let server = StubServer()
         FailedRun.serve(server)
@@ -1175,7 +1175,7 @@ private actor GatedTokens: AccessTokenProvider {
         }
         try await waitUntil("the look to start") { await investigator.waiting == 1 }
         looking.cancel()
-        // Without waiting for the look's answer, which hasn't come.
+        // Without waiting for the look's answer, which hasn't come, nor for the client to give up on it, after 30 s.
         try await waitUntil("the caller to come back", timeout: .seconds(10)) { cameBack.withLock { $0 } }
         await #expect(throws: CancellationError.self) { try await looking.value }
         #expect(await investigator.asking == 0)
@@ -1186,7 +1186,7 @@ private actor GatedTokens: AccessTokenProvider {
 
     /// A look two callers share goes on when one of them is called off: the other gets what's kept, as the look finds the
     /// run hasn't run again, with one GET.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aLookAnotherCallerWaitsForGoesOn() async throws {
         let server = StubServer()
         FailedRun.serve(server)

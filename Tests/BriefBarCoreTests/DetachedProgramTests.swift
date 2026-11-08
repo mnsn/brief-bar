@@ -14,7 +14,7 @@ import Testing
 
     /// Its output and errors go to the file, only you can read it, and BriefBar hears how it ended. An agent runs
     /// whatever it decides on, so it mustn't have BriefBar's permissions.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func runsResponsibleForItselfWithItsOutputInAFile() async throws {
         let folder = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -42,7 +42,7 @@ import Testing
     }
 
     /// It runs in a session of its own, which `stop` ends with whatever it started.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func stopsWithWhatItStarted() async throws {
         let (exits, onExit) = exitStream()
         let handle = try DetachedProgram.start(

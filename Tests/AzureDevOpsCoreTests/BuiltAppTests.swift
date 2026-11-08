@@ -35,7 +35,7 @@ import Testing
         ])
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(5)))
     func refusesWhenItsResponsibleForItself() async throws {
         let binary = try Self.builtApp()
         try await Self.withMadeUpNotifications { home, environment in
@@ -60,7 +60,7 @@ import Testing
     }
 
     /// The control for the test above, so that it could fail.
-    @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
     func listsTheCopyStartedPlainly() async throws {
         let binary = try Self.builtApp()
         try await Self.withMadeUpNotifications { _, environment in

@@ -68,10 +68,10 @@ import Testing
         }
     }
 
-    /// Waits for the store's reads, which finish on the main actor between this test's awaits, for at most a minute, as
-    /// `make test` runs every test on one thread.
+    /// Waits for the store's reads, which finish on the main actor between this test's awaits, for as long as a busy
+    /// machine could need (`waitLimit`), as `make test` runs every test on one thread.
     private func settle(until done: () async -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
-        let deadline = ContinuousClock.now + .seconds(60)
+        let deadline = ContinuousClock.now + waitLimit
         while ContinuousClock.now < deadline {
             if await done() { return }
             try await Task.sleep(for: .milliseconds(10))

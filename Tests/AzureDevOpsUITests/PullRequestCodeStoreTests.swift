@@ -78,9 +78,11 @@ import Testing
         return store
     }
 
-    /// Waits for the store's reads, which finish on the main actor between this test's awaits.
+    /// Waits for the store's reads, which finish on the main actor between this test's awaits, for as long as a busy
+    /// machine could need (`waitLimit`).
     private func settle(until done: () async -> Bool) async throws {
-        for _ in 0..<150 {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while ContinuousClock.now < deadline {
             if await done() { return }
             try await Task.sleep(for: .milliseconds(10))
         }

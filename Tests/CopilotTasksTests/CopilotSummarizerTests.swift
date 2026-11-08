@@ -175,7 +175,8 @@ import Testing
         )
         let options = self.options
         let summary = Task { await summarizer.summarize("Sum it up", options: options) }
-        for _ in 0..<200 where !gate.isWaiting {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !gate.isWaiting, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(5))
         }
         summary.cancel()

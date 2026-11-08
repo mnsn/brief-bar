@@ -260,9 +260,11 @@ import Testing
         #expect(runner.calls.withLock { $0 } == 0)
     }
 
-    /// Waits for the store's reads, which run on the main actor between this test's awaits.
+    /// Waits for the store's reads, which run on the main actor between this test's awaits, for as long as a busy
+    /// machine could need (`waitLimit`).
     private func settle(until done: () -> Bool) async throws {
-        for _ in 0..<100 where !done() {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !done(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
     }
@@ -602,15 +604,11 @@ import Testing
         #expect(services.sentTasks.tasks.map(\.opens) == ["Work Item", "Pull Request", "Pull Request"])
 
         source.settings.copilotEnabled = false
-        for _ in 0..<150 where !services.sentTasks.tasks.isEmpty {
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        try await settle { services.sentTasks.tasks.isEmpty }
         #expect(services.sentTasks.tasks.isEmpty)
 
         source.settings.copilotEnabled = true
-        for _ in 0..<150 where services.sentTasks.tasks.isEmpty {
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        try await settle { !services.sentTasks.tasks.isEmpty }
         #expect(services.sentTasks.tasks.count == 3)
         source.stop()
         #expect(services.sentTasks.tasks.isEmpty)
@@ -637,9 +635,7 @@ import Testing
         report.setWorkingOn([], at: chosenAt)
         report.setWorkingOn([key.linkRef], at: chosenAt.addingTimeInterval(60))
         services.sessionUpdates.tellDemo([report])
-        for _ in 0..<150 where source.settings.chosenSession(for: key)?.isReplaced != true {
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        try await settle { source.settings.chosenSession(for: key)?.isReplaced == true }
         #expect(source.settings.chosenSession(for: key)?.isReplaced == true)
     }
 

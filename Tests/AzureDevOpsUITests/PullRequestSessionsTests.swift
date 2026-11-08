@@ -117,9 +117,10 @@ import Testing
     }
 
     /// Waits, a little at a time, until something is so, as the store reads and keeps up off the main thread: for as long
-    /// as a busy Mac may take, since it stops as soon as it is.
+    /// as a busy Mac may take (`waitLimit`), since it stops as soon as it is.
     private func until(_ condition: () -> Bool) async throws {
-        for _ in 0..<2_400 where !condition() {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(25))
         }
     }

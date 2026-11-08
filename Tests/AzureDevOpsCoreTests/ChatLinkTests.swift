@@ -173,7 +173,7 @@ import Testing
         #expect(!ChatLinkDatabase.isSystemDatabase(fixture, home: home))
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func nothingArrivesOnceStopped() async throws {
         let link = ChatLink(link: PullRequestLink(organization: "contoso", project: "Shop", repository: "web", number: 7),
                             app: Chats.teams, sender: "Dana Whitfield", sentAt: t(0), notificationKey: "n1")
@@ -204,7 +204,7 @@ import Testing
         #expect(try await run(stopping: true) == 0)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func picksUpNewNotificationsAsTheyArrive() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

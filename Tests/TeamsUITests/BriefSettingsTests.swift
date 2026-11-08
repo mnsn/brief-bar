@@ -14,8 +14,12 @@ import Testing
         var settings: [(previews: Bool, summaries: Bool)] = []
     }
 
+    /// Lets what the settings start go on until `done`, for as long as a busy machine could need: four minutes, as the
+    /// other targets' `waitLimit`, since `make test` runs every test's async work on one thread, and a test may get its
+    /// turn only after most of the others. A wait that's answered still returns as soon as it is.
     private func settle(until done: () -> Bool) async {
-        for _ in 0..<100 where !done() {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(240))
+        while !done(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
     }
