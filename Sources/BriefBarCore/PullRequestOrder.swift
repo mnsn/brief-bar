@@ -826,9 +826,10 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
         }
     }
 
-    /// How many of its pull requests you changed the place of, in a way that holds.
+    /// How many of its pull requests you changed the place of, in a way that holds, those stacked with them that its order
+    /// doesn't name too.
     public var changedByYou: Int {
-        steps.filter(\.isChangedByYou).count
+        (steps + attached).filter(\.isChangedByYou).count
     }
 }
 
@@ -874,15 +875,22 @@ public enum OrderBoard {
                 missions.append(mission)
             }
         }
+        let built = missions
+        // What you set as next in a mission it isn't in now, or that's gone: wherever it shows, it says so, beside an order
+        // that doesn't name it too.
+        func nextElsewhere(_ ref: ItemRef) -> OrderNote? {
+            guard let first = layer.holding[ref]?.first,
+                  !built.contains(where: { OrderChanges.names($0, first) && $0.steps.contains { $0.ref == ref } })
+            else { return nil }
+            return .nextElsewhere(first)
+        }
         for index in missions.indices {
             missions[index].isFocused = missions[index].key == focus
             for step in missions[index].steps.indices {
-                let ref = missions[index].steps[step].ref
-                // What you set as next in a mission it isn't in now, or that's gone: wherever it shows, it says so.
-                if let first = layer.holding[ref]?.first,
-                   !missions.contains(where: { OrderChanges.names($0, first) && $0.steps.contains { $0.ref == ref } }) {
-                    missions[index].steps[step].notes.append(.nextElsewhere(first))
-                }
+                if let note = nextElsewhere(missions[index].steps[step].ref) { missions[index].steps[step].notes.append(note) }
+            }
+            for step in missions[index].attached.indices {
+                if let note = nextElsewhere(missions[index].attached[step].ref) { missions[index].attached[step].notes.append(note) }
             }
             // What the missions made after it found its order's lines go round with.
             guard let notes = lines.notes[missions[index].key] else { continue }
@@ -1615,7 +1623,9 @@ extension Board {
         let group = group
         return OrderMission(
             key: group.key, kind: kind, steps: steps,
-            attached: group.attached.sorted(by: isEarlier).map { attachedStep($0, among: members.union(group.attached)) },
+            attached: group.attached.sorted(by: isEarlier).map {
+                attachedStep($0, among: members.union(group.attached), in: group, orders: orders, layer: layer)
+            },
             cycles: cycles, isFocused: false, isFinished: isFinished, isStale: isStale, attention: attention(refs), date: date,
             sessions: sessions(of: steps.map(\.ref) + group.attached, first: first)
         )
@@ -1667,22 +1677,31 @@ extension Board {
         return false
     }
 
-    /// A pull request the order doesn't name, with how it's stacked with the others, and what it's stacked on, wherever that
-    /// is, for what its Mission menu offers.
-    func attachedStep(_ ref: ItemRef, among group: Set<ItemRef>) -> OrderStep {
+    /// A pull request the order doesn't name, with how it's stacked with the others, and what it's stacked on and what you
+    /// put it after, wherever those are, for what its Mission menu offers; and what your change to it says, as one in the
+    /// order does: what you put it after, that an order went against it, ✎.
+    func attachedStep(_ ref: ItemRef, among shown: Set<ItemRef>, in group: Group, orders: DeclaredOrders, layer: Layer) -> OrderStep {
         var notes: [OrderNote] = []
         var prerequisites: [OrderPrerequisite] = []
+        let yours = layer.yours[ref] ?? []
         for earlier in before[ref, default: []].sorted() {
-            if group.contains(earlier), let origin = origins(earlier, ref).first {
+            if shown.contains(earlier), let origin = origins(earlier, ref).first {
                 notes.append(.stackedWith(earlier, comesAfter: true, origin))
             }
-            prerequisites.append(OrderPrerequisite(ref: earlier, origins: origins(earlier, ref), status: status(earlier)))
+            let origins = OrderOrigin.ordered(origins(earlier, ref) + (yours.contains(earlier) ? [.yours] : []))
+            prerequisites.append(OrderPrerequisite(ref: earlier, origins: origins, status: status(earlier)))
         }
-        for later in after[ref, default: []].sorted() where group.contains(later) {
+        for earlier in yours where before[ref]?.contains(earlier) != true {
+            prerequisites.append(OrderPrerequisite(ref: earlier, origins: [.yours], status: status(earlier)))
+        }
+        for later in after[ref, default: []].sorted() where shown.contains(later) {
             if let origin = origins(ref, later).first { notes.append(.stackedWith(later, comesAfter: false, origin)) }
         }
+        let isChanged = layer.holding[ref].map { !$0.after.isEmpty } ?? false
         return OrderStep(
-            ref: ref, status: status(ref), standing: .notInOrder, prerequisites: prerequisites, notes: notes, session: openers[ref]?.first
+            ref: ref, status: status(ref), standing: .notInOrder, prerequisites: prerequisites,
+            notes: notes + yourNotes(of: ref, in: group, entry: nil, orders: orders, layer: layer), session: openers[ref]?.first,
+            isYours: isChanged, isChangedByYou: isChanged
         )
     }
 }

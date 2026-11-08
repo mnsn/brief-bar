@@ -85,7 +85,9 @@ public struct OrderChange: Equatable, Sendable {
     /// Where you moved it; nil while it's where BriefBar or its order puts it.
     public var placement: OrderPlacement?
     /// The mission it was in when you changed it: the one you moved it from, for what it says, or the one you set it as next
-    /// or put it after another in, for Put Yours Back to put it back in, should an order take it out.
+    /// or put it after another in, for Put Yours Back to put it back in, should an order take it out. Where you set it as next
+    /// in a mission BriefBar worked out that an order took in since, still that one, for your next to go back to
+    /// (`unfollow`).
     public var from: MissionKey?
     /// When you last changed it, or put it back.
     public var changedAt: Date
@@ -196,13 +198,31 @@ public struct OrderChange: Equatable, Sendable {
 
     /// What you set in a mission BriefBar worked out, a stack, a chain or a session's pull requests, goes over to an order
     /// that names it since it was there, as it took it out of there: Set as Next to Merge and Merge After are that order's
-    /// now, and Put Yours Back puts it back there.
-    mutating func follow(into orders: DeclaredOrders) {
+    /// now, and Put Yours Back puts it back there. Your next stays where you set it while that order has another of yours,
+    /// for one to go first there; and `from` keeps where you set it, for it to go back there once the order no longer names
+    /// it (`unfollow`).
+    /// - Parameter nexts: the orders where another you set as next holds.
+    /// - Returns: the order your next went over to, if it did.
+    @discardableResult
+    mutating func follow(into orders: DeclaredOrders, besides nexts: Set<UUID> = []) -> UUID? {
         guard placement == nil, (first ?? from)?.isWorkedOut == true,
               let plan = orders.plans.first(where: { replaced.orders[$0.id] == nil && $0.entry(for: ref) != nil })
-        else { return }
-        if first?.isWorkedOut == true { first = .plan(plan.id) }
+        else { return nil }
+        if first?.isWorkedOut == true {
+            guard !nexts.contains(plan.id) else { return nil }
+            first = .plan(plan.id)
+            return plan.id
+        }
         if from?.isWorkedOut == true { from = .plan(plan.id) }
+        return nil
+    }
+
+    /// Your next that went over to an order (`follow`) goes back to the mission BriefBar worked out that you set it in, once
+    /// that order no longer names it, or is gone.
+    mutating func unfollow(in orders: DeclaredOrders) {
+        guard placement == nil, case .plan(let id)? = first, let from, from.isWorkedOut, orders.plan(id)?.entry(for: ref) == nil
+        else { return }
+        first = from
     }
 
     /// A revision of an order its session told before you changed it, which BriefBar sees only now, is what your change
@@ -278,21 +298,22 @@ public enum OrderChangeError: Error, Equatable, CustomStringConvertible {
     /// It merged or closed.
     case ended
 
+    /// Without a full stop: the line that says it beside your last change's Undo ends it, as it does what you did.
     public var description: String {
         switch self {
         case .full:
-            return "BriefBar keeps \(OrderChanges.mostChanges) of your changes: undo some first."
+            return "BriefBar keeps \(OrderChanges.mostChanges) of your changes: undo some first"
         case .waitsForIt(let other):
-            return "\(other.shortOrderLabel) waits for it, so it can't merge after \(other.shortOrderLabel)."
+            return "\(other.shortOrderLabel) waits for it, so it can't merge after \(other.shortOrderLabel)"
         case .stacked(let other):
-            return "Stacked on \(other.shortOrderLabel): it can't merge before it unless you retarget it."
+            return "Stacked on \(other.shortOrderLabel): it can't merge before it unless you retarget it"
         case .retarget(let merged, let branch):
             let label = merged.shortOrderLabel
-            return "\(label) merged: retarget it to \(branch ?? "the branch \(label) merged into") first."
+            return "\(label) merged: retarget it to \(branch ?? "the branch \(label) merged into") first"
         case .notInAMission:
-            return "It isn't in a mission: move it to one first."
+            return "It isn't in a mission: move it to one first"
         case .ended:
-            return "It merged or closed."
+            return "It merged or closed"
         }
     }
 }
@@ -514,24 +535,36 @@ public struct OrderChanges: Equatable, Sendable {
     /// on, though that order puts it back where it was, until you put yours back (`OrderChange.overridden`); one that moved
     /// it toward yours, or changed what you didn't, becomes what yours replaced, for what it does next to be told from, and
     /// one that took it out of a stack, chain or session's pull requests you changed it in, agreeing, gets what you set
-    /// there (`OrderChange.follow`); a revision told before your change, which BriefBar sees only now, is what yours
-    /// replaced; and an override by an order BriefBar forgot since is no more, so that yours holds again. Telling the same
-    /// order again notes nothing. True when that noted something.
+    /// there (`OrderChange.follow`), but your next while another of yours holds there, and gives your next back once it no
+    /// longer names it (`OrderChange.unfollow`); a revision told before your change, which BriefBar sees only now, is what
+    /// yours replaced; and an override by an order BriefBar forgot since is no more, so that yours holds again. Telling the
+    /// same order again notes nothing. True when that noted something.
     /// - Parameter now: when BriefBar saw it, for an order whose last change it can't tell.
     @discardableResult
     public mutating func noteOverrides(in orders: DeclaredOrders, now: Date = Date()) -> Bool {
         var noted = false
-        for (ref, before) in changes {
+        // The orders where one you set as next holds, as it will once back where you set it: another doesn't go over to one
+        // of those (`OrderChange.follow`).
+        var nexts = Set(changes.values.compactMap { change -> UUID? in
+            var change = change
+            change.unfollow(in: orders)
+            guard case .plan(let id)? = change.first, change.holds(in: orders) else { return nil }
+            return id
+        })
+        // The latest first, for the one you set as next last to go over to an order before another you set earlier.
+        for before in changes.values.sorted(by: { ($0.changedAt, $0.ref) > ($1.changedAt, $1.ref) }) {
+            let ref = before.ref
             var change = before
             if let overridden = change.overridden {
                 guard orders.plan(overridden.by) == nil else { continue }
                 change.overridden = nil
             }
+            change.unfollow(in: orders)
             change.rebase(on: orders)
             if let plan = change.changedBy(in: orders).first {
                 change.overridden = OrderChange.Overridden(by: plan.id, at: min(plan.updatedAt, now))
             } else if orders.plans.contains(where: { change.replaced.orders[$0.id] != $0.entry(for: ref).map { Set($0.after) } }) {
-                change.follow(into: orders)
+                if let id = change.follow(into: orders, besides: nexts) { nexts.insert(id) }
                 change.replaced = OrderPlace(of: ref, in: orders)
             }
             if change != before {
@@ -840,7 +873,9 @@ extension OrderChanges {
 
         case .putBack(let ref):
             guard var change = edited.changes[ref] else { break }
-            // What you set in a mission BriefBar worked out, which an order took it out of, is that order's.
+            // What you set in a mission BriefBar worked out, which an order took it out of, is that order's; a next that went
+            // over to an order that no longer names it is back where you set it.
+            change.unfollow(in: orders)
             change.follow(into: orders)
             // Back in the mission you set it as next or put it after another in, where its order no longer has it, even when
             // nothing's left there to show it but this one.

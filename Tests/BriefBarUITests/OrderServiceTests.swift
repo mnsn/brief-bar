@@ -424,7 +424,7 @@ private final class Clock {
 
         let refused = try #require(order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true)))
 
-        #expect(!refused.canUndo && refused.said == "Stacked on !4101: it can't merge before it unless you retarget it.")
+        #expect(!refused.canUndo && refused.said == "Stacked on !4101: it can't merge before it unless you retarget it")
         #expect(order.changes.isEmpty && defaults.object(forKey: OrderChanges.defaultsKey) == nil)
         #expect(order.refusal == refused && order.lastChange == nil)
         #expect(!order.undoLastChange())
@@ -441,7 +441,7 @@ private final class Clock {
 
         let refused = try #require(order.change(.setNext(Self.ref(4130), in: .plan(Self.planID), true)))
 
-        #expect(!refused.canUndo && refused.said == "It isn't in a mission: move it to one first.")
+        #expect(!refused.canUndo && refused.said == "It isn't in a mission: move it to one first")
         #expect(order.lastChange == done && order.refusal == refused && order.said == [refused, done])
         #expect(order.undoLastChange())
         #expect(order.changes.isEmpty && order.lastChange == nil && order.refusal == nil)
