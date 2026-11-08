@@ -542,4 +542,19 @@ import Testing
         #expect(reading.stage == .yourReview)
         #expect(StageText.why(reading, name: { _ in nil }) == "Copilot is pre-reviewing it")
     }
+
+    /// A Board card says what failed once: where its stage's words say it after their reason, "Copilot is writing it ·
+    /// build failed", it has no ✕ of its own, and VoiceOver doesn't hear it twice.
+    @Test func aBoardCardSaysAFailureOnce() throws {
+        let order = Self.onOrder()
+        let failing = Self.record(4088, checks: [Check(name: "shop-web CI", kind: .build, state: .failed)])
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let item = try #require(PRClassifier.snapshot(for: failing, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now))
+        #expect(item.group == .failing)
+        Self.tell(order, [failing], tasks: [Self.task(on: 4088, .fixBuild, .working)])
+        let reading = try #require(order.stage(of: failing.id.linkRef))
+        #expect(StageText.why(reading, name: { _ in nil }) == "Copilot is writing it · build failed")
+        #expect(PullRequestBoardCard.flags(item, reading: reading).isEmpty)
+        #expect(PullRequestBoardCard.details(item, reading: reading, order: nil, ordering: order) == ["shop-web"])
+    }
 }

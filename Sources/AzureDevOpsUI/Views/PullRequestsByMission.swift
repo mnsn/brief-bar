@@ -152,13 +152,13 @@ struct PullRequestBoardCard: View {
     }
 
     /// What it shows whatever its stage, as its row does: what needs you, what failed, a draft; each only where its stage's
-    /// why doesn't say it already.
+    /// words don't say it already, as its why or after it, "‘Cart’ is writing it · build failed".
     static func flags(_ item: PRSnapshot, reading: StageReading) -> [Flag] {
         var flags: [Flag] = []
         if item.group == .needsYou {
             flags.append(Flag(symbol: "hand.raised.fill", text: item.headline, color: PRGroup.needsYou.color))
         }
-        if item.group == .failing, reading.fixRank == nil {
+        if item.group == .failing, reading.fixRank == nil, reading.alsoFailing == nil {
             flags.append(Flag(symbol: "xmark.circle.fill", text: item.headline, color: PRGroup.failing.color))
         }
         if item.isDraft, reading.why != .draft {
