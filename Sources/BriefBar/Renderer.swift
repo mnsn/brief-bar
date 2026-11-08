@@ -486,6 +486,8 @@ enum Renderer {
                 // one picture, as the pictures of one render already come close to what SwiftUI can hold.
                 model.agents.useForRendering(on: true, sessionPrompts: true, sessionUpdates: true, order: true)
                 page(.agents, name: "agents-on-session-prompts")
+                // And whole, down to Pull Request Order's skill, below what the window's picture shows.
+                wholePage(SettingsPage(model: model, destination: .agents) { _ in }, name: "agents-on-session-prompts")
                 model.agents.useForRenderingLeftovers()
                 page(.agents, name: "agents-off-leftovers")
                 model.agents.useForRendering(on: false)
