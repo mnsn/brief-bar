@@ -115,11 +115,12 @@ struct MenuPanelView: View {
                 Label("Open GitHub", systemImage: "arrow.up.forward.app")
             }
             .buttonStyle(.borderless)
-            if let login = store.login {
-                Text(login)
+            if !store.logins.isEmpty {
+                Text(store.logins.joined(separator: ", "))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .help("Signed in to the GitHub CLI as \(login)")
+                    .truncationMode(.middle)
+                    .help("Signed in to the GitHub CLI as \(GitHubAccount.names(store.logins))")
             }
             Spacer()
             Menu {

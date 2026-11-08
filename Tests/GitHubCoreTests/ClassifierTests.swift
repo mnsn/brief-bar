@@ -8,6 +8,19 @@ import Testing
         GitHubClassifier.classify(pullRequest, role: role)
     }
 
+    /// From every account's list: each pull request once, as yours when it's yours as any of them, in the list's order.
+    @Test func mergesAccountsListsEachPullRequestOnce() {
+        let yours = Fixture.make(7, author: "robin-oss", checks: .failing)
+        let asReviewer = classify(yours, role: .reviewer)
+        let asAuthor = classify(yours)
+        let other = classify(Fixture.make(8, updated: t(minute)), role: .reviewer)
+
+        #expect(GitHubClassifier.merged([[asReviewer, other], [asAuthor]]) == GitHubClassifier.sorted([other, asAuthor]))
+        #expect(GitHubClassifier.merged([[asReviewer, other], [asAuthor]]).map(\.group) == [.toReview, .failing])
+        #expect(GitHubClassifier.merged([[other], [other]]) == [other])
+        #expect(GitHubClassifier.merged([]).isEmpty)
+    }
+
     @Test func aReviewRequestIsToReviewWhateverItsState() {
         let snapshot = classify(Fixture.make(isDraft: true, decision: .changesRequested, conflicts: true, checks: .failing), role: .reviewer)
         #expect(snapshot.group == .toReview)
