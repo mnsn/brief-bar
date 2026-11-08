@@ -330,10 +330,13 @@ import Testing
             #expect(window.makeFirstResponder(nil))
             try await Task.sleep(for: .milliseconds(200))
 
+            // Each key once the card is drawn in its new column, a moment later, as you'd press the next: a card that has the
+            // keyboard's focus takes it back as it appears there, and a key before that goes to no card.
             @MainActor func move(_ arrow: KeyEquivalent, to stage: PullRequestStage, _ what: String, throughTheApp: Bool = true)
                 async throws {
+                let before = drawn.frame?.minX
                 Self.press(arrow, command: true, in: window, throughTheApp: throughTheApp)
-                try await until(what) { order.stage(of: Self.ref)?.stage == stage }
+                try await until(what) { order.stage(of: Self.ref)?.stage == stage && drawn.frame?.minX != before }
                 try await Task.sleep(for: .milliseconds(200))
             }
             try await move(.rightArrow, to: .yourReview, "⌘→ to Your review")
@@ -372,6 +375,8 @@ import Testing
             try await Task.sleep(for: .milliseconds(300))
             #expect(order.stage(of: Self.ref)?.stage == .teammateReview)
             #expect(order.stageRefusal == nil, "The details were told why, though the Board showed")
+            // The card had the keys all along, so that key reached it: they move it back.
+            try await move(.leftArrow, to: .yourReview, "⌘← on the card after the key it couldn't take", throughTheApp: false)
         }
     }
 
