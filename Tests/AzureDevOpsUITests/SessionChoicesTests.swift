@@ -601,7 +601,9 @@ private struct DatabaseError: Error {
         let appRun = try #require(store.appRun(for: session, subject: subject, options: CopilotModel.standard))
         try setRunning(recorded, true, home: home)
         store.send(subject, prompt: "Fix the comments", options: CopilotModel.standard, repository: checkout, continuing: appRun)
-        for _ in 0..<100 where store.pending.first(where: { $0.id == onBranch })?.status.phase != .failed {
+        var deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while store.pending.first(where: { $0.id == onBranch })?.status.phase != .failed,
+              ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(store.pending.first { $0.id == onBranch }?.status.detail == LaunchError.sharedCheckout.description)
@@ -609,7 +611,8 @@ private struct DatabaseError: Error {
         // Once that turn ended, it starts.
         try setRunning(recorded, false, home: home)
         store.send(subject, prompt: "Fix the comments", options: CopilotModel.standard, repository: checkout, continuing: appRun)
-        for _ in 0..<100 where launched.withLock({ $0 }) == 0 {
+        deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while launched.withLock({ $0 }) == 0, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(launched.withLock { $0 } == 1)
@@ -957,7 +960,8 @@ private struct DatabaseError: Error {
 
         store.send(subject, prompt: "Fix the comments", options: CopilotModel.quick, repository: appRun.repository, continuing: appRun)
         #expect(store.settings.copilotRepositories.isEmpty)
-        for _ in 0..<100 where store.settings.copilotRuns.isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while store.settings.copilotRuns.isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         let request = try #require(requests.withLock { $0.first })
@@ -1012,7 +1016,8 @@ private struct DatabaseError: Error {
         #expect(store.continuable(forPullRequest: key) == nil)
 
         // It couldn't start: the pull request's row says so, and the run it went on with is as it was.
-        for _ in 0..<100 where store.statuses[opener]?.phase != .failed {
+        var deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while store.statuses[opener]?.phase != .failed, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(launches.withLock { $0 } == 1)
@@ -1041,7 +1046,8 @@ private struct DatabaseError: Error {
             return run
         }
         store.send(subject, prompt: "Fix the comments", options: CopilotModel.quick, repository: worktree, continuing: retry)
-        for _ in 0..<100 where store.settings.copilotRuns.first?.onPullRequest == nil {
+        deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while store.settings.copilotRuns.first?.onPullRequest == nil, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         let started = try #require(store.settings.copilotRuns.first)

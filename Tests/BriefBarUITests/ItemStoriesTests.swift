@@ -106,9 +106,7 @@ import Testing
         stories.request(item(pullRequest))
         stories.request(item(pullRequest))
         #expect(stories.isTelling(pullRequest))
-        for _ in 0..<200 where !stories.hasTold(pullRequest) {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await until("the pull request's story") { stories.hasTold(pullRequest) }
         #expect(stories.story(for: pullRequest)?.sentence == "Waiting for reviewers")
         #expect(!stories.isTelling(pullRequest))
         #expect(asked.refs == [pullRequest])
@@ -124,6 +122,10 @@ import Testing
     /// until the main actor's next turn, then asks for each thing once, for the latest row asked for.
     @Test func askingChangesNothingUntilTheNextTurn() async throws {
         let (_, stories) = hub()
+        // The clock stands still: a busy machine can keep this test from its next turn for longer than a story stays
+        // current (`ItemStories.freshFor`), and asking again then would tell it again.
+        let now = Date()
+        stories.now = { now }
         let asked = Asked()
         stories.register(.azureDevOps, kinds: [.pullRequest]) { ref in
             asked.refs.append(ref)
@@ -144,9 +146,7 @@ import Testing
         #expect(asked.refs.isEmpty)
         // They say they're being told already, for the details to say so as they show.
         #expect(stories.isTelling(pullRequest) && stories.isTelling(session))
-        for _ in 0..<200 where !stories.hasTold(pullRequest) || !stories.hasTold(session) {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("both stories") { stories.hasTold(pullRequest) && stories.hasTold(session) }
         #expect(changes.count > 0)
         #expect(asked.refs.count == 2)
         #expect(Set(asked.refs) == [pullRequest, session])
@@ -184,9 +184,7 @@ import Testing
         #expect(asked.refs.isEmpty)
         // Asked again, it's told.
         stories.request(item(session))
-        for _ in 0..<200 where !stories.hasTold(session) {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the session's story") { stories.hasTold(session) }
         #expect(asked.refs == [session])
     }
 
@@ -302,14 +300,10 @@ import Testing
             return ItemStory(sentence: "Read before its details")
         }
         stories.request(item(pullRequest))
-        for _ in 0..<200 where gate.continuation == nil {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the teller to wait") { gate.continuation != nil }
         stories.invalidate(pullRequest)
         gate.open()
-        for _ in 0..<200 where stories.isTelling(pullRequest) || !stories.hasTold(pullRequest) {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the story told again") { !stories.isTelling(pullRequest) && stories.hasTold(pullRequest) }
         #expect(stories.story(for: pullRequest)?.sentence == "Read with its details")
         #expect(asked.refs.count == 2)
     }
@@ -322,17 +316,13 @@ import Testing
             return ItemStory(sentence: "Told before Copilot stopped")
         }
         stories.request(item(session))
-        for _ in 0..<200 where gate.continuation == nil {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the teller to wait") { gate.continuation != nil }
         // Copilot stops and starts again, and the same row asks again, while the first story is still being told.
         stories.withdraw(.copilot)
         stories.register(.copilot, kinds: [.session]) { _ in ItemStory(sentence: "Told since") }
         stories.request(item(session))
         gate.open()
-        for _ in 0..<200 where !stories.hasTold(session) || stories.isTelling(session) {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the story told since") { stories.hasTold(session) && !stories.isTelling(session) }
         try await Task.sleep(for: .milliseconds(20))
         #expect(stories.story(for: session)?.sentence == "Told since")
         #expect(!stories.isTelling(session))
@@ -352,9 +342,7 @@ import Testing
             return ItemStory(sentence: "Waiting for reviewers")
         }
         let summary = Task { await stories.tell([item(session), item(pullRequest)]) }
-        for _ in 0..<200 where gate.continuation == nil {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the teller to wait") { gate.continuation != nil }
         #expect(stories.isTelling(session))
         summary.cancel()
         gate.open()
@@ -381,9 +369,7 @@ import Testing
         }
         // The details ask first.
         stories.request(item(session))
-        for _ in 0..<200 where gate.continuation == nil {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the teller to wait") { gate.continuation != nil }
         let summary = Task { await stories.tell([item(session)]) }
         try await Task.sleep(for: .milliseconds(30))
         gate.open()
@@ -395,17 +381,13 @@ import Testing
         // What waits for another's request doesn't take it back: that one goes on, for the details.
         let next = item(session, status: "Working")
         stories.request(next)
-        for _ in 0..<200 where gate.continuation == nil {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the teller to wait") { gate.continuation != nil }
         let cancelled = Task { await stories.tell([next]) }
         try await Task.sleep(for: .milliseconds(30))
         cancelled.cancel()
         gate.open()
         await cancelled.value
-        for _ in 0..<200 where stories.isTelling(session) {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the story to be told") { !stories.isTelling(session) }
         #expect(asked.refs == [session, session])
         #expect(stories.story(for: session)?.sentence == "Told 2")
     }

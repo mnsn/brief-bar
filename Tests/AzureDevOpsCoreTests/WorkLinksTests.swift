@@ -254,9 +254,10 @@ import Testing
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
     }
 
-    /// Waits for what a read under way has asked, up to five seconds.
+    /// Waits for what a read under way has asked, for as long as a busy machine could need (`waitLimit`).
     private func until(_ condition: () -> Bool) async throws {
-        for _ in 0..<500 where !condition() {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(condition())

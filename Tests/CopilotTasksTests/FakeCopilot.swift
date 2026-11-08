@@ -169,11 +169,13 @@ enum FakeCopilot {
             messages.compactMap { $0["method"] as? String }
         }
 
-        /// Waits until the server has been sent `method`, looking at its log up to 2,000 times, 10 ms apart: on
-        /// `TestThreads`, since reading it that often in Swift's cooperative pool would hold up every other test.
+        /// Waits until the server has been sent `method`, looking at its log every 10 ms for as long as a busy machine
+        /// could need (`waitLimit`): on `TestThreads`, since reading it that often in Swift's cooperative pool would
+        /// hold up every other test.
         func waitUntilSent(_ method: String) async throws {
             try await withTaskExecutorPreference(TestThreads.shared) {
-                for _ in 0..<2000 where !methods.contains(method) {
+                let deadline = ContinuousClock.now.advanced(by: waitLimit)
+                while !methods.contains(method), ContinuousClock.now < deadline {
                     try await Task.sleep(for: .milliseconds(10))
                 }
             }

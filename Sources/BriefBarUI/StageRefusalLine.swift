@@ -7,7 +7,8 @@ package struct StageRefusal: Equatable, Sendable {
     package let ref: ItemRef
     /// "Azure DevOps decides when it can merge: once it says it's ready to complete".
     package let why: String
-    /// How its stage read as it couldn't leave it: once it reads otherwise, it's said no more.
+    /// How its stage read as it couldn't leave it: once it reads otherwise, it's said no more; a new name for a mission its
+    /// stage's words name is no change (`StageReading.readTheSame`).
     package let reading: StageReading
     /// Why it didn't move; false for where it still waits once it did (`PullRequestOrder.stillWaits`).
     package let isRefusal: Bool
@@ -22,9 +23,12 @@ package struct StageRefusal: Equatable, Sendable {
 
 extension PullRequestOrder {
     /// Why the Board's keys couldn't move a pull request while its details covered the Board, while its stage reads as it
-    /// did then: nil once it changed, from anywhere, or the Board shows again, or you dismissed it.
+    /// did then, but for a new name of a mission its words name: nil once it changed, from anywhere, or the Board shows
+    /// again, or you dismissed it.
     package func stageRefusal(of ref: ItemRef) -> String? {
-        guard let refusal = stageRefusal, refusal.ref == ref, stage(of: ref) == refusal.reading else { return nil }
+        guard let refusal = stageRefusal, refusal.ref == ref, StageReading.readTheSame(stage(of: ref), refusal.reading) else {
+            return nil
+        }
         return refusal.why
     }
 }

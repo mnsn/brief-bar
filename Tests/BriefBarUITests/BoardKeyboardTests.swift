@@ -805,6 +805,75 @@ import Testing
         }
     }
 
+    /// Where two orders go round, the details say why ⌘← in the lane of the order its stage names didn't set it as next,
+    /// as they cover the Board; and they still do as you rename that order, whose new name its stage's words say: its
+    /// stage didn't change.
+    @Test func whileTheyCoverTheBoardWhyItDidntMoveStaysAsTheOrderItsStageNamesIsRenamed() async throws {
+        let order = try Self.twoOrders([4102, 4101], [4101, 4102], ready: [4101, 4102])
+        let ref = ItemRef.pullRequest(organization: "contoso", number: 4101)
+        let other = MissionKey.plan(Self.otherID)
+        #expect(StageOrder.holders(of: ref, in: order.missions) == [.plan(Self.planID)])
+        let details = Details(covers: true)
+        try await Self.showingWired(order, details: details) { window, host, wired in
+            try await Self.pressUntil("the click in the other mission's lane") {
+                Self.click(at: wired.frames[Self.key(ref, other)] ?? .zero, in: host)
+                return details.shown == ref
+            }
+            #expect(window.makeFirstResponder(nil))
+            try await Self.pressUntil("the details to say where it waits") {
+                Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+                return order.stageRefusal(of: ref) != nil
+            }
+            let why = try #require(order.stageRefusal(of: ref))
+            #expect(why.hasPrefix("It waits in ‘"))
+
+            let mission = try #require(order.missions.first { $0.key == other })
+            #expect(order.rename(mission, to: "Payments") == .named)
+            #expect(order.stageRefusal(of: ref) == why)
+            let words = StageWhy.orderHolds("‘Payments’ puts !4102 after it: check the order")
+            try await until("the Board to draw its stage's new words") { wired.whys[Self.key(ref, other)] == words }
+            #expect(order.stageRefusal(of: ref) == why)
+        }
+    }
+
+    /// Where two orders go round, ⌘← in the lane of the order its stage names says why it didn't set it as next, under that
+    /// lane's header, which moves its cards down; and it still does as you rename that order, whose new name its stage's
+    /// words say: its stage didn't change.
+    @Test func whyItDidntMoveStaysUnderItsLaneAsTheOrderItsStageNamesIsRenamed() async throws {
+        let order = try Self.twoOrders([4102, 4101], [4101, 4102], ready: [4101, 4102])
+        let ref = ItemRef.pullRequest(organization: "contoso", number: 4101)
+        let other = MissionKey.plan(Self.otherID)
+        let details = Details()
+        try await Self.showingWired(order, details: details) { window, host, wired in
+            let top = { () -> CGFloat? in
+                host.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                return wired.tops[Self.key(ref, other)]
+            }
+            let before = try #require(top())
+            try await Self.pressUntil("the click in the other mission's lane") {
+                Self.click(at: wired.frames[Self.key(ref, other)] ?? .zero, in: host)
+                return details.shown == ref
+            }
+            try await Self.pressUntil("⌘← to say under its lane where it waits") {
+                Self.press(.leftArrow, command: true, in: window)
+                return (top() ?? before) > before
+            }
+            let below = try #require(top())
+            #expect(order.stage(of: ref)?.stage == .waits && order.lastOrderChange == nil)
+
+            let mission = try #require(order.missions.first { $0.key == other })
+            #expect(order.rename(mission, to: "Payments") == .named)
+            let words = StageWhy.orderHolds("‘Payments’ puts !4102 after it: check the order")
+            try await until("the Board to draw its stage's new words") { wired.whys[Self.key(ref, other)] == words }
+            // Laid out again, a few times over: the line is still there.
+            for _ in 0..<5 {
+                try await Task.sleep(for: .milliseconds(50))
+                #expect(top() == below)
+            }
+        }
+    }
+
     // MARK: Two missions, with Set as Next to Merge
 
     private static let planID = UUID(uuidString: "11111111-2222-4333-8444-555555555555")!
@@ -816,6 +885,10 @@ import Testing
     private final class Wired {
         var frames: [String: CGRect] = [:]
         var places: [MissionMenuContext.UndoPlace] = []
+        /// Why each card is in its stage, as the Board last drew it.
+        var whys: [String: StageWhy] = [:]
+        /// How far down the Board each card is: the window centers the Board, and sizes it anew as it changes.
+        var tops: [String: CGFloat] = [:]
     }
 
     private static func key(_ ref: ItemRef, _ mission: MissionKey?) -> String {
@@ -839,6 +912,8 @@ import Testing
                     let key = BoardKeyboardTests.key(card.ref, card.mission)
                     let content = Text(label)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { wired.frames[key] = $0 }
+                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).minY } action: { wired.tops[key] = $0 }
+                        .onChange(of: card.reading.why, initial: true) { _, why in wired.whys[key] = why }
                     return BoardCardContent(view: AnyView(content), menu: AnyView(EmptyView()), label: label)
                 },
                 isSelected: { [details] in details.shown == $0 },
@@ -851,7 +926,11 @@ import Testing
                 notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000)
             )
             .disabled(covered)
+            .coordinateSpace(.named(Self.space))
         }
+
+        /// The Board's own, for how far down it each card is.
+        static let space = "WiredBoard"
     }
 
     /// Pull Request Order, on, with two sessions' orders of pull requests you opened, each one's in turn, these ready to

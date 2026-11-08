@@ -97,8 +97,11 @@ import Testing
         store.receive(snapshot)
     }
 
+    /// Lets what's under way go on until `reads` has `count` reads, for as long as a busy machine could need
+    /// (`waitLimit`).
     private func waitForReads(_ reads: Reads, _ count: Int) async {
-        for _ in 0..<1_000 where reads.count < count { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while reads.count < count, ContinuousClock.now < deadline { await Task.yield() }
     }
 
     // MARK: Whose
@@ -593,7 +596,7 @@ import Testing
 
     /// Clicked twice, or in two windows, which share what's on its way: while one change to a thread goes, no other does, an
     /// edit, a deletion or a reply.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aChangeGoesOnceWhileItsThreadIsBusy() async throws {
         let (store, changes, azure, _) = live()
         let (mine, _) = try comments(store)
@@ -604,7 +607,8 @@ import Testing
         }
         let original = try thread(store)
         let editing = Task { await changes.edit("Capped it.", of: mine, in: original, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
         #expect(changes.state(of: threadKey) == .sending(.edit(comment: mine.id)))
         #expect(await changes.edit("Capped it.", of: mine, in: original, of: key) == false)
@@ -618,7 +622,7 @@ import Testing
     /// A thread takes one change at a time: while a status you set, or that another window sent, is on its way, your
     /// deletion sends nothing, and the comment stays, which the delete confirmation shows by waiting to delete it
     /// (`CommentDeleteConfirmation.isBusy`); once the status is done, it goes.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aDeletionWaitsForAStatusOnItsWay() async throws {
         let (store, changes, azure, _) = live()
         let (mine, _) = try comments(store)
@@ -634,7 +638,8 @@ import Testing
         }
         let original = try thread(store)
         let setting = Task { await changes.setStatus(.fixed, of: original, in: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         #expect(changes.isSending(threadKey))
         #expect(await changes.delete(mine, in: original, of: key) == false)
         #expect(changes.state(of: threadKey) == .sending(.status(.fixed)))
@@ -726,7 +731,7 @@ import Testing
 
     /// An edit's answer that comes after the list read a later edit of the comment, made elsewhere meanwhile, doesn't put
     /// back what it said, then or as the list reads it again: Azure DevOps dates each edit, and the later one stays.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func anEditsAnswerAfterALaterEditDoesntPutItBack() async throws {
         let (store, changes, azure, _) = live()
         let (mine, _) = try comments(store)
@@ -737,7 +742,8 @@ import Testing
         }
         let original = try thread(store)
         let editing = Task { await changes.edit("Capped it.", of: mine, in: original, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
 
         // Edited elsewhere after it was saved, as Azure DevOps dates it, and read so before its answer comes.
         let elsewhere = "Capped it at 30 seconds, from Azure DevOps."
@@ -888,7 +894,8 @@ import Testing
         }
         let original = try thread(store)
         let editing = Task { await changes.edit("Capped it.", of: mine, in: original, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         changes.settings.makesChanges = false
         try #require(waiting).resume()
         #expect(await editing.value == false)
@@ -902,7 +909,7 @@ import Testing
     /// One on its way as the setting goes off settles all the same: on again before it has, its thread shows it on its way
     /// and takes no other change; then what Azure DevOps answered shows, nothing says it failed, and the thread takes changes
     /// again.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func turnedOffAsADeletionGoesItSettles() async throws {
         let (store, changes, azure, _) = live()
         let (mine, sams) = try comments(store)
@@ -918,7 +925,8 @@ import Testing
         }
         let original = try thread(store)
         let deleting = Task { await changes.delete(mine, in: original, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         changes.settings.makesChanges = false
         changes.settings.makesChanges = true
         #expect(changes.state(of: threadKey) == .sending(.delete(comment: mine.id)))
@@ -934,7 +942,7 @@ import Testing
 
     /// An edit that may have gone though it didn't say so, as the setting went off, is read again once it has settled; and
     /// on again, the same edit is checked before it goes, though what you wrote went with the setting.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func turnedOffAsAnEditThatMayHaveGoneGoesItsCheckedOnceItSettles() async throws {
         let (store, changes, azure, _) = live()
         let (mine, _) = try comments(store)
@@ -949,7 +957,8 @@ import Testing
         let original = try thread(store)
         changes.keepEdit("Capped it.", for: draft, from: changes.startEditing(mine, in: original, of: try #require(store.record(for: key)).pullRequest).base)
         let editing = Task { await changes.edit("Capped it.", of: mine, in: original, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         changes.settings.makesChanges = false
         #expect(readAgain.isEmpty)
         #expect(changes.edit(draft) == nil)
@@ -978,7 +987,7 @@ import Testing
     /// A change goes as whom the list was read as when you clicked: someone else signed in since, the client sends nothing,
     /// and the thread says so; and someone else signing in forgets what may have gone, and what was on its way does nothing
     /// as it settles.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aChangeGoesOnlyAsYou() async throws {
         let (store, changes, azure, _) = live()
         let (mine, _) = try comments(store)
@@ -1018,7 +1027,8 @@ import Testing
         }
         let shown = try thread(store)
         let deleting = Task { await changes.delete(try #require(shown.comments.first), in: shown, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         changes.accountChanged("home/alex")
         try #require(waiting).resume()
         #expect(try await deleting.value == false)

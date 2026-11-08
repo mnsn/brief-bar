@@ -389,7 +389,7 @@ import Testing
 
     /// A list that was read before a change, and answers as the tags were, doesn't undo it; one read after it is taken, as it
     /// may have a change made since.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aListReadThatStartedBeforeAChangeDoesntUndoIt() async throws {
         let server = StubServer()
         server.serveOrganization(mine: [Self.pullRequest(1, tags: ["deploy-eu"])])

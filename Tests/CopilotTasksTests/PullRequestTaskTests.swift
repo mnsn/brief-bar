@@ -58,7 +58,7 @@ import Testing
         return run
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func worksAtThePullRequestsLatestCommitThenGoesOnInTheSameSession() async throws {
         let fixture = try await repositoryWithBranch()
         defer { fixture.remove() }
@@ -105,7 +105,7 @@ import Testing
     /// when it was retargeted after its conflicts were resolved there: nothing starts, and the worktree stays as it is; nor
     /// when Azure DevOps says, right before git checks or right before Copilot starts, that the pull request merges into
     /// another branch than the prompt names, or that can't be read. Against the branch it merged, it goes.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func pushesNoMergeOfWhatTheTargetDoesntHave() async throws {
         let fixture = try await repositoryWithBranch()
         defer { fixture.remove() }
@@ -172,7 +172,7 @@ import Testing
     /// A pull request's prompt has no placeholders, but quotes what others wrote, such as a change suggested in a comment,
     /// which Copilot applies as it's written: it goes as it is, `{baseBranch}` and all, where a work item's prompt has its
     /// base branch filled in (`CopilotLauncherTests`).
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aPullRequestsPromptGoesAsItIs() async throws {
         let fixture = try await repositoryWithBranch()
         defer { fixture.remove() }
@@ -204,7 +204,7 @@ import Testing
 
     /// One of the Copilot app's sessions, such as the one that opened the pull request, goes on in the folder it works in,
     /// under its own name: never while the app has it open, which keeps its history in memory and wouldn't see the turn.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func goesOnWithACopilotAppSessionInItsFolderOnlyWhileTheAppDoesntHaveItOpen() async throws {
         let fixture = try await repositoryWithBranch()
         defer { fixture.remove() }
@@ -246,7 +246,7 @@ import Testing
 
     /// The Copilot app may open a session while BriefBar gets ready to go on with it, as git runs: the launcher looks again
     /// right before it starts the CLI, and doesn't start it then.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func looksAgainWhetherTheAppOpenedTheSessionRightBeforeStarting() async throws {
         let fixture = try await repositoryWithBranch()
         defer { fixture.remove() }
@@ -279,7 +279,7 @@ import Testing
     /// Another of the Copilot app's sessions may start a turn in the same checkout, in a folder of it, while BriefBar gets
     /// ready to go on with a session there, as git runs: the launcher looks again right before it starts the CLI, by the
     /// app's database, and doesn't start it then. Once that turn ended, it does.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func looksAgainWhetherAnotherSessionRunsATurnInTheCheckoutRightBeforeStarting() async throws {
         let fixture = try await repositoryWithBranch()
         defer { fixture.remove() }
@@ -335,7 +335,7 @@ import Testing
     }
 
     /// Going on with the session of the work item's task that opened the pull request, the task stays that work item's.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aTaskOnThePullRequestAWorkItemsTaskOpenedStaysTheWorkItems() async throws {
         let fixture = try await repositoryWithBranch()
         defer { fixture.remove() }

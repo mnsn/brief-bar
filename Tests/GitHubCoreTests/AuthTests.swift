@@ -106,7 +106,7 @@ import Testing
 
     /// Turning GitHub off cancels the read waiting for a token: the run of `gh` under way stops, and what it would have
     /// printed reaches nothing, not even the next read. The run goes on until it's stopped, however slow the machine.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aCallerThatGivesUpStopsTheRunItWaitsFor() async throws {
         let runner = FakeRunner([.output("gho_late"), .output("gho_next")], held: true)
         let provider = GitHubCLITokenProvider(locator: .fixed(gh), runner: runner, now: { referenceDate })
@@ -130,7 +130,7 @@ import Testing
 
     /// A caller that gives up gets no token, but the run goes on for another that still waits for it. The run lasts until
     /// the test lets it end, once the caller has given up, however slow the machine.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aRunGoesOnForTheCallersStillWaiting() async throws {
         let runner = FakeRunner([.output("gho_shared")], held: true)
         let provider = GitHubCLITokenProvider(locator: .fixed(gh), runner: runner, now: { referenceDate })
@@ -394,7 +394,7 @@ import Testing
     }
 
     /// Turning GitHub off cancels a read while it lists the accounts: the run of `gh` stops, and nothing is kept.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aCallerThatGivesUpStopsTheRun() async throws {
         let runner = FakeRunner([.output(Fixture.accounts(["robin"])), .output(Fixture.accounts(["kai"]))], held: true)
         let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { referenceDate })

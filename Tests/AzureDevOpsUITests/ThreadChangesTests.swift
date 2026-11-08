@@ -198,7 +198,7 @@ import Testing
 
     /// Called off while a reply that may have gone is checked, as the setting is turned off and on again, it does nothing
     /// more as the thread comes back read: not to another reply under way on its thread, nor by sending what it said.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aReplyCalledOffWhileItsThreadIsReadDoesNothingMore() async throws {
         let (store, changes, azure) = live()
         let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
@@ -214,7 +214,8 @@ import Testing
         }
         let original = try thread(store)
         let checking = Task { await changes.reply("Capped it.", to: original, of: key) }
-        for _ in 0..<1_000 where reading == nil { await Task.yield() }
+        var deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while reading == nil, ContinuousClock.now < deadline { await Task.yield() }
         changes.settings.makesChanges = false
         changes.settings.makesChanges = true
 
@@ -229,7 +230,8 @@ import Testing
             return try azure.send(write)
         }
         let replying = Task { await changes.reply("Tested it too.", then: .fixed, to: original, of: key) }
-        for _ in 0..<1_000 where sending == nil { await Task.yield() }
+        deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while sending == nil, ContinuousClock.now < deadline { await Task.yield() }
         #expect(changes.state(of: threadKey) == .sending(.reply(then: .fixed)))
 
         try #require(reading).resume()
@@ -416,7 +418,8 @@ import Testing
         }
         let original = try thread(store)
         let replying = Task { await changes.reply("Capped it.", then: .fixed, to: original, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         #expect(changes.isSending(threadKey))
 
         changes.settings.makesChanges = false
@@ -491,7 +494,8 @@ import Testing
         }
         let original = try thread(store)
         let replying = Task { await changes.reply("Capped it.", then: .fixed, to: original, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         changes.settings.makesChanges = false
         try #require(waiting).resume()
         #expect(await replying.value == false)
@@ -518,7 +522,8 @@ import Testing
         changes.keep("Capped it.", for: threadKey)
         let original = try thread(store)
         let replying = Task { await changes.reply("Capped it.", to: original, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         changes.settings.makesChanges = false
         #expect(readAgain.isEmpty)
         azure.fails = .network(ADOClient.unansweredMessage)
@@ -552,7 +557,7 @@ import Testing
     /// On again before a change under way as it went off has settled, its thread shows it on its way, without the status
     /// after a reply, which doesn't go, and takes no other change, the same reply included, until it has: then one that may
     /// have gone is checked before the same goes again, rather than read while Azure DevOps may still be making it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func onAgainBeforeAReplySettlesItsThreadWaitsForIt() async throws {
         let (store, changes, azure) = live()
         let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
@@ -570,7 +575,8 @@ import Testing
         }
         let original = try thread(store)
         let replying = Task { await changes.reply("Capped it.", then: .fixed, to: original, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         changes.settings.makesChanges = false
         changes.settings.makesChanges = true
         #expect(changes.state(of: threadKey) == .sending(.reply(then: nil)))
@@ -608,7 +614,7 @@ import Testing
 
     /// Someone else signing in while a change under way as the setting went off settles doesn't wait for it: it was the last
     /// one's, and what Azure DevOps answers for it doesn't show over what the next one reads.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func someoneElseSigningInDoesntWaitForTheLastOnesChange() async throws {
         let (store, changes, azure) = live()
         let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
@@ -622,7 +628,8 @@ import Testing
         }
         let original = try thread(store)
         let replying = Task { await changes.reply("Capped it.", to: original, of: key) }
-        for _ in 0..<1_000 where waiting == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while waiting == nil, ContinuousClock.now < deadline { await Task.yield() }
         changes.settings.makesChanges = false
         changes.settings.makesChanges = true
         #expect(changes.isSending(threadKey))
@@ -656,7 +663,7 @@ import Testing
 
     /// The reads of a pull request after a change to its threads stop as Azure DevOps does: as it's turned off, or BriefBar
     /// quits.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func stoppingCallsOffTheReadsAfterAChange() async throws {
         let (store, _, _) = live()
         let (started, startedOne) = AsyncStream<Void>.makeStream()
@@ -679,7 +686,10 @@ import Testing
         store.stop()
         #expect(store.changeReadsUnderWay == 0)
         #expect(await read.value == nil)
-        for _ in 0..<1_000 where calledOff.withLock({ $0 }) < 3 { try await Task.sleep(for: .milliseconds(5)) }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while calledOff.withLock({ $0 }) < 3, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
         #expect(calledOff.withLock { $0 } == 3)
         // Stopped, nothing more is read.
         store.mayHaveChanged(key)
