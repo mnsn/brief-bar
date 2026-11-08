@@ -95,6 +95,46 @@ private final class BoardScroll: ObservableObject {
     @Published var x: CGFloat = 0
 }
 
+/// Where the page's top is on the board as the page scrolls, which only the column titles follow, to stay there.
+@MainActor
+private final class BoardPin: ObservableObject {
+    @Published var place = BoardPlace(top: -1, height: 0)
+}
+
+/// Where the page's top is on the board: how far below the board's top, -1 while it's above it, and as far as the board's
+/// height once the board is above it; and how tall the board is, with its column titles.
+private struct BoardPlace: Equatable, Sendable {
+    var top: CGFloat
+    var height: CGFloat
+}
+
+/// The column titles, which stay at the page's top while it shows the board, over the cards that scroll under them, until
+/// the board's end, as a lazy stack's pinned header does. Not one: with the board as its one row, a lazy stack misplaces the
+/// lanes when the page narrows while it's scrolled down the board, as when the details open beside it, and leaves room
+/// above them until the page is back at its top.
+private struct PinnedTitles<Content: View>: View {
+    @ObservedObject var pin: BoardPin
+    let content: Content
+
+    @LocalState private var height: CGFloat = 0
+
+    var body: some View {
+        let place = pin.place
+        content
+            .background {
+                // Once they stay at the top, over the cards that scroll under them.
+                if place.top > -1 {
+                    Rectangle()
+                        .fill(Color(nsColor: .windowBackgroundColor))
+                        .overlay(alignment: .bottom) { Divider().opacity(0.6) }
+                        .padding(.horizontal, -18)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+            .offset(y: min(max(0, place.top), max(0, place.height - height)))
+    }
+}
+
 /// What follows the board as it scrolls sideways: the column titles, which move with the columns under them, and a lane's
 /// header, which stays in view.
 private struct FollowsScroll<Content: View>: View {
@@ -144,21 +184,26 @@ package struct OrderBoardView: View {
     @LocalState private var unfolded: Set<MissionKey> = []
     @LocalState private var width: CGFloat = 0
     @LocalState private var flashing: PullRequestStage?
-    /// The column titles stay at the page's top, over the cards that scroll under them.
-    @LocalState private var isPinned = false
     @LocalState private var scroll = BoardScroll()
+    /// The column titles stay at the page's top, over the cards that scroll under them.
+    @LocalState private var pin = BoardPin()
     /// Where each mission's lane starts, for By Mission to show it, as a row's capsule asks.
     @LocalState private var laneTops: [MissionKey: CGFloat] = [:]
     /// The mission a row's capsule asked to show, for a moment, while the board settles.
     @LocalState private var revealing: MissionKey?
     /// Each time the page shows it, for when to stop.
     @LocalState private var revealCount = 0
-    @LocalState private var titlesHeight: CGFloat = 0
     @FocusState private var focused: CardSpot?
     /// The card a key, or a drop, just moved while it had the keyboard's focus: drawn anew in its new column, it takes the
     /// focus back as it appears, so that the next key moves it on.
     @LocalState private var refocus: CardSpot?
+    /// The card that had the keyboard's focus while the board could take it, or that you clicked last: when the details
+    /// cover the board, which can't take the focus then, it has it back once they close, and the keys move it meanwhile.
+    @LocalState private var lastFocus: CardSpot?
+    @LocalState private var keys = BoardKeys()
     @Environment(\.textScale) private var textScale
+    /// False while the details of what you clicked cover the board, in a narrow window or at a bigger text size.
+    @Environment(\.isEnabled) private var isEnabled
 
     package init(
         board: PullRequestBoard, missions: [OrderMission], order: PullRequestOrder, elsewhere: String, openElsewhere: (() -> Void)?,
@@ -193,19 +238,19 @@ package struct OrderBoardView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
             } else {
-                // Its column titles stay at the top as the page scrolls.
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    Section {
-                        lanesView(lanes, metrics: metrics, moves: moves)
-                    } header: {
-                        columnTitles(metrics)
-                    }
-                }
+                lanesSection(lanes, metrics: metrics, moves: moves)
             }
             notOnBoardLine
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .background(alignment: .topLeading) { coveredKeys(lanes, moves: moves) }
+        .onChange(of: focused) { _, spot in
+            if isEnabled { lastFocus = spot }
+        }
+        .onChange(of: isEnabled) { _, enabled in
+            if enabled { giveFocusBack() }
+        }
         // On the Board, a card that a change takes off it leaves its Undo at the top of its lane, as VoiceOver says.
         .environment(\.stageUndoPlace, .lane)
         // A drag that ends anywhere, dropped or not: the columns stop lighting up.
@@ -220,6 +265,51 @@ package struct OrderBoardView: View {
         }
     }
 
+    /// The column titles over the lanes, with where each mission's lane starts. The titles stay at the page's top while it
+    /// shows the board (`PinnedTitles`).
+    private func lanesSection(_ lanes: [BoardLane], metrics: BoardMetrics, moves: BoardMoves) -> some View {
+        ScrollViewReader { proxy in
+            VStack(alignment: .leading, spacing: 0) {
+                PinnedTitles(pin: pin, content: columnTitles(metrics))
+                    // Over the cards that scroll under them.
+                    .zIndex(1)
+                lanesView(lanes, metrics: metrics, moves: moves)
+            }
+            // Each time the page scrolls while its top is on the board, but for the titles only.
+            .onGeometryChange(for: BoardPlace.self) { geometry in
+                let height = geometry.size.height
+                return BoardPlace(top: min(max(-1, geometry.bounds(of: .scrollView)?.minY ?? -1), height), height: height)
+            } action: { pin.place = $0 }
+            .overlay(alignment: .topLeading) { missionAnchors(lanes, proxy: proxy) }
+            .onAppear { takeReveal(order.revealed, with: proxy) }
+            .onChange(of: order.revealed) { _, key in takeReveal(key, with: proxy) }
+        }
+    }
+
+    // MARK: Keys while the details cover the board
+
+    /// While the details cover the board, its cards can't have the keyboard's focus: ⌘→ and ⌘← move the card of the pull
+    /// request they show.
+    private func coveredKeys(_ lanes: [BoardLane], moves: BoardMoves) -> some View {
+        let move: (@MainActor (Bool) -> Void)? = if isEnabled || shownSpot(in: lanes) == nil {
+            nil
+        } else {
+            { forward in moveShown(forward: forward, lanes: lanes, moves: moves) }
+        }
+        return BoardKeysView(keys: keys, move: move)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+    }
+
+    /// Once the details that covered the board close, or go beside it: the card that had the keyboard's focus has it back,
+    /// once it can take it, unless you're typing in a field.
+    private func giveFocusBack() {
+        guard let spot = lastFocus else { return }
+        DispatchQueue.main.async {
+            if isEnabled, !keys.isEditingText { focused = spot }
+        }
+    }
+
     // MARK: Columns
 
     private func columnTitles(_ metrics: BoardMetrics) -> some View {
@@ -228,23 +318,10 @@ package struct OrderBoardView: View {
                 columnTitle(stage, width: metrics.width(stage))
             }
         })
-        .frame(width: metrics.visible, alignment: .leading)
+        // As wide as the page, whatever the columns need: they scroll sideways under it.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .clipped()
         .padding(.vertical, 6)
-        .background {
-            // Once it stays at the top, over the cards that scroll under it.
-            if isPinned {
-                Rectangle()
-                    .fill(Color(nsColor: .windowBackgroundColor))
-                    .overlay(alignment: .bottom) { Divider().opacity(0.6) }
-                    .padding(.horizontal, -18)
-            }
-        }
-        // Only as it reaches the top and leaves it, not each time the page scrolls.
-        .onGeometryChange(for: Bool.self) { proxy in
-            (proxy.bounds(of: .scrollView)?.minY ?? -1) > -1
-        } action: { isPinned = $0 }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { titlesHeight = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Stages")
     }
@@ -352,23 +429,20 @@ package struct OrderBoardView: View {
             .scrollIndicators(metrics.content > metrics.visible + 1 ? .automatic : .hidden)
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in scroll.x = x }
             .onChange(of: order.revealedColumn) { _, stage in reveal(stage, with: proxy) }
-            .onAppear {
-                reveal(order.revealedColumn, with: proxy)
-                takeReveal(order.revealed, with: proxy)
-            }
-            .onChange(of: order.revealed) { _, key in takeReveal(key, with: proxy) }
-            .overlay(alignment: .topLeading) { missionAnchors(lanes, proxy: proxy) }
+            .onAppear { reveal(order.revealedColumn, with: proxy) }
         }
     }
 
-    /// Where each mission's lane starts, as By Mission shows a mission a row's capsule asks for: outside the board's sideways
-    /// scroll, so that it scrolls the page, just under the column titles that stay at its top. The page scrolls to the one it
-    /// shows once that anchor is laid out where its lane starts, and again as it moves while the board settles.
+    /// Where each mission's lane starts, as By Mission shows a mission a row's capsule asks for: from the board's top, where
+    /// its column titles start, so that with the anchor at the page's top, as far above the lane as they're tall, the
+    /// titles that stay there are just over the lane, its first too. Outside the board's sideways scroll, so that it
+    /// scrolls the page. The page scrolls to the one it shows once that anchor is laid out where its lane starts, and again
+    /// as it moves while the board settles.
     private func missionAnchors(_ lanes: [BoardLane], proxy: ScrollViewProxy) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(lanes.compactMap(\.mission).map(LaneAnchor.init), id: \.self) { anchor in
                 VStack(spacing: 0) {
-                    Color.clear.frame(width: 1, height: max(0, (laneTops[anchor.mission] ?? 0) - titlesHeight))
+                    Color.clear.frame(width: 1, height: max(0, laneTops[anchor.mission] ?? 0))
                     Color.clear.frame(width: 1, height: 1).id(anchor.mission)
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
@@ -621,7 +695,12 @@ package struct OrderBoardView: View {
                 card: card, content: content, isNext: board.next[card.stage] == card.ref, isSelected: isSelected(card.ref),
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus == spot,
                 tookFocus: { if refocus == spot { refocus = nil } },
-                select: { select(card.ref) },
+                select: {
+                    // A click gives it the keyboard's focus, which it has back once its details close, should they cover
+                    // the board.
+                    lastFocus = spot
+                    select(card.ref)
+                },
                 drag: {
                     // As the drag starts: only what it carries drops, and the columns that take it light up.
                     let started = BoardDrag(ref: card.ref)
@@ -632,7 +711,7 @@ package struct OrderBoardView: View {
                     }
                     return started.payload
                 },
-                move: { forward in keyMove(card.ref, in: lane, forward: forward, moves: moves) },
+                move: { forward in keyMove(card.ref, in: lane.kind, forward: forward, moves: moves) },
                 setAsNext: setAsNext.flatMap { setAsNext in card.stage == .waits ? { setAsNext(card.ref) } : nil }
             )
         }
@@ -649,20 +728,41 @@ package struct OrderBoardView: View {
             return false
         }
         drag = nil
-        return apply(move, to: card, in: lane, keepsFocus: focused?.ref == card.ref)
+        return apply(move, to: card, in: lane.kind, keepsFocus: focused?.ref == card.ref)
     }
 
     /// ⌘→ and ⌘← on a card: the next or previous stage you can set, or why it can't go further. The card keeps the
-    /// keyboard's focus.
-    private func keyMove(_ ref: ItemRef, in lane: BoardLane, forward: Bool, moves: BoardMoves) {
-        guard let (card, move) = moves.key(ref, in: lane.kind, forward: forward) else {
+    /// keyboard's focus, where the board can take it.
+    private func keyMove(_ ref: ItemRef, in lane: BoardLane.Kind, forward: Bool, moves: BoardMoves, keepsFocus: Bool = true) {
+        guard let (card, move) = moves.key(ref, in: lane, forward: forward) else {
             NSSound.beep()
             return
         }
-        _ = apply(move, to: card, in: lane, keepsFocus: true)
+        _ = apply(move, to: card, in: lane, keepsFocus: keepsFocus)
     }
 
-    private func apply(_ move: BoardMove, to card: BoardCard, in lane: BoardLane, keepsFocus: Bool) -> Bool {
+    /// ⌘→ and ⌘← while the details cover the board, which can't take the keyboard's focus then: on the card of the pull
+    /// request they show, as its own keys would. That card has the focus once they close.
+    private func moveShown(forward: Bool, lanes: [BoardLane], moves: BoardMoves) {
+        guard let spot = shownSpot(in: lanes) else { return }
+        lastFocus = spot
+        keyMove(spot.ref, in: spot.lane, forward: forward, moves: moves, keepsFocus: false)
+    }
+
+    /// The card of the pull request the details show: in the lane of the card you clicked, where it has it, else in the
+    /// first that does; nil for one that isn't on the board.
+    private func shownSpot(in lanes: [BoardLane]) -> CardSpot? {
+        if let spot = lastFocus, isSelected(spot.ref),
+           lanes.contains(where: { $0.kind == spot.lane && $0.cards.contains { $0.ref == spot.ref } }) {
+            return spot
+        }
+        for lane in lanes {
+            if let card = lane.cards.first(where: { isSelected($0.ref) }) { return CardSpot(lane: lane.kind, ref: card.ref) }
+        }
+        return nil
+    }
+
+    private func apply(_ move: BoardMove, to card: BoardCard, in lane: BoardLane.Kind, keepsFocus: Bool) -> Bool {
         switch move {
         case .setStage(let stage):
             notice = nil
@@ -676,10 +776,10 @@ package struct OrderBoardView: View {
         case .refused(let why):
             NSSound.beep()
             SpokenText.announce(why)
-            notice = BoardNotice(lane: lane.kind, text: why)
+            notice = BoardNotice(lane: lane, text: why)
             return false
         }
-        if keepsFocus { keepFocus(on: CardSpot(lane: lane.kind, ref: card.ref)) }
+        if keepsFocus { keepFocus(on: CardSpot(lane: lane, ref: card.ref)) }
         return true
     }
 

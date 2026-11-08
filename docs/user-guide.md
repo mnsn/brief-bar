@@ -345,16 +345,18 @@ review**, **Teammate's review**, **Can merge**, **Waits** and **Merged**, which 
 click it; and a lane for each mission, its header naming your next steps in it, such as **Review !4093** or
 **Find a reviewer: !4079**, then a lane for the pull requests in no mission. **Lanes: None** puts every card in
 one. Up Next's pull request wears **Next** in its column. Each column puts the mission you focus on first, but In
-progress puts what needs you before it, so that Fix next's is its first card. Click a card for its details, or
-right-click it for its menu; drag it to another column of its lane, or click it, or Tab to it, and press **⌘→** or
-**⌘←**, to change its stage, which says so with **Undo** at the top of its lane, even once the card leaves the board.
-While you drag, the columns that take it light up, and those that don't say why: only Azure DevOps decides that a pull
-request can merge or merged, its order what it waits for, and someone else's pull request asks its own reviewers, so
-**Finished My Review** takes it off your board instead, there and in its menus. A row's order capsule, such as **Next
-to merge**, clicked in another sort shows its mission's lane, and a lane for each mission again if they were None.
-Narrow, or with bigger text, the Board scrolls sideways; a line under it counts the pull requests in your lists that
-aren't on it, such as others' you approved, and **Show By Status** lists them. GitHub's page, whose pull requests have
-no stages, offers List and Map, and shows List where you chose the Board.
+progress puts what needs you before it, so that Fix next's is its first card. Click a card, or press **Return** or
+**Space** on it, for its details, or right-click it for its menu; drag it to another column of its lane, or click it, or
+Tab to it, and press **⌘→** or **⌘←**, to change its stage, which says so with **Undo** at the top of its lane, even
+once the card leaves the board. Where its details cover the Board, in a narrow window or with bigger text, ⌘→ and ⌘←
+move the pull request they show, and the card has the keyboard again once they close. While you drag, the columns that
+take it light up, and those that don't say why: only Azure DevOps decides that a pull request can merge or merged, its
+order what it waits for, and someone else's pull request asks its own reviewers, so **Finished My Review** takes it off
+your board instead, there and in its menus. A row's order capsule, such as **Next to merge**, clicked in another sort
+shows its mission's lane, and a lane for each mission again if they were None. Narrow, or with bigger text, the Board
+scrolls sideways; a line under it counts the pull requests in your lists that aren't on it, such as others' you
+approved, and **Show By Status** lists them. GitHub's page, whose pull requests have no stages, offers List and Map, and
+shows List where you chose the Board.
 
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote

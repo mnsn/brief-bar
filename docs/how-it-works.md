@@ -1394,16 +1394,23 @@ only a card dragged from its own board, never text from another app that names a
 that light up as you drag, act on the card as the board has it then, looked up again (`BoardMoves`), not as it was when
 the drag started. A click, or Tab, gives a card the keyboard's focus as a text field takes it, whatever the Mac's keyboard
 navigation, and it keeps it as it moves: ⌘→ and ⌘← move it to the next or previous stage you can set, and from Waits, ⌘←
-to Can merge. `BoardRules` decides what a move does: In progress, Your review and Teammate's review are set as you set them
+to Can merge. Return or Space shows its details, as a click does. Where the details cover the Board (`DetailsSplit`),
+it's disabled, and none of its cards can have the focus: a key monitor of its window (`BoardKeys`) takes ⌘→ and ⌘← for
+the card of the pull request they show, but not from a text field you type in, and that card has the focus once they
+close. `BoardRules` decides what a move does: In progress, Your review and Teammate's review are set as you set them
 from a stage's menu; someone else's pull request can't go to Teammate's review, there, in its menus or in VoiceOver's
 actions, as it asks its own reviewers, and Finished My Review takes it off your board instead; Can merge, Waits and Merged
 come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge,
 and never for one stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
 (`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card off
 it: in its mission's lane, which has Undo for all its pull requests, as List's card does, or in a lane of those in no
-mission, kept for it. A row's order capsule, clicked in another sort, shows its mission's lane on the Board, as it shows
-the mission in List and on the Map; with Lanes: None, which has no lane for it, the Board shows a lane for each mission
-again, remembered (`PullRequestOrder.reveal(_:kinds:)`). The Board, its lanes and whether Up Next is folded are kept as
+mission, kept for it (`PullRequestBoard.lanes(keepingUndoOf:missions:)`), and with Lanes: None in the one lane, kept for
+it once no card is left in it. A row's order capsule, clicked in another sort, shows its mission's lane on the Board, as
+it shows the mission in List and on the Map; with Lanes: None, which has no lane for it, the Board shows a lane for each
+mission again, remembered (`PullRequestOrder.reveal(_:kinds:)`). The page scrolls the lane, the first too, just under
+the column titles, which stay at the page's top over the cards while it shows the board: offset as it scrolls
+(`PinnedTitles`), not a lazy stack's pinned header, which loses the lanes' places when the page narrows while scrolled
+down the board, as when the details open beside it. The Board, its lanes and whether Up Next is folded are kept as
 choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
 `order.boardLanes` and `order.upNextFolded`.
 
