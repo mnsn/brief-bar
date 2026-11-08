@@ -214,6 +214,45 @@ private final class Clock {
         #expect(Self.why(order, 4093) == "‘Cart’ asks you")
     }
 
+    /// A task BriefBar sent that you went on with in the Copilot app does what the app says since: at work again after
+    /// it finished, it's in progress again. A pre-review stays a review, so someone else's stays yours to review.
+    @Test func aTaskYouWentOnWithInTheCopilotAppDoesWhatTheAppSays() {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        let task = StageSession(ref: Self.cart, activity: .finished, since: clock.now, name: "Copilot")
+        Self.tell(order, [4093: StageFacts(role: .author, sessions: [task])])
+        #expect(Self.why(order, 4093) == "Copilot finished")
+
+        clock.advance(seconds: 300)
+        Self.tellSession(order, on: [4093], state: .running, since: clock.now, activity: .working)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .inProgress)
+        #expect(Self.why(order, 4093) == "Copilot is writing it")
+
+        let review = StageSession(ref: Self.cart, activity: .finished, since: clock.now, name: "Copilot", isReview: true)
+        Self.tell(order, [4110: StageFacts(role: .reviewer, asksYou: "Jordan asked you", sessions: [review])])
+        clock.advance(seconds: 300)
+        Self.tellSession(order, on: [4110], state: .running, since: clock.now, activity: .working)
+        #expect(order.stage(of: Self.ref(4110))?.stage == .yourReview)
+        #expect(Self.why(order, 4110) == "Copilot is pre-reviewing it")
+    }
+
+    /// Choosing the stage it's in, in its menu, sets it as yours, so one BriefBar decided stays there until you change it:
+    /// someone else's you're asked to review stays yours to review once you've voted.
+    @Test func choosingTheStageItsInInItsMenuMakesItYours() throws {
+        let order = Self.service(Self.defaults())
+        Self.tell(order, [4110: StageFacts(role: .reviewer, asksYou: "Jordan asked you", votes: "0")])
+        let reading = try #require(order.stage(of: Self.ref(4110)))
+        #expect(reading.stage == .yourReview)
+        #expect(!reading.isSetByYou)
+        let checked = StageMenuItems.choice(.yourReview, of: Self.ref(4110), reading: reading, order: order)
+        #expect(checked.wrappedValue)
+        checked.wrappedValue = false
+        #expect(order.stage(of: Self.ref(4110))?.isSetByYou == true)
+
+        Self.tell(order, [4110: StageFacts(role: .reviewer, votes: "10")])
+        #expect(order.stage(of: Self.ref(4110))?.stage == .yourReview)
+    }
+
     @Test func readyItWaitsForWhatItsOrderPutsFirstUntilBriefBarSeesItMerge() throws {
         let defaults = Self.defaults()
         var orders = DeclaredOrders()
@@ -513,7 +552,8 @@ private final class Clock {
     }
 
     /// One you set before BriefBar knew the account, which keeps the most by then, waits in memory, where you can still
-    /// change it, and is kept with the account once it has room.
+    /// change it, and is kept with the account once it has room. Undo of what made that room puts back what it forgot,
+    /// which waits in memory in turn.
     @Test func oneSetBeforeBriefBarKnewAFullAccountWaitsInMemoryForRoom() {
         let clock = Clock()
         let defaults = Self.defaults()
@@ -532,6 +572,11 @@ private final class Clock {
 
         order.letBriefBarDecide(Self.ref(1))
         #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .inProgress)
+
+        order.undo()
+        #expect(order.stage(of: Self.ref(1))?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(1))?.isSetByYou == true)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(1), for: Self.account) == nil)
     }
 
     /// A merged or closed pull request's stage doesn't change: nothing is kept, and Undo has nothing to undo.

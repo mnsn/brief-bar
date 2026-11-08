@@ -47,6 +47,7 @@ package final class PullRequestOrder: ObservableObject {
     /// The stages you set for pull requests listed only because someone sent them to you, or before BriefBar knew which
     /// account signed in: in memory only, each with when a list last had it, so that they go after 30 days as those
     /// kept do. They count with those toward the most an account keeps, and stay, unused, while Pull Request Order is off.
+    /// One waits here too while its account has no room: one set before BriefBar knew the account, or put back by Undo.
     private var marksInMemory: [ItemRef: StageMarks.Entry] = [:]
     /// The account each source last told while it knew one: the stages you set in memory, and Undo, are that account's.
     /// Turning Pull Request Order off keeps it, so that once it's on again, another account still forgets them.
@@ -524,7 +525,9 @@ package final class PullRequestOrder: ObservableObject {
         return .done
     }
 
-    /// Undo: puts back exactly the stage your last change replaced, or none.
+    /// Undo: puts back exactly the stage your last change replaced, or none. What it puts back is kept even once the account
+    /// keeps the most, as when Let BriefBar Decide made room that one waiting in memory took: it waits there in turn, until
+    /// the account has room.
     package func undo() {
         guard isOn, let change = lastChange, let facts = stageFacts[change.ref] else {
             lastChange = nil
@@ -532,7 +535,9 @@ package final class PullRequestOrder: ObservableObject {
         }
         lastChange = nil
         if let before = change.before {
-            _ = keep(before, of: change.ref, facts: facts)
+            if !keep(before, of: change.ref, facts: facts) {
+                marksInMemory[change.ref] = StageMarks.Entry(mark: before, listedAt: now())
+            }
         } else {
             forgetMark(of: change.ref, facts: facts)
         }
@@ -705,10 +710,21 @@ package final class PullRequestOrder: ObservableObject {
         }
     }
 
-    /// The sessions a source knows of on a pull request, with the Copilot app's, each once: the source's first.
+    /// The sessions a source knows of on a pull request, with the Copilot app's, each once. One both know, such as a task
+    /// BriefBar sent that you went on with in the Copilot app, does what the app says once that's later, unless the app
+    /// can't tell how it ended; the source's still names it and says whether it reviews.
     static func merged(_ own: [StageSession], _ others: [StageSession]) -> [StageSession] {
+        let theirs = Dictionary(others.map { ($0.ref, $0) }) { first, _ in first }
         let known = Set(own.map(\.ref))
-        return own + others.filter { !known.contains($0.ref) }
+        let reconciled = own.map { session in
+            guard let other = theirs[session.ref], other.activity != .stopped, let since = other.since,
+                  session.since.map({ since > $0 }) ?? true else { return session }
+            var now = session
+            now.activity = other.activity
+            now.since = since
+            return now
+        }
+        return reconciled + others.filter { !known.contains($0.ref) }
     }
 }
 

@@ -312,21 +312,21 @@ to follow many at once. By date, every open pull request is in one list, each st
 what it waits for and what's left, and its time says how long ago it was created; Idle's, folded below
 it, are in the same order, and Done's stay apart, the latest first. BriefBar keeps your choice.
 
-**Each pull request's stage**, with **Pull Request Order** on in Settings › Pull Requests: a colored label opens
-each row's second line, in the window, the menu bar's list and the Overview, and says where it is in its flow.
-**In progress** while a Copilot session works on yours, its build fails, it has conflicts, it's a draft, or someone
-wants changes; **Your review** once a session that wrote it finished, or when someone asks you or sends it to you, also
-while Copilot's pre-review of it runs;
-**Teammate's review** while it waits for others, or **Find a reviewer** when nobody else is asked; **Can merge** once
-Azure DevOps says it's ready to complete and BriefBar saw what its order puts before it merge; **Waits for another
-PR** while its order puts it after one that hasn't merged; and **Merged**. BriefBar works it out from Azure DevOps and
-your Copilot sessions. Click the label to pick another, or **Finished My Review** beside it to send it to your
-teammates; **Stage** in a row's Actions and right-click menus, and VoiceOver's actions, do the same. What you set holds
-until the pull request moves on: new commits, or a session that finishes writing it, end In progress; a vote ends
-Teammate's review, someone else's on yours, and yours on someone else's; merging or closing it ends any. **Let BriefBar Decide** forgets it, and **Undo** puts back your last
-change. Can merge and Waits come only from what Azure DevOps and its order show: nobody can set them. Its details
-show the whole track under its heading, with its next step, such as **Finished My Review** or **Add Reviewers in Azure
-DevOps**. Stages only label rows: groups, Needs You, counts, notifications and the brief stay as they were. On
+**Each pull request's stage**, with **Pull Request Order** on in Settings › Pull Requests: a colored label opens each
+row's second line, in the window, the menu bar's list and the Overview, and says where it is in its flow. **In
+progress** while a Copilot session works on yours, its build fails, it has conflicts, it's a draft, or someone wants
+changes; **Your review** once a session that wrote it finished, or when someone asks you or sends it to you, also while
+Copilot's pre-review of it runs; **Teammate's review** while it waits for others, or **Find a reviewer** when nobody
+else is asked; **Can merge** once Azure DevOps says it's ready to complete and BriefBar saw what its order puts before
+it merge; **Waits for another PR** while its order puts it after one that hasn't merged; and **Merged**. BriefBar works
+it out from Azure DevOps and your Copilot sessions. Click the label to pick another, or the one it's in to keep it there
+until you change it, or **Finished My Review** beside it to send it to your teammates; **Stage** in a row's Actions and
+right-click menus, and VoiceOver's actions, do the same. What you set holds until the pull request moves on: new
+commits, or a session that finishes writing it, end In progress; a vote ends Teammate's review, someone else's on yours,
+and yours on someone else's; merging or closing it ends any. **Let BriefBar Decide** forgets it, and **Undo** puts back
+your last change. Can merge and Waits come only from what Azure DevOps and its order show: nobody can set them. Its
+details show the whole track under its heading, with its next step, such as **Finished My Review** or **Add Reviewers in
+Azure DevOps**. Stages only label rows: groups, Needs You, counts, notifications and the brief stay as they were. On
 someone else's pull request, Finished My Review takes it off your board until you vote in Azure DevOps, which is still
 yours to do, or something new needs you there.
 

@@ -138,9 +138,9 @@ package enum StageWords {
 // MARK: Its menu
 
 /// A pull request's stage's menu, its pill's and Stage ▸ in its row's menus: what it is and why, the three stages you can
-/// set, checked as it's in one, the two only BriefBar sets, dimmed with why, then Finished My Review, Put Yours Back and Let
-/// BriefBar Decide, as they apply; once it merged, only what it is. Undo heads it while your last change was to it, even
-/// once it has no stage left to show.
+/// set, checked as it's in one, which choosing sets as yours, the checked one too; the two only BriefBar sets, dimmed with
+/// why; then Finished My Review, Put Yours Back and Let BriefBar Decide, as they apply; once it merged, only what it is.
+/// Undo heads it while your last change was to it, even once it has no stage left to show.
 package struct StageMenuItems: View {
     private let ref: ItemRef
     @ObservedObject private var order: PullRequestOrder
@@ -168,10 +168,7 @@ package struct StageMenuItems: View {
     private func changes(_ reading: StageReading) -> some View {
         Divider()
         ForEach(PullRequestStage.settable, id: \.self) { stage in
-            Toggle(isOn: Binding(
-                get: { reading.stage == stage },
-                set: { isOn in if isOn { StageCommand.set(stage, of: ref, order: order) } }
-            )) {
+            Toggle(isOn: Self.choice(stage, of: ref, reading: reading, order: order)) {
                 Label(stage.title, systemImage: stage.symbol)
             }
         }
@@ -194,6 +191,15 @@ package struct StageMenuItems: View {
         if reading.isSetByYou {
             Button("Let BriefBar Decide") { StageCommand.letBriefBarDecide(ref, order: order) }
         }
+    }
+
+    /// A stage you can set, checked while it's in it. Choosing it sets it as yours, the one it's in too, so that one
+    /// BriefBar decided stays there until you change it, as someone else's you review does once you've voted; one you set
+    /// already is unchanged.
+    package static func choice(
+        _ stage: PullRequestStage, of ref: ItemRef, reading: StageReading, order: PullRequestOrder
+    ) -> Binding<Bool> {
+        Binding(get: { reading.stage == stage }, set: { _ in StageCommand.set(stage, of: ref, order: order) })
     }
 }
 

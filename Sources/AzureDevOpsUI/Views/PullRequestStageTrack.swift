@@ -49,10 +49,6 @@ struct PullRequestStageTrack: View {
 
     // MARK: Its steps
 
-    private enum Step {
-        case done, current, later
-    }
-
     /// The four steps of its flow: Waits stands where Can merge does, by what it waits for.
     private static let track: [PullRequestStage] = [.inProgress, .yourReview, .teammateReview, .canMerge]
 
@@ -74,24 +70,12 @@ struct PullRequestStageTrack: View {
 
     @ViewBuilder
     private func step(_ stage: PullRequestStage, in reading: StageReading) -> some View {
-        let state: Step = reading.stage == .merged || stage.step < reading.stage.step ? .done
+        let state: StageTrackStep.Place = reading.stage == .merged || stage.step < reading.stage.step ? .done
             : stage.step == reading.stage.step ? .current : .later
         // Its own stage where the track's is Can merge's: Waits, by what it waits for.
         let shown = stage == .canMerge && reading.stage == .waits ? PullRequestStage.waits : stage
         let title = shown == .waits ? StageText.why(reading, name: ordering.name(of:)) : shown.title
-        let label = HStack(spacing: 4) {
-            Image(systemName: state == .done ? "checkmark.circle.fill" : state == .current ? shown.symbol : "circle")
-                .font(size: 10, weight: .bold)
-                .foregroundStyle(state == .current ? shown.color : Color.secondary)
-            Text(title)
-                .font(size: 11.5, weight: state == .current ? .bold : .regular)
-                .foregroundStyle(state == .current ? shown.textColor : state == .done ? Color.secondary : Color.secondary.opacity(0.8))
-                .lineLimit(1)
-        }
-        .padding(.horizontal, state == .current ? 6 : 2)
-        .padding(.vertical, 2)
-        .background(Capsule().fill(state == .current ? shown.color.opacity(0.16) : Color.clear))
-        .fixedSize()
+        let label = StageTrackStep(stage: shown, title: title, place: state)
         let spoken = "\(shown == .waits ? "Waits for another PR, " + title : shown.title), "
             + (state == .done ? "done" : state == .current ? "current" : "to come")
         // Merged ticks them all, and nothing moves it on.
@@ -190,5 +174,42 @@ struct PullRequestStageTrack: View {
         }
         .controlSize(.small)
         .font(size: 11)
+    }
+}
+
+/// One step of a pull request's stage track: its symbol and title, filled in its stage's color while it's the one it's in.
+/// Waits, which says what it waits for, wraps where the track is too narrow for it, as with bigger text, rather than
+/// running past the details; the other steps keep to one line.
+struct StageTrackStep: View {
+    enum Place {
+        case done, current, later
+    }
+
+    let stage: PullRequestStage
+    let title: String
+    let place: Place
+
+    var body: some View {
+        let wraps = stage == .waits
+        let fill = place == .current ? stage.color.opacity(0.16) : Color.clear
+        HStack(alignment: wraps ? .firstTextBaseline : .center, spacing: 4) {
+            Image(systemName: place == .done ? "checkmark.circle.fill" : place == .current ? stage.symbol : "circle")
+                .font(size: 10, weight: .bold)
+                .foregroundStyle(place == .current ? stage.color : Color.secondary)
+            Text(title)
+                .font(size: 11.5, weight: place == .current ? .bold : .regular)
+                .foregroundStyle(place == .current ? stage.textColor : place == .done ? Color.secondary : Color.secondary.opacity(0.8))
+                .lineLimit(wraps ? 4 : 1)
+        }
+        .padding(.horizontal, place == .current ? 6 : 2)
+        .padding(.vertical, 2)
+        .background {
+            if wraps {
+                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(fill)
+            } else {
+                Capsule().fill(fill)
+            }
+        }
+        .fixedSize(horizontal: !wraps, vertical: true)
     }
 }
