@@ -2320,9 +2320,9 @@ details, what they read of it there, with its failed tests and the end of its lo
 them ([above](#its-merge-conflicts)), as the window shows them; for a review, the threads already there, and when you
 last voted or commented. The prompts say what Copilot may do: fixing comments or a build changes files but never
 commits, pushes or replies; resolving conflicts may commit its merge, but never pushes or replies; a review changes and
-posts nothing; only **Push & Reply** commits what's left, pushes the pull request's branch without force
-(`git push origin HEAD:refs/heads/<branch>`) and replies on its threads. The Copilot CLI holds it to that
-whatever it reads, since its denials win over `--allow-all-tools`: a review gets
+posts nothing; only **Push & Reply** commits what's left, pushes the commit it checked to the pull request's branch
+without force (`git push origin <commit>:refs/heads/<branch>`) and replies on its threads. The Copilot CLI holds it to
+that whatever it reads, since its denials win over `--allow-all-tools`: a review gets
 `--deny-tool write --deny-tool 'shell(git commit)' --deny-tool 'shell(git push)'`, fixing comments or a
 build the last two, and resolving conflicts, which has to commit its merge, `shell(git push)`. Its worktree,
 `copilot-worktrees/<repository>/pr-<id>`, is detached at `origin/<branch>`, fetched first, so it never
@@ -2352,13 +2352,32 @@ rebase rather than merge. For BriefBar's own tasks the launcher checks the sessi
 Copilot starts (`LaunchError.foreignMerge`), and the task fails with why; for the Copilot app's sessions the window
 checks the folder the session works in before the prompt is sent or copied, and says why it didn't send it
 (`CopilotTasksStore.deliver(_:to:forking:handOff:about:at:checkingPush:)`). The prompt names the branch it merges into,
-as the window wrote it, and has Copilot check the same and stop if it finds a merge of any other branch; so the branch
-BriefBar checks against is the one the prompt names, and a Push & Reply goes only while the list reads that the pull
-request still merges into it: as you send it, before the launcher starts and again once git is done, right before
-Copilot starts, and until the prompt is sent or copied. Once the list has read another, nothing goes either, and BriefBar
-says to open the window again, for a prompt that names it (`CopilotTasksStore.retargetProblem`,
-`LaunchError.retargeted`). When BriefBar can't check, as in a folder that isn't a clone of the pull request's
-repository, nothing goes either.
+as the window wrote it, so the branch BriefBar checks against is the one the prompt names, and a Push & Reply goes only
+while the pull request still merges into it. The list may not have read a retarget yet, so BriefBar asks Azure DevOps,
+with one request for the pull request right before git checks and one right after (`CopilotTasksStore.freshTarget(of:)`,
+`CopilotLauncher.Request.targetNow`), and nothing goes when it can't be read (`LaunchError.cantReadTarget`); the list
+is asked too, as you send it, before the launcher starts, and until the prompt is sent or copied. Once either says
+another, nothing goes, and BriefBar says to open the window again, for a prompt that names it
+(`CopilotTasksStore.retargetProblem`, `LaunchError.retargeted`). Nor does a Push & Reply go to one of the app's
+sessions while Copilot runs a turn in it, or another of the app's sessions runs one in the checkout it works in, as the
+app's database says (`CopilotTasksStore.turnProblem`): the prompt would wait for that turn, whose changes, a merge to
+fix the build, say, would go with it, unchecked. BriefBar reads that before git checks and again after, right before
+it copies the prompt, or writes the request for the session's extension and then, at most once a second, until the
+extension takes it, taking the request back if a turn starts; the composer says to send it once the turn is done. A
+turn that starts in that last second, or once the extension took the prompt, before the prompt's own turn, is left to
+Copilot's own check. When BriefBar can't check, as in a folder that isn't a clone of the pull request's repository,
+nothing goes either; the check needs only the clone's `origin`, not a branch new work would start from
+(`Git.checkClone(at:of:)`).
+
+Copilot checks too, as late as it can: Push & Reply's prompt has it commit, then, right before it pushes, and again
+after a rebase when a push is rejected, read the pull request with BriefBar's `pull_request` tool or Azure DevOps
+tools, when it has them, and stop if it merges into another branch now or they can't tell; check what each merge in
+`origin/<branch>..HEAD` merged in, as BriefBar does; and push the commit it checked, by its ID,
+`git push origin <commit>:refs/heads/<branch>`, so that nothing committed after the check goes. Without such tools
+it goes on BriefBar's reads, from right before it started. The push has no lease (`--force-with-lease`): a lease lets
+git move the branch to any commit while its tip is the one it names, even one that drops what's on it, where a plain
+push only ever adds to the branch and is rejected once it moved; and BriefBar writes the prompt before it checks, so
+the prompt can't name the tip BriefBar saw.
 
 **A session that's already there.** The composer's session menu, under **Where It Goes**, also lists the sessions a task can
 go to instead of a new one (`SessionChoice`), read as it opens, and only while **Send Work to Copilot**
@@ -2875,8 +2894,8 @@ What text becomes once normalized, as a model may read it, counts as that there:
 accent as a backtick, "⒈" as "1.", a list's marker, or a digit of another script as that digit; and a fence is longer
 than any run of backticks in what it quotes, read that way (`QuotedText.asRead`). A branch whose name holds what a shell reads,
 such as `$(…)` or a backtick, which Git allows, is in single quotes wherever a prompt names it, in a command such as
-`git push origin HEAD:refs/heads/'<branch>'`, in a sentence Copilot may make one from, or in a build's hint, so it runs
-nothing (`PullRequestPrompt.branch`). One that holds a character nobody sees, such as a zero-width space, which Git
+`git push origin <commit>:refs/heads/'<branch>'`, in a sentence Copilot may make one from, or in a build's hint, so it
+runs nothing (`PullRequestPrompt.branch`). One that holds a character nobody sees, such as a zero-width space, which Git
 allows too, is in ANSI-C quotes instead, with that character as its UTF-8 bytes in hex, `$'fix\xE2\x80\x8B'`: it's seen
 in the prompt, and bash, macOS's 3.2 too, zsh and sh read it back as the name itself, so a command still names that
 branch, where the character written out as text, `\u{200B}`, would name another (`QuotedText.commandWord`). It asks the
