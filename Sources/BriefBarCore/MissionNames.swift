@@ -339,7 +339,8 @@ public enum MissionNaming {
     /// The answer as a name: its first line, without quotes, labels, markdown or the full stop, of a few words, in sentence
     /// case; nil when that leaves nothing a name could be, or when the answer isn't a name but talks about one, such as
     /// "Here's a name for the mission:" or "How about “Checkout coupons”?", or declines, such as "I'm sorry, but I can't
-    /// help with that." One that opens with the same word but goes on as a name does, as "Sorry page redesign", is a name.
+    /// help with that.", or holds a place, as "N/A" or "Untitled". One that opens with the same word but goes on as a name
+    /// does, as "Sorry page redesign", is a name.
     /// - Parameter titles: what it was named from: a question one of them asks, as "Why is checkout slow?", can be its name,
     ///   and a first word in small letters that one starts with, as "npm" in "npm audit fixes", stays so.
     public static func clean(_ answer: String, titles: [String] = []) -> String? {
@@ -348,7 +349,7 @@ public enum MissionNaming {
         line = line.replacingOccurrences(of: "`", with: "").replacingOccurrences(of: "**", with: "")
             .replacing(/^#{1,6}\s*/, with: "").trimmingCharacters(in: .whitespaces)
         if line.hasPrefix("- ") { line = String(line.dropFirst(2)) }
-        // A label it starts with, such as "Name:" or "Suggested name:".
+        // A label it starts with, such as "Name:" or "Suggested mission name:".
         if let lead = line.firstMatch(of: label) { line = String(line[lead.range.upperBound...]) }
         guard !line.hasSuffix(":"), !isChatter(line) else { return nil }
         while let first = line.first, "\"“'‘".contains(first) { line.removeFirst() }
@@ -356,6 +357,7 @@ public enum MissionNaming {
         guard !line.hasSuffix("?") || titles.contains(where: { $0.localizedCaseInsensitiveContains(line) }) else { return nil }
         while let last = line.last, "\"”'’.!:;,".contains(last) { line.removeLast() }
         line = line.trimmingCharacters(in: .whitespaces)
+        guard !placeholders.contains(line.lowercased()) else { return nil }
         let words = line.split(whereSeparator: { $0.isWhitespace })
         guard !words.isEmpty, line.count >= 3 else { return nil }
         var name = words.prefix(mostWords).joined(separator: " ")
@@ -378,31 +380,45 @@ public enum MissionNaming {
         }
     }
 
-    /// A label an answer starts with, as a whole: "Name:", "Title:", "Mission name:", "The mission's name:", "Suggested
-    /// name:" or "Suggestion:"; not words a name starts with, as in "Display name: validation" or "Mission: Impossible
-    /// export".
+    /// A label an answer starts with, as a whole: a name, title or suggestion, after up to two words such as "The
+    /// mission's", "Suggested mission", "Possible" or "My", as in "Name:", "The mission's name:", "Suggested mission name:"
+    /// or "Name suggestion:"; not words a name starts with, as in "Display name: validation", "Mission names: guided
+    /// generation" or "Mission: Impossible export".
     static var label: Regex<Substring> {
-        /^(?i)(?:(?:the\s+)?(?:mission(?:'s|’s)?\s+|suggested\s+|new\s+|proposed\s+)?(?:name|title)|suggest(?:ed|ion))\s*:\s*/
+        /^(?i)(?:(?:(?:the|a|my|your|possible|recommended|good|suggested|proposed|new|best|final|short|better|alternative)\s+){0,2}(?:mission(?:'s|’s)?\s+)?(?:name|title)(?:\s+suggestion)?|(?:my\s+)?suggest(?:ed|ion))\s*:\s*/
     }
 
     /// How an answer that isn't a name opens, lowercased, with its apostrophes straight: one that talks about the name, as
-    /// "Here's", "Sure!" or "How about “…", or declines to give one, as "I'm sorry", "I can't", "Apologies," or "Unable to
-    /// determine…". Not a name that opens with the same word: "Here maps integration", "Sure Start rollout", "Okay button
-    /// fix", "Sorry page redesign", "I nuovi pagamenti", "Unable to sign in fix", "Suggested replies in Teams", "Apology
+    /// "Here's", "Here you go:", "Sure —", "I propose" or "How about “…", or declines to give one, as "I'm sorry", "I can't",
+    /// "Apologies —", "Unable to tell from the titles" or "As a helpful assistant, I…". Not a name that opens with the same
+    /// word: "Here maps integration", "Here and now banner", "Sure Start rollout", "Okay button fix", "Certainly feature
+    /// flag", "Sorry page redesign", "I nuovi pagamenti", "Unable to sign in fix", "Suggested replies in Teams", "Apology
     /// emails", "As a service model rollout" or "How about page cleanup".
     static var chatter: [Regex<Substring>] {
         [
-            /^here(?:'s|\s+(?:is|are)\b)/,
-            /^(?:sure|certainly|of course|okay|ok|absolutely)\s*[,.!:;]/,
-            /^(?:sorry|apologies|my apologies)\s*(?:[,.!:;]|$|(?:but|i|that|for)\b)/,
+            /^here(?:'s|\s+(?:is|are|it is|you go|goes)\b|\s*[:,.!;—–]|\s-\s)/,
+            /^(?:sure(?:\s+thing)?|certainly|of course|okay|ok|absolutely|alright|all right)\s*(?:[,.!:;—–]|\s-\s)/,
+            /^(?:sorry|apologies|my apologies)\s*(?:[,.!:;—–]|\s-\s|$|(?:but|i|that|for|can't|cannot|we)\b)/,
+            /^apologi[sz]e\s*(?:[,.!:;—–]|\s-\s)/,
             /^unfortunately\b/,
-            /^i(?:'(?:m|ll|ve|d)\b|\s+(?:am|will|would|can|cannot|can't|could|couldn't|do|don't|apologi[sz]e|think|suggest|recommend|have|need|believe|regret|must|should|won't)\b)/,
-            /^unable\s*(?:[,.!:;]|$|to\s+(?:determine|provide|generate|create|suggest|come up|name|help|assist|answer|comply|fulfill|complete|process|give|offer|decide)\b)/,
+            /^i(?:'(?:m|ll|ve|d)\b|\s+(?:am|will|would|can|cannot|can't|could|couldn't|do|don't|did|didn't|apologi[sz]e|think|suggest|recommend|propose|have|need|believe|regret|must|should|won't|call|called|name|named|went|chose|choose|picked|pick|see|saw|came|settled|opted|prefer|guess|feel|hope|want|wanted|might|may|found|noticed|understand)\b)/,
+            /^i\s+[a-z]+\s+(?:it|this|that|these|those|the|a|an|no|with|for|on|you|one)\b/,
+            /^unable\s*(?:[,.!:;—–]|$|to\s+(?:determine|provide|generate|create|suggest|come up|name|help|assist|answer|comply|fulfill|complete|process|give|offer|decide|infer|produce|summarize|derive|discern)\b)/,
+            /^unable\s+to\s+[a-z]+(?:\s+[a-z]+)?\s+(?:a|an|any|the|this|these|that|from|which|what|whether|enough|one|it)\b.*\b(?:names?|titles?|themes?|missions?|information|context)\b/,
+            /^(?:cannot|can't|can not)\s+(?:determine|name|provide|generate|infer|suggest|tell)\b/,
+            /^not enough\s+(?:information|context|details?|data)\b/,
+            /^no\s+(?:names?|titles?)\b/,
+            /^no\s+(?:common|clear|single|suitable|obvious)\s+(?:themes?|names?|titles?|threads?|topics?)\b/,
+            /^(?:(?:okay|ok|so|well|alright|then|now|and),?\s+){0,3}the\s+(?:mission(?:'s)?\s+)?name\s+(?:is|would be|could be|should be|will be)\b/,
             /^suggest(?:ed|ion)?\s+(?:name|title)\b/,
-            /^how about\s*["“'‘]/,
+            /^how about\s*[:"“'‘]/,
             /^as an?\s+(?:ai|assistant|language model|large language model)\b/,
+            /^as an?\s+(?:[\w-]+\s+){0,3}(?:ai|assistant|model|chatbot|llm)\s*(?:,|i\b)/,
         ]
     }
+
+    /// What holds a name's place rather than being one, as a field's answer may: "N/A", "None", "Unknown", "Untitled".
+    static let placeholders: Set<String> = ["n/a", "none", "unknown", "untitled", "null", "nil", "tbd", "nothing", "no name", "no title"]
 
     /// Whether a line opens as an answer that isn't a name does, whatever quotes it opens with: "Here's", "Sure!",
     /// "I’m sorry", "I'll call it", "As an AI language model", but not "Heredoc fixes", "iOS widgets" or "I/O retries".

@@ -51,7 +51,8 @@ it. No name goes to the log or to agents, and none you give goes to Apple Intell
 gave, or else BriefBar's own, to keep while that fits, each title quoted as data. Its answer is the name alone, by
 guided generation (`OnDeviceModel.Shape`), and one that declines, asks or talks about the name rather than give one
 leaves the mission's name as it was (`MissionNaming.clean`), by how such an answer opens, as "I'm sorry," or "Here's",
-not a name that opens with the same word, as "Sorry page redesign"; a question is a name only when a title asks it.
+not a name that opens with the same word, as "Sorry page redesign", and one that holds a name's place, as "N/A" or
+"Untitled"; a question is a name only when a title asks it.
 
 ## Permissions that macOS grants once
 

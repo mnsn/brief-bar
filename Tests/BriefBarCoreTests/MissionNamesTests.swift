@@ -381,6 +381,12 @@ import Testing
         // A label it starts with goes, however it's written.
         #expect(MissionNaming.clean("Suggested name: Checkout coupons") == "Checkout coupons")
         #expect(MissionNaming.clean("**Name:** Checkout coupons") == "Checkout coupons")
+        for label in [
+            "Possible name:", "Recommended name:", "Good name:", "Suggested mission name:", "Proposed mission name:",
+            "Name suggestion:", "My suggestion:", "Title:", "Suggested:",
+        ] {
+            #expect(MissionNaming.clean("\(label) Checkout coupons") == "Checkout coupons", "\(label)")
+        }
         // In sentence case, as it's asked for, though not where a first word has capitals of its own.
         #expect(MissionNaming.clean("checkout redesign") == "Checkout redesign")
         #expect(MissionNaming.clean("iOS widgets") == "iOS widgets")
@@ -400,6 +406,20 @@ import Testing
             "Checkout coupons?", "Why is checkout slow?", "Sorry but I can't", "Okay, here it is: Checkout coupons", "Unable.",
             "Here is the name: Checkout coupons", "Suggested name Checkout coupons", "Of course! Checkout coupons",
             "I would call it Checkout coupons", "As an assistant, I can't name this.", "I've named it Checkout coupons",
+            // Refusals.
+            "Unable to infer a name from these titles", "Unable to tell from the titles", "Unable to identify a common theme",
+            "Unable to find a common theme", "Unable to produce a name", "Sorry — I can't name this",
+            "Sorry - I can't name this mission", "Sorry can't help with that", "Apologies — the titles don't say",
+            "Apologize, I can't name it", "As an on-device model, I can't name this", "As a helpful assistant, I can't name this",
+            "I see no common theme here", "No name fits these titles", "Cannot determine a name", "Not enough information",
+            // Chatter around a name.
+            "Here it is: Checkout coupons", "Here you go: Checkout coupons", "Here: Checkout coupons", "Sure thing! Checkout coupons",
+            "Sure — Checkout coupons", "Sure - Checkout coupons", "Okay — Checkout coupons", "Of course — Checkout coupons",
+            "Certainly — Checkout coupons", "Okay so the name is Checkout coupons", "I call it Checkout coupons",
+            "I propose Checkout coupons", "I named it Checkout coupons", "I went with Checkout coupons", "How about: Checkout coupons",
+            "I made it Checkout coupons", "I gave it the name Checkout coupons", "I titled it Checkout coupons",
+            // What holds a name's place.
+            "N/A", "None", "Unknown", "Untitled", "\"None.\"",
         ] {
             #expect(MissionNaming.clean(chatter) == nil, "\(chatter)")
         }
@@ -410,6 +430,8 @@ import Testing
             "Okay button fix", "Sorry page redesign", "Display name: validation", "Fix title: wrap long names",
             "Mission names: guided generation", "Mission: Impossible export", "Checkout: coupons and totals", "I-9 forms",
             "IT onboarding", "IPv6 support", "I18n for checkout", "Intune enrollment", "Title bar polish",
+            "Here and now banner", "Certainly feature flag", "Of course list redesign", "Unable to load the cart",
+            "Okay-button fix", "None of the above option", "Not enough stock warning",
         ] {
             #expect(MissionNaming.clean(name) == name, "\(name)")
         }
