@@ -208,16 +208,21 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func writingToAProgramThatStoppedReadingFailsQuietly() async throws {
         let recorder = Recorder()
-        // It closes its input at once, and keeps running a moment.
-        let program = try recorder.start("/bin/sh", ["-c", "exec 0<&-; sleep 1"])
+        // It closes its input, says so, and becomes `sleep`, which runs until it's asked to stop: a shell that runs it
+        // instead may outlive being asked. Had it quit before the write, its input would be closed whatever the write
+        // did.
+        let program = try recorder.start("/bin/sh", ["-c", "exec 0<&-; echo closed; exec sleep 30"])
         #expect(program.inputState.failsWithoutSIGPIPE)
-        try await Task.sleep(for: .milliseconds(300))
+        var lines = recorder.lines.makeAsyncIterator()
+        #expect(await lines.next() == "closed")
         // Nothing reads its input now. Without F_SETNOSIGPIPE, this write would end the tests with SIGPIPE; with it,
         // the write fails, and the input is closed.
         program.send(Data("anyone there?".utf8))
         #expect(!program.inputState.isOpen)
+        // It ends only as it's asked to stop, now: so it was running at the write, and the write closed its input.
+        program.terminate()
         var exits = recorder.exits.makeAsyncIterator()
-        #expect(await exits.next() == 0)
+        #expect(await exits.next() == SIGTERM)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -232,12 +237,12 @@ import Testing
     /// What it started that ignores being asked to stop is made to, once the program itself has quit when its input
     /// ended, or when it was asked to stop.
     @Test(.timeLimit(.minutes(1)), arguments: [
-        // It quits when its input ends.
-        (quits: "read line; exit 0", status: Int32(0)),
+        // It quits when its input ends, long before it would be asked to stop, however busy the Mac.
+        (quits: "read line; exit 0", grace: 30.0, status: Int32(0)),
         // It doesn't, and is asked to stop.
-        (quits: "wait", status: SIGTERM),
+        (quits: "wait", grace: 0.3, status: SIGTERM),
     ])
-    func endsWhatItStartedEvenOnceItHasQuit(_ program: (quits: String, status: Int32)) async throws {
+    func endsWhatItStartedEvenOnceItHasQuit(_ program: (quits: String, grace: TimeInterval, status: Int32)) async throws {
         let recorder = Recorder()
         // What it starts says who it is once it ignores being asked to stop, then doesn't hold the output open, so the
         // program's own exit is heard at once.
@@ -247,7 +252,7 @@ import Testing
         var lines = recorder.lines.makeAsyncIterator()
         let child = try #require(await lines.next().flatMap { pid_t($0) })
         #expect(kill(child, 0) == 0)
-        started.end(grace: 0.3)
+        started.end(grace: program.grace)
         var exits = recorder.exits.makeAsyncIterator()
         #expect(await exits.next() == program.status)
         // What it started is made to stop too, though it ignores being asked to and its program has quit.
