@@ -157,6 +157,29 @@ import Testing
         #expect(missions.allSatisfy { $0.sameStory.isEmpty })
     }
 
+    /// An order whose own pull requests for a story all merged no longer claims the story's new ones: they're the story's
+    /// own mission, as without it, rather than "Same story · not in this order" under a finished order. One of its own
+    /// still open for the story keeps them.
+    @Test func aFinishedOrderLeavesItsStorysNewPullRequestsToTheStory() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [
+            .init(link: OrderPlansTests.link(4101)), .init(link: OrderPlansTests.link(4102), after: ["4101"]),
+        ]), now: t(0), newID: planID)
+        let new = [Self.ado(4105, [Self.task(5104, rank: 3)]), Self.ado(4106, [Self.task(5105, rank: 4)])]
+        var missions = Self.missions(Self.facts([
+            Self.ado(4101, [Self.task(5102, rank: 1)], state: .merged), Self.ado(4102, [Self.task(5103, rank: 2)], state: .merged),
+        ] + new), orders)
+        #expect(Set(missions.map(\.key)) == [.plan(planID), .story(Self.item(5101))])
+        #expect(missions.first { $0.key == .plan(planID) }?.sameStory.isEmpty == true)
+        #expect(missions.first { $0.key == .story(Self.item(5101)) }?.steps.map(\.ref) == [Self.pr(4105), Self.pr(4106)])
+
+        missions = Self.missions(Self.facts([
+            Self.ado(4101, [Self.task(5102, rank: 1)], state: .merged), Self.ado(4102, [Self.task(5103, rank: 2)]),
+        ] + new), orders)
+        #expect(missions.map(\.key) == [.plan(planID)])
+        #expect(missions.first?.sameStory.map(\.ref) == [Self.pr(4105), Self.pr(4106)])
+    }
+
     @Test func stackedOnesKeepTheirOrderAndComeFirstThenTheRestAndStacksNeverSplit() throws {
         let missions = Self.missions(Self.facts([
             Self.ado(4101, [Self.task(5102, rank: 1)]),

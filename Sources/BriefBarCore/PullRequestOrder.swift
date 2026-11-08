@@ -769,9 +769,9 @@ public enum OrderBoard {
     /// Each session's order is a mission of its own, however many a session told, even when they share pull requests.
     /// The pull requests no order names group by what BriefBar sees: those stacked with only one order's pull requests
     /// show with it, apart from what it names; then, with what they're stacked with, by the story their work items are
-    /// for: apart in the one order whose own pull requests are for that story too, or else as that story's mission, two
-    /// or more; others stacked together are a stack of their own; the rest group by the session they were opened under,
-    /// two or more, with no order. A pull request alone isn't shown, nor a story's.
+    /// for: apart in the one order with an open pull request of its own for that story, or else as that story's mission,
+    /// two or more; others stacked together are a stack of their own; the rest group by the session they were opened
+    /// under, two or more, with no order. A pull request alone isn't shown, nor a story's.
     /// - Parameter focus: the mission you keep on top.
     public static func missions(
         facts: OrderFacts, orders: DeclaredOrders, evidence: OrderEvidence, focus: MissionKey? = nil, now: Date = Date()
@@ -800,9 +800,11 @@ public enum OrderBoard {
                 alone += component
             }
         }
+        // An order claims its story's other pull requests only while one of its own for that story is still open: one whose
+        // pull requests for it all merged or closed leaves the story's new ones to go as they would without it.
         var plansByStory: [ItemRef: Set<UUID>] = [:]
         for plan in orders.plans {
-            for ref in plan.refs {
+            for ref in plan.refs where board.status(ref).isOpen {
                 for story in board.stories(of: ref) { plansByStory[story.ref, default: []].insert(plan.id) }
             }
         }
