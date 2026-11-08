@@ -1238,20 +1238,21 @@ extension OrderText {
 
     /// The user's changes to an order that hold (`OrderChanges.holding`), as the session that told it is told them, a line
     /// each, by references and numbers, never titles: "!4079 in contoso merges first: the user set it as next to merge."
-    /// One the user moved to another mission, or out of every one, says only that.
+    /// One the user moved into this order's mission says so, then what they set there, such as next to merge; one they moved
+    /// to another mission, or out of every one, says only that.
     public static func userChanges(to plan: OrderPlan, holding changes: [ItemRef: OrderChange]) -> [String] {
         let key = MissionKey.plan(plan.id)
         return changes.values.filter { isAbout($0, plan) }.sorted { $0.ref < $1.ref }.flatMap { change -> [String] in
             let ref = change.ref
             let label = ref.fullOrderLabel
+            var lines: [String] = []
             if let placement = change.placement, !change.isAttached {
                 switch placement {
-                case .into(let mission) where mission == key: return ["\(label) is in this order's mission: the user moved it there."]
+                case .into(let mission) where mission == key: lines.append("\(label) is in this order's mission: the user moved it there.")
                 case .into: return ["\(label) is in another mission: the user moved it."]
                 case .outside: return ["\(label) is in no mission: the user moved it out."]
                 }
             }
-            var lines: [String] = []
             if change.first == key { lines.append("\(label) merges first: the user set it as next to merge.") }
             if !change.after.isEmpty {
                 lines.append("\(label) merges after \(list(change.after, near: ref)): the user put it there.")

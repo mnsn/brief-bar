@@ -222,6 +222,43 @@ private final class Clock {
         #expect(!SessionStages.keepsAny(in: defaults))
     }
 
+    /// What an archived session set before the latest stage that ended goes with it, rather than come back once the
+    /// Copilot app lists the session again; what one set later stays; and as a pull request closes, all of it goes.
+    @Test func whatAnArchivedSessionSetGoesWithTheLatestThatEnded() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        let open = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)
+        Self.tell(order, [4093: open, 4094: open])
+        Self.list(order, [Self.cart: .finished, Self.backoff: .finished], since: clock.now - 3_600)
+        clock.advance(seconds: 60)
+        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, in: defaults, order)
+        Self.set(.yourReview, of: 4094, by: Self.cart, at: clock.now, in: defaults, order)
+        // Archived: what it set doesn't count. You finished the review; and later, another archived session says it's on it.
+        Self.list(order, [Self.backoff: .finished], since: clock.now - 3_600)
+        clock.advance(seconds: 60)
+        #expect(order.finishedReview(Self.ref(4093)) == .done)
+        #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
+        clock.advance(seconds: 60)
+        Self.set(.inProgress, of: 4093, by: Self.backoff, at: clock.now, in: defaults, order)
+        Self.list(order, [:], since: clock.now)
+
+        // Priya approves: yours ends, and what Cart set before it goes too; what Retry backoff set later stays.
+        clock.advance(seconds: 60)
+        let approved = StageFacts(role: .author, waitingFor: "Waiting on Priya", othersVoted: true, votes: "10", readAt: clock.now)
+        Self.tell(order, [4093: approved, 4094: open])
+        #expect(order.stage(of: Self.ref(4093))?.mark == nil)
+        #expect(SessionStages.load(Self.cart, from: defaults)?.marks.keys.sorted() == [Self.ref(4094)])
+        #expect(SessionStages.load(Self.backoff, from: defaults)?.marks.keys.sorted() == [Self.ref(4093)])
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600)
+        #expect(order.stage(of: Self.ref(4093))?.mark == nil)
+
+        // Archived again, as 4094 closes: what it set there goes all the same.
+        Self.list(order, [:], since: clock.now)
+        Self.tell(order, [4093: approved, 4094: StageFacts(role: .author, state: .closed)], states: [4094: .closed])
+        #expect(SessionStages.load(Self.cart, from: defaults) == nil)
+    }
+
     /// Let BriefBar Decide takes away what sessions set before yours, which yours replaced, rather than show it again.
     @Test func letBriefBarDecideDoesntBringBackWhatASessionSetBefore() {
         let clock = Clock()
@@ -236,6 +273,15 @@ private final class Clock {
         #expect(order.letBriefBarDecide(Self.ref(4093)) == .done)
         #expect(order.stage(of: Self.ref(4093))?.mark == nil)
         #expect(Self.why(order, 4093) == "Waiting on Priya")
+        #expect(!SessionStages.keepsAny(in: defaults))
+
+        // Also what a session the Copilot app doesn't list now set before yours, should it list it again.
+        clock.advance(seconds: 60)
+        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, in: defaults, order)
+        Self.list(order, [:], since: clock.now)
+        clock.advance(seconds: 60)
+        order.setStage(.inProgress, of: Self.ref(4093))
+        #expect(order.letBriefBarDecide(Self.ref(4093)) == .done)
         #expect(!SessionStages.keepsAny(in: defaults))
     }
 

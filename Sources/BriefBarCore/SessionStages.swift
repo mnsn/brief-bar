@@ -94,6 +94,13 @@ public struct SessionStages: Equatable, Sendable {
         }
     }
 
+    /// What every session set on a pull request, listed or not, past its time or not: what was set at or before `date`, or
+    /// all of it without one. That's what goes once the latest stage set on it ends, or as it merges or closes, so that
+    /// what an archived session set doesn't come back once the Copilot app lists it again.
+    public func marks(on ref: ItemRef, setBy date: Date? = nil) -> [StageMark] {
+        sessions.values.compactMap { $0.marks[ref] }.filter { mark in date.map { mark.at <= $0 } ?? true }
+    }
+
     /// Forgets what sessions set on these kinds of things, when their source is turned off: everything, with GitHub
     /// Copilot's sessions.
     public mutating func forget(_ kinds: Set<ItemRef.Kind>) {
@@ -258,11 +265,14 @@ public struct SessionStages: Equatable, Sendable {
     }
 
     /// Forgets what sessions set on these kinds of things in every record kept, when their source is turned off: every
-    /// record, with GitHub Copilot's sessions.
+    /// record, with GitHub Copilot's sessions. Each record is read as it's kept, with what's past its time, which `load`
+    /// leaves out but which still names pull requests: that goes too.
     public static func forget(_ kinds: Set<ItemRef.Kind>, in defaults: some SettingsStorage, now: Date) {
         guard !kinds.contains(.session) else { return forgetAll(in: defaults) }
-        for var stage in load(from: defaults, now: now).sessions.values {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
+            guard var stage = stage(defaults.data(forKey: key)), Self.key(for: stage.session) == key else { continue }
             let before = stage
+            stage.expire(now: now)
             stage.forget(kinds)
             if stage != before { save(stage, to: defaults) }
         }

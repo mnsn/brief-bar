@@ -64,7 +64,8 @@ done
 # Agents: --mcp speaks the Model Context Protocol, one JSON-RPC message a line, with the made-up data. Teams and GitHub
 # have no tools. Pull Request Order's come next, and Updates from Copilot Sessions' last: both on in the demo, which keeps
 # what agents tell them in memory. With Pull Request Order on, agents get pull requests' stages and work items, and
-# BriefBar's prompts end by asking for the stage.
+# BriefBar's prompts end by asking for the stage. It runs as the demo's "Add dark mode to settings" session, as the Copilot
+# CLI says, whatever session runs this check, so that pull_request_stage knows which session sets the stage.
 MCP="$(printf '%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}' \
     '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -77,7 +78,7 @@ MCP="$(printf '%s\n' \
     '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"changed_in_azure_devops","arguments":{"work_items":["5124"],"organization":"contoso"}}}' \
     '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"pull_request_stage","arguments":{"pull_requests":["4093"],"organization":"contoso","stage":"user_review"}}}' \
     '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"pull_request","arguments":{"pull_request":4088}}}' |
-    within 60 "$BIN" --demo --mcp)"
+    within 60 env COPILOT_AGENT_SESSION_ID=0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01 "$BIN" --demo --mcp)"
 [[ "$(jq -sr 'map(select(.id == 1))[0].result.serverInfo.name' <<<"$MCP")" == briefbar ]] ||
     fail "--demo --mcp doesn't answer initialize"
 EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","work_item","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions","order_pull_requests","pull_request_order","forget_pull_request_order","pull_request_stage","working_on","changed_in_azure_devops"]'

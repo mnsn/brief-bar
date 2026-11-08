@@ -77,8 +77,8 @@ actor AzureDevOpsReader {
         var closedLinks: Set<PRKey> = []
         /// The account they were read with, whose stages the user set apply; none in the demo.
         var account: String?
-        /// When they were read (`StageFacts.readAt`).
-        var readAt: Date?
+        /// When what's listed of each was read (`PulseSnapshot.readTimes`, `StageFacts.readAt`).
+        var readAt: [PRKey: Date] = [:]
     }
 
     /// - Parameter freshFor: how old what it read can be, to share it: a minute (`freshFor`), as the app reads at its most
@@ -89,7 +89,7 @@ actor AzureDevOpsReader {
             var snapshot = DemoData.snapshot(now: now)
             snapshot.records = snapshot.records.map { watched.contains($0.id) ? $0.watched() : $0 }
             let items = AzureDevOpsCommandLine.resolve(snapshot, seen: DemoData.seenState(now: now), options: ClassifierOptions(), now: now)
-            return PullRequests(records: snapshot.records, items: items, problem: nil, showToReview: false, readAt: snapshot.refreshedAt)
+            return PullRequests(records: snapshot.records, items: items, problem: nil, showToReview: false, readAt: snapshot.readTimes)
         }
         await readIfStale(now: now, freshFor: freshFor)
         let showToReview = defaults.bool(forKey: SettingsKey.showToReview)
@@ -104,7 +104,7 @@ actor AzureDevOpsReader {
         if snapshot.organizations.isEmpty, let discoveryProblem { problem = discoveryProblem }
         return PullRequests(
             records: snapshot.records, items: items, problem: problem, showToReview: showToReview, closedLinks: snapshot.closedLinks,
-            account: snapshot.account, readAt: snapshot.refreshedAt
+            account: snapshot.account, readAt: snapshot.readTimes
         )
     }
 

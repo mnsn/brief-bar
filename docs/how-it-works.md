@@ -1446,12 +1446,16 @@ they work on, with `--mcp`'s `pull_request_stage` ([below](#what-it-answers)), w
 start fixing one, Your review once they've pushed their work, Teammate's review once you tell them you've reviewed it.
 The latest of what you and the sessions set counts (`StageRules.counted`), while it stands as yours would, whoever set
 it, and its words say who: **‘Cart’ says it's ready**, which also says when, and after you, where it replaced yours,
-whose menu then has **Put Yours Back**, which sets yours again, as a new change. What a session set counts only while
+whose menu then has **Put Yours Back**, which sets yours again, as a new change. Votes and commits end what a session
+set only as BriefBar read them after it set it, since the session read the pull request itself just then: as the
+refresh that read its organization's lists started, or as it was read by its link, a time a pull request kept as it was
+while those couldn't be read keeps (`StageFacts.readAt`, `PulseSnapshot.readAt(of:)`). What a session set counts only while
 the Copilot app lists the session (`MCPRelated.StageSessions`, `PullRequestOrder.listedSessions`), so an archived one's
 goes with it. Once the latest of them no longer stands, or the pull request merges or closes, none counts: yours goes,
-and BriefBar takes the sessions' away from what they keep (`SessionStages.end`), so an older one never comes back; **Let
-BriefBar Decide** takes away, with yours, what sessions set before it. Can merge, Waits and Merged come only from what
-BriefBar sees, whatever a session says.
+and BriefBar takes away from what each session keeps what it set before the latest, or all of it once the pull request
+merged or closed, listed or not (`SessionStages.end`), so an older one never comes back, also once an archived session is
+listed again; **Let BriefBar Decide** takes away, with yours, what sessions set before it, listed or not. Can merge,
+Waits and Merged come only from what BriefBar sees, whatever a session says.
 
 What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one entry
 for each pull request: its number, the stage, when, and only what would end it (`StageRules.mark`): the commit, for In

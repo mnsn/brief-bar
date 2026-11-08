@@ -199,4 +199,24 @@ import Testing
         #expect(!SessionStages.keepsAny(in: defaults))
         #expect(defaults.object(forKey: StageMarks.defaultsKey) != nil)
     }
+
+    /// Turning a source off forgets what's past its time too, which `load` leaves out but which still names pull requests,
+    /// such as after Pull Request Order stayed off for more than 30 days, so nothing pruned it.
+    @Test func forgettingASourceTakesAwayWhatsPastItsTimeToo() {
+        let defaults = MemorySettings()
+        let old = Self.now - 31 * Self.day
+        let later = ItemRef.gitHubPullRequest(repository: "octo/app", number: 13)
+        var expired = SessionStage(session: Self.session)
+        expired.set(Self.mark(.yourReview, old), of: Self.pullRequest)
+        SessionStages.save(expired, to: defaults)
+        var mixed = SessionStage(session: Self.other)
+        mixed.set(Self.mark(.yourReview, old), of: Self.gitHub)
+        mixed.set(Self.mark(.yourReview, Self.now), of: later)
+        SessionStages.save(mixed, to: defaults)
+        #expect(SessionStages.load(from: defaults, now: Self.now).sessions.keys.sorted() == [Self.other])
+
+        SessionStages.forget([.workItem, .pullRequest], in: defaults, now: Self.now)
+        #expect(defaults.data(forKey: SessionStages.key(for: Self.session)) == nil)
+        #expect(SessionStages.load(Self.other, from: defaults)?.marks.keys.sorted() == [later])
+    }
 }

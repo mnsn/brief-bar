@@ -140,13 +140,14 @@ extension AgentText {
         return line
     }
 
-    /// Why it's in its stage, in BriefBar's words, when that happened, if that's what it says, and who set it: "Priya asked
-    /// you", "‘Cart’ finished, 10m ago", "Nobody's asked to review it yet (You set it 2h ago)", "‘Cart’ says it's ready
-    /// (set 5m ago, after you)".
+    /// Why it's in its stage, in BriefBar's words, with what fails too, as the Board says, when that happened, if that's
+    /// what it says, and who set it: "Priya asked you", "‘Cart’ finished, 10m ago", "Nobody's asked to review it yet · build
+    /// failed (You set it 2h ago)", "‘Cart’ says it's ready (set 5m ago, after you)". What sessions and people are called
+    /// is quoted as other tools quote what others named (`QuotedText.inLine`), so all of it stays on its line.
     static func words(_ reading: StageReading, stages: AgentStages) -> String {
         var words = switch reading.why {
-        case .findReviewer: "Nobody's asked to review it yet"
-        case .ready(autoComplete: false): "Ready to complete"
+        case .findReviewer: "Nobody's asked to review it yet" + StageText.alsoFailing(reading)
+        case .ready(autoComplete: false): "Ready to complete" + StageText.alsoFailing(reading)
         default: StageText.why(reading, name: stages.name)
         }
         if reading.why.saysWhen, let since = reading.since { words += ", \(ago(since, now: stages.now))" }
@@ -156,6 +157,6 @@ extension AgentText {
         } else if let who = StageText.who(reading, now: stages.now, name: stages.name) {
             words += " (\(who))"
         }
-        return words
+        return QuotedText.inLine(words)
     }
 }

@@ -1919,4 +1919,30 @@ import Testing
             "!4120 in contoso is in this order's mission: the user moved it there.",
         ])
     }
+
+    /// One the user moved into an order's mission, then set as next or put after another there, says both, as Set as Next
+    /// and Merge After keep where it was moved; one they moved to another mission says only that, whatever they set there.
+    @Test func aSessionIsToldWhatTheUserSetWhereTheyMovedIt() throws {
+        let orders = try tell([(4101, []), (4102, [])])
+        let mine = MissionKey.mine(otherID)
+        let facts = Self.facts([4101, 4102, 4120, 4121])
+        var changes = OrderChanges()
+        func apply(_ edit: OrderEdit, at seconds: Double) throws {
+            try changes.apply(edit, missions: Self.missions(facts, orders, changes), orders: orders, now: t(seconds))
+        }
+        try apply(.move([Self.pr(4120), Self.pr(4121)], to: .into(.plan(planID)), from: nil), at: 60)
+        try apply(.setNext(Self.pr(4120), in: .plan(planID), true), at: 70)
+        try apply(.mergeAfter(Self.pr(4121), Self.pr(4101), in: .plan(planID), true), at: 80)
+        try apply(.move([Self.pr(4102)], to: .into(mine), from: .plan(planID)), at: 90)
+        try apply(.setNext(Self.pr(4102), in: mine, true), at: 100)
+        #expect(changes.changes[Self.pr(4120)]?.placement == .into(.plan(planID)))
+        #expect(changes.changes[Self.pr(4120)]?.first == .plan(planID))
+        #expect(OrderText.userChanges(to: try #require(orders.plan(planID)), holding: changes.holding(in: orders)) == [
+            "!4102 in contoso is in another mission: the user moved it.",
+            "!4120 in contoso is in this order's mission: the user moved it there.",
+            "!4120 in contoso merges first: the user set it as next to merge.",
+            "!4121 in contoso is in this order's mission: the user moved it there.",
+            "!4121 in contoso merges after !4101: the user put it there.",
+        ])
+    }
 }

@@ -612,9 +612,14 @@ public enum StageText {
     ///   - name: what the sources call a session, when they say.
     ///   - separator: before the failure: ", " for VoiceOver, which reads it as a pause.
     public static func why(_ reading: StageReading, name: (ItemRef) -> String?, then separator: String = " · ") -> String {
-        let words = reason(reading, name: name)
-        guard let failing = reading.alsoFailing, let first = failing.first else { return words }
-        return words + separator + first.lowercased() + failing.dropFirst()
+        reason(reading, name: name) + alsoFailing(reading, then: separator)
+    }
+
+    /// What fails too, after why it's in its stage, where something else decides its stage: " · build failed"; nothing
+    /// when nothing does.
+    public static func alsoFailing(_ reading: StageReading, then separator: String = " · ") -> String {
+        guard let failing = reading.alsoFailing, let first = failing.first else { return "" }
+        return separator + first.lowercased() + failing.dropFirst()
     }
 
     private static func reason(_ reading: StageReading, name: (ItemRef) -> String?) -> String {

@@ -125,7 +125,7 @@ final class PullRequestOrderFacts {
             pullRequests: Self.pullRequests(store.records, items: store.items, showToReview: showToReview, stories: stories),
             items: store.items.map { describe($0, showToReview: showToReview) } + stories.workItems.map(describe),
             stages: Self.stages(
-                store.records, items: store.items, tasks: tasks, watched: settings.watchedKeys, readAt: store.refreshedAt
+                store.records, items: store.items, tasks: tasks, watched: settings.watchedKeys, readAt: store.readTimes
             ),
             account: settings.account, inMemory: Self.sentInChats(store.records, watched: settings.watchedKeys),
             readsStories: stories.areRead
@@ -191,9 +191,10 @@ final class PullRequestOrderFacts {
     /// - Parameters:
     ///   - watched: the pull requests you watch, which BriefBar keeps what you set on, as it keeps what you've seen of them,
     ///     while it keeps that of those only sent to you in a chat in memory.
-    ///   - readAt: when the list read them (`StageFacts.readAt`).
+    ///   - readAt: when what the list says of each was read (`PulseSnapshot.readTimes`, `StageFacts.readAt`): one kept as
+    ///     it was while it couldn't be read keeps when it last was.
     static func stages(
-        _ records: [PRRecord], items: [PRSnapshot], tasks: [CopilotTaskEntry], watched: Set<PRKey> = [], readAt: Date? = nil
+        _ records: [PRRecord], items: [PRSnapshot], tasks: [CopilotTaskEntry], watched: Set<PRKey> = [], readAt: [PRKey: Date] = [:]
     ) -> [ItemRef: StageFacts] {
         let rows = Dictionary(items.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         // Newest first, as they come.
@@ -208,7 +209,7 @@ final class PullRequestOrderFacts {
             // One the lists still read but don't show, such as one sent to you in a chat once you answered it, has no stage
             // to show, but what you set on it still ends as it moves on.
             fact.isListed = rows[record.id] != nil
-            fact.readAt = readAt
+            fact.readAt = readAt[record.id]
             facts[record.id.linkRef] = fact
         }
         return facts
