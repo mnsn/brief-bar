@@ -763,6 +763,39 @@ private final class TakenAt: Sendable {
         #expect(shown == [session])
     }
 
+    /// What the sender does in a task of its own is noted for the test too: here, loading a session that nothing has open,
+    /// with nothing standing in for it, though something stands in for copying the prompt once it didn't load. So
+    /// `.opensNothing` fails a test that does that.
+    @Test(.timeLimit(.minutes(1)))
+    func notesALoadInTheSendersOwnTask() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var copied: [String] = []
+        store.openForTests = { _, text in copied.append(text); return true }
+        // One no other test uses, so that whatever loaded it would be this test's.
+        let session = UUID().uuidString.lowercased()
+        let choice = choice(session)
+        #expect(await store.reach(of: choice) == .loads)
+
+        let notes = ThisMac.Notes()
+        let outcome = await ThisMac.$noting.withValue(notes) { await store.deliver("Fix the comments", to: choice) }
+        #expect(notes.refused == ["open ghapp://sessions/\(session)"])
+        guard case .fellBack(let fallback) = outcome else {
+            Issue.record("BriefBar didn't copy the prompt once the session didn't load: \(outcome)")
+            return
+        }
+        #expect(fallback.reason == SendFailure.notLoaded.description)
+        #expect(copied == ["Fix the comments"])
+
+        let test = try #require(Test.current)
+        await withKnownIssue {
+            try await OpensNothing().provideScope(for: test, testCase: Test.Case.current) {
+                _ = await store.deliver("Fix the comments", to: choice)
+            }
+        }
+        #expect(copied == ["Fix the comments", "Fix the comments"])
+    }
+
     /// The session's extension forks it with the app's own fork; once the app records the fork as the session's, the
     /// fork's extension sends it the prompt, and the fork shows. The session itself gets no message.
     @Test func forksTheSessionAndSendsTheFork() async throws {

@@ -376,8 +376,12 @@ extension CopilotTasksStore {
             }
         )
         let sender = SessionSender(outbox: outbox, effects: effects, timing: deliveryTimingForTests ?? SessionSender.Timing())
+        // What a test notes (`ThisMac.noting`) goes with the sender into its own task, which loads the session there.
+        let notes = ThisMac.noting
         let work = Task.detached(priority: .userInitiated) {
-            forking ? await sender.forkAndSend(prompt, from: id) : await sender.send(prompt, to: id)
+            await ThisMac.$noting.withValue(notes) {
+                forking ? await sender.forkAndSend(prompt, from: id) : await sender.send(prompt, to: id)
+            }
         }
         // Stopped, as when its window closes: a request that no extension took yet is taken back.
         let outcome = await withTaskCancellationHandler {
