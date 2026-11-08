@@ -122,8 +122,8 @@ fileprivate final class Viewer {}
         #expect(order.briefBarsName(of: mission) == "Faster checkout")
         // It's asked from the titles, with BriefBar's own name to keep unless it no longer fits.
         let prompt = try #require(model.prompts.first)
-        #expect(prompt.hasPrefix("Current name: Checkout redesign\nStory: Checkout redesign\n"))
-        #expect(prompt.contains("- Speed up the checkout page") && prompt.contains("- Prototype one-click checkout"))
+        #expect(prompt.hasPrefix("Current name: “Checkout redesign”\nStory: “Checkout redesign”\n"))
+        #expect(prompt.contains("- “Speed up the checkout page”") && prompt.contains("- “Prototype one-click checkout”"))
         // Nothing of it is kept.
         #expect(defaults.object(forKey: MissionNames.defaultsKey) == nil)
 
@@ -199,9 +199,9 @@ fileprivate final class Viewer {}
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         try #require(await Self.eventually { model.prompts.count == 2 })
-        #expect(model.prompts[1].contains("- Make checkout faster"))
+        #expect(model.prompts[1].contains("- “Make checkout faster”"))
         // With the name it shows now, Apple Intelligence's, to keep while it fits.
-        #expect(model.prompts[1].hasPrefix("Current name: Faster checkout\n"))
+        #expect(model.prompts[1].hasPrefix("Current name: “Faster checkout”\n"))
         // Without Apple Intelligence: not at all.
         model.unavailability = .notEnabled
         Self.tell(order, firstTitle: "Checkout, faster")
@@ -259,8 +259,8 @@ fileprivate final class Viewer {}
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         try #require(await Self.eventually { model.prompts.count == 1 })
-        #expect(model.prompts[0].hasPrefix("Current name: Checkout speed\n"))
-        #expect(model.prompts[0].contains("Copilot sessions:\n- Checkout speed"))
+        #expect(model.prompts[0].hasPrefix("Current name: “Checkout speed”\n"))
+        #expect(model.prompts[0].contains("Copilot sessions:\n- “Checkout speed”"))
         order.stopShowing(in: viewer)
     }
 
@@ -316,7 +316,7 @@ fileprivate final class Viewer {}
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         try #require(await Self.eventually { model.prompts.count == 2 })
-        #expect(model.prompts[1].contains("- Make checkout faster"))
+        #expect(model.prompts[1].contains("- “Make checkout faster”"))
 
         // Pull Request Order went off meanwhile: on again, it's asked again.
         order.setOn(false)
@@ -689,7 +689,7 @@ fileprivate final class Viewer {}
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
         try #require(await Self.eventually { model.prompts.count == 1 })
-        #expect(model.prompts[0].contains("Copilot sessions:\n- Make checkout faster"))
+        #expect(model.prompts[0].contains("Copilot sessions:\n- “Make checkout faster”"))
 
         order.publish(.copilot, items: titled)
         clock.advance(MissionNamer.settleFor)
