@@ -2355,7 +2355,8 @@ checks the folder the session works in before the prompt is sent or copied, and 
 as the window wrote it, so the branch BriefBar checks against is the one the prompt names, and a Push & Reply goes only
 while the pull request still merges into it. The list may not have read a retarget yet, so BriefBar asks Azure DevOps,
 with one request for the pull request right before git checks and one right after (`CopilotTasksStore.freshTarget(of:)`,
-`CopilotLauncher.Request.targetNow`), and nothing goes when it can't be read (`LaunchError.cantReadTarget`); the list
+`CopilotLauncher.Request.targetNow`), and nothing goes when it can't be read, as once Azure DevOps is turned off,
+which calls off a read under way (`LaunchError.cantReadTarget`, `PRStore.readTarget(of:)`); the list
 is asked too, as you send it, before the launcher starts, as each of those reads answers, since a read may answer from
 before a retarget the list has read meanwhile, and until the prompt is sent or copied. Once either says
 another, nothing goes, and BriefBar says to open the window again, for a prompt that names it
@@ -2370,9 +2371,11 @@ read, or doesn't say which sessions run one, as when the app keeps that another 
 it copies the prompt, or writes the request for the session's extension and then, at most once a second, until the
 extension takes it, taking the request back if a turn starts; the composer says to send it once the turn is done. A
 turn that starts in that last second, or once the extension took the prompt, before the prompt's own turn, is left to
-Copilot's own check. When BriefBar can't check, as in a folder that isn't a clone of the pull request's repository,
-nothing goes either; the check needs only the clone's `origin`, not a branch new work would start from
-(`Git.checkClone(at:of:)`).
+Copilot's own check. When BriefBar can't check, nothing goes either: in a folder that isn't a clone of the pull
+request's repository; where what it would push has a commit without parents, as where a shallow clone's history stops,
+which git takes for a root though it may be a merge, of anything; or while a merge is going on whose `MERGE_HEAD` it
+can't read, such as a link, which it doesn't follow. The check needs only the clone's `origin`, not a branch new work
+would start from (`Git.checkClone(at:of:)`).
 
 Copilot checks too, as late as it can: Push & Reply's prompt has it commit, then, right before it pushes, and again
 after a rebase when a push is rejected, read the pull request with BriefBar's `pull_request` tool, which reads the
