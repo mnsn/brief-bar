@@ -1377,11 +1377,12 @@ went to more than one, as a teammate's chain or a session's, it waits on the sto
 isn't known: no mission has its Focus or your name, and what you put in it shows on its own card, saying it shows once
 Show Links reads the story. For a chain, it goes to the chain or GitHub stack they're in now, or the one with the most
 of them, as you split it, the first shown of those with as many; else they wait. The mission one you didn't move was in,
-as you set it as next or put it after another there, goes on only to a mission that has it. Where you set one as next
-follows only to a mission with all of them and nothing else open but what you moved, never to a part of one that split,
-so that a teammate's of the same story doesn't wait for it, and it holds again as the mission comes back whole; else
-that row says the mission you set it as next in is gone, or, for a story's while Show Links hasn't read the stories,
-that it shows
+as you set it as next or put it after another there, goes on only to a mission that has it. Where you set one as next in
+a chain stays on the chain: in its story's mission it's next among the chain's own pull requests and those you put in
+the mission, so a teammate's of the same story doesn't wait for it. Elsewhere it follows only to a mission with all of
+them and nothing else open but what you moved, never to a part of one that split, so that others there don't wait for
+it, and it holds again as the mission comes back whole; else that row says the mission you set it as next in is gone,
+or, for a story's while Show Links hasn't read the stories, that it shows
 once it does. **Undo** takes back your last change, in memory only,
 and shows in the card you made it in, or at the top of the list once that card is gone; a change BriefBar refuses says
 why beside it. BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never titles,

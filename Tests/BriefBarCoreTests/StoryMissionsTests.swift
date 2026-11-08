@@ -421,9 +421,10 @@ import Testing
         #expect(read.map(\.key) == [.story(Self.item(5101))])
         #expect(OrderBoard.successor(of: .chain(Self.pr(4111)), from: moved, to: read) == .story(Self.item(5101)))
         #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: read, to: moved) == .chain(Self.pr(4111)))
-        // Where you set one as next follows them whole, out and back in.
+        // Where you set one as next follows them whole out of it; but a chain's stays on the chain, whose key names the
+        // story's mission that holds it, where it's next among the chain's own.
         #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: read, to: moved, alone: true) == .chain(Self.pr(4111)))
-        #expect(OrderBoard.successor(of: .chain(Self.pr(4111)), from: moved, to: read, alone: true) == .story(Self.item(5101)))
+        #expect(OrderBoard.successor(of: .chain(Self.pr(4111)), from: moved, to: read, alone: true) == nil)
         // A story's split in two chains: which one what's kept came from isn't known, and it waits.
         let more = Self.missions(Self.facts([
             Self.ado(4111, [Self.task(5102, rank: 1)], from: "users/robin/b", into: "users/robin/a"),
@@ -582,19 +583,25 @@ import Testing
     }
 
     /// What you put in a chain, by its key, shows in the story's mission that holds that chain, not on a card of its own;
-    /// and one you set as next there is next in it, not set as next elsewhere.
+    /// and one you set as next there is next in it, not set as next elsewhere, among the chain's own pull requests and
+    /// those you put in the chain: a teammate's of the same story doesn't wait for it.
     @Test func aChainsKeyNamesTheStorysMissionThatHoldsIt() throws {
         let chain = MissionKey.chain(Self.pr(4110))
         let changes = OrderChanges([OrderChange(ref: Self.pr(4130), first: chain, placement: .into(chain), changedAt: t(10))])
         let missions = Self.missions(Self.facts([
             Self.ado(4110, [Self.task(5102, rank: 1)], from: "users/robin/a"),
             Self.ado(4111, [Self.task(5103, rank: 2)], from: "users/robin/b", into: "users/robin/a"), Self.ado(4130, []),
+            Self.ado(4120, [Self.task(5104, rank: 3)], from: "users/sam/a"),
         ]), changes: changes)
         #expect(missions.map(\.key) == [.story(Self.item(5101))])
         let mission = try #require(missions.first)
-        #expect(Set(mission.steps.map(\.ref)) == Set([4110, 4111, 4130].map(Self.pr)))
+        #expect(Set(mission.steps.map(\.ref)) == Set([4110, 4111, 4120, 4130].map(Self.pr)))
         let step = try #require(mission.steps.first { $0.ref == Self.pr(4130) })
-        #expect(!step.notes.contains(.nextElsewhere(chain)))
+        #expect(!step.notes.contains(.nextElsewhere(chain)) && step.standing == .next)
+        let earliest = try #require(mission.steps.first { $0.ref == Self.pr(4110) })
+        #expect(earliest.notes.contains(.afterYourNext(Self.pr(4130))) && earliest.prerequisites.map(\.ref) == [Self.pr(4130)])
+        let theirs = try #require(mission.steps.first { $0.ref == Self.pr(4120) })
+        #expect(theirs.standing == .unordered && !theirs.notes.contains(.afterYourNext(Self.pr(4130))) && theirs.prerequisites.isEmpty)
     }
 
     /// A story with only one pull request of its own is a mission once you put another in it.

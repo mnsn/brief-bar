@@ -1072,7 +1072,9 @@ public enum OrderBoard {
     ///   - moved: the pull requests your changes that hold put in a mission, or out of one (`OrderChange.placement`).
     ///   - alone: only to a mission with all of them, and no open pull request but those and the ones your changes moved,
     ///     never to a part of one that split: for where you set one as next to merge, which shouldn't have others wait for
-    ///     it, such as a teammate's of the same story, and holds again as the mission comes back whole.
+    ///     it, such as a teammate's of the same story, and holds again as the mission comes back whole. Never a chain's into
+    ///     its story's mission: the chain's key names the story's mission that holds the chain, where it's next among the
+    ///     chain's own pull requests.
     public static func successor(
         of key: MissionKey, from old: [OrderMission], to new: [OrderMission], moved: Set<ItemRef> = [], alone: Bool = false
     ) -> MissionKey? {
@@ -1093,6 +1095,7 @@ public enum OrderBoard {
         func goesOn(_ mission: OrderMission, split: Bool) -> Bool {
             guard !mission.isMine else { return false }
             switch (key, mission.key) {
+            case (.chain, .story): return !split && !alone
             case (_, .story): return !split
             case (.chain, .chain), (.chain, .stack): return true
             case (.story, .chain), (.story, .stack), (.story, .family): return within(mission)
@@ -1750,6 +1753,15 @@ extension Board {
         }
     }
 
+    /// In a story's mission, the pull requests of the chain you set this one as next in, by the chain's key, and those you
+    /// put in the mission, as what you put in the chain went there with it; nil where you set it as next by the mission's
+    /// own key.
+    func chainsOwn(of next: ItemRef, in group: Group, layer: Layer) -> Set<ItemRef>? {
+        guard group.isStory, case .chain(let anchor)? = layer.holding[next]?.first else { return nil }
+        let chain = components(of: Set(group.members)).first { $0.contains(anchor) } ?? []
+        return Set(chain).union(group.placed)
+    }
+
     /// A mission, from its pull requests: what goes before each, their order, where each stands, and what each says. Nil
     /// when you moved all its pull requests elsewhere.
     ///
@@ -1864,11 +1876,15 @@ extension Board {
                     added[ref, default: []].append(.notAfterYourNext(next))
                 }
                 // Every line the missions made before kept, other orders' between this one's pull requests too: what waits for
-                // nothing here waits for yours, unless that goes round with them.
+                // nothing here waits for yours, unless that goes round with them. In a story's mission, where you set it as
+                // next in a chain it holds, only that chain's own and those you put in the mission: a teammate's of the same
+                // story doesn't wait for it.
                 let everywhere = lines.orders().merging(lines.next()) { $0.union($1) }
+                let among = chainsOwn(of: next, in: group, layer: layer)
                 var waiting: Set<ItemRef> = []
                 for ref in refs where ref != next && status(ref).isOpen && layer.holding[ref]?.notAfter.contains(next) != true {
-                    guard prerequisites[ref, default: []].allSatisfy({ status($0).hasEnded }),
+                    guard among?.contains(ref) ?? true,
+                          prerequisites[ref, default: []].allSatisfy({ status($0).hasEnded }),
                           !Self.isBefore(ref, next, in: before, everywhere)
                     else { continue }
                     add(next, before: ref, [.yourNext])

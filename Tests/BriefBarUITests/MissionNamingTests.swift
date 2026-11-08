@@ -919,6 +919,42 @@ fileprivate final class Viewer {}
         #expect(order.missions.map(\.key) == [story] && next(in: story)?.standing == .next)
     }
 
+    /// Where you set one as next in a chain stays on the chain as Show Links reads its pull requests as a story's, with a
+    /// teammate's: in the story's mission it's next among the chain's and the one you put in the chain, and the teammate's
+    /// don't wait for it. Off again, it's next in the chain.
+    @Test func aNextYouSetInAChainIsNextAmongItsOwnInItsStorysMission() throws {
+        let clock = Clock()
+        let order = Self.service(clock: clock)
+        let (chain, story) = (MissionKey.chain(Self.pr(4110)), MissionKey.story(Self.story))
+        func publish(reading: Bool, stories: Bool) {
+            let read = { (task: Int) -> [OrderStory]? in reading ? (stories ? [Self.task(task, rank: Double(task - 5180))] : []) : nil }
+            order.publish(.azureDevOps, pullRequests: [
+                Self.stacked(4110, from: "robin/a", into: "main", read(5181)), Self.stacked(4111, from: "robin/b", into: "robin/a", read(5182)),
+                Self.ado(4130, reading ? [] : nil), Self.ado(4120, read(5184)), Self.ado(4121, read(5185)),
+            ], readsStories: reading)
+        }
+        func step(_ number: Int, in key: MissionKey) -> OrderStep? {
+            order.missions.first { $0.key == key }?.steps.first { $0.ref == Self.pr(number) }
+        }
+        publish(reading: true, stories: false)
+        order.change(.move([Self.pr(4130)], to: .into(chain), from: nil))
+        order.change(.setNext(Self.pr(4110), in: chain, true))
+        order.dismissLastChange()
+        #expect(step(4110, in: chain)?.standing == .next && step(4130, in: chain)?.notes.contains(.afterYourNext(Self.pr(4110))) == true)
+        // Read as User Story 5180's, with a teammate's two: next among the chain's, which the teammate's don't wait for.
+        publish(reading: true, stories: true)
+        #expect(order.missions.map(\.key) == [story] && order.changes[Self.pr(4110)]?.first == chain)
+        #expect(step(4110, in: story)?.standing == .next && step(4110, in: story)?.notes.contains(.nextElsewhere(chain)) == false)
+        #expect(step(4130, in: story)?.notes.contains(.afterYourNext(Self.pr(4110))) == true)
+        for theirs in [4120, 4121] {
+            let row = step(theirs, in: story)
+            #expect(row?.standing == .unordered && row?.prerequisites.isEmpty == true, "!\(theirs)")
+        }
+        // Off: next in the chain again.
+        publish(reading: false, stories: false)
+        #expect(order.missions.map(\.key) == [chain] && step(4110, in: chain)?.standing == .next)
+    }
+
     /// Where you set one as next among a session's pull requests stays there as they go to their story's, once a teammate's
     /// of the same story is there too: theirs don't wait for it, and yours says so. Undo would set it there too.
     @Test func aNextYouSetAmongASessionsPullRequestsDoesntSpreadToTheirStorys() throws {
