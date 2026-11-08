@@ -213,18 +213,25 @@ enum WaitCLI {
             let deadline = now().addingTimeInterval(TimeInterval(request.minutes) * 60)
             var baseline: PRRecord?
             var latest: PRRecord?
-            var lastRead: Date?
+            // When the read before had read the pull request itself, and its details.
+            var previous: (pullRequest: Date?, details: Date?) = (nil, nil)
             var failures = 0
             var problem: String?
             while true {
                 if let refusal = refusal() { return Ended(exit: .couldntRead, error: refusal) }
                 let snapshot = await read()
                 if snapshot.closedLinks.contains(key) { return await closed() }
-                // A read counts once its details were read again: a pull request it couldn't read stays as it was read.
-                if let record = snapshot.records.first(where: { $0.id == key }), let fetched = record.details?.fetchedAt, fetched != lastRead {
-                    lastRead = fetched
+                // A read counts once it read both the pull request and its details again: one that fails leaves what it
+                // couldn't read as it was, such as the pull request's conflicts while its policies are read anew.
+                let record = snapshot.records.first { $0.id == key }
+                let current = (pullRequest: snapshot.linkedReadAt[key], details: record?.details?.fetchedAt)
+                let isFresh = current.pullRequest != nil && current.details != nil
+                    && current.pullRequest != previous.pullRequest && current.details != previous.details
+                previous = current
+                if isFresh, let record, record.role != .author { return notYours(key) }
+                // Policies you can't read leave its builds unknown, rather than none: such a read doesn't count either.
+                if isFresh, let record, record.details?.checksKnown == true {
                     failures = 0
-                    guard record.role == .author else { return notYours(key) }
                     latest = record
                     let start = baseline ?? record
                     baseline = start
@@ -232,7 +239,7 @@ enum WaitCLI {
                     if !outcomes.isEmpty { return await ended(outcomes, on: record, prompt: prompt) }
                 } else {
                     failures += 1
-                    problem = snapshot.problem.map(AzureDevOpsCommandLine.text(of:)) ?? problem
+                    problem = isFresh ? unreadablePolicies : snapshot.problem.map(AzureDevOpsCommandLine.text(of:)) ?? problem
                     if failures >= mostFailures {
                         let why = problem ?? "Check that you're signed in to the Azure CLI (az login), that you're online, and the link."
                         return Ended(exit: .couldntRead, error: "Couldn't read !\(key.number) \(failures) times in a row. \(why)")
@@ -242,6 +249,11 @@ enum WaitCLI {
                 guard left > 0 else { return timedOut(latest) }
                 await sleep(min(interval, left))
             }
+        }
+
+        /// Why a read whose policies Azure DevOps didn't let it read doesn't count, as a pull request's details say it.
+        private var unreadablePolicies: String {
+            "Its project doesn't let you read its policies, so BriefBar can't tell how its builds stand."
         }
 
         /// The engine found it closed, or couldn't read it: which, as Azure DevOps says now.
@@ -261,11 +273,18 @@ enum WaitCLI {
             guard let latest else {
                 return Ended(exit: .couldntRead, error: "Couldn't read !\(number) within \(minutes).")
             }
+            // Nothing runs, though a build that blocks it hasn't passed: it may have to be queued again.
             let running = WaitOutcome.running(in: latest)
-            let what = running.isEmpty
-                ? "no build ran, nobody commented, and it has no merge conflicts."
-                : names(running) + (running.count == 1 ? " is" : " are") + " still "
+            let stalled = WaitOutcome.stalled(in: latest)
+            let what: String
+            if !running.isEmpty {
+                what = names(running) + (running.count == 1 ? " is" : " are") + " still "
                     + (running.allSatisfy { $0.state == .queued } ? "queued." : "running.")
+            } else if !stalled.isEmpty {
+                what = names(stalled) + (stalled.count == 1 ? " hasn't passed, and isn't running." : " haven't passed, and aren't running.")
+            } else {
+                what = "no build ran, nobody commented, and it has no merge conflicts."
+            }
             return Ended(
                 exit: .timedOut,
                 output: "Stopped waiting for !\(number) after \(minutes): \(what)\n\(latest.pullRequest.webURL.absoluteString)"

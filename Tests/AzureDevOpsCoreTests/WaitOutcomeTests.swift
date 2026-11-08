@@ -18,9 +18,12 @@ import BriefBarCore
 
     private func build(
         _ state: Check.State, id: Int? = 501, pipeline: Int? = 12, name: String = "shop-web CI", blocking: Bool = true,
-        completed: Date? = nil
+        completed: Date? = nil, policy: Int? = nil
     ) -> Check {
-        Check(name: name, kind: .build, state: state, isBlocking: blocking, completedAt: completed, buildId: id, definitionId: pipeline)
+        Check(
+            name: name, kind: .build, state: state, isBlocking: blocking, completedAt: completed, buildId: id, definitionId: pipeline,
+            policyId: policy
+        )
     }
 
     @Test func nothingYetWhileTheBuildRuns() {
@@ -63,6 +66,35 @@ import BriefBarCore
         #expect(WaitOutcome.since(baseline, in: record(checks: [build(.running), failed])) == [.buildFailed([failed])])
         let both = [passed, build(.passed, id: 601, pipeline: 13, name: "shop-web tests", completed: t(90))]
         #expect(WaitOutcome.since(baseline, in: record(checks: both)) == [.buildPassed(both)])
+    }
+
+    /// It passes only once every build that blocks it has: not while another failed before the wait began, expired, or never
+    /// ran, though nothing runs it, as one that expired while the wait went on. One that doesn't apply holds nothing up.
+    @Test func itPassesOnlyOnceEveryBuildThatBlocksItHas() {
+        let passed = build(.passed, completed: t(60))
+        for state in [Check.State.failed, .expired, .notRun] {
+            let other = build(state, id: 601, pipeline: 13, name: "shop-web tests", completed: t(-600))
+            #expect(WaitOutcome.since(record(checks: [build(.running), other]), in: record(checks: [passed, other])).isEmpty, "\(state)")
+        }
+        let running = build(.running, id: 601, pipeline: 13, name: "shop-web tests")
+        var expired = running
+        expired.state = .expired
+        #expect(WaitOutcome.since(record(checks: [build(.running), running]), in: record(checks: [passed, expired])).isEmpty)
+        #expect(WaitOutcome.stalled(in: record(checks: [passed, expired])) == [expired])
+        let skipped = build(.notApplicable, id: nil, pipeline: 13, name: "shop-web tests")
+        #expect(WaitOutcome.since(record(checks: [build(.running), skipped]), in: record(checks: [passed, skipped])) == [.buildPassed([passed])])
+        #expect(WaitOutcome.stalled(in: record(checks: [passed, skipped])).isEmpty)
+    }
+
+    /// Two policies may run one pipeline under one name, each with its own run: their policies tell them apart, so neither's
+    /// last run is news, and only the one that runs again ends it.
+    @Test func twoPoliciesOfOnePipelineAreToldApart() {
+        let web = build(.passed, id: 501, completed: t(-600), policy: 7)
+        let api = build(.failed, id: 601, completed: t(-300), policy: 8)
+        let baseline = record(checks: [web, api])
+        #expect(WaitOutcome.since(baseline, in: baseline).isEmpty)
+        let again = build(.passed, id: 602, completed: t(60), policy: 8)
+        #expect(WaitOutcome.since(baseline, in: record(checks: [web, again])) == [.buildPassed([again])])
     }
 
     /// Optional builds don't hold up a merge, and expired ones or ones never run aren't results.

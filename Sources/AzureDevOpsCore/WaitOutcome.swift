@@ -12,7 +12,8 @@ public enum WaitOutcome: Sendable, Equatable {
     case conflicts
     /// Open threads with a comment that waits on you, as Needs You counts it, that wasn't there when the wait began.
     case comments([ReviewThread])
-    /// The builds that ran since the wait began, all of which passed, with none still queued or running.
+    /// The builds that ran since the wait began, once every build that blocks it has passed: none still to run, nor to run
+    /// again.
     case buildPassed([Check])
 
     /// What happened on it between `baseline`, the first read of it with its details, and `current`, a later one: a failed
@@ -27,7 +28,8 @@ public enum WaitOutcome: Sendable, Equatable {
         if current.pullRequest.hasConflicts { outcomes.append(.conflicts) }
         let threads = comments(in: current, since: baseline)
         if !threads.isEmpty { outcomes.append(.comments(threads)) }
-        if failed.isEmpty, !finished.isEmpty, !now.contains(where: { $0.state == .queued || $0.state == .running }) {
+        // One that failed before the wait began, expired or never ran still holds it up, though nothing runs it.
+        if failed.isEmpty, !finished.isEmpty, now.allSatisfy({ $0.state == .passed || $0.state == .notApplicable }) {
             outcomes.append(.buildPassed(finished))
         }
         return outcomes
@@ -49,8 +51,10 @@ public enum WaitOutcome: Sendable, Equatable {
         return false
     }
 
-    /// The same build policy in two reads: by its pipeline, or else by its name.
+    /// The same build policy in two reads: by its policy, as Azure DevOps names it, since two policies may run one pipeline
+    /// under one name; or else, when it doesn't say, by its pipeline, or else by its name.
     static func isSamePolicy(_ one: Check, _ other: Check) -> Bool {
+        if let policy = one.policyId, let otherPolicy = other.policyId { return policy == otherPolicy }
         if let pipeline = one.definitionId, let otherPipeline = other.definitionId { return pipeline == otherPipeline }
         return one.name == other.name
     }
@@ -73,6 +77,12 @@ public enum WaitOutcome: Sendable, Equatable {
     /// Its builds that are still queued or running, which a wait that ends with nothing waits on.
     public static func running(in record: PRRecord) -> [Check] {
         builds(of: record).filter { $0.state == .queued || $0.state == .running }
+    }
+
+    /// Its builds that hold it up though nothing runs them: one that failed before the wait began, expired or never ran, until
+    /// someone queues it again.
+    public static func stalled(in record: PRRecord) -> [Check] {
+        builds(of: record).filter { ![.passed, .notApplicable, .queued, .running].contains($0.state) }
     }
 }
 

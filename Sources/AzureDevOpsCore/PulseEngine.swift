@@ -148,11 +148,14 @@ public struct PulseSnapshot: Sendable, Equatable {
     public var hasLoaded: Bool
     /// Pull requests asked for by their links that turned out to be closed, gone, or not yours to read.
     public var closedLinks: Set<PRKey>
+    /// When each pull request asked for by its link that's listed was last read by it: one that couldn't be read since
+    /// stays listed as it was then, though its details may be read again. `--wait` takes a read only once it read both.
+    public var linkedReadAt: [PRKey: Date]
 
     public init(
         records: [PRRecord] = [], organizations: [String] = [], account: String? = nil, userName: String? = nil,
         firstLoaded: [String: Date] = [:], problem: PulseProblem? = nil, refreshedAt: Date? = nil, isRefreshing: Bool = false,
-        hasLoaded: Bool = false, closedLinks: Set<PRKey> = []
+        hasLoaded: Bool = false, closedLinks: Set<PRKey> = [], linkedReadAt: [PRKey: Date] = [:]
     ) {
         self.records = records
         self.organizations = organizations
@@ -164,6 +167,7 @@ public struct PulseSnapshot: Sendable, Equatable {
         self.isRefreshing = isRefreshing
         self.hasLoaded = hasLoaded
         self.closedLinks = closedLinks
+        self.linkedReadAt = linkedReadAt
     }
 
     /// When an organization's lists were first read, however its name is spelled: a pull request read under another
@@ -1283,7 +1287,8 @@ public actor PulseEngine {
         records.sort { $0.id < $1.id }
         return PulseSnapshot(
             records: records, organizations: configuration.organizations, account: account, userName: userName, firstLoaded: firstLoaded,
-            problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, closedLinks: closedLinks
+            problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, closedLinks: closedLinks,
+            linkedReadAt: linked.mapValues(\.readAt)
         )
     }
 

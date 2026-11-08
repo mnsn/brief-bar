@@ -151,12 +151,13 @@ import Testing
         )
     }
 
-    /// The demo's pull request, as a read at this minute of the wait has it, with its details read then.
+    /// The demo's pull request, as a read at this minute of the wait has it, with it and its details read then.
     private func read(_ number: Int, at minute: Int, _ change: (inout PRRecord) -> Void = { _ in }) throws -> PulseSnapshot {
         var record = try #require(DemoData.records(now: start).first { $0.id.number == number })
-        record.details?.fetchedAt = start.addingTimeInterval(TimeInterval(minute) * 60)
+        let at = start.addingTimeInterval(TimeInterval(minute) * 60)
+        record.details?.fetchedAt = at
         change(&record)
-        return PulseSnapshot(records: [record], hasLoaded: true)
+        return PulseSnapshot(records: [record], hasLoaded: true, linkedReadAt: [record.id: at])
     }
 
     private func pageOf(_ number: Int, in repository: String) -> String {
@@ -270,6 +271,77 @@ import Testing
         // Its time ran out before it could.
         let late = await waiter(Script([PulseSnapshot(hasLoaded: true)], now: start), 4099, minutes: 1).run()
         #expect(late.exit == .couldntRead && late.error == "Couldn't read !4099 within a minute.")
+    }
+
+    /// A read that couldn't read the pull request itself, though its policies and threads could, isn't one: what it kept of
+    /// the pull request, such as its conflicts, may be old. Here !4099's build passed in each, which ends nothing until a
+    /// read has the pull request too; five in a row end the wait.
+    @Test func aReadCountsOnlyOnceItReadThePullRequestToo() async throws {
+        func passed(_ minute: Int, pullRequestReadAt: Date? = nil) throws -> PulseSnapshot {
+            var snapshot = try read(4099, at: minute) { record in
+                record.details?.checks[0].state = .passed
+                record.details?.checks[0].completedAt = start.addingTimeInterval(TimeInterval(minute) * 60 - 10)
+            }
+            if let pullRequestReadAt { snapshot.linkedReadAt = [PRKey(organization, 4099): pullRequestReadAt] }
+            return snapshot
+        }
+        let first = try read(4099, at: 0)
+        let stale = try (1...5).map { try passed($0, pullRequestReadAt: start) }
+        let script = Script([first] + stale, now: start)
+        let ended = await waiter(script, 4099).run()
+        #expect(ended.exit == .couldntRead && ended.output.isEmpty)
+        #expect(ended.error.hasPrefix("Couldn't read !4099 5 times in a row. Check that you're signed in to the Azure CLI (az login)"))
+        #expect(script.reads == 6)
+
+        let then = Script([first, stale[0], stale[1], try passed(3)], now: start)
+        #expect(await waiter(then, 4099).run().exit == .passed)
+        #expect(then.reads == 4)
+    }
+
+    /// Policies it can't read leave the builds unknown, not none: such a read doesn't count, so a build that had passed
+    /// before isn't news once they can be read; and five of them in a row end the wait.
+    @Test func aReadCountsOnlyWithItsPolicies() async throws {
+        func unknown(_ minute: Int) throws -> PulseSnapshot {
+            try read(4091, at: minute) { record in
+                record.details?.checks = []
+                record.details?.checksKnown = false
+            }
+        }
+        let script = Script(try (0..<5).map(unknown), now: start)
+        let ended = await waiter(script, 4091).run()
+        #expect(ended.exit == .couldntRead && script.reads == 5)
+        #expect(ended.error == """
+            Couldn't read !4091 5 times in a row. Its project doesn't let you read its policies, so BriefBar can't tell how its \
+            builds stand.
+            """)
+
+        let readable = Script([try unknown(0), try unknown(1), try read(4091, at: 2), try read(4091, at: 3)], now: start)
+        let timedOut = await waiter(readable, 4091, minutes: 3).run()
+        #expect(timedOut.exit == .timedOut && readable.reads == 4)
+        #expect(timedOut.output.hasPrefix("Stopped waiting for !4091 after 3 minutes: no build ran, nobody commented"))
+    }
+
+    /// One build passed, but another that blocks it expired, and nothing queues it again: it hasn't passed, so the wait goes
+    /// on, and its timeout says which.
+    @Test func passesOnlyOnceEveryBuildThatBlocksItHas() async throws {
+        let tests = Check(name: "infra tests", kind: .build, state: .running, buildId: 77, definitionId: 41)
+        func later(_ minute: Int) throws -> PulseSnapshot {
+            try read(4099, at: minute) { record in
+                record.details?.checks[0].state = .passed
+                record.details?.checks[0].completedAt = start.addingTimeInterval(50)
+                var expired = tests
+                expired.state = .expired
+                record.details?.checks.append(expired)
+            }
+        }
+        let baseline = try read(4099, at: 0) { $0.details?.checks.append(tests) }
+        let script = Script([baseline, try later(1), try later(2)], now: start)
+        let ended = await waiter(script, 4099, minutes: 2).run()
+        #expect(ended.exit == .timedOut)
+        #expect(ended.output == """
+            Stopped waiting for !4099 after 2 minutes: “infra tests” hasn't passed, and isn't running.
+            \(pageOf(4099, in: "infra"))
+            """)
     }
 
     @Test func endsOnceItsClosed() async throws {

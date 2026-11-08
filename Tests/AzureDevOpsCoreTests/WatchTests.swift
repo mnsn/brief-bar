@@ -137,6 +137,7 @@ import BriefBarCore
         await engine.setLinkedPullRequests([PRKey(Fixture.org, 8)])
         await engine.refreshNow()
         #expect(await engine.currentSnapshot().records.isEmpty)
+        #expect(await engine.currentSnapshot().linkedReadAt.isEmpty)
 
         fails.withLock { $0 = false }
         clock.withLock { $0 = t(1) }
@@ -147,10 +148,20 @@ import BriefBarCore
         await engine.refreshNow()
         let snapshot = await engine.currentSnapshot()
         #expect(snapshot.records.first?.details?.fetchedAt == t(56))
+        #expect(snapshot.linkedReadAt == [PRKey(Fixture.org, 8): t(56)])
         #expect(snapshot.records.first?.role == .author)
         #expect(server.requests.filter { $0.url?.path.hasSuffix("/pullrequests/8") == true }.count == 3)
         #expect(server.requests.filter { $0.url?.path.hasSuffix("/threads") == true }.count == 2)
         #expect(!server.requests.contains { $0.url?.query?.contains("searchCriteria") == true })
+
+        // The pull request couldn't be read this time, though its policies and threads could: it stays listed as it was,
+        // and when it was read says so.
+        fails.withLock { $0 = true }
+        clock.withLock { $0 = t(57) }
+        await engine.refreshNow()
+        let stale = await engine.currentSnapshot()
+        #expect(stale.records.first?.details?.fetchedAt == t(57))
+        #expect(stale.linkedReadAt == [PRKey(Fixture.org, 8): t(56)])
     }
 
     /// Azure DevOps ignores the letter case of an organization's name: a link that spells it differently is to the pull

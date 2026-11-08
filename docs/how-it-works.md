@@ -3614,20 +3614,22 @@ than once the app's planner finds the details due, a minute after the last read,
 brings sooner, still sees what changed in the last minute; and one it couldn't read, at the next, rather than an hour
 later as in the app (`retryLinkedAfter`). Its first read is where it starts from, and each later one is compared with it
 (`WaitOutcome`): a build that blocks the pull request and ran since, as another run, or the same one retried, which
-finishes later, ends it at once when it fails, and once all have passed and none is queued or running; merge conflicts
-end it even when it had them as it began, since no build runs until they're resolved; and so does a comment that
-waits on you, as Needs You counts it, that wasn't there when it began: in an open thread, someone else's, not a bot's,
-such as a build service's or a code scanner's, after your last word there, matched by thread and comment, so an edit
-isn't news. It prints
-a line for each, a failed build first, then conflicts, comments and a build that passed, the pull request's link, and
-each one's prompt as `pull_request_prompt` writes it for an agent's checkout, and exits with the first one's code: 0
-the build passed, 4 a build failed, 5 comments, 6 conflicts. It exits with 7 once the pull request is completed or
-abandoned, with 3 at its timeout, saying what still runs, with 2 on wrong usage or for a pull request that isn't yours,
-and with 1 when it can't read it: five reads in a row that fail, or a pull request you may no longer read. A read
-counts only once the details were read again (`PRDetails.fetchedAt`), since one that fails leaves the pull request as
-it was. Like `--mcp`, it runs only from a shell and only while agents and Azure DevOps are on in the app, checked
-before each read, so turning either off stops it. `--demo --wait` waits a second for the demo's one change, Priya's
-comment on !4091.
+finishes later, ends it at once when it fails, and once every build that blocks it has passed, though not while one that
+failed before, expired or never ran still holds it up; each build is told apart by its policy (`Check.policyId`), since
+two policies may run one pipeline under one name. Merge conflicts end it even when it had them as it began, since no
+build runs until they're resolved; and so does a comment that waits on you, as Needs You counts it, that wasn't there
+when it began: in an open thread, someone else's, not a bot's, such as a build service's or a code scanner's, after your
+last word there, matched by thread and comment, so an edit isn't news. It prints a line for each, a failed build first,
+then conflicts, comments and a build that passed, the pull request's link, and each one's prompt as
+`pull_request_prompt` writes it for an agent's checkout, and exits with the first one's code: 0 the build passed, 4 a
+build failed, 5 comments, 6 conflicts. It exits with 7 once the pull request is completed or abandoned, with 3 at its
+timeout, saying what still runs or what hasn't passed, with 2 on wrong usage or for a pull request that isn't yours, and
+with 1 when it can't read it: five reads in a row that fail, or a pull request you may no longer read. A read counts
+only once it read both the pull request (`PulseSnapshot.linkedReadAt`) and its details (`PRDetails.fetchedAt`) again,
+since one that fails leaves what it couldn't read as it was, such as the pull request's conflicts while its policies are
+read anew; and only with its policies, since policies you can't read leave its builds unknown rather than none. Like
+`--mcp`, it runs only from a shell and only while agents and Azure DevOps are on in the app, checked before each read,
+so turning either off stops it. `--demo --wait` waits a second for the demo's one change, Priya's comment on !4091.
 
 ### Its Copilot plugin
 

@@ -141,13 +141,13 @@ enum Fixture {
 
     static func evaluation(
         _ type: String, status: String, blocking: Bool = true, enabled: Bool = true, settings: [String: Any] = [:],
-        context: [String: Any]? = nil, completed: Date? = nil
+        context: [String: Any]? = nil, completed: Date? = nil, policy: Int? = nil
     ) -> [String: Any] {
-        var json: [String: Any] = [
-            "evaluationId": UUID().uuidString, "status": status,
-            "configuration": ["isEnabled": enabled, "isBlocking": blocking, "type": ["id": UUID().uuidString, "displayName": type],
-                              "settings": settings],
+        var configuration: [String: Any] = [
+            "isEnabled": enabled, "isBlocking": blocking, "type": ["id": UUID().uuidString, "displayName": type], "settings": settings,
         ]
+        if let policy { configuration["id"] = policy }
+        var json: [String: Any] = ["evaluationId": UUID().uuidString, "status": status, "configuration": configuration]
         if let context { json["context"] = context }
         if let completed { json["completedDate"] = iso(completed) }
         return json
