@@ -255,7 +255,7 @@ final class ThreadChanges: ObservableObject {
     /// can do then.
     static let changedSentence = "This comment changed since you began editing it, as in Azure DevOps or another window."
     static let changedChoices = "Start Over puts what it says now in your edit, in place of what you wrote. Save Anyway replaces it "
-        + "with your edit."
+        + "with your edit; Save doesn't."
 
     /// Dismisses what a thread says went wrong.
     func dismiss(_ key: Key) {
