@@ -334,11 +334,11 @@ which is still yours to do, or something new needs you there.
 **Up Next**, at the top of the window's page while [Pull Request Order](#settings) is on, says what's next for you,
 whichever way you sort: a slot for each kind of next, in its stage's color, each with its first pull request and
 how many it has. **Fix next** is what needs you to fix or answer: a session that asks you, then a build that
-failed, then changes someone wants. **Your next review** is the one that has waited longest, an earlier one in
-its mission first, as later ones build on it; **Next for a teammate**, one of yours that needs a reviewer first;
-**Merge next**, what can merge next; **Waits next**, the one closest to merging. The mission you focus on comes
-first in each. Click one for its details; **2 more ›** shows the rest on the Board. Click **Up Next** to fold it,
-and BriefBar remembers. It changes no group or count.
+failed, then changes someone wants. **Your next review** is the one that has waited longest, one that others
+build on counting as long as they've waited, as they can't merge before it; **Next for a teammate**, one of yours
+that needs a reviewer first; **Merge next**, what can merge next; **Waits next**, the one closest to merging. The
+mission you focus on comes first in each. Click one for its details; **2 more ›** shows the rest on the Board.
+Click **Up Next** to fold it, and BriefBar remembers. It changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
 review**, **Teammate's review**, **Can merge**, **Waits** and **Merged**, which shows only its count until you

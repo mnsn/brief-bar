@@ -1374,12 +1374,16 @@ in each stage, but in In progress, what needs you comes before it, so that Fix n
 | Stage | Which comes first |
 |---|---|
 | In progress | What needs you, Fix next's, the mission you focus on first among it: a session that asks you, then a build that failed, then changes someone wants, the oldest first; then the rest, the mission you focus on first, as By Mission lists them |
-| Your review | The mission you focus on; then the one that has waited longest; in a mission, an earlier one waits as long as the longest waiting after it, as they build on it |
-| Teammate's review | The mission you focus on; then Find a reviewer, then the earliest in its mission's order |
+| Your review | The mission you focus on; then the one that has waited longest, one that others build on as long as the longest waiting of those that wait for it, directly or through others, in any mission, as none of them can merge before it; of those that waited as long, the one more build on |
+| Teammate's review | The mission you focus on; then Find a reviewer, then the earliest in its mission's merge order |
 | Can merge | The mission you focus on; then next to merge, then any time, then those with no order; the oldest first, then as By Mission lists them |
 | Waits | The mission you focus on; then the one closest to merging: one merge away when what it waits for can merge, one more for each that waits itself |
 | Merged | The mission you focus on; then the latest first |
 
+Only an open pull request its order numbers has a place in its mission's merge order (`BoardCard.position`): one that
+merges any time, one in a group with no order, such as a family's, and one stacked with the order's without being in
+it have none, and come after those that have one, as By Mission lists them. What waits for a pull request follows its
+steps' prerequisites (`BoardCard.waitingForIt`), not those places, as two lines in one order don't wait for each other.
 A pull request in two missions has a card in each lane, and counts once. On the Board (`OrderBoardView`), a card drags
 with SwiftUI's `draggable`, carrying its reference and a token made for that drag alone (`BoardDrag`), so a column takes
 only a card dragged from its own board, never text from another app that names a pull request. A drop, and the columns

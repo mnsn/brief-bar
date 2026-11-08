@@ -20,14 +20,24 @@ import Testing
         StageReading(stage: stage, why: why, since: seconds.map(t), mark: mark, isOnBoard: isOnBoard)
     }
 
-    static func step(_ number: Int, _ standing: OrderStanding = .unordered, status: OrderStatus = .open) -> OrderStep {
-        OrderStep(ref: pr(number), status: status, standing: standing)
+    /// A pull request's step in its mission: where it stands, its place in its order (nil for one that merges any time, or in
+    /// a group with no order), what its order puts before it, and what it's stacked on.
+    static func step(
+        _ number: Int, _ standing: OrderStanding = .unordered, status: OrderStatus = .open, place: Int? = nil, after: [Int] = [],
+        stackedOn: [Int] = []
+    ) -> OrderStep {
+        let prerequisites = after.map { OrderPrerequisite(ref: pr($0), origins: [.declared(revision: 1)], status: .open) }
+            + stackedOn.map { OrderPrerequisite(ref: pr($0), origins: [.branch], status: .open) }
+        return OrderStep(ref: pr(number), number: place, status: status, standing: standing, prerequisites: prerequisites)
     }
 
-    static func mission(_ steps: [OrderStep], attached: [OrderStep] = [], focused: Bool = false) -> OrderMission {
+    static func mission(
+        _ steps: [OrderStep], attached: [OrderStep] = [], focused: Bool = false, family: ItemRef? = nil
+    ) -> OrderMission {
         OrderMission(
-            key: .chain(steps.first?.ref ?? attached[0].ref), kind: .stack, steps: steps, attached: attached, cycles: [],
-            isFocused: focused, isFinished: false, isStale: false, attention: nil, date: nil, sessions: []
+            key: family.map { .family($0) } ?? .chain(steps.first?.ref ?? attached[0].ref),
+            kind: family.map { .family(session: $0) } ?? .stack, steps: steps, attached: attached, cycles: [], isFocused: focused,
+            isFinished: false, isStale: false, attention: nil, date: nil, sessions: []
         )
     }
 
@@ -159,7 +169,9 @@ import Testing
     @Test func yourReviewIsTheLongestWaitingAndAnEarlierOneInItsMissionFirstAsLaterOnesBuildOnIt() {
         // !4202 has waited longest, but it builds on !4201, which comes first in their mission: so !4201, then !4202, then
         // !4101, which waited less long than !4202.
-        let coupons = Self.mission([Self.step(4201, .next), Self.step(4202, .waiting(open: [Self.pr(4201)], unknown: []))])
+        let coupons = Self.mission([
+            Self.step(4201, .next, place: 1), Self.step(4202, .waiting(open: [Self.pr(4201)], unknown: []), place: 2, after: [4201]),
+        ])
         let stages: [Int: StageReading] = [
             4101: Self.reading(.yourReview, .asked("Priya asked you"), at: 30),
             4201: Self.reading(.yourReview, .asked("Sam asked you"), at: 90),
@@ -169,9 +181,93 @@ import Testing
         #expect(Self.column(.yourReview, stages, missions: [coupons]) == ["!4201", "!4202", "!4101", "!4102"])
     }
 
+    /// The user's own example, two lines in one order: !4301 → !4302 → !4303, and !4302 → !4305 → !4306, with !4304 any
+    /// time. Each waits as long as the longest waiting of those that build on it, through others too: !4303 and !4306 take
+    /// no one's wait, !4305 takes !4306's, !4302 takes !4303's, !4305's and !4306's, and !4301 all of theirs. !4304's goes
+    /// to no one, though it has waited longest. Of those that waited as long, the one more build on comes first.
+    @Test func aReviewWaitsAsLongAsTheLongestWaitingOfThoseThatBuildOnIt() {
+        let order = Self.mission([
+            Self.step(4301, .next, place: 1), Self.step(4302, place: 2, after: [4301]), Self.step(4303, place: 3, after: [4302]),
+            Self.step(4305, place: 4, after: [4302]), Self.step(4306, place: 5, after: [4305]), Self.step(4304, .anyTime),
+        ])
+        let asked = StageWhy.asked("Sam asked you")
+        let stages: [Int: StageReading] = [
+            4301: Self.reading(.yourReview, asked, at: 60), 4302: Self.reading(.yourReview, asked, at: 50),
+            4303: Self.reading(.yourReview, asked, at: 20), 4305: Self.reading(.yourReview, asked, at: 40),
+            4306: Self.reading(.yourReview, asked, at: 30), 4304: Self.reading(.yourReview, asked, at: 10),
+        ]
+        let cards = Self.board(stages, missions: [order]).lanes.first?.cards ?? []
+        func waiting(_ number: Int) -> Set<ItemRef>? { cards.first { $0.ref == Self.pr(number) }?.waitingForIt }
+        #expect(waiting(4303) == [] && waiting(4306) == [] && waiting(4304) == [])
+        #expect(waiting(4305) == [Self.pr(4306)])
+        #expect(waiting(4302) == Set([4303, 4305, 4306].map(Self.pr)))
+        #expect(waiting(4301) == Set([4302, 4303, 4305, 4306].map(Self.pr)))
+
+        let waited = BoardOrder.waitedLongest(cards)
+        #expect([4301, 4302, 4303, 4304, 4305, 4306].map { waited[Self.pr($0)] } == [t(20), t(20), t(20), t(10), t(30), t(30)])
+        #expect(Self.column(.yourReview, stages, missions: [order]) == ["!4304", "!4301", "!4302", "!4303", "!4305", "!4306"])
+    }
+
+    /// A family's list, the pull requests opened under one session whose order nobody told, says nothing of what merges
+    /// first: its first takes no one's wait.
+    @Test func aFamilysFirstPullRequestDoesntTakeTheOthersWait() {
+        let family = Self.mission([Self.step(4501), Self.step(4502), Self.step(4503)], family: Self.cart)
+        let asked = StageWhy.asked("Sam asked you")
+        let stages: [Int: StageReading] = [
+            4501: Self.reading(.yourReview, asked, at: 30), 4502: Self.reading(.yourReview, asked, at: 20),
+            4503: Self.reading(.yourReview, asked, at: 10),
+        ]
+        #expect(PullRequestBoard.places(in: family).map(\.position) == [nil, nil, nil])
+        #expect(Self.column(.yourReview, stages, missions: [family]) == ["!4503", "!4502", "!4501"])
+    }
+
+    /// With nothing in it yours, a family waits for the one waiting longest, not the first in its list, which merges no
+    /// sooner than the others.
+    @Test func aFamilyWaitsForTheOneWaitingLongestNotItsFirst() {
+        let family = Self.mission([Self.step(4501), Self.step(4502)], family: Self.cart)
+        let stages: [Int: StageReading] = [
+            4501: Self.reading(.teammateReview, .waitingFor("Waiting for Sam"), at: 30),
+            4502: Self.reading(.teammateReview, .waitingFor("Waiting for Priya"), at: 10),
+        ]
+        #expect(Self.board(stages, missions: [family]).lane(for: family.key)?.waiting(name: Self.name) == "Waiting for Priya (!4502)")
+    }
+
+    /// The base the order's pull requests are stacked on, which its order doesn't name, waits as long as they do, as they
+    /// build on it, and comes before them, though By Mission lists it after them.
+    @Test func aBaseTheOrdersPullRequestsAreStackedOnTakesTheirWait() {
+        let order = Self.mission(
+            [Self.step(4701, .next, place: 1, stackedOn: [4700]), Self.step(4702, place: 2, after: [4701])],
+            attached: [Self.step(4700, .notInOrder)]
+        )
+        let asked = StageWhy.asked("Sam asked you")
+        let stages: [Int: StageReading] = [
+            4700: Self.reading(.yourReview, asked, at: 50), 4701: Self.reading(.yourReview, asked, at: 30),
+            4702: Self.reading(.yourReview, asked, at: 10),
+        ]
+        #expect(Self.column(.yourReview, stages, missions: [order]) == ["!4700", "!4701", "!4702"])
+    }
+
+    /// Only an open pull request its order numbers has a place in its merge order, among what's left to merge; one that
+    /// merged, one that merges any time and one stacked with the order's have none. Each keeps its place in By Mission's
+    /// list, for ties.
+    @Test func onlyAnOpenOneItsOrderNumbersHasAPlaceInItsMergeOrder() {
+        let order = Self.mission(
+            [
+                Self.step(4601, .merged, status: .merged, place: 1), Self.step(4602, .next, place: 2),
+                Self.step(4603, .waiting(open: [Self.pr(4602)], unknown: []), place: 3, after: [4602]), Self.step(4604, .anyTime),
+            ],
+            attached: [Self.step(4605, .notInOrder)]
+        )
+        let places = PullRequestBoard.places(in: order)
+        #expect(places.map(\.position) == [nil, 0, 1, nil, nil])
+        #expect(places.map(\.listIndex) == [0, 1, 2, 3, 4])
+    }
+
     @Test func teammatesReviewPutsFindAReviewerFirstThenTheEarliestInItsMissionsOrder() {
+        // !4202 has waited longer, but its order merges !4201 first.
         let payments = Self.mission([
-            Self.step(4074, .merged, status: .merged), Self.step(4201, .next), Self.step(4202, .waiting(open: [Self.pr(4201)], unknown: [])),
+            Self.step(4074, .merged, status: .merged, place: 1), Self.step(4201, .next, place: 2),
+            Self.step(4202, .waiting(open: [Self.pr(4201)], unknown: []), place: 3, after: [4201]),
         ])
         let stages: [Int: StageReading] = [
             4202: Self.reading(.teammateReview, .waitingFor("Waiting for Sam"), at: 1),
@@ -318,10 +414,13 @@ import Testing
         #expect(steps.map(\.stage) == [.inProgress, .inProgress, .yourReview, .teammateReview, .canMerge])
         #expect(lane?.waiting(name: Self.name) == nil)
 
-        let waiting = Self.mission([Self.step(4091, .next), Self.step(4092, .waiting(open: [Self.pr(4091)], unknown: []))])
+        // !4092 has waited longer, but its order merges !4091 first.
+        let waiting = Self.mission([
+            Self.step(4091, .next, place: 1), Self.step(4092, .waiting(open: [Self.pr(4091)], unknown: []), place: 2, after: [4091]),
+        ])
         let theirs: [Int: StageReading] = [
-            4092: Self.reading(.waits, .waitsFor([Self.pr(4091)], words: "After !4091")),
-            4091: Self.reading(.teammateReview, .waitingFor("Waiting for Priya")),
+            4092: Self.reading(.waits, .waitsFor([Self.pr(4091)], words: "After !4091"), at: 0),
+            4091: Self.reading(.teammateReview, .waitingFor("Waiting for Priya"), at: 50),
         ]
         let quiet = Self.board(theirs, missions: [waiting]).lane(for: waiting.key)
         #expect(quiet?.nextSteps.isEmpty == true)

@@ -17,15 +17,22 @@ public struct BoardCard: Equatable, Sendable, Identifiable {
     public var step: OrderStep?
     /// That mission's place in By Mission's list, from 0.
     public var missionIndex: Int?
-    /// Its place among what's left to merge in that mission, from 0: its order's steps first, then those stacked with them;
-    /// nil once it merged or closed, or in no mission.
+    /// Its place in that mission's merge order, among what's left to merge there, from 0: only for one its order numbers.
+    /// Nil for one that merges any time, in a group with no order, stacked with the order's without being in it, merged or
+    /// closed, or in no mission.
     public var position: Int?
+    /// Its place in that mission as By Mission lists it, from 0: its order's steps, then those stacked with them. Only for
+    /// which comes first when nothing else tells them apart, never for which merges first.
+    public var listIndex: Int?
+    /// The pull requests that wait for it, directly or through others, by their steps' prerequisites, in any mission the
+    /// board shows: those that build on it.
+    public var waitingForIt: Set<ItemRef>
     /// That mission is the one you focus on.
     public var isFocused: Bool
 
     public init(
         ref: ItemRef, reading: StageReading, mission: MissionKey? = nil, step: OrderStep? = nil, missionIndex: Int? = nil,
-        position: Int? = nil, isFocused: Bool = false
+        position: Int? = nil, listIndex: Int? = nil, waitingForIt: Set<ItemRef> = [], isFocused: Bool = false
     ) {
         self.ref = ref
         self.reading = reading
@@ -33,6 +40,8 @@ public struct BoardCard: Equatable, Sendable, Identifiable {
         self.step = step
         self.missionIndex = missionIndex
         self.position = position
+        self.listIndex = listIndex
+        self.waitingForIt = waitingForIt
         self.isFocused = isFocused
     }
 
@@ -72,8 +81,9 @@ extension PullRequestStage {
 /// - **In progress:** what needs you first, as Fix next has it, the mission you focus on first among it: a session that
 ///   asks you, then what failed, then changes someone wants, the oldest first; then the rest, the mission you focus on
 ///   first, as By Mission lists them.
-/// - **Your review:** the one that has waited longest; within a mission, the earlier in its merge order, as later ones
-///   build on it: an earlier one waits as long as the longest waiting after it.
+/// - **Your review:** the one that has waited longest; one that others build on as long as the longest waiting of those
+///   that wait for it, by their orders, as none of them can merge before it; of those that waited as long, the one more
+///   build on.
 /// - **Teammate's review:** Find a reviewer first, as that's yours to do; then the earliest in its mission's merge order.
 /// - **Can merge:** next to merge first, then any time, then those with no order; the oldest first, then as By Mission
 ///   lists them.
@@ -101,6 +111,8 @@ public enum BoardOrder {
                 if lhs.isFocused != rhs.isFocused { return lhs.isFocused }
                 let left = waited[lhs.ref] ?? .distantFuture, right = waited[rhs.ref] ?? .distantFuture
                 if left != right { return left < right }
+                // Of those that waited as long, the one more build on, which merges before them.
+                if lhs.waitingForIt.count != rhs.waitingForIt.count { return lhs.waitingForIt.count > rhs.waitingForIt.count }
                 return isEarlierInMissions(lhs, rhs) ?? isOlder(lhs, rhs)
             }
         case .teammateReview:
@@ -162,28 +174,27 @@ public enum BoardOrder {
         }
     }
 
-    /// Whether one comes first as By Mission lists them: by its mission, then its place there; one in no mission after
-    /// those in one. Nil when that doesn't tell them apart.
+    /// Whether one comes first as By Mission lists them: by its mission, then its place in that mission's list; one in no
+    /// mission after those in one. Nil when that doesn't tell them apart.
     static func isEarlierInMissions(_ lhs: BoardCard, _ rhs: BoardCard) -> Bool? {
         switch (lhs.missionIndex, rhs.missionIndex) {
         case let (left?, right?) where left != right: return left < right
         case (.some, nil): return true
         case (nil, .some): return false
-        default: return isEarlierInOrder(lhs, rhs)
+        default:
+            guard let left = lhs.listIndex, let right = rhs.listIndex, left != right else { return nil }
+            return left < right
         }
     }
 
-    /// Since when each in Your review has waited, as its turn counts it: an earlier one in its mission's order as long as
-    /// the longest waiting after it, as they build on it.
+    /// Since when each in Your review has waited, as its turn counts it: one that others build on as long as the longest
+    /// waiting of those here that wait for it, directly or through others, as none of them can merge before it.
     static func waitedLongest(_ cards: [BoardCard]) -> [ItemRef: Date] {
         var waited: [ItemRef: Date] = [:]
-        let byMission = Dictionary(grouping: cards.filter { $0.mission != nil && $0.position != nil }) { $0.mission }
         for card in cards {
             var since = card.reading.since ?? .distantFuture
-            if let position = card.position {
-                for later in byMission[card.mission] ?? [] where (later.position ?? -1) > position {
-                    since = min(since, later.reading.since ?? .distantFuture)
-                }
+            for other in cards where card.waitingForIt.contains(other.ref) {
+                since = min(since, other.reading.since ?? .distantFuture)
             }
             waited[card.ref] = since
         }
@@ -522,13 +533,15 @@ public struct PullRequestBoard: Equatable, Sendable {
         // Each pull request once, in the first mission that has it.
         var first: [ItemRef: BoardCard] = [:]
         var laneCards: [[BoardCard]] = []
+        let waiters = waiters(in: shown)
         for (index, mission) in shown.enumerated() {
             var cards: [BoardCard] = []
-            for (step, position) in places(in: mission) {
+            for place in places(in: mission) {
+                let step = place.step
                 guard let reading = onBoard[step.ref] else { continue }
                 let card = BoardCard(
-                    ref: step.ref, reading: reading, mission: mission.key, step: step, missionIndex: index, position: position,
-                    isFocused: mission.isFocused
+                    ref: step.ref, reading: reading, mission: mission.key, step: step, missionIndex: index, position: place.position,
+                    listIndex: place.listIndex, waitingForIt: waiters[step.ref] ?? [], isFocused: mission.isFocused
                 )
                 cards.append(card)
                 if first[step.ref] == nil { first[step.ref] = card }
@@ -626,15 +639,40 @@ public struct PullRequestBoard: Equatable, Sendable {
         Set(listed).subtracting(refs).count
     }
 
-    /// Each of a mission's pull requests, its order's then those stacked with them, with its place among what's left to
-    /// merge there; nil for one that merged or closed.
-    static func places(in mission: OrderMission) -> [(OrderStep, Int?)] {
-        var left = 0
-        return (mission.steps + mission.attached).map { step in
-            guard !step.status.hasEnded else { return (step, nil) }
-            defer { left += 1 }
-            return (step, left)
+    /// Each of a mission's pull requests as By Mission lists them, its order's then those stacked with them, with its place
+    /// in that list and its place in the merge order among what's left to merge: only for an open one its order numbers,
+    /// as a family's list or an any-time one's place says nothing of what merges first.
+    static func places(in mission: OrderMission) -> [(step: OrderStep, position: Int?, listIndex: Int)] {
+        let numbered = mission.steps.filter { $0.number != nil && !$0.status.hasEnded }
+            .sorted { ($0.number ?? 0) < ($1.number ?? 0) }
+        let positions = Dictionary(numbered.enumerated().map { ($1.ref, $0) }, uniquingKeysWith: { first, _ in first })
+        return (mission.steps + mission.attached).enumerated().map { index, step in
+            (step, index < mission.steps.count ? positions[step.ref] : nil, index)
         }
+    }
+
+    /// For each pull request in these missions, those that wait for it, directly or through others, by their steps'
+    /// prerequisites: across the missions, so that a pull request in two gathers what waits for it in each.
+    static func waiters(in missions: [OrderMission]) -> [ItemRef: Set<ItemRef>] {
+        var direct: [ItemRef: Set<ItemRef>] = [:]
+        for mission in missions {
+            for step in mission.steps + mission.attached {
+                for prerequisite in step.prerequisites where prerequisite.ref != step.ref {
+                    direct[prerequisite.ref, default: []].insert(step.ref)
+                }
+            }
+        }
+        var all: [ItemRef: Set<ItemRef>] = [:]
+        for ref in direct.keys {
+            var found: Set<ItemRef> = []
+            var next = Array(direct[ref] ?? [])
+            while let waiter = next.popLast() {
+                guard waiter != ref, found.insert(waiter).inserted else { continue }
+                next.append(contentsOf: direct[waiter] ?? [])
+            }
+            all[ref] = found
+        }
+        return all
     }
 
     static func columns(_ cards: [BoardCard], stages: [ItemRef: StageReading]) -> [PullRequestStage: [BoardCard]] {
