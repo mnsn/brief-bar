@@ -92,7 +92,7 @@ private struct OrderLineContent: View {
             let rest = [place, step.flatMap { OrderText.capsule($0) }].compactMap { $0 }.joined(separator: " · ")
             let button = Button(title) {
                 settings.pullRequestOrder = .byMission
-                order.reveal(mission.key)
+                order.reveal(mission.key, kinds: PullRequestsByMission.kinds)
             }
             .buttonStyle(.plain)
             .font(size: 12.5, weight: .semibold)

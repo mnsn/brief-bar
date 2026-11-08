@@ -11,6 +11,8 @@ struct PullRequestsPage: View {
     var order: PROrder? = nil
     /// By Mission's view, for pictures; nil for the one you chose.
     var view: OrderView? = nil
+    /// The Board's lanes, for pictures; nil for those you chose.
+    var lanes: BoardLanes? = nil
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var settings: AppSettings
@@ -22,10 +24,23 @@ struct PullRequestsPage: View {
 
     private static let shownGroups: [PRGroup] = [.needsYou, .answered, .failing, .ready, .toReview, .waiting, .done]
 
+    /// By Mission's views on this page: List, Map and the Board.
+    private static let views = OrderView.offered(for: PullRequestsByMission.kinds)
+
     /// By Mission only while Pull Request Order is on: by status otherwise.
     private var shownOrder: PROrder {
         let chosen = order ?? settings.pullRequestOrder
         return chosen == .byMission && !ordering.isOn ? .status : chosen
+    }
+
+    /// By Mission's view, as you chose it, or a picture's.
+    private var shownView: OrderView {
+        view ?? ordering.view(offering: Self.views)
+    }
+
+    /// It shows the Board.
+    private var showsBoard: Bool {
+        shownOrder == .byMission && shownView == .board
     }
 
     var body: some View {
@@ -37,7 +52,10 @@ struct PullRequestsPage: View {
                     .glassButtonStyle()
                     .fixedSize()
                 if shownOrder == .byMission {
-                    OrderViewPicker(order: ordering, shown: view)
+                    OrderViewPicker(order: ordering, views: Self.views, shown: view)
+                }
+                if showsBoard {
+                    BoardLanesPicker(order: ordering, shown: lanes)
                 }
                 Button {
                     store.openPullRequestsPage()
@@ -57,8 +75,16 @@ struct PullRequestsPage: View {
         }
     }
 
+    /// The Board, Up Next and each mission's next steps, worked out once each time the page draws: a lane for each mission,
+    /// or, on the Board, as you chose its lanes. Nil while Pull Request Order is off.
+    private var board: PullRequestBoard? {
+        guard ordering.isOn else { return nil }
+        return ordering.board(kinds: PullRequestsByMission.kinds, lanes: showsBoard ? lanes ?? ordering.lanes : .missions)
+    }
+
     private var list: some View {
-        PageScroll {
+        let board = self.board
+        return PageScroll {
             VStack(alignment: .leading, spacing: 18) {
                 notices
                 // By Mission has no group to put a compact brief in: it shows above the missions.
@@ -66,10 +92,18 @@ struct PullRequestsPage: View {
                     BriefView()
                         .padding(.horizontal, -4)
                 }
+                // What's next, in every order: it changes no group or count.
+                if let board, store.hasLoaded, !store.items.isEmpty {
+                    UpNextView(upNext: board.upNext, order: ordering, select: showDetails(of:)) { stage in
+                        Self.showColumn(stage, settings: settings, ordering: ordering)
+                    }
+                }
                 if shownOrder == .byMission {
                     PullRequestsByMission(
-                        view: view ?? ordering.view, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
-                        isSelected: isSelected, select: select, rest: { AnyView(groups($0, showsBrief: false)) }
+                        view: shownView, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
+                        card: boardCard, isSelected: isSelected, select: select, shownOnTop: details.shownOnTop,
+                        rest: { AnyView(groups($0, showsBrief: false)) }, board: board,
+                        showByStatus: { settings.pullRequestOrder = .status }, now: store.now
                     )
                 } else {
                     // What you changed last of a mission, from a row's Mission menu: By Status has no mission's card to say it.
@@ -83,9 +117,46 @@ struct PullRequestsPage: View {
                         groups(store.items)
                     }
                 }
-                idle
+                // The Board has your own idle ones among its cards, and counts the rest.
+                if !showsBoard {
+                    idle
+                }
             }
         }
+    }
+
+    /// Shows a pull request's details from Up Next, which shows only those the list has.
+    private func showDetails(of ref: ItemRef) {
+        if let item = store.items.first(where: { $0.key.linkRef == ref }) { select(item) }
+    }
+
+    /// Up Next's "2 more ›", from any order: By Mission's Board, at that column, which the page scrolls to.
+    static func showColumn(_ stage: PullRequestStage, settings: AppSettings, ordering: PullRequestOrder) {
+        settings.pullRequestOrder = .byMission
+        ordering.revealColumn(stage)
+    }
+
+    /// A pull request's card on the Board: what it shows, its menu as its row's, and what VoiceOver says of it. With a lane
+    /// for every card, Undo shows at the top.
+    private func boardCard(_ item: PRSnapshot, _ card: BoardCard) -> BoardCardContent {
+        let order = card.step.map {
+            OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready, names: ordering.names)
+        }
+        let mission = missionMenu(item, in: card.mission, undo: .onBoard(lanes ?? ordering.lanes))
+        return BoardCardContent(
+            view: AnyView(PullRequestBoardCard(item: item, card: card, order: order, ordering: ordering, now: store.now)),
+            menu: AnyView(Group {
+                Button("Show Details") { select(item) }
+                Button("Open in Azure DevOps") { store.open(item) }
+                PullRequestMenuItems(
+                    item: item, openSource: source(item), dismiss: dismissing(item), stopWatching: watching(item),
+                    mission: mission, ordering: ordering
+                )
+            }),
+            label: "!\(item.key.number) \(item.title)",
+            details: PullRequestBoardCard.details(item, reading: card.reading, order: order, ordering: ordering),
+            mission: mission
+        )
     }
 
     /// The groups, each in a card: every pull request By Status, or those in no mission By Mission.
@@ -107,14 +178,18 @@ struct PullRequestsPage: View {
         let byMission = shownOrder == .byMission
         let open: ((MissionKey) -> Void)? = byMission ? nil : { key in
             settings.pullRequestOrder = .byMission
-            ordering.reveal(key)
+            ordering.reveal(key, kinds: PullRequestsByMission.kinds)
         }
         return OrderRowContext.of(item.key.linkRef, in: ordering.missions, isReady: item.group == .ready, open: open, names: ordering.names)
     }
 
     /// A row's Mission menu, while Pull Request Order is on: from the mission whose card it's in, By Mission.
-    private func missionMenu(_ item: PRSnapshot, in mission: MissionKey? = nil) -> MissionMenuContext? {
-        MissionMenuContext.of(item.key.linkRef, order: ordering, mission: mission, undo: shownOrder == .byMission ? .byMission : .top)
+    /// - Parameter undo: where its Undo shows; nil for where the page's list shows it.
+    private func missionMenu(_ item: PRSnapshot, in mission: MissionKey? = nil, undo: MissionMenuContext.UndoPlace? = nil)
+        -> MissionMenuContext? {
+        MissionMenuContext.of(
+            item.key.linkRef, order: ordering, mission: mission, undo: undo ?? (shownOrder == .byMission ? .byMission : .top)
+        )
     }
 
     /// Shows a pull request's details, which sees it, as opening it does.
@@ -235,10 +310,12 @@ struct PullRequestsPage: View {
     /// - Parameter order: where it stands in the mission whose card it's in; nil elsewhere, for the one its capsule speaks
     ///   for.
     private func row(_ item: PRSnapshot, showsCreated: Bool = false, order: OrderRowContext? = nil) -> PRRowView {
-        PRRowView(
+        let stage = ordering.isOn ? ordering.stage(of: item.key.linkRef) : nil
+        return PRRowView(
             item: item, now: store.now, showsActions: true, showsCreated: showsCreated, isSelected: isSelected(item),
             openSource: source(item), stopWatching: watching(item), dismiss: dismissing(item), showDetails: { select(item) },
-            order: order ?? rowOrder(item), mission: missionMenu(item, in: order?.mission)
+            order: order ?? rowOrder(item), mission: missionMenu(item, in: order?.mission), stage: stage,
+            ordering: ordering.isOn ? ordering : nil
         ) { store.open(item) }
     }
 

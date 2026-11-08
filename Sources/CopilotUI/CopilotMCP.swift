@@ -114,9 +114,18 @@ struct CopilotAgent: Sendable {
 
     // MARK: What the other sources' tools name
 
-    /// What it tells the other sources' tools: the app's sessions on the pull requests they name.
+    /// What it tells the other sources' tools: the app's sessions on the pull requests they name, and the sessions it lists,
+    /// for what sessions told BriefBar.
     var teller: MCPRelated.Teller {
-        MCPRelated.Teller(title: "Copilot sessions") { query in try await related(query) }
+        MCPRelated.Teller(title: "Copilot sessions", tell: { query in try await related(query) }, sessions: { try await listing() })
+    }
+
+    /// The sessions it lists now, as the app does, and since when each idle one has been (`CopilotSource.listing`): what
+    /// sessions told BriefBar counts only for these.
+    func listing(now: Date = Date()) async throws -> SessionReports.Listing {
+        let (sessions, problem) = await load(now: now)
+        if sessions.isEmpty, let problem { throw MCPToolError(problem) }
+        return CopilotSource.listing(sessions)
     }
 
     /// The app's sessions that go with the pull requests a query names, as Show Links links them: on a pull request's

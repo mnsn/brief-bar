@@ -159,7 +159,7 @@ package final class CopilotSource: BriefBarSource {
 
     /// The sessions it lists, the app's and the tasks BriefBar sent, and since when each idle one has been: what a session
     /// told BriefBar shows only while it's listed, and what it works on until it's been idle for a day.
-    static func listing(_ sessions: [SessionSnapshot]) -> SessionReports.Listing {
+    nonisolated static func listing(_ sessions: [SessionSnapshot]) -> SessionReports.Listing {
         var listing = SessionReports.Listing()
         for session in sessions {
             guard let ref = ItemRef.session(session.id) else { continue }
@@ -202,7 +202,8 @@ package final class CopilotSource: BriefBarSource {
     // MARK: Pull Request Order
 
     /// Tells Pull Request Order about the sessions, while it's on: the pull requests each opened, as the app recorded them,
-    /// the sessions that started and coordinate it, and what each session is, for a mission to name them.
+    /// the sessions that started and coordinate it, what each session is, for a mission to name them, and what each does or
+    /// how it ended, which its pull requests' stages follow.
     private func publishOrder(_ sessions: [SessionSnapshot]? = nil, orderSessions: [OrderSession]? = nil) {
         let order = services.pullRequestOrder
         guard order.isOn else {
@@ -211,8 +212,14 @@ package final class CopilotSource: BriefBarSource {
         }
         let updates = services.sessionUpdates
         let working = updates.isOn ? updates.reports.workingOn(Self.listing(sessions ?? store.sessions), now: store.now) : [:]
+        let shown = sessions ?? store.sessions
+        var activities: [ItemRef: StageSession.Activity] = [:]
+        for session in shown {
+            if let ref = ItemRef.session(session.id) { activities[ref] = session.stageActivity }
+        }
         order.publish(
-            .copilot, sessions: orderSessions ?? store.orderSessions, items: items(sessions ?? store.sessions), working: working
+            .copilot, sessions: orderSessions ?? store.orderSessions, items: items(shown), working: working,
+            sessionActivities: activities
         )
     }
 

@@ -51,9 +51,11 @@ fileprivate final class Model {
 fileprivate final class Viewer {}
 
 /// A mission's name (§7.4.7), as the service gives it: yours, then Apple Intelligence's, then BriefBar's own; when Apple
-/// Intelligence is asked; and how your names are kept and follow their missions, as Focus does.
+/// Intelligence is asked; and how your names are kept and follow their missions, as Focus does. One at a time: started all
+/// at once, their work on the main thread holds it long enough that the Board's keyboard tests press a key before the card
+/// they moved has the keyboard's focus back.
 @MainActor
-@Suite struct MissionNamingTests {
+@Suite(.serialized) struct MissionNamingTests {
     static let story = ItemRef.workItem(organization: "contoso", id: 5180)
     static let session = ItemRef.session("00000000-0000-4000-8000-000000000003")!
 
@@ -599,6 +601,18 @@ fileprivate final class Viewer {}
         #expect(defaults.object(forKey: MissionNames.defaultsKey) == nil)
     }
 
+    /// Up Next calls a card's mission as By Mission's header does: the name you gave it, else BriefBar's own.
+    @Test func upNextCallsAMissionByTheNameItsHeaderShows() throws {
+        let clock = Clock()
+        let order = Self.service(clock: clock)
+        Self.tell(order)
+        let mission = try #require(order.missions.first)
+        #expect(UpNextView.missionTitle(mission.key, order: order) == "Checkout redesign")
+        order.rename(mission, to: "Coupons and speed")
+        #expect(UpNextView.missionTitle(mission.key, order: order) == "Coupons and speed")
+        #expect(UpNextView.missionTitle(nil, order: order) == "Not in a mission")
+    }
+
     @Test func focusAndYourNameFollowASessionsPullRequestsToTheirStory() throws {
         let clock = Clock()
         let defaults = MemoryDefaults()
@@ -625,7 +639,7 @@ fileprivate final class Viewer {}
         let defaults = MemoryDefaults()
         let order = Self.service(defaults, clock: clock)
         let (family, story) = (MissionKey.family(Self.session), MissionKey.story(Self.story))
-        func undone(_ number: Int) -> OrderChange? { order.lastChange?.touched[Self.pr(number)].flatMap { $0 } }
+        func undone(_ number: Int) -> OrderChange? { order.lastOrderChange?.touched[Self.pr(number)].flatMap { $0 } }
         order.publish(.copilot, sessions: [OrderSession(ref: Self.session, pullRequests: [Self.pr(4113), Self.pr(4105), Self.pr(4106)])])
         order.publish(.azureDevOps, pullRequests: [4113, 4105, 4106, 4120].map { Self.ado($0, nil) }, readsStories: true)
         #expect(order.missions.map(\.key) == [family])
@@ -635,7 +649,7 @@ fileprivate final class Viewer {}
         order.change(.setNext(Self.pr(4105), in: family, true))
         // Then !4106 instead: Undo would set !4105 as next there again.
         order.change(.setNext(Self.pr(4106), in: family, true))
-        #expect(order.lastChange?.mission == family && undone(4105)?.first == family)
+        #expect(order.lastOrderChange?.mission == family && undone(4105)?.first == family)
 
         // Show Links read them: the session's three are for User Story 5180, !4120 for none.
         order.publish(.azureDevOps, pullRequests: [
@@ -650,9 +664,9 @@ fileprivate final class Viewer {}
         #expect(OrderChanges.load(from: defaults)[Self.pr(4120)]?.placement == .into(story))
         #expect(order.focus == story && OrderFocus.load(from: defaults) == story)
         #expect(order.title(of: mission) == "Checkout work")
-        #expect(order.lastChange?.mission == story && undone(4105)?.first == story)
+        #expect(order.lastOrderChange?.mission == story && undone(4105)?.first == story)
         // Undo sets !4105 as next again, in the story's mission.
-        #expect(order.undoLastChange())
+        #expect(order.undo())
         #expect(order.changes[Self.pr(4105)]?.first == story)
         #expect(order.missions.first?.steps.first { $0.ref == Self.pr(4105) }?.standing == .next)
     }
@@ -883,7 +897,7 @@ fileprivate final class Viewer {}
         // Where you set !4110 as next stays on the chain, whole, which !4110 isn't in a part of.
         #expect(order.changes[Self.pr(4110)]?.first == chain.key)
         // Undo: the chain is whole again, and they come back to it, with !4110 next.
-        #expect(order.undoLastChange())
+        #expect(order.undo())
         #expect(order.missions.map(\.key) == [chain.key])
         let whole = try #require(order.missions.first)
         #expect(order.focus == chain.key && order.title(of: whole) == "Totals")
@@ -966,7 +980,7 @@ fileprivate final class Viewer {}
         #expect(order.missions.map(\.key) == [family])
         order.change(.setNext(Self.pr(4105), in: family, true))
         order.change(.setNext(Self.pr(4113), in: family, true))
-        #expect(order.lastChange?.touched[Self.pr(4105)].flatMap { $0 }?.first == family)
+        #expect(order.lastOrderChange?.touched[Self.pr(4105)].flatMap { $0 }?.first == family)
 
         // Show Links read them: the session's are for User Story 5180, and so are a teammate's !4120 and !4121.
         order.publish(.azureDevOps, pullRequests: [
@@ -981,7 +995,7 @@ fileprivate final class Viewer {}
             return step.standing == .next
         })
         #expect(mission.steps.first { $0.ref == Self.pr(4113) }?.notes.contains(.nextElsewhere(family)) == true)
-        #expect(order.lastChange?.touched[Self.pr(4105)].flatMap { $0 }?.first == family)
+        #expect(order.lastOrderChange?.touched[Self.pr(4105)].flatMap { $0 }?.first == family)
     }
 
     /// One you set as next in a story's mission stays that mission's, never following out: while Show Links is off it waits,
@@ -1120,7 +1134,7 @@ fileprivate final class Viewer {}
         order.change(.move(both, to: .outside, from: mine))
         #expect(!order.missions.contains { $0.key == mine })
         #expect(order.yourNames.name(for: mine) == "Checkout bits" && order.focus == mine)
-        #expect(order.undoLastChange())
+        #expect(order.undo())
         let back = try #require(order.missions.first { $0.key == mine })
         #expect(order.title(of: back) == "Checkout bits" && back.isFocused)
         #expect(MissionNames.load(from: defaults).name(for: mine) == "Checkout bits")
@@ -1338,10 +1352,8 @@ fileprivate final class Viewer {}
 
     /// By Mission says only the missions in its scroll view's sight are on screen: one out of sight isn't named until it
     /// comes into it.
-    @Test func onlyTheMissionsInSightAreOnScreen() async throws {
-        _ = NSApplication.shared
-        let order = Self.service(clock: Clock())
-        // Three stacks of two pull requests, each a mission.
+    /// Three stacks of two pull requests, each a mission, as Azure DevOps tells them.
+    static func threeStacks(_ order: PullRequestOrder) -> [OrderPullRequest] {
         var pullRequests: [OrderPullRequest] = []
         for stack in 0..<3 {
             for (index, number) in [4100 + 10 * stack, 4101 + 10 * stack].enumerated() {
@@ -1353,38 +1365,103 @@ fileprivate final class Viewer {}
             }
         }
         order.publish(.azureDevOps, pullRequests: pullRequests)
-        let missions = order.missions
-        #expect(missions.count == 3)
-        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
-        // By Mission in a scroll view this high, each of its pull requests' rows a third of it at least.
-        func page(height: CGFloat) -> AnyView {
-            AnyView(
-                ScrollView {
-                    MissionsBody(
-                        view: .list, ordering: order, kinds: [.pullRequest], elsewhere: "GitHub", openElsewhere: nil,
-                        listed: pullRequests.map(\.ref), row: { step, _ in AnyView(Text(step.ref.id).frame(height: 240)) },
-                        place: { _ in nil }, isSelected: { _ in false }, select: { _ in false }, rest: { _ in AnyView(EmptyView()) }
-                    )
-                }
-                .environment(\.shownSection, .azureDevOpsPullRequests)
-                .environment(\.shownWindow, "1")
-                .environmentObject(services)
-                .frame(width: 600, height: height)
-            )
-        }
-        order.setVisible(true, for: Self.page)
-        let host = NSHostingView(rootView: page(height: 300))
+        return pullRequests
+    }
+
+    /// By Mission on the tests' window's page, in a scroll view this high: in List, each of its pull requests' rows a third
+    /// of it at least; on the Board, with these lanes, and no cards, as no pull request has a stage.
+    static func byMission(
+        _ order: PullRequestOrder, listing pullRequests: [OrderPullRequest], view: OrderView = .list, lanes: BoardLanes? = nil,
+        height: CGFloat, services: AppServices
+    ) -> AnyView {
+        let card: ((BoardCard) -> BoardCardContent?)? = view == .board ? { _ in nil } : nil
+        let board = view == .board ? order.board(kinds: [.pullRequest], lanes: lanes) : nil
+        return AnyView(
+            ScrollView {
+                MissionsBody(
+                    view: view, ordering: order, kinds: [.pullRequest], elsewhere: "GitHub", openElsewhere: nil,
+                    listed: pullRequests.map(\.ref), row: { step, _ in AnyView(Text(step.ref.id).frame(height: 240)) },
+                    place: { _ in nil }, isSelected: { _ in false }, select: { _ in false }, rest: { _ in AnyView(EmptyView()) },
+                    board: board, card: card
+                )
+            }
+            .environment(\.shownSection, .azureDevOpsPullRequests)
+            .environment(\.shownWindow, "1")
+            .environmentObject(services)
+            .frame(width: 600, height: height)
+        )
+    }
+
+    /// A window off screen's, as the tests' page has it: drawn, but never in front of anything.
+    static func window(showing host: NSView, height: CGFloat) -> NSWindow {
         let window = NSWindow(
-            contentRect: CGRect(x: -20_000, y: -20_000, width: 600, height: 300), styleMask: .borderless, backing: .buffered,
+            contentRect: CGRect(x: -20_000, y: -20_000, width: 600, height: height), styleMask: .borderless, backing: .buffered,
             defer: false
         )
         window.contentView = host
+        return window
+    }
+
+    @Test func onlyTheMissionsInSightAreOnScreen() async throws {
+        _ = NSApplication.shared
+        let order = Self.service(clock: Clock())
+        let pullRequests = Self.threeStacks(order)
+        let missions = order.missions
+        #expect(missions.count == 3)
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        order.setVisible(true, for: Self.page)
+        let host = NSHostingView(rootView: Self.byMission(order, listing: pullRequests, height: 300, services: services))
+        let window = Self.window(showing: host, height: 300)
         defer { window.contentView = nil }
         try await until("the first mission is on screen") { order.onScreen == [missions[0].key] }
 
         // A scroll view tall enough for them all.
-        host.rootView = page(height: 2_400)
+        host.rootView = Self.byMission(order, listing: pullRequests, height: 2_400, services: services)
         try await until("every mission is on screen") { Set(order.onScreen) == Set(missions.map(\.key)) }
+    }
+
+    /// On the Board, a mission's lane is in sight as the page scrolls up and down, though the Board scrolls sideways.
+    @Test func onTheBoardOnlyTheLanesInThePagesSightAreOnScreen() async throws {
+        _ = NSApplication.shared
+        let order = Self.service(clock: Clock())
+        let pullRequests = Self.threeStacks(order)
+        let missions = order.missions
+        #expect(missions.count == 3)
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        order.setVisible(true, for: Self.page)
+        let board = { (height: CGFloat) in
+            Self.byMission(order, listing: pullRequests, view: .board, lanes: .missions, height: height, services: services)
+        }
+        let host = NSHostingView(rootView: board(150))
+        let window = Self.window(showing: host, height: 150)
+        defer { window.contentView = nil }
+        try await until("the first mission's lane is on screen") { order.onScreen.first == missions[0].key }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(order.onScreen.first == missions[0].key)
+        #expect(!order.onScreen.contains(missions[2].key))
+
+        host.rootView = board(2_400)
+        try await until("every mission's lane is on screen") { Set(order.onScreen) == Set(missions.map(\.key)) }
+    }
+
+    /// The missions one view had in sight aren't another's: on the Board with a lane for every card, none is on screen.
+    @Test func whatOneViewHadInSightAnotherDoesntShow() async throws {
+        _ = NSApplication.shared
+        let order = Self.service(clock: Clock())
+        let pullRequests = Self.threeStacks(order)
+        let missions = order.missions
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        order.setVisible(true, for: Self.page)
+        let host = NSHostingView(rootView: Self.byMission(order, listing: pullRequests, height: 2_400, services: services))
+        let window = Self.window(showing: host, height: 2_400)
+        defer { window.contentView = nil }
+        try await until("every mission is on screen") { Set(order.onScreen) == Set(missions.map(\.key)) }
+
+        host.rootView = Self.byMission(order, listing: pullRequests, view: .board, lanes: BoardLanes.none, height: 2_400, services: services)
+        try await until("no mission is on screen") { order.onScreen.isEmpty }
+
+        host.rootView = Self.byMission(order, listing: pullRequests, height: 2_400, services: services)
+        try await until("every mission is on screen again") { Set(order.onScreen) == Set(missions.map(\.key)) }
     }
 
     /// Apple Intelligence's answer is the mission's name alone, by guided generation: its schema is made as BriefBar runs,

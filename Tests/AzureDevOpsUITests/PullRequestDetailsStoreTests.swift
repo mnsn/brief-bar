@@ -170,6 +170,35 @@ import Testing
         #expect(store.pages.isEmpty && store.selected?.key == retry.key)
     }
 
+    /// The pull request whose own details show on top, whose card the Board's ⌘→ and ⌘← move while they cover it: not while
+    /// a page is over them, such as a linked work item's or session's, or a file's page, or a page over that; again once
+    /// they're back.
+    @Test func itsOwnDetailsAreOnTopOnlyWithNothingOverThem() throws {
+        let store = makeStore()
+        #expect(store.shownOnTop == nil)
+        let retry = try item(4102)
+        store.show(retry)
+        #expect(store.shownOnTop == retry.key.linkRef)
+        store.open(page: workItem)
+        #expect(store.shownOnTop == nil)
+        store.back()
+        #expect(store.shownOnTop == retry.key.linkRef)
+        store.open(file: "/src/PaymentsClient.cs")
+        #expect(store.shownOnTop == nil)
+        store.open(page: session)
+        #expect(store.shownOnTop == nil)
+        store.back()
+        #expect(store.file != nil && store.shownOnTop == nil)
+        store.back()
+        #expect(store.shownOnTop == retry.key.linkRef)
+        // Its own page, from a page over it: its details.
+        store.open(page: session)
+        store.open(page: retry.key.linkRef)
+        #expect(store.shownOnTop == retry.key.linkRef)
+        store.close()
+        #expect(store.shownOnTop == nil)
+    }
+
     @Test func goesToAPlaceInTheDetailsOnce() throws {
         let store = makeStore()
         store.go(to: .section(.comments))

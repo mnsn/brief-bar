@@ -104,6 +104,8 @@ struct LinkedSession: Equatable {
     var id: String
     var origins: [LinkOrigin]
     var isThrough: Bool
+    /// When it began to tell BriefBar it's working on it, for one that says so (`SessionReport.workingOnBegan`).
+    var began: Date? = nil
 }
 
 /// Main-thread view model for Send Work to Copilot: sends a work item to the Copilot CLI when you ask, then follows the

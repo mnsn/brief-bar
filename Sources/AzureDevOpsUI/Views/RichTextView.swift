@@ -3,7 +3,8 @@ import BriefBarUI
 import SwiftUI
 
 /// Formatted text from Azure DevOps, such as a description or a comment, drawn by BriefBar: its text can be selected, and
-/// its links open in the browser. Nothing it links to or embeds is loaded here; an image is a link to it.
+/// its links open in the browser, through `ThisMac` (`opensLinksThroughThisMac`). Nothing it links to or embeds is loaded
+/// here; an image is a link to it.
 struct RichTextView: View {
     let text: RichText
     var size: CGFloat = 12.5
@@ -34,6 +35,7 @@ struct RichTextView: View {
         .coordinateSpace(.named(RichTextBlockTops.space))
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
+        .opensLinksThroughThisMac()
     }
 
     @ViewBuilder
@@ -197,7 +199,7 @@ private struct ImageLink: View {
             .lineLimit(1)
             .truncationMode(.middle)
         if let url {
-            Link(destination: url) { label }
+            ThisMac.link(to: url) { label }
                 .help("Open the image in your browser")
         } else {
             label.foregroundStyle(.secondary)

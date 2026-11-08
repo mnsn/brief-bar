@@ -547,7 +547,7 @@ struct PullRequestSessionMenu: View {
                     CheckedMenuLabel(title: "New Session — in a worktree at its latest commit", isChecked: session.pick == .newSession(chosenByYou: true))
                 }
             }
-            if copilot.settings.chosenSession(for: item.key) != nil {
+            if let chosen = copilot.settings.chosenSession(for: item.key), !chosen.isReplaced {
                 Divider()
                 Button("Let BriefBar Choose") { sessions.letBriefBarChoose(for: item.key) }
             }

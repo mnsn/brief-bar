@@ -26,6 +26,8 @@ struct PullRequestDetailsContent: View {
     @EnvironmentObject private var files: PullRequestFilesStore
     @EnvironmentObject private var changes: ThreadChanges
     @EnvironmentObject private var tagChanges: TagChanges
+    /// Pull Request Order, for its stage, under its heading.
+    @EnvironmentObject private var ordering: PullRequestOrder
     /// Which comment threads show, Active or All, which its comments and its files' pages follow.
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.itemNavigation) private var navigation
@@ -106,6 +108,8 @@ struct PullRequestDetailsContent: View {
                 }
                     .id(PullRequestDetailsStore.Anchor.top)
                 PullRequestSessionLine(item: item)
+                // Where it is in its flow, while Pull Request Order is on.
+                PullRequestStageTrack(item: item, ordering: ordering, now: store.now) { store.open(item) }
                 // Its mission, while Pull Request Order is on.
                 PullRequestOrderLine(item: item)
                 // Its summary, of it and what's linked to it, under what it is.

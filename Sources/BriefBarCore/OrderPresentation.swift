@@ -6,12 +6,16 @@ import Foundation
 
 // MARK: - The view
 
-/// By Mission's two views, which you switch between in the page's header, and which both pages remember as one choice.
+/// By Mission's views, which you switch between in the page's header, and which both pages remember as one choice. The Board
+/// is Azure DevOps' page's only, as only its pull requests have stages: GitHub's page shows List where you chose the Board
+/// (`shown(offering:)`), and never saves that back.
 public enum OrderView: String, CaseIterable, Sendable {
     /// One card for each mission, its rows with the graph beside them.
     case list
     /// Each mission a band, its pull requests in merge waves.
     case map
+    /// A column for each stage, a lane for each mission, and a card for each pull request.
+    case board
 
     public static let defaultsKey = "order.view"
 
@@ -24,10 +28,21 @@ public enum OrderView: String, CaseIterable, Sendable {
         defaults.set(rawValue, forKey: Self.defaultsKey)
     }
 
+    /// The views a page of these kinds offers: the Board only where its pull requests have stages, Azure DevOps'.
+    public static func offered(for kinds: Set<ItemRef.Kind>) -> [OrderView] {
+        kinds.contains(.pullRequest) ? [.list, .map, .board] : [.list, .map]
+    }
+
+    /// The view a page that offers these shows when you chose this one: List for one it doesn't offer.
+    public func shown(offering views: [OrderView]) -> OrderView {
+        views.contains(self) ? self : .list
+    }
+
     public var title: String {
         switch self {
         case .list: return "List"
         case .map: return "Map"
+        case .board: return "Board"
         }
     }
 }
@@ -62,10 +77,10 @@ extension OrderText {
     }
 
     /// A row's capsule's tone. One that waits for others turns orange when its source says it's ready to complete, so it
-    /// isn't completed out of order.
+    /// isn't completed out of order; and one that two orders put before and after another, as its order needs checking.
     /// - Parameter isReady: its source says it's ready to complete.
     public static func tone(of step: OrderStep, isReady: Bool) -> OrderCapsuleTone {
-        if step.standing.needsChecking { return .warning }
+        if step.standing.needsChecking || step.ordersGoRound != nil { return .warning }
         if step.standing.waitsForOthers { return isReady ? .warning : .waiting }
         switch step.standing {
         case .next: return .next

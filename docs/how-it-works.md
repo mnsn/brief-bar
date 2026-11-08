@@ -1340,59 +1340,178 @@ its age. Idle's, folded below it, are in the same order; Done's, closed already,
 Counts, the brief, notifications, widgets and lists by state stay by status.
 
 **Changing a mission yourself.** With Pull Request Order on, an Azure DevOps pull request's **Mission** menu, in its
-row's menu, its details and a Map node's right-click, changes where it goes By Mission (`OrderChanges`): **Set as Next
-to Merge**, one for each mission, so that what waited for nothing there waits for it; **Merge After ▸**, to check or
-uncheck what it merges after; and **Move to Mission ▸**, into another mission, named by what lasts (an order by its ID,
-a chain of branches by one of its pull requests, the pull requests opened under a session by that session, a story's by
-its work item), a **New Mission** of your own, or **Not in a Mission**. A stacked branch is a fact: it counts wherever
-it leads, in a session's order and from one mission to another, where the Map puts the pull request a wave on and says
-where the other is; only
-retargeting changes it, and Set as Next waits for the one it's stacked on to merge and for the retarget. Then come your
-changes, then sessions' orders: an order's line that would go round with them is set aside and says so, also when it
-goes round through another mission, such as with what you set as next there. Two orders that put the same pull requests
-the other way round each keep their own, and both say so, for you to check the order. Your changes are a layer, kept by
-pull request and never written into an order, so sessions go on telling theirs. Each keeps the place the orders gave the
-pull request when you made it, and a session's later change wins only where it goes against yours: a revision told after
-yours that names it in another mission than the one you moved it to, takes it out of the order you moved it to or
-changed it in, or puts it after what you took away, or after anything where you set it as next, also in a stack, a chain
-or a session's pull requests that it takes it out of, shows instead, says so, and **Put Yours Back** makes yours hold
-again. One that moves it toward yours, such as an order taking out what you moved out of it, naming what you moved into
-its mission, or naming as you had them what you changed among a stack's, a chain's or a session's pull requests, where
-what you set there goes over to that order (your next only while no other of yours is next there, and back to where you
-set it once the order no longer names it), or one that changes what you didn't, becomes what yours replaced, and yours
-holds; so does telling the same order again, or as it was when you made yours, whatever it said between, and a revision
-told before yours that BriefBar saw only after. An order forgotten since is no change. One limit: an order that takes in
-only the one you set as next among a stack's, a chain's or a session's pull requests takes your next with it, and the
-others wait for it only where they're stacked on it, with no note, as BriefBar doesn't keep which were with it when you
-set it. A row with no order known shows a quiet ✎ where your change says something of it, such as that you moved it
-there, or that the order you set it as next in is gone; and one beside an order that doesn't name it, stacked with its
-pull requests, shows your change as any row does: what you put it after, with ✎, that the mission you set it as next in
-is gone, or that an order went against it, with Put Yours Back. A mission your changes name that's gone, as its key
-changed, is followed by them and by what Undo would put back, as Focus and the name you gave it are, by one rule
-(`OrderBoard.successor`): to the mission all its open pull requests went to, but those your changes moved into it or out
-of it, when that's their story's, once Show Links reads it; out of a story's, as Show Links is turned off, to the chain,
-GitHub stack or session's they went to that has no other open one, when it's the only one (a teammate's on its own, in
-no mission, doesn't count), so what followed them in comes back out with them, and goes back in as they do. When they
-went to more than one, as a teammate's chain or a session's, it waits on the story's mission, as which one it came from
-isn't known: no mission has its Focus or your name, and what you put in it shows on its own card, saying it shows once
-Show Links reads the story. For a chain, it goes to the chain or GitHub stack they're in now, or the one with the most
-of them, as you split it, the first shown of those with as many; else they wait. The mission one you didn't move was in,
-as you set it as next or put it after another there, goes on only to a mission that has it. Where you set one as next in
-a chain stays on the chain: in its story's mission it's next among the chain's own pull requests and those you put in
-the mission, so a teammate's of the same story doesn't wait for it. One you set as next in a story's mission stays that
-mission's, following its pull requests only to another story's, as all their tasks move to it and no other is open
-there: while it doesn't show, its row says so, and a teammate's pull request for the story that comes meanwhile waits
-for it too once it does; and one set among a session's pull requests that went whole to their story's mission is that
-mission's from then on, so a teammate's that joins it later waits for it too. Elsewhere it follows only to a mission
-with all of them and nothing else open but what you moved, never to a part of one that split, so that others there don't
-wait for it, and it holds again as the mission comes back whole; else that row says the mission you set it as next in is
-gone, or, for a story's while Show Links hasn't read the stories, that it shows once it does. **Undo** takes back your
-last change, in memory only, and shows in the card you made it in, or at the top of the list once that card is gone; a
-change BriefBar refuses says why beside it. BriefBar keeps them in the preferences (`order.changes`) as references,
-codes and dates, never titles, those about a pull request sent to you in a chat in memory only; at most 500, refusing
-more rather than dropping one; each until two weeks after BriefBar saw its pull requests merge or close. Turning a
-source off forgets those about its pull requests, turning Pull Request Order off keeps them, unused, and **Forget All
-Orders…** forgets them. Nothing goes to Azure DevOps.
+row's menu, its details, a Map node's right-click and a Board card's menu, changes where it goes By Mission
+(`OrderChanges`): **Set as Next to Merge**, one for each mission, so that what waited for nothing there waits for it;
+**Merge After ▸**, to check or uncheck what it merges after; and **Move to Mission ▸**, into another mission, named by
+what lasts (an order by its ID, a chain of branches by one of its pull requests, the pull requests opened under a
+session by that session, a story's by its work item), a **New Mission** of your own, or **Not in a Mission**. A stacked
+branch is a fact: it counts wherever it leads, in a session's order and from one mission to another, where the Map puts
+the pull request a wave on and says where the other is; only retargeting changes it, and Set as Next waits for the one
+it's stacked on to merge and for the retarget. Then come your changes, then sessions' orders: an order's line that would
+go round with them is set aside and says so, also when it goes round through another mission, such as with what you set
+as next there. Two orders that put the same pull requests the other way round each keep their own, and both say so, for
+you to check the order. Your changes are a layer, kept by pull request and never written into an order, so sessions go
+on telling theirs. Each keeps the place the orders gave the pull request when you made it, and a session's later change
+wins only where it goes against yours: a revision told after yours that names it in another mission than the one you
+moved it to, takes it out of the order you moved it to or changed it in, or puts it after what you took away, or after
+anything where you set it as next, also in a stack, a chain or a session's pull requests that it takes it out of, shows
+instead, says so, and **Put Yours Back** makes yours hold again. One that moves it toward yours, such as an order taking
+out what you moved out of it, naming what you moved into its mission, or naming as you had them what you changed among a
+stack's, a chain's or a session's pull requests, where what you set there goes over to that order (your next only while
+no other of yours is next there, and back to where you set it once the order no longer names it), or one that changes
+what you didn't, becomes what yours replaced, and yours holds; so does telling the same order again, or as it was when
+you made yours, whatever it said between, and a revision told before yours that BriefBar saw only after. An order
+forgotten since is no change. One limit: an order that takes in only the one you set as next among a stack's, a chain's
+or a session's pull requests takes your next with it, and the others wait for it only where they're stacked on it, with
+no note, as BriefBar doesn't keep which were with it when you set it. A row with no order known shows a quiet ✎ where
+your change says something of it, such as that you moved it there, or that the order you set it as next in is gone; and
+one beside an order that doesn't name it, stacked with its pull requests, shows your change as any row does: what you
+put it after, with ✎, that the mission you set it as next in is gone, or that an order went against it, with Put Yours
+Back. A mission your changes name that's gone, as its key changed, is followed by them and by what Undo would put back,
+as Focus and the name you gave it are, by one rule (`OrderBoard.successor`): to the mission all its open pull requests
+went to, but those your changes moved into it or out of it, when that's their story's, once Show Links reads it; out of
+a story's, as Show Links is turned off, to the chain, GitHub stack or session's they went to that has no other open one,
+when it's the only one (a teammate's on its own, in no mission, doesn't count), so what followed them in comes back out
+with them, and goes back in as they do. When they went to more than one, as a teammate's chain or a session's, it waits
+on the story's mission, as which one it came from isn't known: no mission has its Focus or your name, and what you put
+in it shows on its own card, saying it shows once Show Links reads the story. For a chain, it goes to the chain or
+GitHub stack they're in now, or the one with the most of them, as you split it, the first shown of those with as many;
+else they wait. The mission one you didn't move was in, as you set it as next or put it after another there, goes on
+only to a mission that has it. Where you set one as next in a chain stays on the chain: in its story's mission it's next
+among the chain's own pull requests and those you put in the mission, so a teammate's of the same story doesn't wait for
+it. One you set as next in a story's mission stays that mission's, following its pull requests only to another story's,
+as all their tasks move to it and no other is open there: while it doesn't show, its row says so, and a teammate's pull
+request for the story that comes meanwhile waits for it too once it does; and one set among a session's pull requests
+that went whole to their story's mission is that mission's from then on, so a teammate's that joins it later waits for
+it too. Elsewhere it follows only to a mission with all of them and nothing else open but what you moved, never to a
+part of one that split, so that others there don't wait for it, and it holds again as the mission comes back whole; else
+that row says the mission you set it as next in is gone, or, for a story's while Show Links hasn't read the stories,
+that it shows once it does. **Undo** takes back your last change, to a mission or to a stage, one at a time, in memory
+only; a change to a mission shows its Undo in the card you made it in, or in its mission's lane on the Board, or at the
+top of the list once that card is gone, or with the Board's Lanes: None. A change BriefBar refuses says why beside it.
+BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never titles, those about a
+pull request sent to you in a chat in memory only; at most 500, refusing more rather than dropping one; each until two
+weeks after BriefBar saw its pull requests merge or close. Turning a source off forgets those about its pull requests,
+turning Pull Request Order off keeps them, unused, and **Forget All Orders…** forgets them. Nothing goes to Azure
+DevOps.
+
+### A pull request's stage
+
+With Pull Request Order on, each Azure DevOps pull request also has a stage (`PullRequestStage`), where it is in its
+flow, which a row's colored label shows, in the window, the menu bar's list and the Overview, and its details as a
+track. `StageRules` works it out from what the lists already read (`PullRequestOrderFacts.stageFacts`), the Copilot
+sessions on it (the tasks BriefBar sent to Copilot, and the Copilot app's sessions that opened it or say they work on
+it; a task you went on with in the Copilot app does what the app says since, unless the app can't tell how it ended),
+what you set, and its order. The first rule that applies decides:
+
+| When | Stage | Says |
+|---|---|---|
+| BriefBar saw it merge | Merged | **Merged** |
+| Yours: a session writes it, or waits for you, since what you set | In progress | **‘Cart’ is writing it**, **‘Cart’ asks you** |
+| Someone else's: Copilot's pre-review runs, since what you set | Your review | **Copilot is pre-reviewing it** |
+| You set one, and it still holds | What you set | **Find a reviewer**, **Waiting on Sam**, **You set it 2h ago** |
+| Someone else's: you're asked, someone sent it to you, or new commits came since your vote | Your review | **Sam asked you**, **Priya sent it in Teams**, **New commits by Sam** |
+| Someone else's: you want changes | In progress | **Waiting for Sam's changes** |
+| Yours: a required item failed, or someone wants changes | In progress | **Build failed**, **Merge conflicts**, **Sam wants changes** |
+| Yours: a session that worked on it finished, and nobody else voted | Your review | **‘Cart’ finished** |
+| Yours: a draft | In progress | **Draft** |
+| Yours: ready to complete, and its order lets it | Can merge | **Complete it** |
+| Yours: ready to complete, after one BriefBar hasn't seen merge | Waits for another PR | **After !4102** |
+| Yours: ready to complete, still targeting the branch of one that merged, or its order needs checking, or another order puts what it waits for after it | Waits for another PR | **!4101 merged: retarget it to main**, **Check the order**, **Another order puts !4102 after it: check the order** |
+| Yours: reviewed, with something else left | In progress | What's Left's first item |
+| Yours: otherwise | Teammate's review | Who it waits for, as What's Left says it, or **Find a reviewer** |
+
+On yours, where a session or a stage you set decides its stage while a required item failed, its words say the failure
+too, after their reason, **‘Cart’ asks you · build failed**, wherever they show: its row, its tooltip and its details,
+Up Next, and its mission's next step or what the mission waits for; VoiceOver hears it after a pause. Someone else's
+pull request that asks nothing of you has no stage. Beside Can merge and Waits, whose words say where its order puts
+it, a row or a card shows its order capsule only where a change of yours speaks of it (`OrderRowContext.isSaid(by:)`):
+✎ **Next to merge** for one you set as next, or, for one an order went against yours, its capsule, which says so in
+its tooltip and to VoiceOver, with Put Yours Back in its menu. You can set In progress, Your review or Teammate's
+review; Can merge, Waits and Merged come only from what Azure DevOps and the order show. What you set holds until the
+pull request moves on (`StageRules.stands`): In progress until new commits come, or a session writing it finishes (a
+review, such as Copilot's pre-review, ends nothing); Teammate's review, on yours, until the votes others cast change
+(a digest of the votes, never who cast them), so asking someone else to review it keeps it, and, on someone else's,
+until your own vote changes or new commits come; Your review until you change it; merging or closing ends any.
+**Finished My Review** sets Teammate's review: on someone else's, it takes it off your board until you vote in Azure
+DevOps, or something new needs you there. Sessions never put someone else's pull request in progress. BriefBar never
+votes or changes anything in Azure DevOps for a stage.
+
+What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one entry
+for each pull request: its number, the stage, when, and only what would end it (`StageRules.mark`): the commit, for In
+progress and for Teammate's review on someone else's, and the votes, for Teammate's review alone, on yours their digest,
+how many of each others cast, never who, on someone else's your own vote; Your review keeps neither. For a pull request
+listed only because someone sent it to you in a chat, it's kept in memory only, as what you've seen of it is. Either
+way, an account keeps up to 500, those in memory counted with the others, and one no list has had for 30 days goes; what
+Undo puts back once there's no room waits in memory until there is. **Forget Stages…** forgets them all, and turning
+Azure DevOps off forgets its own; turning Pull Request Order off keeps them, unused, those in memory too. Stages change
+no group, count, notification or brief: they only label rows.
+
+### What's next, and the Board
+
+Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
+works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
+lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`), so Up Next's pull
+request is always the first in its column's order, which wears **Next** on the Board. The mission you focus on comes first
+in each stage, but in In progress, what needs you comes before it, so that Fix next is always its column's first:
+
+| Stage | Which comes first |
+|---|---|
+| In progress | What needs you, Fix next's, the mission you focus on first among it: a session that asks you, then a build that failed, then changes someone wants, the oldest first; then the rest, the mission you focus on first, as By Mission lists them |
+| Your review | The mission you focus on; then the one that has waited longest, one that others build on as long as the longest waiting of those that wait for it, directly or through others, in any mission, as none of them can merge before it; of those that waited as long, the one more build on |
+| Teammate's review | The mission you focus on; then Find a reviewer, then the earliest in its mission's merge order |
+| Can merge | The mission you focus on; then next to merge, then any time, then those with no order; the oldest first, then as By Mission lists them |
+| Waits | The mission you focus on; then the one closest to merging: one merge away when what it waits for can merge, one more for each that waits itself |
+| Merged | The mission you focus on; then the latest first |
+
+Only an open pull request its order numbers has a place in its mission's merge order (`BoardCard.position`): one that
+merges any time, one in a group with no order, such as a family's, and one stacked with the order's without being in
+it have none, and come after those that have one, as By Mission lists them. What waits for a pull request follows its
+steps' prerequisites and what they're stacked on, such as a base the order doesn't name that a step's changes show
+against (`BoardCard.waitingForIt`, `OrderMission.stackedBases(of:)`), not those places, as two lines in one order don't
+wait for each other. It's only between open pull requests: nothing waits through one that merged or closed, as its order
+then lets what comes after it merge, or holds it until you check the order. A mission's lane counts how long those in
+other missions have waited, as Up Next does.
+A pull request in two missions has a card in each lane, and counts once. On the Board (`OrderBoardView`), a card drags
+with SwiftUI's `draggable`, carrying its reference and a token made for that drag alone (`BoardDrag`), so a column takes
+only a card dragged from its own board, never text from another app that names a pull request. A drop, and the columns
+that light up as you drag, act on the card as the board has it then, looked up again (`BoardMoves`), not as it was when
+the drag started. A click, or Tab, gives a card the keyboard's focus as a text field takes it, whatever the Mac's
+keyboard navigation, and it keeps it as it moves: drawn anew in its new column, it takes the focus back, which each move
+owes it for a second, so that a key that comes just as the last move's second ends doesn't lose it (`OwedFocus`). ⌘→ and
+⌘← move it to the next or previous stage you can set, and from Waits, ⌘← to Can merge. Return or Space shows its
+details, as a click does. Where the details cover the Board (`DetailsSplit`),
+it's disabled, and none of its cards can have the focus: a key monitor of its window (`BoardKeys`) takes ⌘→ and ⌘← for
+the card of the pull request whose own details show, in the lane you clicked it in, else in that of the mission whose
+order holds it, as for details shown from Up Next, but not from a text field you type in, nor while a page is over
+them, such as a linked pull request's, whose card isn't that one, or a file's, which doesn't show its stage
+(`PullRequestDetailsStore.shownOnTop`). That card has the focus once they close. A move it can't make, the details say
+why under its stage track (`StageRefusalLine`), as the line under its lane can't be seen; each goes once its stage
+changes, from anywhere, and the details' once the Board shows again. A change it makes to a mission says its Undo is
+beside it, in the details' order line. Like the monitor, a card takes ⌘ alone: ⇧⌘→ is another shortcut. `BoardRules`
+decides what a move does: In progress, Your review and Teammate's review are set as you set them
+from a stage's menu; someone else's pull request can't go to Teammate's review, there, in its menus or in VoiceOver's
+actions, as it asks its own reviewers, and Finished My Review takes it off your board instead; Can merge, Waits and Merged
+come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge
+in its lane's mission, only where that mission's order holds it, as its stage says (`StageOrder.holders(of:in:)`): in
+another's lane, set as next there, it would still wait, so the lane says where it waits, "It waits in ‘Payments’: set
+it as next there"; with Lanes: None, a card that waits is the mission's that holds it, and keeps its place among those
+of the mission you focus on, where it's in that one too. Where two missions' orders hold it, it's set as next in the
+lane's, and still waits in the other's, which its lane says, as VoiceOver does: "It still waits for !4102 in
+‘Payments’" (`BoardText.stillWaits`). Only one mission has a pull request as next, so set as next there, it would wait
+in the first again; that mission's Merge After takes away what it waits for. None is set as next while
+stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
+(`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card
+off it: in its mission's lane, which has Undo for all its pull requests, as List's card does, or in a lane of those in
+no mission, kept for it (`PullRequestBoard.lanes(keepingUndoOf:missions:)`), and with Lanes: None in the one lane,
+kept for it once no card is left in it. A row's order capsule, clicked in another sort, shows its mission's lane on
+the Board, as it shows the mission in List and on the Map; with Lanes: None, which has no lane for it, the Board shows
+a lane for each mission again, remembered (`PullRequestOrder.reveal(_:kinds:)`). The page scrolls the lane, the first
+too, just under the column titles, which stay at the page's top over the cards while it shows the board: offset as it
+scrolls (`PinnedTitles`), not a lazy stack's pinned header, which loses the lanes' places when the page narrows while
+scrolled down the board, as when the details open beside it. The Board, its lanes and whether Up Next is folded are
+kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
+`order.boardLanes` and `order.upNextFolded`.
 
 ### A pull request's details
 
@@ -1500,9 +1619,12 @@ closes it.
 **Its Copilot session.** With **Send Work to Copilot** on, a line under the heading, in its details and on its page
 over a work item's or another pull request's (`PullRequestDetailsContent`), names the Copilot session the pull
 request's work goes to (`PullRequestSessionLine`), one for each pull request (`PullRequestSession`): the session you
-chose for it, unless a task of BriefBar's started on it since, in whatever session; else its last task's, while its
+chose for it, unless a task of BriefBar's started on it since, in whatever session, or, as Show Links shows what sessions
+tell BriefBar with Updates from Copilot Sessions on, another of the Copilot app's sessions began to say it's working on
+it since (`PullRequestSession.toldSince`), when two such ask which; else its last task's, while its
 worktree is there, even while Copilot still works in it, which then says it's busy; else the session of the work
-item's task that opened it; else the Copilot app's session that the app records with it, that you linked to it in Show Links or
+item's task that opened it; else the Copilot app's session that the app records with it, that told BriefBar it's working
+on it or opened it, that you linked to it in Show Links or
 that's on its branch. Two of those that go with it as well as each other, neither with every reason the other has
 and more, aren't ranked by which was active last: the line asks which is its, and goes on with the one you choose.
 One whose log only has a link to it, and that was there before it was created, is a guess (`PullRequestSession.guess`),
@@ -1533,7 +1655,20 @@ shows the session's page in the details, and it isn't under **Also Linked**. **U
 menu, keeps your choice in the preferences (`ado.copilot.pullRequestSessions`), by references only, the pull
 request's and the session's, never names, as Show Links keeps the links you make, and for as long
 (`PullRequestSessionChoice`): what's older leaves the preferences as BriefBar reads them, a task that starts on the
-pull request in another session forgets it, so clearing that task doesn't bring it back, and turning Azure DevOps off
+pull request in another session forgets it, so clearing that task doesn't bring it back, and so does another of the
+app's sessions its work could go to, not one of its tasks' or of BriefBar's own, that Show Links shows began to tell
+BriefBar it's working on it after you chose, so it doesn't come back once that session stops saying so: the app
+forgets it as it sees that, while Send Work to Copilot is on (`CopilotTasksStore.forgetChoicesToldSince`), so one that
+began and stopped saying so while BriefBar wasn't running, or Send Work to Copilot was off, leaves it be. The app's
+sessions are those its database lists, as the line reads them, read off the main thread only once one may have taken
+your choice's place, so that a session only Copilot's list has, such as one of the Copilot CLI's when there's no
+database to read, never does. It keeps when
+you chose, though, marked as given way (`PullRequestSessionChoice.givenWay`), with what you chose for an older
+BriefBar's `--mcp`, which reads it as before: while a session that began to say so since does, that session goes on
+taking its place, ahead of a task that started before you chose, and two such ask which; once none does, the rest
+decide; and **Let BriefBar Choose** doesn't show. What a
+session told before BriefBar kept when it began to say it works on something, or tells through an older BriefBar's
+`--mcp`, which doesn't keep that, began, as far as BriefBar knows, when the session last said so. Turning Azure DevOps off
 forgets it. The Send to Copilot window goes there too, unless you choose otherwise
 (`CopilotTasksStore.suggestedChoice`), following what you choose in the details while it's open, and so do agents
 ([below](#agents)). Without Send Work to Copilot, the line shows only the sessions Show Links links to
@@ -2520,9 +2655,11 @@ with it:
 
 The rest of the app's sessions follow, the most recently active first. A pull request's task goes where its
 details say its work goes ([above](#a-pull-requests-details)), by the same rules (`CopilotTasksStore.suggestedChoice`,
-with `PullRequestSession.pick`): to the session you chose for it there, unless a task started on it since; else on
+with `PullRequestSession.pick`): to the session you chose for it there, unless a task started on it since, or another
+session began to tell BriefBar it's working on it since; else on
 with its last task's session, as before; else with the session of the work item's task that opened it; else with the
-app's session that the app records with it, that you linked, or that's on its branch, when one goes with it better
+app's session that the app records with it, that told BriefBar it's working on it or opened it, that you linked, or
+that's on its branch, when one goes with it better
 than the others. When two go with it as well as each other, which its details ask about, or only one whose log
 mentions it and that was there before it was created may have opened it, which they offer, it starts a new session
 unless you choose one, rather than guess; so it does while the session they name is busy, rather than go to another.
@@ -3561,8 +3698,10 @@ While **Send Work to Copilot** is on, `pull_request` also names an open pull req
 Copilot session BriefBar sends its work to, as its details show it (see [A pull request's
 details](#a-pull-requests-details)), by its name and session ID, with why and where it is, and whether Copilot
 still works in it. It's found the same way (`CopilotTasksStore.pullRequestSession`, with `PullRequestSession`):
-the session you chose for it, unless a task started on it since; else its last task's session; else the session
-of the work item's task that opened it; else the Copilot app's session that the app records with it, that you
+the session you chose for it, unless a task started on it since, or another session began to tell BriefBar it's working
+on it since; else its last task's session; else the session
+of the work item's task that opened it; else the Copilot app's session that the app records with it, that told BriefBar
+it's working on it or opened it, that you
 linked to it in Show Links, or that's on its branch. When you chose a new session, it says so; when two sessions
 go with it as well as each other, it names both, and that BriefBar asks you which; and when none does, it names
 one whose log mentions it and that was there before it was created as one that may have opened it, not as its
@@ -3571,8 +3710,13 @@ finds it with a store of its own (`AzureDevOpsReader.session`): over a copy of t
 sessions you chose for pull requests' work, in memory, each task as its log says it stands, with the pull request
 one opened while BriefBar was quit, as the app finds it when it next looks (`RunTranscript.openedPullRequest`), so
 nothing it does is saved; with the environment
-`--mcp` started with, rather than your login shell's, which it would have to start; and with the links
-you made, from the app's settings, only while Show Links is on. Like the composer, it reads the Copilot
+`--mcp` started with, rather than your login shell's, which it would have to start; and with what Show Links knows,
+from the app's settings, only while it's on: the links you made, and, with Updates from Copilot Sessions on too, what
+sessions told BriefBar they work on and opened, with when each began to say it works on something, for the sessions
+Copilot's part of `--mcp` lists, as the app's Copilot list has them (`MCPRelated.sessionListing`), which it asks only
+once a session told BriefBar something of that pull request, and which says nothing while Copilot is off; both settings
+are checked again once it has, in case either was turned off meanwhile. Like the
+composer, it reads the Copilot
 app's database read-only, the folder each of its sessions works in and, for mentions, their logs, and
 nothing at all while Send Work to Copilot is off or in the demo, whose composer reads no sessions. Its
 store has a copy of the app's setting, so it reads the app's again every tenth of a second while it
@@ -3975,7 +4119,13 @@ when BriefBar does.
   expected states, each section's and all of them added up. It runs the same checks the Pulse apps ran
   on their demos.
 - `scripts/check-boundaries.sh` reads each module's object files and fails unless only
-  `AzureDevOpsCore` and `GitHubCore` use networking APIs, and only `BriefBarCore` starts programs. It
+  `AzureDevOpsCore` and `GitHubCore` use networking APIs, and only `BriefBarCore` starts programs. It also fails unless
+  only `ThisMac`, in `BriefBarUI`, opens links, files, apps and System Settings, brings another app forward, shows
+  files in the Finder, writes the clipboard, asks in alerts and panels, and makes SwiftUI's links and what opens them:
+  in a test process it refuses each, so no test does any of them on your Mac. It goes by what the compiled code calls,
+  the Objective-C messages it sends and the SwiftUI types it uses, so a call however it's spelled, through a variable or
+  an extension, counts. Links in text, such as a comment's, open with what the view around them sets, which the
+  compiled code doesn't show: `RichTextView`, the one view with such links, opens them through `ThisMac`. It
   also fails if those stop using them, since the check could no longer tell, and if a module in `Sources` has no
   object files, as when a build stopped partway. It reads BriefBar's own modules, the updater's included, not
   Sparkle, whose requests are only for updates.

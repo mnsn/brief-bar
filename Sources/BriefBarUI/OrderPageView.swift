@@ -27,8 +27,23 @@ package struct MissionsBody: View {
     /// What clicking one of its pull requests' node does: what clicking its row does. False for one the page doesn't
     /// list, which then opens where it lives.
     let select: (ItemRef) -> Bool
+    /// The pull request whose own details show, with nothing over them, such as a linked item's page or a file's: while
+    /// they cover the Board, its card is the one ⌘→ and ⌘← move. Nil on a page that has no Board.
+    let shownOnTop: ItemRef?
     /// The pull requests in no mission, as the page groups them by status.
     let rest: ([ItemRef]) -> AnyView
+    /// The Board, with Up Next and each mission's next steps, which the page works out once as it draws: a lane for each
+    /// mission, but on the Board with Lanes: None. Nil on a page whose pull requests have no stages, which offers no Board and
+    /// shows no next steps.
+    let board: PullRequestBoard?
+    /// A card's content on the Board, as the page draws it.
+    let card: ((BoardCard) -> BoardCardContent?)?
+    /// Set as Next to Merge in a mission, for a card dropped from Waits onto Can merge: nil where you can't change missions
+    /// yourself.
+    let setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?
+    /// Lists the page By Status, for what isn't on the Board.
+    let showByStatus: (() -> Void)?
+    let now: Date
 
     @EnvironmentObject private var services: AppServices
     /// The section and window whose page this is, when it's on one: its missions are named only while that page is on
@@ -37,14 +52,19 @@ package struct MissionsBody: View {
     @Environment(\.shownWindow) private var window
     /// Who shows the missions, for Apple Intelligence to name them while they're on screen.
     @LocalState private var viewer = MissionsViewer()
-    /// The missions whose card or band is in the scroll view's sight now: Apple Intelligence names only those.
-    @LocalState private var inSight: Set<MissionKey> = []
+    /// The missions whose card, band or lane is in the page's sight now, in each view: Apple Intelligence names only those
+    /// of the view it shows.
+    @LocalState private var inSight: [OrderView: Set<MissionKey>] = [:]
 
     package init(
         view: OrderView, ordering: PullRequestOrder, kinds: Set<ItemRef.Kind>, elsewhere: String, openElsewhere: (() -> Void)?,
         listed: [ItemRef], apart: [ItemRef] = [], row: @escaping (OrderStep, MissionKey) -> AnyView?,
         place: @escaping (ItemRef) -> String?,
-        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, rest: @escaping ([ItemRef]) -> AnyView
+        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, shownOnTop: ItemRef? = nil,
+        rest: @escaping ([ItemRef]) -> AnyView,
+        board: PullRequestBoard? = nil, card: ((BoardCard) -> BoardCardContent?)? = nil,
+        setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)? = nil,
+        showByStatus: (() -> Void)? = nil, now: Date = Date()
     ) {
         self.view = view
         self.ordering = ordering
@@ -57,7 +77,20 @@ package struct MissionsBody: View {
         self.place = place
         self.isSelected = isSelected
         self.select = select
+        self.shownOnTop = shownOnTop
         self.rest = rest
+        self.board = board
+        self.card = card
+        self.setAsNext = setAsNext
+        self.showByStatus = showByStatus
+        self.now = now
+    }
+
+    /// The missions whose card, or lane on the Board, shows what you changed last in them, and why BriefBar didn't make a
+    /// change there: the rest show at the top of the page.
+    /// - Parameter board: the Board, as it shows; nil in List and on the Map.
+    package static func showingTheirChanges(_ missions: [OrderMission], board: PullRequestBoard?) -> Set<MissionKey> {
+        board.map { Set($0.lanes.compactMap(\.mission)) } ?? Set(missions.map(\.key))
     }
 
     /// The missions a page of these kinds shows.
@@ -70,27 +103,32 @@ package struct MissionsBody: View {
         missions.contains { $0.contains(ref) }
     }
 
+    /// Where the Board starts, which Up Next's "2 more ›" scrolls to.
+    private static let boardTop = "board"
+
     package var body: some View {
         let missions = Self.missions(ordering.missions, kinds: kinds)
         let rest = listed.filter { !Self.isIn(missions, $0) }
+        // Each mission's next steps, as its lane on the Board has them, where its pull requests have stages.
+        let missionLanes = board?.mode == .missions ? board : nil
         // Apple Intelligence names only the missions on screen: those scrolled out of sight wait.
-        let onScreen = missions.map(\.key).filter(inSight.contains)
+        let onScreen = missions.map(\.key).filter { inSight[view]?.contains($0) == true }
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 18) {
-                // What you changed last, and why BriefBar didn't make a change, when no mission's card here shows it, such as one
-                // you moved out of missions.
-                let shown = Set(missions.map(\.key))
+                // What you changed last of a mission, and why BriefBar didn't make a change, when no mission's card or lane
+                // here shows it, such as one you moved out of missions.
+                let shown = Self.showingTheirChanges(missions, board: view == .board ? board : nil)
                 if ordering.said.contains(where: { OrderUndoLine.shows($0, about: nil, in: nil, outside: shown) }) {
                     OrderUndoLine(order: ordering, outside: shown)
                         .padding(.horizontal, 4)
                 }
-                if missions.isEmpty {
+                if missions.isEmpty, view != .board {
                     noMissions
                 }
                 switch view {
                 case .list:
                     ForEach(missions) { mission in
-                        card(mission)
+                        missionCard(mission, lane: missionLanes?.lane(for: mission.key))
                             .onSightChange { see(mission.key, $0) }
                     }
                     if !rest.isEmpty {
@@ -104,20 +142,33 @@ package struct MissionsBody: View {
                 case .map:
                     ForEach(missions) { mission in
                         MissionBand(
-                            mission: mission, place: place(of: mission), links: services.links,
-                            order: ordering, isSelected: isSelected, select: open, list: { AnyView(card(mission)) }
+                            mission: mission, place: place(of: mission), links: services.links, order: ordering,
+                            lane: missionLanes?.lane(for: mission.key), isSelected: isSelected, select: open,
+                            list: { AnyView(missionCard(mission, lane: missionLanes?.lane(for: mission.key))) }
                         )
                         .onSightChange { see(mission.key, $0) }
                     }
                     let undrawn = OrderMap.undrawn(listed + apart, in: missions)
                     NotInAMissionLine(inNoMission: undrawn.inNoMission, notInOrder: undrawn.notInOrder) { ordering.setView(.list) }
+                case .board:
+                    if let board, let card {
+                        OrderBoardView(
+                            board: board, missions: missions, order: ordering, elsewhere: elsewhere, openElsewhere: openElsewhere,
+                            place: place(of:), card: card, isSelected: isSelected, select: { ref in _ = select(ref) },
+                            shownOnTop: shownOnTop, setAsNext: setAsNext, notOnBoard: board.notOnBoard(listed + apart),
+                            showByStatus: showByStatus, now: now, see: see
+                        )
+                        .id(Self.boardTop)
+                    }
                 }
             }
             .onChange(of: ordering.revealed) { _, key in reveal(key, with: proxy) }
             .onAppear {
                 reveal(ordering.revealed, with: proxy)
+                revealBoard(ordering.revealedColumn, with: proxy)
                 ordering.showing(onScreen, in: viewer, on: page)
             }
+            .onChange(of: ordering.revealedColumn) { _, stage in revealBoard(stage, with: proxy) }
             .onChange(of: onScreen) { _, keys in ordering.showing(keys, in: viewer, on: page) }
             .onDisappear { ordering.stopShowing(in: viewer) }
         }
@@ -129,15 +180,15 @@ package struct MissionsBody: View {
         return PullRequestOrder.page(section, window: window)
     }
 
-    /// A mission's card or band came into the scroll view's sight, or left it.
+    /// A mission's card, band or lane came into the page's sight, or left it.
     private func see(_ key: MissionKey, _ isInSight: Bool) {
-        if isInSight { inSight.insert(key) } else { inSight.remove(key) }
+        if isInSight { inSight[view, default: []].insert(key) } else { inSight[view]?.remove(key) }
     }
 
-    private func card(_ mission: OrderMission) -> MissionCard {
+    private func missionCard(_ mission: OrderMission, lane: BoardLane?) -> MissionCard {
         MissionCard(
             mission: mission, kinds: kinds, place: place(of: mission), elsewhere: elsewhere, openElsewhere: openElsewhere,
-            order: ordering
+            order: ordering, lane: lane, select: { ref in _ = select(ref) }
         ) { step in
             row(step, mission.key)
         }
@@ -172,10 +223,19 @@ package struct MissionsBody: View {
     }
 
     private func reveal(_ key: MissionKey?, with proxy: ScrollViewProxy) {
-        guard let key else { return }
+        // The Board shows it itself, once its lane is laid out.
+        guard let key, view != .board else { return }
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(key, anchor: .top) }
             ordering.revealed = nil
+        }
+    }
+
+    /// Up Next's "2 more ›": the page scrolls to the Board, which scrolls sideways to the column.
+    private func revealBoard(_ stage: PullRequestStage?, with proxy: ScrollViewProxy) {
+        guard stage != nil, view == .board else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(Self.boardTop, anchor: .top) }
         }
     }
 }
@@ -183,11 +243,12 @@ package struct MissionsBody: View {
 /// A page that shows missions, as Pull Request Order knows it while it does.
 final class MissionsViewer {}
 
-private extension View {
-    /// Says whether it's in its scroll view's sight, as it comes in or leaves it; outside a scroll view, it is.
+extension View {
+    /// Says whether it's in the page's sight, as it comes in or leaves it: in that of the innermost scroll view that scrolls
+    /// up and down, such as the page's, rather than the Board's, which scrolls sideways. Outside one, it is.
     func onSightChange(_ action: @escaping (Bool) -> Void) -> some View {
         onGeometryChange(for: Bool.self) { proxy in
-            proxy.bounds(of: .scrollView).map { $0.intersects(CGRect(origin: .zero, size: proxy.size)) } ?? true
+            proxy.bounds(of: .scrollView(axis: .vertical)).map { $0.intersects(CGRect(origin: .zero, size: proxy.size)) } ?? true
         } action: { action($0) }
     }
 }
