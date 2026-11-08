@@ -564,7 +564,7 @@ struct WorkItemDetailsPanel: View {
                     count: read.resources.count) {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(read.resources) { resource in
-                        Link(destination: resource.url) {
+                        ThisMac.link(to: resource.url) {
                             Label(resource.name, systemImage: resource.kind == .attachment ? "paperclip" : "link")
                                 .font(size: 12.5)
                                 .lineLimit(1)

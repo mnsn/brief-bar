@@ -549,7 +549,7 @@ final class AppModel: ObservableObject {
             .timeout(.seconds(1), scheduler: DispatchQueue.main)
             .sink { _ in MainActor.assumeIsolated { NSApp.activate() } }
         NSApp.yieldActivation(to: dock)
-        if !dock.activate(from: .current, options: []) {
+        if !ThisMac.activate(dock, from: .current) {
             takingMenuBar = nil
         }
     }
