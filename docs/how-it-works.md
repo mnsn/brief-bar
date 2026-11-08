@@ -45,7 +45,9 @@ are kept in memory only. It's asked only for the missions in sight in a window t
 while that window is closed, minimized or covered, nor for one scrolled out of sight until it comes into it; and,
 while Apple Intelligence is off or getting ready, BriefBar looks again every half minute, never on a Mac that can't run
 it. No name goes to the log or to agents, and none you give goes to Apple Intelligence: it's asked with the name it
-gave, or else BriefBar's own, to keep while that fits.
+gave, or else BriefBar's own, to keep while that fits, each title quoted as data. Its answer is the name alone, by
+guided generation (`OnDeviceModel.Shape`), and one that declines, asks or talks about the name rather than give one
+leaves the mission's name as it was.
 
 ## Permissions that macOS grants once
 

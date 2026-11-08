@@ -49,11 +49,17 @@ package final class MissionNamer {
     private let respond: Respond
     private let now: () -> Date
 
+    /// What an answer is: the mission's name alone, by guided generation, so it never comes wrapped in talk, Markdown or
+    /// other lines. `MissionNaming.clean` still reads it, as a name can still decline or talk about itself.
+    nonisolated package static let answerShape = try? OnDeviceModel.Shape("MissionName", property: "name", description: "The mission's name")
+
     /// - Parameter unavailability: why Apple Intelligence can't answer now, or nil when it can.
     package init(
         unavailability: @escaping @MainActor () -> OnDeviceModel.Unavailability? = { OnDeviceModel.unavailability },
         respond: @escaping Respond = { prompt, instructions in
-            await OnDeviceModel.respond(to: prompt, instructions: instructions, maximumTokens: 24, likeliestWords: true)
+            await OnDeviceModel.respond(
+                to: prompt, instructions: instructions, maximumTokens: 32, likeliestWords: true, shape: MissionNamer.answerShape
+            )
         },
         now: @escaping () -> Date = { Date() }
     ) {

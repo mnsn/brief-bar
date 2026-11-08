@@ -785,6 +785,14 @@ fileprivate final class Viewer {}
         try await until("every mission is on screen") { Set(order.onScreen) == Set(missions.map(\.key)) }
     }
 
+    /// Apple Intelligence's answer is the mission's name alone, by guided generation: its schema is made as BriefBar runs,
+    /// without `@Generable`'s macro, and the name is read from what the model generates.
+    @Test func theAnswerIsTheNameAloneByGuidedGeneration() throws {
+        let shape = try #require(MissionNamer.answerShape)
+        #expect(try shape.text(ofJSON: #"{"name": "Checkout coupons"}"#) == "Checkout coupons")
+        #expect(throws: (any Error).self) { try shape.text(ofJSON: #"{"title": "Checkout coupons"}"#) }
+    }
+
     @Test func theDemosNamesAreMadeUpAndItNeverAsksTheModel() throws {
         let clock = Clock()
         let order = Self.service(clock: clock, isDemo: true)
