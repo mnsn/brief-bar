@@ -1224,6 +1224,41 @@ fileprivate final class Viewer {}
         return defaults
     }
 
+    /// Where two orders go round, the stage names the other by Apple Intelligence's name as soon as it comes, as its
+    /// mission's header does.
+    @Test func theStageNamesAnOrderThatGoesRoundByAppleIntelligencesNameAsSoonAsItComes() async throws {
+        let clock = Clock()
+        let model = Model()
+        let defaults = try Self.ordered()
+        // Another order puts them the other way round: !4113 after !4105.
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        var orders = DeclaredOrders.load(from: defaults)
+        try orders.apply(
+            OrderRequest(entries: [.init(link: link(4105)), .init(link: link(4113), after: ["4105"])]),
+            now: Date(timeIntervalSince1970: 1_791_900_001), newID: Self.otherPlanID
+        )
+        orders.save(to: defaults)
+        let order = Self.service(defaults, clock: clock)
+        order.namer = model.namer(clock: clock)
+        order.publish(
+            .azureDevOps, pullRequests: [Self.ado(4113, nil), Self.ado(4105, nil)],
+            items: [Self.item(Self.pr(4113), "Speed up the checkout page"), Self.item(Self.pr(4105), "Prototype one-click checkout")],
+            stages: [Self.pr(4113): StageFacts(role: .author, isReady: true), Self.pr(4105): StageFacts(role: .author, isReady: true)],
+            account: "robin@contoso.com"
+        )
+        let key = MissionKey.plan(Self.planID)
+        let briefBars = try #require(order.names.title(key))
+        let says = { (name: String) -> StageWhy in .orderHolds("‘\(name)’ puts !4105 after it: check the order") }
+        #expect(order.stage(of: Self.pr(4113))?.why == says(briefBars))
+
+        let viewer = Viewer()
+        Self.show([key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { order.modelNames[key] == "Faster checkout" })
+        #expect(order.stage(of: Self.pr(4113))?.why == says("Faster checkout"))
+    }
+
     /// Apple Intelligence's name for an order's mission goes with the order, however it goes: forgotten, or left with no
     /// pull request as Azure DevOps is turned off; and an answer under way for it then doesn't bring it back.
     @Test func anOrdersNameFromAppleIntelligenceGoesWithTheOrder() async throws {

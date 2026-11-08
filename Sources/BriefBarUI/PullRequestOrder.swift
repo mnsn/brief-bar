@@ -563,7 +563,7 @@ package final class PullRequestOrder: ObservableObject {
         guard names != yourNames else { return outcome }
         objectWillChange.send()
         yourNames = names
-        cachedNames = nil
+        namesChanged()
         names.save(to: defaults)
         askNames()
         return outcome
@@ -574,7 +574,7 @@ package final class PullRequestOrder: ObservableObject {
         guard isOn, yourNames.name(for: key) != nil else { return }
         objectWillChange.send()
         yourNames.clear(key)
-        cachedNames = nil
+        namesChanged()
         yourNames.save(to: defaults)
         askNames()
     }
@@ -652,7 +652,13 @@ package final class PullRequestOrder: ObservableObject {
     private func modelNamed(_ key: MissionKey, _ name: String) {
         guard isOn, modelNames[key] != name else { return }
         modelNames[key] = name
+        namesChanged()
+    }
+
+    /// A mission's name changed: what names it, and the stages that name it, as where two orders go round.
+    private func namesChanged() {
         cachedNames = nil
+        restage()
     }
 
     // MARK: Your changes to missions

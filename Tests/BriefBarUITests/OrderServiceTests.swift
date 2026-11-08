@@ -1318,6 +1318,58 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4101))?.stage == .canMerge)
     }
 
+    /// Its order in the first, as it is now: once you moved what that puts it after out of the first, or put that after it
+    /// with Merge After, set as next there, the Board sets it as next in the other, where it doesn't wait in the first again.
+    @Test(arguments: [false, true])
+    func onceYouFreedItInTheFirstTheBoardSetsItAsNextInTheOther(byMergeAfter: Bool) throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
+            [.init(link: Self.link(4102)), .init(link: Self.link(4101), after: ["4102"])],
+            numbers: [4100, 4101, 4102], ready: [4101]
+        )
+        let first = MissionKey.plan(Self.planID), other = MissionKey.plan(Self.otherID)
+        let moves = {
+            BoardMoves(board: order.board(kinds: [.pullRequest], lanes: .missions), missions: order.missions, order: order, missionChanges: true)
+        }
+        let mission = { order.missions.first { $0.key == first } }
+        MissionMenuContext.setAsNext(Self.ref(4101), in: first, order: order)
+        #expect(mission()?.orderBeforeYourNext == [Self.ref(4101): [Self.ref(4100)]])
+        let held = moves().key(Self.ref(4101), in: .mission(other), forward: false)?.move
+        #expect(held != .setAsNext(other) && held?.isTaken == false)
+
+        if byMergeAfter {
+            order.change(.mergeAfter(Self.ref(4100), Self.ref(4101), in: first, true))
+        } else {
+            order.change(.move([Self.ref(4100)], to: .into(.mine(UUID())), from: first))
+            #expect(mission()?.contains(Self.ref(4100)) == false)
+        }
+
+        #expect(mission()?.orderBeforeYourNext.isEmpty == true)
+        #expect(moves().key(Self.ref(4101), in: .mission(other), forward: false)?.move == .setAsNext(other))
+        MissionMenuContext.setAsNext(Self.ref(4101), in: other, order: order)
+        #expect(order.stage(of: Self.ref(4101))?.stage == .canMerge)
+        #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions).isEmpty)
+    }
+
+    /// Where two orders go round, the stage names the other as its mission's header does, as soon as you rename it or give
+    /// it BriefBar's name back, though nothing BriefBar knows of the pull requests changed.
+    @Test func theStageNamesAnOrderThatGoesRoundAsSoonAsYouRenameIt() throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4101), after: ["4102"]), .init(link: Self.link(4102))],
+            [.init(link: Self.link(4101)), .init(link: Self.link(4102), after: ["4101"])],
+            numbers: [4101, 4102], ready: [4101, 4102]
+        )
+        let other = try #require(order.missions.first { $0.key == .plan(Self.otherID) })
+        let briefBars = try #require(order.names.title(other.key))
+        let says = { (name: String) -> StageWhy in .orderHolds("‘\(name)’ puts !4102 after it: check the order") }
+        #expect(order.stage(of: Self.ref(4101))?.why == says(briefBars))
+
+        #expect(order.rename(other, to: "Payments") == .named)
+        #expect(order.stage(of: Self.ref(4101))?.why == says("Payments"))
+        order.useBriefBarsName(other.key)
+        #expect(order.stage(of: Self.ref(4101))?.why == says(briefBars))
+    }
+
     /// Where its order no longer puts it after one that hasn't merged, set as next there, the Board sets it as next in the
     /// other: it doesn't wait in the first again.
     @Test func whereTheFirstNoLongerHoldsItTheBoardSetsItAsNextInTheOther() throws {
