@@ -9,8 +9,9 @@ import Testing
 
 /// Your comments in a pull request's details as you edit or delete them: they stay in sight while they're open, however a
 /// long thread folds and whatever comes meanwhile; what was open on one closes once it leaves its thread, and what went wrong
-/// with it shows on the thread then; and what of yours takes the keyboard's focus back once each closes. With the demo's
-/// made-up pull requests, read as a list that reads Azure DevOps would, and the comments drawn in a window off screen.
+/// with it shows on the thread then; what of yours takes the keyboard's focus back once each closes; what Esc and ⌘Return
+/// do in your edit; and its spell checking. With the demo's made-up pull requests, read as a list that reads Azure DevOps
+/// would, a stand-in for Azure DevOps that takes nothing, and the comments drawn in a window off screen.
 @MainActor
 @Suite struct YourCommentsViewTests {
     /// Which composer the details have open, as the test opens them.
@@ -25,6 +26,11 @@ import Testing
         let make: (PRStore, Binding<CopilotComposing?>) -> AnyView
 
         var body: some View { make(store, $composing.open) }
+    }
+
+    /// What the stand-in for Azure DevOps was sent: it takes nothing, as Azure DevOps refusing it would.
+    final class Sent {
+        var writes: [ADOWrite] = []
     }
 
     /// The demo's pull request that Sam replied on.
@@ -46,8 +52,9 @@ import Testing
         ])
     }
 
-    /// A list that reads Azure DevOps, with the demo's pull requests and the long thread read, and what changes them.
-    private func live() throws -> (store: PRStore, changes: ThreadChanges, thread: ReviewThread) {
+    /// A list that reads Azure DevOps, with the demo's pull requests and the long thread read, and what changes them, which
+    /// sends a stand-in what it would send Azure DevOps.
+    private func live() throws -> (store: PRStore, changes: ThreadChanges, thread: ReviewThread, sent: Sent) {
         let settings = AppSettings(defaults: MemoryDefaults())
         settings.makesChanges = true
         let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
@@ -60,7 +67,13 @@ import Testing
         store.receive(snapshot)
         // Nothing's read again: there's no Azure DevOps.
         store.readAfterChange = { _, _ in nil }
-        return (store, ThreadChanges(store: store, settings: settings), thread)
+        let changes = ThreadChanges(store: store, settings: settings)
+        let sent = Sent()
+        changes.send = { write, _ in
+            sent.writes.append(write)
+            throw ADOError.forbidden
+        }
+        return (store, changes, thread, sent)
     }
 
     /// The pull request's comments, as its details show them, with what a composer needs.
@@ -127,8 +140,51 @@ import Testing
 
     /// What each field you write in says: in the comments, only your edit's, or a reply's, draws one.
     private func fields(in view: NSView) -> [String] {
-        if let field = view as? NSTextView, field.isEditable { return [field.string] }
-        return view.subviews.flatMap(fields(in:))
+        textViews(in: view).map(\.string)
+    }
+
+    /// The fields you write in: in the comments, only your edit's, or a reply's.
+    private func textViews(in view: NSView) -> [NSTextView] {
+        if let field = view as? NSTextView, field.isEditable { return [field] }
+        return view.subviews.flatMap(textViews(in:))
+    }
+
+    /// What's behind each field to check its spelling.
+    private func probes(in view: NSView) -> [SpellCheckingProbe.ProbeView] {
+        if let probe = view as? SpellCheckingProbe.ProbeView { return [probe] }
+        return view.subviews.flatMap(probes(in:))
+    }
+
+    /// A key pressed in a window.
+    private func key(_ characters: String, code: UInt16, _ flags: NSEvent.ModifierFlags = [], in window: NSWindow) throws -> NSEvent {
+        try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+        ))
+    }
+
+    /// Writes at the end of a field, as you type there.
+    private func type(_ text: String, in field: NSTextView) {
+        field.window?.makeFirstResponder(field)
+        field.insertText(text, replacementRange: NSRange(location: (field.string as NSString).length, length: 0))
+    }
+
+    /// The pull request read again, with the long thread's comment of yours saying something else, as edited elsewhere.
+    private func receive(_ store: PRStore, yours text: String, in thread: ReviewThread) throws {
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        var changed = thread
+        changed.comments[1].text = text
+        changed.comments[1].markdown = text
+        snapshot.records[index].details?.threads.append(changed)
+        store.receive(snapshot)
+    }
+
+    /// Which of what corrects, replaces or substitutes text by itself, or checks its grammar, a field has on.
+    private func corrections(of field: NSTextView) -> [String] {
+        [("autocorrection", field.isAutomaticSpellingCorrectionEnabled), ("text replacement", field.isAutomaticTextReplacementEnabled),
+         ("smart quotes", field.isAutomaticQuoteSubstitutionEnabled), ("smart dashes", field.isAutomaticDashSubstitutionEnabled),
+         ("grammar", field.isGrammarCheckingEnabled)].filter(\.1).map(\.0)
     }
 
     // MARK: In sight
@@ -139,7 +195,7 @@ import Testing
     /// closes.
     @Test func yourCommentStaysInSightWhileYouEditIt() async throws {
         _ = NSApplication.shared
-        let (store, changes, thread) = try live()
+        let (store, changes, thread, _) = try live()
         let mine = thread.comments[1]
         let composing = Composing()
         let (window, host) = window(showing: comments(store, changes, composing: composing))
@@ -267,5 +323,126 @@ import Testing
         refocus.opened()
         refocus.deleted(4)
         #expect(refocus == ThreadRefocus())
+    }
+
+    // MARK: The keyboard
+
+    /// Esc closes your edit, as its ✕ does, and keeps what you wrote, as Reply's keeps yours, until you save it or cancel:
+    /// opened again, it has it. Only Cancel forgets it.
+    @Test func escClosesYourEditAndKeepsWhatYouWrote() async throws {
+        _ = NSApplication.shared
+        let (store, changes, thread, sent) = try live()
+        let mine = thread.comments[1]
+        let draft = ThreadChanges.CommentKey(thread: ThreadChanges.Key(pullRequest: key, thread: thread.id), comment: mine.id)
+        let composing = Composing()
+        composing.open = .edit(mine.id, in: thread.id)
+        let (window, host) = window(showing: comments(store, changes, composing: composing))
+        try await settle { !textViews(in: host).isEmpty }
+        let written = mine.markdown + " Per client too."
+        type(" Per client too.", in: try #require(textViews(in: host).first))
+        try await settle { changes.edit(draft) != nil }
+        #expect(changes.edit(draft) == written)
+
+        #expect(host.performKeyEquivalent(with: try key("\u{1b}", code: 53, in: window)))
+        try await settle { composing.open == nil }
+        #expect(composing.open == nil)
+        #expect(changes.edit(draft) == written)
+        #expect(sent.writes.isEmpty)
+
+        composing.open = .edit(mine.id, in: thread.id)
+        try await settle { fields(in: host) == [written] }
+        #expect(fields(in: host) == [written])
+        window.contentView = nil
+    }
+
+    /// ⌘Return saves your edit, as Save does; but once your comment changed since you began editing it, as in Azure DevOps or
+    /// another window, it sends nothing, which would replace what it says now unseen: your edit stays open, with what you
+    /// wrote, and says it changed (`ThreadChanges.changedSince`).
+    @Test func commandReturnDoesntReplaceYourCommentChangedSinceYouBegan() async throws {
+        _ = NSApplication.shared
+        let (store, changes, thread, sent) = try live()
+        let mine = thread.comments[1]
+        let composing = Composing()
+        composing.open = .edit(mine.id, in: thread.id)
+        let (window, host) = window(showing: comments(store, changes, composing: composing))
+        try await settle { !textViews(in: host).isEmpty }
+        let written = mine.markdown + " Per client too."
+        type(" Per client too.", in: try #require(textViews(in: host).first))
+        try await settle { fields(in: host) == [written] }
+        let commandReturn = try key("\r", code: 36, .command, in: window)
+
+        // Unchanged since: it goes, as the stand-in refuses it.
+        #expect(host.performKeyEquivalent(with: commandReturn))
+        try await settle { sent.writes.count == 1 }
+        #expect(sent.writes.map(\.kind) == [.editComment])
+
+        // Edited elsewhere, as the list reads it: nothing more goes.
+        try receive(store, yours: "It reads RetryOptions.MaxDelay, a minute by default.", in: thread)
+        try await settle(at: 20)
+        #expect(host.performKeyEquivalent(with: commandReturn))
+        try await settle(at: 30)
+        #expect(sent.writes.count == 1)
+        #expect(composing.open == .edit(mine.id, in: thread.id))
+        #expect(fields(in: host) == [written])
+        window.contentView = nil
+    }
+
+    // MARK: Spell checking
+
+    /// Your edit is spell checked as you type, and nothing corrects, replaces or substitutes what you write by itself, nor
+    /// checks its grammar, whatever turns one on: SwiftUI as you type, the right-click menu's Substitutions, or AppKit as the
+    /// system's settings change, which key-value observing doesn't hear, here as if they were all on.
+    @Test func yourEditIsSpellCheckedAndNothingCorrectsIt() async throws {
+        _ = NSApplication.shared
+        let (store, changes, thread, _) = try live()
+        let composing = Composing()
+        composing.open = .edit(thread.comments[1].id, in: thread.id)
+        let (window, host) = window(showing: comments(store, changes, composing: composing))
+        try await settle { textViews(in: host).first?.isContinuousSpellCheckingEnabled == true }
+        let field = try #require(textViews(in: host).first)
+        #expect(probes(in: host).first?.textView === field)
+        #expect(field.isContinuousSpellCheckingEnabled)
+        #expect(corrections(of: field).isEmpty)
+
+        // SwiftUI, as you type, and the right-click menu's Substitutions.
+        type(" Per client too.", in: field)
+        try await settle(at: 10)
+        #expect(field.isContinuousSpellCheckingEnabled)
+        #expect(corrections(of: field).isEmpty)
+        for keyPath in SpellCheckingProbe.ProbeView.kept { field[keyPath: keyPath] = true }
+        #expect(corrections(of: field).isEmpty)
+
+        // AppKit, as the system's settings change, here to on, in memory only: it gives the text view each as it says so.
+        let defaults = UserDefaults.standard
+        let arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        defer { defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain) }
+        defaults.setVolatileDomain(arguments.merging(Self.substitutionsOn) { _, on in on }, forName: UserDefaults.argumentDomain)
+        for name in SpellCheckingProbe.ProbeView.systemSettingChanges {
+            NotificationCenter.default.post(name: name, object: nil)
+        }
+        #expect(field.isAutomaticQuoteSubstitutionEnabled, "AppKit gives the text view the system's setting as it changes")
+        try await settle { corrections(of: field).isEmpty }
+        #expect(corrections(of: field).isEmpty)
+        #expect(field.isContinuousSpellCheckingEnabled)
+        #expect(probes(in: host).first?.foundNone == false)
+        window.contentView = nil
+    }
+
+    /// The system's settings, all on.
+    private static let substitutionsOn: [String: Any] = [
+        "NSAutomaticSpellingCorrectionEnabled": true, "NSAutomaticTextReplacementEnabled": true,
+        "NSAutomaticQuoteSubstitutionEnabled": true, "NSAutomaticDashSubstitutionEnabled": true,
+    ]
+
+    /// Behind something that isn't an editor, spell checking finds no text view: it says so, as the log does, rather than
+    /// leave autocorrection on anywhere.
+    @Test func spellCheckingSaysWhenItFindsNoEditor() async throws {
+        _ = NSApplication.shared
+        let (window, host) = window(showing: AnyView(Text(verbatim: "Not an editor").frame(width: 200, height: 60).spellChecked()))
+        try await settle { probes(in: host).first?.foundNone == true }
+        let probe = try #require(probes(in: host).first)
+        #expect(probe.foundNone)
+        #expect(probe.textView == nil)
+        window.contentView = nil
     }
 }

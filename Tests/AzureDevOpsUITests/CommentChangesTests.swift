@@ -206,14 +206,16 @@ import Testing
     }
 
     /// Opening your comment to edit it keeps nothing until you change it: as its field opens with what it says, nothing's a
-    /// draft. What you change is kept with what the comment said as you began, until the comment says something else, as
-    /// edited elsewhere: opened again, it says what it says now, and what you wrote before goes. Saved with nothing changed
-    /// since you began, though the comment changed elsewhere meanwhile, nothing goes, which would put back what it said.
-    @Test func anEditStartedBeforeTheCommentChangedElsewhereDoesntPutItBack() async throws {
+    /// draft. What you change is kept with what the comment said as you began, though the comment says something else since,
+    /// as edited elsewhere: opened again, it has what you wrote, and tells it changed. Saved then, nothing goes, which would
+    /// replace what it says now unseen, unless you chose to replace what it says now (Save Anyway); and Start Over begins
+    /// again from what it says now, which forgets what you wrote.
+    @Test func anEditBegunBeforeTheCommentChangedReplacesItOnlyOnceYouSaySo() async throws {
         let (store, changes, azure, reads) = live()
         let record = try #require(store.record(for: key))
         let (mine, _) = try comments(store)
-        let draft = ThreadChanges.CommentKey(thread: ThreadChanges.Key(pullRequest: key, thread: 11), comment: mine.id)
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        let draft = ThreadChanges.CommentKey(thread: threadKey, comment: mine.id)
         let started = changes.startEditing(mine, in: try thread(store), of: record.pullRequest)
         changes.keepEdit(started.text, for: draft, from: started.base)
         #expect(changes.edit(draft) == nil)
@@ -223,6 +225,7 @@ import Testing
         changes.keepEdit(started.text, for: draft, from: started.base)
         #expect(changes.edit(draft) == nil)
         changes.keepEdit("Exponential, from 200 ms.", for: draft, from: started.base)
+        #expect(!changes.changedSince(started.base, now: mine, editing: "Exponential, from 200 ms.", on: threadKey))
 
         // Edited elsewhere, as the list reads it.
         let elsewhere = "Exponential, from 200 ms, capped at 30 seconds."
@@ -234,23 +237,109 @@ import Testing
         store.receive(snapshot)
         let now = try comments(store).mine
         #expect(now.markdown == elsewhere)
-        #expect(changes.startEditing(now, in: try thread(store), of: record.pullRequest).text == elsewhere)
-        #expect(changes.edit(draft) == nil)
+        // Opened again: what you wrote, which it tells was begun before.
+        let reopened = changes.startEditing(now, in: try thread(store), of: record.pullRequest)
+        #expect(reopened == ThreadChanges.EditDraft(text: "Exponential, from 200 ms.", base: started.base))
+        #expect(changes.changedSince(reopened.base, now: now, editing: reopened.text, on: threadKey))
+        // Not once it says what you wrote, nor what you began with.
+        #expect(!changes.changedSince(reopened.base, now: now, editing: elsewhere, on: threadKey))
+        #expect(!changes.changedSince(reopened.base, now: mine, editing: reopened.text, on: threadKey))
 
-        // Open since before it changed, saved as it was when you began: nothing goes.
-        #expect(await changes.edit(started.text, from: started.base, of: now, in: try thread(store), of: key))
+        // Saved, nothing goes, and what you wrote is kept.
+        #expect(await changes.edit(reopened.text, from: reopened.base, of: now, in: try thread(store), of: key) == false)
         #expect(azure.sent.isEmpty)
         #expect(reads.count == 0)
+        #expect(changes.edit(draft) == "Exponential, from 200 ms.")
+        #expect(changes.state(of: threadKey) == nil)
         #expect(try comments(store).mine.markdown == elsewhere)
-        // Saved as it is now: nothing goes either. Changed, it goes, in place of what it says now.
+        // Saved as it was when you began, or as it is now: nothing goes either, and there's nothing to save.
+        #expect(await changes.edit(started.text, from: started.base, of: now, in: try thread(store), of: key))
         #expect(await changes.edit(elsewhere, from: started.base, of: now, in: try thread(store), of: key))
         #expect(azure.sent.isEmpty)
-        #expect(await changes.edit("Capped at 30 seconds.", from: started.base, of: now, in: try thread(store), of: key))
+        // Save Anyway, chosen as it said something else, replaces nothing.
+        #expect(await changes.edit("Capped at 30 seconds.", from: started.base, replacing: "Something else", of: now,
+                                   in: try thread(store), of: key) == false)
+        #expect(azure.sent.isEmpty)
+        // Save Anyway, chosen as it says this: it goes, in place of what it says now.
+        #expect(await changes.edit("Capped at 30 seconds.", from: started.base, replacing: now.kept, of: now, in: try thread(store), of: key))
         #expect(azure.sent == [.editComment(try address(store), comment: mine.id, markdown: "Capped at 30 seconds.")])
+        #expect(try comments(store).mine.markdown == "Capped at 30 seconds.")
+    }
+
+    /// Start Over begins your edit again from what the comment says now, and forgets what you wrote.
+    @Test func startOverBeginsAgainFromWhatTheCommentSaysNow() throws {
+        let (store, changes, _, _) = live()
+        let record = try #require(store.record(for: key))
+        let (mine, _) = try comments(store)
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        let draft = ThreadChanges.CommentKey(thread: threadKey, comment: mine.id)
+        let started = changes.startEditing(mine, in: try thread(store), of: record.pullRequest)
+        changes.keepEdit("Exponential, from 200 ms.", for: draft, from: started.base)
+        var now = mine
+        now.text = "Capped at 30 seconds."
+        now.markdown = "Capped at 30 seconds."
+        let again = changes.startOver(now, in: try thread(store), of: record.pullRequest)
+        #expect(again.text == "Capped at 30 seconds.")
+        #expect(again.base.content == "Capped at 30 seconds.")
+        #expect(changes.edit(draft) == nil)
+        #expect(!changes.changedSince(again.base, now: now, editing: again.text, on: threadKey))
+    }
+
+    /// An edit of yours that may have gone, as one Azure DevOps didn't answer in time, which the list shows the comment says,
+    /// is yours, not a change elsewhere: what you write after it goes, without your saying so.
+    @Test func yourOwnEditThatMayHaveGoneIsntAChangeElsewhere() async throws {
+        let (store, changes, azure, _) = live()
+        let record = try #require(store.record(for: key))
+        let (mine, _) = try comments(store)
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        let started = changes.startEditing(mine, in: try thread(store), of: record.pullRequest)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.edit("Capped it.", from: started.base, of: mine, in: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        // It went, as the list reads it.
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        let at = try #require(snapshot.records[index].details?.threads[0].comments.firstIndex { $0.id == mine.id })
+        snapshot.records[index].details?.threads[0].comments[at].text = "Capped it."
+        snapshot.records[index].details?.threads[0].comments[at].markdown = "Capped it."
+        store.receive(snapshot)
+        let now = try comments(store).mine
+        #expect(!changes.changedSince(started.base, now: now, editing: "Capped it at 30 seconds.", on: threadKey))
+        #expect(await changes.edit("Capped it at 30 seconds.", from: started.base, of: now, in: try thread(store), of: key))
+        #expect(azure.sent.map(\.kind) == [.editComment, .editComment])
+        // Someone else's, though: it changed since.
+        var theirs = now
+        theirs.text = "Capped it at a minute."
+        theirs.markdown = "Capped it at a minute."
+        #expect(changes.changedSince(started.base, now: theirs, editing: "Capped it at 30 seconds.", on: threadKey))
+    }
+
+    /// An edit that may have gone, checked by reading its thread again, finds the comment says something else, which you
+    /// haven't seen: nothing goes, and it shows what the thread has, for your edit to say what it says now.
+    @Test func anEditCheckedAfterTheCommentChangedElsewhereSendsNothing() async throws {
+        let (store, changes, azure, _) = live()
+        let record = try #require(store.record(for: key))
+        let (mine, _) = try comments(store)
+        let started = changes.startEditing(mine, in: try thread(store), of: record.pullRequest)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.edit("Capped it.", from: started.base, of: mine, in: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        var read = try thread(store)
+        read.comments[0].text = "Capped it at a minute."
+        read.comments[0].markdown = "Capped it at a minute."
+        let threads = [read]
+        changes.readThreads = { _ in threads }
+        #expect(await changes.edit("Capped it.", from: started.base, of: mine, in: try thread(store), of: key) == false)
+        #expect(azure.sent.count == 1)
+        #expect(try comments(store).mine.markdown == "Capped it at a minute.")
+        #expect(changes.changedSince(started.base, now: try comments(store).mine, editing: "Capped it.",
+                                     on: ThreadChanges.Key(pullRequest: key, thread: 11)))
     }
 
     /// Your edit's names go back as the mentions they showed as you began, though the comment changed elsewhere since and
-    /// doesn't mention them anymore.
+    /// doesn't mention them anymore, once you chose to replace what it says now.
     @Test func anEditsNamesGoBackAsTheMentionsTheyShowedAsYouBegan() async throws {
         let (store, changes, azure, _) = live()
         let record = try #require(store.record(for: key))
@@ -269,7 +358,8 @@ import Testing
         now.text = "Capped it."
         now.mentions = []
         try receive(store, with: ReviewThread(id: 70, comments: [samsComment, now]))
-        #expect(await changes.edit("Thanks @\(sam.name), capped it at 30 seconds.", from: started.base, of: now, in: try thread(store, 70), of: key))
+        #expect(await changes.edit("Thanks @\(sam.name), capped it at 30 seconds.", from: started.base, replacing: now.kept, of: now,
+                                   in: try thread(store, 70), of: key))
         #expect(azure.sent == [.editComment(try address(store, 70), comment: 2, markdown: "Thanks @<\(sam.id.uppercased())>, capped it at 30 seconds.")])
     }
 

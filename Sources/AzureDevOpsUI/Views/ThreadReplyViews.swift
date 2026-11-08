@@ -332,8 +332,10 @@ struct ThreadChangeProblemLine: View {
 /// you, in Azure DevOps, and ⇧⌘Return sends and resolves the thread, or reactivates a resolved one; Fix Grammar, one ▾ from
 /// its model; ✕ or Esc closes it, keeping what you wrote until you send it. As it opens, the details scroll to show it all.
 /// Nothing goes until you click. Editing a comment of yours (`editing`), it's the same, in place of what the comment says,
-/// with what it says, but for Save, which ⌘Return presses, and Cancel, or Esc, which keeps the comment as it was. The Mac
-/// checks your spelling as you type, but corrects nothing by itself (`spellChecked()`).
+/// with what it says, but for Save, which ⌘Return presses, and Cancel, which keeps the comment as it was and forgets what
+/// you wrote; ✕ or Esc keeps it, until you save it or cancel. When the comment changed since you began, as in Azure DevOps
+/// or another window, it says so, with what it says now, Start Over and Save Anyway (`CommentChangedNotice`): Save alone
+/// sends nothing then. The Mac checks your spelling as you type, but corrects nothing by itself (`spellChecked()`).
 struct ThreadReplyComposer: View {
     let thread: PullRequestPanel.Thread
     let item: PRSnapshot
@@ -364,6 +366,9 @@ struct ThreadReplyComposer: View {
     /// Editing a comment, what it said as you began, whose names go back as the mentions they showed as you save it, though
     /// it changes elsewhere meanwhile.
     @LocalState private var editBase: CommentEditing?
+    /// Editing a comment that changed since you began, what it said as you chose Save Anyway, which you replace then, and
+    /// then only.
+    @LocalState private var replacing: String?
     /// Fix Grammar, while it runs.
     @LocalState private var fixing: Task<Void, Never>?
     /// What Fix Grammar suggests, to use or not.
@@ -395,6 +400,15 @@ struct ThreadReplyComposer: View {
         return sending == .edit(comment: editing.comment.id)
     }
 
+    /// Editing a comment that changed since you began, unseen, as in Azure DevOps or another window, the comment as it is
+    /// now: your edit says so, and Save sends nothing (`ThreadChanges.changedSince`).
+    private var changedSince: ReviewComment? {
+        guard let editing, let editBase,
+              changes.changedSince(editBase, now: editing.comment, editing: text, replacing: replacing, on: key)
+        else { return nil }
+        return editing.comment
+    }
+
     /// What `--render` shows in it.
     private var previewed: ThreadChangesPreview.Reply? {
         guard let editing else { return preview?.replies[thread.id] }
@@ -417,6 +431,12 @@ struct ThreadReplyComposer: View {
             }
             header
             editor
+            if let changedSince {
+                CommentChangedNotice(now: changedSince, isSending: isSending, startOver: startOver) {
+                    replacing = changedSince.kept
+                    save(replacing: changedSince.kept)
+                }
+            }
             if let suggestion {
                 GrammarSuggestionView(suggestion: suggestion, model: modelName(suggestion.model), isEdit: editing != nil) {
                     use(suggestion)
@@ -461,6 +481,10 @@ struct ThreadReplyComposer: View {
             if let suggestion, text != suggestion.original { self.suggestion = nil }
         }
         .onAppear(perform: appear)
+        // VoiceOver hears it as it changes, as when a refresh brings what someone saved meanwhile.
+        .onChange(of: changedSince?.kept) { old, now in
+            if now != nil, old == nil { SpokenText.announce(ThreadChanges.changedSentence + " " + ThreadChanges.changedChoices) }
+        }
         // Fix Grammar is this reply's own: it stops as the reply closes. What it sends isn't: a reply you sent goes on.
         // Off screen, as a file's page scrolls it away while keeping what it holds: Fix Grammar stops, and nothing waits on it
         // as it comes back.
@@ -483,11 +507,16 @@ struct ThreadReplyComposer: View {
             suggestion = preview.suggestion
             undo = preview.undo
             grammarProblem = preview.grammarProblem
+            if let editing { editBase = CommentEditing(content: preview.began ?? editing.comment.kept, names: [:]) }
         } else if let editing {
             let started = changes.startEditing(editing.comment, in: thread.thread, of: editing.pullRequest)
             editBase = started.base
             text = started.text
             isFocused = !isRendering
+            // Opened again on what you wrote before it changed: VoiceOver hears so too.
+            if changes.changedSince(started.base, now: editing.comment, editing: started.text, on: key) {
+                SpokenText.announce(ThreadChanges.changedSentence + " " + ThreadChanges.changedChoices)
+            }
         } else {
             text = changes.draft(key)
             guard !isRendering else { return }
@@ -515,12 +544,11 @@ struct ThreadReplyComposer: View {
                 .font(size: 12.5, weight: .semibold)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 6)
-            // Editing, Cancel, by Save, closes it.
-            if editing == nil { closeButton }
+            closeButton
         }
     }
 
-    /// ✕, which Esc presses: your reply closes, and what you wrote stays.
+    /// ✕, which Esc presses: your reply, or your edit, closes, and what you wrote stays.
     private var closeButton: some View {
         Button(action: closeKeepingFocus) {
             Image(systemName: "xmark")
@@ -530,8 +558,10 @@ struct ThreadReplyComposer: View {
         }
         .buttonStyle(.borderless)
         .keyboardShortcut(.cancelAction)
-        .help("Close (Esc): what you wrote stays, until you send it")
-        .accessibilityLabel("Close Reply")
+        .help(editing == nil
+            ? "Close (Esc): what you wrote stays, until you send it"
+            : "Close (Esc): what you wrote stays, until you save it or cancel")
+        .accessibilityLabel(editing == nil ? "Close Reply" : "Close Your Edit")
     }
 
     /// A field for Markdown as tall as what's in it, from three lines to ten, then it scrolls. Return starts a new line.
@@ -577,7 +607,7 @@ struct ThreadReplyComposer: View {
         if editing == nil { sendButtons } else { saveButtons }
     }
 
-    /// Cancel, which Esc presses, then Save, which ⌘Return presses.
+    /// Cancel, then Save, which ⌘Return presses. Esc presses ✕, which keeps what you wrote.
     private var saveButtons: some View {
         HStack(spacing: 6) {
             if case .sending(let sending)? = state {
@@ -590,9 +620,8 @@ struct ThreadReplyComposer: View {
             } else {
                 Button(action: cancel) { ControlLabel("Cancel") }
                     .buttonStyle(.bordered)
-                    .keyboardShortcut(.cancelAction)
-                    .help("Keep your comment as it was (Esc)")
-                Button(action: save) { ControlLabel("Save") }
+                    .help("Keep your comment as it was, and forget what you wrote")
+                Button { save() } label: { ControlLabel("Save") }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: .command)
                     .help("Save your comment as you edited it, in Azure DevOps, as you (⌘Return)")
@@ -694,19 +723,38 @@ struct ThreadReplyComposer: View {
         }
     }
 
-    /// Saves your comment as you edited it, its names as the mentions they showed as you began.
-    private func save() {
+    /// Saves your comment as you edited it, its names as the mentions they showed as you began; in place of what it says now,
+    /// once you chose Save Anyway, only while it says what it did then.
+    private func save(replacing chosen: String? = nil) {
         guard canSend, let editing, let editBase else {
             NSSound.beep()
             return
         }
-        let markdown = text
+        let markdown = text, replacing = chosen ?? replacing
         hold(thread)
         changes.dismiss(key)
         Task {
-            guard await changes.edit(markdown, from: editBase, of: editing.comment, in: thread.thread, of: item.key) else { return }
+            guard await changes.edit(markdown, from: editBase, replacing: replacing, of: editing.comment, in: thread.thread, of: item.key)
+            else { return }
             close()
         }
+    }
+
+    /// Your edit begun again from what the comment says now, as it changed since you began: what you wrote goes, and so does
+    /// what Fix Grammar suggested for it.
+    private func startOver() {
+        guard let editing else { return }
+        fixing?.cancel()
+        fixing = nil
+        suggestion = nil
+        undo = nil
+        grammarProblem = nil
+        replacing = nil
+        let started = changes.startOver(editing.comment, in: thread.thread, of: editing.pullRequest)
+        editBase = started.base
+        text = started.text
+        isFocused = true
+        SpokenText.announce("Started over from what your comment says now")
     }
 
     /// Closes your edit: your comment stays as it was, and what you wrote goes, with what went wrong with it.
@@ -720,7 +768,7 @@ struct ThreadReplyComposer: View {
         close()
     }
 
-    /// Closes it, keeping what you wrote, and the keyboard's focus goes back to Reply.
+    /// Closes it, keeping what you wrote, and the keyboard's focus goes back to Reply, or the comment's ⋯.
     private func closeKeepingFocus() {
         fixing?.cancel()
         fixing = nil
@@ -1023,6 +1071,8 @@ struct ThreadChangesPreview {
         var suggestion: GrammarSuggestion?
         var undo: GrammarSuggestion?
         var grammarProblem: GrammarFixer.Problem?
+        /// Editing a comment that changed since: what it said as you began.
+        var began: String?
     }
 
     /// The replies open, by thread.

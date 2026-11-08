@@ -222,15 +222,40 @@ final class ThreadChanges: ObservableObject {
     }
 
     /// What you edit of a comment of yours as you open it: what you wrote in place of it, with what it said as you began,
-    /// while it still says that; or else what it says now, its mentions as the names the details show (`CommentEditing`).
-    /// What you wrote before it changed elsewhere goes: saved, it would put back what it said.
+    /// whatever it says now, which your edit tells when it's something else (`changedSince`); or else what it says now, its
+    /// mentions as the names the details show (`CommentEditing`).
     func startEditing(_ comment: ReviewComment, in thread: ReviewThread, of pullRequest: PullRequest) -> EditDraft {
         let key = CommentKey(thread: Key(pullRequest: pullRequest.key, thread: thread.id), comment: comment.id)
-        if let draft = edits[key], draft.base.content == comment.kept { return draft }
-        edits[key] = nil
+        if let draft = edits[key] { return draft }
         let now = CommentEditing(comment, in: thread, of: pullRequest)
         return EditDraft(text: now.text, base: now)
     }
+
+    /// Your edit of a comment of yours begun again from what it says now, as Start Over does: what you wrote in place of it
+    /// goes.
+    func startOver(_ comment: ReviewComment, in thread: ReviewThread, of pullRequest: PullRequest) -> EditDraft {
+        edits[CommentKey(thread: Key(pullRequest: pullRequest.key, thread: thread.id), comment: comment.id)] = nil
+        return startEditing(comment, in: thread, of: pullRequest)
+    }
+
+    /// Whether saving `text`, your edit of a comment of yours on `key`'s thread begun as `base`, would replace what the
+    /// comment says now unseen: it says something else than it did as you began, as when it was edited in Azure DevOps or in
+    /// another window meanwhile; and something else than what you wrote, than what you chose to replace (`accepted`, Save
+    /// Anyway), and than an edit of yours that may have gone (`EditAttempt`), which you wrote. Then Save sends nothing.
+    func changedSince(
+        _ base: CommentEditing, now comment: ReviewComment, editing text: String, replacing accepted: String? = nil, on key: Key
+    ) -> Bool {
+        let now = Self.digest(comment.kept)
+        guard now != Self.digest(base.content), now != Self.digest(base.content(of: Self.posted(text))) else { return false }
+        if let accepted, Self.digest(accepted) == now { return false }
+        return unsureEdits[key]?.contains { $0.comment == comment.id && $0.digest == now } != true
+    }
+
+    /// What your edit says, and VoiceOver hears, when the comment changed since you began it (`changedSince`), and what you
+    /// can do then.
+    static let changedSentence = "This comment changed since you began editing it, as in Azure DevOps or another window."
+    static let changedChoices = "Start Over puts what it says now in your edit, in place of what you wrote. Save Anyway replaces it "
+        + "with your edit."
 
     /// Dismisses what a thread says went wrong.
     func dismiss(_ key: Key) {
@@ -411,13 +436,15 @@ final class ThreadChanges: ObservableObject {
     /// Saves your comment as you edited it (`posted(_:)`), in place of what it says, as you, each name a mention showed as you
     /// began (`base`, or else what it says now) as that mention again (`CommentEditing`), and returns whether it was saved,
     /// or there was nothing to save, and was still yours to finish: then what you wrote is forgotten; otherwise it's kept,
-    /// and your edit says why. One that says what you began with, or what the comment says now, goes nowhere: it would only
-    /// put back what it said before it changed elsewhere. After one that may have gone, as one Azure DevOps didn't answer
-    /// in time, the same edit goes only once the thread, read again first, says the comment doesn't say it. Called off, it
-    /// settles as a reply does (`reply(_:then:to:of:)`).
+    /// and your edit says why. One that says what you began with, or what the comment says now, goes nowhere. Nor does one
+    /// begun before the comment changed, as in Azure DevOps or in another window, which you haven't seen (`changedSince`),
+    /// unless it's what you chose to replace (`accepted`, Save Anyway). After one that may have gone, as one Azure DevOps
+    /// didn't answer in time, the same edit goes only once the thread, read again first, says the comment doesn't say it,
+    /// nor something else you haven't seen. Called off, it settles as a reply does (`reply(_:then:to:of:)`).
     @discardableResult
     func edit(
-        _ text: String, from base: CommentEditing? = nil, of comment: ReviewComment, in thread: ReviewThread, of pullRequest: PRKey
+        _ text: String, from base: CommentEditing? = nil, replacing accepted: String? = nil, of comment: ReviewComment,
+        in thread: ReviewThread, of pullRequest: PRKey
     ) async -> Bool {
         let key = Key(pullRequest: pullRequest, thread: thread.id)
         let draft = CommentKey(thread: key, comment: comment.id)
@@ -436,6 +463,11 @@ final class ThreadChanges: ObservableObject {
             edits[draft] = nil
             SpokenText.announce(digest == Self.digest(known.kept) ? "Your comment says that already" : "Nothing to save")
             return true
+        }
+        // Changed since you began, unseen: nothing goes, which would replace it, and your edit says so.
+        if changedSince(base, now: known, editing: text, replacing: accepted, on: key) {
+            SpokenText.announce(Self.changedSentence + " Your edit wasn't saved. " + Self.changedChoices)
+            return false
         }
         let generation = generation, lifetime = lifetime, account = account
         let attempt = EditAttempt(comment: comment.id, digest: digest)
@@ -462,6 +494,13 @@ final class ThreadChanges: ObservableObject {
                 edits[draft] = nil
                 SpokenText.announce("Your edit is saved already")
                 return true
+            }
+            // It didn't, or something else came after it, which you haven't seen: as above. It shows, as the thread has it,
+            // over what the list showed, for your edit to say what it says now.
+            if changedSince(base, now: read, editing: text, replacing: accepted, on: key) {
+                store.changed(pullRequest, by: ThreadChange(thread: thread.id, edited: [read]))
+                SpokenText.announce(Self.changedSentence + " Your edit wasn't saved. " + Self.changedChoices)
+                return false
             }
             // Its pull request may have closed, or left your lists, while its thread was read.
             if let problem = refusal(pullRequest, in: store) {
