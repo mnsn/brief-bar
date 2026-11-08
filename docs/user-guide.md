@@ -485,26 +485,25 @@ wrote. It never changes your reply without you, and never sends it. Where Apple 
 it says so, with **Choose a Model**. The demo changes only its own made-up pull requests, and sends nothing.
 
 **Edit or delete your comments.** With **Make Changes in Azure DevOps** on, a comment you wrote, on an open pull
-request, has **⋯** at the end of its line, with **Edit** and **Delete…**, which its right-click menu has too, before
-its thread's, and so do VoiceOver's actions on it: not someone else's, nor a comment Azure DevOps added for a code
-change. **Edit** opens what it says in place of it, in a field like Reply's, its @mentions as the names they show, which
-go back as mentions: **Save**, or ⌘Return, saves it in Azure DevOps, as you, and it shows as soon as Azure DevOps
-answers, with **· Edited** after when you wrote it; **Cancel** keeps it as it was, and forgets what you changed. **✕**
-or Esc closes the field and keeps what you changed, as for a reply, and so does opening something else: it stays while
-BriefBar runs, until you save it or cancel. If the comment changes meanwhile, in Azure DevOps or another window, your
-edit says so once BriefBar has read the change, with what it says now, and **Save** saves nothing, which would replace
-that without you seeing it: **Start Over** puts what it says now in your edit, in place of what you wrote, and **Save
-Anyway** replaces it with your edit. **Fix Grammar** is there too, as in a reply.
-**Delete…** asks first, under the comment, saying that Azure DevOps deletes it, as you, and that it can't be undone:
-**Delete** deletes it, and **Cancel**, or Esc, keeps it. Azure DevOps keeps a deleted comment, marked deleted, and
-doesn't show it, and deletes its thread once none of its comments is left, so the comment leaves its thread at once, and
-the thread leaves the details then. After each, BriefBar reads the pull request again, as after a reply. While a comment
-is open to edit or delete, its thread's comments don't fold, and once it closes, the keyboard's focus goes back to its
-**⋯**, or to **Reply** once it's deleted. When an edit or a deletion can't go, the thread says why, as for a reply,
-such as **Azure DevOps says you may not edit this comment**, **You're offline**, or until when Azure DevOps asked
-BriefBar to slow down, with **Edit…**, **Try Again** or **Sign In…**; an edit that didn't go keeps what you wrote, and
-one that Azure DevOps didn't answer in time is read again before you save or delete it twice. The demo changes only its
-own made-up pull requests.
+request, has **⋯** at the end of its line, with **Edit** and **Delete…**, which its right-click menu has too, before its
+thread's, and so do VoiceOver's actions on it: not someone else's, nor a comment Azure DevOps added for a code change.
+**Edit** opens what it says in place of it, in a field like Reply's, its @mentions as the names they show, which go back
+as mentions: **Save**, or ⌘Return, saves it in Azure DevOps, as you, and it shows as soon as Azure DevOps answers, with
+**· Edited** after when you wrote it; **Cancel** keeps it as it was, and forgets what you changed. **✕** or Esc closes
+the field and keeps what you changed, as for a reply, and so does opening something else: it stays while BriefBar runs,
+until you save it or cancel. If the comment changes meanwhile, in Azure DevOps or another window, your edit says so once
+BriefBar has read the change, with all of what it says now, and **Save** is dimmed, since it would replace that without
+you seeing it: **Start Over** (⌥⌘R) puts what it says now in your edit, in place of what you wrote, and **Save Anyway**
+(⌥⌘Return) replaces it with your edit. **Fix Grammar** is there too, as in a reply. **Delete…** asks first, under the
+comment, saying that Azure DevOps deletes it, as you, and that it can't be undone: **Delete** deletes it, and
+**Cancel**, or Esc, keeps it. Azure DevOps keeps a deleted comment, marked deleted, and doesn't show it, and deletes its
+thread once none of its comments is left, so the comment leaves its thread at once, and the thread leaves the details
+then. After each, BriefBar reads the pull request again, as after a reply. While a comment is open to edit or delete,
+its thread's comments don't fold, and once it closes, the keyboard's focus goes back to its **⋯**, or to **Reply** once
+it's deleted. When an edit or a deletion can't go, the thread says why, as for a reply, such as **Azure DevOps says you
+may not edit this comment**, **You're offline**, or until when Azure DevOps asked BriefBar to slow down, with **Edit…**,
+**Try Again** or **Sign In…**; an edit that didn't go keeps what you wrote, and one that Azure DevOps didn't answer in
+time is read again before you save or delete it twice. The demo changes only its own made-up pull requests.
 
 **Spelling.** In your reply, and in a comment you edit, the Mac checks your spelling as you type, in the languages
 your Mac uses: it underlines the words it doesn't know, and a right-click on one suggests others. It never corrects

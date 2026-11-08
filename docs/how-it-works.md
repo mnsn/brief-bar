@@ -1632,47 +1632,48 @@ deleted ones are never read. **Edit** opens your reply's composer in place of wh
 as it was and forgets what you wrote, and **Save**, which ⌘Return presses. It holds what the comment says as Azure
 DevOps keeps it, each mention as the name it shows, as the details named it as they read the thread, by its identities
 and the authors of comments they leave out too (`ReviewComment.mentionNames`), and saves those names as mentions again
-(`CommentEditing`): a mention whose name
-isn't known, that two of them share, that the comment says as text too, or that wouldn't come back as it was, stays as
-Azure DevOps keeps it, `@<…>`, so that what you leave as it was goes as it was. What you write is kept as you type
-(`ThreadChanges.keepEdit`), in memory only, once it says something else than what you began with, with what the comment
-said then (`ThreadChanges.EditDraft`), until it's saved or you cancel, which forgets it, as turning the setting off,
-Azure DevOps stopping or someone else signing in do. Closed with ✕ or Esc, or as something else opens, it stays, and
-opened again, the edit has what you wrote, whatever the comment says now (`ThreadChanges.startEditing`). Its names go
-back as the mentions they showed as you began, though the comment changed meanwhile. Once the comment says something
-else than it did as you began, as edited in Azure DevOps or in another window, which a refresh or a read again brings,
-and something else than what you wrote, your edit says so under its field, with what the comment says now, as it opens
-or as the comment changes, which VoiceOver hears too (`CommentChangedNotice`, `ThreadChanges.changedSince`): saved, your
-edit would replace what it says now, which you haven't seen, so **Save** sends nothing then, as the notice says, and
-VoiceOver hears so again. **Start Over** puts what the comment says now in your edit, in place of what you wrote, and
-begins again from it (`ThreadChanges.startOver`); **Save Anyway** saves your edit over the version it shows, and that
-one only: once the comment changes again, your edit says so again. An edit of yours that may have gone, as one Azure
-DevOps didn't answer in time, isn't a change elsewhere, though the thread has it (`EditAttempt`). It tells only what
-BriefBar has read: Save doesn't read the comment again first, so an edit made in Azure DevOps since BriefBar last read
-the pull request, Save replaces. Saving is a `PATCH` of what the comment
-says alone, `content` (`ADOWrite.editComment`), unless it says what you began with, or what the comment says now, when
-nothing goes; Azure DevOps answers with the comment as it keeps it, which shows at once in its place
+(`CommentEditing`): a mention whose name isn't known, that two of them share, that the comment says as text too, or that
+wouldn't come back as it was, stays as Azure DevOps keeps it, `@<…>`, so that what you leave as it was goes as it was.
+What you write is kept as you type (`ThreadChanges.keepEdit`), in memory only, once it says something else than what you
+began with, with what the comment said then (`ThreadChanges.EditDraft`), until it's saved or you cancel, which forgets
+it, as turning the setting off, Azure DevOps stopping or someone else signing in do. Closed with ✕ or Esc, or as
+something else opens, it stays, and opened again, the edit has what you wrote, whatever the comment says now
+(`ThreadChanges.startEditing`). Its names go back as the mentions they showed as you began, though the comment changed
+meanwhile. Once the comment says something else than it did as you began, as edited in Azure DevOps or in another
+window, which a refresh or a read again brings, and something else than what you wrote, your edit says so under its
+field, with all of what the comment says now, however long, since that's what Save Anyway replaces
+(`CommentChangedNotice`, `ThreadChanges.changedSince`): saved, your edit would replace what it says now, which you
+haven't seen, so **Save** is dimmed then, and ⌘Return does nothing. VoiceOver hears it once for each version of the
+comment, as it shows, though two windows show it, and once again as your edit opens again on it
+(`ThreadChanges.sayChanged`); a Save refused for a version it heard of says only that your edit wasn't saved. **Start
+Over** (⌥⌘R) puts what the comment says now in your edit, in place of what you wrote, and begins again from it
+(`ThreadChanges.startOver`); **Save Anyway** (⌥⌘Return) saves your edit over the version it shows, and that one only: it
+stays chosen though Azure DevOps refuses it, so Save saves it again, but once the comment changes again, your edit says
+so again. An edit of yours that may have gone, as one Azure DevOps didn't answer in time, isn't a change elsewhere,
+though the thread has it (`EditAttempt`). It tells only what BriefBar has read: Save doesn't read the comment again
+first, so an edit made in Azure DevOps since BriefBar last read the pull request, Save replaces. Saving is a `PATCH` of
+what the comment says alone, `content` (`ADOWrite.editComment`), unless it says what you began with, or what the comment
+says now, when nothing goes; Azure DevOps answers with the comment as it keeps it, which shows at once in its place
 (`ThreadChange.edited`), but never over a later edit of it, as one made elsewhere that a read had before the answer
 came, as Azure DevOps dates each edit, then or as the list reads it again (`PRDetails.apply`); with **· Edited** after
-when it was written, from its
-`lastContentUpdatedDate`, once that's a second or more after its `publishedDate`, or, when the answer doesn't say, its
-`lastUpdatedDate`, or as you saved it (`ReviewComment.editedAt`). **Delete…** asks first, under what the comment says, that Azure DevOps deletes
-it, as you, and that it can't be undone (`CommentDeleteConfirmation`, `CopilotComposing.deleting(_:in:)`), with
-**Cancel**, which Esc presses, and **Delete**, which waits while another change to the thread is on its way, as a status
-set from its menu or in another window, since a thread takes one at a time. Deleting is a `DELETE` of the comment, with
-no body (`ADOWrite.deleteComment`), whose answer, 200 with nothing, as Azure DevOps' REST reference has it, says it's
-done.
-Azure DevOps keeps a deleted comment, marked `isDeleted`, and deletes its thread once none of its comments is left (the
-thread's `isDeleted`), as the reference says, and its own pages show neither: nor does BriefBar, which never read them,
-so the comment leaves its thread at once, and the thread leaves the details once it has none left (`PRDetails.apply`).
-After either, as after a reply, the pull request is read again, two requests (`PRStore.changed`, `PulseEngine.changed`).
-While a comment of yours is open to edit or delete, its thread's comments don't fold, wherever it is among them, though a
-reply that comes meanwhile would make it one of those between the first and the latest (`ThreadCard.folded`), and they
-stay unfolded once it closes; once the comment leaves its thread, as deleted elsewhere, what was open on it closes, and
-what went wrong with it shows on the thread (`ThreadReplyArea.showsInItsComposer`). Saved or canceled, as the composer
-open, your edit gives the keyboard's focus back to the comment's ⋯, and so does what confirms you delete it, as you keep
-the comment; once a comment you deleted is done with, the thread's Reply takes it, unless a composer opened meanwhile,
-though it closed since (`ThreadRefocus`), as Reply does after your reply.
+when it was written, from its `lastContentUpdatedDate`, once that's a second or more after its `publishedDate`, or, when
+the answer doesn't say, its `lastUpdatedDate`, or as you saved it (`ReviewComment.editedAt`). **Delete…** asks first,
+under what the comment says, that Azure DevOps deletes it, as you, and that it can't be undone
+(`CommentDeleteConfirmation`, `CopilotComposing.deleting(_:in:)`), with **Cancel**, which Esc presses, and **Delete**,
+which waits while another change to the thread is on its way, as a status set from its menu or in another window, since
+a thread takes one at a time. Deleting is a `DELETE` of the comment, with no body (`ADOWrite.deleteComment`), whose
+answer, 200 with nothing, as Azure DevOps' REST reference has it, says it's done. Azure DevOps keeps a deleted comment,
+marked `isDeleted`, and deletes its thread once none of its comments is left (the thread's `isDeleted`), as the
+reference says, and its own pages show neither: nor does BriefBar, which never read them, so the comment leaves its
+thread at once, and the thread leaves the details once it has none left (`PRDetails.apply`). After either, as after a
+reply, the pull request is read again, two requests (`PRStore.changed`, `PulseEngine.changed`). While a comment of yours
+is open to edit or delete, its thread's comments don't fold, wherever it is among them, though a reply that comes
+meanwhile would make it one of those between the first and the latest (`ThreadCard.folded`), and they stay unfolded once
+it closes; once the comment leaves its thread, as deleted elsewhere, what was open on it closes, and what went wrong
+with it shows on the thread (`ThreadReplyArea.showsInItsComposer`). Saved or canceled, as the composer open, your edit
+gives the keyboard's focus back to the comment's ⋯, and so does what confirms you delete it, as you keep the comment;
+once a comment you deleted is done with, the thread's Reply takes it, unless a composer opened meanwhile, though it
+closed since (`ThreadRefocus`), as Reply does after your reply.
 
 Both go as a reply does: each only when you click, as whom the list was read as when you did, and once while a change
 to the thread is on its way (`ThreadChanges.isSending`), which the same pull request's details in two windows share;
