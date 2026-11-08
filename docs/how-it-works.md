@@ -3115,7 +3115,9 @@ minute, until an account it didn't read shows, not just the same ones in another
 When `gh` can't list its accounts, as one
 older than 2.81 can't, or lists none, as a signed-out one does, BriefBar reads its active account, as it did before it
 read more, and reading that says what's wrong; it keeps that from a `gh` too old to list them, for half an hour, and
-asks again at the next read otherwise.
+asks again at the next read otherwise. When listing them fails otherwise, as when `gh` takes longer than 30 seconds on a
+network that doesn't answer, BriefBar reads the accounts it last listed, so what it read of each stays, and lists them
+again at the next read.
 
 BriefBar keeps each token in memory only, for half an hour, then asks again, in case you signed in as someone else, and
 asks again right away if GitHub rejects it. Concurrent requests share one run of `gh`, which is limited to 30 seconds,

@@ -241,7 +241,7 @@ import Testing
 @Suite struct AccountListTests {
     private let gh = "/opt/homebrew/bin/gh"
 
-    private func list(_ status: Int32, _ stdout: String, _ stderr: String = "") -> (accounts: [GitHubAccount], keeps: Bool) {
+    private func list(_ status: Int32, _ stdout: String, _ stderr: String = "") -> (accounts: [GitHubAccount], keeps: Bool)? {
         GitHubCLIAccounts.accounts(from: ProcessResult(status: status, stdout: Data(stdout.utf8), stderr: Data(stderr.utf8)))
     }
 
@@ -260,12 +260,12 @@ import Testing
 
     @Test func onlyGitHubDotComsAccountsAreListed() {
         let output = #"{"hosts":{"ghe.example.com":[{"login":"robin-ghe","active":true,"tokenSource":"keyring"}],"github.com":[{"login":"robin","active":true,"tokenSource":"keyring"}]}}"#
-        #expect(list(0, output).accounts.map(\.login) == ["robin"])
+        #expect(list(0, output)?.accounts.map(\.login) == ["robin"])
     }
 
     /// GH_TOKEN holds a token: its account is the active one, and those the GitHub CLI keeps follow, each login once.
-    @Test func aTokenInAnEnvironmentVariableIsTheActiveAccounts() {
-        let listed = list(0, Fixture.accounts([("robin", true, "GH_TOKEN"), ("kai", false, "keyring"), ("robin", false, "keyring")]))
+    @Test func aTokenInAnEnvironmentVariableIsTheActiveAccounts() throws {
+        let listed = try #require(list(0, Fixture.accounts([("robin", true, "GH_TOKEN"), ("kai", false, "keyring"), ("robin", false, "keyring")])))
         #expect(listed.keeps)
         #expect(listed.accounts == [GitHubAccount(login: "robin", isActive: true, isKept: false), GitHubAccount(login: "kai", isActive: false)])
         #expect(listed.accounts.map(\.tokenUser) == [nil, "kai"])
@@ -281,26 +281,45 @@ import Testing
     }
 
     /// A token in the keychain without a user in the GitHub CLI's settings: it can't say whose it is.
-    @Test func anUnnamedActiveAccountIsReadWithoutALogin() {
-        let listed = list(0, Fixture.accounts([("", true, "keyring")]))
+    @Test func anUnnamedActiveAccountIsReadWithoutALogin() throws {
+        let listed = try #require(list(0, Fixture.accounts([("", true, "keyring")])))
         #expect(listed.keeps)
         #expect(listed.accounts == [GitHubAccount(login: "", isActive: true)])
         #expect(listed.accounts.first?.tokenUser == nil)
     }
 
-    @Test func withoutAListTheActiveAccountIsRead() {
-        // Signed out: it lists none, and reading the active account says to sign in. Or it printed something else.
-        for output in [#"{"hosts":{}}"#, #"{"hosts":{"github.com":[]}}"#, "", "not JSON"] {
-            #expect(list(0, output).accounts == [.active])
-            #expect(!list(0, output).keeps)
+    @Test func withoutAListTheActiveAccountIsRead() throws {
+        // Signed out: it lists none, and reading the active account says to sign in.
+        for output in [#"{"hosts":{}}"#, #"{"hosts":{"github.com":[]}}"#] {
+            let none = try #require(list(0, output))
+            #expect(none.accounts == [.active])
+            #expect(!none.keeps)
         }
         // Too old to list them: its active account, until it's updated.
-        let old = list(1, "", "unknown flag: --json\n\nUsage:  gh auth status [flags]")
+        let old = try #require(list(1, "", "unknown flag: --json\n\nUsage:  gh auth status [flags]"))
         #expect(old.accounts == [.active])
         #expect(old.keeps)
-        // It failed: the active account, and it's asked again next time.
-        #expect(list(1, "", "something broke").accounts == [.active])
-        #expect(!list(1, "", "something broke").keeps)
+        // It failed, as when it took longer than it may and was stopped, or printed something else.
+        for (status, output) in [(Int32(1), ""), (15, ""), (0, ""), (0, "not JSON")] {
+            #expect(list(status, output, "something broke") == nil, "\(status) \(output)")
+        }
+    }
+
+    /// Listing them failed, as when `gh` took longer than it may on a network that doesn't answer, or couldn't run: the
+    /// accounts the last listing that worked gave, and they're listed again at the next call.
+    @Test func aListingThatFailsGivesTheAccountsLastListed() async throws {
+        let runner = FakeRunner([
+            .output(Fixture.accounts(["robin", "kai"])), .output("", status: 15), .error("launch failed"),
+            .output(Fixture.accounts(["robin"])),
+        ])
+        let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        #expect(try await accounts.accounts().map(\.login) == ["robin", "kai"])
+        await accounts.invalidate()
+        #expect(try await accounts.accounts().map(\.login) == ["robin", "kai"])
+        #expect(try await accounts.accounts().map(\.login) == ["robin", "kai"])
+        #expect(try await accounts.accounts().map(\.login) == ["robin"])
+        #expect(runner.calls.count == 4)
     }
 
     @Test func keepsTheListForHalfAnHour() async throws {

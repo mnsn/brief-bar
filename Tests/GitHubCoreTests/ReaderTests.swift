@@ -281,6 +281,27 @@ import Testing
         #expect(own.received.count == 1)
     }
 
+    /// Listing the accounts failed, as when `gh` took longer than it may on a network that doesn't answer, and GitHub
+    /// can't be reached either: the accounts listed last are read, as before, and what was read of each stays.
+    @Test func aListingThatFailsKeepsWhatEachAccountRead() async throws {
+        let work = StubServer()
+        let own = StubServer()
+        work.reply(.json(Fixture.answer(login: "robin", reviewing: [Fixture.pullRequest(1)])))
+        work.always(.failure(.notConnectedToInternet))
+        own.reply(.json(Fixture.answer(login: "robin-oss", authored: [Fixture.pullRequest(3, author: "robin-oss")])))
+        own.always(.failure(.notConnectedToInternet))
+        let runner = FakeRunner([.output(Fixture.accounts(["robin", "robin-oss"])), .output("", status: 15)])
+        let (reader, _) = reader([], servers: ["robin": work, "robin-oss": own], runner: runner)
+
+        #expect(try await reader.load().items.count == 2)
+        await reader.listAgain()
+        let failure = try await #require(throws: GitHubAccountsReader.Failure.self) { try await reader.load() }
+        #expect(GitHubProblem.from(failure) == .offline)
+        #expect(failure.load.logins == ["robin", "robin-oss"])
+        #expect(failure.load.items.map(\.pullRequest.number).sorted() == [1, 3])
+        #expect(runner.calls.count == 2)
+    }
+
     /// GitHub asking one account's reads to slow down holds that account's alone: until it said, the others are read,
     /// and the list keeps what it last read of that one.
     @Test func anAccountGitHubSlowsDownDoesntHoldTheOthers() async throws {

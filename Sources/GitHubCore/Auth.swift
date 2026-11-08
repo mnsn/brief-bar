@@ -243,7 +243,9 @@ public struct GitHubAccount: Sendable, Hashable {
 /// CLI has from version 2.81. As it lists them, the GitHub CLI checks each one with GitHub, a request each, so a list is
 /// kept for half an hour, as tokens are, unless it's asked to list them again. It never fails: when the GitHub CLI can't
 /// list its accounts, as one that isn't installed, is signed out or is older than that can't, the list is its active
-/// account alone, as BriefBar read before, and reading that says what's wrong.
+/// account alone, as BriefBar read before, and reading that says what's wrong. When listing them fails otherwise, as when
+/// `gh` takes longer than it may on a network that doesn't answer, the list is the one the last listing that worked gave,
+/// until one works again, so that what was read of each account isn't lost meanwhile.
 public actor GitHubCLIAccounts {
     /// How long a list is used before `gh` is asked again, in case you signed in to another account or out of one.
     static let lifetime = GitHubCLITokenProvider.lifetime
@@ -255,6 +257,8 @@ public actor GitHubCLIAccounts {
     private var executable: URL?
     /// The list, while it's kept: one the GitHub CLI gave, or the active account alone from one too old to give it.
     private var listed: (accounts: [GitHubAccount], at: Date)?
+    /// What the last listing that worked gave, for one that fails: nil before one works.
+    private var known: [GitHubAccount]?
 
     public init(
         locator: GitHubCLILocator = GitHubCLILocator(), runner: any ProcessRunning = ProcessRunner(),
@@ -269,10 +273,16 @@ public actor GitHubCLIAccounts {
     public func accounts() async throws -> [GitHubAccount] {
         try Task.checkCancellation()
         if let listed, now().timeIntervalSince(listed.at) < Self.lifetime { return listed.accounts }
-        let (accounts, keeps) = try await list()
+        let listing = try await list()
         try Task.checkCancellation()
-        listed = keeps ? (accounts, now()) : nil
-        return accounts
+        guard let listing else {
+            // Listing them failed: those the last listing that worked gave, and they're listed again at the next call.
+            listed = nil
+            return known ?? [.active]
+        }
+        known = listing.accounts
+        listed = listing.keeps ? (listing.accounts, now()) : nil
+        return listing.accounts
     }
 
     /// Forgets the list, so the next call lists the accounts again.
@@ -283,7 +293,8 @@ public actor GitHubCLIAccounts {
     /// The `gh` executable this lists the accounts with, once it has looked for it.
     public var executablePath: String? { executable?.path }
 
-    private func list() async throws -> (accounts: [GitHubAccount], keeps: Bool) {
+    /// What `gh` lists, and whether to keep it; nil when listing them failed.
+    private func list() async throws -> (accounts: [GitHubAccount], keeps: Bool)? {
         if executable == nil {
             executable = await locator.locate()
         }
@@ -298,20 +309,22 @@ public actor GitHubCLIAccounts {
         } catch {
             // It may have been uninstalled or moved: look again next time.
             self.executable = nil
-            return ([.active], false)
+            return nil
         }
         return Self.accounts(from: result)
     }
 
     /// What `gh auth status --json hosts` printed: github.com's accounts, each once, the active one first, and whether to
-    /// keep them. Not when it printed none, as a signed-out GitHub CLI does, or couldn't say: until it does, the active
-    /// account is read, and reading it says what's wrong. A GitHub CLI too old to list them (`unknown flag`) has its active
-    /// account read until it's updated.
-    static func accounts(from result: ProcessResult) -> (accounts: [GitHubAccount], keeps: Bool) {
+    /// keep them. The active account alone, not kept, when it printed none, as a signed-out GitHub CLI does: until it lists
+    /// some, the active account is read, and reading it says what's wrong. A GitHub CLI too old to list them (`unknown
+    /// flag`) has its active account read until it's updated. Nil when it failed otherwise, as when it took longer than it
+    /// may and was stopped, or printed what BriefBar can't read.
+    static func accounts(from result: ProcessResult) -> (accounts: [GitHubAccount], keeps: Bool)? {
         guard result.status == 0 else {
-            return ([.active], String(decoding: result.stderr, as: UTF8.self).lowercased().contains("unknown flag"))
+            guard String(decoding: result.stderr, as: UTF8.self).lowercased().contains("unknown flag") else { return nil }
+            return ([.active], true)
         }
-        guard let status = try? JSONDecoder().decode(Status.self, from: result.stdout) else { return ([.active], false) }
+        guard let status = try? JSONDecoder().decode(Status.self, from: result.stdout) else { return nil }
         let entries = (status.hosts[GitHubCLITokenProvider.host] ?? []).compactMap(\.value)
         var seen = Set<String>()
         // Two entries for one login, as when GH_TOKEN holds a token of an account the GitHub CLI keeps too: the first.
