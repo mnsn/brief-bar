@@ -33,8 +33,8 @@ ON_THIS_MAC+='runModal[A-Za-z:]*|beginModalSessionForWindow:|'                  
 ON_THIS_MAC+='beginSheetModalForWindow:[A-Za-z:]*|beginWithCompletionHandler:'                      # their sheets too
 # SwiftUI's Link, and OpenURLAction, what opens links, Link's and those in text, as its environment value sets it.
 ON_THIS_MAC+=')$|^_\$s7SwiftUI4LinkV|13OpenURLActionV'
-# What ThisMac's own object file has to show, one of each kind, or the compiled code no longer says what this looks
-# for, as with another compiler, and this check couldn't tell ThisMac from the rest.
+# What each of ThisMac's own object files has to show, one of each kind, or that build's compiled code no longer says
+# what this looks for, as with another compiler, and this check couldn't see what its code does.
 THIS_MAC_SHOWS='^_objc_msgSend\$openURL:$ ^_\$s7SwiftUI4LinkV 13OpenURLActionV'
 
 LIST="$(mktemp)"
@@ -131,13 +131,16 @@ if [[ -z "$THIS_MAC_OBJECTS" ]]; then
     echo "check-boundaries: $THIS_MAC_MODULE has no object file of its own for $THIS_MAC, so this can't tell it from the rest." >&2
     FAILED=true
 else
-    THIS_MAC_SYMBOLS="$(awk -F '\t' 'NR == FNR { ours[$0]; next } $2 in ours { print $3 }' - "$SYMBOLS" <<< "$THIS_MAC_OBJECTS")"
-    for shown in $THIS_MAC_SHOWS; do
-        if ! grep -qE "$shown" <<< "$THIS_MAC_SYMBOLS"; then
-            echo "check-boundaries: $THIS_MAC's object files have nothing like $shown, so this check can't see what it does anymore." >&2
-            FAILED=true
-        fi
-    done
+    # Each build's own, so that one build's can't stand in for another's.
+    while IFS= read -r object; do
+        THIS_MAC_SYMBOLS="$(awk -F '\t' -v object="$object" '$2 == object { print $3 }' "$SYMBOLS")"
+        for shown in $THIS_MAC_SHOWS; do
+            if ! grep -qE "$shown" <<< "$THIS_MAC_SYMBOLS"; then
+                echo "check-boundaries: $THIS_MAC's object file has nothing like $shown, so this check can't see what its build's code does ($object)." >&2
+                FAILED=true
+            fi
+        done
+    done <<< "$THIS_MAC_OBJECTS"
 fi
 $FAILED && exit 1
 echo "check-boundaries passed: only ${NETWORK_MODULES// / and } use networking APIs, only $PROCESS_MODULE starts programs, and only $THIS_MAC opens, copies or asks anything on your Mac ($(echo $MODULES | wc -w | tr -d ' ') modules)"
