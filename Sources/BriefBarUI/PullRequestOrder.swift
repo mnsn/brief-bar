@@ -138,6 +138,9 @@ package final class PullRequestOrder: ObservableObject {
         var account: String?
         /// What each of its sessions does, as the source can tell it: how one that ended ended, which how it looks can't.
         var activities: [ItemRef: StageSession.Activity] = [:]
+        /// Since when each does what it does, or ended, whether or not it has a row, as a task BriefBar sent hasn't until
+        /// you open it in the Copilot app.
+        var activitiesSince: [ItemRef: Date] = [:]
         var inMemory: Set<ItemRef> = []
         var readsStories = false
     }
@@ -316,15 +319,16 @@ package final class PullRequestOrder: ObservableObject {
     /// it knows, how its things look, for what shows them, what each session told BriefBar it works on now
     /// (`SessionUpdates`), which changes no mission, what its pull requests' stages are worked out from, with the account
     /// it read them with, whose stages you set apply, and how each of the sessions it lists does, or ended, when it can
-    /// tell, which are the sessions whose stages count (`SessionStages`), the pull requests it lists only because someone
-    /// sent them in a chat, whose changes stay in memory, and whether it reads the stories its pull requests are for. It
-    /// replaces what the source told before. Once it tells another account than the one it told last, the stages you set
-    /// that BriefBar kept in memory for its pull requests go, and so does Undo of one: they were the other account's.
-    /// Nothing's kept while Pull Request Order is off.
+    /// tell, and since when, which are the sessions whose stages count (`SessionStages`), the pull requests it lists only
+    /// because someone sent them in a chat, whose changes stay in memory, and whether it reads the stories its pull
+    /// requests are for. It replaces what the source told before. Once it tells another account than the one it told last,
+    /// the stages you set that BriefBar kept in memory for its pull requests go, and so does Undo of one: they were the
+    /// other account's. Nothing's kept while Pull Request Order is off.
     package func publish(
         _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = [],
         working: [ItemRef: [ItemRef]] = [:], stages: [ItemRef: StageFacts] = [:], account: String? = nil,
-        sessionActivities: [ItemRef: StageSession.Activity] = [:], inMemory: Set<ItemRef> = [], readsStories: Bool = false
+        sessionActivities: [ItemRef: StageSession.Activity] = [:], activitiesSince: [ItemRef: Date] = [:],
+        inMemory: Set<ItemRef> = [], readsStories: Bool = false
     ) {
         guard isOn else { return }
         var byRef: [ItemRef: LinkedItem] = [:]
@@ -333,11 +337,13 @@ package final class PullRequestOrder: ObservableObject {
         }
         let new = Told(
             pullRequests: pullRequests, sessions: sessions, items: byRef, working: working, stages: stages,
-            account: account?.lowercased(), activities: sessionActivities, inMemory: inMemory, readsStories: readsStories
+            account: account?.lowercased(), activities: sessionActivities, activitiesSince: activitiesSince, inMemory: inMemory,
+            readsStories: readsStories
         )
         let old = told[source]
         let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions && old?.readsStories == new.readsStories
         let sameStages = old?.stages == new.stages && old?.account == new.account && old?.activities == new.activities
+            && old?.activitiesSince == new.activitiesSince
         guard !sameFacts || !sameStages || old?.items != new.items || old?.working != new.working
             || old?.inMemory != new.inMemory else { return }
         objectWillChange.send()
@@ -1394,7 +1400,8 @@ package final class PullRequestOrder: ObservableObject {
         var doing: [ItemRef: StageSession] = [:]
         for source in SourceID.allCases {
             for (session, activity) in told[source]?.activities ?? [:] where doing[session] == nil {
-                doing[session] = StageSession(ref: session, activity: activity, since: describe(session)?.date)
+                let since = told[source]?.activitiesSince[session] ?? describe(session)?.date
+                doing[session] = StageSession(ref: session, activity: activity, since: since)
             }
         }
         return doing

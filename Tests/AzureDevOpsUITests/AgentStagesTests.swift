@@ -154,6 +154,37 @@ import Testing
         #expect(reading(.finished)?.mark == nil)
     }
 
+    /// What a task BriefBar sent set counts for agents as in the app, which lists it with the Copilot app's sessions until
+    /// you open it there, unnamed; and its In progress ends as it finishes.
+    @Test func whatASentTaskSetCountsAsInTheApp() throws {
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        let pr = ItemRef.pullRequest(organization: "contoso", number: 4093)
+        let task = try #require(ItemRef.session("c5a8e2d4-6f1b-4c97-a3e0-8b2d7f9c1e13"))
+        var sessionStages = SessionStages()
+        var taskStage = SessionStage(session: task)
+        taskStage.set(StageMark(stage: .inProgress, at: now - 60), of: pr)
+        sessionStages.replace(taskStage)
+        let kept = OrderKept(
+            orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: StageMarks(),
+            sessionStages: sessionStages
+        )
+        let facts = [pr: StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "")]
+        func stages(_ activity: StageSession.Activity?) -> AgentStages {
+            let sent = activity.map { [StageSession(ref: task, activity: $0, since: now - 30, name: "Copilot")] } ?? []
+            return AzureDevOpsAgent.stages(
+                facts: facts, pullRequests: [], copilot: MCPRelated.StageSessions(), sentTasks: sent, kept: kept,
+                account: "Robin@contoso.com", now: now
+            )
+        }
+        let working = stages(.working)
+        let reading = try #require(working.readings[pr])
+        #expect(reading.mark?.by == task)
+        #expect(AgentText.stage(reading, stages: working) == "Its stage: In progress: A Copilot session is on it (set 1m ago).")
+        #expect(stages(nil).readings[pr]?.mark == nil)
+        #expect(stages(.finished).readings[pr]?.stage == .teammateReview)
+        #expect(stages(.finished).readings[pr]?.mark == nil)
+    }
+
     /// Agents' words for a stage say what fails too, as the Board does, also where they put Find a reviewer more plainly; and
     /// what a session is called stays on its line, its line breaks written out, as other tools quote what others named.
     @Test func stageWordsSayWhatFailsAndQuoteWhatSessionsAreCalled() throws {

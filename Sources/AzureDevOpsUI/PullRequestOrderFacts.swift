@@ -320,7 +320,7 @@ final class PullRequestOrderFacts {
     /// A task sent to Copilot, as its pull request's stage needs it: at work while it gets ready or works, done once Copilot
     /// called it done, stopped otherwise; called "Copilot", as its row does. A review, Pre-review, writes nothing: it keeps
     /// someone else's yours to review while it runs.
-    static func session(_ entry: CopilotTaskEntry) -> StageSession? {
+    nonisolated static func session(_ entry: CopilotTaskEntry) -> StageSession? {
         guard let ref = ItemRef.session(entry.id) else { return nil }
         let activity: StageSession.Activity = switch entry.status.phase {
         case .preparing, .working: .working
