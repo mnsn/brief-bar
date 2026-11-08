@@ -421,9 +421,9 @@ import Testing
         #expect(read.map(\.key) == [.story(Self.item(5101))])
         #expect(OrderBoard.successor(of: .chain(Self.pr(4111)), from: moved, to: read) == .story(Self.item(5101)))
         #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: read, to: moved) == .chain(Self.pr(4111)))
-        // Where you set one as next follows them whole out of it; but a chain's stays on the chain, whose key names the
-        // story's mission that holds it, where it's next among the chain's own.
-        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: read, to: moved, alone: true) == .chain(Self.pr(4111)))
+        // Where you set one as next in the story's mission stays its, never following out; and a chain's stays on the
+        // chain, whose key names the story's mission that holds it, where it's next among the chain's own.
+        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: read, to: moved, alone: true) == nil)
         #expect(OrderBoard.successor(of: .chain(Self.pr(4111)), from: moved, to: read, alone: true) == nil)
         // A story's split in two chains: which one what's kept came from isn't known, and it waits.
         let more = Self.missions(Self.facts([

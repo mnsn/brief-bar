@@ -984,6 +984,57 @@ fileprivate final class Viewer {}
         #expect(order.lastChange?.touched[Self.pr(4105)].flatMap { $0 }?.first == family)
     }
 
+    /// One you set as next in a story's mission stays that mission's, never following out: while Show Links is off it waits,
+    /// saying so, and a teammate's pull request for the story opened meanwhile waits for it once the story's mission shows
+    /// again. So does one set among a session's pull requests that went whole to their story's mission: from then on it's
+    /// that mission's, and a teammate's that joins it later waits for it too.
+    @Test func aNextInAStorysMissionStaysItsThoughItsPullRequestsChange() throws {
+        let (family, story) = (MissionKey.family(Self.session), MissionKey.story(Self.story))
+        func make() -> PullRequestOrder {
+            let order = Self.service(clock: Clock())
+            order.publish(.copilot, sessions: [OrderSession(ref: Self.session, pullRequests: [Self.pr(4113), Self.pr(4105)])])
+            return order
+        }
+        func publish(_ order: PullRequestOrder, reading: Bool, stories: Bool, teammate: Bool) {
+            let read = { (task: Int) -> [OrderStory]? in reading ? (stories ? [Self.task(task, rank: Double(task - 5180))] : []) : nil }
+            let theirs = teammate ? [Self.ado(4120, read(5184))] : []
+            order.publish(.azureDevOps, pullRequests: [Self.ado(4113, read(5181)), Self.ado(4105, read(5183))] + theirs, readsStories: reading)
+        }
+        func step(_ order: PullRequestOrder, _ number: Int, in key: MissionKey) -> OrderStep? {
+            order.missions.first { $0.key == key }?.steps.first { $0.ref == Self.pr(number) }
+        }
+        func expectTheStorys(_ order: PullRequestOrder) {
+            #expect(order.missions.map(\.key) == [story] && step(order, 4105, in: story)?.standing == .next)
+            for other in [4113, 4120] {
+                #expect(step(order, other, in: story)?.notes.contains(.afterYourNext(Self.pr(4105))) == true, "!\(other)")
+            }
+        }
+
+        // Set in the story's mission, which is the session's two.
+        let set = make()
+        publish(set, reading: true, stories: true, teammate: false)
+        set.change(.setNext(Self.pr(4105), in: story, true))
+        set.dismissLastChange()
+        // Off: it waits on the story's mission, saying so, rather than go to the session's.
+        publish(set, reading: false, stories: false, teammate: false)
+        #expect(set.missions.map(\.key) == [family] && set.changes[Self.pr(4105)]?.first == story)
+        #expect(step(set, 4105, in: family)?.notes.contains(.nextUnseen(story)) == true)
+        // A teammate's for the story, opened while it's off; on again: the story's next, which theirs waits for.
+        publish(set, reading: false, stories: false, teammate: true)
+        publish(set, reading: true, stories: true, teammate: true)
+        expectTheStorys(set)
+
+        // Set among the session's, which go whole to their story's mission: it goes with them, then a teammate's joins.
+        let went = make()
+        publish(went, reading: true, stories: false, teammate: false)
+        went.change(.setNext(Self.pr(4105), in: family, true))
+        went.dismissLastChange()
+        publish(went, reading: true, stories: true, teammate: false)
+        #expect(went.changes[Self.pr(4105)]?.first == story)
+        publish(went, reading: true, stories: true, teammate: true)
+        expectTheStorys(went)
+    }
+
     /// Apple Intelligence's name of a mission of your own waits with it while Undo would bring it back, then goes with it.
     @Test func appleIntelligencesNameOfAMissionOfYourOwnGoesWithIt() async throws {
         let clock = Clock()
