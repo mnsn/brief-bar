@@ -178,8 +178,8 @@ struct PullRequestStageTrack: View {
 }
 
 /// One step of a pull request's stage track: its symbol and title, filled in its stage's color while it's the one it's in.
-/// Waits, which says what it waits for, wraps where the track is too narrow for it, as with bigger text, rather than
-/// running past the details; the other steps keep to one line.
+/// Waits, which says what it waits for, keeps to one line where it fits, as the other steps do, and wraps where the track
+/// is too narrow for it, as with bigger text, rather than running past the details.
 struct StageTrackStep: View {
     enum Place {
         case done, current, later
@@ -190,26 +190,44 @@ struct StageTrackStep: View {
     let place: Place
 
     var body: some View {
-        let wraps = stage == .waits
-        let fill = place == .current ? stage.color.opacity(0.16) : Color.clear
-        HStack(alignment: wraps ? .firstTextBaseline : .center, spacing: 4) {
+        if stage == .waits {
+            ViewThatFits(in: .horizontal) {
+                oneLine
+                label(lines: 4, alignment: .firstTextBaseline)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(fill))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            oneLine
+        }
+    }
+
+    private var oneLine: some View {
+        label(lines: 1, alignment: .center)
+            .background(Capsule().fill(fill))
+            .fixedSize()
+    }
+
+    private var fill: Color {
+        place == .current ? stage.color.opacity(0.16) : Color.clear
+    }
+
+    private func label(lines: Int, alignment: VerticalAlignment) -> some View {
+        HStack(alignment: alignment, spacing: 4) {
             Image(systemName: place == .done ? "checkmark.circle.fill" : place == .current ? stage.symbol : "circle")
                 .font(size: 10, weight: .bold)
                 .foregroundStyle(place == .current ? stage.color : Color.secondary)
-            Text(title)
+            Text(stage == .waits ? Self.unbroken(title) : title)
                 .font(size: 11.5, weight: place == .current ? .bold : .regular)
                 .foregroundStyle(place == .current ? stage.textColor : place == .done ? Color.secondary : Color.secondary.opacity(0.8))
-                .lineLimit(wraps ? 4 : 1)
+                .lineLimit(lines)
         }
         .padding(.horizontal, place == .current ? 6 : 2)
         .padding(.vertical, 2)
-        .background {
-            if wraps {
-                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(fill)
-            } else {
-                Capsule().fill(fill)
-            }
-        }
-        .fixedSize(horizontal: !wraps, vertical: true)
+    }
+
+    /// What it waits for, with each pull request's ! joined to its number, so a line never breaks between them.
+    static func unbroken(_ title: String) -> String {
+        title.replacingOccurrences(of: "!", with: "!\u{2060}")
     }
 }
