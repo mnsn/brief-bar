@@ -793,6 +793,30 @@ fileprivate final class Viewer {}
         #expect(order.lastChange?.touched[Self.pr(4105)].flatMap { $0 }?.first == family)
     }
 
+    /// Apple Intelligence's name of a mission of your own waits with it while Undo would bring it back, then goes with it.
+    @Test func appleIntelligencesNameOfAMissionOfYourOwnGoesWithIt() async throws {
+        let clock = Clock()
+        let model = Model()
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order, readsStories: false)
+        let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
+        order.change(.move([Self.pr(4113), Self.pr(4105)], to: .into(mine), from: nil))
+        let viewer = Viewer()
+        Self.show([mine], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try #require(await Self.eventually { order.modelNames[mine] == "Faster checkout" })
+        order.stopShowing(in: viewer)
+        // Undone: it's gone, but Undo would bring it back, with that name.
+        order.change(.undoMission(mine))
+        #expect(!order.missions.contains { $0.key == mine } && order.modelNames[mine] == "Faster checkout")
+        // No Undo left to bring it back: its name goes.
+        order.dismissLastChange()
+        order.timePassed()
+        #expect(order.modelNames[mine] == nil)
+    }
+
     /// A mission of your own keeps the name you give it, and Focus, while a change of yours puts a pull request in it, or
     /// Undo would: Undo brings it back as it was. Then they go.
     @Test func aMissionOfYourOwnKeepsItsNameAndFocusWhileUndoWouldBringItBack() throws {

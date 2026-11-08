@@ -147,6 +147,8 @@ import Testing
         #expect(MissionNames.canSee(Self.family, plans: [], kindsOn: [.session], readsStories: false))
         #expect(!MissionNames.canSee(Self.family, plans: [], kindsOn: [.pullRequest], readsStories: false))
         #expect(MissionNames.canSee(Self.gitHubStack, plans: [], kindsOn: [.gitHubPullRequest], readsStories: false))
+        // A mission of your own is seen whatever's on: a change of yours makes it, and its name goes with that change.
+        #expect(MissionNames.canSee(.mine(UUID()), plans: [], kindsOn: [], readsStories: false))
         #expect(MissionNames.canSee(Self.chain, plans: [], kindsOn: [.workItem, .pullRequest], readsStories: false))
         #expect(MissionNames.canSee(.plan(Self.planID), plans: [Self.planID], kindsOn: [], readsStories: false))
         #expect(!MissionNames.canSee(.plan(Self.planID), plans: [], kindsOn: all, readsStories: true))

@@ -510,6 +510,91 @@ import Testing
         #expect(mission.steps.first { $0.ref == Self.pr(4102) }?.standing == .next)
     }
 
+    /// A chain of GitHub pull requests that GitHub then lists as a stack goes on as that stack: what was kept by the chain
+    /// follows it there.
+    @Test func aChainGoesOnAsTheGitHubStackItsPullRequestsAreIn() throws {
+        func gitHub(_ number: Int, from source: String, into target: String, stack: GitHubStack? = nil) -> OrderPullRequest {
+            OrderPullRequest(
+                ref: OrderBoardTests.gh(number), repository: OrderBoardTests.gitHubRepository, sourceBranch: source,
+                targetBranch: target, isFork: false, author: "robin", createdAt: t(Double(number)), stack: stack
+            )
+        }
+        let chain = Self.missions(OrderFacts(pullRequests: [
+            gitHub(210, from: "address-form", into: "main"), gitHub(211, from: "saved-addresses", into: "address-form"),
+        ]))
+        #expect(chain.map(\.key) == [.chain(OrderBoardTests.gh(210))])
+        let stack = GitHubStack(repository: "Octo/Storefront", number: 41, baseBranch: "main", members: [
+            .init(position: 1, ref: OrderBoardTests.gh(210), state: .open), .init(position: 2, ref: OrderBoardTests.gh(211), state: .open),
+        ])
+        let stacked = Self.missions(OrderFacts(pullRequests: [
+            gitHub(210, from: "address-form", into: "main", stack: stack),
+            gitHub(211, from: "saved-addresses", into: "address-form", stack: stack),
+        ]))
+        let key = MissionKey.stack(repository: "octo/storefront", number: 41)
+        #expect(stacked.map(\.key) == [key])
+        #expect(OrderBoard.successor(of: .chain(OrderBoardTests.gh(210)), from: chain, to: stacked) == key)
+    }
+
+    /// What you put in a chain, by its key, shows in the story's mission that holds that chain, not on a card of its own;
+    /// and one you set as next there is next in it, not set as next elsewhere.
+    @Test func aChainsKeyNamesTheStorysMissionThatHoldsIt() throws {
+        let chain = MissionKey.chain(Self.pr(4110))
+        let changes = OrderChanges([OrderChange(ref: Self.pr(4130), first: chain, placement: .into(chain), changedAt: t(10))])
+        let missions = Self.missions(Self.facts([
+            Self.ado(4110, [Self.task(5102, rank: 1)], from: "users/robin/a"),
+            Self.ado(4111, [Self.task(5103, rank: 2)], from: "users/robin/b", into: "users/robin/a"), Self.ado(4130, []),
+        ]), changes: changes)
+        #expect(missions.map(\.key) == [.story(Self.item(5101))])
+        let mission = try #require(missions.first)
+        #expect(Set(mission.steps.map(\.ref)) == Set([4110, 4111, 4130].map(Self.pr)))
+        let step = try #require(mission.steps.first { $0.ref == Self.pr(4130) })
+        #expect(!step.notes.contains(.nextElsewhere(chain)))
+    }
+
+    /// A story with only one pull request of its own is a mission once you put another in it.
+    @Test func aStoryYouPutOneInIsAMissionWithOnlyOneOfItsOwn() throws {
+        let story = MissionKey.story(Self.item(5101))
+        let facts = Self.facts([Self.ado(4101, [Self.task(5102, rank: 1)]), Self.ado(4130, [])])
+        #expect(Self.missions(facts).isEmpty)
+        let changes = OrderChanges([OrderChange(ref: Self.pr(4130), placement: .into(story), changedAt: t(10))])
+        let missions = Self.missions(facts, changes: changes)
+        #expect(missions.map(\.key) == [story])
+        let mission = try #require(missions.first)
+        #expect(!mission.isMine && Set(mission.steps.map(\.ref)) == [Self.pr(4101), Self.pr(4130)])
+    }
+
+    /// Turning Azure DevOps off forgets what names a story's mission, whatever the change is to: its work items go with it.
+    @Test func turningAzureDevOpsOffForgetsWhatNamesAStorysMission() {
+        let story = MissionKey.story(Self.item(5101))
+        let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
+        var changes = OrderChanges([
+            OrderChange(ref: OrderBoardTests.gh(7), placement: .into(story), changedAt: t(10)),
+            OrderChange(ref: OrderBoardTests.gh(8), first: story, changedAt: t(10)),
+            OrderChange(ref: OrderBoardTests.gh(9), placement: .into(mine), from: story, changedAt: t(10)),
+        ])
+        // Copilot off: they stay.
+        let copilotOff = changes.forget([.session])
+        #expect(!copilotOff && [7, 8, 9].allSatisfy { changes[OrderBoardTests.gh($0)] != nil })
+        let azureDevOpsOff = changes.forget([.workItem, .pullRequest])
+        #expect(azureDevOpsOff && changes[OrderBoardTests.gh(7)] == nil && changes[OrderBoardTests.gh(8)] == nil)
+        #expect(changes[OrderBoardTests.gh(9)]?.placement == .into(mine) && changes[OrderBoardTests.gh(9)]?.from == nil)
+    }
+
+    /// One of a story's that an order lists apart, which you set as next in the story's mission, which is gone, says so.
+    @Test func oneAnOrderListsApartForItsStorySaysYouSetItAsNextElsewhere() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [
+            .init(link: OrderPlansTests.link(4101)), .init(link: OrderPlansTests.link(4102), after: ["4101"]),
+        ]), now: t(0), newID: planID)
+        let story = MissionKey.story(Self.item(5101))
+        let changes = OrderChanges([OrderChange(ref: Self.pr(4105), first: story, changedAt: t(5))])
+        let missions = Self.missions(Self.facts([
+            Self.ado(4101, [Self.task(5102, rank: 1)]), Self.ado(4102, [Self.task(5103, rank: 2)]), Self.ado(4105, [Self.task(5104, rank: 3)]),
+        ]), orders, changes: changes)
+        let row = try #require(missions.first { $0.key == .plan(planID) }?.sameStory.first)
+        #expect(row.ref == Self.pr(4105) && row.notes.contains(.nextElsewhere(story)))
+    }
+
     /// Where you set one as next among a session's pull requests follows them to their story's only while nothing else open
     /// is there: a teammate's of the same story didn't wait for it. Where you put one follows them all the same.
     @Test func aNextYouSetFollowsOnlyWhereNothingElseOpenIs() throws {
