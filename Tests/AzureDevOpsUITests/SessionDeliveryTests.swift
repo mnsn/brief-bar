@@ -540,7 +540,11 @@ private final class TakenAt: Sendable {
     /// checkout it works in, as the app's database says then: what that turn changes, such as a merge, would go with the
     /// push, unchecked. Before git checks; and from right before the request is written until the session's extension takes
     /// it, which BriefBar takes back then. Once no turn runs there, it goes.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(1)), .disabled("""
+        Flaky on CI: on a slow runner it ran past its one-minute limit before the second delivery came (main's run \
+        42505061708), though the same tree passed in its pull request. Turn it back on once it waits on the \
+        deliveries rather than on time.
+        """))
     func sendsNoPushWhileATurnRunsInTheSessionOrItsCheckout() async throws {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
