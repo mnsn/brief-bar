@@ -103,7 +103,7 @@ import Testing
     }
 
     /// A database that goes away after a good read, as when the app's data is removed, is missing too.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func saysTheDatabaseIsMissingOnceItsGone() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -130,7 +130,7 @@ import Testing
         #expect(gone.listedByApp)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func keepsTheLastListWhileTheDatabaseCannotBeRead() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -166,7 +166,7 @@ import Testing
     }
 
     /// The point of the whole design: changes are pushed by FSEvents, nothing polls.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func pushesLogAndDatabaseChangesWithoutPolling() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

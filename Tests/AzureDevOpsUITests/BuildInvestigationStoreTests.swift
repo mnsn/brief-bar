@@ -695,7 +695,7 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
 
     /// Showing another pull request calls off the store's reads under way: so do closing the details and someone else
     /// signing in.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func lettingGoCallsOffTheReadsUnderWay() async throws {
         let (started, startedOne) = AsyncStream<Int>.makeStream()
         let (calledOff, calledOffOne) = AsyncStream<Int>.makeStream()
@@ -734,10 +734,10 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
     /// Through its own `BuildInvestigator`, over a stand-in for Azure DevOps: as the details let go of a run, showing another
     /// pull request, or as someone else signs in, the investigator's read of it, waiting for a token, is called off
     /// (`BuildInvestigator.giveUp`, `forget`), and nothing more of the run is read, its timeline, logs and tests. It waits on
-    /// what becomes of the token, never for a while: on CI's runners, `make test` can take a minute, all of it at once on
-    /// the one thread it gives the cooperative pool, and a test that starts early can take most of that minute, however
-    /// little it does. Its time limit is above that.
-    @Test(.timeLimit(.minutes(2)), arguments: LetGo.allCases)
+    /// what becomes of the token, never for a while: on CI's slow runners, `make test` took up to about three and a
+    /// half minutes on 2026-11-08, all of it at once on the one thread it gives the cooperative pool, and a test that
+    /// starts early can take most of that, however little it does. Its time limit is above that.
+    @Test(.timeLimit(.minutes(5)), arguments: LetGo.allCases)
     func lettingGoStopsTheInvestigatorsRead(_ letGo: LetGo) async throws {
         let tokens = HeldToken()
         var events = tokens.events.makeAsyncIterator()

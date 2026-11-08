@@ -32,7 +32,7 @@ import Testing
 
     /// A worktree of a real repository, from a folder inside its checkout: detached at the latest origin/main, and gone
     /// once removed.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func makesADetachedWorktreeAtTheLatestBaseBranch() async throws {
         let fixture = try await RepositoryFixture()
         defer { fixture.remove() }
@@ -87,7 +87,7 @@ import Testing
     }
 
     /// Commits of its own, merges aside, are the work to push, whatever the target.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func takesTheBranchsOwnCommits() async throws {
         let (fixture, git) = try await retargetable()
         defer { fixture.remove() }
@@ -98,7 +98,7 @@ import Testing
 
     /// Resolved against main, then retargeted to release/x: the merge would bring main's work, which release/x doesn't
     /// have, until it does; as fetched, not as the checkout last saw it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func findsAMergeOfWhatTheTargetDoesntHave() async throws {
         let (fixture, git) = try await retargetable()
         defer { fixture.remove() }
@@ -113,7 +113,7 @@ import Testing
 
     /// A merge the pull request's branch has already, pushed before, which this push doesn't bring, as git fetches the branch
     /// now, whatever the checkout last saw of it: the commit on top of it is the work to push.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func takesAMergeTheBranchHasAlready() async throws {
         let (fixture, git) = try await retargetable()
         defer { fixture.remove() }
@@ -130,7 +130,7 @@ import Testing
 
     /// An octopus merge, of release/x's work and main's at once: each branch it merged in has to be in the target, not only
     /// the first.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func findsAnOctopusMergeOfWhatTheTargetDoesntHave() async throws {
         let (fixture, git) = try await retargetable()
         defer { fixture.remove() }
@@ -149,7 +149,7 @@ import Testing
     /// A merge of the pull request's own branch, whichever way, merges in what the target doesn't have: pulled into the
     /// work, or merged into main's latest, which on a target with no merges of its own looks the same in history, and
     /// would push main's work to the branch.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func findsAMergeOfThePullRequestsOwnBranch() async throws {
         let (fixture, git) = try await retargetable()
         defer { fixture.remove() }
@@ -174,7 +174,7 @@ import Testing
 
     /// A merge not committed yet, in the checkout, whose `MERGE_HEAD` git names from where it is, and in a worktree of it,
     /// whose `MERGE_HEAD` is in the checkout's `.git`; and none, once it's aborted.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func findsAMergeStillInProgress() async throws {
         let (fixture, git) = try await retargetable()
         defer { fixture.remove() }
@@ -191,7 +191,7 @@ import Testing
 
     /// A merge going on whose `MERGE_HEAD` it can't read, as when it's a link, which it doesn't follow, or lists anything but
     /// commits, may merge in anything: it can't tell, rather than taking it for none. Readable again, it's checked as before.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func cantTellAMergeGoingOnItCantRead() async throws {
         let (fixture, git) = try await retargetable()
         defer { fixture.remove() }
@@ -219,7 +219,7 @@ import Testing
     /// In a shallow clone, where its history stops git takes a commit for a root, though it may be a merge, of anything:
     /// there, it can't tell what that brings in, whichever branch it's checked against. Once the clone has the rest of its
     /// history, it's checked as any other.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func cantTellWhatAShallowClonesHistoryHides() async throws {
         let (fixture, git) = try await retargetable()
         defer { fixture.remove() }

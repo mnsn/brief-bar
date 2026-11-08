@@ -103,7 +103,7 @@ import Testing
         try CopilotServer.start(fixture.copilot, environment: fixture.environment, grace: grace)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func forksASessionAndQuitsOnceItsInputEnds() async throws {
         let fixture = try FakeCopilot.Fixture()
         defer { fixture.remove() }
@@ -121,7 +121,7 @@ import Testing
 
     /// It asks for permission while it answers, which BriefBar refuses, and tells of its session's events, which BriefBar
     /// ignores: the answer still comes.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func refusesWhatTheServerAsksAndIgnoresWhatItSaysUnasked() async throws {
         let fixture = try FakeCopilot.Fixture()
         defer { fixture.remove() }
@@ -136,7 +136,7 @@ import Testing
         #expect(fixture.methods == ["session.resume", "session.ui.ephemeralQuery", "session.delete"])
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func saysWhatTheServerSaid() async throws {
         let unsupported = try FakeCopilot.Fixture(["FAKE_FORK": "unsupported"])
         defer { unsupported.remove() }
@@ -157,7 +157,7 @@ import Testing
     }
 
     /// Tried on a session the Copilot CLI 1.0.105 wrote, 1.0.87's fork replaced its whole log with one line.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func refusesACLITooOldToForkASessionWithoutChangingIt() async throws {
         for old in ["1.0.87-0", "1.0.78-2"] {
             let fixture = try FakeCopilot.Fixture(["FAKE_VERSION": old])
@@ -169,7 +169,7 @@ import Testing
         }
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func givesUpOnAnAnswerThatDoesntCome() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_ANSWER": "hang"])
         defer { fixture.remove() }
@@ -180,7 +180,7 @@ import Testing
         #expect(await server.close() == 0)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func stopsWaitingWhenItsTaskIsCancelled() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_ANSWER": "hang"])
         defer { fixture.remove() }
@@ -201,7 +201,7 @@ import Testing
 
     /// A fork's answer is the only word of it: once it's asked for, it's waited for, even once the task that asked is
     /// cancelled, so that the fork can be deleted.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func waitsForAForkEvenOnceItsTaskIsCancelled() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "gated"])
         defer { fixture.remove() }
@@ -217,7 +217,7 @@ import Testing
 
     /// One that takes too long gives up on the server, which then finishes what it's at, and may still say which fork it
     /// made, before it quits.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func givesUpOnTheServerWhenAForkTakesTooLong() async throws {
         let late = try FakeCopilot.Fixture(["FAKE_FORK": "late"])
         defer { late.remove() }
@@ -233,7 +233,7 @@ import Testing
         #expect(await server.close() == 0)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func failsWhatWaitsWhenTheServerEnds() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_ANSWER": "exit"])
         defer { fixture.remove() }
@@ -243,7 +243,7 @@ import Testing
     }
 
     /// The fork it made is handed over, though what it writes right after can't be read; nothing more is asked of it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func handsOverTheForkItMadeBeforeWhatCantBeRead() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "garbled"])
         defer { fixture.remove() }
@@ -254,7 +254,7 @@ import Testing
     }
 
     /// One that doesn't quit when its input ends is ended, with whatever it started.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func endsAServerThatDoesntQuit() async throws {
         let folder = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -267,7 +267,7 @@ import Testing
 
     /// What it started that ignores being asked to stop is made to, once the server itself has quit when its input
     /// ended, or when it was asked to stop.
-    @Test(.timeLimit(.minutes(1)), arguments: [
+    @Test(.timeLimit(.minutes(5)), arguments: [
         // It quits when its input ends.
         (quits: "read line; exit 0", status: Int32(0)),
         // It doesn't, and is asked to stop.
@@ -284,14 +284,16 @@ import Testing
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: copilot.path)
         let started = try CopilotServer.start(copilot, environment: ["PATH": "/usr/bin:/bin", "CHILD": childFile.path], grace: 0.3)
         var child: pid_t?
-        for _ in 0..<2000 {
+        var deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while ContinuousClock.now < deadline {
             child = (try? String(contentsOf: childFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
             if child != nil { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         let pid = try #require(child)
         #expect(await started.close() == server.status)
-        for _ in 0..<2000 where kill(pid, 0) == 0 {
+        deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while kill(pid, 0) == 0, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(kill(pid, 0) == -1 && errno == ESRCH)
@@ -299,7 +301,7 @@ import Testing
 
     /// One that quits by itself before it's closed, rather than when its input ends, takes what it started along all the
     /// same, even what ignores being asked to stop.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func endsWhatTheServerStartedWhenItQuitsByItself() async throws {
         let folder = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -319,7 +321,8 @@ import Testing
         let child = (try? String(contentsOf: childFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
         let pid = try #require(child)
         // Without being closed, what it started is made to stop.
-        for _ in 0..<2000 where kill(pid, 0) == 0 {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while kill(pid, 0) == 0, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(kill(pid, 0) == -1 && errno == ESRCH)
@@ -328,7 +331,7 @@ import Testing
 
     /// One that ignores both its input ending and being asked to stop, while BriefBar waits for a fork it may have made,
     /// is made to stop, and nothing waits for it any longer.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aForkIsWaitedForOnlySoLong() async throws {
         let folder = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -337,7 +340,8 @@ import Testing
         try "#!/bin/sh\ntrap '' TERM\n: > \"$READY\"\nwhile :; do sleep 1; done\n".write(to: deaf, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: deaf.path)
         let server = try CopilotServer.start(deaf, environment: ["PATH": "/usr/bin:/bin", "READY": ready.path], grace: 0.3)
-        for _ in 0..<2000 where !FileManager.default.fileExists(atPath: ready.path) {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !FileManager.default.fileExists(atPath: ready.path), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         let clock = ContinuousClock()
@@ -398,7 +402,7 @@ import Testing
         return String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func forksTheSessionIntoAWorktreeAtItsCheckoutsCommit() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
@@ -453,7 +457,7 @@ import Testing
     }
 
     /// Going on with a fork, the run is still that session's fork.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func goesOnWithAForkAsTheForkItIs() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
@@ -476,7 +480,7 @@ import Testing
 
     /// One of the Copilot app's sessions that works in a folder of repositories, or another clone: the fork starts where a
     /// new task's worktree would, at the pull request's latest commit.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aForkOfASessionOutsideTheRepositoryStartsWhereANewTasksWould() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
@@ -516,7 +520,7 @@ import Testing
 
     /// Push & Reply from a fork of a session whose checkout holds a merge of what the pull request's target doesn't have:
     /// the fork's worktree has it too, so nothing starts, and the fork and its worktree are deleted.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aForkPushesNoMergeOfWhatTheTargetDoesntHave() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
@@ -557,7 +561,7 @@ import Testing
     /// The fork has the session's whole log, which ends with its task done, and the pull request it opened. If Copilot then
     /// stops before it writes anything, as when the CLI refuses its options, the task failed: it didn't finish as the
     /// session had, nor open that pull request.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aForkWhoseCopilotStopsAtOnceFailedThoughTheSessionHadFinished() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
@@ -593,7 +597,7 @@ import Testing
         #expect(RunTranscript.openedPullRequest(events: events, printed: printed, since: run.launchedAt) == nil)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aCopilotCLIThatCantForkSafelyLeavesNothingBehind() async throws {
         for (settings, reason) in [
             (["FAKE_VERSION": "1.0.87-0"], "The Copilot CLI 1.0.87-0 can't fork a session without changing it. Update it with copilot update."),
@@ -616,7 +620,7 @@ import Testing
     }
 
     /// Cancelled while the CLI forks the session, the launcher waits for the fork, deletes it, and makes nothing more.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func cancelledWhileTheSessionIsForkedItDeletesTheFork() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
@@ -637,7 +641,7 @@ import Testing
     }
 
     /// A fork that's no use is deleted: here, the pull request's branch is gone, so its worktree can't be made.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func deletesTheForkWhenItsWorktreeCantBeMade() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
@@ -661,7 +665,7 @@ import Testing
 
     /// A fork that's no use and can't be deleted now is kept where BriefBar keeps its runs, and deleted before the next task,
     /// even once BriefBar has started again.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func keepsAForkItCouldntDeleteAndDeletesItBeforeTheNextTask() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
@@ -707,7 +711,7 @@ import Testing
     /// What's kept is checked first: one that isn't a session's, or whose folder is gone, is dropped without asking the
     /// CLI; one that something has open now is left for later, and so is one in another CLI's folder, should your shell's
     /// `COPILOT_HOME` have changed, until that's the CLI's folder again.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func deletesWhatsLeftOverOnlyOnceItsCheckedFirst() async throws {
         let fixture = try FakeCopilot.Fixture()
         defer { fixture.remove() }
@@ -754,7 +758,7 @@ import Testing
 
     /// A fork its task takes on after a cleanup has read which forks are left over is, by the time it'd be deleted, no
     /// longer kept, nor in flight: it's checked again then, and isn't deleted.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func leavesAForkATaskTookOnAfterTheListWasRead() async throws {
         let fixture = try FakeCopilot.Fixture()
         defer { fixture.remove() }
@@ -814,7 +818,7 @@ import Testing
         )
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func asksAForkOfTheSessionWithNoToolsThenDeletesIt() async throws {
         let fixture = try FakeCopilot.Fixture()
         defer { fixture.remove() }
@@ -848,7 +852,7 @@ import Testing
     }
 
     /// With no model chosen, the session's own answers.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func asksWithTheSessionsOwnModelUnlessToldOtherwise() async throws {
         let fixture = try FakeCopilot.Fixture()
         defer { fixture.remove() }
@@ -857,7 +861,7 @@ import Testing
         #expect(resume["model"] == nil && resume["reasoningEffort"] == nil)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func saysWhyThereIsNoAnswerAndStillDeletesTheFork() async throws {
         for (settings, failure) in [
             (["FAKE_ANSWER": "signed-out"], SessionQuestions.Failure.notSignedIn("Error: No authentication information found.")),
@@ -878,7 +882,7 @@ import Testing
     }
 
     /// A fork the server said it made right before writing what can't be read is deleted all the same, and not kept.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func deletesAForkTheServerMadeBeforeWhatCantBeRead() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "garbled"])
         defer { fixture.remove() }
@@ -891,7 +895,7 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: fixture.forkFolder.path))
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func refusesACLITooOldToForkTheSessionWithoutChangingIt() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_VERSION": "1.0.87-0"])
         defer { fixture.remove() }
@@ -912,7 +916,7 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: fixture.log.path))
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func givesUpOnALateAnswerAndDeletesTheFork() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_ANSWER": "hang"])
         defer { fixture.remove() }
@@ -922,7 +926,7 @@ import Testing
     }
 
     /// Cancelled while the fork is made, it waits for it, to delete it unasked.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func cancelledWhileTheForkIsMadeItDeletesTheFork() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "gated"])
         defer { fixture.remove() }
@@ -937,7 +941,7 @@ import Testing
     }
 
     /// A fork the server says it made after BriefBar gave up on it is deleted all the same, through another server.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aForkMadeAfterItsTimeoutIsDeletedThroughAnotherServer() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "late"])
         defer { fixture.remove() }
@@ -950,7 +954,7 @@ import Testing
 
     /// A fork that no server can delete for now is kept where BriefBar keeps its runs, and deleted before the next
     /// question, even once BriefBar has started again.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aForkThatCouldntBeDeletedIsDeletedBeforeTheNextQuestion() async throws {
         var fixture = try FakeCopilot.Fixture()
         defer { fixture.remove() }
@@ -977,7 +981,7 @@ import Testing
 
     /// A question's fork is kept to delete from the moment it's made, should BriefBar quit before it's deleted; while the
     /// question still uses it, no other question or task deletes it as left over.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func keepsTheForkItAsksToDeleteButNotWhileItAsks() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_ANSWER": "hang"])
         defer { fixture.remove() }
@@ -998,7 +1002,7 @@ import Testing
         #expect(!ForksInFlight.contains(fork))
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func cancelledItStopsAndDeletesTheFork() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_ANSWER": "hang"])
         defer { fixture.remove() }

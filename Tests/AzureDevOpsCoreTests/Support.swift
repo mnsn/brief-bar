@@ -29,10 +29,11 @@ struct TestError: Error, CustomStringConvertible {
 }
 
 /// How long a test waits for something before it fails. `make test` runs every test on one thread
-/// (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), where a test may get its turn only after most of the others. On CI's busy
-/// runner, tests waited half a minute or more, about as long as the whole run takes. A wait that's answered still
-/// returns as soon as it is: only a test that fails takes this long.
-let waitLimit: Duration = .seconds(60)
+/// (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), where a test may get its turn only after most of the others. On CI's slow
+/// runners on 2026-11-08, whole runs took up to about three and a half minutes, and waits of a minute ran out in tests
+/// nobody had changed: so four minutes. A wait that's answered still returns as soon as it is: only a test that fails
+/// takes this long.
+let waitLimit: Duration = .seconds(240)
 
 /// Threads of the tests' own, beside Swift's cooperative pool, which `make test` gives one thread for every test at
 /// once: synchronous work that takes long there holds up every other test. Async code under test stays in the pool,
@@ -308,7 +309,8 @@ final class StubServer: Sendable {
         /// Where the request is redirected, with its headers, as a server's 307 would.
         var redirect: URL?
         /// Answers only once this holds, while it answers other requests meanwhile, as a slow answer that comes after a
-        /// quicker one does; or after ten seconds, if it never does.
+        /// quicker one does. If it never does, the client gives up on the request after 30 s, as `ADOClient`'s session
+        /// and requests have it, though this answers anyway after `waitLimit`.
         var waitsFor: (@Sendable () -> Bool)?
 
         static func json(_ object: Any, status: Int = 200, headers: [String: String] = [:]) -> Reply {

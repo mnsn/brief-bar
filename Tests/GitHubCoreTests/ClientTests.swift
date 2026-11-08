@@ -286,7 +286,7 @@ import Testing
 
     /// The token goes to api.github.com only: no redirect is followed, and one to another host fails with an error that
     /// says so.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func refusesARedirectToAnotherHost() async {
         let server = StubServer()
         server.reply(.redirect(to: "https://elsewhere.example/graphql"))
@@ -299,7 +299,7 @@ import Testing
     }
 
     /// GitHub answers the query where it's sent, so a redirect on api.github.com isn't followed either.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aRedirectOnGitHubsOwnHostIsAnHTTPError() async {
         let server = StubServer()
         server.reply(.redirect(to: "https://api.github.com/graphql?again"))

@@ -25,6 +25,13 @@ struct TestError: Error, CustomStringConvertible {
     }
 }
 
+/// How long a test waits for something before it fails. `make test` runs every test on one thread
+/// (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), where a test may get its turn only after most of the others. On CI's slow
+/// runners on 2026-11-08, whole runs took up to about three and a half minutes, and waits of a minute ran out in tests
+/// nobody had changed: so four minutes. A wait that's answered still returns as soon as it is: only a test that fails
+/// takes this long.
+let waitLimit: Duration = .seconds(240)
+
 // MARK: - Event log lines
 
 /// Builds `events.jsonl` lines shaped like the Copilot CLI's, including its top-level key order
@@ -345,10 +352,10 @@ final class SnapshotCollector: Sendable {
         snapshots.withLock { $0.count }
     }
 
-    /// Waits until the latest snapshot satisfies `predicate`.
+    /// Waits until the latest snapshot satisfies `predicate`, for as long as a busy machine could need (`waitLimit`).
     @discardableResult
     func wait(
-        _ what: String, timeout: Duration = .seconds(15), until predicate: (EngineSnapshot) -> Bool
+        _ what: String, timeout: Duration = waitLimit, until predicate: (EngineSnapshot) -> Bool
     ) async throws -> EngineSnapshot {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)

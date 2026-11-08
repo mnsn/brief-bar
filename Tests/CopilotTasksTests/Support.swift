@@ -34,6 +34,13 @@ struct TestError: Error, CustomStringConvertible {
     }
 }
 
+/// How long a test waits for something before it fails. `make test` runs every test on one thread
+/// (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), where a test may get its turn only after most of the others. On CI's slow
+/// runners on 2026-11-08, whole runs took up to about three and a half minutes, and waits of a minute ran out in tests
+/// nobody had changed: so four minutes. A wait that's answered still returns as soon as it is: only a test that fails
+/// takes this long.
+let waitLimit: Duration = .seconds(240)
+
 /// A work item made up for tests.
 let sampleItem = TaskWorkItem(
     organization: "contoso", project: "Storefront", id: 4217, type: "Task", title: "Show the order total in the cart",

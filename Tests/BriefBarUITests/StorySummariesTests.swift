@@ -183,9 +183,7 @@ import Testing
             Issue.record("Not writing")
             return
         }
-        for _ in 0..<200 where !gate.isWaiting {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the writer to wait") { gate.isWaiting }
         summaries.cancel(workItem)
         #expect(summaries.state(for: workItem) == nil)
         gate.open()
@@ -249,17 +247,13 @@ import Testing
             return .success("HEADLINE: Fixed in !4091.")
         }
         summaries.summarize(workItem)
-        for _ in 0..<200 where !gate.isWaiting {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the writer to wait") { gate.isWaiting }
         // Azure DevOps stops while Copilot writes.
         links.withdraw(.azureDevOps)
         stories.withdraw(.azureDevOps)
         #expect(summaries.state(for: workItem) == nil)
         gate.open()
-        for _ in 0..<200 where stopped.prompts.isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the writer to stop") { !stopped.prompts.isEmpty }
         try await Task.sleep(for: .milliseconds(20))
         // Copilot was stopped, and what it answered doesn't show.
         #expect(stopped.prompts == ["cancelled"])
@@ -332,9 +326,7 @@ import Testing
         }
         // The details ask for the pull request's story first.
         stories.request(links.describe(pullRequest))
-        for _ in 0..<200 where !gate.isWaiting {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the pull request's story to be asked") { gate.isWaiting }
         let asked = Asked()
         summaries.write = writer(asked)
         summaries.summarize(workItem)
@@ -343,14 +335,10 @@ import Testing
         #expect(asked.prompts.isEmpty)
         #expect(stories.isTelling(pullRequest))
         gate.open()
-        for _ in 0..<200 where asked.prompts.isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the prompt") { !asked.prompts.isEmpty }
         let prompt = try #require(asked.prompts.first)
         #expect(prompt.contains("Status: Ready to complete: Approved by Priya Shah\n- Comments: No open threads"))
-        for _ in 0..<200 where isWriting(summaries.state(for: workItem)) {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the summary to be written") { !isWriting(summaries.state(for: workItem)) }
         #expect(!summaries.isOutOfDate(workItem))
     }
 
@@ -808,9 +796,7 @@ import Testing
             return true
         }
         summaries.setOn(true)
-        for _ in 0..<200 where !gate.isWaiting {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the look for the CLI to wait") { gate.isWaiting }
         #expect(gate.isWaiting)
         // Asked again meanwhile, it waits for the same look.
         let again = Task { await summaries.lookForCLI() }
@@ -818,9 +804,7 @@ import Testing
         summaries.setOn(false)
         gate.open()
         await again.value
-        for _ in 0..<200 where looks.prompts.isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the look to end") { !looks.prompts.isEmpty }
         #expect(looks.prompts == ["stopped"])
         #expect(!summaries.hasLookedForCLI)
         #expect(summaries.model == StorySummaries.appleIntelligenceModel)
@@ -1088,9 +1072,7 @@ import Testing
             // Not known yet: nothing's about to be written as it opens.
             #expect(summaries.expect(workItem, unlessActedSince: acted) == nil)
             let opened = Task { await summaries.opened(workItem, unlessActedSince: acted) }
-            for _ in 0..<200 where !summaries.isPending(workItem) {
-                try await Task.sleep(for: .milliseconds(5))
-            }
+            try await until("the summary to be pending") { summaries.isPending(workItem) }
             #expect(summaries.isPending(workItem))
             if keeps { summaries.notNow(workItem) }
             await opened.value
@@ -1152,14 +1134,10 @@ import Testing
             return true
         }
         summaries.setOn(true)
-        for _ in 0..<200 where !gate.isWaiting {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the look for the CLI to wait") { gate.isWaiting }
         stories.withdraw(.copilot)
         gate.open()
-        for _ in 0..<200 where !summaries.hasLookedForCLI {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the look for the CLI") { summaries.hasLookedForCLI }
         #expect(looks.prompts == ["found"])
         #expect(summaries.knowsModel)
         #expect(summaries.model == StorySummaries.copilotDefaultModel)
@@ -1307,9 +1285,7 @@ import Testing
             return .success("HEADLINE: Completed.")
         }
         summaries.summarize(workItem)
-        for _ in 0..<200 where !gate.isWaiting {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the writer to wait") { gate.isWaiting }
         summaries.hide(workItem)
         #expect(summaries.isHidden(workItem))
         #expect(summaries.state(for: workItem) == first)
@@ -1337,9 +1313,7 @@ import Testing
         // It opens; before its moment is up, you ask for one, then stop it.
         let acted = summaries.timesActed(on: workItem)
         summaries.summarize(workItem)
-        for _ in 0..<200 where !gate.isWaiting {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the writer to wait") { gate.isWaiting }
         summaries.cancel(workItem)
         gate.open()
         await summaries.opened(workItem, unlessActedSince: acted)
@@ -1375,9 +1349,7 @@ import Testing
         }
         summaries.summarize(workItem)
         #expect(summaries.previous(for: workItem) == first)
-        for _ in 0..<200 where !gate.isWaiting {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await until("the writer to wait") { gate.isWaiting }
         // Stopped: the one before is back.
         summaries.cancel(workItem)
         #expect(summaries.state(for: workItem) == first)
@@ -1402,9 +1374,10 @@ import Testing
         #expect(summaries.previous(for: workItem) == nil)
     }
 
-    /// Lets a summary started by opening one be written.
+    /// Lets a summary started by opening one be written, for as long as a busy machine could need (`waitLimit`).
     private func waitForWriting(_ summaries: StorySummaries, _ subject: ItemRef) async {
-        for _ in 0..<400 {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while ContinuousClock.now < deadline {
             if case .writing? = summaries.state(for: subject) {
                 try? await Task.sleep(for: .milliseconds(5))
             } else {
@@ -1499,13 +1472,13 @@ import Testing
             return .success("HEADLINE: Late cloud response.")
         }
         summaries.summarize(workItem)
-        for _ in 0..<200 where !gate.isWaiting { try await Task.sleep(for: .milliseconds(5)) }
+        try await until("the writer to wait") { gate.isWaiting }
         #expect(gate.isWaiting)
         // Stopped, the one before is back, as it was written; the late answer never replaces it.
         summaries.setModel(StorySummaries.appleIntelligenceModel)
         #expect(summaries.state(for: workItem) == first)
         gate.open()
-        for _ in 0..<200 where finished.prompts.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        try await until("the writer to finish") { !finished.prompts.isEmpty }
         #expect(finished.prompts == ["cancelled"])
         #expect(summaries.state(for: workItem) == first)
     }

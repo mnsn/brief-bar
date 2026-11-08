@@ -13,7 +13,7 @@ import Testing
         #expect(String(decoding: result.stderr, as: UTF8.self) == "err\n")
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func endsAProgramThatRunsTooLong() async throws {
         let (result, elapsed) = try await measured {
             try await ProcessRunner().run(URL(fileURLWithPath: "/bin/sleep"), arguments: ["30"], environment: nil, timeout: 0.5)
@@ -22,7 +22,7 @@ import Testing
         #expect(elapsed < .seconds(10))
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func endsAProgramThatIgnoresBeingAskedToStop() async throws {
         // Both sleeps ignore SIGTERM, so only SIGKILL, a second later, ends them. The program becomes one of them
         // (exec), so it can't exit on its own when the other is killed first, as a shell waiting for it would.
@@ -47,7 +47,7 @@ import Testing
         }
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func doesntWaitForWhatTheProgramLeftRunning() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -85,7 +85,7 @@ import Testing
 
     /// A task that's cancelled ends its program as the timeout does, rather than waiting for it. The shell writes down its
     /// process ID, then becomes `sleep`, for longer than a busy runner can take to cancel it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func endsAProgramWhoseTaskIsCancelled() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -101,7 +101,8 @@ import Testing
                     )
                 }
                 var written: pid_t?
-                for _ in 0..<2_000 where written == nil {
+                let deadline = ContinuousClock.now.advanced(by: waitLimit)
+                while written == nil, ContinuousClock.now < deadline {
                     written = (try? String(contentsOf: file, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
                     if written == nil { try await Task.sleep(for: .milliseconds(10)) }
                 }
@@ -122,7 +123,7 @@ import Testing
     /// writes nothing, and becomes `sleep`.
     /// As in `endsAProgramThatIgnoresBeingAskedToStop`, a shell that's slow to start, as on a busy runner, may be asked to
     /// stop before it writes anything: that isn't what's tested, so it's tried again with twice the time.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func endsWhatAProgramLeavesBehindWhenItStops() async throws {
         for timeout in [0.5, 1, 2, 4, 8] {
             let result = try await ProcessRunner().run(
@@ -139,7 +140,7 @@ import Testing
 
     /// So is what it leaves when its task is cancelled. The background shell writes down its process ID once it ignores
     /// being asked to stop, then becomes `sleep`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func endsWhatAProgramLeavesBehindWhenItsTaskIsCancelled() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -155,7 +156,8 @@ import Testing
                 )
             }
             var written: pid_t?
-            for _ in 0..<2_000 where written == nil {
+            let deadline = ContinuousClock.now.advanced(by: waitLimit)
+            while written == nil, ContinuousClock.now < deadline {
                 written = (try? String(contentsOf: file, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
                 if written == nil { try await Task.sleep(for: .milliseconds(10)) }
             }
@@ -180,7 +182,7 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: ran.path))
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func noticesEveryExitRightAway() async throws {
         // Many at once: an exit can be reported a moment before its status can be collected, and isn't reported again.
         let (_, elapsed) = try await measured {
@@ -216,7 +218,7 @@ import Testing
 
     /// A program doesn't inherit the signals that the thread starting it blocks, as Dispatch's and Swift concurrency's
     /// workers do: Git Credential Manager, which git runs to fetch, hung until the timeout without the ones it needs.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func startsProgramsWithNoSignalsBlocked() async throws {
         let result = try await withTaskExecutorPreference(SignalBlockingExecutor()) {
             try await ProcessRunner().run(
@@ -270,7 +272,7 @@ import Testing
     /// Started from an app, a program is otherwise attributed to it, and may use its privacy permissions. The shell
     /// writes down its process ID, and waits while this test asks macOS about it; it goes on to run `sleep` in the
     /// same process, which macOS keeps attributed as the shell was.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func startsProgramsResponsibleForThemselves() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -283,10 +285,9 @@ import Testing
             )
         }
         var shell: pid_t?
-        var tries = 0
-        while shell == nil && tries < 500 {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while shell == nil, ContinuousClock.now < deadline {
             shell = (try? String(contentsOf: file, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-            tries += 1
             if shell == nil { try await Task.sleep(for: .milliseconds(20)) }
         }
         let pid = try #require(shell, "the shell didn't write down its process ID")

@@ -182,7 +182,7 @@ import Testing
     /// However many openings a text spells out, the number a fence writes out with is found in one pass, the first none of
     /// them has: thousands of them take no longer than a few. (Asking the text whether it has each number in turn took
     /// seconds a call.)
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func findsAFreeNumberInOnePass() {
         let count = 8_000
         let text = "\\u{41} " + (1...count).reversed().map { "⟦\($0)U+" }.joined() + "⟦U+\n\u{200B}"
@@ -222,7 +222,7 @@ import Testing
     /// written out as text in quotes, as `inLine` writes it, it would name another branch, one with "\u{200B}" in it. It's
     /// in ANSI-C quotes instead, that character as its bytes in hex, which bash, zsh and sh read back byte for byte as the
     /// name itself, in a word or after "origin/"; and they still run nothing in it. All of it is seen, on its line.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aShellReadsACommandWordAsTheBranchItNames() async throws {
         #expect(QuotedText.commandWord("fix\u{200B}") == "$'fix\\xE2\\x80\\x8B'")
         #expect(QuotedText.commandWord("it's\u{200F}") == "$'it\\'s\\xE2\\x80\\x8F'")
@@ -267,7 +267,7 @@ import Testing
 
     /// A shell reads the word back as the text it was, and runs nothing in it: `$(…)`, backticks, a quote, `;`, `|`, `&`, a
     /// variable, braces, a glob, a tilde or a comment, in bash, zsh and sh. An ordinary branch's name stays as it is.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aShellReadsAWordAsTheTextItWas() async throws {
         #expect(QuotedText.shellWord("users/robin/fix-total_2.1+x@y,z:w") == "users/robin/fix-total_2.1+x@y,z:w")
         #expect(QuotedText.shellWord("fix$(echo ran)") == "'fix$(echo ran)'")

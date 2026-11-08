@@ -325,7 +325,7 @@ import Testing
     /// same: the tags show what Azure DevOps answered, and are read again after it, not as the setting goes off, which may be
     /// before Azure DevOps made it, and would leave them as they were. One that may have been made without saying so, as one
     /// Azure DevOps didn't answer in time, has them read again once it settled.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aChangeUnderWayAsItGoesOffShowsOnceItSettles() async throws {
         let (store, changes, azure) = live()
         var waiting: CheckedContinuation<Void, Never>?
@@ -376,7 +376,7 @@ import Testing
 
     /// On again before a change under way as it went off has settled, the tags show it on its way and take no other change
     /// until it has, so that its answer, coming late, can't undo a later one.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func onAgainBeforeATagChangeSettlesTheTagsWaitForIt() async throws {
         let (store, changes, azure) = live()
         var waiting: CheckedContinuation<Void, Never>?
@@ -409,7 +409,7 @@ import Testing
 
     /// A change that settles after someone else signed in, or Azure DevOps stopped, was the last one's: what Azure DevOps
     /// answers does nothing, so it can't undo the tags the next one reads, nor change a list that stopped.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aChangeThatSettlesAfterSomeoneElseSignsInDoesNothing() async throws {
         let (store, changes, azure) = live()
         changes.accountChanged("robin@contoso.example")

@@ -606,7 +606,8 @@ import Testing
         let sender = sender(outbox, effects)
         let sending = Task { await sender.send("Fix it", to: session) }
         let requests = outbox.url.appendingPathComponent("requests")
-        for _ in 0..<400 where names(requests).isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while names(requests).isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: FakeExtension.lookEvery)
         }
         sending.cancel()
@@ -637,7 +638,8 @@ import Testing
         effects.allowed.withLock { $0 = true }
         let sending = Task { [sender = sender(outbox, effects)] in await sender.send("Fix it", to: session) }
         let requests = outbox.url.appendingPathComponent("requests")
-        for _ in 0..<400 where names(requests).isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while names(requests).isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: FakeExtension.lookEvery)
         }
         effects.allowed.withLock { $0 = false }
@@ -680,7 +682,8 @@ import Testing
         }
 
         let sending = Task { await sender.send("Fix it", to: session) }
-        for _ in 0..<400 where !claimed.withLock({ $0 }) {
+        var deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !claimed.withLock({ $0 }), ContinuousClock.now < deadline {
             try await Task.sleep(for: FakeExtension.lookEvery)
         }
         sending.cancel()
@@ -690,7 +693,8 @@ import Testing
         claimed.withLock { $0 = false }
         stopped.withLock { $0 = false }
         let forking = Task { await sender.forkAndSend("Try it", from: session) }
-        for _ in 0..<400 where !claimed.withLock({ $0 }) {
+        deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !claimed.withLock({ $0 }), ContinuousClock.now < deadline {
             try await Task.sleep(for: FakeExtension.lookEvery)
         }
         forking.cancel()
@@ -785,7 +789,8 @@ import Testing
             claimed.withLock { $0 = false }
             effects.allowed.withLock { $0 = true }
             let forking = Task { await sender.forkAndSend("Try it", from: session) }
-            for _ in 0..<400 where !claimed.withLock({ $0 }) {
+            let deadline = ContinuousClock.now.advanced(by: waitLimit)
+            while !claimed.withLock({ $0 }), ContinuousClock.now < deadline {
                 try await Task.sleep(for: FakeExtension.lookEvery)
             }
             effects.allowed.withLock { $0 = false }

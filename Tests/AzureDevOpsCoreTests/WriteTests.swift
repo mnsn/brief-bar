@@ -349,7 +349,7 @@ import Testing
 
     /// A change that has gone isn't called off with its caller, which wouldn't take it back: Azure DevOps' answer comes all
     /// the same, to say it was made.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aChangeThatWentWhenCalledOffAnswersAllTheSame() async throws {
         let server = StubServer()
         let answers = Locked(false)
@@ -372,7 +372,7 @@ import Testing
     }
 
     /// A change goes only where it's sent, as a read does.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func followsNoRedirectWithAChange() async {
         let server = StubServer()
         server.on("/threads/12") { _ in .redirect(to: "https://elsewhere.example/contoso/_apis/threads/12") }

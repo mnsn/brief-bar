@@ -55,7 +55,8 @@ import Testing
         let settings = settings(enabled: true)
         let store = PRStore(settings: settings, summarizer: .withoutModel, chats: standIn.reading)
         store.updateChatMonitor()
-        for _ in 0..<100 where settings.chatLinks.links.isEmpty {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while settings.chatLinks.links.isEmpty, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
         #expect(standIn.watched == 1)

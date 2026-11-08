@@ -355,7 +355,7 @@ extension Locked where Value == Int {
 
     /// Each request's token goes only where it's sent: no redirect is followed, and one to another host fails with an
     /// error that says so.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func refusesARedirectToAnotherHost() async {
         let server = StubServer()
         server.on("/_apis/connectionData") { request in
@@ -371,7 +371,7 @@ extension Locked where Value == Int {
     }
 
     /// Azure DevOps answers each request where it's sent, so a redirect on the same host isn't followed either.
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func aRedirectOnTheSameHostIsAnHTTPError() async {
         let server = StubServer()
         server.on("/_apis/connectionData") { request in

@@ -113,9 +113,11 @@ fileprivate final class Viewer {}
         order.showing(keys, in: viewer, on: page)
     }
 
-    /// Waits for what the model's answer sets, on the main actor.
+    /// Waits for what the model's answer sets, on the main actor, for as long as a busy machine could need
+    /// (`waitLimit`).
     static func eventually(_ condition: () -> Bool) async -> Bool {
-        for _ in 0..<300 where !condition() {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !condition(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()

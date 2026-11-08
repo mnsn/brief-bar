@@ -111,9 +111,11 @@ import Testing
         return asking
     }
 
-    /// Lets the writer's work on the main actor go on until `done`, or a second goes by.
+    /// Lets the writer's work on the main actor go on until `done`, for as long as a busy machine could need
+    /// (`waitLimit`).
     private func settle(until done: () -> Bool) async {
-        for _ in 0..<100 where !done() {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !done(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
     }
