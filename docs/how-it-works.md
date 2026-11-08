@@ -1493,9 +1493,10 @@ order holds it, as for details shown from Up Next, but not from a text field you
 them, such as a linked pull request's, whose card isn't that one, or a file's, which doesn't show its stage
 (`PullRequestDetailsStore.shownOnTop`). That card has the focus once they close. A move it can't make, the details say
 why under its stage track (`StageRefusalLine`), as the line under its lane can't be seen; each goes once its stage
-changes, from anywhere, and the details' once the Board shows again. A change it makes to a mission says its Undo is
-beside it, in the details' order line. Like the monitor, a card takes ⌘ alone: ⇧⌘→ is another shortcut. `BoardRules`
-decides what a move does: In progress, Your review and Teammate's review are set as you set them
+changes, from anywhere, though not for a new name, from Rename… or Apple Intelligence, of a mission its stage's words
+name (`StageReading.readTheSame`), and the details' once the Board shows again. A change it makes to a mission says its
+Undo is beside it, in the details' order line. Like the monitor, a card takes ⌘ alone: ⇧⌘→ is another shortcut.
+`BoardRules` decides what a move does: In progress, Your review and Teammate's review are set as you set them
 from a stage's menu; someone else's pull request can't go to Teammate's review, there, in its menus or in VoiceOver's
 actions, as it asks its own reviewers, and Finished My Review takes it off your board instead; Can merge, Waits and Merged
 come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge
