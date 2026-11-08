@@ -886,6 +886,30 @@ private struct DatabaseError: Error {
         #expect(!existing.contains("{"))
     }
 
+    /// While Pull Request Order is on, the prompt BriefBar writes ends asking the session to tell BriefBar the pull
+    /// request's stage once it pushed, wherever Copilot works: a work item's, from Settings or BriefBar's own, and a pull
+    /// request's, but a review's. While it's off, none does.
+    @Test func thePromptAsksForTheStageWhilePullRequestOrderIsOn() {
+        let item = TaskWorkItem(organization: "contoso", project: "Storefront", id: 4217, type: "Task", title: "Show the total",
+                                url: URL(string: "https://dev.azure.com/contoso/Storefront/_workitems/edit/4217")!)
+        func prompt(_ choice: SessionChoice?, _ subject: TaskSubject, on: Bool = true) -> String {
+            CopilotComposerView.writtenPrompt(
+                for: choice, subject: subject, template: PromptTemplate.standard, worktreePrompt: "worktree",
+                sessionPrompt: "session", baseBranch: "main", asksForStage: on
+            )
+        }
+        let line = "\n\n" + PromptTemplate.stageLine
+        let appSession = choice(onBranch, reasons: [.onItsBranch], active: 0)
+        #expect(prompt(nil, .workItem(item)).hasSuffix("End with the pull request's link." + line))
+        #expect(prompt(appSession, .workItem(item)).hasSuffix("End with the pull request's link." + line))
+        #expect(prompt(nil, subject) == "worktree" + line)
+        #expect(prompt(appSession, .pullRequest(pullRequest, .pushAndReply)) == "session" + line)
+        #expect(prompt(nil, .pullRequest(pullRequest, .review)) == "worktree")
+
+        #expect(prompt(nil, .workItem(item), on: false) == PromptTemplate.render(PromptTemplate.standard, item: item, baseBranch: "main"))
+        #expect(prompt(appSession, subject, on: false) == "session")
+    }
+
     /// Reset goes back to the prompt BriefBar wrote for the session you chose, with that session's checks, even when you'd
     /// changed the prompt before you chose it; and a prompt you changed stays as you wrote it.
     @Test func resetGoesBackToThePromptForTheSessionYouChose() {

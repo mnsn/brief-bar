@@ -927,7 +927,10 @@ package final class AzureDevOpsSource: BriefBarSource {
         renderings += pullRequestFilesRenderings()
         renderings += pullRequestConflictRenderings()
         if let copilot, let item = sprint?.board?.myWork.first(where: { copilot.latest(for: $0) == nil }) {
-            let composer = CopilotComposerView(item: item.copilotTask, options: settings.copilotOptions, template: settings.copilotPromptTemplate) {}
+            let composer = CopilotComposerView(
+                item: item.copilotTask, options: settings.copilotOptions, template: settings.copilotPromptTemplate,
+                asksForStage: services.pullRequestOrder.isOn
+            ) {}
                 .environment(\.isRendering, true)
             let options = Form { CopilotSetting() }
                 .formStyle(.grouped)
@@ -990,7 +993,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             subject: .pullRequest(task, .fixComments), options: settings.copilotOptions, template: settings.copilotPromptTemplate,
             prompt: PullRequestPrompt.fixComments(record, workplace: .worktree),
             sessionPrompt: PullRequestPrompt.fixComments(record, workplace: .agent), createdAt: pr.createdAt,
-            session: (choice, .listening(canFork: true))
+            session: (choice, .listening(canFork: true)), asksForStage: services.pullRequestOrder.isOn
         ) {}
     }
 

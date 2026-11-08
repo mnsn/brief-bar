@@ -57,6 +57,29 @@ import Testing
         #expect(prompt.contains("published, ready for review, and linked to work item 4217"))
         #expect(!prompt.contains("{"))
     }
+
+    /// While Pull Request Order is on, BriefBar's prompts that change code end asking the session to tell BriefBar the pull
+    /// request's stage once it pushed: once, after whatever the prompt ends with, and never alone. A work item's does, and
+    /// a pull request's, but a review's, which changes nothing.
+    @Test func promptsThatChangeCodeEndAskingForTheStage() throws {
+        #expect(PromptTemplate.stageLine
+            == "When you've pushed, tell BriefBar the pull request is ready for my review with pull_request_stage, if that tool is there.")
+        let asked = PromptTemplate.ending("Fix the build.\n\n", asksForStage: true)
+        #expect(asked == "Fix the build.\n\n" + PromptTemplate.stageLine)
+        #expect(PromptTemplate.ending(asked, asksForStage: true) == asked)
+        #expect(PromptTemplate.ending("Fix the build.", asksForStage: false) == "Fix the build.")
+        #expect(PromptTemplate.ending(" \n", asksForStage: true) == " \n")
+
+        #expect(PullRequestAction.allCases.filter(\.asksForStage) == [.fixComments, .fixBuild, .resolveConflicts, .pushAndReply])
+        let pullRequest = TaskPullRequest(
+            organization: "contoso", project: "Storefront", repository: "checkout", id: 4071, title: "Fix the checkout total",
+            url: try #require(URL(string: "https://dev.azure.com/contoso/Storefront/_git/checkout/pullrequest/4071")),
+            sourceBranch: "users/robin/fix-total", targetBranch: "main"
+        )
+        #expect(TaskSubject.workItem(sampleItem).asksForStage)
+        #expect(TaskSubject.pullRequest(pullRequest, .pushAndReply).asksForStage)
+        #expect(!TaskSubject.pullRequest(pullRequest, .review).asksForStage)
+    }
 }
 
 @Suite struct CopilotCommandTests {

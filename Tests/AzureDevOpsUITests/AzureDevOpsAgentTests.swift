@@ -139,6 +139,11 @@ import Testing
         let ship = try await call("pull_request_prompt", ["pull_request": .int(4091), "action": .string("push_and_reply")])
         #expect(ship.contains("git merge-base --is-ancestor origin/"))
         #expect(ship.contains("don't rebase, merge or force"))
+        // Each ends as BriefBar's own do while Pull Request Order is on, as the demo's is: asking for the stage once it
+        // pushed, but a review's.
+        #expect(prompt.hasSuffix("\n\n" + PromptTemplate.stageLine))
+        #expect(ship.hasSuffix("\n\n" + PromptTemplate.stageLine))
+        #expect(!review.contains("pull_request_stage"))
         await #expect(throws: MCPToolError.self) {
             try await call("pull_request_prompt", ["pull_request": .int(4071), "action": .string("push_and_reply")])
         }

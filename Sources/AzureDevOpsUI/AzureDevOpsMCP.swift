@@ -108,6 +108,9 @@ actor AzureDevOpsReader {
         )
     }
 
+    /// Whether Pull Request Order is on, as the app keeps it: the demo's always is.
+    var ordersPullRequests: Bool { demo || PullRequestOrderSetting.isOn(in: defaults) }
+
     /// What Pull Request Order keeps, for the stages agents are told, while it's on; nil while it's off. The demo's is made
     /// up, as the app's demo's is (`DemoPullRequestOrder`).
     func orderKept(now: Date) -> OrderKept? {
@@ -912,7 +915,9 @@ struct AzureDevOpsAgent: Sendable {
             let applies = others.isEmpty ? "" : " What applies: \(others.map(\.agentName).joined(separator: ", "))."
             throw MCPToolError("\(action.agentName) doesn't apply to !\(pr.key.number): \(why).\(applies)")
         }
-        return await PullRequestTasks.prompt(action, for: record, client: reader.client, workplace: .agent)
+        let prompt = await PullRequestTasks.prompt(action, for: record, client: reader.client, workplace: .agent)
+        // As BriefBar's own end, while Pull Request Order is on.
+        return PromptTemplate.ending(prompt, asksForStage: await reader.ordersPullRequests && action.asksForStage)
     }
 
     func pipelines(now: Date = Date()) async throws -> String {

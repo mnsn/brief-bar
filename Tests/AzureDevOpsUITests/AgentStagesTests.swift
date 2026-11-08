@@ -66,16 +66,18 @@ import Testing
         #expect(retry.contains("\n- Its stage: Your review: ‘Retry backoff’ says it's ready (set 1d ago).\n"))
     }
 
-    /// Nothing of stages while Pull Request Order is off.
+    /// Nothing of stages while Pull Request Order is off, and `pull_request_prompt`'s prompts don't ask for them.
     @Test func noStagesWhilePullRequestOrderIsOff() async throws {
         let off = AzureDevOpsReader(demo: false, organizations: [], defaults: MemoryDefaults())
         #expect(await off.orderKept(now: Date()) == nil)
+        #expect(await !off.ordersPullRequests)
         let on = AzureDevOpsReader(demo: false, organizations: [], defaults: {
             let defaults = MemoryDefaults()
             defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
             return defaults
         }())
         #expect(await on.orderKept(now: Date()) != nil)
+        #expect(await on.ordersPullRequests)
     }
 
     /// As the app works them out: yours while it stands, with the account the lists read; the latest of yours and the listed
@@ -122,5 +124,45 @@ import Testing
         #expect(stages.readings[ref(4095)]?.stage == .yourReview)
         #expect(stages.readings[ref(4095)]?.mark == nil)
         #expect(stages.columns[.inProgress] == [ref(4093)])
+    }
+
+    /// Two orders that put two pull requests the other way round hold both, and say so to agents without naming either
+    /// order: agents get no missions' names, which the app's own words may say.
+    @Test func ordersGoingRoundSayAnotherOrder() throws {
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        func ref(_ number: Int) -> ItemRef { .pullRequest(organization: "contoso", number: number) }
+        func link(_ number: Int) -> String { "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(session: "7c1e2a90-4b3d-4f5e-8a6b-1c2d3e4f5a6b", entries: [
+            .init(link: link(4101), after: ["4102"]), .init(link: link(4102)),
+        ]), now: now - 600)
+        try orders.apply(OrderRequest(session: "2b8d4f60-9a1c-4e3b-b7d5-6f8e9a0b1c2d", entries: [
+            .init(link: link(4101)), .init(link: link(4102), after: ["4101"]),
+        ]), now: now - 300)
+        let kept = OrderKept(
+            orders: orders, evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: StageMarks(),
+            sessionStages: SessionStages()
+        )
+        let pullRequests = [4101, 4102].map { number in
+            OrderPullRequest(
+                ref: ref(number), repository: "shop-web", sourceBranch: "refs/heads/users/robin/part-\(number)",
+                targetBranch: "refs/heads/main", author: "robin", createdAt: now - 86_400
+            )
+        }
+        // Both approved: only their orders hold them.
+        let facts = Dictionary(uniqueKeysWithValues: [4101, 4102].map { number in
+            (ref(number), StageFacts(role: .author, isReady: true, othersVoted: true, votes: "priya:10"))
+        })
+        let stages = AzureDevOpsAgent.stages(
+            facts: facts, pullRequests: pullRequests, copilot: MCPRelated.StageSessions(), kept: kept, account: "robin@contoso.com",
+            now: now
+        )
+
+        let first = try #require(stages.readings[ref(4101)])
+        #expect(first.stage == .waits && first.why == .orderHolds("Another order puts !4102 after it: check the order"))
+        #expect(AgentText.stage(first, stages: stages)
+            == "Its stage: Waits for another PR: Another order puts !4102 after it: check the order.")
+        #expect(stages.readings[ref(4102)]?.why == .orderHolds("Another order puts !4101 after it: check the order"))
+        #expect(Set(stages.columns[.waits] ?? []) == [ref(4101), ref(4102)])
     }
 }

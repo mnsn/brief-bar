@@ -50,6 +50,21 @@ public enum PromptTemplate {
         If something stops you, say what and why. End with the pull request's link.
         """
 
+    /// The last line of BriefBar's prompts that change code, Send Work to Copilot's and a pull request's fixes', while Pull
+    /// Request Order is on: for the session to tell BriefBar the pull request's stage itself once it pushed, with `--mcp`'s
+    /// `pull_request_stage`, which it has only while Pull Request Order and agents are on.
+    public static let stageLine = """
+        When you've pushed, tell BriefBar the pull request is ready for my review with pull_request_stage, if that tool \
+        is there.
+        """
+
+    /// A prompt, ending with `stageLine` when it asks for the stage: once, and never alone.
+    public static func ending(_ prompt: String, asksForStage: Bool) -> String {
+        let trimmed = prompt.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
+        guard asksForStage, !trimmed.isEmpty, !trimmed.hasSuffix(stageLine) else { return prompt }
+        return trimmed + "\n\n" + stageLine
+    }
+
     /// Fills in the placeholders. Without a base branch yet, `{baseBranch}` stays, to be filled in once the
     /// repository says which it is.
     public static func render(_ template: String, item: TaskWorkItem, baseBranch: String? = nil) -> String {
