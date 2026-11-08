@@ -335,7 +335,8 @@ struct ThreadChangeProblemLine: View {
 /// with what it says, but for Save, which ⌘Return presses, and Cancel, which keeps the comment as it was and forgets what
 /// you wrote; ✕ or Esc keeps it, until you save it or cancel. When the comment changed since you began, in Azure DevOps or
 /// another window, it says so, with all of what it says now, Start Over and Save Anyway (`CommentChangedNotice`), and Save
-/// is dimmed. The Mac checks your spelling as you type, but corrects nothing by itself (`spellChecked()`).
+/// is dimmed; while your edit says what you began with, it follows the comment instead (`followComment()`). The Mac checks
+/// your spelling as you type, but corrects nothing by itself (`spellChecked()`).
 struct ThreadReplyComposer: View {
     let thread: PullRequestPanel.Thread
     let item: PRSnapshot
@@ -481,8 +482,12 @@ struct ThreadReplyComposer: View {
             if let undo, text != undo.corrected { self.undo = nil }
             // Changed while a suggestion shows: it corrects what you wrote before, and would take what you wrote since.
             if let suggestion, text != suggestion.original { self.suggestion = nil }
+            // Back to what you began with, once the comment changed since.
+            followComment()
         }
         .onAppear(perform: appear)
+        // An edit that says what you began with follows the comment as it changes.
+        .onChange(of: editing?.comment.kept) { followComment() }
         // VoiceOver hears it as it shows, once for each version, as when a refresh brings what someone saved meanwhile.
         .onChange(of: changedSince?.kept) {
             if let changedSince, let commentKey { changes.sayChanged(changedSince, on: commentKey) }
@@ -756,17 +761,37 @@ struct ThreadReplyComposer: View {
     /// what Fix Grammar suggested for it.
     private func startOver() {
         guard let editing else { return }
-        fixing?.cancel()
-        fixing = nil
-        suggestion = nil
-        undo = nil
-        grammarProblem = nil
+        forgetGrammar()
         replacing = nil
         let started = changes.startOver(editing.comment, in: thread.thread, of: editing.pullRequest)
         editBase = started.base
         text = started.text
         isFocused = true
         changes.speak("Started over from what your comment says now")
+    }
+
+    /// While your edit says what you began with, it follows the comment (`ThreadChanges.isUnchanged`): once the comment says
+    /// something else, as edited in Azure DevOps or another window, your edit begins again from what it says now, quietly,
+    /// as there's nothing it would replace, and Fix Grammar, if it runs for what it said before, stops. So it never shows a
+    /// version the comment doesn't have anymore though you changed nothing, nor says the comment changed.
+    private func followComment() {
+        guard preview == nil, let editing, let editBase, editing.comment.kept != editBase.content,
+              ThreadChanges.isUnchanged(text, from: editBase)
+        else { return }
+        forgetGrammar()
+        replacing = nil
+        let now = CommentEditing(editing.comment, in: thread.thread, of: editing.pullRequest)
+        self.editBase = now
+        text = now.text
+    }
+
+    /// Fix Grammar called off, and what it suggested, did or couldn't do forgotten, as what it was for is gone.
+    private func forgetGrammar() {
+        fixing?.cancel()
+        fixing = nil
+        suggestion = nil
+        undo = nil
+        grammarProblem = nil
     }
 
     /// Closes your edit: your comment stays as it was, and what you wrote goes, with what went wrong with it.

@@ -494,7 +494,8 @@ the field and keeps what you changed, as for a reply, and so does opening someth
 until you save it or cancel. If the comment changes meanwhile, in Azure DevOps or another window, your edit says so once
 BriefBar has read the change, with all of what it says now, and **Save** is dimmed, since it would replace that without
 you seeing it: **Start Over** (⌥⌘R) puts what it says now in your edit, in place of what you wrote, and **Save Anyway**
-(⌥⌘Return) replaces it with your edit. **Fix Grammar** is there too, as in a reply. **Delete…** asks first, under the
+(⌥⌘Return) replaces it with your edit. If you haven't changed anything, your edit just shows what it says now instead.
+**Fix Grammar** is there too, as in a reply. **Delete…** asks first, under the
 comment, saying that Azure DevOps deletes it, as you, and that it can't be undone: **Delete** deletes it, and
 **Cancel**, or Esc, keeps it. Azure DevOps keeps a deleted comment, marked deleted, and doesn't show it, and deletes its
 thread once none of its comments is left, so the comment leaves its thread at once, and the thread leaves the details

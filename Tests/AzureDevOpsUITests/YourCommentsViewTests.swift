@@ -197,6 +197,13 @@ import Testing
         field.insertText(text, replacementRange: NSRange(location: (field.string as NSString).length, length: 0))
     }
 
+    /// Takes what's at the end of a field out, as you delete it there.
+    private func delete(_ text: String, in field: NSTextView) {
+        field.window?.makeFirstResponder(field)
+        let length = (field.string as NSString).length, count = (text as NSString).length
+        field.insertText("", replacementRange: NSRange(location: length - count, length: count))
+    }
+
     /// The pull request read again, with the long thread's comment of yours saying something else, as edited elsewhere.
     private func receive(_ store: PRStore, yours text: String, in thread: ReviewThread) throws {
         var snapshot = DemoData.snapshot(now: store.now)
@@ -513,6 +520,66 @@ import Testing
         #expect(try await press(try key("\r", code: 36, .command, in: window), in: host))
         try await settle { sent.writes.count == 1 }
         #expect(sent.edits == [elsewhere + " Per client too."])
+        window.contentView = nil
+    }
+
+    /// Your edit, while you haven't changed it, follows your comment as it changes, in Azure DevOps or another window: it
+    /// shows what the comment says now, quietly, with no notice, as saving it would replace nothing. Save stays: it saves
+    /// nothing, as the comment says that already, and your edit closes; opened again, it has what the comment says now.
+    @Test func anEditYouHaventChangedFollowsYourComment() async throws {
+        _ = NSApplication.shared
+        let (store, changes, thread, sent) = try live()
+        let mine = thread.comments[1]
+        let draft = ThreadChanges.CommentKey(thread: ThreadChanges.Key(pullRequest: key, thread: thread.id), comment: mine.id)
+        let composing = Composing()
+        composing.open = .edit(mine.id, in: thread.id)
+        let (window, host) = window(showing: comments(store, changes, composing: composing))
+        try await settle { fields(in: host) == [mine.markdown] }
+        let elsewhere = "It reads RetryOptions.MaxDelay, a minute by default."
+        try receive(store, yours: elsewhere, in: thread)
+        try await settle { fields(in: host) == [elsewhere] }
+        #expect(fields(in: host) == [elsewhere])
+        try await settle(at: 30)
+        #expect(sent.spoken.isEmpty)
+        #expect(changes.edit(draft) == nil)
+        #expect(!host.performKeyEquivalent(with: try key("\r", code: 36, [.command, .option], in: window)))
+
+        #expect(try await press(try key("\r", code: 36, .command, in: window), in: host))
+        try await settle { composing.open == nil && fields(in: host).isEmpty }
+        #expect(composing.open == nil)
+        #expect(sent.writes.isEmpty)
+        composing.open = .edit(mine.id, in: thread.id)
+        try await settle { fields(in: host) == [elsewhere] }
+        #expect(fields(in: host) == [elsewhere])
+        window.contentView = nil
+    }
+
+    /// Your edit, changed once your comment changed since you began, then changed back to what you began with, follows the
+    /// comment: the notice goes, quietly, and your edit shows what the comment says now, which Save saves nothing over.
+    @Test func anEditYouChangeBackFollowsYourComment() async throws {
+        _ = NSApplication.shared
+        let (store, changes, thread, sent) = try live()
+        let mine = thread.comments[1]
+        let composing = Composing()
+        composing.open = .edit(mine.id, in: thread.id)
+        let (window, host) = window(showing: comments(store, changes, composing: composing))
+        try await settle { !textViews(in: host).isEmpty }
+        type(" Per client too.", in: try #require(textViews(in: host).first))
+        try await settle { fields(in: host) == [mine.markdown + " Per client too."] }
+        let elsewhere = "It reads RetryOptions.MaxDelay, a minute by default."
+        try receive(store, yours: elsewhere, in: thread)
+        try await settle { sent.spoken.count == 1 }
+        #expect(fields(in: host) == [mine.markdown + " Per client too."])
+
+        delete(" Per client too.", in: try #require(textViews(in: host).first))
+        try await settle { fields(in: host) == [elsewhere] }
+        #expect(fields(in: host) == [elsewhere])
+        #expect(!host.performKeyEquivalent(with: try key("\r", code: 36, [.command, .option], in: window)))
+        #expect(try await press(try key("\r", code: 36, .command, in: window), in: host))
+        try await settle { composing.open == nil }
+        #expect(composing.open == nil)
+        #expect(sent.writes.isEmpty)
+        #expect(sent.spoken.count == 1)
         window.contentView = nil
     }
 

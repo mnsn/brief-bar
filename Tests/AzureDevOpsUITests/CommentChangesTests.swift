@@ -285,6 +285,45 @@ import Testing
         #expect(!changes.changedSince(again.base, now: now, editing: again.text, on: threadKey))
     }
 
+    /// An edit that says what you began with, as when you haven't changed it, or only the blank lines and spaces at its ends,
+    /// which saving leaves out, keeps nothing, never says the comment changed since, though it says something else since,
+    /// and saves nothing: it follows the comment instead, and opened again, it has what the comment says now. Once you change
+    /// it, it says the comment changed.
+    @Test func anEditYouHaventChangedSavesNothingAndFollowsTheComment() async throws {
+        let (store, changes, azure, reads) = live()
+        let record = try #require(store.record(for: key))
+        let (mine, _) = try comments(store)
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: 11)
+        let draft = ThreadChanges.CommentKey(thread: threadKey, comment: mine.id)
+        let started = changes.startEditing(mine, in: try thread(store), of: record.pullRequest)
+        let spaced = "\n \n" + started.text + "  \n"
+        #expect(ThreadChanges.isUnchanged(started.text, from: started.base))
+        #expect(ThreadChanges.isUnchanged(spaced, from: started.base))
+        #expect(!ThreadChanges.isUnchanged(started.text + " Capped.", from: started.base))
+        changes.keepEdit(spaced, for: draft, from: started.base)
+        #expect(changes.edit(draft) == nil)
+
+        // Edited elsewhere, as the list reads it.
+        let elsewhere = "Exponential, from 200 ms, capped at 30 seconds."
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        let at = try #require(snapshot.records[index].details?.threads[0].comments.firstIndex { $0.id == mine.id })
+        snapshot.records[index].details?.threads[0].comments[at].text = elsewhere
+        snapshot.records[index].details?.threads[0].comments[at].markdown = elsewhere
+        store.receive(snapshot)
+        let now = try comments(store).mine
+        #expect(!changes.changedSince(started.base, now: now, editing: started.text, on: threadKey))
+        #expect(!changes.changedSince(started.base, now: now, editing: spaced, on: threadKey))
+        #expect(changes.changedSince(started.base, now: now, editing: started.text + " Capped.", on: threadKey))
+
+        // Saved, nothing goes, and nothing's kept.
+        #expect(await changes.edit(spaced, from: started.base, of: now, in: try thread(store), of: key))
+        #expect(azure.sent.isEmpty)
+        #expect(reads.count == 0)
+        #expect(changes.edit(draft) == nil)
+        #expect(changes.startEditing(now, in: try thread(store), of: record.pullRequest).text == elsewhere)
+    }
+
     /// An edit of yours that may have gone, as one Azure DevOps didn't answer in time, which the list shows the comment says,
     /// is yours, not a change elsewhere: what you write after it goes, without your saying so.
     @Test func yourOwnEditThatMayHaveGoneIsntAChangeElsewhere() async throws {

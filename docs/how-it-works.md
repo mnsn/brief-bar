@@ -1643,15 +1643,19 @@ meanwhile. Once the comment says something else than it did as you began, as edi
 window, which a refresh or a read again brings, and something else than what you wrote, your edit says so under its
 field, with all of what the comment says now, however long, since that's what Save Anyway replaces
 (`CommentChangedNotice`, `ThreadChanges.changedSince`): saved, your edit would replace what it says now, which you
-haven't seen, so **Save** is dimmed then, and ⌘Return does nothing. VoiceOver hears it once for each version of the
-comment, as it shows, though two windows show it, and once again as your edit opens again on it
-(`ThreadChanges.sayChanged`); a Save refused for a version it heard of says only that your edit wasn't saved. **Start
-Over** (⌥⌘R) puts what the comment says now in your edit, in place of what you wrote, and begins again from it
-(`ThreadChanges.startOver`); **Save Anyway** (⌥⌘Return) saves your edit over the version it shows, and that one only: it
-stays chosen though Azure DevOps refuses it, so Save saves it again, but once the comment changes again, your edit says
-so again. An edit of yours that may have gone, as one Azure DevOps didn't answer in time, isn't a change elsewhere,
-though the thread has it (`EditAttempt`). It tells only what BriefBar has read: Save doesn't read the comment again
-first, so an edit made in Azure DevOps since BriefBar last read the pull request, Save replaces. Saving is a `PATCH` of
+haven't seen, so **Save** is dimmed then, and ⌘Return does nothing. Not while your edit says what you began with, but
+for blank lines and spaces at its ends, which saving leaves out (`ThreadChanges.isUnchanged`), as before you change it,
+or once you change it back: Save saves nothing then, so your edit follows the comment instead, quietly, beginning again
+from what it says now, and Fix Grammar, if it runs for what it said before, stops (`ThreadReplyComposer.followComment`).
+VoiceOver hears the notice once for each version of the comment, as it shows, though two windows show it, and once
+again as your edit opens again on it (`ThreadChanges.sayChanged`); a Save refused for a version it heard of says only
+that your edit wasn't saved. **Start Over** (⌥⌘R) puts what the comment says now in your edit, in place of what you
+wrote, and begins again from it (`ThreadChanges.startOver`); **Save Anyway** (⌥⌘Return) saves your edit over the
+version it shows, and that one only: it stays chosen though Azure DevOps refuses it, so Save saves it again, but once
+the comment changes again, your edit says so again. An edit of yours that may have gone, as one Azure DevOps didn't
+answer in time, isn't a change elsewhere, though the thread has it (`EditAttempt`). It tells only what BriefBar has
+read: Save doesn't read the comment again first, so an edit made in Azure DevOps since BriefBar last read the pull
+request, Save replaces. Saving is a `PATCH` of
 what the comment says alone, `content` (`ADOWrite.editComment`), unless it says what you began with, or what the comment
 says now, when nothing goes; Azure DevOps answers with the comment as it keeps it, which shows at once in its place
 (`ThreadChange.edited`), but never over a later edit of it, as one made elsewhere that a read had before the answer
