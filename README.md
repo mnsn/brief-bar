@@ -113,6 +113,7 @@ requests and sessions get one too: on their page, or under their row from **✨*
 |---|---|---|
 | **Summaries** | Summaries of work items, pull requests and sessions as you open them, or only when you ask, using what BriefBar knows about them and their links | Claude Haiku 5.5 by default when the Copilot CLI is installed: the details go through your signed-in Copilot CLI to GitHub Copilot, one request on your Copilot plan each, and you can choose any model from Haiku, the cheapest, to Claude Opus 5.5, the most capable. Or Apple Intelligence on your Mac, the default without the CLI: free, with Apple Intelligence available and enabled, and no Copilot requests, but a small model that often gets details wrong. Either way, nothing from Teams is included and no tools are allowed: summarizing cannot change files or take actions. |
 | **Chat summaries and the brief** | Summaries of unread Teams chats and more concise briefs about what needs you | Apple's on-device model, on your Mac. Requires Apple Intelligence, available and enabled. |
+| **Missions' names** | With Pull Request Order on, a short name for each mission By Mission shows, from the titles of its Azure DevOps pull requests, their work items and stories, and the Copilot sessions on them | Apple's on-device model, on your Mac, never a Copilot model. Requires Apple Intelligence, available and enabled. |
 
 Summaries of your work are written **as you open** a work item's details or a page, never in the
 background, and the card says what it's about to do first, with **Not Now**; or, if you choose, **only
