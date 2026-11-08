@@ -3846,7 +3846,7 @@ descriptions; Pull Request Order's skill, `briefbar-pr-order`, which says the se
 once you say you've reviewed it, and keeps what you set unless you and the session decided otherwise; a line in
 `briefbar-updates`; and, while Pull Request Order is on, the last line of BriefBar's own prompts that change code, Send
 Work to Copilot's, and a pull request's Fix Comments, Fix the Build, Resolve Conflicts and Push & Reply, wherever they
-go, `pull_request_prompt`'s too (`PromptTemplate.stageLine`), which a review's never has.
+go, `pull_request_prompt`'s and `--wait`'s too (`PromptTemplate.stageLine`), which a review's never has.
 
 ### Waiting on a pull request
 
@@ -3873,7 +3873,8 @@ build runs until they're resolved; and so does a comment that waits on you, as N
 when it began: in an open thread, someone else's, not a bot's, such as a build service's or a code scanner's, after your
 last word there, matched by thread and comment, so an edit isn't news. It prints a line for each, a failed build first,
 then conflicts, comments and a build that passed, the pull request's link, and each one's prompt as
-`pull_request_prompt` writes it for an agent's checkout, and exits with the first one's code: 0 the build passed, 4 a
+`pull_request_prompt` writes it for an agent's checkout (`PullRequestTasks.agentPrompt`), its last line asking for the
+stage too while Pull Request Order is on in the app, and exits with the first one's code: 0 the build passed, 4 a
 build failed, 5 comments, 6 conflicts. It exits with 7 once the pull request is completed or abandoned, with 3 at its
 timeout, saying what still runs or what hasn't passed, with 2 on wrong usage, such as `--org` without a name, or for a
 pull request that isn't yours, even one closed as it began, and with 1 when it can't read it: five reads in a row that

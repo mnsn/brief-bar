@@ -984,9 +984,9 @@ struct AzureDevOpsAgent: Sendable {
             let applies = others.isEmpty ? "" : " What applies: \(others.map(\.agentName).joined(separator: ", "))."
             throw MCPToolError("\(action.agentName) doesn't apply to !\(pr.key.number): \(why).\(applies)")
         }
-        let prompt = await PullRequestTasks.prompt(action, for: record, client: reader.client, workplace: .agent)
-        // As BriefBar's own end, while Pull Request Order is on.
-        return PromptTemplate.ending(prompt, asksForStage: await reader.ordersPullRequests && action.asksForStage)
+        return await PullRequestTasks.agentPrompt(
+            action, for: record, client: reader.client, ordersPullRequests: await reader.ordersPullRequests
+        )
     }
 
     func pipelines(now: Date = Date()) async throws -> String {
