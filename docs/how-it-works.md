@@ -2366,16 +2366,18 @@ names that one (`CopilotTasksStore.rereadPullRequest`, `PRStore.reread(_:)`). No
 app's sessions while Copilot runs a turn in it, or another of the app's sessions runs one in the checkout it works in,
 as the app's database says (`CopilotTasksStore.turnProblem`): the prompt would wait for that turn, whose changes, a
 merge to fix the build, say, would go with it, unchecked. Nor while BriefBar can't tell, as when that database can't be
-read, or doesn't say which sessions run one, as when the app keeps that another way now
-(`AppSessions.running(home:strictly:)`). BriefBar reads that before git checks and again after, right before
-it copies the prompt, or writes the request for the session's extension and then, at most once a second, until the
-extension takes it, taking the request back if a turn starts; the composer says to send it once the turn is done. A
-turn that starts in that last second, or once the extension took the prompt, before the prompt's own turn, is left to
-Copilot's own check. When BriefBar can't check, nothing goes either: in a folder that isn't a clone of the pull
-request's repository; where what it would push has a commit without parents, as where a shallow clone's history stops,
-which git takes for a root though it may be a merge, of anything; or while a merge is going on whose `MERGE_HEAD` it
-can't read, such as a link, which it doesn't follow. The check needs only the clone's `origin`, not a branch new work
-would start from (`Git.checkClone(at:of:)`).
+read, or doesn't keep the flag that says which sessions run one, as when the app keeps that another way now. It reads
+that flag alone (`AppSessions.running(home:strictly:)`, `AppDatabase.turns(at:)`), so whatever else the app changes of
+what it keeps of its sessions, which the session list reads, the push still goes while no turn runs there; and with no
+database at all, as without the Copilot app, none of the app's sessions runs one. BriefBar reads that before git checks
+and again after, right before it copies the prompt, or writes the request for the session's extension and then, at most
+once a second, until the extension takes it, taking the request back if a turn starts; the composer says to send it
+once the turn is done. A turn that starts in that last second, or once the extension took the prompt, before the
+prompt's own turn, is left to Copilot's own check. When BriefBar can't check, nothing goes either: in a folder that
+isn't a clone of the pull request's repository; where what it would push has a commit without parents, as where a
+shallow clone's history stops, which git takes for a root though it may be a merge, of anything; or while a merge is
+going on whose `MERGE_HEAD` it can't read, such as a link, which it doesn't follow. The check needs only the clone's
+`origin`, not a branch new work would start from (`Git.checkClone(at:of:)`).
 
 Copilot checks too, as late as it can: Push & Reply's prompt has it commit, then, right before it pushes, and again
 after a rebase when a push is rejected, read the pull request with BriefBar's `pull_request` tool, which reads the
