@@ -159,7 +159,7 @@ import Testing
 
     /// An order whose own pull requests for a story all merged no longer claims the story's new ones: they're the story's
     /// own mission, as without it, rather than "Same story · not in this order" under a finished order. One of its own
-    /// still open for the story keeps them.
+    /// for the story that hasn't merged or closed keeps them.
     @Test func aFinishedOrderLeavesItsStorysNewPullRequestsToTheStory() throws {
         var orders = DeclaredOrders()
         try orders.apply(OrderRequest(entries: [
