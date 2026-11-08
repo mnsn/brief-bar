@@ -220,7 +220,7 @@ package struct UpNextGrid: Layout {
     }
 
     package func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? CGFloat(subviews.count) * (minimum + spacing) - spacing
+        let width = finite(proposal.width, subviews: subviews)
         let lines = arrange(width: width, subviews: subviews)
         let height = lines.map(\.height).reduce(0, +) + spacing * CGFloat(max(lines.count - 1, 0))
         return CGSize(width: width, height: height)
@@ -228,7 +228,7 @@ package struct UpNextGrid: Layout {
 
     package func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var y = bounds.minY
-        for line in arrange(width: bounds.width, subviews: subviews) {
+        for line in arrange(width: finite(bounds.width, subviews: subviews), subviews: subviews) {
             for (column, index) in line.indices.enumerated() {
                 let x = bounds.minX + CGFloat(column) * (line.width + spacing)
                 subviews[index].place(
@@ -244,6 +244,13 @@ package struct UpNextGrid: Layout {
         /// Each slot's width on it.
         var width: CGFloat
         var height: CGFloat
+    }
+
+    /// The width to lay its slots out in: the one offered, or, asked for its ideal or its largest size, its slots side by
+    /// side at their narrowest. Never infinite, nor less than nothing, as SwiftUI needs a size it can use.
+    private func finite(_ width: CGFloat?, subviews: Subviews) -> CGFloat {
+        if let width, width.isFinite { return max(0, width) }
+        return max(0, CGFloat(subviews.count) * (minimum + spacing) - spacing)
     }
 
     private func arrange(width: CGFloat, subviews: Subviews) -> [Line] {
