@@ -40,6 +40,6 @@ package final class LoginItem: ObservableObject {
     }
 
     package func openSystemSettings() {
-        SMAppService.openSystemSettingsLoginItems()
+        ThisMac.openLoginItemsSettings()
     }
 }
