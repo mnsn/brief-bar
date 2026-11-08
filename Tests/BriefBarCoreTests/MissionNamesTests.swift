@@ -414,6 +414,9 @@ import Testing
             "I see no common theme here", "No name fits these titles", "Cannot determine a name", "Not enough information",
             "Unable to do that", "Unable to do this.", "Unable to fulfil this request",
             "As an on-device model without context, I can't",
+            // Quoted, as a whole answer, with its full stop inside the quotes or after them.
+            "\"Unable to do that\"", "“Unable to do this.”", "\"Unable to do that\".", "‘Unable to do it’",
+            "\"Sorry\"", "“My apologies”", "“Sorry.”", "\"Unable\"", "“Unable”",
             // Chatter around a name.
             "Here it is: Checkout coupons", "Here you go: Checkout coupons", "Here: Checkout coupons", "Sure thing! Checkout coupons",
             "Sure — Checkout coupons", "Sure - Checkout coupons", "Okay — Checkout coupons", "Of course — Checkout coupons",
@@ -438,6 +441,9 @@ import Testing
         ] {
             #expect(MissionNaming.clean(name) == name, "\(name)")
         }
+        // Quoted, it's still a name, without its quotes.
+        #expect(MissionNaming.clean("“Unable to sign in fix”") == "Unable to sign in fix")
+        #expect(MissionNaming.clean("\"Sorry page redesign\".") == "Sorry page redesign")
         // A question one of its titles asks can be its name; and a first word in small letters that one starts with, or
         // has after a colon, stays so. Elsewhere in a title, a word in small letters is only in its sentence.
         #expect(MissionNaming.clean("Why is checkout slow?", titles: ["Speed up the checkout page", "Why is checkout slow?"]) == "Why is checkout slow?")

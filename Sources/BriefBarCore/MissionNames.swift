@@ -429,10 +429,12 @@ public enum MissionNaming {
         return placeholders.contains(words) || placeholders.contains(words.replacing(/\s+(?:mission|name|title)$/, with: ""))
     }
 
-    /// Whether a line opens as an answer that isn't a name does, whatever quotes it opens with: "Here's", "Sure!",
-    /// "I’m sorry", "I'll call it", "As an AI language model", but not "Heredoc fixes", "iOS widgets" or "I/O retries".
+    /// Whether a line opens as an answer that isn't a name does, whatever quotes it's in: "Here's", "Sure!", "I’m sorry",
+    /// "I'll call it", "As an AI language model", “Unable to do this.”, but not "Heredoc fixes", "iOS widgets" or "I/O
+    /// retries". Its closing quotes go, with a full stop or "!" after them, for the openings that are a whole answer.
     static func isChatter(_ line: String) -> Bool {
         let opening = line.drop { "\"“'‘".contains($0) }.lowercased().replacingOccurrences(of: "’", with: "'")
+            .replacing(/["”']+[.!]*\s*$/, with: "")
         return chatter.contains { opening.firstMatch(of: $0) != nil }
     }
 
