@@ -392,6 +392,8 @@ import Testing
         ], sessions: sessions))
         #expect(after.map(\.key) == [.story(Self.item(5101))])
         #expect(OrderBoard.successor(of: .family(coordinator), from: before, to: after) == .story(Self.item(5101)))
+        // And back, as Show Links is turned off.
+        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: after, to: before) == .family(coordinator))
         // Only one of them went: it waits.
         let split = Self.missions(Self.facts([
             Self.ado(4101, [Self.task(5102, rank: 1)]), Self.ado(4102, []), Self.ado(4103, [Self.task(5103, rank: 2)]),
@@ -411,6 +413,26 @@ import Testing
         ]))
         #expect(moved.map(\.key) == [.chain(Self.pr(4111))])
         #expect(OrderBoard.successor(of: .chain(Self.pr(4110)), from: chain, to: moved) == .chain(Self.pr(4111)))
+        // A chain's pull requests read as a story's, and back, as Show Links is turned off.
+        let read = Self.missions(Self.facts([
+            Self.ado(4111, [Self.task(5102, rank: 1)], from: "users/robin/b", into: "users/robin/a"),
+            Self.ado(4112, [Self.task(5103, rank: 2)], from: "users/robin/c", into: "users/robin/b"),
+        ]))
+        #expect(read.map(\.key) == [.story(Self.item(5101))])
+        #expect(OrderBoard.successor(of: .chain(Self.pr(4111)), from: moved, to: read) == .story(Self.item(5101)))
+        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: read, to: moved) == .chain(Self.pr(4111)))
+        // A story's that held others too: it waits, as they went different ways.
+        let more = Self.missions(Self.facts([
+            Self.ado(4111, [Self.task(5102, rank: 1)], from: "users/robin/b", into: "users/robin/a"),
+            Self.ado(4112, [Self.task(5103, rank: 2)], from: "users/robin/c", into: "users/robin/b"),
+            Self.ado(4120, [Self.task(5104, rank: 3)], from: "users/sam/a"), Self.ado(4121, [Self.task(5105, rank: 4)], from: "users/sam/b", into: "users/sam/a"),
+        ]))
+        let unread = Self.missions(Self.facts([
+            Self.ado(4111, nil, from: "users/robin/b", into: "users/robin/a"), Self.ado(4112, nil, from: "users/robin/c", into: "users/robin/b"),
+            Self.ado(4120, nil, from: "users/sam/a"), Self.ado(4121, nil, from: "users/sam/b", into: "users/sam/a"),
+        ]))
+        #expect(Set(unread.map(\.key)) == [.chain(Self.pr(4111)), .chain(Self.pr(4120))])
+        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: more, to: unread) == nil)
         // A family whose pull requests went to a chain: it waits, as today.
         let stacked = Self.missions(Self.facts([
             Self.ado(4101, [], from: "users/robin/a"), Self.ado(4102, [], from: "users/robin/b", into: "users/robin/a"),
@@ -430,7 +452,28 @@ import Testing
         let left = Self.missions(Self.facts(open), changes: out)
         #expect(Set(left.map(\.key)) == [.chain(Self.pr(4111)), mine])
         #expect(OrderBoard.successor(of: .chain(Self.pr(4110)), from: whole, to: left, moved: [Self.pr(4110)]) == .chain(Self.pr(4111)))
-        #expect(OrderBoard.successor(of: .chain(Self.pr(4110)), from: whole, to: left) == nil)
+        // Counting the one you moved, the chain split in two: what was kept goes to the chain with the most of it.
+        #expect(OrderBoard.successor(of: .chain(Self.pr(4110)), from: whole, to: left) == .chain(Self.pr(4111)))
+        // Split by one moved from its middle: the chain with the most of the rest, not the one left alone.
+        let four = open + [Self.ado(4113, [], from: "users/robin/d", into: "users/robin/c")]
+        let middle = OrderChanges([OrderChange(ref: Self.pr(4111), placement: .into(mine), from: .chain(Self.pr(4110)), changedAt: t(10))])
+        let halves = Self.missions(Self.facts(four), changes: middle)
+        #expect(Set(halves.map(\.key)) == [.chain(Self.pr(4112)), mine])
+        #expect(
+            OrderBoard.successor(of: .chain(Self.pr(4110)), from: Self.missions(Self.facts(four)), to: halves, moved: [Self.pr(4111)])
+                == .chain(Self.pr(4112))
+        )
+        // Split in two chains, by the earliest and another moved out: the longer one.
+        let seven = (4110...4116).map { number in
+            Self.ado(number, [], from: "users/robin/\(number)", into: number == 4110 ? "main" : "users/robin/\(number - 1)")
+        }
+        let two = OrderChanges([4110, 4113].map { OrderChange(ref: Self.pr($0), placement: .into(mine), changedAt: t(10)) })
+        let parts = Self.missions(Self.facts(seven), changes: two)
+        #expect(Set(parts.map(\.key)) == [.chain(Self.pr(4111)), .chain(Self.pr(4114)), mine])
+        #expect(
+            OrderBoard.successor(of: .chain(Self.pr(4110)), from: Self.missions(Self.facts(seven)), to: parts, moved: [Self.pr(4110), Self.pr(4113)])
+                == .chain(Self.pr(4114))
+        )
         // A mission of your own never moves: it's kept by its ID.
         #expect(OrderBoard.successor(of: mine, from: left, to: whole) == nil)
     }
@@ -465,6 +508,55 @@ import Testing
         let mission = try #require(followed.first)
         #expect(mission.steps.map(\.ref).contains(Self.pr(4103)))
         #expect(mission.steps.first { $0.ref == Self.pr(4102) }?.standing == .next)
+    }
+
+    /// Where you set one as next among a session's pull requests follows them to their story's only while nothing else open
+    /// is there: a teammate's of the same story didn't wait for it. Where you put one follows them all the same.
+    @Test func aNextYouSetFollowsOnlyWhereNothingElseOpenIs() throws {
+        let coordinator = ItemRef.session("00000000-0000-4000-8000-000000000002")!
+        let sessions = [OrderSession(ref: coordinator, pullRequests: [Self.pr(4101), Self.pr(4102)])]
+        let (family, story) = (MissionKey.family(coordinator), MissionKey.story(Self.item(5101)))
+        let changes = OrderChanges([
+            OrderChange(ref: Self.pr(4103), placement: .into(family), changedAt: t(10)),
+            OrderChange(ref: Self.pr(4102), first: family, changedAt: t(20)),
+        ])
+        let before = Self.missions(Self.facts([4101, 4102, 4103, 4120].map { Self.ado($0, nil) }, sessions: sessions), changes: changes)
+        // Show Links read them: the session's are for 5101, and so is a teammate's !4120.
+        let read = Self.facts([
+            Self.ado(4101, [Self.task(5102, rank: 1)]), Self.ado(4102, [Self.task(5103, rank: 2)]), Self.ado(4103, []),
+            Self.ado(4120, [Self.task(5104, rank: 3)]),
+        ], sessions: sessions)
+        let after = Self.missions(read, changes: changes)
+        let moved: Set<ItemRef> = [Self.pr(4103)]
+        let successor = { (key: MissionKey) in OrderBoard.successor(of: key, from: before, to: after, moved: moved) }
+        let nexts = { (key: MissionKey) in OrderBoard.successor(of: key, from: before, to: after, moved: moved, alone: true) }
+        #expect(successor(family) == story && nexts(family) == nil)
+        var followed = changes
+        #expect(followed.followMissions(successor, nexts: nexts) == [family: story])
+        #expect(followed[Self.pr(4103)]?.placement == .into(story) && followed[Self.pr(4102)]?.first == family)
+        let mission = try #require(Self.missions(read, changes: followed).first { $0.key == story })
+        #expect(Set(mission.steps.map(\.ref)) == Set([4101, 4102, 4103, 4120].map(Self.pr)))
+        #expect(!mission.steps.contains { step in
+            if case .waiting = step.standing { return true }
+            return step.standing == .next
+        })
+        #expect(mission.steps.first { $0.ref == Self.pr(4102) }?.notes.contains(.nextElsewhere(family)) == true)
+
+        // Without the teammate's, nothing else is there: it follows.
+        let alone = Self.facts([Self.ado(4101, [Self.task(5102, rank: 1)]), Self.ado(4102, [Self.task(5103, rank: 2)]), Self.ado(4103, [])], sessions: sessions)
+        let only = Self.missions(alone, changes: changes)
+        #expect(OrderBoard.successor(of: family, from: before, to: only, moved: moved, alone: true) == story)
+        // One you put in the story's mission yourself isn't another's: it follows too.
+        let placed = OrderChanges([
+            OrderChange(ref: Self.pr(4130), placement: .into(story), changedAt: t(5)),
+            OrderChange(ref: Self.pr(4102), first: family, changedAt: t(20)),
+        ])
+        let unread = Self.missions(Self.facts([4101, 4102, 4130].map { Self.ado($0, nil) }, sessions: sessions), changes: placed)
+        let withYours = Self.missions(Self.facts([
+            Self.ado(4101, [Self.task(5102, rank: 1)]), Self.ado(4102, [Self.task(5103, rank: 2)]), Self.ado(4130, []),
+        ], sessions: sessions), changes: placed)
+        #expect(withYours.first { $0.key == story }?.steps.map(\.ref) == [4101, 4102, 4130].map(Self.pr))
+        #expect(OrderBoard.successor(of: family, from: unread, to: withYours, moved: [Self.pr(4130)], alone: true) == story)
     }
 
     /// Moving one of a story's pull requests into an order moves only that one: the order doesn't claim the story for it,

@@ -70,6 +70,14 @@ fileprivate final class Viewer {}
         )
     }
 
+    /// An Azure DevOps pull request from `source` into `target`, as a chain's.
+    static func stacked(_ number: Int, from source: String, into target: String, _ stories: [OrderStory]?) -> OrderPullRequest {
+        OrderPullRequest(
+            ref: pr(number), repository: "contoso/p/shop-web", sourceBranch: source, targetBranch: target, author: "robin",
+            createdAt: Date(timeIntervalSince1970: 1_791_000_000 + Double(number)), stories: stories
+        )
+    }
+
     static func item(_ ref: ItemRef, _ title: String) -> LinkedItem {
         LinkedItem(ref: ref, label: ref.shortOrderLabel, title: title, symbol: "circle", color: .blue)
     }
@@ -625,6 +633,112 @@ fileprivate final class Viewer {}
         #expect(order.focus == next && OrderFocus.load(from: defaults) == next)
         #expect(order.yourNames.name(for: next) == "Totals" && order.yourNames.name(for: chain.key) == nil)
         #expect(order.title(of: try #require(order.missions.first { $0.key == next })) == "Totals")
+    }
+
+    /// What's kept by a chain follows its pull requests into their story's mission as Show Links reads them, and back out
+    /// as it's turned off: Focus, your name, and the one you put in it, which never shows apart from them.
+    @Test func focusYourNameAndWhatYouPutInAChainFollowItIntoItsStoryAndBackOut() throws {
+        let clock = Clock()
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults, clock: clock)
+        let (chain, story) = (MissionKey.chain(Self.pr(4110)), MissionKey.story(Self.story))
+        func publish(reading: Bool, stories: Bool) {
+            order.publish(.azureDevOps, pullRequests: [
+                Self.stacked(4110, from: "robin/a", into: "main", reading ? (stories ? [Self.task(5181, rank: 1)] : []) : nil),
+                Self.stacked(4111, from: "robin/b", into: "robin/a", reading ? (stories ? [Self.task(5182, rank: 2)] : []) : nil),
+                Self.ado(4130, reading ? [] : nil),
+            ], readsStories: reading)
+        }
+        func expectKept(by key: MissionKey) throws {
+            #expect(order.missions.map(\.key) == [key])
+            let mission = try #require(order.missions.first)
+            #expect(mission.steps.map(\.ref) == [4110, 4111, 4130].map(Self.pr))
+            #expect(mission.steps.allSatisfy { step in
+                step.notes.allSatisfy { note in
+                    switch note {
+                    case .placementGone, .placementUnseen: return false
+                    default: return true
+                    }
+                }
+            })
+            #expect(mission.isFocused && order.focus == key && OrderFocus.load(from: defaults) == key)
+            #expect(order.title(of: mission) == "Totals" && MissionNames.load(from: defaults).entries.keys.map { $0 } == [key])
+            #expect(order.changes[Self.pr(4130)]?.placement == .into(key))
+            #expect(OrderChanges.load(from: defaults)[Self.pr(4130)]?.placement == .into(key))
+        }
+        publish(reading: true, stories: false)
+        #expect(order.missions.map(\.key) == [chain])
+        order.setFocus(chain)
+        order.rename(try #require(order.missions.first), to: "Totals")
+        order.change(.move([Self.pr(4130)], to: .into(chain), from: nil))
+        order.dismissLastChange()
+        try expectKept(by: chain)
+        // Show Links read that the chain's are for User Story 5180: all three go to its mission.
+        publish(reading: true, stories: true)
+        try expectKept(by: story)
+        // Turned off: they come back to the chain, as you left it.
+        publish(reading: false, stories: false)
+        try expectKept(by: chain)
+        // And on again.
+        publish(reading: true, stories: true)
+        try expectKept(by: story)
+    }
+
+    /// A chain you split in two, moving one from its middle into a mission of your own, goes on as the part with the most
+    /// of it: Focus and your name follow there, and back with Undo.
+    @Test func focusAndYourNameFollowAChainYouSplitToItsLongerPart() throws {
+        let clock = Clock()
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults, clock: clock)
+        order.publish(.azureDevOps, pullRequests: [
+            Self.stacked(4110, from: "robin/a", into: "main", []), Self.stacked(4111, from: "robin/b", into: "robin/a", []),
+            Self.stacked(4112, from: "robin/c", into: "robin/b", []), Self.stacked(4113, from: "robin/d", into: "robin/c", []),
+        ], readsStories: true)
+        let chain = try #require(order.missions.first)
+        #expect(chain.key == .chain(Self.pr(4110)) && chain.steps.count == 4)
+        order.setFocus(chain.key)
+        order.rename(chain, to: "Totals")
+        let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
+        order.change(.move([Self.pr(4111)], to: .into(mine), from: chain.key))
+
+        let rest = MissionKey.chain(Self.pr(4112))
+        #expect(Set(order.missions.map(\.key)) == [rest, mine])
+        #expect(order.focus == rest && OrderFocus.load(from: defaults) == rest)
+        #expect(order.yourNames.name(for: rest) == "Totals" && order.yourNames.name(for: chain.key) == nil)
+        // Undo: the chain is whole again, and they come back to it.
+        #expect(order.undoLastChange())
+        #expect(order.missions.map(\.key) == [chain.key])
+        let whole = try #require(order.missions.first)
+        #expect(order.focus == chain.key && order.title(of: whole) == "Totals")
+    }
+
+    /// Where you set one as next among a session's pull requests stays there as they go to their story's, once a teammate's
+    /// of the same story is there too: theirs don't wait for it, and yours says so. Undo would set it there too.
+    @Test func aNextYouSetAmongASessionsPullRequestsDoesntSpreadToTheirStorys() throws {
+        let clock = Clock()
+        let order = Self.service(clock: clock)
+        let (family, story) = (MissionKey.family(Self.session), MissionKey.story(Self.story))
+        order.publish(.copilot, sessions: [OrderSession(ref: Self.session, pullRequests: [Self.pr(4113), Self.pr(4105)])])
+        order.publish(.azureDevOps, pullRequests: [4113, 4105, 4120, 4121].map { Self.ado($0, []) }, readsStories: true)
+        #expect(order.missions.map(\.key) == [family])
+        order.change(.setNext(Self.pr(4105), in: family, true))
+        order.change(.setNext(Self.pr(4113), in: family, true))
+        #expect(order.lastChange?.touched[Self.pr(4105)].flatMap { $0 }?.first == family)
+
+        // Show Links read them: the session's are for User Story 5180, and so are a teammate's !4120 and !4121.
+        order.publish(.azureDevOps, pullRequests: [
+            Self.ado(4113, [Self.task(5181, rank: 1)]), Self.ado(4105, [Self.task(5183, rank: 3)]),
+            Self.ado(4120, [Self.task(5184, rank: 4)]), Self.ado(4121, [Self.task(5185, rank: 5)]),
+        ], readsStories: true)
+        let mission = try #require(order.missions.first)
+        #expect(order.missions.map(\.key) == [story] && mission.steps.count == 4)
+        #expect(order.changes[Self.pr(4113)]?.first == family)
+        #expect(!mission.steps.contains { step in
+            if case .waiting = step.standing { return true }
+            return step.standing == .next
+        })
+        #expect(mission.steps.first { $0.ref == Self.pr(4113) }?.notes.contains(.nextElsewhere(family)) == true)
+        #expect(order.lastChange?.touched[Self.pr(4105)].flatMap { $0 }?.first == family)
     }
 
     /// A mission of your own keeps the name you give it, and Focus, while a change of yours puts a pull request in it, or

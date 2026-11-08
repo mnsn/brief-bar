@@ -520,37 +520,48 @@ public struct OrderChanges: Equatable, Sendable {
 
     /// Names the chains that changes name by another of their pull requests, where `anchor` gives one.
     mutating func rename(_ anchor: (ItemRef) -> ItemRef?) {
-        renameMissions { key in
+        func chain(_ key: MissionKey) -> MissionKey? {
             guard case .chain(let old) = key, let new = anchor(old) else { return nil }
             return .chain(new)
         }
+        renameMissions(chain, nexts: chain)
     }
 
     /// Names the missions your changes name as they went on, where `successor` gives where one went
-    /// (`OrderBoard.successor`): the pull requests opened under a session, or a chain, to their story's, a chain to another
-    /// chain or a GitHub stack. Where each puts its pull request, the mission it came from, and where it's set as next.
+    /// (`OrderBoard.successor`): the pull requests opened under a session, or a chain, to their story's, and back; a chain
+    /// to another chain or a GitHub stack. Where each puts its pull request and the mission it came from, by `successor`;
+    /// where it's set as next, by `nexts`, which can leave it where it was, so that others where they went don't wait for it.
     /// - Returns: what each mission it renamed was named, and is now.
     @discardableResult
-    public mutating func followMissions(_ successor: (MissionKey) -> MissionKey?) -> [MissionKey: MissionKey] {
+    public mutating func followMissions(
+        _ successor: (MissionKey) -> MissionKey?, nexts: ((MissionKey) -> MissionKey?)? = nil
+    ) -> [MissionKey: MissionKey] {
         var renamed: [MissionKey: MissionKey] = [:]
-        renameMissions { key in
-            guard let next = successor(key) else { return nil }
-            renamed[key] = next
+        func went(_ key: MissionKey, to next: MissionKey?) -> MissionKey? {
+            if let next { renamed[key] = next }
             return next
         }
+        func follow(_ key: MissionKey) -> MissionKey? { went(key, to: successor(key)) }
+        func followNext(_ key: MissionKey) -> MissionKey? {
+            guard let nexts else { return follow(key) }
+            return went(key, to: nexts(key))
+        }
+        renameMissions(follow, nexts: followNext)
         return renamed
     }
 
-    /// Names the missions changes name as `rename` gives, where it gives one.
-    private mutating func renameMissions(_ rename: (MissionKey) -> MissionKey?) {
-        func renamed(_ key: MissionKey?) -> MissionKey? {
+    /// Names the missions changes name as `rename` gives, where it gives one; where each is set as next, as `nexts` gives.
+    private mutating func renameMissions(_ rename: (MissionKey) -> MissionKey?, nexts: (MissionKey) -> MissionKey?) {
+        func renamed(_ key: MissionKey?, by rename: (MissionKey) -> MissionKey?) -> MissionKey? {
             key.map { rename($0) ?? $0 }
         }
         for (ref, change) in changes {
             var change = change
-            if let placement = change.placement?.mission { change.placement = renamed(placement).map(OrderPlacement.into) }
-            change.from = renamed(change.from)
-            change.first = renamed(change.first)
+            if let placement = change.placement?.mission {
+                change.placement = renamed(placement, by: rename).map(OrderPlacement.into)
+            }
+            change.from = renamed(change.from, by: rename)
+            change.first = renamed(change.first, by: nexts)
             if change != changes[ref] { changes[ref] = change }
         }
     }

@@ -1042,8 +1042,11 @@ public enum OrderBoard {
 
     /// Where something kept by a mission's key goes once that mission is gone, as the missions change: Focus, the name you
     /// gave it, and your changes that name it. The mission all its open pull requests went to, but those your changes moved
-    /// into it or out of it, wherever they are now, when that's their story's; or, for a chain whose earliest pull request
-    /// left, the chain or GitHub stack they're in now. Nil while it's still there, or when its open pull requests went
+    /// into it or out of it, wherever they are now, when that's their story's; for a chain whose earliest pull request
+    /// left, the chain or GitHub stack they're in now; or, for a story's, as Show Links is turned off or their work items
+    /// change, the chain, GitHub stack or session's they're in now, so that what followed them into it comes back with
+    /// them. A chain split in two, as you moved one from its middle, goes to the chain or GitHub stack with the most of
+    /// them, the first shown of those with as many. Nil while it's still there, or when its open pull requests went
     /// different ways, or none is open: what's kept waits, as it would. A session's order and a mission of your own never
     /// move: they're kept by their IDs. One that's gone but for what you'd put in it, which By Mission shows as yours, is
     /// gone.
@@ -1051,8 +1054,10 @@ public enum OrderBoard {
     ///   - old: the missions as they were.
     ///   - new: the missions now.
     ///   - moved: the pull requests your changes that hold put in a mission, or out of one (`OrderChange.placement`).
+    ///   - alone: only to a mission with no open pull request but those and the ones your changes moved: for where you set
+    ///     one as next to merge, which shouldn't have others wait for it, such as a teammate's of the same story.
     public static func successor(
-        of key: MissionKey, from old: [OrderMission], to new: [OrderMission], moved: Set<ItemRef> = []
+        of key: MissionKey, from old: [OrderMission], to new: [OrderMission], moved: Set<ItemRef> = [], alone: Bool = false
     ) -> MissionKey? {
         switch key {
         case .plan, .mine: return nil
@@ -1060,15 +1065,28 @@ public enum OrderBoard {
         }
         guard !new.contains(where: { $0.key == key && !$0.isMine }), let was = old.first(where: { $0.key == key }) else { return nil }
         let open = (was.steps + was.attached + was.sameStory).filter { $0.status.isOpen && !moved.contains($0.ref) }.map(\.ref)
-        guard let first = open.first,
-              let now = new.first(where: { mission in mission.steps.contains { $0.ref == first } }),
-              open.allSatisfy({ ref in now.steps.contains { $0.ref == ref } })
-        else { return nil }
+        guard !open.isEmpty else { return nil }
+        let held = { (mission: OrderMission) in open.filter { ref in mission.steps.contains { $0.ref == ref } }.count }
+        var now = new.first { !$0.isMine && held($0) == open.count }
+        if now == nil, case .chain = key {
+            for mission in new where !mission.isMine && held(mission) > (now.map(held) ?? 0) {
+                switch mission.key {
+                case .chain, .stack: now = mission
+                default: break
+                }
+            }
+        }
+        guard let now else { return nil }
         switch (key, now.key) {
-        case (_, .story): return now.key
-        case (.chain, .chain), (.chain, .stack): return now.key
+        case (_, .story), (.chain, .chain), (.chain, .stack), (.story, .chain), (.story, .stack), (.story, .family): break
         default: return nil
         }
+        if alone {
+            let had = Set((was.steps + was.attached + was.sameStory).map(\.ref))
+            guard !(now.steps + now.attached).contains(where: { $0.status.isOpen && !had.contains($0.ref) && !moved.contains($0.ref) })
+            else { return nil }
+        }
+        return now.key
     }
 }
 
