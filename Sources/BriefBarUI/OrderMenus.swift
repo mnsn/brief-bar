@@ -194,10 +194,10 @@ struct MissionMenuItems: View {
         }
     }
 
-    /// A mission as Move to Mission names it: by its title, with its kind but for a session's order.
+    /// A mission as Move to Mission names it: by the name its header shows, with its kind but for a session's order.
     private func targetTitle(_ key: MissionKey) -> String {
         guard let mission = order.missions.first(where: { $0.key == key }) else { return key.description }
-        let title = OrderText.title(of: mission, name: order.name(of:))
+        let title = order.title(of: mission)
         let kind: String? = switch mission.kind {
         case .declared: nil
         default: OrderText.kind(of: mission)

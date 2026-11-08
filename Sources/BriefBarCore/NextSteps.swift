@@ -18,8 +18,8 @@ public struct BoardCard: Equatable, Sendable, Identifiable {
     /// That mission's place in By Mission's list, from 0.
     public var missionIndex: Int?
     /// Its place in that mission's merge order, among what's left to merge there, from 0: only for one its order numbers.
-    /// Nil for one that merges any time, in a group with no order, stacked with the order's without being in it, merged or
-    /// closed, or in no mission.
+    /// Nil for one that merges any time, in a group with no order, stacked with the order's or for its story without being
+    /// in it, merged or closed, or in no mission.
     public var position: Int?
     /// Its place in that mission as By Mission lists it, from 0: its order's steps, then those stacked with them. Only for
     /// which comes first when nothing else tells them apart, never for which merges first.
@@ -625,14 +625,15 @@ public struct PullRequestBoard: Equatable, Sendable {
     }
 
     /// The pull requests whose Undo line a lane shows, when your last change was to one of them: a mission's lane, every
-    /// one of its mission's, on the board or not, as List's card does; the lane of those in no mission, or of every card,
-    /// its cards, and the one you changed once it left the board where no mission's lane has it.
+    /// one of its mission's, those for its story apart from its order too, on the board or not, as List's card does; the
+    /// lane of those in no mission, or of every card, its cards, and the one you changed once it left the board where no
+    /// mission's lane has it.
     public func undoRefs(of lane: BoardLane, missions: [OrderMission], changed: ItemRef?) -> Set<ItemRef> {
         var refs = Set(lane.cards.map(\.ref))
         switch lane.kind {
         case .mission(let key):
             if let mission = missions.first(where: { $0.key == key }) {
-                refs.formUnion((mission.steps + mission.attached).map(\.ref))
+                refs.formUnion(mission.refs)
             }
         case .notInAMission, .all:
             if let changed, isUnhosted(changed, missions: missions) { refs.insert(changed) }
@@ -653,14 +654,15 @@ public struct PullRequestBoard: Equatable, Sendable {
         Set(listed).subtracting(refs).count
     }
 
-    /// Each of a mission's pull requests as By Mission lists them, its order's then those stacked with them, with its place
-    /// in that list and its place in the merge order among what's left to merge: only for an open one its order numbers,
-    /// as a family's list or an any-time one's place says nothing of what merges first.
+    /// Each of a mission's pull requests as By Mission lists them, its order's, those stacked with them, then those for its
+    /// story that its order doesn't name, with its place in that list and its place in the merge order among what's left to
+    /// merge: only for an open one its order numbers, as a family's list or an any-time one's place says nothing of what
+    /// merges first.
     static func places(in mission: OrderMission) -> [(step: OrderStep, position: Int?, listIndex: Int)] {
         let numbered = mission.steps.filter { $0.number != nil && !$0.status.hasEnded }
             .sorted { ($0.number ?? 0) < ($1.number ?? 0) }
         let positions = Dictionary(numbered.enumerated().map { ($1.ref, $0) }, uniquingKeysWith: { first, _ in first })
-        return (mission.steps + mission.attached).enumerated().map { index, step in
+        return (mission.steps + mission.attached + mission.sameStory).enumerated().map { index, step in
             (step, index < mission.steps.count ? positions[step.ref] : nil, index)
         }
     }

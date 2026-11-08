@@ -40,7 +40,8 @@ package struct MissionBand: View {
     package var body: some View {
         if let map = OrderMap(mission) {
             VStack(alignment: .leading, spacing: 6) {
-                let badge = OrderBadge.workItem(of: mission, links: links)
+                // A mission's story shows in its header already.
+                let badge = mission.story == nil ? OrderBadge.workItem(of: mission, links: links) : nil
                 MissionHeader(mission: mission, order: order, place: [place, badge].compactMap { $0 }.joined(separator: " · "))
                 if let lane {
                     MissionNextStepsLine(lane: lane, order: order, select: select)

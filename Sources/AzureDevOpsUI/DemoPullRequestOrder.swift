@@ -13,8 +13,8 @@ import Foundation
 ///   can't see whether it merged).
 ///
 /// And your changes to them (`OrderChanges`): you set the order status rename (!4079) as next to merge, two hours ago, so
-/// it no longer waits for the retry, which waits for it; and you made a mission of your own of the delivery estimates
-/// (!4088) and the one-click checkout's prototype (!4105), which you put after them.
+/// it no longer waits for the retry, which waits for it; and you made a mission of your own of the build agents' upgrade
+/// (!4110) and the slow query log (!4099), which you put after it.
 /// And the stage you set on the one-click checkout's prototype, a draft nobody reviews yet: Teammate's review, two
 /// hours ago, so it says to find a reviewer; and the one "Retry backoff" set on the retry (!4102) as it finished: Your
 /// review.
@@ -35,7 +35,9 @@ enum DemoPullRequestOrder {
     static let emails = pullRequest(4118)
     static let deliveryEstimates = pullRequest(4088)
     static let oneClickCheckout = pullRequest(4105)
-    /// Your mission of the delivery estimates and the one-click checkout.
+    static let buildAgents = pullRequest(4110)
+    static let slowQueries = pullRequest(4099)
+    /// Your mission of the build agents' upgrade and the slow query log.
     static let mineID = UUID(uuidString: "6c2e9f41-8b3d-4a57-9e12-0d4f7b3a5c88")!
 
     static func pullRequest(_ number: Int) -> ItemRef {
@@ -77,6 +79,19 @@ enum DemoPullRequestOrder {
     /// The mission you focus on.
     static let focus = MissionKey.plan(paymentsID)
 
+    /// User Story 5180, "Checkout redesign", outside the sprint: Show Links' demo links its tasks to !4113, !4088 and !4105
+    /// (`DemoData.workLinks`), which are its mission.
+    static let checkoutRedesign = ItemRef.workItem(organization: DemoData.organization, id: 5180)
+
+    /// The names Apple Intelligence would give the demo's missions, as their work drifted from where it started: made up,
+    /// as the demo never asks the model.
+    static let names: [MissionKey: String] = [
+        .plan(paymentsID): "Payment retries and coupons",
+        .plan(id): "Dark mode everywhere",
+        .story(checkoutRedesign): "Faster checkout",
+        .mine(mineID): "Build agents on .NET 9",
+    ]
+
     /// The stages you set: the one-click checkout's prototype, for a teammate's review, two hours ago.
     static func stages(now: Date) -> [ItemRef: StageMark] {
         [oneClickCheckout: StageMark(stage: .teammateReview, at: now.addingTimeInterval(-2 * 3_600))]
@@ -100,10 +115,8 @@ enum DemoPullRequestOrder {
                 ref: statusRename, first: .plan(paymentsID), changedAt: now.addingTimeInterval(-2 * 3_600),
                 replaced: OrderPlace(of: statusRename, in: orders)
             ),
-            OrderChange(ref: deliveryEstimates, placement: mine, changedAt: now.addingTimeInterval(-50 * 60)),
-            OrderChange(
-                ref: oneClickCheckout, after: [deliveryEstimates], placement: mine, changedAt: now.addingTimeInterval(-49 * 60)
-            ),
+            OrderChange(ref: buildAgents, placement: mine, changedAt: now.addingTimeInterval(-30 * 60)),
+            OrderChange(ref: slowQueries, after: [buildAgents], placement: mine, changedAt: now.addingTimeInterval(-29 * 60)),
         ])
     }
 }

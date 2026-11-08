@@ -35,6 +35,27 @@ Pull Request Order, with Azure DevOps' and GitHub's, then Azure DevOps' own, whi
 same keys. A source's settings work only while it's on: while it's off or paused, they show all the same,
 disabled, saying so, drawn from its settings alone, as a source that's off reads nothing for them.
 
+Pull Request Order keeps the names you give missions with **Rename…** (`MissionNames`, under `order.names`), by what
+makes each mission: only names you typed, never one left as it was or set back to BriefBar's own, up to 200, of 80
+characters at most. A name is forgotten once its mission hasn't shown for 14 days, counted only while Pull Request
+Order, and what makes the mission, are on, and for a story's, once Show Links has read what each pull request is for
+(`OrderFacts.seesStories`), or failed to: a pull request whose work items, or one of them, couldn't be read counts as
+read, for no story, until a read gets them, rather than keep every story's mission unseen; with the order that makes it;
+with the source whose things make it, as you turn that off; for a mission of your own, once no change of yours puts a
+pull request in it, nor would Undo; and with
+**Forget All Orders…**. As a mission's key changes, its name follows it, as Focus and your changes do
+(`OrderBoard.successor`, below). The names Apple Intelligence gives missions with Azure DevOps' pull requests, on this
+Mac (`MissionNamer`, `MissionNaming`), from their pull requests', work items' and sessions' titles,
+are kept in memory only, and all go as you turn Azure DevOps off, with the answer under way. It's asked only for the missions in sight in a window that shows By Mission on screen: not
+while that window is closed, minimized or covered, nor for one scrolled out of sight until it comes into it; and,
+while Apple Intelligence is off or getting ready, BriefBar looks again every half minute, never on a Mac that can't run
+it. No name goes to the log or to agents, and none you give goes to Apple Intelligence: it's asked with the name it
+gave, or else BriefBar's own, to keep while that fits, each title quoted as data. Its answer is the name alone, by
+guided generation (`OnDeviceModel.Shape`), and one that declines, asks or talks about the name rather than give one
+leaves the mission's name as it was (`MissionNaming.clean`), by how such an answer opens, as "I'm sorry," or "Here's",
+not a name that opens with the same word, as "Sorry page redesign", and one that holds a name's place, as "N/A" or
+"Untitled"; a question is a name only when a title asks it.
+
 ## Permissions that macOS grants once
 
 macOS gives some permissions to the whole app, and asks for them only once. That's why BriefBar's own
@@ -1199,7 +1220,8 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
-| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed |
+| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
+| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links and Pull Request Order: for the parents of the tasks linked to your pull requests, their stories, that BriefBar doesn't read already, every quarter of an hour; 200 a request | their title, type, state, project and when they changed, to name a story's mission |
 | `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
@@ -1322,37 +1344,56 @@ row's menu, its details, a Map node's right-click and a Board card's menu, chang
 (`OrderChanges`): **Set as Next to Merge**, one for each mission, so that what waited for nothing there waits for it;
 **Merge After ▸**, to check or uncheck what it merges after; and **Move to Mission ▸**, into another mission, named by
 what lasts (an order by its ID, a chain of branches by one of its pull requests, the pull requests opened under a
-session by that session), a **New Mission** of your own, or **Not in a Mission**. A stacked branch is a fact: it
-counts wherever it leads, in a session's order and from one mission to another, where the Map puts the pull request a
-wave on and says where the other is; only retargeting changes it, and Set as Next waits for the one it's stacked on to
-merge and for the retarget. Then come your changes, then sessions' orders: an order's line that would go round with
-them is set aside and says so, also when it goes round through another mission, such as with what you set as next
-there. Two orders that put the same pull requests the other way round each keep their own, and both say so, for you to
-check the order. Your changes are a layer, kept by pull request and never written into an order, so sessions go on
-telling theirs. Each keeps the place the orders gave the pull request when you made it, and a session's later change
+session by that session, a story's by its work item), a **New Mission** of your own, or **Not in a Mission**. A stacked
+branch is a fact: it counts wherever it leads, in a session's order and from one mission to another, where the Map puts
+the pull request a wave on and says where the other is; only retargeting changes it, and Set as Next waits for the one
+it's stacked on to merge and for the retarget. Then come your changes, then sessions' orders: an order's line that would
+go round with them is set aside and says so, also when it goes round through another mission, such as with what you set
+as next there. Two orders that put the same pull requests the other way round each keep their own, and both say so, for
+you to check the order. Your changes are a layer, kept by pull request and never written into an order, so sessions go
+on telling theirs. Each keeps the place the orders gave the pull request when you made it, and a session's later change
 wins only where it goes against yours: a revision told after yours that names it in another mission than the one you
 moved it to, takes it out of the order you moved it to or changed it in, or puts it after what you took away, or after
-anything where you set it as next, also in a stack, a chain or a session's pull requests that it takes it out of,
-shows instead, says so, and **Put Yours Back** makes yours hold again. One that moves it toward yours, such as an
-order taking out what you moved out of it, naming what you moved into its mission, or naming as you had them what you
-changed among a stack's, a chain's or a session's pull requests, where what you set there goes over to that order
-(your next only while no other of yours is next there, and back to where you set it once the order no longer names
-it), or one that changes what you didn't, becomes what yours replaced, and yours holds; so does telling the same order
-again, or as it was when you made yours, whatever it said between, and a revision told before yours that BriefBar saw
-only after. An order forgotten since is no change. One limit: an order that takes in only the one you set as next
-among a stack's, a chain's or a session's pull requests takes your next with it, and the others wait for it only where
-they're stacked on it, with no note, as BriefBar doesn't keep which were with it when you set it. A row with no order
-known shows a quiet ✎ where your change says something of it, such as that you moved it there, or that the order you
-set it as next in is gone; and one beside an order that doesn't name it, stacked with its pull requests, shows your
-change as any row does: what you put it after, with ✎, that the mission you set it as next in is gone, or that an
-order went against it, with Put Yours Back. **Undo** takes back your last change, to a mission or to a stage, one at a
-time, in memory only; a change to a mission shows its Undo in the card you made it in, or in its mission's lane on the
-Board, or at the top of the list once that card is gone, or with the Board's Lanes: None. A change BriefBar refuses
-says why beside it. BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never
-titles, those about a pull request sent to you in a chat in memory only; at most 500, refusing more rather than
-dropping one; each until two weeks after BriefBar saw its pull requests merge or close. Turning a source off forgets
-those about its pull requests, turning Pull Request Order off keeps them, unused, and **Forget All Orders…** forgets
-them. Nothing goes to Azure DevOps.
+anything where you set it as next, also in a stack, a chain or a session's pull requests that it takes it out of, shows
+instead, says so, and **Put Yours Back** makes yours hold again. One that moves it toward yours, such as an order taking
+out what you moved out of it, naming what you moved into its mission, or naming as you had them what you changed among a
+stack's, a chain's or a session's pull requests, where what you set there goes over to that order (your next only while
+no other of yours is next there, and back to where you set it once the order no longer names it), or one that changes
+what you didn't, becomes what yours replaced, and yours holds; so does telling the same order again, or as it was when
+you made yours, whatever it said between, and a revision told before yours that BriefBar saw only after. An order
+forgotten since is no change. One limit: an order that takes in only the one you set as next among a stack's, a chain's
+or a session's pull requests takes your next with it, and the others wait for it only where they're stacked on it, with
+no note, as BriefBar doesn't keep which were with it when you set it. A row with no order known shows a quiet ✎ where
+your change says something of it, such as that you moved it there, or that the order you set it as next in is gone; and
+one beside an order that doesn't name it, stacked with its pull requests, shows your change as any row does: what you
+put it after, with ✎, that the mission you set it as next in is gone, or that an order went against it, with Put Yours
+Back. A mission your changes name that's gone, as its key changed, is followed by them and by what Undo would put back,
+as Focus and the name you gave it are, by one rule (`OrderBoard.successor`): to the mission all its open pull requests
+went to, but those your changes moved into it or out of it, when that's their story's, once Show Links reads it; out of
+a story's, as Show Links is turned off, to the chain, GitHub stack or session's they went to that has no other open one,
+when it's the only one (a teammate's on its own, in no mission, doesn't count), so what followed them in comes back out
+with them, and goes back in as they do. When they went to more than one, as a teammate's chain or a session's, it waits
+on the story's mission, as which one it came from isn't known: only the card of what you put in it, if anything, has its
+Focus and your name, saying it shows once Show Links reads the story. For a chain, it goes to the chain or
+GitHub stack they're in now, or the one with the most of them, as you split it, the first shown of those with as many;
+else they wait. The mission one you didn't move was in, as you set it as next or put it after another there, goes on
+only to a mission that has it. Where you set one as next in a chain stays on the chain: in its story's mission it's next
+among the chain's own pull requests and those you put in the mission, so a teammate's of the same story doesn't wait for
+it. One you set as next in a story's mission stays that mission's, following its pull requests only to another story's,
+as all their tasks move to it and no other is open there: while it doesn't show, its row says so, and a teammate's pull
+request for the story that comes meanwhile waits for it too once it does; and one set among a session's pull requests
+that went whole to their story's mission is that mission's from then on, so a teammate's that joins it later waits for
+it too. Elsewhere it follows only to a mission with all of them and nothing else open but what you moved, never to a
+part of one that split, so that others there don't wait for it, and it holds again as the mission comes back whole; else
+that row says the mission you set it as next in is gone, or, for a story's while Show Links hasn't read the stories,
+that it shows once it does. **Undo** takes back your last change, to a mission or to a stage, one at a time, in memory
+only; a change to a mission shows its Undo in the card you made it in, or in its mission's lane on the Board, or at the
+top of the list once that card is gone, or with the Board's Lanes: None. A change BriefBar refuses says why beside it.
+BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never titles, those about a
+pull request sent to you in a chat in memory only; at most 500, refusing more rather than dropping one; each until two
+weeks after BriefBar saw its pull requests merge or close. Turning a source off forgets those about its pull requests,
+turning Pull Request Order off keeps them, unused, and **Forget All Orders…** forgets them. Nothing goes to Azure
+DevOps.
 
 ### A pull request's stage
 
@@ -2394,7 +2435,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 |---|---|---|
 | `_apis/teams?$mine=true` | every six hours while the sprint shows | your teams, in every project |
 | `{project}/{team}/_apis/work/teamsettings/iterations?$timeframe=current` | every hour, and once per team to find one with a sprint today | the team's current sprint and its dates |
-| `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, and each state's category |
+| `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, which are features and epics (its portfolio backlogs'), and each state's category |
 | `{project}/{team}/_apis/work/teamsettings/iterations/{id}/workitems` | every refresh | the sprint's work items, and which task is under which story or bug |
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
 | `_apis/wit/workitems/{id}?$expand=relations` | when you open a work item's details, unless they were read less than a minute ago; and again when the sprint shows it changed while they show | all its fields, its links, attachments and web pages, and which of its long text fields are Markdown |
@@ -3224,6 +3265,17 @@ Changing a setting or time passing never causes a notification. Clicking one ope
 about, in Azure DevOps, or in the pull request's details with **Open Pull Requests in BriefBar** on, and marks the
 pull request seen.
 
+With **Send Work to Copilot** on, a notification about your pull request that says what Copilot can fix
+(`PulseNotification.Fix`), a build that failed, merge conflicts, or a comment, a reply, a mention or a vote that
+wants changes, has a button, **Fix with Copilot…**, while the pull request's Actions menu would offer that task
+(`PRStore.copilotCan`): never on someone else's, nor while Copilot's last task on it is under way. Notification
+Center shows a button through the notification's category, one for each button, which BriefBar registers as Azure
+DevOps starts, before it posts any (`Notifier.register`). Clicking it
+brings BriefBar to the front, and asks again: while Copilot can still do that, it sees the pull request and opens
+the Send to Copilot window with the task's prompt, going where BriefBar would send it, as the menu does; otherwise it
+opens the notification, as a click on it does. A click that starts BriefBar waits for the list's first read, a minute
+at most (`PRStore.onceLoaded`). The Notifications page keeps each entry's button, in its right-click menu.
+
 ### The brief
 
 Azure DevOps' own brief, at the top of its list and its page, picks, in code, the newest pull
@@ -3788,6 +3840,42 @@ once you say you've reviewed it, and keeps what you set unless you and the sessi
 Work to Copilot's, and a pull request's Fix Comments, Fix the Build, Resolve Conflicts and Push & Reply, wherever they
 go, `pull_request_prompt`'s too (`PromptTemplate.stageLine`), which a review's never has.
 
+### Waiting on a pull request
+
+`BriefBar --wait` waits on one of your pull requests for an agent (`WaitCLI` in `Sources/AzureDevOpsUI`): one that
+started it in the background and ended its turn, which its end then wakes, so a session can wait on a build without
+BriefBar or you sending it a prompt. It takes
+the pull request's link, or its number with `--org` or the one organization the app reads, and `--timeout`, in
+minutes: 90 unless it says otherwise, and 120 at most, since a session that waits stays busy, and wakes up whatever
+the result, a full prompt to read again for a pipeline that may run an hour and pass. For those, the notification's
+**Fix with Copilot…** is the way back ([Notifications](#notifications)). `pull_request` gives agents the command for
+each of your open pull requests, with this copy of BriefBar's path.
+
+It reads only that pull request, every minute, with a `PulseEngine` of its own that has no organizations and the pull
+request linked, as the app reads one you watch: the pull request, its policies and its threads, three GETs, and once
+each failed build's timeline. It reads all of them each time it's asked (`PulseEngine.Configuration.waiting`), rather
+than once the app's planner finds the details due, a minute after the last read, so its last read, which its timeout
+brings sooner, still sees what changed in the last minute; and one it couldn't read, at the next, rather than an hour
+later as in the app (`retryLinkedAfter`). Its first read is where it starts from, and each later one is compared with it
+(`WaitOutcome`): a build that blocks the pull request and ran since, as another run, or the same one retried, which
+finishes later, ends it at once when it fails, and once every build that blocks it has passed, though not while one that
+failed before, expired or never ran still holds it up; each build is told apart by its policy (`Check.policyId`), since
+two policies may run one pipeline under one name. Merge conflicts end it even when it had them as it began, since no
+build runs until they're resolved; and so does a comment that waits on you, as Needs You counts it, that wasn't there
+when it began: in an open thread, someone else's, not a bot's, such as a build service's or a code scanner's, after your
+last word there, matched by thread and comment, so an edit isn't news. It prints a line for each, a failed build first,
+then conflicts, comments and a build that passed, the pull request's link, and each one's prompt as
+`pull_request_prompt` writes it for an agent's checkout, and exits with the first one's code: 0 the build passed, 4 a
+build failed, 5 comments, 6 conflicts. It exits with 7 once the pull request is completed or abandoned, with 3 at its
+timeout, saying what still runs or what hasn't passed, with 2 on wrong usage, such as `--org` without a name, or for a
+pull request that isn't yours, even one closed as it began, and with 1 when it can't read it: five reads in a row that
+fail, or a pull request you may no longer read. A read counts only once it read both the pull request
+(`PulseSnapshot.linkedReadAt`) and its details (`PRDetails.fetchedAt`) again, since one that fails leaves what it
+couldn't read as it was, such as the pull request's conflicts while its policies are read anew; and only with its
+policies, since policies you can't read leave its builds unknown rather than none. Like `--mcp`, it runs only from a
+shell and only while agents and Azure DevOps are on in the app, checked before each read, so turning either off stops
+it. `--demo --wait` waits a second for the demo's one change, Priya's comment on !4091.
+
 ### Its Copilot plugin
 
 BriefBar's plugin for Copilot (`Resources/CopilotPlugin`) gives the GitHub Copilot app's sessions, and
@@ -3860,16 +3948,21 @@ session's question, plan or permission for you: it offers to open the session, w
 answers in at most four short lines, with their links: where it stands and what you can do now, what's
 done, by people and by Copilot, what's left and who has it, and who it waits on; then it offers one
 next step, and starts nothing. Given a pull request's number, it calls `pull_request`, and it tries
-that before asking for a link when `work_item` finds nothing.
+that before asking for a link when `work_item` finds nothing. Once it pushes to a pull request, it ends its
+turn rather than wait on the pipeline or the reviewers: BriefBar's notifications tell you. It waits only when
+its next step needs a short build's result, with the command `pull_request` gives
+([above](#waiting-on-a-pull-request)), in the background, with a timeout a few minutes longer than the build usually takes, and acts
+on what it prints only within what you asked; it doesn't start waiting again after a timeout unless you ask.
 
 `CopilotPluginTests` checks the plugin's manifests, that the skill's frontmatter values are plain YAML
 scalars, which a colon and a space would end, and that the skill names only tools that
 `BriefBar --mcp` lists, their arguments and values, and the app's tools it uses, and every tool
 BriefBar has; that it stops only for what BriefBar answers when agents are off
 (`AgentAccess.refusal`), not when a source is; that it checks a pull request with `pull_request`
-before it starts a session for it, forks one or sends one a message; and that it offers the session
+before it starts a session for it, forks one or sends one a message; that it offers the session
 `pull_request` names beside a new one, asks unless you said which, forks only the session it talks in,
-and gives the same prompt wherever the work goes.
+and gives the same prompt wherever the work goes; and that it ends its turn after a push, waiting only on a
+short build, with a timeout.
 
 ### Its extension for the app's sessions
 

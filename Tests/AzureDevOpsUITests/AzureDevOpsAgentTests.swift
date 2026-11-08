@@ -125,6 +125,25 @@ import Testing
         await #expect(throws: MCPToolError.self) { try await call("pull_request", ["pull_request": .string("the big one")]) }
     }
 
+    /// Your open pull request says how an agent waits on it, with this copy of BriefBar (`--wait`): not others', nor closed
+    /// ones.
+    @Test func saysHowToWaitOnYourOpenPullRequests() async throws {
+        var agent = self.agent
+        agent.executable = "/Applications/BriefBar.app/Contents/MacOS/BriefBar"
+        let tool = try #require(agent.tools.first { $0.name == "pull_request" })
+        let yours = try await tool.run(.object(["pull_request": .int(4088)]))
+        let copilot = try #require(yours.components(separatedBy: "\n## Copilot\n").last)
+        #expect(copilot.contains("""
+            To wait on it, start `/Applications/BriefBar.app/Contents/MacOS/BriefBar --demo --wait \
+            https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4088 --timeout 90` in the background and end \
+            your turn:
+            """))
+        #expect(copilot.contains("Set --timeout a few minutes longer than its build usually takes, 120 at most."))
+        for other in [4097, 4085] {
+            #expect(!(try await tool.run(.object(["pull_request": .int(other)]))).contains("--wait"))
+        }
+    }
+
     @Test func writesThePromptForAnAgentsOwnCheckout() async throws {
         let prompt = try await call("pull_request_prompt", ["pull_request": .int(4088), "action": .string("fix_build")])
         #expect(prompt.hasPrefix("Pull request !4088 “Show delivery estimates on the product page” in shop-web, from delivery-estimates into main:"))

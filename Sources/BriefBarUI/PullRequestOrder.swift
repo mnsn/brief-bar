@@ -8,7 +8,9 @@ import Foundation
 /// it changed (`AgentChanges`), and of your changes to missions (`OrderChanges`), which only the app writes. It's off until
 /// you turn it on (`PullRequestOrderSetting`): until then it reads nothing, not even the orders it kept, and the sources tell
 /// it nothing. Turned off, it shows nothing again, and keeps the orders, what it saw become of their pull requests, the
-/// mission you focus on and your changes, unused, until you forget them.
+/// mission you focus on, your changes and the names you gave missions, unused, until you forget them. A mission is called
+/// by the name you gave it, else the one Apple Intelligence gave it on this Mac while By Mission showed it
+/// (`MissionNamer`), else the one BriefBar gives it from its sources.
 @MainActor
 package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var isOn: Bool
@@ -36,6 +38,19 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var view: OrderView
     /// The mission a row's capsule asked By Mission to show, until it has.
     @Published package var revealed: MissionKey?
+    /// The mission whose name you're editing in its header, while you are: Escape cancels that, rather than closing the
+    /// details beside the list.
+    @Published package var renaming: MissionKey?
+    /// The names you gave missions: none while it's off. It says it changed when a name did, not as their time counts.
+    package private(set) var yourNames = MissionNames()
+    /// The names Apple Intelligence gave missions, in memory only; in the demo, made-up ones.
+    @Published package private(set) var modelNames: [MissionKey: String] = [:]
+    /// Asks Apple Intelligence for missions' names: only the app's, never the demo's or `--render`'s.
+    package var namer: MissionNamer? {
+        didSet {
+            namer?.named = { [weak self] key, name in self?.modelNamed(key, name) }
+        }
+    }
     /// The Board's lanes: one for each mission, or one for every card.
     @Published package private(set) var lanes: BoardLanes
     /// Whether you folded Up Next.
@@ -85,12 +100,22 @@ package final class PullRequestOrder: ObservableObject {
     }
     /// `names`, but the time, until the sources or the missions change.
     private var cachedNames: OrderNames?
+    /// What the change you're making touched, as it was, while the missions are made again for it, before it's your last
+    /// change: what its Undo would put back.
+    private var making: [ItemRef: OrderChange?]?
     /// What BriefBar sees each pull request stacked on, as the missions were last made: what your changes can't go against.
     private var stacked: [ItemRef: Set<ItemRef>] = [:]
     /// Hears about the orders an agent tells or forgets through `--mcp`, while it's on.
     private var agentChanges: AnyObject?
     /// Looks at the time every hour, while it's on (`timePassed`).
     private var clock: Timer?
+    /// When it last counted the time against the names you gave missions, while it's on.
+    private var namesCounted: Date?
+    /// The missions By Mission shows now, by the views that show them, the first to show first, with the window's page each
+    /// is on, when it's on one.
+    private var shown: [(viewer: WeakViewer, keys: [MissionKey], page: String?)] = []
+    /// The windows' pages on screen now that can list pull requests By Mission, as their sources say (`setVisible`).
+    private var visiblePages: Set<String> = []
 
     /// How often it looks at the time, for what time alone changes: an order that hasn't changed for 30 days shows as stale,
     /// and one that finished goes two weeks later, whether or not the sources show anything new meanwhile.
@@ -98,7 +123,8 @@ package final class PullRequestOrder: ObservableObject {
 
     /// What a source told: its pull requests and sessions, how its things look, for what shows them, what each of its
     /// sessions told BriefBar it works on, which the Map shows, what its pull requests' stages are worked out from, with
-    /// the account it read them with, and which of its pull requests it lists only because someone sent them in a chat.
+    /// the account it read them with, which of its pull requests it lists only because someone sent them in a chat, and
+    /// whether it reads the stories its pull requests are for.
     private struct Told {
         var pullRequests: [OrderPullRequest]
         var sessions: [OrderSession]
@@ -109,6 +135,11 @@ package final class PullRequestOrder: ObservableObject {
         /// What each of its sessions does, as the source can tell it: how one that ended ended, which how it looks can't.
         var activities: [ItemRef: StageSession.Activity] = [:]
         var inMemory: Set<ItemRef> = []
+        var readsStories = false
+    }
+
+    private struct WeakViewer {
+        weak var object: AnyObject?
     }
 
     /// - Parameters:
@@ -167,10 +198,12 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Whether BriefBar keeps anything for Pull Request Order, on or off: an order, what it saw become of their pull
-    /// requests, the mission you focus on, or a change of yours.
+    /// requests, the mission you focus on, a change of yours, or a name you gave a mission.
     package var keepsAnything: Bool {
-        !changesInMemory.isEmpty || !evidenceInMemory.records.isEmpty || [DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, OrderChanges.defaultsKey]
-            .contains { defaults.object(forKey: $0) != nil }
+        let keys = [
+            DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, OrderChanges.defaultsKey, MissionNames.defaultsKey,
+        ]
+        return !changesInMemory.isEmpty || !evidenceInMemory.records.isEmpty || keys.contains { defaults.object(forKey: $0) != nil }
     }
 
     /// Pull Request Order, in Settings. On, it reads the orders and changes it kept, and the sources tell it what they show;
@@ -194,6 +227,10 @@ package final class PullRequestOrder: ObservableObject {
             changes = OrderChanges()
             lastChange = nil
             refusal = nil
+            yourNames = MissionNames()
+            namesCounted = nil
+            modelNames = [:]
+            namer?.stop()
             missions = []
             marks = StageMarks()
             sessionStages = SessionStages()
@@ -208,6 +245,8 @@ package final class PullRequestOrder: ObservableObject {
         focus = OrderFocus.load(from: defaults)
         marks = StageMarks.load(from: defaults)
         changes = OrderChanges.load(from: defaults).merging(changesInMemory)
+        yourNames = MissionNames.load(from: defaults)
+        namesCounted = nil
         // The demo's agents keep what they tell in their own memory.
         if !isDemo {
             SessionStages.prune(in: defaults, now: now())
@@ -272,14 +311,15 @@ package final class PullRequestOrder: ObservableObject {
     /// it knows, how its things look, for what shows them, what each session told BriefBar it works on now
     /// (`SessionUpdates`), which changes no mission, what its pull requests' stages are worked out from, with the account
     /// it read them with, whose stages you set apply, and how each of the sessions it lists does, or ended, when it can
-    /// tell, which are the sessions whose stages count (`SessionStages`), and the pull requests it lists only because
-    /// someone sent them in a chat, whose changes stay in memory. It replaces what the source told before. Once it tells
-    /// another account than the one it told last, the stages you set that BriefBar kept in memory for its pull requests
-    /// go, and so does Undo of one: they were the other account's. Nothing's kept while Pull Request Order is off.
+    /// tell, which are the sessions whose stages count (`SessionStages`), the pull requests it lists only because someone
+    /// sent them in a chat, whose changes stay in memory, and whether it reads the stories its pull requests are for. It
+    /// replaces what the source told before. Once it tells another account than the one it told last, the stages you set
+    /// that BriefBar kept in memory for its pull requests go, and so does Undo of one: they were the other account's.
+    /// Nothing's kept while Pull Request Order is off.
     package func publish(
         _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = [],
         working: [ItemRef: [ItemRef]] = [:], stages: [ItemRef: StageFacts] = [:], account: String? = nil,
-        sessionActivities: [ItemRef: StageSession.Activity] = [:], inMemory: Set<ItemRef> = []
+        sessionActivities: [ItemRef: StageSession.Activity] = [:], inMemory: Set<ItemRef> = [], readsStories: Bool = false
     ) {
         guard isOn else { return }
         var byRef: [ItemRef: LinkedItem] = [:]
@@ -288,10 +328,10 @@ package final class PullRequestOrder: ObservableObject {
         }
         let new = Told(
             pullRequests: pullRequests, sessions: sessions, items: byRef, working: working, stages: stages,
-            account: account?.lowercased(), activities: sessionActivities, inMemory: inMemory
+            account: account?.lowercased(), activities: sessionActivities, inMemory: inMemory, readsStories: readsStories
         )
         let old = told[source]
-        let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions
+        let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions && old?.readsStories == new.readsStories
         let sameStages = old?.stages == new.stages && old?.account == new.account && old?.activities == new.activities
         guard !sameFacts || !sameStages || old?.items != new.items || old?.working != new.working
             || old?.inMemory != new.inMemory else { return }
@@ -304,8 +344,14 @@ package final class PullRequestOrder: ObservableObject {
         sentInChats.formUnion(inMemory)
         sentInChats.subtract(Set(pullRequests.map(\.ref)).subtracting(inMemory))
         if old?.inMemory != new.inMemory || !sameFacts { keep(changes) }
-        // How a session looks says whether it works now, which stages follow.
-        if sameFacts { restage() } else { rebuild() }
+        // How a session looks says whether it works now, which stages follow; and what missions are named from, such as a
+        // title, can change.
+        if sameFacts {
+            restage()
+            askNames()
+        } else {
+            rebuild()
+        }
     }
 
     /// A source stopped: what it showed goes, and its pull requests can't be seen until it's on again.
@@ -318,8 +364,8 @@ package final class PullRequestOrder: ObservableObject {
 
     /// Forgets a source's things when you turn it off, as each source forgets what it kept, whether Pull Request Order is on
     /// or not: its pull requests' places in every order, which goes up a revision, the orders left with none, what BriefBar
-    /// saw become of them, your changes to them and those that put pull requests in its missions, the mission you focus on,
-    /// when it's theirs, and the stages you set for its pull requests.
+    /// saw become of them, your changes to them and those that put pull requests in its missions, the mission you focus on
+    /// and the names you gave missions, when they're theirs, and the stages you set for its pull requests.
     package func forget(_ source: SourceID) {
         let kinds = ItemRef.Kind.of(source)
         guard !kinds.isEmpty else { return }
@@ -339,6 +385,9 @@ package final class PullRequestOrder: ObservableObject {
         let focus = OrderFocus.load(from: defaults)
         let kept = OrderFocus.kept(focus, in: orders, changes: changes, forgetting: kinds)
         if kept != focus { OrderFocus.save(kept, to: defaults) }
+        let plans = Set(orders.plans.map(\.id))
+        var names = MissionNames.load(from: defaults)
+        if names.forget(kinds, keepingPlans: plans, keepingMine: changes.ownMissions) { names.save(to: defaults) }
         var marks = StageMarks.load(from: defaults)
         if marks.forget(kinds) { marks.save(to: defaults) }
         forgetInMemory(kinds)
@@ -347,7 +396,7 @@ package final class PullRequestOrder: ObservableObject {
         sessionStages.forget(kinds)
         accounts[source] = nil
         // What's left goes in before the source's pull requests leave the missions, so that rebuilding then, which can save
-        // what it keeps, saves none of what was forgotten back.
+        // what it keeps, saves none of what was forgotten back, such as a name.
         if isOn {
             objectWillChange.send()
             self.orders = orders
@@ -357,6 +406,15 @@ package final class PullRequestOrder: ObservableObject {
             self.marks = marks
             if lastOrderChange != nil { lastChange = nil }
             refusal = nil
+            yourNames = names
+            // Apple Intelligence names only missions with an Azure DevOps pull request, from their titles: as Azure DevOps
+            // goes, all its names go, and the answer under way, a session's mission's too, whose key names none.
+            let forgets = { (key: MissionKey) in
+                kinds.contains(.pullRequest)
+                    || MissionNames.forgets(key, kinds: kinds, keepingPlans: plans, keepingMine: changes.ownMissions)
+            }
+            modelNames = modelNames.filter { !forgets($0.key) }
+            namer?.forget(where: forgets)
         }
         withdraw(source)
         guard isOn else { return }
@@ -417,8 +475,8 @@ package final class PullRequestOrder: ObservableObject {
         rebuild()
     }
 
-    /// Forget All Orders: every order, what BriefBar saw become of their pull requests, the mission you focus on, and your
-    /// changes to missions, whether Pull Request Order is on or not.
+    /// Forget All Orders: every order, what BriefBar saw become of their pull requests, the mission you focus on, your changes
+    /// to missions and the names you gave missions, whether Pull Request Order is on or not.
     package func forgetAll() {
         objectWillChange.send()
         DeclaredOrders.forgetAll(in: defaults)
@@ -430,6 +488,7 @@ package final class PullRequestOrder: ObservableObject {
         changesInMemory = OrderChanges()
         if lastOrderChange != nil { lastChange = nil }
         refusal = nil
+        yourNames = MissionNames()
         rebuild()
     }
 
@@ -448,12 +507,16 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// The demo's orders, as if its sessions had told them, unless it has them, with what BriefBar saw become of their pull
-    /// requests before, the mission you focus on and your made-up changes to its missions: only in the demo, while it's on.
+    /// requests before, the mission you focus on, your made-up changes to its missions, and the names Apple Intelligence
+    /// would give missions, made up: only in the demo, while it's on.
     package func tellDemo(
         _ demo: DeclaredOrders, evidence seen: OrderEvidence = OrderEvidence(), focus key: MissionKey? = nil,
-        changes made: OrderChanges = OrderChanges()
+        changes made: OrderChanges = OrderChanges(), names madeUp: [MissionKey: String] = [:]
     ) {
         guard isDemo, isOn else { return }
+        for (key, name) in madeUp where modelNames[key] == nil {
+            modelNames[key] = name
+        }
         let orders = DeclaredOrders.load(from: defaults)
         let missing = demo.plans.filter { orders.plan($0.id) == nil }
         guard !missing.isEmpty else { return }
@@ -482,6 +545,149 @@ package final class PullRequestOrder: ObservableObject {
         describe(ref)?.title
     }
 
+    // MARK: Missions' names
+
+    /// Who named a mission, for its help.
+    package enum Naming: Equatable {
+        case you
+        case appleIntelligence
+        case briefBar
+    }
+
+    /// What a mission is called: the name you gave it, else the one Apple Intelligence gave it, else BriefBar's own.
+    package func title(of mission: OrderMission) -> String {
+        yourNames.name(for: mission.key) ?? briefBarsName(of: mission)
+    }
+
+    /// What it's called without your name: Apple Intelligence's, while it has an Azure DevOps pull request, else the name
+    /// BriefBar gives it from its sources (`OrderText.title`). Use BriefBar's Name gives it this.
+    package func briefBarsName(of mission: OrderMission) -> String {
+        modelName(of: mission) ?? OrderText.title(of: mission, name: name(of:))
+    }
+
+    /// Who named it: you, else Apple Intelligence while its name is the one it has, though it kept BriefBar's own, as it's
+    /// asked to while that fits, else BriefBar.
+    package func naming(of mission: OrderMission) -> Naming {
+        if yourNames.name(for: mission.key) != nil { return .you }
+        return modelName(of: mission) != nil ? .appleIntelligence : .briefBar
+    }
+
+    /// The name Apple Intelligence gave it, while it has an Azure DevOps pull request.
+    private func modelName(of mission: OrderMission) -> String? {
+        guard !MissionNaming.pullRequests(of: mission).isEmpty else { return nil }
+        return modelNames[mission.key]
+    }
+
+    /// Whether Rename… can give it a name: it has one of yours, or BriefBar keeps fewer than it can.
+    package func canRename(_ key: MissionKey) -> Bool {
+        yourNames.name(for: key) != nil || !yourNames.isFull
+    }
+
+    /// Rename…: what you typed becomes its name, as you typed it; nothing, or BriefBar's name for it, gives it BriefBar's
+    /// name again, and keeps nothing. At the cap, it keeps none. Never logged.
+    /// - Parameter shown: what the field started with: left as it was, it changes nothing, though Apple Intelligence named
+    ///   the mission meanwhile.
+    @discardableResult
+    package func rename(_ mission: OrderMission, to typed: String, from shown: String? = nil) -> MissionNames.Outcome {
+        guard isOn else { return .unchanged }
+        if let shown, MissionNames.cleaned(typed) == MissionNames.cleaned(shown) { return .unchanged }
+        var names = yourNames
+        let outcome = names.rename(mission.key, to: typed, briefBarsName: briefBarsName(of: mission))
+        guard names != yourNames else { return outcome }
+        objectWillChange.send()
+        yourNames = names
+        cachedNames = nil
+        names.save(to: defaults)
+        askNames()
+        return outcome
+    }
+
+    /// Use BriefBar's Name: forgets the name you gave it.
+    package func useBriefBarsName(_ key: MissionKey) {
+        guard isOn, yourNames.name(for: key) != nil else { return }
+        objectWillChange.send()
+        yourNames.clear(key)
+        cachedNames = nil
+        yourNames.save(to: defaults)
+        askNames()
+    }
+
+    /// By Mission shows these missions now, in this view, the first first: Apple Intelligence names them as they settle,
+    /// while the window's page the view is on is on screen.
+    /// - Parameter page: the window's page it's on (`page(_:window:)`); nil outside a window's page, where nothing it shows
+    ///   is named, as nothing says it's on screen.
+    package func showing(_ keys: [MissionKey], in viewer: AnyObject, on page: String? = nil) {
+        if let index = shown.firstIndex(where: { $0.viewer.object === viewer }) {
+            guard shown[index].keys != keys || shown[index].page != page else { return }
+            shown[index].keys = keys
+            shown[index].page = page
+        } else {
+            shown.append((WeakViewer(object: viewer), keys, page))
+        }
+        askNames()
+    }
+
+    /// That view no longer shows By Mission.
+    package func stopShowing(in viewer: AnyObject) {
+        guard let index = shown.firstIndex(where: { $0.viewer.object === viewer }) else { return }
+        shown.remove(at: index)
+        askNames()
+    }
+
+    /// What a window's page is called here: the section it shows, in that window, by the ID its `SectionViewer` has.
+    package nonisolated static func page(_ section: SectionID, window: String) -> String {
+        "\(section.rawValue) in window \(window)"
+    }
+
+    /// A window started or stopped showing, on screen, a page that can list pull requests By Mission, as its source says
+    /// (`sectionVisibilityChanged`): minimized, hidden or covered, the missions it shows aren't named until it shows again.
+    package func setVisible(_ visible: Bool, for page: String) {
+        if visible {
+            guard visiblePages.insert(page).inserted else { return }
+        } else {
+            guard visiblePages.remove(page) != nil else { return }
+        }
+        askNames()
+    }
+
+    /// The missions By Mission shows on screen now, in all its views, the first first: those Apple Intelligence names. A
+    /// view counts only while a window shows its page on screen; one that isn't on a window's page never does.
+    package var onScreen: [MissionKey] {
+        var keys: [MissionKey] = []
+        for view in shown where view.viewer.object != nil && view.page.map(visiblePages.contains) ?? false {
+            for key in view.keys where !keys.contains(key) { keys.append(key) }
+        }
+        return keys
+    }
+
+    /// Asks Apple Intelligence to name the missions on screen that you didn't name, from what they're made of now.
+    private func askNames() {
+        guard let namer else { return }
+        shown.removeAll { $0.viewer.object == nil }
+        guard isOn else {
+            namer.stop()
+            return
+        }
+        let facts = facts
+        let requests = onScreen.compactMap { key -> MissionNamer.Request? in
+            guard yourNames.name(for: key) == nil, let mission = missions.first(where: { $0.key == key }),
+                  let inputs = MissionNaming.inputs(
+                      for: mission, named: modelName(of: mission), stories: { facts.pullRequests[$0]?.stories ?? [] },
+                      workItems: { facts.pullRequests[$0]?.workItems ?? [] }, sessionsWorking: sessionsWorking(on:),
+                      name: name(of:)
+                  )
+            else { return nil }
+            return MissionNamer.Request(key: key, inputs: inputs, isSettled: MissionNaming.isSettled(mission, facts: facts))
+        }
+        namer.update(requests)
+    }
+
+    private func modelNamed(_ key: MissionKey, _ name: String) {
+        guard isOn, modelNames[key] != name else { return }
+        modelNames[key] = name
+        cachedNames = nil
+    }
+
     // MARK: Your changes to missions
 
     /// What a pull request's Mission menu offers now.
@@ -500,8 +706,9 @@ package final class PullRequestOrder: ObservableObject {
         changes.undone(in: mission.key, missions: missions).count
     }
 
-    /// What names sessions, pull requests and missions in the order's words, as the sources say now, and the time: the names
-    /// worked out again once they change, the time read each time, for ages to go on.
+    /// What names sessions, pull requests and missions in the order's words, as the sources say now, and the time: missions
+    /// as their headers do (`title(of:)`); the names worked out again once they change, the time read each time, for ages to
+    /// go on.
     package var names: OrderNames {
         var names: OrderNames
         if let cachedNames {
@@ -516,7 +723,7 @@ package final class PullRequestOrder: ObservableObject {
             let named = titles
             var missionTitles: [MissionKey: String] = [:]
             for mission in missions where missionTitles[mission.key] == nil {
-                missionTitles[mission.key] = OrderText.title(of: mission) { named[$0] }
+                missionTitles[mission.key] = title(of: mission)
             }
             let titled = missionTitles
             names = OrderNames(name: { named[$0] }, title: { titled[$0] })
@@ -558,7 +765,9 @@ package final class PullRequestOrder: ObservableObject {
         var seen = evidence
         seen.keep(only: OrderChanges(touched.values.compactMap { $0 }).subjects)
         keep(changed)
+        making = touched
         rebuild()
+        making = nil
         var made = false
         if case .move(_, .into(let key), _) = edit, case .mine = key { made = !before.contains(key) }
         let last = OrderLastChange(
@@ -628,20 +837,37 @@ package final class PullRequestOrder: ObservableObject {
 
     // MARK: Missions
 
+    /// The missions of your own that Undo would put a pull request in again: your last change's, or, while the change you're
+    /// making goes in, that one's. Until it's gone, the name you gave such a mission, and Focus on it, wait.
+    private var undoableOwnMissions: Set<UUID> {
+        OrderChanges((making ?? lastOrderChange?.touched ?? [:]).values.compactMap { $0 }).ownMissions
+    }
+
+    /// Whether BriefBar can tell which stories' missions there are (`OrderFacts.seesStories`): only then is one that doesn't
+    /// show gone.
+    package var seesStories: Bool { facts.seesStories }
+
     /// What the sources that are on show now.
     private var facts: OrderFacts {
         let sources = SourceID.allCases.filter { told[$0] != nil }
         return OrderFacts(
             pullRequests: sources.flatMap { told[$0]?.pullRequests ?? [] },
             sessions: sources.flatMap { told[$0]?.sessions ?? [] },
-            sourcesOn: Set(sources.flatMap(ItemRef.Kind.of).filter(\.isPullRequest))
+            sourcesOn: Set(sources.flatMap(ItemRef.Kind.of).filter(\.isPullRequest)),
+            readsStories: sources.contains { told[$0]?.readsStories == true }
         )
+    }
+
+    /// The kinds of thing whose source is on and tells it what it shows.
+    private var kindsOn: Set<ItemRef.Kind> {
+        Set(SourceID.allCases.filter { told[$0] != nil }.flatMap(ItemRef.Kind.of))
     }
 
     /// The missions again, from what the sources show, the orders and your changes: first keeping what the sources show
     /// become of the pull requests that orders or your changes name, or that you focus on, and forgetting the orders and
     /// changes that finished long enough ago; then moving a chain you put pull requests in on to another of its pull
-    /// requests, as the one it's named by ends, and Focus on a chain on to the chain its pull requests are in now.
+    /// requests, as the one it's named by ends; then what's kept by the key of a mission that's gone on to where it went
+    /// (`OrderBoard.successor`): your changes that name it and what Undo would put back, Focus, and the name you gave it.
     private func rebuild() {
         guard isOn else {
             if !missions.isEmpty { missions = [] }
@@ -683,11 +909,12 @@ package final class PullRequestOrder: ObservableObject {
         var changes = changes
         if !changes.removeFinished(evidence: evidence, now: date).isEmpty { keep(changes) }
         // The mission you focus on goes once its order finished, or, for one of your own, once no change of yours puts a
-        // pull request in it, as Undo or time can take them.
+        // pull request in it, as Undo or time can take them, and Undo wouldn't bring it back: its name waits as long.
         var isMine = false
         if case .mine? = focus { isMine = true }
         if !finished.isEmpty || isMine {
-            let kept = OrderFocus.kept(focus, in: orders, changes: self.changes)
+            var kept = OrderFocus.kept(focus, in: orders, changes: self.changes)
+            if case .mine(let id)? = focus, undoableOwnMissions.contains(id) { kept = focus }
             if kept != focus {
                 focus = kept
                 OrderFocus.save(kept, to: defaults)
@@ -715,24 +942,79 @@ package final class PullRequestOrder: ObservableObject {
                 )
             }
         }
-        // Focus on a chain follows its pull requests to the chain they're in now, as it's named by another of them: once the
-        // one it was named by ended or moved out, or came back with Undo. Not those your changes moved, into it or out of
-        // it, wherever they are now.
-        if case .chain? = focus, let key = focus, !missions.contains(where: { $0.key == key }),
-           let was = self.missions.first(where: { $0.key == key }) {
-            let moved = Set(self.changes.holding(in: orders).filter { $0.value.placement != nil }.keys)
-            let open = Set(was.steps.filter { $0.status.isOpen && !moved.contains($0.ref) }.map(\.ref))
-            if let now = missions.first(where: { $0.kind == .stack && $0.steps.contains { open.contains($0.ref) } }) {
-                focus = now.key
-                OrderFocus.save(now.key, to: defaults)
-                missions = OrderBoard.missions(
-                    facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date
-                )
-            }
+        // What's kept by a mission's key follows it, once it's gone, to where all its open pull requests went: a session's
+        // pull requests, or a chain, to their story's, and back out to the one mission made of them alone they went to, but
+        // not while they're in more than one, as a teammate's chain's are; a chain to the chain or GitHub stack they're in
+        // now, as the one it was named by ended, moved out or came back with Undo, or to the one with the most of them, as
+        // you split it.
+        // Not by those your changes moved, into it or out of it, wherever they are now. Else it waits, as ever. One rule
+        // for all of it: your changes and what Undo would put back, Focus, and the name you gave the mission; but where you
+        // set one as next follows only where nothing else open is, so that others there don't wait for it, and where one
+        // you didn't move was as you changed it, only to a mission that has it.
+        let moved = Set(self.changes.holding(in: orders).filter { $0.value.placement != nil }.keys)
+        let old = self.missions
+        let new = missions
+        let successor = { (key: MissionKey) in OrderBoard.successor(of: key, from: old, to: new, moved: moved) }
+        let nexts = { (key: MissionKey) in OrderBoard.successor(of: key, from: old, to: new, moved: moved, alone: true) }
+        let holds = { (key: MissionKey, ref: ItemRef) in
+            new.first { $0.key == key }.map { ($0.steps + $0.attached).contains { $0.ref == ref } } ?? false
         }
+        var followed = self.changes
+        var remade = !followed.followMissions(successor, nexts: nexts, holds: holds).isEmpty
+        if remade { keep(followed) }
+        if let last = lastOrderChange { lastChange = .order(last.renamingMissions(successor, nexts: nexts, holds: holds)) }
+        if let focus, let next = successor(focus) {
+            self.focus = next
+            OrderFocus.save(next, to: defaults)
+            remade = true
+        }
+        if remade {
+            missions = OrderBoard.missions(
+                facts: facts, orders: orders, evidence: evidence, focus: focus, changes: self.changes, now: date
+            )
+        }
+        keepNames(following: successor, in: missions, facts: facts, at: date)
+        forgetModelNames(keepingPlans: Set(orders.plans.map(\.id)), keepingMine: self.changes.ownMissions.union(undoableOwnMissions))
         cachedNames = nil
         if missions != self.missions { self.missions = missions }
         restage()
+        askNames()
+    }
+
+    /// Apple Intelligence's names of orders BriefBar no longer keeps, and of missions of your own no change of yours puts a
+    /// pull request in anymore, go, with what it was asked of them, as yours do, however they went: forgotten, finished,
+    /// undone, or left with no pull request as a source was turned off.
+    private func forgetModelNames(keepingPlans plans: Set<UUID>, keepingMine mine: Set<UUID>) {
+        let forgets = { (key: MissionKey) in MissionNames.forgets(key, kinds: [], keepingPlans: plans, keepingMine: mine) }
+        if modelNames.keys.contains(where: forgets) { modelNames = modelNames.filter { !forgets($0.key) } }
+        namer?.forget(where: forgets)
+    }
+
+    /// The names you gave missions, as the missions change: each follows its mission as Focus does, by `successor`; those of
+    /// orders BriefBar no longer keeps, and of missions of your own no change of yours puts a pull request in anymore, go;
+    /// and the time since BriefBar last saw a mission counts against its name while BriefBar could see it, at most two hours
+    /// at a time, as when the Mac slept.
+    private func keepNames(
+        following successor: (MissionKey) -> MissionKey?, in missions: [OrderMission], facts: OrderFacts, at date: Date
+    ) {
+        var names = yourNames
+        var renamed = false
+        for key in names.entries.keys.sorted(by: { $0.description < $1.description }) {
+            if let next = successor(key), names.follow(key, to: next) { renamed = true }
+        }
+        let plans = Set(orders.plans.map(\.id))
+        if names.forget([], keepingPlans: plans, keepingMine: changes.ownMissions.union(undoableOwnMissions)) { renamed = true }
+        let elapsed = namesCounted.map { min(max(date.timeIntervalSince($0), 0), 2 * Self.timeCheckInterval) } ?? 0
+        namesCounted = date
+        let kindsOn = kindsOn
+        let before = names.entries.count
+        let changed = names.account(shown: Set(missions.map(\.key)), canSee: { key in
+            MissionNames.canSee(key, plans: plans, kindsOn: kindsOn, readsStories: facts.seesStories)
+        }, elapsed: elapsed)
+        if names.entries.count != before { renamed = true }
+        if renamed { objectWillChange.send() }
+        yourNames = names
+        if renamed || changed { names.save(to: defaults) }
     }
 
     // MARK: Stages
@@ -1176,6 +1458,23 @@ package struct OrderLastChange: Equatable {
         if case .chain(let anchor)? = mission, let new = renamed[anchor] { mission = .chain(new) }
         return OrderLastChange(
             said: said, refs: refs, mission: mission, touched: touched.mapValues { change in change.map { undo[$0.ref] ?? $0 } },
+            evidence: evidence
+        )
+    }
+
+    /// The same, with the missions it names that are gone named as where they went (`OrderBoard.successor`), as your changes
+    /// are: in what Undo would put back, where it sets one as next by `nexts`, the mission one it didn't move was in only
+    /// where that one is (`holds`), and its card.
+    func renamingMissions(
+        _ successor: (MissionKey) -> MissionKey?, nexts: ((MissionKey) -> MissionKey?)? = nil,
+        holds: ((MissionKey, ItemRef) -> Bool)? = nil
+    ) -> OrderLastChange {
+        var undo = OrderChanges(touched.values.compactMap { $0 })
+        let renamed = undo.followMissions(successor, nexts: nexts, holds: holds)
+        let card = mission.map { successor($0) ?? $0 }
+        guard !renamed.isEmpty || card != mission else { return self }
+        return OrderLastChange(
+            said: said, refs: refs, mission: card, touched: touched.mapValues { change in change.map { undo[$0.ref] ?? $0 } },
             evidence: evidence
         )
     }

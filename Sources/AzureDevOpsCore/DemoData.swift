@@ -324,17 +324,21 @@ public enum DemoData {
 
 extension DemoData {
     /// Made-up links for Show Links: the work items of some of the demo's pull requests, and the pull requests of some of
-    /// the demo sprint's work items, among them two of teammates' that the lists don't show, and two linked work items that
-    /// aren't in the sprint.
+    /// the demo sprint's work items, among them two of teammates' that the lists don't show, and linked work items that
+    /// aren't in the sprint: among them the tasks of User Story 5180, "Checkout redesign", which isn't in the sprint
+    /// either, whose three pull requests are its mission with Pull Request Order on (`parents`).
     public static func workLinks(now: Date = Date()) -> WorkLinks {
         let project = "Storefront"
         let projectId = "7a0c4e1d-0000-4000-8000-000000000001"
         func key(_ number: Int) -> PRKey { PRKey(organization, number) }
         func workItem(_ id: Int) -> WorkItemKey { WorkItemKey(organization, id) }
-        func linked(_ id: Int, _ type: String, _ title: String, _ state: String, changed hoursAgo: Double) -> WorkItem {
+        func linked(
+            _ id: Int, _ type: String, _ title: String, _ state: String, changed hoursAgo: Double, parent: Int? = nil, rank: Double? = nil
+        ) -> WorkItem {
             WorkItem(
                 id: id, organization: organization, project: project, type: type, title: title, state: state,
-                category: WorkItem.Category(category: nil, state: state), changedAt: now.addingTimeInterval(-hoursAgo * 3_600)
+                category: WorkItem.Category(category: nil, state: state), parentId: parent, rank: rank,
+                changedAt: now.addingTimeInterval(-hoursAgo * 3_600)
             )
         }
         func teammates(_ number: Int, _ title: String, by author: Person, repo: String, branch: String, hoursAgo: Double) -> PullRequest {
@@ -350,6 +354,9 @@ extension DemoData {
                 key(4071): [5140, 5141],
                 key(4102): [5160],
                 key(4093): [5170],
+                key(4113): [5181],
+                key(4088): [5182],
+                key(4105): [5183],
             ],
             pullRequestsOfWorkItems: [
                 workItem(5101): [key(4120)],
@@ -362,12 +369,18 @@ extension DemoData {
             workItems: [
                 workItem(5160): linked(5160, "User Story", "Retry payments that fail for a moment", "Active", changed: 30),
                 workItem(5170): linked(5170, "User Story", "Dark mode for the account page", "Resolved", changed: 48),
+                workItem(5181): linked(5181, "Task", "Speed up the checkout page", "Active", changed: 5, parent: 5180, rank: 1),
+                workItem(5182): linked(5182, "Task", "Show delivery estimates", "Active", changed: 26, parent: 5180, rank: 2),
+                workItem(5183): linked(5183, "Task", "Prototype one-click checkout", "New", changed: 3, parent: 5180, rank: 3),
             ],
             pullRequests: [
                 key(4120): teammates(4120, "Save items for later in the cart service", by: sam, repo: "shop-web", branch: "saved-items",
                                      hoursAgo: 20),
                 key(4118): teammates(4118, "Check gift card codes with the payments API", by: alex, repo: "payments-api",
                                      branch: "gift-card-codes", hoursAgo: 9),
+            ],
+            parents: [
+                workItem(5180): linked(5180, "User Story", "Checkout redesign", "Active", changed: 50),
             ]
         )
     }

@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Pull Request Order, on the Pull Requests page in Settings, as rows of its form: off until you turn it on, what it does and
 /// reads; Forget All Orders…, which forgets, on or off, every order sessions told BriefBar, what it saw become of their
-/// pull requests, the mission you focus on, and your changes to missions; and Forget Stages…, which forgets the stages you
-/// and sessions set.
+/// pull requests, the mission you focus on, your changes to missions, and the names you gave missions; and Forget
+/// Stages…, which forgets the stages you and sessions set.
 package struct PullRequestOrderSettingView: View {
     @ObservedObject private var order: PullRequestOrder
     /// Tells the rest of the app, such as Agents, which adds Pull Request Order's skill to Copilot while both are on.
@@ -26,19 +26,25 @@ package struct PullRequestOrderSettingView: View {
         requests, you can change a mission yourself, from a pull request's menu: which merges next, what it merges after, \
         and which mission it's in. A session's later change wins only where it goes against yours, and says who made \
         it; you can put yours back. It never changes a pull request's status, what's left before you can complete \
-        it, or your lists. While it's on, BriefBar also reads, from GitHub, each pull request's base branch, whether it's \
-        from a fork, its repository's default branch and its place in a stack, in its usual refresh; and, from the Copilot \
-        app, which pull request each session opened. On Azure DevOps' pull requests, in the window and the menu bar, it \
-        also shows each one's stage, In progress, Your review, Teammate's review, Can merge or Waits for another PR, as \
-        BriefBar works it out from Azure DevOps and Copilot, or as you or a session set it, the latest winning; what's \
-        next, at the top of the Pull Requests page; and a Board beside List and Map. With agents on, sessions get the tools \
-        to tell BriefBar an order, and each pull request's stage, as they work, and Copilot gets a skill that says when to. \
-        It keeps the orders and your changes to missions, by reference, and the stages you set, for each Azure DevOps \
-        account you sign in with, and those each session set, as references only, with only what would end each: for In \
-        progress, its commit; for Teammate's review, the votes it was set over, never who cast them (on someone else's, \
-        your own vote and its commit); until they end or you forget them; what a session set shows only while the Copilot \
-        app lists it. What you change or set of a pull request sent to you in a chat stays in memory only. None of it goes \
-        to Azure DevOps or GitHub. Turning it off keeps them, unused, until you forget them.
+        it, or your lists. With Show Links on too, Azure DevOps' pull requests whose work items are for the same story \
+        go together, as that story's mission, in its tasks' order, unless you, a session's order or a stack say \
+        otherwise: for that, Show Links also reads the parent and place in the backlog of the work items linked to your \
+        pull requests, and what those stories are when BriefBar hasn't read them already. While Apple Intelligence is \
+        on, it names each mission on this Mac, from its pull requests', work items' and sessions' titles; you can rename \
+        one. While it's on, BriefBar also reads, from GitHub, each pull request's base branch, whether it's from a fork, \
+        its repository's default branch and its place in a stack, in its usual refresh; and, from the Copilot app, which \
+        pull request each session opened. On Azure DevOps' pull requests, in the window and the menu bar, it also shows \
+        each one's stage, In progress, Your review, Teammate's review, Can merge or Waits for another PR, as BriefBar \
+        works it out from Azure DevOps and Copilot, or as you or a session set it, the latest winning; what's next, at \
+        the top of the Pull Requests page; and a Board beside List and Map. With agents on, sessions get the tools to \
+        tell BriefBar an order, and each pull request's stage, as they work, and Copilot gets a skill that says when to. \
+        It keeps the orders and your changes to missions, by reference, and the names you give missions; and the stages \
+        you set, for each Azure DevOps account you sign in with, and those each session set, as references only, with \
+        only what would end each: for In progress, its commit; for Teammate's review, the votes it was set over, never \
+        who cast them (on someone else's, your own vote and its commit); until they end or you forget them; what a \
+        session set shows only while the Copilot app lists it. What you change or set of a pull request sent to you in a \
+        chat stays in memory only. None of it goes to Azure DevOps or GitHub. Turning it off keeps them, unused, until \
+        you forget them.
         """
 
     package var body: some View {
@@ -56,7 +62,8 @@ package struct PullRequestOrderSettingView: View {
             } message: {
                 Text("""
                     BriefBar forgets every order sessions told it, what it saw become of their pull requests, the mission you \
-                    focus on, and your changes to missions. Sessions that name an order are told it's forgotten.
+                    focus on, your changes to missions, and the names you gave missions. Sessions that name an order are told \
+                    it's forgotten.
                     """)
             }
         Button("Forget Stages…") { confirmsForgetStages = true }

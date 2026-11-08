@@ -161,6 +161,68 @@ import Testing
         #expect(await Self.eventually { order.describe(DemoPullRequestOrder.retry) != nil })
     }
 
+    /// The demo's story outside the sprint (§7.4): its three pull requests, for its tasks, are its mission, in the tasks'
+    /// order, with no order known, and the made-up name Apple Intelligence would give it; with Show Links off, there are no
+    /// stories, and they're in no mission.
+    @Test func theDemosStoryIsAMissionWithAMadeUpName() async throws {
+        let store = await Self.demoStore()
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        await sprint.loadOnce()
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        func facts(showLinks: Bool) async -> (PullRequestOrder, PullRequestOrderFacts, WorkLinksStore) {
+            let links = Links(defaults: MemoryDefaults(), isDemo: showLinks)
+            let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
+            let workLinks = WorkLinksStore(
+                links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
+                order: order
+            )
+            await workLinks.loadOnce()
+            let facts = PullRequestOrderFacts(order: order, store: store, settings: settings, details: nil, workLinks: workLinks)
+            return (order, facts.loadOnce(), workLinks)
+        }
+
+        let (order, held, workLinks) = await facts(showLinks: true)
+        let key = MissionKey.story(DemoPullRequestOrder.checkoutRedesign)
+        let mission = try #require(order.missions.first { $0.key == key })
+        #expect(mission.steps.map(\.ref.id) == ["4113", "4088", "4105"])
+        #expect(mission.steps.allSatisfy { $0.standing == .unordered })
+        #expect(OrderText.story(of: mission, title: order.title(of: mission)) == "User Story 5180")
+        #expect(order.title(of: mission) == "Faster checkout" && order.naming(of: mission) == .appleIntelligence)
+        #expect(order.name(of: DemoPullRequestOrder.checkoutRedesign) == "Checkout redesign")
+        #expect(order.describe(.workItem(organization: "contoso", id: 5181))?.title == "Speed up the checkout page")
+        // Each pull request goes with all its work items, for its mission's name.
+        let seen = PullRequestOrderFacts.pullRequests(store.records, items: store.items, showToReview: false, stories: workLinks.storiesRead)
+        #expect(seen.first { $0.ref.id == "4091" }?.workItems == [5110, 5112].map { .workItem(organization: "contoso", id: $0) })
+        // The orders keep their own: their pull requests aren't a story's mission's.
+        #expect(order.missions.first { $0.key == DemoPullRequestOrder.focus }?.steps.count == 5)
+        _ = held
+
+        let (withoutLinks, _, _) = await facts(showLinks: false)
+        #expect(!withoutLinks.missions.contains { $0.isStory })
+        #expect(!withoutLinks.missions.contains { $0.contains(.pullRequest(organization: "contoso", number: 4113)) })
+    }
+
+    /// By Mission on a window's Pull Requests page is named only while the window shows that page on screen, as it tells
+    /// the source; the Sprint's page, or a popover, says nothing of it.
+    @Test func byMissionIsNamedOnlyWhileAWindowShowsItsPageOnScreen() {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
+        let order = services.pullRequestOrder
+        let viewer = NSObject()
+        let key = MissionKey.story(DemoPullRequestOrder.checkoutRedesign)
+        order.showing([key], in: viewer, on: PullRequestOrder.page(.azureDevOpsPullRequests, window: "7"))
+        #expect(order.onScreen.isEmpty)
+        source.sectionVisibilityChanged(.azureDevOpsPullRequests, isShowing: true, by: SectionViewer(.window, id: "7"))
+        #expect(order.onScreen == [key])
+        source.sectionVisibilityChanged(.azureDevOpsSprint, isShowing: false, by: SectionViewer(.window, id: "7"))
+        source.sectionVisibilityChanged(.azureDevOpsPullRequests, isShowing: false, by: SectionViewer(.popover, id: "7"))
+        #expect(order.onScreen == [key])
+        source.sectionVisibilityChanged(.azureDevOpsPullRequests, isShowing: false, by: SectionViewer(.window, id: "7"))
+        #expect(order.onScreen.isEmpty)
+        withExtendedLifetime(viewer) {}
+    }
+
     /// The demo's orders are ones an agent could tell: BriefBar would keep them as they are.
     @Test func theDemosOrdersAreOnesAnAgentCouldTell() throws {
         let demos = DemoPullRequestOrder.orders(now: Date()).plans
@@ -749,7 +811,7 @@ import Testing
     }
 
     /// Your made-up changes in the demo hold over its orders: the order status rename goes first, the retry waits for it, and
-    /// the delivery estimates and the one-click checkout are a mission of your own.
+    /// the build agents' upgrade and the slow query log are a mission of your own.
     @Test func theDemosChangesHoldOverItsOrders() async throws {
         let store = await Self.demoStore()
         let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
@@ -769,8 +831,8 @@ import Testing
         #expect(retry.standing == .waiting(open: [DemoPullRequestOrder.statusRename], unknown: []) && retry.isYours)
         #expect(OrderText.kind(of: payments) == "changed by you")
         let yours = try #require(order.missions.first { $0.key == .mine(DemoPullRequestOrder.mineID) })
-        #expect(yours.steps.map(\.ref) == [DemoPullRequestOrder.deliveryEstimates, DemoPullRequestOrder.oneClickCheckout])
-        #expect(yours.steps.map(\.standing) == [.next, .waiting(open: [DemoPullRequestOrder.deliveryEstimates], unknown: [])])
+        #expect(yours.steps.map(\.ref) == [DemoPullRequestOrder.buildAgents, DemoPullRequestOrder.slowQueries])
+        #expect(yours.steps.map(\.standing) == [.next, .waiting(open: [DemoPullRequestOrder.buildAgents], unknown: [])])
         #expect(OrderText.kind(of: yours) == "Your mission")
     }
 

@@ -182,6 +182,8 @@ package struct OrderBoardView: View {
     /// Lists them By Status; nil where it can't.
     let showByStatus: (() -> Void)?
     let now: Date
+    /// A mission's lane came into the page's sight, or left it: Apple Intelligence names the missions on screen.
+    let see: (MissionKey, Bool) -> Void
 
     /// The card you drag, or dragged last: only what this drag carries drops.
     @LocalState private var drag: BoardDrag?
@@ -219,7 +221,8 @@ package struct OrderBoardView: View {
         board: PullRequestBoard, missions: [OrderMission], order: PullRequestOrder, elsewhere: String, openElsewhere: (() -> Void)?,
         place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, shownOnTop: ItemRef?,
-        setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?, now: Date
+        setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?,
+        now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in }
     ) {
         self.board = board
         self.missions = missions
@@ -235,6 +238,7 @@ package struct OrderBoardView: View {
         self.notOnBoard = notOnBoard
         self.showByStatus = showByStatus
         self.now = now
+        self.see = see
     }
 
     package var body: some View {
@@ -533,6 +537,9 @@ package struct OrderBoardView: View {
             }
         }
         .accessibilityElement(children: .contain)
+        .onSightChange { isInSight in
+            if let key = lane.mission { see(key, isInSight) }
+        }
     }
 
     @ViewBuilder

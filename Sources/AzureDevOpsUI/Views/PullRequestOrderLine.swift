@@ -31,7 +31,9 @@ private struct OrderLineContent: View {
             let names = order.names
             // What your changes say, and an order's later one; and where no mission has it, what became of your change.
             let notes = (step?.notes.filter(\.isAboutYourChanges)
-                ?? OrderBoard.notes(outside: ref, missions: order.missions, changes: order.changes, orders: order.orders))
+                ?? OrderBoard.notes(
+                    outside: ref, missions: order.missions, changes: order.changes, orders: order.orders, seesStories: order.seesStories
+                ))
                 .map { OrderText.note($0, of: ref, names: names) }
             let canPutBack = order.changes[ref] != nil && order.choices(for: ref, in: mission?.key).canPutBack
             VStack(alignment: .leading, spacing: 6) {
@@ -80,11 +82,11 @@ private struct OrderLineContent: View {
     }
 
     /// "Fix the payments bugs · 1st of 4 · Next to merge" on one line where it fits, else its name, then where it stands; its
-    /// mission's name showing it By Mission. Or "Not in a mission".
+    /// mission's name, as its header shows it, showing it By Mission. Or "Not in a mission".
     @ViewBuilder
     private func headline(mission: OrderMission?, step: OrderStep?, names: OrderNames) -> some View {
         if let mission {
-            let title = OrderText.title(of: mission, name: order.name(of:))
+            let title = order.title(of: mission)
             let numbered = mission.steps.filter { $0.number != nil }.count
             let place = step?.number.map { "\(Self.ordinal($0)) of \(numbered)" }
             let rest = [place, step.flatMap { OrderText.capsule($0) }].compactMap { $0 }.joined(separator: " · ")

@@ -253,6 +253,9 @@ package protocol BriefBarSource: AnyObject {
     /// A click on one of its notifications on the window's Notifications page, where what it's about may show in BriefBar's
     /// window itself. By default, as a click in Notification Center.
     func openNotificationInWindow(_ userInfo: [String: String])
+    /// A click on one of its notifications' buttons, by the button's ID, in Notification Center or in the right-click menu
+    /// of the Notifications page. By default, as a click on the notification.
+    func notificationButton(_ id: String, userInfo: [String: String])
 
     /// Loads its data once, without watching for changes, for `--render`.
     func loadForRendering() async
@@ -267,6 +270,9 @@ extension BriefBarSource {
     package var pullRequestSettings: [String] { [] }
     package func openNotification(_ userInfo: [String: String]) {}
     package func openNotificationInWindow(_ userInfo: [String: String]) {
+        openNotification(userInfo)
+    }
+    package func notificationButton(_ id: String, userInfo: [String: String]) {
         openNotification(userInfo)
     }
     package func loadForRendering() async {}

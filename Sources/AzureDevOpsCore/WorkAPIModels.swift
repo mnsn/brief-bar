@@ -188,9 +188,12 @@ public struct ADOWorkItem: Decodable, Sendable {
 }
 
 /// How a team's backlogs are set up, from `{org}/{project}/{team}/_apis/work/backlogconfiguration`: which
-/// work item types are cards on its task board, and which category each state of each type is in.
+/// work item types are cards on its task board, which are its portfolio backlogs' (features and epics), and which
+/// category each state of each type is in.
 public struct ADOBacklogConfiguration: Decodable, Sendable {
     public var taskBacklog: Level?
+    /// Features, epics, and any others the process adds above the stories, from the lowest.
+    public var portfolioBacklogs: LenientArray<Level>?
     public var workItemTypeMappedStates: LenientArray<MappedStates>?
 
     public struct Level: Decodable, Sendable {
@@ -208,11 +211,12 @@ public struct ADOBacklogConfiguration: Decodable, Sendable {
         public var states: [String: String]
     }
 
-    private enum CodingKeys: String, CodingKey { case taskBacklog, workItemTypeMappedStates }
+    private enum CodingKeys: String, CodingKey { case taskBacklog, portfolioBacklogs, workItemTypeMappedStates }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         taskBacklog = container.lenient(Level.self, forKey: .taskBacklog)
+        portfolioBacklogs = container.lenient(LenientArray<Level>.self, forKey: .portfolioBacklogs)
         workItemTypeMappedStates = container.lenient(LenientArray<MappedStates>.self, forKey: .workItemTypeMappedStates)
     }
 }

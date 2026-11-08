@@ -1,6 +1,8 @@
+import AppKit
 import BriefBarCore
 import BriefBarUI
 import Foundation
+import SwiftUI
 import Testing
 
 /// Up Next and the Board, as Pull Request Order keeps them: one view for both pages, which GitHub's shows as List without
@@ -358,6 +360,60 @@ import Testing
         let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastStageChange?.ref)
         #expect(undoRefs.contains(Self.ref(4088)))
         #expect(board.lanes(keepingUndoOf: order.lastStageChange?.ref, missions: missions) == board.lanes)
+    }
+
+    /// An order of !4087, and a teammate's !4088 for the same story, apart from it, whose review you're asked for.
+    private static func orderWithItsStorysOther() throws -> PullRequestOrder {
+        let order = service(try defaults(orders: [[4087]]))
+        let story = ItemRef.workItem(organization: "contoso", id: 5180)
+        let pullRequests = [(4087, 5181), (4088, 5182)].map { number, task in
+            var pullRequest = ado(number)
+            pullRequest.stories = [OrderStory(ref: story, type: "User Story", task: .workItem(organization: "contoso", id: task))]
+            return pullRequest
+        }
+        order.publish(
+            .azureDevOps, pullRequests: pullRequests,
+            stages: [ref(4087): StageFacts(role: .author), ref(4088): StageFacts(role: .reviewer, asksYou: "Priya asked you", author: "Priya")],
+            account: account, readsStories: true
+        )
+        return order
+    }
+
+    /// Finished My Review on a teammate's card for the story of a mission's order, apart from it, takes it off the board:
+    /// the mission's lane keeps its Undo, as for one of the order's own.
+    @Test func undoStaysInTheMissionsLaneOnceACardForItsStoryLeaves() throws {
+        let order = try Self.orderWithItsStorysOther()
+        let key = try #require(MissionsBody.missions(order.missions, kinds: Self.kinds).first?.key)
+        #expect(order.board(kinds: Self.kinds).lane(for: key)?.cards.contains { $0.ref == Self.ref(4088) } == true)
+
+        order.finishedReview(Self.ref(4088))
+        let missions = MissionsBody.missions(order.missions, kinds: Self.kinds)
+        #expect(missions.first?.sameStory.map(\.ref) == [Self.ref(4088)])
+        let board = order.board(kinds: Self.kinds)
+        let lane = try #require(board.lane(for: key))
+        #expect(!lane.cards.contains { $0.ref == Self.ref(4088) })
+        let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastStageChange?.ref)
+        #expect(undoRefs.contains(Self.ref(4088)))
+        #expect(board.lanes(keepingUndoOf: order.lastStageChange?.ref, missions: missions) == board.lanes)
+    }
+
+    /// So does the mission's card in List, which lists it apart: the card shows the change's line with Undo, a line taller
+    /// than once you dismiss it.
+    @Test func aMissionsCardShowsTheUndoOfOneForItsStoryApartFromItsOrder() throws {
+        let order = try Self.orderWithItsStorysOther()
+        order.finishedReview(Self.ref(4088))
+        let mission = try #require(MissionsBody.missions(order.missions, kinds: Self.kinds).first)
+        #expect(mission.sameStory.map(\.ref) == [Self.ref(4088)])
+        func height() -> CGFloat {
+            let card = MissionCard(
+                mission: mission, kinds: Self.kinds, place: nil, elsewhere: "GitHub", openElsewhere: nil, order: order
+            ) { _ in nil }
+            return NSHostingView(rootView: card.frame(width: 480)).fittingSize.height
+        }
+        let shown = height()
+        order.dismissLastChange()
+        #expect(order.lastStageChange == nil)
+        #expect(shown > height())
     }
 
     // MARK: The view

@@ -639,6 +639,8 @@ enum AgentSession: Sendable, Equatable {
 /// The tools `--mcp` gives agents for Azure DevOps.
 struct AzureDevOpsAgent: Sendable {
     let reader: AzureDevOpsReader
+    /// This copy of BriefBar, which `pull_request`'s command to wait on one of your pull requests runs (`--wait`).
+    var executable = Bundle.main.executablePath ?? AppIdentity.name
 
     /// How old the lists can be when a session sets the stage of a pull request they don't have, such as one it just
     /// opened, before they're read again for it.
@@ -887,9 +889,11 @@ struct AzureDevOpsAgent: Sendable {
         let session = await reader.session(for: record, tasks: sent, now: now)
         let stages = await stages(read, now: now)
         let stage = stages.flatMap { stages in stages.readings[record.id.linkRef].map { AgentText.stage($0, stages: stages) } }
+        let waits = record.role == .author && record.pullRequest.status == .active
         return AgentText.details(
             record, item: item, actions: PullRequestTasks.actions(for: record, canShip: false), tasks: sent.filter { $0.isOn(record.id) },
-            session: session, stage: stage, unreadTarget: unreadTarget, now: now
+            session: session, stage: stage, unreadTarget: unreadTarget,
+            wait: waits ? WaitCLI.command(executable: executable, link: record.pullRequest.webURL, demo: reader.demo) : nil, now: now
         )
     }
 
@@ -1185,9 +1189,10 @@ enum AgentText {
     ///   - stage: its stage, with Pull Request Order on (`AgentText.stage`).
     ///   - unreadTarget: why BriefBar couldn't read again which branch it merges into, as it asked, for the agent to know
     ///     that the one named may not be it any more (`AzureDevOpsReader.targetNow(of:)`).
+    ///   - wait: the command that waits on it for an agent (`--wait`), for one of your open pull requests.
     static func details(
         _ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], session: AgentSession? = nil,
-        stage: String? = nil, unreadTarget: String? = nil, now: Date
+        stage: String? = nil, unreadTarget: String? = nil, wait: String? = nil, now: Date
     ) -> String {
         let pr = record.pullRequest
         let (source, target) = (QuotedText.commandWord(pr.sourceBranch), QuotedText.commandWord(pr.targetBranch))
@@ -1273,6 +1278,15 @@ enum AgentText {
             copilot.append("Once you've changed it, push_and_reply's prompt pushes the changes and answers its threads.")
         }
         lines.append(copilot.isEmpty ? "Nothing for Copilot to do with it now." : copilot.joined(separator: " "))
+        if let wait {
+            lines.append("""
+                To wait on it, start `\(wait)` in the background and end your turn: it reads the pull request every minute, \
+                and ends on its next build's result, comments that wait on you, merge conflicts or its closing, printing what \
+                to do then, as pull_request_prompt does. Set --timeout a few minutes longer than its build usually takes, \
+                120 at most. Wait only on a short build that the next step needs: for a long pipeline, just end your turn. \
+                BriefBar notifies you if it fails.
+                """)
+        }
         if let session { lines.append(Self.session(session, now: now)) }
         for task in tasks {
             lines.append(Self.task(task, titles: [:], workItems: [:], now: now))

@@ -90,6 +90,15 @@ package struct UpNextView: View {
     }
 }
 
+extension UpNextView {
+    /// A card's mission's name, as By Mission's header has it, the name you gave it, else Apple Intelligence's, else
+    /// BriefBar's own; or that it's in none.
+    package static func missionTitle(_ key: MissionKey?, order: PullRequestOrder) -> String {
+        guard let key, let mission = order.missions.first(where: { $0.key == key }) else { return "Not in a mission" }
+        return order.title(of: mission)
+    }
+}
+
 /// One of Up Next's slots: its kind in its stage's color and how many it has; its pull request, why, and its mission; and
 /// "2 more ›", which shows the rest on the Board.
 private struct UpNextSlotView: View {
@@ -194,8 +203,7 @@ private struct UpNextSlotView: View {
 
     /// Its mission's name, as By Mission has it, or that it's in none.
     private var missionTitle: String {
-        guard let key = slot.card.mission, let mission = order.missions.first(where: { $0.key == key }) else { return "Not in a mission" }
-        return OrderText.title(of: mission, name: order.name(of:))
+        UpNextView.missionTitle(slot.card.mission, order: order)
     }
 }
 

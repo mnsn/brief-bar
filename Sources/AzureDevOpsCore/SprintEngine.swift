@@ -50,6 +50,8 @@ public actor SprintEngine {
     /// How a team's board is set up.
     struct BoardSetup: Sendable {
         var taskTypes: Set<String>
+        /// Its portfolio backlogs' types, such as Feature and Epic; none when its configuration couldn't be read.
+        var portfolioTypes: Set<String> = []
         /// Work item type → state → category.
         var categories: [String: [String: String]]
     }
@@ -352,7 +354,10 @@ public actor SprintEngine {
         }
         // The team may have changed while this loaded.
         guard self.configuration.team == nil || self.configuration.team?.id == team.id else { return }
-        board = SprintBoard.build(team: team, sprint: sprint, me: me, relations: relations, items: items, taskTypes: setup.taskTypes)
+        board = SprintBoard.build(
+            team: team, sprint: sprint, me: me, relations: relations, items: items, taskTypes: setup.taskTypes,
+            portfolioTypes: setup.portfolioTypes
+        )
     }
 
     /// Your teams in each organization, read again every few hours. An organization that can't be read keeps the
@@ -549,6 +554,7 @@ public actor SprintEngine {
             let configuration = try await get(ADOEndpoint.backlogConfiguration(team: team), as: ADOBacklogConfiguration.self)
             let types = configuration.taskBacklog?.workItemTypes?.elements.map(\.name) ?? []
             if !types.isEmpty { setup.taskTypes = Set(types) }
+            setup.portfolioTypes = Set((configuration.portfolioBacklogs?.elements ?? []).flatMap { $0.workItemTypes?.elements.map(\.name) ?? [] })
             for mapped in configuration.workItemTypeMappedStates?.elements ?? [] {
                 setup.categories[mapped.workItemTypeName] = mapped.states
             }

@@ -7,7 +7,8 @@ import SwiftUI
 /// pull requests, each a card of its rows in their order with the graph beside them, a band of the Map, or a lane of the
 /// Board, with a card for each pull request in a column for its stage; then, in List, the pull requests in no mission, by
 /// status, and on the Board, their lane. A row, a node or a card shows its details beside the list, as a click on a row does
-/// By Status. Idle's keep their own section, but on the Board, which has your own among its cards.
+/// By Status. Idle's keep their own section, but on the Board, which has your own among its cards. While Show Links is off,
+/// its foot says that stories need it.
 struct PullRequestsByMission: View {
     let view: OrderView
     @ObservedObject var ordering: PullRequestOrder
@@ -38,6 +39,13 @@ struct PullRequestsByMission: View {
         let byRef = Dictionary(items.map { ($0.key.linkRef, $0) }, uniquingKeysWith: { first, _ in first })
         let listed = items.filter { $0.group != .idle }.map(\.key.linkRef)
         let apart = items.filter { $0.group == .idle }.map(\.key.linkRef)
+        VStack(alignment: .leading, spacing: 18) {
+            missions(byRef: byRef, listed: listed, apart: apart)
+            StoriesNeedShowLinks(links: services.links)
+        }
+    }
+
+    private func missions(byRef: [ItemRef: PRSnapshot], listed: [ItemRef], apart: [ItemRef]) -> some View {
         MissionsBody(
             view: view, ordering: ordering, kinds: Self.kinds, elsewhere: "GitHub",
             openElsewhere: services.hasPage(.githubPullRequests) ? { services.openWindow(.githubPullRequests) } : nil,
@@ -78,6 +86,36 @@ struct PullRequestsByMission: View {
 
     static func isIn(_ missions: [OrderMission], _ item: PRSnapshot) -> Bool {
         MissionsBody.isIn(missions, item.key.linkRef)
+    }
+}
+
+/// By Mission's foot while Show Links is off: Pull Request Order puts each story's pull requests together only with it,
+/// as Show Links reads your pull requests' work items. Turn On… shows its setting.
+private struct StoriesNeedShowLinks: View {
+    @ObservedObject var links: Links
+
+    @LocalState private var showsSetting = false
+
+    var body: some View {
+        if !links.isOn {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "link")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(OrderText.storiesNeedShowLinks)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Turn On…") { showsSetting = true }
+                    .buttonStyle(.borderless)
+                    .popover(isPresented: $showsSetting, arrowEdge: .bottom) {
+                        LinksSetting(links: links, isBrief: true)
+                            .padding(16)
+                            .frame(width: 320)
+                    }
+            }
+            .font(size: 12)
+            .padding(.horizontal, 4)
+        }
     }
 }
 
@@ -204,8 +242,9 @@ struct PullRequestBoardCard: View {
 extension PullRequestsByMission {
     /// For `--render`, with Pull Request Order on and a mission to show: the page By Mission, in List, on the Map and on the
     /// Board, Up Next above each, also with text at 150%, and in a narrow window, its header's controls their symbols alone,
-    /// also all the way down to a mission of your own; the Board with Lanes: None; and By Status, Up Next above it, with the
-    /// order's capsules on the rows, also narrow and with text at 150%, where Up Next's slots wrap.
+    /// also all the way down to a mission of your own; every mission, a story's among them, wide, narrow and at 150%; the
+    /// Board with Lanes: None; and By Status, Up Next above it, with the order's capsules on the rows, also narrow and with
+    /// text at 150%, where Up Next's slots wrap. And the line at By Mission's foot while Show Links is off.
     @MainActor
     static func renderings(
         store: PRStore, services: AppServices, environment: (AnyView) -> AnyView
@@ -219,6 +258,10 @@ extension PullRequestsByMission {
             ("pull-requests-by-mission-map", .byMission, .map, nil, nil, CGSize(width: 1_000, height: 720)),
             ("pull-requests-by-mission-150", .byMission, .list, nil, 1.5, CGSize(width: 1_000, height: 1_000)),
             ("pull-requests-by-mission-narrow", .byMission, .list, nil, nil, CGSize(width: 560, height: 720)),
+            ("pull-requests-by-mission-all", .byMission, .list, nil, nil, CGSize(width: 1_000, height: 2_000)),
+            ("pull-requests-by-mission-all-narrow", .byMission, .list, nil, nil, CGSize(width: 560, height: 2_800)),
+            ("pull-requests-by-mission-all-150", .byMission, .list, nil, 1.5, CGSize(width: 1_000, height: 3_000)),
+            ("pull-requests-by-mission-map-all", .byMission, .map, nil, nil, CGSize(width: 1_000, height: 1_600)),
             ("pull-requests-board", .byMission, .board, .missions, nil, CGSize(width: 1_200, height: 1_250)),
             ("pull-requests-board-150", .byMission, .board, .missions, 1.5, CGSize(width: 1_200, height: 1_400)),
             ("pull-requests-board-narrow", .byMission, .board, .missions, nil, CGSize(width: 560, height: 1_100)),
@@ -227,7 +270,13 @@ extension PullRequestsByMission {
             ("pull-requests-up-next-narrow", .status, .list, nil, nil, CGSize(width: 560, height: 900)),
             ("pull-requests-up-next-150", .status, .list, nil, 1.5, CGSize(width: 1_000, height: 900)),
         ]
-        return shown.map { name, order, view, lanes, scale, size in
+        let showLinksOff = StoriesNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))
+            .padding(16)
+            .frame(width: 700, alignment: .leading)
+            .background(WindowBackdrop())
+            .environment(\.isRendering, true)
+        let foot = (name: "pull-requests-by-mission-show-links-off", view: environment(AnyView(showLinksOff)))
+        return [foot] + shown.map { name, order, view, lanes, scale, size in
             let page = PullRequestsPage(order: order, view: view, lanes: lanes)
                 .environment(\.panelStyle, .page)
             let scaled: AnyView = if let scale {
