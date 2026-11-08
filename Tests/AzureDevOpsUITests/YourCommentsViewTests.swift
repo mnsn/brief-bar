@@ -165,6 +165,18 @@ import Testing
         ))
     }
 
+    /// Presses a key in a window once SwiftUI takes it, as a button's shortcut, which it takes only once it has drawn the
+    /// button enabled, as after a change that went, for as long as a busy machine could need (`waitLimit`): whether it took
+    /// it.
+    private func press(_ key: NSEvent, in host: NSView) async throws -> Bool {
+        var taken = false
+        try await settle {
+            taken = host.performKeyEquivalent(with: key)
+            return taken
+        }
+        return taken
+    }
+
     /// Writes at the end of a field, as you type there.
     private func type(_ text: String, in field: NSTextView) {
         field.window?.makeFirstResponder(field)
@@ -345,7 +357,7 @@ import Testing
         try await settle { changes.edit(draft) != nil }
         #expect(changes.edit(draft) == written)
 
-        #expect(host.performKeyEquivalent(with: try key("\u{1b}", code: 53, in: window)))
+        #expect(try await press(try key("\u{1b}", code: 53, in: window), in: host))
         try await settle { composing.open == nil }
         #expect(composing.open == nil)
         #expect(changes.edit(draft) == written)
@@ -374,14 +386,13 @@ import Testing
         let commandReturn = try key("\r", code: 36, .command, in: window)
 
         // Unchanged since: it goes, as the stand-in refuses it.
-        #expect(host.performKeyEquivalent(with: commandReturn))
+        #expect(try await press(commandReturn, in: host))
         try await settle { sent.writes.count == 1 }
         #expect(sent.writes.map(\.kind) == [.editComment])
 
-        // Edited elsewhere, as the list reads it: nothing more goes.
+        // Edited elsewhere, as the list reads it: nothing more goes, once Save is enabled again, as the stand-in refused it.
         try receive(store, yours: "It reads RetryOptions.MaxDelay, a minute by default.", in: thread)
-        try await settle(at: 20)
-        #expect(host.performKeyEquivalent(with: commandReturn))
+        #expect(try await press(commandReturn, in: host))
         try await settle(at: 30)
         #expect(sent.writes.count == 1)
         #expect(composing.open == .edit(mine.id, in: thread.id))
@@ -414,7 +425,8 @@ import Testing
         for keyPath in SpellCheckingProbe.ProbeView.kept { field[keyPath: keyPath] = true }
         #expect(corrections(of: field).isEmpty)
 
-        // AppKit, as the system's settings change, here to on, in memory only: it gives the text view each as it says so.
+        // AppKit, as the system's settings change, here to on, in memory only: it gives the text view each as it says so, on
+        // a Mac here, though not on CI's runner, where there's nothing to turn off again.
         let defaults = UserDefaults.standard
         let arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         defer {
@@ -428,7 +440,6 @@ import Testing
         for name in SpellCheckingProbe.ProbeView.systemSettingChanges {
             NotificationCenter.default.post(name: name, object: nil)
         }
-        #expect(field.isAutomaticQuoteSubstitutionEnabled, "AppKit gives the text view the system's setting as it changes")
         try await settle { corrections(of: field).isEmpty }
         #expect(corrections(of: field).isEmpty)
         #expect(field.isContinuousSpellCheckingEnabled)
