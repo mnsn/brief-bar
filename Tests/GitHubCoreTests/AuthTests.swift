@@ -256,7 +256,6 @@ import Testing
         #expect(call.timeout == 30)
         #expect(call.environment?["GH_PROMPT_DISABLED"] == "1")
         #expect(await accounts.executablePath == gh)
-        #expect(await accounts.activeLogin == "robin")
     }
 
     @Test func onlyGitHubDotComsAccountsAreListed() {
@@ -327,7 +326,6 @@ import Testing
         await accounts.invalidate()
         #expect(try await accounts.accounts().map(\.login) == ["kai", "robin"])
         #expect(runner.calls.count == 2)
-        #expect(await accounts.activeLogin == "kai")
     }
 
     /// Signed out, it's asked again each time, so a sign-in shows at the next read.
@@ -336,21 +334,8 @@ import Testing
         let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { referenceDate })
 
         #expect(try await accounts.accounts() == [.active])
-        #expect(await accounts.activeLogin == nil)
         #expect(try await accounts.accounts().map(\.login) == ["robin"])
         #expect(runner.calls.count == 2)
-    }
-
-    /// The last account it listed as active stays the one to switch back to, while a list is asked for again.
-    @Test func remembersTheActiveAccountOnceInvalidated() async throws {
-        let runner = FakeRunner([.output(Fixture.accounts(["robin", "kai"])), .output(#"{"hosts":{}}"#)])
-        let accounts = GitHubCLIAccounts(locator: .fixed(gh), runner: runner, now: { referenceDate })
-
-        _ = try await accounts.accounts()
-        await accounts.invalidate()
-        #expect(await accounts.activeLogin == "robin")
-        #expect(try await accounts.accounts() == [.active])
-        #expect(await accounts.activeLogin == "robin")
     }
 
     @Test func anOldCLIsActiveAccountIsKept() async throws {
@@ -360,7 +345,6 @@ import Testing
         #expect(try await accounts.accounts() == [.active])
         #expect(try await accounts.accounts() == [.active])
         #expect(runner.calls.count == 1)
-        #expect(await accounts.activeLogin == nil)
     }
 
     /// Reading the active account then says the GitHub CLI isn't installed.

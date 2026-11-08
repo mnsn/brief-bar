@@ -207,27 +207,33 @@ import Testing
 /// What Terminal runs when you sign in to the GitHub CLI, or to another account.
 @Suite struct SignInScriptTests {
     @Test func signsInThroughTheBrowser() {
-        let script = GitHub.signInScript(ghPath: "/opt/homebrew/bin/gh", keepingActive: nil)
+        let script = GitHub.signInScript(ghPath: "/opt/homebrew/bin/gh", keepingActive: false)
         #expect(script.hasPrefix("#!/bin/zsh -l\n"))
         #expect(script.contains("\nif '/opt/homebrew/bin/gh' auth login --hostname github.com --web; then\n"))
         #expect(script.contains("BriefBar will refresh within a minute"))
         #expect(!script.contains("auth switch"))
-        #expect(GitHub.signInScript(ghPath: nil, keepingActive: nil).contains("\nif gh auth login --hostname github.com --web; then\n"))
+        #expect(!script.contains("config get"))
+        #expect(GitHub.signInScript(ghPath: nil, keepingActive: false).contains("\nif gh auth login --hostname github.com --web; then\n"))
     }
 
-    /// Signing in to another account makes it the GitHub CLI's active one: the one it used goes on being so.
+    /// Signing in to another account makes it the GitHub CLI's active one: the one it used as the sign-in started, as `gh`
+    /// says then, goes on being so.
     @Test func anotherAccountLeavesTheOneTheCLIUses() throws {
-        let script = GitHub.signInScript(ghPath: nil, keepingActive: "robin")
-        let login = try #require(script.range(of: "gh auth login --hostname github.com --web"))
-        let back = try #require(script.range(of: "gh auth switch --hostname github.com --user 'robin' >/dev/null 2>&1"))
+        let script = GitHub.signInScript(ghPath: nil, keepingActive: true)
+        let active = try #require(script.range(of: "\nactive=\"$(gh config get --host github.com user 2>/dev/null)\"\n"))
+        let login = try #require(script.range(of: "\nif gh auth login --hostname github.com --web; then\n"))
+        let back = try #require(script.range(
+            of: "\n    if [[ -n \"$active\" ]] && gh auth switch --hostname github.com --user \"$active\" >/dev/null 2>&1; then\n"
+        ))
+        #expect(active.lowerBound < login.lowerBound)
         #expect(back.lowerBound > login.upperBound)
-        #expect(script.contains("The GitHub CLI goes on using robin in Terminal"))
+        #expect(script.contains("\n        echo \"The GitHub CLI goes on using $active in Terminal: gh auth switch changes that.\"\n    fi\n"))
     }
 
     @Test func quotesWhatItRuns() {
-        let script = GitHub.signInScript(ghPath: "/Users/o'brien/bin/gh", keepingActive: "a'b; rm -rf ~")
+        let script = GitHub.signInScript(ghPath: "/Users/o'brien/bin/gh", keepingActive: true)
+        #expect(script.contains("active=\"$('/Users/o'\\''brien/bin/gh' config get --host github.com user"))
         #expect(script.contains("if '/Users/o'\\''brien/bin/gh' auth login"))
-        #expect(script.contains("--user 'a'\\''b; rm -rf ~' >/dev/null"))
-        #expect(script.contains("goes on using abrm-rf in Terminal"))
+        #expect(script.contains("&& '/Users/o'\\''brien/bin/gh' auth switch"))
     }
 }

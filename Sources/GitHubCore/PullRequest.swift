@@ -354,6 +354,8 @@ public enum GitHubProblem: Sendable, Equatable {
     }
 
     public static func from(_ error: Error, now: Date = Date()) -> GitHubProblem {
+        // No account could be read: why the first one couldn't, other than for a sign-in.
+        if let failure = error as? GitHubAccountsReader.Failure { return from(failure.error, now: now) }
         var unwrapped: any Error = error
         if let authError = error as? GitHubAuthError { unwrapped = GitHubError.auth(authError) }
         guard let gitHubError = unwrapped as? GitHubError else { return .unreachable(unwrapped.localizedDescription) }

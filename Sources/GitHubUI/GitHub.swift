@@ -18,10 +18,10 @@ enum GitHub {
     /// Opens Terminal running `gh auth login`, which signs in through the browser: to the GitHub CLI, or to another of
     /// your accounts, whose pull requests BriefBar reads too. BriefBar picks the sign-in up on its next refresh, within a
     /// minute.
-    /// - Parameter active: the account the GitHub CLI uses now, which it goes on using after, rather than the one you sign
-    ///   in to; nil to use that one, as when it's signed in to none.
-    static func signIn(ghPath: String?, keepingActive active: String? = nil) {
-        let script = signInScript(ghPath: ghPath, keepingActive: active)
+    /// - Parameter keepingActive: whether the GitHub CLI goes on using the account it used, rather than the one you sign in
+    ///   to, as when you add one.
+    static func signIn(ghPath: String?, keepingActive: Bool = false) {
+        let script = signInScript(ghPath: ghPath, keepingActive: keepingActive)
         do {
             let directory = UserHome.url.appendingPathComponent("Library/Caches", isDirectory: true)
                 .appendingPathComponent(AppIdentity.bundleIdentifier, isDirectory: true)
@@ -35,23 +35,30 @@ enum GitHub {
         }
     }
 
-    /// What Terminal runs to sign in: `gh auth login`, then, when `active` names the account the GitHub CLI used, `gh auth
-    /// switch` back to it.
-    nonisolated static func signInScript(ghPath: String?, keepingActive active: String?) -> String {
+    /// What Terminal runs to sign in: `gh auth login`; and, when `keepingActive`, `gh auth switch` back to the account the
+    /// GitHub CLI used just before, which it reads as it starts, so that it's the one you use now, however you last chose
+    /// it. Nothing switches when the GitHub CLI used none.
+    nonisolated static func signInScript(ghPath: String?, keepingActive: Bool) -> String {
         let gh = ghPath.map(quoted) ?? "gh"
         var lines = [
             "#!/bin/zsh -l",
             "# Opened by BriefBar, which reads your GitHub pull requests with the GitHub CLI's sign-in.",
             "echo \"Signing in to the GitHub CLI for BriefBar, which reads every account it's signed in to.\"",
             "echo",
+        ]
+        if keepingActive {
+            lines.append("active=\"$(\(gh) config get --host github.com user 2>/dev/null)\"")
+        }
+        lines += [
             "if \(gh) auth login --hostname github.com --web; then",
             "    echo",
         ]
-        if let active {
-            lines.append(
-                "    \(gh) auth switch --hostname github.com --user \(quoted(active)) >/dev/null 2>&1"
-                    + " && echo \"The GitHub CLI goes on using \(active.filter(isLoginCharacter)) in Terminal: gh auth switch changes that.\""
-            )
+        if keepingActive {
+            lines += [
+                "    if [[ -n \"$active\" ]] && \(gh) auth switch --hostname github.com --user \"$active\" >/dev/null 2>&1; then",
+                "        echo \"The GitHub CLI goes on using $active in Terminal: gh auth switch changes that.\"",
+                "    fi",
+            ]
         }
         lines += [
             "    echo \"Signed in. You can close this window: BriefBar will refresh within a minute.\"",
@@ -63,10 +70,5 @@ enum GitHub {
     /// `text` in single quotes, for zsh to take as it is.
     nonisolated static func quoted(_ text: String) -> String {
         "'\(text.replacingOccurrences(of: "'", with: "'\\''"))'"
-    }
-
-    /// What a GitHub login is made of, which an echo can say unquoted: letters, digits, `-`, and `_` for a managed user.
-    nonisolated private static func isLoginCharacter(_ character: Character) -> Bool {
-        character.isASCII && (character.isLetter || character.isNumber || character == "-" || character == "_")
     }
 }

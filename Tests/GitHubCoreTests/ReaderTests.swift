@@ -82,6 +82,9 @@ import Testing
         #expect(GitHubProblem.from(GitHubError.http(500), now: now) == .unreachable("GitHub answered with HTTP 500."))
         #expect(GitHubProblem.from(GitHubError.forbidden, now: now) == .unreachable("GitHub refused the request."))
         #expect(GitHubProblem.from(URLError(.badURL), now: now) == .unreachable(URLError(.badURL).localizedDescription))
+        // No account could be read: why the GitHub CLI's active one couldn't.
+        let failure = GitHubAccountsReader.Failure(error: GitHubError.throttled(retryAfter: 120), load: GitHubLoad(login: "robin", items: []))
+        #expect(GitHubProblem.from(failure, now: now) == .throttled(until: t(120)))
     }
 
     @Test func onlyAMissingSignInNeedsOne() {
@@ -158,7 +161,6 @@ import Testing
         _ = try await reader.load()
         #expect(runner.calls.count == 2)
         #expect(await reader.executablePath == gh)
-        #expect(await reader.activeLogin == "robin")
     }
 
     /// One account's read is as BriefBar's was before it read more: its notices say nothing of whose.
@@ -302,14 +304,108 @@ import Testing
         #expect(work.received.count == 3)
     }
 
-    @Test func whenNoAccountCanBeReadItFailsAsTheFirstDid() async throws {
+    @Test func oneAccountThatCantBeReadFailsAsBefore() async throws {
+        let server = StubServer()
+        server.always(.failure(.notConnectedToInternet))
+        let (reader, _) = reader([Fixture.me], servers: [Fixture.me: server])
+
+        await #expect(throws: GitHubError.offline) { try await reader.load() }
+    }
+
+    /// No account can be read: it fails as the first one did, the GitHub CLI's active account, with what's left of the
+    /// list, as when only some can't be read. What it last read of one offline stays, and one that needs signing in again
+    /// goes, as the list says; what's wrong with the first, the list's problem, isn't said again.
+    @Test func whenNoAccountCanBeReadItFailsAsTheFirstDidWithWhatsLeft() async throws {
         let work = StubServer()
         let own = StubServer()
+        work.reply(.json(Fixture.answer(login: "robin", reviewing: [Fixture.pullRequest(1)])))
         work.always(.failure(.notConnectedToInternet))
+        own.reply(
+            .json(Fixture.answer(login: "robin-oss", authored: [Fixture.pullRequest(3, author: "robin-oss")])),
+            .text("Bad credentials", status: 401), .text("Bad credentials", status: 401)
+        )
+        let (reader, _) = reader(["robin", "robin-oss"], servers: ["robin": work, "robin-oss": own])
+
+        #expect(try await reader.load().items.count == 2)
+        let failure = try await #require(throws: GitHubAccountsReader.Failure.self) { try await reader.load() }
+        #expect(failure.error as? GitHubError == .offline)
+        #expect(GitHubProblem.from(failure) == .offline)
+        #expect(failure.load.items.map(\.pullRequest.number) == [1])
+        #expect(failure.load.logins == ["robin", "robin-oss"])
+        #expect(failure.load.notice == "Sign in to the GitHub CLI again to see robin-oss's pull requests.")
+        #expect(failure.waitsUntil == nil)
+    }
+
+    /// The other way round: the first account takes signing in again, so its pull requests go, and the list says so, as
+    /// when only some can't be read; what was last read of the other, which GitHub couldn't answer just now, stays, and
+    /// that's what's wrong with the list, which a sign-in wouldn't fix.
+    @Test func whenTheFirstNeedsSigningInAgainTheOthersKeepTheirLastList() async throws {
+        let work = StubServer()
+        let own = StubServer()
+        work.reply(
+            .json(Fixture.answer(login: "robin", reviewing: [Fixture.pullRequest(1)])),
+            .text("Bad credentials", status: 401), .text("Bad credentials", status: 401)
+        )
+        own.reply(.json(Fixture.answer(login: "robin-oss", authored: [Fixture.pullRequest(3, author: "robin-oss")])))
         own.always(.text("oops", status: 502))
         let (reader, _) = reader(["robin", "robin-oss"], servers: ["robin": work, "robin-oss": own])
 
-        await #expect(throws: GitHubError.offline) { try await reader.load() }
+        _ = try await reader.load()
+        let failure = try await #require(throws: GitHubAccountsReader.Failure.self) { try await reader.load() }
+        #expect(GitHubProblem.from(failure) == .unreachable("GitHub answered with HTTP 502."))
+        #expect(failure.load.items.map(\.pullRequest.number) == [3])
+        #expect(failure.load.logins == ["robin", "robin-oss"])
+        #expect(failure.load.notice == "Sign in to the GitHub CLI again to see robin's pull requests.")
+    }
+
+    /// Every account takes signing in again: it fails as one account does, and the list goes.
+    @Test func whenEveryAccountNeedsSigningInAgainItFailsAsOneDoes() async throws {
+        let work = StubServer()
+        let own = StubServer()
+        work.always(.text("Bad credentials", status: 401))
+        own.always(.text("Bad credentials", status: 401))
+        let (reader, _) = reader(["robin", "robin-oss"], servers: ["robin": work, "robin-oss": own])
+
+        await #expect(throws: GitHubError.unauthorized) { try await reader.load() }
+    }
+
+    /// What's wrong as every account alike is said once, as the list's problem.
+    @Test func whatsWrongAsEveryAccountIsSaidOnce() async throws {
+        let work = StubServer()
+        let own = StubServer()
+        work.always(.failure(.notConnectedToInternet))
+        own.always(.failure(.notConnectedToInternet))
+        let (reader, _) = reader(["robin", "robin-oss"], servers: ["robin": work, "robin-oss": own])
+
+        let failure = try await #require(throws: GitHubAccountsReader.Failure.self) { try await reader.load() }
+        #expect(GitHubProblem.from(failure) == .offline)
+        #expect(failure.load.notice == nil)
+        #expect(failure.load.items.isEmpty)
+        #expect(failure.load.logins == ["robin", "robin-oss"])
+    }
+
+    /// GitHub asking the first account to slow down for an hour doesn't hold another, which GitHub couldn't answer just
+    /// now: it may be read again sooner.
+    @Test func waitsForGitHubOnlyWhenItAskedThatAsEveryAccount() async throws {
+        let work = StubServer()
+        let own = StubServer()
+        work.always(.text("slow down", status: 429, headers: ["Retry-After": "3600"]))
+        own.always(.text("oops", status: 502))
+        let (reader, _) = reader(["robin", "robin-oss"], servers: ["robin": work, "robin-oss": own])
+
+        let failure = try await #require(throws: GitHubAccountsReader.Failure.self) { try await reader.load() }
+        guard case .throttled = GitHubProblem.from(failure) else {
+            Issue.record("The list's problem is the first account's: GitHub asked it to slow down.")
+            return
+        }
+        #expect(failure.waitsUntil == nil)
+        #expect(failure.load.notice == "Couldn't read robin-oss's pull requests: GitHub answered with HTTP 502. The list may be out of date.")
+    }
+
+    @Test func waitsUntilTheSoonestTimeGitHubGaveAsEachAccount() {
+        #expect(GitHubAccountsReader.waitsUntil([.throttled(until: t(600)), .throttled(until: t(300))]) == t(300))
+        #expect(GitHubAccountsReader.waitsUntil([.throttled(until: t(600)), .unreachable("x")]) == nil)
+        #expect(GitHubAccountsReader.waitsUntil([.offline, .throttled(until: t(300))]) == nil)
     }
 
     /// Two accounts that turn out to be one, such as the active one's token, which the GitHub CLI can't say whose it is,

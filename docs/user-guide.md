@@ -913,7 +913,8 @@ A pull request that's both yours and asks for your review shows once, as yours, 
 your accounts' and asks another of them. Click one to open it on GitHub. If an organization uses SAML
 single sign-on and the GitHub CLI isn't authorized for it, the list says to authorize it, and shows the
 rest. When one of your accounts can't be read, the list says why and shows the others' pull requests,
-with what it last read of that one, unless it takes signing in to that account again.
+with what it last read of that one, unless it takes signing in to that account again. When none can be
+read, it shows what it last read of each, on the same terms, unless every one takes signing in again.
 
 To add an account, click **Add Account…** on GitHub's page in Settings, or run `gh auth login` in
 Terminal; to stop reading one, sign the GitHub CLI out of it (`gh auth logout --user <login>`). BriefBar

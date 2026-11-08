@@ -29,7 +29,8 @@ package enum GitHubCommandLine: SourceCommandLine {
             do {
                 return Loaded(load: try await reader.load())
             } catch {
-                return Loaded(problem: GitHubProblem.from(error))
+                // No account could be read, of more than one: what's left of the list, as the app shows it.
+                return Loaded(load: (error as? GitHubAccountsReader.Failure)?.load, problem: GitHubProblem.from(error))
             }
         }
     }
@@ -111,12 +112,15 @@ package enum GitHubCommandLine: SourceCommandLine {
     }
 }
 
-/// Prints only the pull requests whose group or status changed.
+/// Prints only the pull requests whose group or status changed, and what's wrong as it changes.
 private final class GitHubWatchPrinter: @unchecked Sendable {
     private let reader: GitHubAccountsReader
     private let lock = NSLock()
     private var isPolling = false
     private var problem: String?
+    /// The notice's lines, as the last list had them: each is printed once, as it comes, such as why an account couldn't
+    /// be read.
+    private var notices: [String] = []
     private var previous: [String: GitHubPRSnapshot] = [:]
     private let formatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -150,25 +154,35 @@ private final class GitHubWatchPrinter: @unchecked Sendable {
         lock.withLock {
             defer { isPolling = false }
             let now = formatter.string(from: Date())
+            let load: GitHubLoad
             switch result {
             case .failure(let error):
                 let message = GitHubProblem.from(error).message
                 if message != problem { Swift.print("\(now)  ! \(message)") }
                 problem = message
-            case .success(let load):
+                // No account could be read, of more than one: what's left of the list. Otherwise it stays as it was.
+                guard let left = (error as? GitHubAccountsReader.Failure)?.load else { return }
+                load = left
+            case .success(let read):
                 problem = nil
-                var current: [String: GitHubPRSnapshot] = [:]
-                for item in load.items {
-                    current[item.id] = item
-                    let old = previous[item.id]
-                    guard old?.group != item.group || old?.headline != item.headline else { continue }
-                    Swift.print("\(now)  \(item.group.rawValue.padding(toLength: 16, withPad: " ", startingAt: 0)) \(item.headline): \(item.pullRequest.reference) \(item.pullRequest.title.prefix(70))")
-                }
-                for (id, old) in previous where current[id] == nil {
-                    Swift.print("\(now)  gone             \(old.pullRequest.reference) \(old.pullRequest.title.prefix(70))")
-                }
-                previous = current
+                load = read
             }
+            let lines = load.notice.map { $0.split(separator: "\n").map(String.init) } ?? []
+            for line in lines where !notices.contains(line) {
+                Swift.print("\(now)  ! \(line)")
+            }
+            notices = lines
+            var current: [String: GitHubPRSnapshot] = [:]
+            for item in load.items {
+                current[item.id] = item
+                let old = previous[item.id]
+                guard old?.group != item.group || old?.headline != item.headline else { continue }
+                Swift.print("\(now)  \(item.group.rawValue.padding(toLength: 16, withPad: " ", startingAt: 0)) \(item.headline): \(item.pullRequest.reference) \(item.pullRequest.title.prefix(70))")
+            }
+            for (id, old) in previous where current[id] == nil {
+                Swift.print("\(now)  gone             \(old.pullRequest.reference) \(old.pullRequest.title.prefix(70))")
+            }
+            previous = current
         }
     }
 }

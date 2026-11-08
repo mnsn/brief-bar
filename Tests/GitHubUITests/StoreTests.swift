@@ -28,6 +28,7 @@ import Testing
         let store = GitHubStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
         store.start()
         store.fail(GitHubError.offline)
+        store.fail(GitHubError.throttled(retryAfter: 600))
         store.stop()
 
         #expect(!store.isStarted)
@@ -35,6 +36,7 @@ import Testing
         #expect(store.items.isEmpty)
         #expect(store.counts == GitHubGroupCounts())
         #expect(store.problem == nil)
+        #expect(store.waitsUntil == nil)
         #expect(store.login == nil)
         #expect(store.logins.isEmpty)
         #expect(store.notice == nil)
@@ -132,6 +134,32 @@ import Testing
         #expect(!store.isRefreshing)
     }
 
+    /// GitHub asked the first account to slow down, and another couldn't be read for something else: it reads again as
+    /// often as set, as that one may be read sooner. It waits as long as GitHub asked only when it asked that as each.
+    @Test func waitsForGitHubOnlyWhenItAskedThatAsEveryAccount() async throws {
+        let store = liveStore(FakeCLI.missing)
+        store.start()
+        defer { store.stop() }
+        await eventually { store.hasLoaded }
+        // From when the read started, as `isDue` counts, however late the wait for it ends.
+        let started = try #require(store.lastAttempt)
+        let load = GitHubLoad(login: "robin", logins: ["robin", "robin-oss"], items: [])
+
+        store.fail(GitHubAccountsReader.Failure(error: GitHubError.throttled(retryAfter: 3_600), load: load))
+        #expect(store.problem?.message.hasPrefix("GitHub asked BriefBar to slow down") == true)
+        #expect(store.waitsUntil == nil)
+        #expect(store.isDue(at: started.addingTimeInterval(121)))
+
+        let asked = Date()
+        store.fail(GitHubAccountsReader.Failure(
+            error: GitHubError.throttled(retryAfter: 3_600), load: load, waitsUntil: asked.addingTimeInterval(600)
+        ))
+        #expect(!store.isDue(at: asked.addingTimeInterval(300)))
+        #expect(store.isDue(at: asked.addingTimeInterval(601)))
+        store.refresh()
+        #expect(!store.isRefreshing)
+    }
+
     @Test func aPopoverOpeningReadsAgainOnlyAfterAWhile() async {
         let store = liveStore(FakeCLI.missing)
         let started = Date()
@@ -214,6 +242,33 @@ import Testing
         #expect(store.problem == nil)
     }
 
+    /// None of its accounts could be read, and some not for a sign-in: it shows what's left of each one's list, with that
+    /// problem. One that takes signing in again empties the list, which every view hides then.
+    @Test func whenNoAccountCanBeReadItShowsWhatsLeftOfEach() {
+        let store = GitHubStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        store.start()
+        defer { store.stop() }
+        let items = GitHubDemoData.load().items
+        let notice = "Sign in to the GitHub CLI again to see robin-oss's pull requests."
+        let offline = GitHubLoad(login: "robin", logins: ["robin", "robin-oss"], items: Array(items.prefix(3)), notice: notice)
+
+        store.fail(GitHubAccountsReader.Failure(error: GitHubError.offline, load: offline))
+        #expect(store.problem == .offline)
+        #expect(store.items == offline.items)
+        #expect(store.counts == offline.counts)
+        #expect(store.login == "robin")
+        #expect(store.logins == ["robin", "robin-oss"])
+        #expect(store.notice == notice)
+
+        let left = GitHubLoad(login: "robin", logins: ["robin", "robin-oss"], items: Array(items.suffix(2)))
+        store.fail(GitHubAccountsReader.Failure(error: GitHubAuthError.signedOut("not logged in"), load: left))
+        #expect(store.problem == .signedOut("not logged in"))
+        #expect(store.items.isEmpty)
+        #expect(store.counts == GitHubGroupCounts())
+        #expect(store.logins.isEmpty)
+        #expect(store.notice == nil)
+    }
+
     @Test func aCancelledReadIsNotAProblem() {
         let store = GitHubStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
         store.start()
@@ -260,13 +315,13 @@ import Testing
         #expect(!store.isAllQuiet)
     }
 
-    /// After you choose to sign in, it reads every minute, until the account you sign in to shows, or for ten minutes.
+    /// After you choose to sign in, it reads every minute, until an account it didn't read as shows, or for ten minutes.
     @Test func waitingForASignInReadsEveryMinuteUntilItShows() async throws {
         let store = liveStore(FakeCLI.missing)
         store.start()
         defer { store.stop() }
         await eventually { store.hasLoaded }
-        store.receive(GitHubLoad(login: "robin", items: []))
+        store.receive(GitHubLoad(login: "robin", logins: ["robin", "kai"], items: []))
         // From when the read started, as `isDue` counts, however late the wait for it ends.
         let started = try #require(store.lastAttempt)
         #expect(!store.isDue(at: started.addingTimeInterval(61)))
@@ -274,10 +329,12 @@ import Testing
         store.waitForSignIn()
         #expect(store.isDue(at: started.addingTimeInterval(61)))
         #expect(!store.isListingAccounts(at: Date().addingTimeInterval(GitHubStore.signInWait + 1)))
-        // The same accounts: it goes on.
-        store.receive(GitHubLoad(login: "robin", items: []))
-        #expect(store.isListingAccounts(at: Date()))
-        // The one you signed in to shows: every two minutes again.
+        // The same accounts, in another order, as `gh auth login` and `gh auth switch` leave them, or fewer: it goes on.
+        for logins in [["robin", "kai"], ["kai", "robin"], ["robin"]] {
+            store.receive(GitHubLoad(login: logins[0], logins: logins, items: []))
+            #expect(store.isListingAccounts(at: Date()), "\(logins)")
+        }
+        // One it didn't read as shows: every two minutes again.
         store.receive(GitHubLoad(login: "robin", logins: ["robin", "robin-oss"], items: []))
         #expect(store.listsAccountsUntil == nil)
         #expect(!store.isDue(at: started.addingTimeInterval(61)))

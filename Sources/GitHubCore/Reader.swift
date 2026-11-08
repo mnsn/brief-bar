@@ -68,7 +68,9 @@ public enum GitHubReader {
     /// The list from every account's read, the active one first: each pull request once, as yours when it's yours as any of
     /// them, with what GitHub couldn't read as each, and which accounts couldn't be read, and why. A single account's is
     /// its own read, as BriefBar read before more were.
-    public static func merge(_ reads: [AccountRead]) -> GitHubLoad {
+    /// - Parameter shown: the problem the list shows, when no account could be read: an account that couldn't be read for
+    ///   what it says isn't named again.
+    public static func merge(_ reads: [AccountRead], besides shown: GitHubProblem? = nil) -> GitHubLoad {
         if reads.count == 1, let only = reads.first, only.problem == nil, let load = only.load { return load }
         let named = reads.count > 1
         var logins: [String] = []
@@ -85,7 +87,7 @@ public enum GitHubReader {
                 loads.append(load)
                 if let notice = load.notice { notices.append(named ? "\(login.isEmpty ? "Its active account" : login): \(notice)" : notice) }
             }
-            if let problem = read.problem {
+            if let problem = read.problem, problem.message != shown?.message {
                 let whose = login.isEmpty ? "the GitHub CLI's active account's" : "\(login)'s"
                 notices.append(problem.needsSignIn
                     ? "Sign in to the GitHub CLI again to see \(whose) pull requests."
@@ -103,8 +105,30 @@ public enum GitHubReader {
 /// time, each with its own token, and its own wait when GitHub asks BriefBar to slow down. The list has each pull request
 /// once, as yours when it's yours as any of them. When some accounts can't be read and others can, it says which and
 /// why, beside the others' pull requests and what it last read of those it couldn't, unless they need you to sign in
-/// again; when none can be read, it fails as the first one did, the GitHub CLI's active account.
+/// again; when none can be read, it fails as the first one did, the GitHub CLI's active account, unless that needs you to
+/// sign in again and another doesn't, with what's left of the list when there's more than one (`Failure`).
 public actor GitHubAccountsReader {
+    /// No account could be read, of more than one, and some not for a sign-in: why the first of those couldn't, which the
+    /// list says is wrong, with what's left of the list, as when only some can't be read. Its problem never takes signing
+    /// in again, so the list it comes with isn't one to hide.
+    public struct Failure: Error {
+        /// Why the first account that doesn't need signing in again couldn't be read: the GitHub CLI's active one, unless
+        /// that one does.
+        public var error: any Error
+        /// What each account last read, unless it takes signing in to it again, with why each of the others couldn't be
+        /// read, unless it's what `error` says.
+        public var load: GitHubLoad
+        /// Until when GitHub asked BriefBar to slow down as every account: the soonest of those times. Nil when it didn't ask
+        /// that of each, so that the others can be read sooner.
+        public var waitsUntil: Date?
+
+        public init(error: any Error, load: GitHubLoad, waitsUntil: Date? = nil) {
+            self.error = error
+            self.load = load
+            self.waitsUntil = waitsUntil
+        }
+    }
+
     private let accounts: GitHubCLIAccounts
     private let makeClient: @Sendable (GitHubAccount) -> GitHubClient
     /// Each account's client, by its key (`key(of:)`), while the GitHub CLI lists it.
@@ -135,12 +159,6 @@ public actor GitHubAccountsReader {
         get async { await accounts.executablePath }
     }
 
-    /// The GitHub CLI's active account's login, as it last listed its accounts, for `gh auth switch` to make it active
-    /// again.
-    public var activeLogin: String? {
-        get async { await accounts.activeLogin }
-    }
-
     /// Reads the pull requests of every account, in one request each.
     /// - Parameter order: while Pull Request Order is on: with what an order needs, when GitHub answers that.
     public func load(order: Bool = false) async throws -> GitHubLoad {
@@ -168,7 +186,7 @@ public actor GitHubAccountsReader {
         // Given up, as when GitHub is turned off: what was read goes nowhere.
         try Task.checkCancellation()
         var reads: [GitHubReader.AccountRead] = []
-        var firstError: (any Error)?
+        var errors: [any Error] = []
         for (account, result) in zip(listed, results) {
             let key = Self.key(of: account)
             switch result {
@@ -177,7 +195,7 @@ public actor GitHubAccountsReader {
                 reads.append(.init(account: account, load: load))
             case .failure(let error):
                 if error is CancellationError { throw error }
-                firstError = firstError ?? error
+                errors.append(error)
                 let problem = GitHubProblem.from(error)
                 if problem.needsSignIn { last[key] = nil }
                 // The GitHub CLI has no token for it anymore: it may have been signed out of it, so list them again.
@@ -185,8 +203,29 @@ public actor GitHubAccountsReader {
                 reads.append(.init(account: account, load: last[key], problem: problem))
             }
         }
-        if let firstError, reads.allSatisfy({ $0.problem != nil }) { throw firstError }
+        if errors.count == reads.count, let first = errors.first {
+            // What's wrong with the list is the first account's reason, the GitHub CLI's active one's, unless it takes signing
+            // in again: then the next one's that doesn't, as what that one read last stays, and that one goes in a notice,
+            // as when only some couldn't be read. One account, or every one needing signing in again, fails as BriefBar's
+            // read did before it read more, and its list goes.
+            guard reads.count > 1, let shown = reads.firstIndex(where: { $0.problem?.needsSignIn == false }) else { throw first }
+            throw Failure(
+                error: errors[shown], load: GitHubReader.merge(reads, besides: reads[shown].problem),
+                waitsUntil: Self.waitsUntil(reads.compactMap(\.problem))
+            )
+        }
         return GitHubReader.merge(reads)
+    }
+
+    /// The soonest time GitHub said to wait until, when it said so as each account: until then, none can be read. Nil when
+    /// one couldn't be read for another reason, as it may be read again sooner.
+    static func waitsUntil(_ problems: [GitHubProblem]) -> Date? {
+        var soonest: Date?
+        for problem in problems {
+            guard case .throttled(let until) = problem else { return nil }
+            soonest = min(soonest ?? until, until)
+        }
+        return soonest
     }
 
     /// The client for `account`: the one it had while it's listed, so its wait when GitHub asked to slow down holds.

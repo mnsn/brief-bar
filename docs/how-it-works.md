@@ -3111,7 +3111,8 @@ keep, as one in `GH_TOKEN`, or whose login it can't say, can only be its active 
 As `gh` lists its accounts, it checks each one with GitHub, a request each, so BriefBar keeps the list for half an hour,
 as it does tokens, and lists them sooner only when you click **Refresh Now**, when `gh` has no token for an account it
 listed, as once you sign it out of one, and, for ten minutes after **Sign In…** or **Add Account…**, at each read, every
-minute, until the account you sign in to shows (`GitHubStore.waitForSignIn`). When `gh` can't list its accounts, as one
+minute, until an account it didn't read shows, not just the same ones in another order (`GitHubStore.waitForSignIn`).
+When `gh` can't list its accounts, as one
 older than 2.81 can't, or lists none, as a signed-out one does, BriefBar reads its active account, as it did before it
 read more, and reading that says what's wrong; it keeps that from a `gh` too old to list them, for half an hour, and
 asks again at the next read otherwise.
@@ -3124,7 +3125,9 @@ once no request waits for it, and a request that gave up gets no token, so it re
 memory. It tells a signed-out CLI from other failures by what `gh` prints. **Sign In…** opens
 Terminal to run `gh auth login --hostname github.com --web`. **Add Account…**, on GitHub's page in Settings while
 you're signed in, runs it too, then `gh auth switch` back to the account `gh` used, as `gh auth login` makes the one you
-sign in to its active account in Terminal too (`GitHub.signInScript`).
+sign in to its active account in Terminal too (`GitHub.signInScript`). Terminal asks `gh` which account that is as it
+starts (`gh config get --host github.com user`), so it's the one you use then, even if you switched since BriefBar last
+listed them; when `gh` uses none, nothing switches.
 
 As with `az`, BriefBar looks for `gh` in `/opt/homebrew/bin`, `/usr/local/bin` and the other usual
 places, then asks your login shell (`command -v gh`), and both are responsible for themselves (see
@@ -3158,7 +3161,9 @@ last read is more than 10 seconds old, and every minute while you need to sign i
 fix shows soon. When GitHub asks it to slow down, it sends nothing until the time GitHub gave:
 `Retry-After` for its secondary limits, in seconds or as the date to wait until (`RetryAfter`), the hourly
 limit's reset (`x-ratelimit-reset`), or a minute when GitHub only says so in words. Each account has its own limits, so
-that wait holds only the account GitHub asked it of, and the others are read meanwhile. At the default, that's 30
+that wait holds only the account GitHub asked it of, and the others are read meanwhile, even when none could be read
+last time: BriefBar stops reading altogether only when GitHub asked that as every account, until the soonest of their
+times (`GitHubAccountsReader.Failure`). At the default, that's 30
 requests an hour for each account, a small part of GitHub's hourly limit for the GraphQL API.
 
 When GitHub answers with errors alongside what it could read, such as an organization that uses SAML
@@ -3171,8 +3176,11 @@ With more than one account, the list has each pull request once, as yours when i
 (`GitHubClassifier.merged`), and its foot names every account. When some accounts can be read and others can't, it
 says, beside the others' pull requests, why each of those couldn't, and keeps what it last read of it, but not when
 it takes signing in to that account again: GitHub rejected even a fresh token of it, or `gh` has none for it. When no
-account can be read, the list says why the first one, the active account, couldn't, as when BriefBar read one
-(`GitHubReader.merge`).
+account can be read, the list is what it would be if only some couldn't: what it last read of each, on the same terms,
+with why each couldn't. What's wrong with it, as when BriefBar read one, is why the first one couldn't, the active
+account, or, when that one takes signing in again, the next one that doesn't, and that isn't said twice
+(`GitHubAccountsReader.Failure`). When every account takes signing in again, the list asks you to sign in and shows
+nothing, as it does for one.
 
 ### How a pull request's group is decided
 

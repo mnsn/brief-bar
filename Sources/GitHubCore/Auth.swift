@@ -255,9 +255,6 @@ public actor GitHubCLIAccounts {
     private var executable: URL?
     /// The list, while it's kept: one the GitHub CLI gave, or the active account alone from one too old to give it.
     private var listed: (accounts: [GitHubAccount], at: Date)?
-    /// The login of the account the GitHub CLI used, as the last list it gave said: one that `gh auth switch` can make
-    /// active again. Nil when that list had none.
-    public private(set) var activeLogin: String?
 
     public init(
         locator: GitHubCLILocator = GitHubCLILocator(), runner: any ProcessRunning = ProcessRunner(),
@@ -275,9 +272,6 @@ public actor GitHubCLIAccounts {
         let (accounts, keeps) = try await list()
         try Task.checkCancellation()
         listed = keeps ? (accounts, now()) : nil
-        if keeps, accounts != [.active] {
-            activeLogin = accounts.first { $0.isActive }?.tokenUser
-        }
         return accounts
     }
 
