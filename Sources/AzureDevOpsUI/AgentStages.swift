@@ -80,7 +80,8 @@ extension AzureDevOpsAgent {
             stage.set(StageRules.mark(set.stage, at: set.at, facts: fact), of: ref)
             sessionStages.replace(stage)
         }
-        let theirs = sessionStages.marks(listed: Set(copilot.listed.keys), now: now)
+        let setters = copilot.doing
+        let theirs = sessionStages.marks(listed: Set(setters.keys), now: now)
         let sessionsOn = copilot.onPullRequests
         var readings: [ItemRef: StageReading] = [:]
         for (ref, fact) in facts where fact.isListed {
@@ -92,9 +93,12 @@ extension AzureDevOpsAgent {
                 // One only sent to you in a chat keeps what you set on it in the app's memory, which `--mcp` can't read.
                 yours = kept.marks.mark(of: ref, for: account)
             }
-            let counted = StageRules.counted(yours: yours, theirs: theirs[ref] ?? [], facts: fact, sessions: sessions)
+            let counted = StageRules.counted(
+                yours: yours, theirs: theirs[ref] ?? [], facts: fact, sessions: sessions, setters: setters
+            )
             let marks = [counted.yours].compactMap { $0 } + counted.theirs
-            if let reading = StageRules.reading(facts: fact, sessions: sessions, marks: marks, order: StageOrder.of(ref, in: missions)) {
+            let order = StageOrder.of(ref, in: missions)
+            if let reading = StageRules.reading(facts: fact, sessions: sessions, marks: marks, order: order, setters: setters) {
                 readings[ref] = reading
             }
         }

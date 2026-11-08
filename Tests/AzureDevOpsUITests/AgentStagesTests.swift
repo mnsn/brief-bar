@@ -126,6 +126,34 @@ import Testing
         #expect(stages.columns[.inProgress] == [ref(4093)])
     }
 
+    /// A session's In progress ends for agents too as that session finishes, though the Copilot app doesn't record it on the
+    /// pull request.
+    @Test func aSessionsInProgressEndsAsItFinishesThoughItIsntOnThePullRequest() throws {
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        let pr = ItemRef.pullRequest(organization: "contoso", number: 4093)
+        let cart = try #require(ItemRef.session("7c1e2a90-4b3d-4f5e-8a6b-1c2d3e4f5a6b"))
+        var sessionStages = SessionStages()
+        var cartStage = SessionStage(session: cart)
+        cartStage.set(StageMark(stage: .inProgress, at: now - 60), of: pr)
+        sessionStages.replace(cartStage)
+        let kept = OrderKept(
+            orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: StageMarks(),
+            sessionStages: sessionStages
+        )
+        let facts = [pr: StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "")]
+        func reading(_ activity: StageSession.Activity) -> StageReading? {
+            let copilot = MCPRelated.StageSessions(listed: [cart: .init(activity: activity, since: now - 30, name: "Cart")])
+            let stages = AzureDevOpsAgent.stages(
+                facts: facts, pullRequests: [], copilot: copilot, kept: kept, account: "Robin@contoso.com", now: now
+            )
+            return stages.readings[pr]
+        }
+        #expect(reading(.working)?.stage == .inProgress)
+        #expect(reading(.working)?.mark?.by == cart)
+        #expect(reading(.finished)?.stage == .teammateReview)
+        #expect(reading(.finished)?.mark == nil)
+    }
+
     /// Agents' words for a stage say what fails too, as the Board does, also where they put Find a reviewer more plainly; and
     /// what a session is called stays on its line, its line breaks written out, as other tools quote what others named.
     @Test func stageWordsSayWhatFailsAndQuoteWhatSessionsAreCalled() throws {

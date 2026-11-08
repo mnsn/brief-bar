@@ -81,7 +81,7 @@ package final class PullRequestOrder: ObservableObject {
     private var marksInMemory: [ItemRef: StageMarks.Entry] = [:]
     /// The stages Copilot sessions set (`order.stage.<id>`), as their `--mcp` kept them: read as Pull Request Order turns
     /// on and as an agent changes something, the demo's in memory. Each counts only while the Copilot source lists its
-    /// session (`listedSessions`).
+    /// session (`listedSessionsDoing`).
     private var sessionStages = SessionStages()
     /// The account each source last told while it knew one: the stages you set in memory, and Undo, are that account's.
     /// Turning Pull Request Order off keeps it, so that once it's on again, another account still forgets them.
@@ -1276,12 +1276,6 @@ package final class PullRequestOrder: ObservableObject {
         if let change = lastStageChange, kinds.contains(change.ref.kind) { lastChange = nil }
     }
 
-    /// The sessions the sources list now, each with what it does: what a session set counts only while it's listed, so
-    /// what an archived session set goes with it.
-    private var listedSessions: Set<ItemRef> {
-        Set(told.values.flatMap(\.activities.keys))
-    }
-
     /// Takes away what sessions set on a pull request, once none of it counts: in memory, and from what each session
     /// keeps, unless it set something since; the demo's are in memory only.
     private func end(_ sessionMarks: [StageMark], of ref: ItemRef) {
@@ -1326,8 +1320,9 @@ package final class PullRequestOrder: ObservableObject {
         }
         let all = stageFacts
         stagedKinds = Set(all.keys.map(\.kind))
+        let setters = listedSessionsDoing()
         let sessionsOn = sessionsOnPullRequests()
-        let sessionMarks = sessionStages.marks(listed: listedSessions, now: now())
+        let sessionMarks = sessionStages.marks(listed: Set(setters.keys), now: now())
         // What names an order where two go round, as its mission's header does: only for what this Mac shows.
         let names = self.names
         var readings: [ItemRef: StageReading] = [:]
@@ -1343,7 +1338,9 @@ package final class PullRequestOrder: ObservableObject {
                 if marks.clear(ref, for: account) { changed = true }
             }
             var mine = yourMark(of: ref, facts: facts)
-            let counted = StageRules.counted(yours: mine, theirs: sessionMarks[ref] ?? [], facts: facts, sessions: sessions)
+            let counted = StageRules.counted(
+                yours: mine, theirs: sessionMarks[ref] ?? [], facts: facts, sessions: sessions, setters: setters
+            )
             if counted.latestEnded {
                 // What every session set on it, listed or not: all of it once it merged or closed, else what the latest set
                 // before it ended, so that what an archived session set doesn't come back once it's listed again.
@@ -1359,7 +1356,7 @@ package final class PullRequestOrder: ObservableObject {
             marksInMemory[ref]?.listedAt = now()
             let order = StageOrder.of(ref, in: missions, names: names)
             let set = [mine].compactMap { $0 } + counted.theirs
-            if let reading = StageRules.reading(facts: facts, sessions: sessions, marks: set, order: order) {
+            if let reading = StageRules.reading(facts: facts, sessions: sessions, marks: set, order: order, setters: setters) {
                 readings[ref] = reading
             }
         }
@@ -1372,6 +1369,19 @@ package final class PullRequestOrder: ObservableObject {
         }
         if changed { marks.save(to: defaults) }
         if readings != stages { stages = readings }
+    }
+
+    /// What each session the sources list does now, or how it ended, and since when, on a pull request or not: what ends
+    /// an In progress it set (`StageRules.stands`). What a session set counts only while it's listed, so what an archived
+    /// session set goes with it.
+    private func listedSessionsDoing() -> [ItemRef: StageSession] {
+        var doing: [ItemRef: StageSession] = [:]
+        for source in SourceID.allCases {
+            for (session, activity) in told[source]?.activities ?? [:] where doing[session] == nil {
+                doing[session] = StageSession(ref: session, activity: activity, since: describe(session)?.date)
+            }
+        }
+        return doing
     }
 
     /// The Copilot app's sessions on each pull request, as their source tells them: those that opened it or work on it, as

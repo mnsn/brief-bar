@@ -138,7 +138,7 @@ package enum PullRequestOrderMCP {
                 ], required: ["pull_requests", "stage"]),
                 readOnly: false
             ) { arguments in
-                try await setStage(arguments, keeper: keeper, stages: stages, copilotOn: copilotOn(), started: session, now: now())
+                try await setStage(arguments, keeper: keeper, stages: stages, copilotOn: copilotOn, started: session, now: now)
             })
         }
         return tools.map { tool in
@@ -237,14 +237,18 @@ package enum PullRequestOrderMCP {
     }
 
     /// `pull_request_stage`: sets the stage of pull requests the session that started `--mcp` works on, as that session's,
-    /// or clears what it set, as Azure DevOps reads them now. Refused, saying why, while GitHub Copilot is off, as what a
-    /// session sets shows only while the Copilot app lists it; for GitHub's pull requests; for more than
-    /// `SessionStages.mostAtOnce`; and when BriefBar can't tell which session it is. One BriefBar doesn't list, or that
-    /// merged or closed, is left as it is, with a line that says why.
+    /// or clears what it set, as Azure DevOps reads them now, at the time it's read them. Refused, saying why, while GitHub
+    /// Copilot is off, as what a session sets shows only while the Copilot app lists it; for GitHub's pull requests; for
+    /// more than `SessionStages.mostAtOnce`; and when BriefBar can't tell which session it is. Whether it may is asked
+    /// again just before it keeps anything, as reading Azure DevOps takes a while (`OrderKeeper.changeStages`). One
+    /// BriefBar doesn't list, or that merged or closed, is left as it is, with a line that says why.
     static func setStage(
-        _ arguments: JSONValue, keeper: OrderKeeper, stages: MCPStages, copilotOn: Bool, started: ItemRef?, now: Date
+        _ arguments: JSONValue, keeper: OrderKeeper, stages: MCPStages, copilotOn: @escaping @Sendable () -> Bool,
+        started: ItemRef?, now: @Sendable () -> Date
     ) async throws -> String {
-        guard copilotOn else { throw MCPToolError(AgentAccess.refusal(source: "GitHub Copilot")) }
+        let noCopilot = AgentAccess.refusal(source: "GitHub Copilot")
+        guard copilotOn() else { throw MCPToolError(noCopilot) }
+        let refusal: @Sendable () -> String? = { stages.refusal() ?? (copilotOn() ? nil : noCopilot) }
         let stage = try stage(arguments["stage"])
         let refs = try SessionUpdatesMCP.refs(
             arguments["pull_requests"], in: "pull_requests", as: [.pullRequest, .gitHubPullRequest],
@@ -266,7 +270,7 @@ package enum PullRequestOrderMCP {
         }
         let demo = keeper.demo ? " (The demo keeps it in memory.)" : ""
         guard let stage else {
-            let (before, _) = await keeper.changeStages(session, now: now) { set in
+            let (before, _) = try await keeper.changeStages(session, now: now(), unless: refusal) { set in
                 for ref in refs { set.clear(ref) }
             }
             let cleared = refs.filter { before?.marks[$0] != nil }
@@ -283,6 +287,8 @@ package enum PullRequestOrderMCP {
         }
 
         let read = try await stages.read(refs)
+        // Set as it's read: what the app reads after this counts against it, and nothing it started reading before.
+        let now = now()
         var marks: [ItemRef: StageMark] = [:]
         var notSet: [String] = []
         for ref in refs {
@@ -300,7 +306,7 @@ package enum PullRequestOrderMCP {
         // What the user set that this replaces, while it stands: they can put it back.
         let yours = await keeper.userMarks(of: Array(marks.keys), account: read.account)
         let set = marks
-        await keeper.changeStages(session, now: now) { kept in
+        try await keeper.changeStages(session, now: now, unless: refusal) { kept in
             for (ref, mark) in set { kept.set(mark, of: ref) }
         }
         let told = refs.filter { marks[$0] != nil }
@@ -534,11 +540,15 @@ actor OrderKeeper {
     }
 
     /// Changes what a session set on its pull requests' stages, saving it under its own key, and tells the app when that
-    /// changed it: what it had set before, but what's past its time, and what it sets now.
+    /// changed it: what it had set before, but what's past its time, and what it sets now. Refused, changing nothing,
+    /// while Pull Request Order is off, or `refusal` gives an answer, asked just before.
     @discardableResult
     func changeStages(
-        _ session: ItemRef, now: Date, _ body: @Sendable (inout SessionStage) -> Void
-    ) -> (before: SessionStage?, after: SessionStage) {
+        _ session: ItemRef, now: Date, unless refusal: @Sendable () -> String? = { nil },
+        _ body: @Sendable (inout SessionStage) -> Void
+    ) throws -> (before: SessionStage?, after: SessionStage) {
+        if let refusal = refusal() { throw MCPToolError(refusal) }
+        guard isOn else { throw MCPToolError(PullRequestOrderMCP.refusal) }
         var before = SessionStages.load(session, from: defaults)
         before?.expire(now: now)
         let after = SessionStages.change(session, in: defaults, now: now, body)

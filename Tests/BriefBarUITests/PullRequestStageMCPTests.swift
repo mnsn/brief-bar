@@ -45,16 +45,22 @@ private final class Announcements: Sendable {
         ref(4096): StageFacts(role: .author, isListed: false),
     ]
 
+    private static func read(_ refs: [ItemRef]) -> MCPStages.Read {
+        MCPStages.Read(account: account, facts: listed.filter { refs.contains($0.key) })
+    }
+
+    /// - Parameter refusal: why what's read can't be kept, as agents or Azure DevOps being off in the app say.
     private static func tools(
-        _ defaults: MemoryDefaults, demo: Bool = false, session: String? = session, copilotOn: Bool = true,
-        read: @escaping @Sendable ([ItemRef]) async throws -> MCPStages.Read = { refs in
-            MCPStages.Read(account: account, facts: listed.filter { refs.contains($0.key) })
-        },
-        announcements: Announcements = Announcements()
+        _ defaults: MemoryDefaults, demo: Bool = false, session: String? = session,
+        copilotOn: @escaping @Sendable () -> Bool = { true },
+        read: @escaping @Sendable ([ItemRef]) async throws -> MCPStages.Read = { refs in read(refs) },
+        refusal: @escaping @Sendable () -> String? = { nil },
+        announcements: Announcements = Announcements(), now: @escaping @Sendable () -> Date = { now }
     ) -> [String: MCPTool] {
         let tools = PullRequestOrderMCP.tools(
-            defaults: defaults, demo: demo, sourcesOn: { [.pullRequest] }, session: session, stages: MCPStages(read: read),
-            copilotOn: { copilotOn }, announce: { announcements.add() }, now: { now }
+            defaults: defaults, demo: demo, sourcesOn: { [.pullRequest] }, session: session,
+            stages: MCPStages(read: read).guarded(by: refusal), copilotOn: copilotOn, announce: { announcements.add() },
+            now: now
         )
         return Dictionary(tools.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
     }
@@ -224,7 +230,7 @@ private final class Announcements: Sendable {
         let off = Self.tools(defaults, read: { _ in throw MCPToolError(AgentAccess.refusal(source: "Azure DevOps")) })
         #expect(await refusal(#"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#, tools: off) ==
             AgentAccess.refusal(source: "Azure DevOps"))
-        let noCopilot = Self.tools(defaults, copilotOn: false)
+        let noCopilot = Self.tools(defaults, copilotOn: { false })
         #expect(await refusal(#"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#, tools: noCopilot) ==
             AgentAccess.refusal(source: "GitHub Copilot"))
         #expect(Self.kept(defaults) == nil)
@@ -233,6 +239,54 @@ private final class Announcements: Sendable {
         defaults.set(false, forKey: PullRequestOrderSetting.defaultsKey)
         #expect(await refusal(#"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#)?
             .hasPrefix("Pull Request Order is off in BriefBar") == true)
+    }
+
+    /// It's set as Azure DevOps read it, at the time it did: what the app read before, or while it read, counts nothing
+    /// against it (`StageFacts.readAt`).
+    @Test func itsSetAtTheTimeItsRead() async throws {
+        let defaults = Self.settings()
+        let clock = Mutex(Self.now)
+        let tools = Self.tools(defaults, read: { refs in
+            clock.withLock { $0 += 90 }
+            return Self.read(refs)
+        }, now: { clock.withLock { $0 } })
+        _ = try await Self.set(tools, #"{"pull_requests": [4093], "organization": "contoso", "stage": "in_progress"}"#)
+        #expect(Self.kept(defaults)?.marks[Self.ref(4093)]?.at == Self.now + 90)
+    }
+
+    /// Whether it may is asked again once Azure DevOps has read the pull requests, as that takes a while: what's turned off
+    /// meanwhile keeps it from keeping anything, saying so.
+    @Test func whatsTurnedOffWhileItReadsKeepsItFromKeepingAnything() async throws {
+        let json = #"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#
+
+        let orderOff = Self.settings()
+        let order = Self.tools(orderOff, read: { refs in
+            orderOff.set(false, forKey: PullRequestOrderSetting.defaultsKey)
+            return Self.read(refs)
+        })
+        #expect(await Self.failure { try await Self.set(order, json) }?.hasPrefix("Pull Request Order is off in BriefBar") == true)
+        #expect(Self.kept(orderOff) == nil)
+
+        let copilotOff = Self.settings()
+        let copilot = Mutex(true)
+        let noCopilot = Self.tools(copilotOff, copilotOn: { copilot.withLock { $0 } }, read: { refs in
+            copilot.withLock { $0 = false }
+            return Self.read(refs)
+        })
+        #expect(await Self.failure { try await Self.set(noCopilot, json) } == AgentAccess.refusal(source: "GitHub Copilot"))
+        #expect(Self.kept(copilotOff) == nil)
+
+        // Agents, or Azure DevOps, as what reads the pull requests says.
+        let agentsOff = Self.settings()
+        let refusal = Mutex<String?>(nil)
+        let noAgents = Self.tools(agentsOff, read: { refs in
+            refusal.withLock { $0 = "Agents are off in BriefBar." }
+            return Self.read(refs)
+        }, refusal: { refusal.withLock { $0 } })
+        #expect(await Self.failure { try await Self.set(noAgents, json) } == "Agents are off in BriefBar.")
+        #expect(Self.kept(agentsOff) == nil)
+        let clear = #"{"pull_requests": [4093], "organization": "contoso", "stage": "clear"}"#
+        #expect(await Self.failure { try await Self.set(noAgents, clear) } == "Agents are off in BriefBar.")
     }
 
     @Test func theDemoKeepsItInMemory() async throws {

@@ -335,7 +335,8 @@ set decides it while your build failed, it says that too: **‘Cart’ asks you 
 another, or the one it's in to keep it there until you change it, or **Finished My Review** beside it to send it to
 your teammates; **Stage** in a row's Actions and right-click menus, and VoiceOver's actions, do the same. What you or
 a session set holds until the pull request moves on: new commits, or a session that finishes writing it, end In
-progress; a vote ends Teammate's review, someone else's on yours, and yours on someone else's; merging or closing it
+progress, and so does the session that set it finishing; a vote ends Teammate's review, someone else's on yours, and
+yours on someone else's; merging or closing it
 ends any. **Let BriefBar Decide** forgets it, and **Undo** puts back your last change. Can merge and Waits come only
 from what Azure DevOps and its order show: nobody, you or a session, can set them. Its details show the whole track
 under its heading, with its next step, such as **Finished My Review** or **Add Reviewers in Azure DevOps**. Stages

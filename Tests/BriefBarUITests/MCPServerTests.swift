@@ -190,6 +190,7 @@ private final class Output: Sendable {
         #expect(try await source.tools[0].run(.object(["text": .string("x")])) == "x")
         #expect(try await source.needsYou() == "Two need you.")
         #expect(try await source.stages?.read([]) == read)
+        #expect(source.stages?.refusal() == nil)
         #expect(read.account == "robin@contoso.com")
         isOn.withLock { $0 = false }
         await #expect(throws: MCPToolError("Azure DevOps is off in BriefBar.")) {
@@ -197,6 +198,9 @@ private final class Output: Sendable {
         }
         await #expect(throws: MCPToolError("Azure DevOps is off in BriefBar.")) { try await source.needsYou() }
         await #expect(throws: MCPToolError("Azure DevOps is off in BriefBar.")) { try await source.stages?.read([]) }
+        // Asked again before what it read is kept.
+        #expect(source.stages?.refusal() == "Azure DevOps is off in BriefBar.")
+        #expect(source.stages?.guarded { "Agents are off in BriefBar." }.refusal() == "Agents are off in BriefBar.")
     }
 
     @Test func everyToolWaitsForAgentsToBeOn() async throws {

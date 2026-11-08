@@ -205,6 +205,31 @@ private final class Clock {
         #expect(!SessionStages.keepsAny(in: defaults))
     }
 
+    /// A session's In progress ends as it finishes, though the Copilot app doesn't record it on the pull request, nor did it
+    /// say it works on it; as it works on afterwards, it doesn't put the pull request in progress.
+    @Test func aSessionsInProgressEndsAsItFinishesThoughItIsntOnThePullRequest() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        Self.tell(order, [4093: StageFacts(role: .author, waitingFor: "Waiting on Priya", readAt: clock.now)])
+        Self.list(order, [Self.cart: .working], since: clock.now - 600)
+        clock.advance(seconds: 1)
+        Self.set(.inProgress, of: 4093, by: Self.cart, at: clock.now, in: defaults, order)
+        #expect(Self.why(order, 4093) == "‘Cart’ is on it")
+
+        clock.advance(seconds: 120)
+        Self.list(order, [Self.cart: .finished], since: clock.now)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(order.stage(of: Self.ref(4093))?.mark == nil)
+        #expect(!SessionStages.keepsAny(in: defaults))
+
+        clock.advance(seconds: 60)
+        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, in: defaults, order)
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .working], since: clock.now)
+        #expect(Self.why(order, 4093) == "‘Cart’ says it's ready")
+    }
+
     @Test func mergedOrClosedEndsWhatSessionsSet() {
         let clock = Clock()
         let defaults = Self.defaults()

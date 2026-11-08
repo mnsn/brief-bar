@@ -192,9 +192,29 @@ package struct MCPStages: Sendable {
 
     /// Reads these pull requests: what it throws says why it can't, such as being off in BriefBar.
     package var read: @Sendable ([ItemRef]) async throws -> Read
+    /// Why what it read can't be kept now, such as its source turned off in BriefBar while it read: asked again just
+    /// before it's kept; nil when it can be.
+    package var refusal: @Sendable () -> String?
 
-    package init(read: @escaping @Sendable ([ItemRef]) async throws -> Read) {
+    package init(
+        read: @escaping @Sendable ([ItemRef]) async throws -> Read, refusal: @escaping @Sendable () -> String? = { nil }
+    ) {
         self.read = read
+        self.refusal = refusal
+    }
+
+    /// The same, refused whenever `refusal` gives an answer instead: asked as it reads, and again as what it read is
+    /// kept, first.
+    package func guarded(by refusal: @escaping @Sendable () -> String?) -> MCPStages {
+        let read = self.read
+        let inner = self.refusal
+        return MCPStages(
+            read: { refs in
+                if let refusal = refusal() { throw MCPToolError(refusal) }
+                return try await read(refs)
+            },
+            refusal: { refusal() ?? inner() }
+        )
     }
 }
 
@@ -248,12 +268,7 @@ package struct MCPSource: Sendable {
                 }
             )
         }
-        let stages = self.stages.map { stages in
-            MCPStages { refs in
-                guard isAvailable() else { throw MCPToolError(refusal) }
-                return try await stages.read(refs)
-            }
-        }
+        let stages = self.stages.map { $0.guarded { isAvailable() ? nil : refusal } }
         return MCPSource(
             name: name, tools: tools.map { $0.available(while: isAvailable, refusal: refusal) }, related: related, stages: stages
         ) {

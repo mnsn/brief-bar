@@ -253,6 +253,36 @@ import Testing
         #expect(Self.why(finished) == "‘Cart’ finished")
     }
 
+    /// A session's own In progress ends as it finishes, though BriefBar doesn't see it on the pull request otherwise; as
+    /// it works on, or on something else, it isn't on the pull request: it doesn't put it in progress.
+    @Test func aSessionsOwnInProgressEndsAsItFinishesOnItOrNot() {
+        let mark = StageMark(stage: .inProgress, at: t(100), by: Self.cart, commit: "a1b2c3d")
+        let facts = StageFacts(role: .author, waitingFor: "Waiting on Priya", commit: "a1b2c3d")
+        func stands(_ setter: StageSession, _ mark: StageMark = mark) -> Bool {
+            StageRules.stands(mark, facts: facts, sessions: [], setters: [setter.ref: setter])
+        }
+        #expect(stands(Self.session(.working, at: 150)))
+        #expect(stands(Self.session(.finished, at: 50)))
+        #expect(stands(Self.session(.stopped, at: 150)))
+        #expect(!stands(Self.session(.finished, at: 150)))
+        // Another session's end ends only what it set.
+        #expect(stands(Self.session(.finished, at: 150, Self.backoff)))
+        #expect(stands(Self.session(.finished, at: 150), StageMark(stage: .yourReview, at: t(100), by: Self.cart)))
+
+        let finished = Self.session(.finished, at: 150)
+        let ended = StageRules.reading(facts: facts, sessions: [], marks: [mark], order: .free, setters: [Self.cart: finished])
+        #expect(ended?.stage == .teammateReview)
+        #expect(ended?.mark == nil)
+        let counted = StageRules.counted(yours: nil, theirs: [mark], facts: facts, sessions: [], setters: [Self.cart: finished])
+        #expect(counted.latestEnded)
+
+        let ready = StageMark(stage: .yourReview, at: t(100), by: Self.cart)
+        let working = Self.session(.working, at: 150)
+        let reading = StageRules.reading(facts: facts, sessions: [], marks: [ready], order: .free, setters: [Self.cart: working])
+        #expect(reading?.stage == .yourReview)
+        #expect(Self.why(reading) == "‘Cart’ says it's ready")
+    }
+
     @Test func aSetTeammatesReviewEndsAsOthersVotesChange() {
         let mark = StageMark(stage: .teammateReview, at: t(100), votes: "0", commit: "a1b2c3d")
         #expect(StageRules.stands(mark, facts: StageFacts(role: .author, votes: "0", commit: "e4f5a6b"), sessions: []))

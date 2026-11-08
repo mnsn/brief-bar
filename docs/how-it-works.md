@@ -1446,16 +1446,19 @@ they work on, with `--mcp`'s `pull_request_stage` ([below](#what-it-answers)), w
 start fixing one, Your review once they've pushed their work, Teammate's review once you tell them you've reviewed it.
 The latest of what you and the sessions set counts (`StageRules.counted`), while it stands as yours would, whoever set
 it, and its words say who: **‘Cart’ says it's ready**, which also says when, and after you, where it replaced yours,
-whose menu then has **Put Yours Back**, which sets yours again, as a new change. Votes and commits end what a session
-set only as BriefBar read them after it set it, since the session read the pull request itself just then: as the
-refresh that read its organization's lists started, or as it was read by its link, a time a pull request kept as it was
-while those couldn't be read keeps (`StageFacts.readAt`, `PulseSnapshot.readAt(of:)`). What a session set counts only while
-the Copilot app lists the session (`MCPRelated.StageSessions`, `PullRequestOrder.listedSessions`), so an archived one's
-goes with it. Once the latest of them no longer stands, or the pull request merges or closes, none counts: yours goes,
-and BriefBar takes away from what each session keeps what it set before the latest, or all of it once the pull request
-merged or closed, listed or not (`SessionStages.end`), so an older one never comes back, also once an archived session is
-listed again; **Let BriefBar Decide** takes away, with yours, what sessions set before it, listed or not. Can merge,
-Waits and Merged come only from what BriefBar sees, whatever a session says.
+whose menu then has **Put Yours Back**, which sets yours again, as a new change. A session's own In progress also ends
+as that session finishes, whether or not BriefBar sees it on the pull request otherwise; working on afterwards, at
+something else, it doesn't put the pull request in progress. Votes and commits end what a session set only as BriefBar
+read them after it set it, since the session read the pull request itself just then, and what it sets is timed as that
+read ended. BriefBar reads them as the refresh that read its organization's lists started, or as it was read by its
+link, a time a pull request kept as it was while those couldn't be read keeps (`StageFacts.readAt`,
+`PulseSnapshot.readAt(of:)`). What a session set counts only while the Copilot app lists the session
+(`MCPRelated.StageSessions`, `PullRequestOrder.listedSessionsDoing`), so an archived one's goes with it. Once the latest
+of them no longer stands, or the pull request merges or closes, none counts: yours goes, and BriefBar takes away from
+what each session keeps what it set before the latest, or all of it once the pull request merged or closed, listed or
+not (`SessionStages.end`), so an older one never comes back, also once an archived session is listed again; **Let
+BriefBar Decide** takes away, with yours, what sessions set before it, listed or not. Can merge, Waits and Merged come
+only from what BriefBar sees, whatever a session says.
 
 What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one entry
 for each pull request: its number, the stage, when, and only what would end it (`StageRules.mark`): the commit, for In
@@ -3845,7 +3848,9 @@ finds it (`SessionUpdatesMCP.session`): `session` names it only when BriefBar ca
 lists. It refuses a GitHub pull request ("Stages are for Azure DevOps' pull requests only, for now"), Can merge, Waits
 and Merged, which come only from what BriefBar sees, and everything while Azure DevOps, Copilot or Pull Request Order is
 off. Before it sets a stage, it reads each pull request again, one GET each, so that what would end it is kept as it is
-now (`AzureDevOpsAgent.stages(of:)`, `StageRules.mark`); clearing reads nothing. It answers with what BriefBar shows now,
+now (`AzureDevOpsAgent.stages(of:)`, `StageRules.mark`), and set as of when it's read them; clearing reads nothing. Just
+before it keeps anything, it checks again that agents, Azure DevOps, Copilot and Pull Request Order are still on, as
+reading takes a while (`OrderKeeper.changeStages`, `MCPStages.refusal`). It answers with what BriefBar shows now,
 set by that session, and, where it replaced a stage you set that still stood, that you can put yours back; and names
 those it didn't set, such as one no list has now, one that merged or one that was abandoned. The order tools' answers
 also tell the session what you changed in its orders that still holds (`OrderText.userChanges`), to keep, and that a

@@ -198,7 +198,7 @@ enum CLI {
         let consent: @Sendable () -> String? = {
             demo ? nil : AgentAccess.refusal(AppIdentity.installedAppDefaults.map { AgentAccess.state(in: $0) } ?? .off)
         }
-        let orderTools = orderTools(options, stages: sources.lazy.compactMap(\.stages).first)
+        let orderTools = orderTools(options, stages: sources.lazy.compactMap(\.stages).first?.guarded(by: consent))
         let updateTools = updateTools(options)
         let tools = MCPSource.tools(sources, refusal: consent) + (orderTools + updateTools).map { $0.guarded(by: consent) }
         let tellsStages = orderTools.contains { $0.name == "pull_request_stage" }

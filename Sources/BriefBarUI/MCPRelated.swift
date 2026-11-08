@@ -144,6 +144,16 @@ package enum MCPRelated {
             }
         }
 
+        /// What each session it lists does now, or how it ended, and since when, on a pull request or not: what ends an In
+        /// progress it set (`StageRules.stands`).
+        package var doing: [ItemRef: StageSession] {
+            var doing: [ItemRef: StageSession] = [:]
+            for (ref, session) in listed {
+                doing[ref] = StageSession(ref: ref, activity: session.activity, since: session.since)
+            }
+            return doing
+        }
+
         /// Both, the first's wherever both have a session.
         func merging(_ other: StageSessions) -> StageSessions {
             StageSessions(
