@@ -721,6 +721,10 @@ package final class PullRequestOrder: ObservableObject {
         OrderChanges((making ?? lastChange?.touched ?? [:]).values.compactMap { $0 }).ownMissions
     }
 
+    /// Whether BriefBar can tell which stories' missions there are (`OrderFacts.seesStories`): only then is one that doesn't
+    /// show gone.
+    package var seesStories: Bool { facts.seesStories }
+
     /// What the sources that are on show now.
     private var facts: OrderFacts {
         let sources = SourceID.allCases.filter { told[$0] != nil }

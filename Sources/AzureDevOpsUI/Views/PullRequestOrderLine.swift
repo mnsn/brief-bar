@@ -31,7 +31,9 @@ private struct OrderLineContent: View {
             let names = order.names
             // What your changes say, and an order's later one; and where no mission has it, what became of your change.
             let notes = (step?.notes.filter(\.isAboutYourChanges)
-                ?? OrderBoard.notes(outside: ref, missions: order.missions, changes: order.changes, orders: order.orders))
+                ?? OrderBoard.notes(
+                    outside: ref, missions: order.missions, changes: order.changes, orders: order.orders, seesStories: order.seesStories
+                ))
                 .map { OrderText.note($0, of: ref, names: names) }
             let canPutBack = order.changes[ref] != nil && order.choices(for: ref, in: mission?.key).canPutBack
             VStack(alignment: .leading, spacing: 6) {

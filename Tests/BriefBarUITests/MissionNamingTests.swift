@@ -755,6 +755,7 @@ fileprivate final class Viewer {}
         #expect(chain.key == .chain(Self.pr(4110)) && chain.steps.count == 4)
         order.setFocus(chain.key)
         order.rename(chain, to: "Totals")
+        order.change(.setNext(Self.pr(4110), in: chain.key, true))
         let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
         order.change(.move([Self.pr(4111)], to: .into(mine), from: chain.key))
 
@@ -762,11 +763,43 @@ fileprivate final class Viewer {}
         #expect(Set(order.missions.map(\.key)) == [rest, mine])
         #expect(order.focus == rest && OrderFocus.load(from: defaults) == rest)
         #expect(order.yourNames.name(for: rest) == "Totals" && order.yourNames.name(for: chain.key) == nil)
-        // Undo: the chain is whole again, and they come back to it.
+        // Where you set !4110 as next stays on the chain, whole, which !4110 isn't in a part of.
+        #expect(order.changes[Self.pr(4110)]?.first == chain.key)
+        // Undo: the chain is whole again, and they come back to it, with !4110 next.
         #expect(order.undoLastChange())
         #expect(order.missions.map(\.key) == [chain.key])
         let whole = try #require(order.missions.first)
         #expect(order.focus == chain.key && order.title(of: whole) == "Totals")
+        #expect(whole.steps.first { $0.ref == Self.pr(4110) }?.standing == .next)
+    }
+
+    /// One you set as next in a story's mission, which a teammate's pull request is for too, waits on it as Show Links is
+    /// turned off, saying so, rather than go to the part it's in, and is next there again once it's on.
+    @Test func aNextYouSetInAStorysMissionWaitsWhileShowLinksIsOffAndHoldsAgain() throws {
+        let clock = Clock()
+        let order = Self.service(clock: clock)
+        let (chain, story) = (MissionKey.chain(Self.pr(4110)), MissionKey.story(Self.story))
+        func publish(reading: Bool) {
+            order.publish(.azureDevOps, pullRequests: [
+                Self.stacked(4110, from: "robin/a", into: "main", reading ? [Self.task(5181, rank: 1)] : nil),
+                Self.stacked(4111, from: "robin/b", into: "robin/a", reading ? [Self.task(5182, rank: 2)] : nil),
+                Self.ado(4120, reading ? [Self.task(5184, rank: 4)] : nil),
+            ], readsStories: reading)
+        }
+        func next(in key: MissionKey) -> OrderStep? {
+            order.missions.first { $0.key == key }?.steps.first { $0.ref == Self.pr(4110) }
+        }
+        publish(reading: true)
+        #expect(order.missions.map(\.key) == [story])
+        order.change(.setNext(Self.pr(4110), in: story, true))
+        #expect(next(in: story)?.standing == .next)
+        // Off: the chain shows apart from the teammate's, and !4110's next waits on the story's mission, saying so.
+        publish(reading: false)
+        #expect(order.missions.map(\.key) == [chain] && order.changes[Self.pr(4110)]?.first == story)
+        #expect(next(in: chain)?.notes.contains(.nextUnseen(story)) == true)
+        // On again: next in it again.
+        publish(reading: true)
+        #expect(order.missions.map(\.key) == [story] && next(in: story)?.standing == .next)
     }
 
     /// Where you set one as next among a session's pull requests stays there as they go to their story's, once a teammate's

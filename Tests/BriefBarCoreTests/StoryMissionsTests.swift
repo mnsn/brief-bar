@@ -421,6 +421,9 @@ import Testing
         #expect(read.map(\.key) == [.story(Self.item(5101))])
         #expect(OrderBoard.successor(of: .chain(Self.pr(4111)), from: moved, to: read) == .story(Self.item(5101)))
         #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: read, to: moved) == .chain(Self.pr(4111)))
+        // Where you set one as next follows them whole, out and back in.
+        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: read, to: moved, alone: true) == .chain(Self.pr(4111)))
+        #expect(OrderBoard.successor(of: .chain(Self.pr(4111)), from: moved, to: read, alone: true) == .story(Self.item(5101)))
         // A story's split in two chains: the first shown.
         let more = Self.missions(Self.facts([
             Self.ado(4111, [Self.task(5102, rank: 1)], from: "users/robin/b", into: "users/robin/a"),
@@ -447,6 +450,8 @@ import Testing
         ]))
         #expect(theirsAlone.map(\.key) == [.chain(Self.pr(4111))])
         #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: withTheirs, to: theirsAlone) == .chain(Self.pr(4111)))
+        // But not where you set one as next: it waits for the story's mission, whole, as it couldn't come back from a part.
+        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: withTheirs, to: theirsAlone, alone: true) == nil)
         // Not to a session's that has another open, for no story: what went there wouldn't come back with the story's.
         let three = [OrderSession(ref: coordinator, pullRequests: [Self.pr(4101), Self.pr(4102), Self.pr(4103)])]
         let storys = Self.missions(Self.facts([
@@ -485,6 +490,12 @@ import Testing
         #expect(
             OrderBoard.successor(of: .chain(Self.pr(4110)), from: Self.missions(Self.facts(four)), to: halves, moved: [Self.pr(4111)])
                 == .chain(Self.pr(4112))
+        )
+        // Where you set one as next waits for the chain, whole, as Undo brings it back.
+        #expect(
+            OrderBoard.successor(
+                of: .chain(Self.pr(4110)), from: Self.missions(Self.facts(four)), to: halves, moved: [Self.pr(4111)], alone: true
+            ) == nil
         )
         // Split in two chains, by the earliest and another moved out: the longer one.
         let seven = (4110...4116).map { number in
@@ -715,6 +726,31 @@ import Testing
         #expect(read.seesStories)
         let gone = try #require(Self.missions(read, changes: changes).first { $0.key == story }?.steps.first)
         #expect(gone.notes.contains(.placementGone(story)))
+    }
+
+    /// One you set as next in a story's mission says it waits unseen, not that it's gone, while BriefBar can't tell stories'
+    /// missions, in a mission or in none.
+    @Test func oneYouSetAsNextInAStorysMissionWaitsUnseenWhileStoriesArentRead() throws {
+        let story = MissionKey.story(Self.item(5101))
+        let changes = OrderChanges([
+            OrderChange(ref: Self.pr(4110), first: story, changedAt: t(10)), OrderChange(ref: Self.pr(4120), first: story, changedAt: t(10)),
+        ])
+        let chain = [Self.ado(4110, nil, from: "users/robin/a"), Self.ado(4111, nil, from: "users/robin/b", into: "users/robin/a")]
+        let unread = OrderFacts(pullRequests: chain + [Self.ado(4120, nil)])
+        let missions = Self.missions(unread, changes: changes)
+        let step = try #require(missions.first { $0.key == .chain(Self.pr(4110)) }?.steps.first { $0.ref == Self.pr(4110) })
+        #expect(step.notes.contains(.nextUnseen(story)) && !step.notes.contains(.nextElsewhere(story)))
+        #expect(OrderText.note(.nextUnseen(story), of: step.ref) == "You set it as next to merge in a story's mission, which shows once Show Links reads the story")
+        #expect(OrderNote.nextUnseen(story).isAboutYourChanges)
+        // In no mission: its details say so too, while BriefBar can't tell them; once it can, it's gone.
+        let outside = { (sees: Bool) in
+            OrderBoard.notes(outside: Self.pr(4120), missions: missions, changes: changes, orders: DeclaredOrders(), seesStories: sees)
+        }
+        #expect(outside(false) == [.nextUnseen(story)] && outside(true) == [.nextElsewhere(story)])
+        // Read, with no pull request for the story anymore: gone.
+        let read = Self.facts([Self.ado(4110, [], from: "users/robin/a"), Self.ado(4111, [], from: "users/robin/b", into: "users/robin/a"), Self.ado(4120, [])])
+        let gone = try #require(Self.missions(read, changes: changes).first?.steps.first { $0.ref == Self.pr(4110) })
+        #expect(gone.notes.contains(.nextElsewhere(story)))
     }
 
     /// Move to Mission from one an order lists apart, for its story, into that order: it goes in it, rather than count as

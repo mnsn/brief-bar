@@ -705,6 +705,9 @@ public enum OrderNote: Equatable, Sendable {
     case nextDoesntHold(ItemRef, retarget: Bool)
     /// You set it as next to merge in that mission, which it isn't in now, or which is gone, its order forgotten.
     case nextElsewhere(MissionKey)
+    /// You set it as next to merge in that story's mission, which isn't gone, but unseen while BriefBar can't tell stories'
+    /// missions, as before Show Links has read them: it holds again once the mission shows.
+    case nextUnseen(MissionKey)
     /// You set this one as next to merge here after it, such as in a chain that came to be one with another: that one's
     /// next, and yours doesn't hold.
     case nextSince(ItemRef)
@@ -728,7 +731,7 @@ public enum OrderNote: Equatable, Sendable {
     public var isAboutYourChanges: Bool {
         switch self {
         case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .placementUnseen, .afterYourNext, .notAfterYourNext,
-             .yoursDoesntHold, .nextDoesntHold, .nextElsewhere, .nextSince, .orderChangedIt, .yourNextGoesFirst:
+             .yoursDoesntHold, .nextDoesntHold, .nextElsewhere, .nextUnseen, .nextSince, .orderChangedIt, .yourNextGoesFirst:
             return true
         case .setAside(_, _, let circle):
             return circle == .yours || circle == .yourChanges
@@ -991,7 +994,7 @@ public enum OrderBoard {
             guard let first = layer.holding[ref]?.first,
                   !built.contains(where: { OrderChanges.names($0, first) && $0.steps.contains { $0.ref == ref } })
             else { return nil }
-            return .nextElsewhere(first)
+            return elsewhere(first, seesStories: facts.seesStories)
         }
         for index in missions.indices {
             missions[index].isFocused = missions[index].key == focus
@@ -1016,14 +1019,25 @@ public enum OrderBoard {
     }
 
     /// What your change to a pull request in no mission says: that an order went against it, or that you set it as next in a
-    /// mission it isn't in now, or that's gone; for its details, where no mission's card shows it.
-    public static func notes(outside ref: ItemRef, missions: [OrderMission], changes: OrderChanges, orders: DeclaredOrders) -> [OrderNote] {
+    /// mission it isn't in now, or that's gone, or a story's that BriefBar can't see yet; for its details, where no mission's
+    /// card shows it.
+    /// - Parameter seesStories: BriefBar can tell which stories' missions there are (`OrderFacts.seesStories`).
+    public static func notes(
+        outside ref: ItemRef, missions: [OrderMission], changes: OrderChanges, orders: DeclaredOrders, seesStories: Bool = true
+    ) -> [OrderNote] {
         guard let change = changes[ref] else { return [] }
         guard change.holds(in: orders) else { return change.overridden(in: orders).map { [.orderChangedIt($0)] } ?? [] }
         if let first = change.first, !missions.contains(where: { OrderChanges.names($0, first) && $0.contains(ref) }) {
-            return [.nextElsewhere(first)]
+            return [elsewhere(first, seesStories: seesStories)]
         }
         return []
+    }
+
+    /// Where you set it as next to merge, which it isn't in now: gone, or, for a story's while BriefBar can't tell stories'
+    /// missions, unseen.
+    static func elsewhere(_ first: MissionKey, seesStories: Bool) -> OrderNote {
+        if case .story = first, !seesStories { return .nextUnseen(first) }
+        return .nextElsewhere(first)
     }
 
     /// The one you focus on first, then those still going, then those with an order; the most pressing for you first, then
@@ -1055,8 +1069,9 @@ public enum OrderBoard {
     ///   - old: the missions as they were.
     ///   - new: the missions now.
     ///   - moved: the pull requests your changes that hold put in a mission, or out of one (`OrderChange.placement`).
-    ///   - alone: only to a mission with no open pull request but those and the ones your changes moved: for where you set
-    ///     one as next to merge, which shouldn't have others wait for it, such as a teammate's of the same story.
+    ///   - alone: only to a mission with all of them, and no open pull request but those and the ones your changes moved,
+    ///     never to a part of one that split: for where you set one as next to merge, which shouldn't have others wait for
+    ///     it, such as a teammate's of the same story, and holds again as the mission comes back whole.
     public static func successor(
         of key: MissionKey, from old: [OrderMission], to new: [OrderMission], moved: Set<ItemRef> = [], alone: Bool = false
     ) -> MissionKey? {
@@ -1084,7 +1099,7 @@ public enum OrderBoard {
             }
         }
         var now = new.first { goesOn($0, split: false) && held($0) == open.count }
-        if now == nil {
+        if now == nil, !alone {
             for mission in new where goesOn(mission, split: true) && held(mission) > (now.map(held) ?? 0) {
                 now = mission
             }
@@ -2290,6 +2305,8 @@ public enum OrderText {
             if let title = names.title(mission) { return "You set it as next to merge in ‘\(title)’, which it isn't in now" }
             if case .plan = mission { return "Its order is gone: you'd set it as next to merge there" }
             return "The mission you set it as next to merge in is gone"
+        case .nextUnseen:
+            return "You set it as next to merge in a story's mission, which shows once Show Links reads the story"
         case .nextSince(let later):
             return "You set \(later.orderLabel(near: ref)) as next to merge here later, so your ‘next to merge’ doesn't hold"
         case .orderChangedIt(let override):
