@@ -383,6 +383,10 @@ import Testing
         #expect(MissionNaming.clean("checkout redesign") == "Checkout redesign")
         #expect(MissionNaming.clean("iOS widgets") == "iOS widgets")
         #expect(MissionNaming.clean("I/O retries") == "I/O retries")
+        // A heading's marks go, but not a hash within a name.
+        #expect(MissionNaming.clean("## Checkout coupons") == "Checkout coupons")
+        #expect(MissionNaming.clean("C# modernization") == "C# modernization")
+        #expect(MissionNaming.clean("# F# language support") == "F# language support")
         // An answer that talks about the name, asks, or declines to give one, is none: the mission keeps the name it has.
         for chatter in [
             "Here's a name for the mission:\n\nCheckout coupons", "Sure! Checkout coupons", "**Certainly.** Checkout coupons",

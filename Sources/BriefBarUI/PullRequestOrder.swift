@@ -64,6 +64,9 @@ package final class PullRequestOrder: ObservableObject {
     }
     /// `names`, but the time, until the sources or the missions change.
     private var cachedNames: OrderNames?
+    /// What the change you're making touched, as it was, while the missions are made again for it, before it's your last
+    /// change: what its Undo would put back.
+    private var making: [ItemRef: OrderChange?]?
     /// What BriefBar sees each pull request stacked on, as the missions were last made: what your changes can't go against.
     private var stacked: [ItemRef: Set<ItemRef>] = [:]
     /// Hears about the orders an agent tells or forgets through `--mcp`, while it's on.
@@ -125,9 +128,10 @@ package final class PullRequestOrder: ObservableObject {
     /// Whether BriefBar keeps anything for Pull Request Order, on or off: an order, what it saw become of their pull
     /// requests, the mission you focus on, a change of yours, or a name you gave a mission.
     package var keepsAnything: Bool {
-        !changesInMemory.isEmpty || !evidenceInMemory.records.isEmpty
-            || [DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, OrderChanges.defaultsKey, MissionNames.defaultsKey]
-            .contains { defaults.object(forKey: $0) != nil }
+        let keys = [
+            DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, OrderChanges.defaultsKey, MissionNames.defaultsKey,
+        ]
+        return !changesInMemory.isEmpty || !evidenceInMemory.records.isEmpty || keys.contains { defaults.object(forKey: $0) != nil }
     }
 
     /// Pull Request Order, in Settings. On, it reads the orders and changes it kept, and the sources tell it what they show;
@@ -617,7 +621,9 @@ package final class PullRequestOrder: ObservableObject {
         var seen = evidence
         seen.keep(only: OrderChanges(touched.values.compactMap { $0 }).subjects)
         keep(changed)
+        making = touched
         rebuild()
+        making = nil
         var made = false
         if case .move(_, .into(let key), _) = edit, case .mine = key { made = !before.contains(key) }
         let last = OrderLastChange(
@@ -706,6 +712,12 @@ package final class PullRequestOrder: ObservableObject {
 
     // MARK: Missions
 
+    /// The missions of your own that Undo would put a pull request in again: your last change's, or, while the change you're
+    /// making goes in, that one's. Until it's gone, the name you gave such a mission, and Focus on it, wait.
+    private var undoableOwnMissions: Set<UUID> {
+        OrderChanges((making ?? lastChange?.touched ?? [:]).values.compactMap { $0 }).ownMissions
+    }
+
     /// What the sources that are on show now.
     private var facts: OrderFacts {
         let sources = SourceID.allCases.filter { told[$0] != nil }
@@ -768,11 +780,12 @@ package final class PullRequestOrder: ObservableObject {
         var changes = changes
         if !changes.removeFinished(evidence: evidence, now: date).isEmpty { keep(changes) }
         // The mission you focus on goes once its order finished, or, for one of your own, once no change of yours puts a
-        // pull request in it, as Undo or time can take them.
+        // pull request in it, as Undo or time can take them, and Undo wouldn't bring it back: its name waits as long.
         var isMine = false
         if case .mine? = focus { isMine = true }
         if !finished.isEmpty || isMine {
-            let kept = OrderFocus.kept(focus, in: orders, changes: self.changes)
+            var kept = OrderFocus.kept(focus, in: orders, changes: self.changes)
+            if case .mine(let id)? = focus, undoableOwnMissions.contains(id) { kept = focus }
             if kept != focus {
                 focus = kept
                 OrderFocus.save(kept, to: defaults)
@@ -824,7 +837,7 @@ package final class PullRequestOrder: ObservableObject {
             )
         }
         keepNames(following: successor, in: missions, facts: facts, at: date)
-        forgetModelNames(keepingPlans: Set(orders.plans.map(\.id)), keepingMine: self.changes.ownMissions)
+        forgetModelNames(keepingPlans: Set(orders.plans.map(\.id)), keepingMine: self.changes.ownMissions.union(undoableOwnMissions))
         cachedNames = nil
         if missions != self.missions { self.missions = missions }
         askNames()
@@ -852,7 +865,7 @@ package final class PullRequestOrder: ObservableObject {
             if let next = successor(key), names.follow(key, to: next) { renamed = true }
         }
         let plans = Set(orders.plans.map(\.id))
-        if names.forget([], keepingPlans: plans, keepingMine: changes.ownMissions) { renamed = true }
+        if names.forget([], keepingPlans: plans, keepingMine: changes.ownMissions.union(undoableOwnMissions)) { renamed = true }
         let elapsed = namesCounted.map { min(max(date.timeIntervalSince($0), 0), 2 * Self.timeCheckInterval) } ?? 0
         namesCounted = date
         let kindsOn = kindsOn

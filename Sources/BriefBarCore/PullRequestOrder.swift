@@ -668,6 +668,9 @@ public enum OrderNote: Equatable, Sendable {
     /// The mission you put it in is gone, its order forgotten or its pull requests gone: it stays with the others you put
     /// there, as a mission of yours.
     case placementGone(MissionKey)
+    /// The story's mission you put it in isn't gone, but unseen while BriefBar can't read stories, as before Show Links has
+    /// read them: it stays with the others you put there meanwhile.
+    case placementUnseen(MissionKey)
     /// It waits for this one, which you set as next to merge.
     case afterYourNext(ItemRef)
     /// It doesn't wait for this one, which you set as next to merge: you took that away.
@@ -712,8 +715,8 @@ public enum OrderNote: Equatable, Sendable {
     /// the details' order line says, and what a row with no order known marks.
     public var isAboutYourChanges: Bool {
         switch self {
-        case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .afterYourNext, .notAfterYourNext, .yoursDoesntHold,
-             .nextDoesntHold, .nextElsewhere, .nextSince, .orderChangedIt, .yourNextGoesFirst:
+        case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .placementUnseen, .afterYourNext, .notAfterYourNext,
+             .yoursDoesntHold, .nextDoesntHold, .nextElsewhere, .nextSince, .orderChangedIt, .yourNextGoesFirst:
             return true
         case .setAside(_, _, let circle):
             return circle == .yours || circle == .yourChanges
@@ -897,6 +900,12 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
     /// Whether it's a mission of your own.
     public var isMine: Bool {
         kind == .mine
+    }
+
+    /// Whether its header shows how far it got, a bar and "1 of 3 merged": all but the pull requests opened under a session
+    /// and a story's, which nothing told BriefBar go together in an order, whatever order some of them have.
+    public var showsProgress: Bool {
+        !isFamily && !isStory
     }
 
     /// Whether any of its pull requests has a place in an order: not a group whose order nobody knows, whatever became of
@@ -1558,9 +1567,9 @@ extension Board {
 
     /// The missions' pull requests: each order's, but those you moved elsewhere, with those you put in it; then the pull
     /// requests no order names, by what BriefBar sees: with what they're stacked with, by the story their work items are
-    /// for, apart in the one unfinished order with a pull request for it, or else as its mission, two or more; but those
-    /// you moved, which join the stack, the chain, the story's pull requests or the pull requests opened under a session
-    /// you put them in; then those you put in a mission of your own, or in one that's gone, together, by its key.
+    /// for, apart in the one unfinished order with a pull request of its own for it, or else as its mission, two or more;
+    /// but those you moved, which join the stack, the chain, the story's pull requests or the pull requests opened under a
+    /// session you put them in; then those you put in a mission of your own, or in one that's gone, together, by its key.
     func groups(orders: DeclaredOrders, layer: Layer) -> [Group] {
         let placed = layer.placed
         let placedRefs = placed.keys.sorted { lhs, rhs in
@@ -1609,13 +1618,14 @@ extension Board {
         for index in groups.indices {
             if let plan = groups[index].plan { groups[index].attached = attached[plan.id] ?? [] }
         }
-        // An order claims the stories of all its pull requests, merged ones included, until it's finished: until each has
-        // merged or closed, as far as BriefBar knows, one it can't see counting as neither. A finished order leaves its
-        // stories' new pull requests to go as they would without it.
+        // An order claims the stories of all its own pull requests, merged ones included, until it's finished: until each
+        // of its pull requests has merged or closed, as far as BriefBar knows, one it can't see counting as neither. A
+        // finished order leaves its stories' new pull requests to go as they would without it. Not the stories of those you
+        // put in it: a Move moves only what you moved.
         var plansByStory: [ItemRef: Set<UUID>] = [:]
         for group in groups where group.refs.contains(where: { !status($0).hasEnded }) {
             guard let plan = group.plan else { continue }
-            for ref in group.refs {
+            for ref in group.members {
                 for story in stories(of: ref) { plansByStory[story.ref, default: []].insert(plan.id) }
             }
         }
@@ -1996,7 +2006,12 @@ extension Board {
         }
         if case .into(let target)? = change.placement {
             if case .mine = group.kind, target == group.key, !Self.isOwn(target) {
-                notes.append(.placementGone(target))
+                // A story's mission isn't gone while BriefBar can't read stories, only unseen.
+                if case .story = target, !facts.readsStories {
+                    notes.append(.placementUnseen(target))
+                } else {
+                    notes.append(.placementGone(target))
+                }
             } else if !change.isAttached {
                 notes.append(.moved(from: change.from, change.changedAt))
             }
@@ -2200,6 +2215,8 @@ public enum OrderText {
         case .placementGone(let key):
             if case .plan = key { return "Its order is gone: you'd put it here" }
             return "Its mission is gone: you'd put it here"
+        case .placementUnseen:
+            return "You put it in a story's mission, which shows once Show Links reads the story"
         case .afterYourNext(let next):
             return "You set \(next.orderLabel(near: ref)) as next to merge"
         case .notAfterYourNext(let next):

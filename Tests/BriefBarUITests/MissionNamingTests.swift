@@ -620,21 +620,36 @@ fileprivate final class Viewer {}
         #expect(order.title(of: try #require(order.missions.first { $0.key == next })) == "Totals")
     }
 
-    /// A mission of your own has the name you give it, until no change of yours puts a pull request in it.
-    @Test func aMissionOfYourOwnsNameGoesWithIt() throws {
+    /// A mission of your own keeps the name you give it, and Focus, while a change of yours puts a pull request in it, or
+    /// Undo would: Undo brings it back as it was. Then they go.
+    @Test func aMissionOfYourOwnKeepsItsNameAndFocusWhileUndoWouldBringItBack() throws {
         let clock = Clock()
         let defaults = MemoryDefaults()
         let order = Self.service(defaults, clock: clock)
         Self.tell(order, readsStories: false)
         let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
-        order.change(.move([Self.pr(4113), Self.pr(4105)], to: .into(mine), from: nil))
-        let mission = try #require(order.missions.first { $0.key == mine })
-        order.rename(mission, to: "Checkout bits")
-        #expect(order.title(of: mission) == "Checkout bits" && order.naming(of: mission) == .you)
+        let both = [Self.pr(4113), Self.pr(4105)]
+        order.change(.move(both, to: .into(mine), from: nil))
+        order.rename(try #require(order.missions.first { $0.key == mine }), to: "Checkout bits")
+        order.setFocus(mine)
+        #expect(order.naming(of: try #require(order.missions.first { $0.key == mine })) == .you)
 
-        order.change(.undoMission(mine))
+        // Its pull requests moved out: it's gone, but Undo brings it back, with its name and Focus.
+        order.change(.move(both, to: .outside, from: mine))
         #expect(!order.missions.contains { $0.key == mine })
+        #expect(order.yourNames.name(for: mine) == "Checkout bits" && order.focus == mine)
+        #expect(order.undoLastChange())
+        let back = try #require(order.missions.first { $0.key == mine })
+        #expect(order.title(of: back) == "Checkout bits" && back.isFocused)
+        #expect(MissionNames.load(from: defaults).name(for: mine) == "Checkout bits")
+
+        // Undone with no Undo left to bring it back: its name and Focus go.
+        order.change(.undoMission(mine))
+        #expect(order.yourNames.name(for: mine) == "Checkout bits")
+        order.dismissLastChange()
+        order.timePassed()
         #expect(order.yourNames.name(for: mine) == nil && defaults.object(forKey: MissionNames.defaultsKey) == nil)
+        #expect(order.focus == nil && OrderFocus.load(from: defaults) == nil)
     }
 
     /// Turning a source off forgets all that was kept of its missions before its pull requests leave them, so that nothing

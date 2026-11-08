@@ -193,7 +193,7 @@ package struct MissionHeader: View {
             focusButton
             titleLine
             Spacer(minLength: 8)
-            if mission.hasOrder {
+            if mission.showsProgress {
                 OrderProgressBar(mission: mission)
                 Text(OrderText.progress(mission))
                     .foregroundStyle(.secondary)
@@ -278,7 +278,12 @@ package struct MissionHeader: View {
         .accessibilityElement(children: isRenaming ? .contain : .combine)
         .accessibilityAddTraits(.isHeader)
         .accessibilityAction(named: "Rename") { rename() }
-        .accessibilityAction(named: story.map { "Show \($0)" } ?? "Show Its Story") { storyItem?.open?() }
+        .accessibilityActions {
+            // Only where the story can show, as its button is.
+            if let story, let open = storyItem?.open {
+                Button("Show \(story)", action: open)
+            }
+        }
     }
 
     /// Who named it, who told its order or what it was opened under, and what a story's mission is.

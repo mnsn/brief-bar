@@ -225,10 +225,34 @@ import Testing
         #expect(OrderText.capsule(mission.steps[1]) == "After !4110 · stacked")
         #expect(mission.steps[1].comesRightAfter(Self.pr(4110)))
         #expect(mission.steps[2...].allSatisfy { $0.standing == .unordered })
-        // Some have an order: its graph and progress show, for them, and its help says their rows say so.
-        #expect(mission.hasOrder)
+        // Some have an order: its graph shows, for them, and its help says their rows say so; its header shows no progress,
+        // as nothing told BriefBar the story's go together in an order.
+        #expect(mission.hasOrder && !mission.showsProgress)
         #expect(OrderText.storyHelp(mission, title: "Checkout redesign")
             == "Its story: ‘Checkout redesign’. Listed in the order of its tasks in the backlog. Those with an order say so on their rows.")
+    }
+
+    /// An order's header shows how far it got though nothing in it waits for another, also once they all merged; and so
+    /// does a mission of your own with no order known. A story's and a session's pull requests' don't.
+    @Test func anOrderShowsItsProgressThoughItsPullRequestsMergeAnyTime() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [
+            .init(link: OrderPlansTests.link(4101)), .init(link: OrderPlansTests.link(4102)),
+        ]), now: t(0), newID: planID)
+        let merged = Self.missions(Self.facts([Self.ado(4101, [], state: .merged), Self.ado(4102, [], state: .merged)]), orders)
+        let order = try #require(merged.first { $0.key == .plan(planID) })
+        #expect(!order.hasOrder && order.showsProgress)
+        let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
+        let yours = Self.missions(Self.facts([Self.ado(4103, []), Self.ado(4104, [])]), changes: OrderChanges([
+            OrderChange(ref: Self.pr(4103), placement: .into(mine), changedAt: t(10)),
+            OrderChange(ref: Self.pr(4104), placement: .into(mine), changedAt: t(11)),
+        ]))
+        let own = try #require(yours.first { $0.key == mine })
+        #expect(!own.hasOrder && own.showsProgress)
+        let story = try #require(Self.missions(Self.facts([
+            Self.ado(4105, [Self.task(5103, rank: 1)]), Self.ado(4106, [Self.task(5102, rank: 2)]),
+        ])).first)
+        #expect(story.isStory && !story.showsProgress)
     }
 
     @Test func twoStacksForAStoryGoInItsTasksOrderEachInItsOwn() throws {
@@ -441,6 +465,45 @@ import Testing
         let mission = try #require(followed.first)
         #expect(mission.steps.map(\.ref).contains(Self.pr(4103)))
         #expect(mission.steps.first { $0.ref == Self.pr(4102) }?.standing == .next)
+    }
+
+    /// Moving one of a story's pull requests into an order moves only that one: the order doesn't claim the story for it,
+    /// and the story's others stay its mission.
+    @Test func movingAStorysPullRequestIntoAnOrderLeavesItsOthersTheStorysMission() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [
+            .init(link: OrderPlansTests.link(4110)), .init(link: OrderPlansTests.link(4111), after: ["4110"]),
+        ]), now: t(0), newID: planID)
+        let facts = Self.facts([
+            Self.ado(4110, []), Self.ado(4111, []), Self.ado(4101, [Self.task(5102, rank: 1)]),
+            Self.ado(4102, [Self.task(5103, rank: 2)]), Self.ado(4103, [Self.task(5104, rank: 3)]),
+        ])
+        let story = MissionKey.story(Self.item(5101))
+        #expect(Set(Self.missions(facts, orders).map(\.key)) == [.plan(planID), story])
+        let changes = OrderChanges([
+            OrderChange(ref: Self.pr(4101), placement: .into(.plan(planID)), from: story, changedAt: t(10)),
+        ])
+        let missions = Self.missions(facts, orders, changes: changes)
+        #expect(try #require(missions.first { $0.key == story }).steps.map(\.ref) == [Self.pr(4102), Self.pr(4103)])
+        let order = try #require(missions.first { $0.key == .plan(planID) })
+        #expect(order.steps.map(\.ref).contains(Self.pr(4101)) && order.sameStory.isEmpty)
+    }
+
+    /// One you put in a story's mission waits with the others you put there while BriefBar can't read stories, as before
+    /// Show Links has: its mission isn't gone, only unseen. Once it reads them and no pull request is for that story, it's
+    /// gone.
+    @Test func oneYouPutInAStorysMissionWaitsUnseenWhileStoriesArentRead() throws {
+        let story = MissionKey.story(Self.item(5101))
+        let changes = OrderChanges([OrderChange(ref: Self.pr(4110), placement: .into(story), changedAt: t(10))])
+        let unread = OrderFacts(pullRequests: [Self.ado(4110, nil), Self.ado(4101, nil), Self.ado(4102, nil)])
+        let waiting = try #require(Self.missions(unread, changes: changes).first { $0.key == story })
+        let step = try #require(waiting.steps.first)
+        #expect(waiting.isMine && step.notes.contains(.placementUnseen(story)) && !step.notes.contains(.placementGone(story)))
+        #expect(OrderText.note(.placementUnseen(story), of: step.ref) == "You put it in a story's mission, which shows once Show Links reads the story")
+        // Read, with no pull request for the story anymore: gone.
+        let read = Self.facts([Self.ado(4110, []), Self.ado(4101, []), Self.ado(4102, [])])
+        let gone = try #require(Self.missions(read, changes: changes).first { $0.key == story }?.steps.first)
+        #expect(gone.notes.contains(.placementGone(story)))
     }
 
     /// Move to Mission from one an order lists apart, for its story, into that order: it goes in it, rather than count as

@@ -336,8 +336,9 @@ public enum MissionNaming {
     /// with that."
     public static func clean(_ answer: String) -> String? {
         var line = answer.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
+        // Markdown's code, bold and a heading's marks, but a hash within a name, as in "C# modernization".
         line = line.replacingOccurrences(of: "`", with: "").replacingOccurrences(of: "**", with: "")
-            .replacingOccurrences(of: "#", with: "").trimmingCharacters(in: .whitespaces)
+            .replacing(/^#{1,6}\s*/, with: "").trimmingCharacters(in: .whitespaces)
         if line.hasPrefix("- ") { line = String(line.dropFirst(2)) }
         // A label it starts with, such as "Name:" or "Suggested name:".
         if let lead = line.firstMatch(of: label) { line = String(line[lead.range.upperBound...]) }
