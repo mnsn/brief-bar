@@ -28,8 +28,10 @@ import Testing
         return pullRequest
     }
 
-    static func missions(_ facts: OrderFacts, _ orders: DeclaredOrders = DeclaredOrders(), focus: MissionKey? = nil) -> [OrderMission] {
-        OrderBoard.missions(facts: facts, orders: orders, evidence: OrderEvidence(), focus: focus, now: t(60))
+    static func missions(
+        _ facts: OrderFacts, _ orders: DeclaredOrders = DeclaredOrders(), focus: MissionKey? = nil, changes: OrderChanges = OrderChanges()
+    ) -> [OrderMission] {
+        OrderBoard.missions(facts: facts, orders: orders, evidence: OrderEvidence(), focus: focus, changes: changes, now: t(60))
     }
 
     static func facts(_ pullRequests: [OrderPullRequest], sessions: [OrderSession] = []) -> OrderFacts {
@@ -51,9 +53,14 @@ import Testing
         #expect(mission.kind == .story(Self.item(5101)))
         #expect(mission.story == MissionStory(ref: Self.item(5101), type: "User Story"))
         #expect(mission.steps.map(\.ref) == [Self.pr(4105), Self.pr(4102), Self.pr(4101)])
-        // No order known: no place, no mark, no capsule, nothing it waits for; and no progress bar.
-        #expect(mission.steps.allSatisfy { $0.standing == .unordered && $0.number == nil && $0.standing.marker == .none })
-        #expect(mission.steps.allSatisfy { OrderText.capsule($0) == nil && OrderText.standing($0) == nil && $0.prerequisites.isEmpty })
+        // No order known: no place, no mark, no capsule, nothing it waits for; one that merged says so, as a session's pull
+        // requests' does; and no progress bar.
+        let open = mission.steps.filter(\.status.isOpen)
+        #expect(open.count == 2)
+        #expect(open.allSatisfy { $0.standing == .unordered && $0.standing.marker == .none })
+        #expect(open.allSatisfy { OrderText.capsule($0) == nil && OrderText.standing($0) == nil })
+        #expect(mission.steps.allSatisfy { $0.number == nil && $0.prerequisites.isEmpty })
+        #expect(mission.steps.last?.standing == .merged)
         #expect(!mission.hasOrder && mission.isStory && !mission.isFamily)
         #expect(mission.folded.map(\.ref) == [Self.pr(4101)])
         #expect(OrderText.kind(of: mission) == "No order known")
@@ -218,6 +225,10 @@ import Testing
         #expect(OrderText.capsule(mission.steps[1]) == "After !4110 · stacked")
         #expect(mission.steps[1].comesRightAfter(Self.pr(4110)))
         #expect(mission.steps[2...].allSatisfy { $0.standing == .unordered })
+        // Some have an order: its graph and progress show, for them, and its help says their rows say so.
+        #expect(mission.hasOrder)
+        #expect(OrderText.storyHelp(mission, title: "Checkout redesign")
+            == "Its story: ‘Checkout redesign’. Listed in the order of its tasks in the backlog. Those with an order say so on their rows.")
     }
 
     @Test func twoStacksForAStoryGoInItsTasksOrderEachInItsOwn() throws {
@@ -381,6 +392,74 @@ import Testing
             Self.ado(4101, [], from: "users/robin/a"), Self.ado(4102, [], from: "users/robin/b", into: "users/robin/a"),
         ], sessions: sessions))
         #expect(OrderBoard.successor(of: .family(coordinator), from: before, to: stacked) == nil)
+
+        // A chain whose earliest you moved out to a mission of your own, still open: it goes on by the next, and what was
+        // kept by it follows there, not after the one you moved.
+        let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
+        let open = [
+            Self.ado(4110, [], from: "users/robin/a"), Self.ado(4111, [], from: "users/robin/b", into: "users/robin/a"),
+            Self.ado(4112, [], from: "users/robin/c", into: "users/robin/b"),
+        ]
+        let whole = Self.missions(Self.facts(open))
+        #expect(whole.map(\.key) == [.chain(Self.pr(4110))])
+        let out = OrderChanges([OrderChange(ref: Self.pr(4110), placement: .into(mine), from: .chain(Self.pr(4111)), changedAt: t(10))])
+        let left = Self.missions(Self.facts(open), changes: out)
+        #expect(Set(left.map(\.key)) == [.chain(Self.pr(4111)), mine])
+        #expect(OrderBoard.successor(of: .chain(Self.pr(4110)), from: whole, to: left, moved: [Self.pr(4110)]) == .chain(Self.pr(4111)))
+        #expect(OrderBoard.successor(of: .chain(Self.pr(4110)), from: whole, to: left) == nil)
+        // A mission of your own never moves: it's kept by its ID.
+        #expect(OrderBoard.successor(of: mine, from: left, to: whole) == nil)
+    }
+
+    /// Your changes that name a session's pull requests' mission follow them to their story's, as Focus does: where you put
+    /// one, and which you set as next there. The one you put with them goes along, rather than stay in a mission that's
+    /// gone, and doesn't count for where the session's went.
+    @Test func yourChangesFollowASessionsPullRequestsToTheirStory() throws {
+        let coordinator = ItemRef.session("00000000-0000-4000-8000-000000000002")!
+        let sessions = [OrderSession(ref: coordinator, pullRequests: [Self.pr(4101), Self.pr(4102)])]
+        let (family, story) = (MissionKey.family(coordinator), MissionKey.story(Self.item(5101)))
+        var changes = OrderChanges([
+            OrderChange(ref: Self.pr(4103), placement: .into(family), changedAt: t(10)),
+            OrderChange(ref: Self.pr(4102), first: family, changedAt: t(20)),
+        ])
+        let before = Self.missions(Self.facts([Self.ado(4101, nil), Self.ado(4102, nil), Self.ado(4103, nil)], sessions: sessions), changes: changes)
+        #expect(before.map(\.key) == [family])
+        // Show Links read their work items: the session's are for 5101, !4103 for none.
+        let read = Self.facts([Self.ado(4101, [Self.task(5102, rank: 1)]), Self.ado(4102, [Self.task(5103, rank: 2)]), Self.ado(4103, [])], sessions: sessions)
+        let after = Self.missions(read, changes: changes)
+        // What you put there waits alone where it was, as if gone; the session's went to their story's.
+        #expect(Set(after.map(\.key)) == [story, family])
+        #expect(after.first { $0.key == family }?.isMine == true)
+        let successor = { (key: MissionKey) in OrderBoard.successor(of: key, from: before, to: after, moved: [Self.pr(4103)]) }
+        #expect(successor(family) == story)
+        #expect(OrderBoard.successor(of: family, from: before, to: after) == nil)
+
+        #expect(changes.followMissions(successor) == [family: story])
+        #expect(changes[Self.pr(4103)]?.placement == .into(story) && changes[Self.pr(4102)]?.first == story)
+        let followed = Self.missions(read, changes: changes)
+        #expect(followed.map(\.key) == [story])
+        let mission = try #require(followed.first)
+        #expect(mission.steps.map(\.ref).contains(Self.pr(4103)))
+        #expect(mission.steps.first { $0.ref == Self.pr(4102) }?.standing == .next)
+    }
+
+    /// Move to Mission from one an order lists apart, for its story, into that order: it goes in it, rather than count as
+    /// in it already.
+    @Test func movingOneAnOrderListsApartForItsStoryIntoThatOrderPutsItThere() throws {
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [
+            .init(link: OrderPlansTests.link(4101)), .init(link: OrderPlansTests.link(4102), after: ["4101"]),
+        ]), now: t(0), newID: planID)
+        let facts = Self.facts([
+            Self.ado(4101, [Self.task(5102, rank: 1)]), Self.ado(4102, [Self.task(5103, rank: 2)]), Self.ado(4105, [Self.task(5104, rank: 3)]),
+        ])
+        let missions = Self.missions(facts, orders)
+        #expect(missions.first?.sameStory.map(\.ref) == [Self.pr(4105)])
+        var changes = OrderChanges()
+        let touched = try changes.apply(.move([Self.pr(4105)], to: .into(.plan(planID)), from: nil), missions: missions, orders: orders, now: t(60))
+        #expect(touched.keys.contains(Self.pr(4105)))
+        let order = try #require(Self.missions(facts, orders, changes: changes).first)
+        #expect(order.key == .plan(planID) && order.steps.map(\.ref).contains(Self.pr(4105)) && order.sameStory.isEmpty)
     }
 
     @Test func anOrderNeverMovesItsKeptByItsID() throws {

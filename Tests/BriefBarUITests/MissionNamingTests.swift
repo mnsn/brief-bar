@@ -463,7 +463,7 @@ fileprivate final class Viewer {}
         order.namer?.next()
         #expect(await Self.eventually { order.modelNames[mission.key] != nil })
         #expect(order.rename(mission, to: shown, from: shown) == .unchanged)
-        #expect(order.names.entries.isEmpty && defaults.object(forKey: MissionNames.defaultsKey) == nil)
+        #expect(order.yourNames.entries.isEmpty && defaults.object(forKey: MissionNames.defaultsKey) == nil)
         #expect(order.title(of: mission) == "Faster checkout")
         // What you typed is kept.
         #expect(order.rename(mission, to: "Coupons and speed", from: shown) == .named)
@@ -484,7 +484,7 @@ fileprivate final class Viewer {}
         let mission = try #require(order.missions.first)
         #expect(!order.canRename(mission.key))
         #expect(order.rename(mission, to: "Coupons") == .full)
-        #expect(order.names.name(for: mission.key) == nil)
+        #expect(order.yourNames.name(for: mission.key) == nil)
         #expect(MissionNames.load(from: defaults).entries.count == MissionNames.mostNames)
         // One whose mission isn't seen goes, two weeks after: room again.
         for _ in 0..<(14 * 12 + 1) {
@@ -494,7 +494,7 @@ fileprivate final class Viewer {}
         #expect(order.canRename(mission.key))
         // BriefBar's own name, as it shows now: nothing kept.
         #expect(order.rename(mission, to: "Checkout redesign") == .unchanged)
-        #expect(order.names.entries.isEmpty)
+        #expect(order.yourNames.entries.isEmpty)
     }
 
     @Test func yourNameWaitsWhileWhatMakesItsMissionIsOffAndGoesTwoWeeksAfterItWasLastSeen() throws {
@@ -511,24 +511,24 @@ fileprivate final class Viewer {}
             clock.advance(2 * 3_600)
             order.timePassed()
         }
-        #expect(order.names.name(for: mission.key) == "Coupons and speed")
+        #expect(order.yourNames.name(for: mission.key) == "Coupons and speed")
         // Pull Request Order off: it waits too, and turned on again, it's there.
         order.setOn(false)
         clock.advance(30 * 86_400)
         order.setOn(true)
-        #expect(order.names.name(for: mission.key) == "Coupons and speed")
+        #expect(order.yourNames.name(for: mission.key) == "Coupons and speed")
         // Show Links on, but its pull requests went: two weeks later, it goes.
         order.publish(.azureDevOps, pullRequests: [], readsStories: true)
         for _ in 0..<(13 * 12) {
             clock.advance(2 * 3_600)
             order.timePassed()
         }
-        #expect(order.names.name(for: mission.key) == "Coupons and speed")
+        #expect(order.yourNames.name(for: mission.key) == "Coupons and speed")
         for _ in 0..<(12 + 1) {
             clock.advance(2 * 3_600)
             order.timePassed()
         }
-        #expect(order.names.name(for: mission.key) == nil)
+        #expect(order.yourNames.name(for: mission.key) == nil)
         #expect(defaults.object(forKey: MissionNames.defaultsKey) == nil)
     }
 
@@ -551,6 +551,111 @@ fileprivate final class Viewer {}
         #expect(MissionNames.load(from: defaults).name(for: .story(Self.story)) == "Checkout work")
     }
 
+    /// What's kept by a session's pull requests' mission follows them to their story's, by one rule: your changes, what Undo
+    /// would put back, Focus and your name. The one you put with them goes along, rather than stay in a mission that's gone.
+    @Test func yourChangesUndoFocusAndNameFollowASessionsPullRequestsToTheirStory() throws {
+        let clock = Clock()
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults, clock: clock)
+        let (family, story) = (MissionKey.family(Self.session), MissionKey.story(Self.story))
+        func undone(_ number: Int) -> OrderChange? { order.lastChange?.touched[Self.pr(number)].flatMap { $0 } }
+        order.publish(.copilot, sessions: [OrderSession(ref: Self.session, pullRequests: [Self.pr(4113), Self.pr(4105), Self.pr(4106)])])
+        order.publish(.azureDevOps, pullRequests: [4113, 4105, 4106, 4120].map { Self.ado($0, nil) }, readsStories: true)
+        #expect(order.missions.map(\.key) == [family])
+        order.setFocus(family)
+        order.rename(try #require(order.missions.first), to: "Checkout work")
+        order.change(.move([Self.pr(4120)], to: .into(family), from: nil))
+        order.change(.setNext(Self.pr(4105), in: family, true))
+        // Then !4106 instead: Undo would set !4105 as next there again.
+        order.change(.setNext(Self.pr(4106), in: family, true))
+        #expect(order.lastChange?.mission == family && undone(4105)?.first == family)
+
+        // Show Links read them: the session's three are for User Story 5180, !4120 for none.
+        order.publish(.azureDevOps, pullRequests: [
+            Self.ado(4113, [Self.task(5181, rank: 1)]), Self.ado(4106, [Self.task(5182, rank: 2)]),
+            Self.ado(4105, [Self.task(5183, rank: 3)]), Self.ado(4120, []),
+        ], readsStories: true)
+        #expect(order.missions.map(\.key) == [story])
+        let mission = try #require(order.missions.first)
+        #expect(Set(mission.steps.map(\.ref)) == Set([4113, 4106, 4105, 4120].map(Self.pr)))
+        #expect(mission.steps.first { $0.ref == Self.pr(4106) }?.standing == .next)
+        #expect(order.changes[Self.pr(4120)]?.placement == .into(story) && order.changes[Self.pr(4106)]?.first == story)
+        #expect(OrderChanges.load(from: defaults)[Self.pr(4120)]?.placement == .into(story))
+        #expect(order.focus == story && OrderFocus.load(from: defaults) == story)
+        #expect(order.title(of: mission) == "Checkout work")
+        #expect(order.lastChange?.mission == story && undone(4105)?.first == story)
+        // Undo sets !4105 as next again, in the story's mission.
+        #expect(order.undoLastChange())
+        #expect(order.changes[Self.pr(4105)]?.first == story)
+        #expect(order.missions.first?.steps.first { $0.ref == Self.pr(4105) }?.standing == .next)
+    }
+
+    /// A chain whose earliest pull request you moved out, still open, goes on by the next: Focus and your name follow it
+    /// there, by the same rule, not the one you moved.
+    @Test func focusAndYourNameFollowAChainWhoseEarliestYouMovedOut() throws {
+        let clock = Clock()
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults, clock: clock)
+        func stacked(_ number: Int, from source: String, into target: String) -> OrderPullRequest {
+            OrderPullRequest(
+                ref: Self.pr(number), repository: "contoso/p/shop-web", sourceBranch: source, targetBranch: target, author: "robin",
+                createdAt: Date(timeIntervalSince1970: 1_791_000_000 + Double(number)), stories: []
+            )
+        }
+        order.publish(.azureDevOps, pullRequests: [
+            stacked(4110, from: "robin/a", into: "main"), stacked(4111, from: "robin/b", into: "robin/a"),
+            stacked(4112, from: "robin/c", into: "robin/b"),
+        ], readsStories: true)
+        let chain = try #require(order.missions.first)
+        #expect(chain.key == .chain(Self.pr(4110)))
+        order.setFocus(chain.key)
+        order.rename(chain, to: "Totals")
+        let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
+        order.change(.move([Self.pr(4110)], to: .into(mine), from: chain.key))
+
+        let next = MissionKey.chain(Self.pr(4111))
+        #expect(Set(order.missions.map(\.key)) == [next, mine])
+        #expect(order.focus == next && OrderFocus.load(from: defaults) == next)
+        #expect(order.yourNames.name(for: next) == "Totals" && order.yourNames.name(for: chain.key) == nil)
+        #expect(order.title(of: try #require(order.missions.first { $0.key == next })) == "Totals")
+    }
+
+    /// A mission of your own has the name you give it, until no change of yours puts a pull request in it.
+    @Test func aMissionOfYourOwnsNameGoesWithIt() throws {
+        let clock = Clock()
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults, clock: clock)
+        Self.tell(order, readsStories: false)
+        let mine = MissionKey.mine(UUID(uuidString: "44444444-5555-4666-8777-888888888888")!)
+        order.change(.move([Self.pr(4113), Self.pr(4105)], to: .into(mine), from: nil))
+        let mission = try #require(order.missions.first { $0.key == mine })
+        order.rename(mission, to: "Checkout bits")
+        #expect(order.title(of: mission) == "Checkout bits" && order.naming(of: mission) == .you)
+
+        order.change(.undoMission(mine))
+        #expect(!order.missions.contains { $0.key == mine })
+        #expect(order.yourNames.name(for: mine) == nil && defaults.object(forKey: MissionNames.defaultsKey) == nil)
+    }
+
+    /// Turning a source off forgets all that was kept of its missions before its pull requests leave them, so that nothing
+    /// forgotten is saved back: your changes, Focus, the name you gave it, and Undo.
+    @Test func turningASourceOffForgetsItsChangesFocusAndNamesBeforeItsMissionsGo() throws {
+        let clock = Clock()
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults, clock: clock)
+        Self.tell(order)
+        let mission = try #require(order.missions.first)
+        order.setFocus(mission.key)
+        order.rename(mission, to: "Coupons and speed")
+        order.change(.setNext(Self.pr(4105), in: mission.key, true))
+        #expect(order.lastChange != nil && !order.changes.isEmpty)
+
+        order.forget(.azureDevOps)
+        #expect(order.changes.isEmpty && order.focus == nil && order.yourNames.entries.isEmpty && order.lastChange == nil)
+        #expect(defaults.object(forKey: OrderChanges.defaultsKey) == nil && defaults.object(forKey: MissionNames.defaultsKey) == nil)
+        #expect(OrderFocus.load(from: defaults) == nil)
+    }
+
     @Test func forgetAllAndTurningAzureDevOpsOffForgetTheNames() throws {
         let clock = Clock()
         let defaults = MemoryDefaults()
@@ -560,12 +665,12 @@ fileprivate final class Viewer {}
         order.rename(mission, to: "Coupons and speed")
         #expect(order.keepsAnything)
         order.forget(.azureDevOps)
-        #expect(order.names.entries.isEmpty && defaults.object(forKey: MissionNames.defaultsKey) == nil)
+        #expect(order.yourNames.entries.isEmpty && defaults.object(forKey: MissionNames.defaultsKey) == nil)
 
         Self.tell(order)
         order.rename(try #require(order.missions.first), to: "Coupons and speed")
         order.forgetAll()
-        #expect(order.names.entries.isEmpty && defaults.object(forKey: MissionNames.defaultsKey) == nil)
+        #expect(order.yourNames.entries.isEmpty && defaults.object(forKey: MissionNames.defaultsKey) == nil)
     }
 
     /// Turning a source off forgets its missions' names for good, though another's last hour unseen ends as it goes, which
@@ -585,12 +690,12 @@ fileprivate final class Viewer {}
         order.rename(mission, to: "Coupons and speed")
         clock.advance(3_600 + 1)
         order.forget(.azureDevOps)
-        #expect(order.names.name(for: mission.key) == nil)
+        #expect(order.yourNames.name(for: mission.key) == nil)
         let kept = MissionNames.load(from: defaults)
         #expect(kept.name(for: mission.key) == nil && kept.name(for: gitHub) == "Storefront polish")
         #expect((kept.entries[gitHub]?.unseen ?? 0) > 3_600)
         // After a restart too.
-        #expect(Self.service(defaults, clock: clock).names.name(for: mission.key) == nil)
+        #expect(Self.service(defaults, clock: clock).yourNames.name(for: mission.key) == nil)
     }
 
     static let planID = UUID(uuidString: "11111111-2222-4333-8444-555555555555")!

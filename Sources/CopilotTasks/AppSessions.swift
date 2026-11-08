@@ -75,10 +75,42 @@ public enum AppSessions {
     }
 
     /// The sessions that run a turn now, by the app's own flag, as its database says now: their IDs. Throws when it can't
-    /// be read.
-    public static func running(home: URL) throws -> [String] {
-        try AppDatabase.load(at: CopilotPaths(root: home).database).sessions
-            .filter { $0.isRunning == true && isSessionID($0.id) }.map(\.id)
+    /// be read. `strictly`, for a check that mustn't take what it can't tell for none, it reads the flag alone
+    /// (`AppDatabase.turns(at:)`), so that a change to anything else the app keeps of its sessions leaves it to be read; it
+    /// throws `TurnsUnknown` when the database can't be read, or doesn't keep the flag, or say it for a session, as BriefBar
+    /// reads it; and with nothing at all where the database goes, as without the Copilot app, none of its sessions runs
+    /// one. A database that's there but out of reach, as in a folder BriefBar may not read, can't be read.
+    public static func running(home: URL, strictly: Bool = false) throws -> [String] {
+        let database = CopilotPaths(root: home).database
+        guard strictly else {
+            return try AppDatabase.load(at: database).sessions.filter { $0.isRunning == true && isSessionID($0.id) }.map(\.id)
+        }
+        if SessionEngine.isMissing(database) { return [] }
+        let turns: [(id: String, isRunning: Bool?)]?
+        do {
+            turns = try AppDatabase.turns(at: database)
+        } catch {
+            throw TurnsUnknown.unreadable
+        }
+        guard let sessions = turns?.filter({ isSessionID($0.id) }), !sessions.contains(where: { $0.isRunning == nil }) else {
+            throw TurnsUnknown.unsaid
+        }
+        return sessions.filter { $0.isRunning == true }.map { $0.id }
+    }
+
+    /// Why BriefBar can't tell which of the app's sessions run a turn now (`running(home:strictly:)`), as a sentence ends.
+    public enum TurnsUnknown: Error, Equatable, CustomStringConvertible {
+        /// Its database can't be read.
+        case unreadable
+        /// It doesn't keep the flag that says which sessions run one, or say it for a session, as BriefBar reads it.
+        case unsaid
+
+        public var description: String {
+            switch self {
+            case .unreadable: return "the Copilot app's database couldn't be read."
+            case .unsaid: return "the Copilot app's database doesn't say which of its sessions run one, as this version of BriefBar reads it."
+            }
+        }
     }
 
     /// Whether the Copilot app, or another program, has the session open now (`SessionLock`): a turn the CLI runs in it
@@ -111,6 +143,35 @@ public enum AppSessions {
     /// A session's log, `session-state/<id>/events.jsonl`.
     public static func events(of id: String, home: URL) -> URL? {
         sessionFolder(id, home: home)?.appendingPathComponent("events.jsonl")
+    }
+
+    /// When a session was first sent a message, since `since`, that holds `text`, such as a prompt BriefBar copied for you to
+    /// paste there: as you sent it, or as Copilot was told it, whatever else it says before or after, however its lines and
+    /// spaces are broken; not what an agent and its subagent say to each other. From the end of its log, the last
+    /// `maxBytes`, opened without following a symbolic link below the app's folder; nil when no message since holds it, as
+    /// when you sent it something else, or nothing yet.
+    public static func pasted(_ text: String, in id: String, home: URL, since: Date, maxBytes: Int = 4 << 20) -> Date? {
+        let wanted = words(text)
+        guard isSessionID(id), !wanted.isEmpty,
+              let log = LocalFile.tail(below: home, stateFile(id, "events.jsonl", home: home), maxBytes: maxBytes)
+        else { return nil }
+        func isSet(_ value: Any?) -> Bool { (value as? String).map { !words($0).isEmpty } ?? false }
+        for line in log.split(separator: UInt8(ascii: "\n")) where line.starts(with: userMessage) {
+            guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                  let at = (object["timestamp"] as? String).flatMap(Timestamp.parse), at >= since,
+                  let data = object["data"] as? [String: Any], !isSet(object["agentId"]), !isSet(data["parentToolCallId"])
+            else { continue }
+            let said = [data["content"], data["transformedContent"]].compactMap { $0 as? String }
+            if said.contains(where: { words($0).contains(wanted) }) { return at }
+        }
+        return nil
+    }
+
+    private static let userMessage = Data(#"{"type":"user.message""#.utf8)
+
+    /// Text as its words, one space apart.
+    static func words(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     /// `session-state/<id>/<name>`, by its components below the app's folder, to open it without following a link.

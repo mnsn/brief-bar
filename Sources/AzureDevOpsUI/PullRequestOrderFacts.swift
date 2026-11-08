@@ -54,6 +54,8 @@ final class PullRequestOrderFacts {
             .merge(with: store.refreshed)
             .merge(with: settings.$showToReview.removeDuplicates().map { _ in () })
             .merge(with: workLinks?.$storiesRead.removeDuplicates().map { _ in () }.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher())
+            // Watching one sent in a chat keeps what you change of its mission in the preferences.
+            .merge(with: settings.$watchedPullRequests.map { _ in () })
             .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.publish() } }
             .store(in: &cancellables)
@@ -76,13 +78,14 @@ final class PullRequestOrderFacts {
         return self
     }
 
-    /// The demo's orders, as if its sessions had told them, and the names Apple Intelligence would give its missions.
+    /// The demo's orders, as if its sessions had told them, your made-up changes to its missions, and the names Apple
+    /// Intelligence would give them.
     private func tellDemo() {
         guard store.mode == .demo else { return }
         let now = store.now
         order.tellDemo(
             DemoPullRequestOrder.orders(now: now), evidence: DemoPullRequestOrder.evidence(now: now), focus: DemoPullRequestOrder.focus,
-            names: DemoPullRequestOrder.names
+            changes: DemoPullRequestOrder.changes(now: now), names: DemoPullRequestOrder.names
         )
     }
 
@@ -98,8 +101,14 @@ final class PullRequestOrderFacts {
             .azureDevOps,
             pullRequests: Self.pullRequests(store.records, items: store.items, showToReview: showToReview, stories: stories),
             items: store.items.map { describe($0, showToReview: showToReview) } + stories.workItems.map(describe),
-            readsStories: stories.areRead
+            inMemory: Self.sentInChats(store.records, watched: settings.watchedKeys), readsStories: stories.areRead
         )
+    }
+
+    /// The pull requests listed only because someone sent them in a chat, not yours or ones you watch: what you change of
+    /// their missions stays in memory, as what you've seen of them does (`AppSettings.seenSentInChats`).
+    static func sentInChats(_ records: [PRRecord], watched: Set<PRKey>) -> Set<ItemRef> {
+        Set(records.filter { $0.role == .linked && !watched.contains($0.id) }.map(\.id.linkRef))
     }
 
     // MARK: What an order sees

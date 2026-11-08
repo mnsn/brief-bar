@@ -312,7 +312,7 @@ struct PullRequestSession: Equatable, Sendable {
     /// sent by what for, "Fix the Build", or the work item it was sent for, "Work Item 5112".
     static func name(of choice: SessionChoice) -> String {
         guard let run = choice.run, run.isAppSession != true else { return choice.name }
-        if let action = run.action { return action.title }
+        if let action = run.action { return action.title(taken: run.taken) }
         if let workItem = run.workItem { return "Work Item \(workItem.id)" }
         return choice.name
     }
@@ -339,9 +339,10 @@ extension AppSettings {
     }
 
     /// Forgets what you chose for a pull request's work once a task started on it in another session after you chose it,
-    /// which takes its place (`PullRequestSession.chosen(_:after:)`), so that clearing that task doesn't bring it back.
+    /// which takes its place (`PullRequestSession.chosen(_:after:)`), so that clearing that task doesn't bring it back. Not
+    /// for a fork, which works on the side and takes no session's place (`CopilotTasksStore.lastTask(forPullRequest:)`).
     func forgetChosenSession(for key: PRKey, supersededBy run: CopilotRun) {
-        guard let chosen = chosenSession(for: key), chosen.date < run.startedAt, chosen.session?.id != run.id else { return }
+        guard run.forkedFrom == nil, let chosen = chosenSession(for: key), chosen.date < run.startedAt, chosen.session?.id != run.id else { return }
         forgetChosenSession(for: key)
     }
 }
@@ -375,14 +376,16 @@ extension CopilotTasksStore {
     /// The latest task BriefBar started on a pull request, that got as far as starting, whatever its session and however
     /// it stands: the one the Send to Copilot window goes on with, once it's done, and which takes the place of the session
     /// you chose for its work before it started. As its run was kept when it started: a send that goes on with an earlier
-    /// task's session is the pull request's task only once it starts, so one that couldn't start leaves your choice be.
+    /// task's session is the pull request's task only once it starts, so one that couldn't start leaves your choice be. Not a
+    /// fork's, which works on the side, in a worktree of its own: the pull request's session stays the one it was, unless
+    /// you choose the fork.
     func lastTask(forPullRequest key: PRKey) -> PullRequestSession.LastTask? {
         // The demo's made-up tasks have no run.
         if mode == .demo {
-            return entries.first { $0.isOn(key) }.map { PullRequestSession.LastTask(id: $0.id, startedAt: $0.startedAt) }
+            return entries.first { $0.isOn(key) && $0.forkedFrom == nil }.map { PullRequestSession.LastTask(id: $0.id, startedAt: $0.startedAt) }
         }
         return settings.copilotRuns
-            .filter { $0.isValid && $0.onPullRequest?.matches(organization: key.organization, id: key.number) == true }
+            .filter { $0.isValid && $0.forkedFrom == nil && $0.onPullRequest?.matches(organization: key.organization, id: key.number) == true }
             .max { $0.startedAt < $1.startedAt }
             .map(PullRequestSession.LastTask.init)
     }

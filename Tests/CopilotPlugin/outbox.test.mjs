@@ -40,15 +40,20 @@ beforeEach(() => {
     open = [];
 });
 
-/** A made-up session: what it was sent and asked to run, and the answers it gives. */
-function fakeSession(sessionId = randomUUID(), { send, execute } = {}) {
+/** A made-up session: what it was sent and asked to run, how many times its turn was stopped, and the answers it gives. */
+function fakeSession(sessionId = randomUUID(), { send, execute, abort } = {}) {
     const calls = { sent: [], executed: [] };
+    const stops = { count: 0 };
     const forkId = randomUUID();
     const session = {
         sessionId,
         async send(options) {
             calls.sent.push(options);
             return send ? send(options) : `message-${calls.sent.length}`;
+        },
+        async abort() {
+            stops.count += 1;
+            if (abort) return abort();
         },
         rpc: {
             tools: {
@@ -63,7 +68,7 @@ function fakeSession(sessionId = randomUUID(), { send, execute } = {}) {
             },
         },
     };
-    return { session, calls, forkId };
+    return { session, calls, forkId, stops };
 }
 
 function listenTo(session, options = {}) {
@@ -138,7 +143,7 @@ describe("listening", () => {
         const file = path.join(folder, "listening", `${session.sessionId}.json`);
         assert.equal(fs.lstatSync(file).mode & 0o777, 0o600);
         assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), {
-            version: 1, sessionId: session.sessionId, pid: 4242, startedAt: iso(STARTED), kinds: ["send", "fork"],
+            version: 1, sessionId: session.sessionId, pid: 4242, startedAt: iso(STARTED), kinds: ["send", "fork", "stop"],
         });
         // It does nothing until BriefBar asks.
         assert.deepEqual(calls, { sent: [], executed: [] });
@@ -349,6 +354,7 @@ describe("turning requests down", () => {
         ["a send without a prompt", (sessionId) => ({ value: request(sessionId, { prompt: undefined }) }), "invalid"],
         ["a send with an empty prompt", (sessionId) => ({ value: request(sessionId, { prompt: "  \n" }) }), "invalid"],
         ["a fork with a prompt", (sessionId) => ({ value: request(sessionId, { kind: "fork", prompt: PROMPT }) }), "invalid"],
+        ["a stop with a prompt", (sessionId) => ({ value: request(sessionId, { kind: "stop", prompt: PROMPT }) }), "invalid"],
         ["one whose times aren't ISO 8601", (sessionId) => ({ value: request(sessionId, { createdAt: "Mon, 02 Nov 2026 10:00:00 GMT" }) }), "invalid"],
         ["one that would wait longer than 120 s", (sessionId) => ({ value: request(sessionId, { createdAt: iso(NOW), expiresAt: iso(NOW + LONGEST_WAIT_MS + 1) }) }), "invalid"],
         ["one that expires before it's made", (sessionId) => ({ value: request(sessionId, { createdAt: iso(NOW), expiresAt: iso(NOW - 1) }) }), "invalid"],
@@ -436,6 +442,8 @@ describe("turning requests down", () => {
         assert.deepEqual(checkRequest(value, { requestId: value.requestId, sessionId, now: NOW }), { kind: "send", prompt: PROMPT });
         const fork = request(sessionId, { kind: "fork" });
         assert.deepEqual(checkRequest(fork, { requestId: fork.requestId, sessionId, now: NOW }), { kind: "fork" });
+        const stop = request(sessionId, { kind: "stop" });
+        assert.deepEqual(checkRequest(stop, { requestId: stop.requestId, sessionId, now: NOW }), { kind: "stop" });
         // Swift's ISO 8601 dates, with and without fractions of a second, in UTC or with an offset.
         for (const createdAt of ["2026-11-02T09:59:59Z", "2026-11-02T09:59:59.123Z", "2026-11-02T11:59:59+02:00"]) {
             const dated = request(sessionId, { createdAt });
@@ -445,6 +453,34 @@ describe("turning requests down", () => {
         const longest = request(sessionId, { createdAt: iso(NOW - 1000), expiresAt: iso(NOW - 1000 + LONGEST_WAIT_MS) });
         assert.equal(checkRequest(longest, { requestId: longest.requestId, sessionId, now: NOW }).kind, "send");
         assert.throws(() => checkRequest(value, { requestId: value.requestId, sessionId, now: Date.parse(value.expiresAt) }), { code: "expired" });
+    });
+});
+
+describe("stopping", () => {
+    test("stops its own session's turn, as the app's Stop does, and sends and forks nothing", async () => {
+        const { session, calls, stops } = fakeSession();
+        const outbox = listenTo(session);
+        const value = request(session.sessionId, { kind: "stop" });
+        writeRequest(value);
+        await outbox.scan();
+        assert.equal(stops.count, 1);
+        assert.deepEqual(calls, { sent: [], executed: [] });
+        assert.deepEqual(readResult(value.requestId), {
+            version: 1, requestId: value.requestId, sessionId: session.sessionId, kind: "stop", ok: true, finishedAt: iso(NOW),
+        });
+    });
+
+    test("says it couldn't stop the turn, in its own words", async () => {
+        const { session, stops } = fakeSession(undefined, { abort: () => Promise.reject(new Error("Not connected")) });
+        const outbox = listenTo(session);
+        const value = request(session.sessionId, { kind: "stop" });
+        writeRequest(value);
+        await outbox.scan();
+        assert.equal(stops.count, 1);
+        const result = readResult(value.requestId);
+        assert.equal(result.ok, false);
+        assert.equal(result.kind, "stop");
+        assert.deepEqual(result.error, { code: "stop_failed", message: "Copilot didn't stop the session's turn." });
     });
 });
 

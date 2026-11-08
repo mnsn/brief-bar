@@ -10,7 +10,7 @@ import Testing
 /// Send Work to Copilot: off until you turn it on, and what BriefBar keeps about a send: which work item, where and with
 /// which model, never the work item's title or what Copilot wrote.
 @MainActor
-@Suite struct CopilotTasksStoreTests {
+@Suite(.opensNothing) struct CopilotTasksStoreTests {
     private let now = Date(timeIntervalSince1970: 1_792_317_600)
     private let item = WorkItem(
         id: 4217, organization: "Contoso", project: "Storefront", type: "Task", title: "Show the order total in the cart",

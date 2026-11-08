@@ -1,4 +1,5 @@
 import AppKit
+import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
 import SwiftUI
@@ -77,6 +78,75 @@ struct CommentDeleteConfirmation: View {
     }
 }
 
+// MARK: - Your edit, of a comment that changed since
+
+/// In your edit of a comment of yours that changed since you began, in Azure DevOps or another window, unseen, as your edit
+/// hides what it says: that it did, and all of what it says now, which is what Save Anyway replaces, with Start Over (⌥⌘R),
+/// which puts that in your edit in place of what you wrote, and Save Anyway (⌥⌘Return), which replaces it with your edit.
+/// Save is dimmed then (`ThreadChanges.changedSince`).
+struct CommentChangedNotice: View {
+    /// The comment as it is now.
+    let now: ReviewComment
+    /// Your edit is on its way.
+    let isSending: Bool
+    /// Your edit can be saved now: it says something, and isn't on its way, nor being fixed.
+    let canSave: Bool
+    let startOver: () -> Void
+    let saveAnyway: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(size: 11, weight: .semibold)
+                    .foregroundStyle(ItemState.needsYou.color)
+                    .accessibilityHidden(true)
+                Text(ThreadChanges.changedSentence)
+                    .font(size: 12, weight: .semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("It says now:")
+                    .font(size: 11)
+                    .foregroundStyle(.secondary)
+                // All of it: Save Anyway replaces all of it.
+                CommentBody(markdown: now.markdown, isQuiet: false)
+                    .equatable()
+                    .padding(.leading, 9)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(Color.primary.opacity(0.18)).frame(width: 2.5)
+                    }
+            }
+            .accessibilityElement(children: .combine)
+            Text(ThreadChanges.changedChoices)
+                .font(size: 11)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Spacer(minLength: 0)
+                Button(action: startOver) { ControlLabel("Start Over") }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut("r", modifiers: [.command, .option])
+                    .help("Put what your comment says now in your edit, in place of what you wrote (⌥⌘R)")
+                    .disabled(isSending)
+                Button(action: saveAnyway) { ControlLabel("Save Anyway") }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.return, modifiers: [.command, .option])
+                    .help("Replace what your comment says now with your edit, in Azure DevOps, as you (⌥⌘Return)")
+                    .disabled(!canSave)
+            }
+            .controlSize(.small)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(ItemState.needsYou.color.opacity(0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(ItemState.needsYou.color.opacity(0.3), lineWidth: 1))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Your Comment Changed")
+    }
+}
+
 // MARK: - For --render
 
 /// For `--render`, which can't draw a menu, as macOS draws it in a window of its own: one open, as macOS draws it, with these
@@ -119,29 +189,72 @@ extension View {
     /// dashes long, nor replaces text, which would change code, links and mentions as you type; and it leaves grammar to Fix
     /// Grammar. The editor, its focus, its size and its shortcuts are as they were.
     func spellChecked() -> some View {
-        // SwiftUI turns spell checking on with autocorrection, which `SpellCheckingProbe` turns off again.
-        autocorrectionDisabled(false)
-            .background(SpellCheckingProbe())
+        modifier(SpellChecked())
     }
 }
 
-/// Behind a `TextEditor`, as big as it is: finds the editor's text view, the one there, and turns off what `spellChecked()`
-/// leaves out. SwiftUI turns autocorrection on again each time it updates the editor, as you type, so it's turned off again,
-/// at once, as it is (`NSKeyValueObservation`).
-private struct SpellCheckingProbe: NSViewRepresentable {
-    func makeNSView(context: Context) -> ProbeView { ProbeView() }
+/// Spell checking in a `TextEditor`, once `SpellCheckingProbe` found its text view, and keeps what corrects or substitutes text
+/// off there: SwiftUI turns spell checking on only with autocorrection, which the probe turns off again. Until then, and if it
+/// never finds it, nothing is checked, nor corrected, as you type.
+private struct SpellChecked: ViewModifier {
+    @LocalState private var isAttached = false
+
+    func body(content: Content) -> some View {
+        content
+            .autocorrectionDisabled(!isAttached)
+            .background(SpellCheckingProbe { isAttached = true })
+    }
+}
+
+/// Behind a `TextEditor`, as big as it is: finds the editor's text view, the one there, and keeps off there what
+/// `spellChecked()` leaves out (`kept`). SwiftUI turns autocorrection on again each time it updates the editor, as you type,
+/// and the editor's right-click menu's Substitutions turn any of them on, which key-value observing tells at once; AppKit
+/// gives the text view the system's settings of autocorrection, text replacement, smart quotes and dashes as they change,
+/// without telling key-value observers, which `NSSpellChecker`'s notifications do (`systemSettingChanges`). Each time,
+/// they're turned off again. Once it found the text view, it says so (`attached`); when it finds none in a moment, the log
+/// says so, with nothing of what's written there.
+struct SpellCheckingProbe: NSViewRepresentable {
+    let attached: () -> Void
+
+    func makeNSView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.attached = attached
+        return view
+    }
 
     func updateNSView(_ view: ProbeView, context: Context) {
+        view.attached = attached
         view.find()
     }
 
     final class ProbeView: NSView {
-        private weak var textView: NSTextView?
-        private var observation: NSKeyValueObservation?
+        /// What corrects, replaces or substitutes text by itself, or checks its grammar: kept off.
+        static let kept: [ReferenceWritableKeyPath<NSTextView, Bool>] = [
+            \.isAutomaticSpellingCorrectionEnabled, \.isAutomaticTextReplacementEnabled, \.isAutomaticQuoteSubstitutionEnabled,
+            \.isAutomaticDashSubstitutionEnabled, \.isGrammarCheckingEnabled,
+        ]
+
+        /// What AppKit posts as the system's settings change, after it gives each text view the new one.
+        static let systemSettingChanges: [Notification.Name] = [
+            NSSpellChecker.didChangeAutomaticSpellingCorrectionNotification, NSSpellChecker.didChangeAutomaticTextReplacementNotification,
+            NSSpellChecker.didChangeAutomaticQuoteSubstitutionNotification, NSSpellChecker.didChangeAutomaticDashSubstitutionNotification,
+        ]
+
+        /// How long it looks for its editor's text view before the log says it found none.
+        static let patience: Duration = .seconds(1)
+
+        /// The editor's text view, once it found it.
+        private(set) weak var textView: NSTextView?
+        /// It looked for its editor's text view for a while, in a window, and found none.
+        private(set) var foundNone = false
+        var attached: (() -> Void)?
+        private var observations: [NSKeyValueObservation] = []
+        private var isLooking = false
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             find()
+            awaitTextView()
         }
 
         override func layout() {
@@ -156,6 +269,20 @@ private struct SpellCheckingProbe: NSViewRepresentable {
         func find() {
             guard textView == nil, window != nil else { return }
             Task { @MainActor [weak self] in self?.attach() }
+        }
+
+        /// The log says so when it finds no text view in a moment, in a window, once.
+        private func awaitTextView() {
+            guard window != nil, textView == nil, !isLooking, !foundNone else { return }
+            isLooking = true
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: Self.patience)
+                guard let self else { return }
+                isLooking = false
+                guard window != nil, textView == nil else { return }
+                foundNone = true
+                Log.app.error("Spell checking found no text view behind an editor: it's off there, and substitutions follow the system")
+            }
         }
 
         private func attach() {
@@ -173,16 +300,33 @@ private struct SpellCheckingProbe: NSViewRepresentable {
 
         private func configure(_ textView: NSTextView) {
             self.textView = textView
-            textView.isAutomaticSpellingCorrectionEnabled = false
-            textView.isAutomaticTextReplacementEnabled = false
-            textView.isAutomaticQuoteSubstitutionEnabled = false
-            textView.isAutomaticDashSubstitutionEnabled = false
-            textView.isGrammarCheckingEnabled = false
             textView.isContinuousSpellCheckingEnabled = true
-            observation = textView.observe(\.isAutomaticSpellingCorrectionEnabled) { textView, _ in
-                MainActor.assumeIsolated {
-                    if textView.isAutomaticSpellingCorrectionEnabled { textView.isAutomaticSpellingCorrectionEnabled = false }
+            Self.keepOff(textView)
+            observations = Self.kept.map { keyPath in
+                textView.observe(keyPath) { textView, _ in
+                    MainActor.assumeIsolated { Self.keepOff(textView) }
                 }
+            }
+            for name in Self.systemSettingChanges {
+                NotificationCenter.default.addObserver(self, selector: #selector(systemSettingChanged), name: name, object: nil)
+            }
+            attached?()
+        }
+
+        /// A system setting changed, which AppKit gives the text view as it posts this, unheard by key-value observing: once
+        /// it has, it's turned off again.
+        @objc private func systemSettingChanged(_ notification: Notification) {
+            Task { @MainActor [weak self] in
+                guard let textView = self?.textView else { return }
+                Self.keepOff(textView)
+            }
+        }
+
+        /// What corrects, replaces or substitutes text by itself, or checks its grammar, off: each only when it's on, so that
+        /// turning one off again tells key-value observers nothing more.
+        static func keepOff(_ textView: NSTextView) {
+            for keyPath in kept where textView[keyPath: keyPath] {
+                textView[keyPath: keyPath] = false
             }
         }
 

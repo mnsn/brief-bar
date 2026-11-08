@@ -18,8 +18,10 @@ final class GitHubStore: ObservableObject {
     /// What GitHub couldn't read, alongside the list.
     @Published private(set) var notice: String?
     @Published private(set) var moreThanShown = false
-    /// Who the GitHub CLI is signed in as.
+    /// Who the GitHub CLI is signed in as: its active account, unless that couldn't be read.
     @Published private(set) var login: String?
+    /// Every account it reads as, the GitHub CLI's active one first.
+    @Published private(set) var logins: [String] = []
     @Published private(set) var hasLoaded = false
     @Published private(set) var isRefreshing = false
     @Published private(set) var refreshedAt: Date?
@@ -29,29 +31,37 @@ final class GitHubStore: ObservableObject {
 
     let mode: Mode
     let settings: AppSettings
-    /// The GitHub CLI's tokens, made when it starts; tests give it a CLI that isn't there.
-    private let makeTokens: () -> GitHubCLITokenProvider
+    /// Reads the GitHub CLI's accounts, made when it starts; tests give it a CLI that isn't there.
+    private let makeReader: () -> GitHubAccountsReader
     /// Whether Pull Request Order is on: each read then sends the order's query, which reads what an order needs too.
     var ordersOn: () -> Bool = { false }
-    /// While it runs: they're made by `start()`, so nothing runs `gh` or connects before then.
-    private(set) var tokens: GitHubCLITokenProvider?
-    private var client: GitHubClient?
+    /// While it runs: it's made by `start()`, so nothing runs `gh` or connects before then.
+    private(set) var reader: GitHubAccountsReader?
     private var ticker: Timer?
     private var task: Task<Void, Never>?
     /// When the last read started: `isDue(at:)` counts from it.
     private(set) var lastAttempt: Date?
+    /// Until when GitHub asked BriefBar to slow down as every account it reads as: it reads nothing before then.
+    private(set) var waitsUntil: Date?
     /// Goes up with every stop, so a read that ends afterwards changes nothing.
     private var generation = 0
+    /// Until when each read lists the GitHub CLI's accounts again, every minute, after you chose to sign in to one, so that
+    /// it shows soon; nil otherwise, and once an account it didn't read as then shows.
+    private(set) var listsAccountsUntil: Date?
+    /// The accounts it read as when you chose to sign in to one.
+    private var loginsBeforeSignIn: [String] = []
 
     /// How soon a popover opening reads again.
     static let minimumGap: TimeInterval = 10
     /// How often it tries again while you need to sign in or are offline, so a fix shows within a minute.
     static let retryInterval: TimeInterval = 60
+    /// For how long after you choose to sign in each read lists the GitHub CLI's accounts again.
+    static let signInWait: TimeInterval = 10 * 60
 
-    init(settings: AppSettings, mode: Mode, makeTokens: @escaping () -> GitHubCLITokenProvider = { GitHubCLITokenProvider() }) {
+    init(settings: AppSettings, mode: Mode, makeReader: @escaping () -> GitHubAccountsReader = { GitHubAccountsReader() }) {
         self.settings = settings
         self.mode = mode
-        self.makeTokens = makeTokens
+        self.makeReader = makeReader
     }
 
     func start() {
@@ -62,9 +72,7 @@ final class GitHubStore: ObservableObject {
         case .demo:
             receive(GitHubDemoData.load(now: now, order: ordersOn()))
         case .live:
-            let tokens = makeTokens()
-            self.tokens = tokens
-            client = GitHubClient(tokens: tokens)
+            reader = makeReader()
             refresh()
         }
         let ticker = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
@@ -83,9 +91,11 @@ final class GitHubStore: ObservableObject {
         task = nil
         ticker?.invalidate()
         ticker = nil
-        client = nil
-        tokens = nil
+        reader = nil
         lastAttempt = nil
+        waitsUntil = nil
+        listsAccountsUntil = nil
+        loginsBeforeSignIn = []
         isStarted = false
         items = []
         counts = GitHubGroupCounts()
@@ -93,6 +103,7 @@ final class GitHubStore: ObservableObject {
         notice = nil
         moreThanShown = false
         login = nil
+        logins = []
         hasLoaded = false
         isRefreshing = false
         refreshedAt = nil
@@ -103,32 +114,46 @@ final class GitHubStore: ObservableObject {
         if isDue(at: now) { refresh() }
     }
 
-    /// Whether it's time to read again: every few minutes, every minute while there's something to fix, and not
-    /// before GitHub said to.
+    /// Whether it's time to read again: every few minutes, every minute while there's something to fix or it waits for you
+    /// to sign in, and not before GitHub said to.
     func isDue(at date: Date) -> Bool {
         guard mode == .live, isStarted else { return false }
-        if case .throttled(let until) = problem, date < until { return false }
+        // While it waits for you to sign in, it lists the accounts even while GitHub asked every one to slow down, so a new
+        // one shows; each account's own wait still holds what it would send.
+        if let waitsUntil, date < waitsUntil, !isListingAccounts(at: date) { return false }
         guard let lastAttempt else { return true }
         let interval: TimeInterval
         switch problem {
         case .cliNotFound?, .signedOut?, .authFailed?, .offline?: interval = min(Self.retryInterval, settings.refreshInterval)
-        default: interval = settings.refreshInterval
+        default:
+            interval = isListingAccounts(at: date) ? min(Self.retryInterval, settings.refreshInterval) : settings.refreshInterval
         }
         return date.timeIntervalSince(lastAttempt) >= interval
     }
 
-    /// Reads GitHub now, unless a read is under way.
-    func refresh() {
-        guard mode == .live, isStarted, task == nil, let client else { return }
-        if case .throttled(let until) = problem, Date() < until { return }
-        lastAttempt = Date()
+    /// Whether reads list the GitHub CLI's accounts again, at `date`, as they do for a while after you chose to sign in.
+    func isListingAccounts(at date: Date) -> Bool {
+        listsAccountsUntil.map { date < $0 } ?? false
+    }
+
+    /// Reads GitHub now, unless a read is under way, or GitHub asked every account to slow down.
+    /// - Parameter listingAccounts: whether to list the GitHub CLI's accounts again first, as Refresh Now does, rather than
+    ///   use the list it keeps for half an hour. It does even while GitHub asked every account to slow down, so a new one
+    ///   shows; each account's own wait still holds what it would send.
+    func refresh(listingAccounts: Bool = false) {
+        guard mode == .live, isStarted, task == nil, let reader else { return }
+        let started = Date()
+        let listsAgain = listingAccounts || isListingAccounts(at: started)
+        if let waitsUntil, started < waitsUntil, !listsAgain { return }
+        lastAttempt = started
         isRefreshing = true
         let generation = self.generation
         let order = ordersOn()
         task = Task { [weak self] in
             let result: Result<GitHubLoad, Error>
             do {
-                result = .success(try await GitHubReader.load(client: client, order: order))
+                if listsAgain { await reader.listAgain() }
+                result = .success(try await reader.load(order: order))
             } catch {
                 result = .failure(error)
             }
@@ -170,17 +195,14 @@ final class GitHubStore: ObservableObject {
     }
 
     func receive(_ load: GitHubLoad) {
-        items = load.items
-        counts = load.counts
-        login = load.login
-        notice = load.notice
-        moreThanShown = load.moreThanShown
+        show(load)
         problem = nil
+        waitsUntil = nil
         hasLoaded = true
         refreshedAt = Date()
         now = Date()
         Log.app.info(
-            "Read \(load.items.count, privacy: .public) pull requests: \(load.counts.needsYou, privacy: .public) need you"
+            "Read \(load.items.count, privacy: .public) pull requests as \(load.logins.count, privacy: .public) accounts: \(load.counts.needsYou, privacy: .public) need you"
         )
     }
 
@@ -190,15 +212,40 @@ final class GitHubStore: ObservableObject {
         self.problem = problem
         hasLoaded = true
         now = Date()
-        // Signed out, or as someone else: the list was theirs. Otherwise keep the last one, which may be out of date.
-        if problem.needsSignIn {
-            items = []
-            counts = GitHubGroupCounts()
-            login = nil
-            notice = nil
-            moreThanShown = false
+        if let failure = error as? GitHubAccountsReader.Failure, !problem.needsSignIn {
+            // None of its accounts could be read, and some not for a sign-in: what's left of each one's list, as when only
+            // some can't be.
+            show(failure.load)
+            waitsUntil = failure.waitsUntil
+        } else {
+            if case .throttled(let until) = problem { waitsUntil = until } else { waitsUntil = nil }
+            // Signed out, or as someone else: the list was theirs, and every view hides it until you sign in. Otherwise keep
+            // the last one, which may be out of date.
+            if problem.needsSignIn {
+                items = []
+                counts = GitHubGroupCounts()
+                login = nil
+                logins = []
+                notice = nil
+                moreThanShown = false
+            }
         }
         Log.app.error("Couldn't read GitHub: \(problem.message, privacy: .public)")
+    }
+
+    /// Shows what a read found, or what's left of the list when none of its accounts could be read.
+    private func show(_ load: GitHubLoad) {
+        items = load.items
+        counts = load.counts
+        login = load.login
+        logins = load.logins
+        notice = load.notice
+        moreThanShown = load.moreThanShown
+        // An account it didn't read as when you chose to sign in shows: reads go back to the list kept for half an hour.
+        // Not for the same accounts in another order, as `gh auth switch` leaves them, or fewer.
+        if listsAccountsUntil != nil, load.logins.contains(where: { !loginsBeforeSignIn.contains($0) }) {
+            listsAccountsUntil = nil
+        }
     }
 
     /// For `--render`: reads once, without the timer.
@@ -208,7 +255,7 @@ final class GitHubStore: ObservableObject {
             receive(GitHubDemoData.load(order: ordersOn()))
         case .live:
             do {
-                receive(try await GitHubReader.load(client: GitHubClient(tokens: makeTokens()), order: ordersOn()))
+                receive(try await makeReader().load(order: ordersOn()))
             } catch {
                 fail(error)
             }
@@ -221,11 +268,28 @@ final class GitHubStore: ObservableObject {
             GitHub.open(GitHub.installCLIPage)
             return
         }
-        let tokens = tokens
+        waitForSignIn()
+        let reader = reader
         Task {
-            let path = await tokens?.executablePath
-            GitHub.signIn(ghPath: path)
+            GitHub.signIn(ghPath: await reader?.executablePath)
         }
+    }
+
+    /// Signs the GitHub CLI in to another account, in Terminal, whose pull requests BriefBar then reads too. The account the
+    /// GitHub CLI uses in Terminal stays the one it was as you clicked.
+    func addAccount() {
+        waitForSignIn()
+        let reader = reader
+        Task {
+            GitHub.signIn(ghPath: await reader?.executablePath, keepingActive: true)
+        }
+    }
+
+    /// For a while, each read, every minute, lists the GitHub CLI's accounts again, until the one you sign in to shows.
+    func waitForSignIn() {
+        guard mode == .live, isStarted else { return }
+        listsAccountsUntil = Date().addingTimeInterval(Self.signInWait)
+        loginsBeforeSignIn = logins
     }
 
     func open(_ item: GitHubPRSnapshot) {

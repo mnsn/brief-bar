@@ -27,8 +27,9 @@ import Testing
         // Both sleeps ignore SIGTERM, so only SIGKILL, a second later, ends them. The program becomes one of them
         // (exec), so it can't exit on its own when the other is killed first, as a shell waiting for it would.
         // A program starts with SIGTERM's default, so SIGTERM can come before a shell that's slow to start, as on a
-        // busy runner, ignores it. It then ends at once, before it writes anything: that isn't what's tested, so it's
-        // tried again with twice the time, and the last time counts.
+        // busy runner, ignores it, and it ends at once; or the shell ignores it, but is so slow that SIGKILL comes
+        // before it writes anything. That isn't what's tested, so it's tried again with twice the time, and the last
+        // time counts.
         for timeout in [0.5, 1, 2, 4, 8] {
             let (result, elapsed) = try await measured {
                 try await ProcessRunner().run(
@@ -36,7 +37,7 @@ import Testing
                     environment: nil, timeout: timeout
                 )
             }
-            if result.status == SIGTERM, result.stdout.isEmpty, timeout < 8 { continue }
+            if result.stdout.isEmpty, timeout < 8 { continue }
             #expect(result.status == SIGKILL)
             #expect(elapsed > .seconds(timeout + 0.7) && elapsed < .seconds(timeout + 4.5))
             // The sleep is ended too.
@@ -48,14 +49,26 @@ import Testing
 
     @Test(.timeLimit(.minutes(1)))
     func doesntWaitForWhatTheProgramLeftRunning() async throws {
-        // The shell exits at once, but the sleep it started in the background keeps its output open.
-        let (result, elapsed) = try await measured {
-            try await ProcessRunner().run(
-                URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "sleep 30 & echo $!"], environment: nil, timeout: 20
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let exiting = directory.appendingPathComponent("exiting")
+        // The shell exits at once, but the sleep it started in the background keeps its output open. It makes a file
+        // as it exits, and the time is counted from then: how long a busy Mac takes to start the shell isn't what's
+        // tested.
+        let (result, returned) = try await withTaskExecutorPreference(ProcessTestExecutor()) {
+            let result = try await ProcessRunner().run(
+                URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "sleep 30 & echo $!; : > \"$0\"", exiting.path],
+                environment: nil, timeout: 20
             )
+            // As it returns, without waiting for the shared cooperative pool to resume the test.
+            return (result, Date())
         }
+        let exited = try #require(
+            FileManager.default.attributesOfItem(atPath: exiting.path)[.modificationDate] as? Date
+        )
         #expect(result.status == 0)
-        #expect(elapsed < .seconds(3))
+        #expect(returned.timeIntervalSince(exited) < 3)
         // And what it left running is ended.
         let child = try #require(pid_t(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
         #expect(try await ends(child))

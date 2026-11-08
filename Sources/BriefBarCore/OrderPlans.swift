@@ -516,12 +516,13 @@ public struct DeclaredOrders: Equatable, Sendable {
         }
     }
 
-    /// Forget All Orders: every order, what BriefBar saw become of their pull requests, the mission you focus on, and the
-    /// names you gave missions.
+    /// Forget All Orders: every order, what BriefBar saw become of their pull requests, the mission you focus on, your
+    /// changes to missions, and the names you gave missions.
     public static func forgetAll(in defaults: some SettingsStorage) {
         defaults.removeObject(forKey: defaultsKey)
         defaults.removeObject(forKey: OrderEvidence.defaultsKey)
         defaults.removeObject(forKey: OrderFocus.defaultsKey)
+        defaults.removeObject(forKey: OrderChanges.defaultsKey)
         defaults.removeObject(forKey: MissionNames.defaultsKey)
     }
 }
@@ -688,6 +689,11 @@ public struct OrderEvidence: Equatable, Sendable {
         return records.count != count
     }
 
+    /// Both, this one's record wherever both have one.
+    public func merging(_ other: OrderEvidence) -> OrderEvidence {
+        OrderEvidence(records: records.merging(other.records) { mine, _ in mine })
+    }
+
     /// Forgets what it saw of the pull requests of the sources you turned off. True when that forgot something.
     @discardableResult
     public mutating func forget(_ kinds: Set<ItemRef.Kind>) -> Bool {
@@ -755,13 +761,17 @@ public enum OrderFocus {
         return nil
     }
 
-    /// The mission you focus on, while it can still be one: nil once it's a session's order that BriefBar no longer keeps,
-    /// or, with `kinds`, one of the things whose source you turned off: a GitHub stack, a chain of their pull requests, the
-    /// pull requests opened under a Copilot session, or a story's.
-    public static func kept(_ key: MissionKey?, in orders: DeclaredOrders, forgetting kinds: Set<ItemRef.Kind> = []) -> MissionKey? {
+    /// The mission you focus on, while it can still be one: nil once it's a session's order that BriefBar no longer keeps, a
+    /// mission of your own that no change of yours puts a pull request in anymore, or, with `kinds`, one of the things whose
+    /// source you turned off: a GitHub stack, a chain of their pull requests, the pull requests opened under a Copilot
+    /// session, or a story's.
+    public static func kept(
+        _ key: MissionKey?, in orders: DeclaredOrders, changes: OrderChanges = OrderChanges(), forgetting kinds: Set<ItemRef.Kind> = []
+    ) -> MissionKey? {
         switch key {
         case nil: return nil
         case .plan(let id)?: return orders.plan(id) == nil ? nil : key
+        case .mine(let id)?: return changes.ownMissions.contains(id) ? key : nil
         case let key?: return key.kinds.isDisjoint(with: kinds) ? key : nil
         }
     }

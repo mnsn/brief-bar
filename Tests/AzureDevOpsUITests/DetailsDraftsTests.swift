@@ -13,7 +13,7 @@ import Testing
 /// while the details show their pull request, pages over them included. With the made-up pull requests and sprint, which
 /// never use the Azure CLI or Azure DevOps.
 @MainActor
-@Suite struct DetailsDraftsTests {
+@Suite(.opensNothing) struct DetailsDraftsTests {
     private let now = Date()
     private let records: [PRRecord]
     private let items: [PRSnapshot]

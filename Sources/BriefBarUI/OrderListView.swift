@@ -42,9 +42,7 @@ package struct MissionCard: View {
         let mine = mission.steps(of: kinds)
         let folded = mine.filter { $0.status == .merged || $0.status == .closed }
         let shown = showsFolded ? mine : mine.filter { $0.status != .merged && $0.status != .closed }
-        // No graph for pull requests with no order known, but for those stacked on each other among a story's.
-        let hasGraph = mission.hasOrder || mission.isStory && shown.contains { $0.number != nil }
-        let gutter = hasGraph ? OrderGutter(shown) : nil
+        let gutter = mission.hasOrder ? OrderGutter(shown) : nil
         let width = gutter.map { OrderGutterRowView.width(lanes: $0.laneCount, scale: textScale) } ?? 0
         VStack(alignment: .leading, spacing: 6) {
             MissionHeader(mission: mission, order: order, place: place)
@@ -66,6 +64,12 @@ package struct MissionCard: View {
                 let sameStory = mission.sameStory.filter { kinds.contains($0.ref.kind) }
                 if !sameStory.isEmpty {
                     apartRows(sameStory, title: OrderText.sameStory, width: width)
+                }
+                if order.said.contains(where: { $0.mission == mission.key }) {
+                    OrderUndoLine(order: order, in: mission.key)
+                        .padding(.leading, max(width, 6) + 8)
+                        .padding(.trailing, 12)
+                        .padding(.vertical, 6)
                 }
             }
             .padding(.vertical, 4)
@@ -219,7 +223,7 @@ struct OrderPlaceholderRow: View {
         guard step.ref.kind == .gitHubPullRequest, let url = URL(string: "https://github.com/\(step.ref.scope)/pull/\(step.ref.id)") else {
             return nil
         }
-        return { NSWorkspace.shared.open(url) }
+        return { ThisMac.open(url) }
     }
 }
 

@@ -9,9 +9,9 @@ import Foundation
 /// The names you give missions with Rename…, in the preferences by the mission's key, which only the app writes: only what
 /// you typed, never a name a source or Apple Intelligence gave, so no title BriefBar read gets there. A name goes once
 /// BriefBar hasn't seen its mission for `forgottenAfter`, counting only while it could have: with Pull Request Order on,
-/// and what makes that mission on too, such as Show Links for a story's. Forget All Orders… forgets them all, and turning a
-/// source off those of its missions, as Focus. They're never logged, never in agents' answers, and never in what Apple
-/// Intelligence is asked.
+/// and what makes that mission on too, such as Show Links for a story's. Forget All Orders… forgets them all, turning a
+/// source off those of its missions, and a mission of your own's goes once no change of yours puts a pull request in it,
+/// as Focus. They're never logged, never in agents' answers, and never in what Apple Intelligence is asked.
 public struct MissionNames: Equatable, Sendable {
     public static let defaultsKey = "order.names"
     /// At most this many: at the cap, Rename… keeps none rather than drop one.
@@ -124,21 +124,31 @@ public struct MissionNames: Equatable, Sendable {
         return true
     }
 
-    /// Forgets the names of the missions of things whose source you turned off, and of the orders BriefBar no longer
-    /// keeps, as Focus. Whether it forgot any.
+    /// Forgets the names of the missions of things whose source you turned off, of the orders BriefBar no longer keeps, and
+    /// of the missions of your own no change of yours puts a pull request in anymore, as Focus. Whether it forgot any.
     @discardableResult
-    public mutating func forget(_ kinds: Set<ItemRef.Kind>, keepingPlans plans: Set<UUID>? = nil) -> Bool {
+    public mutating func forget(
+        _ kinds: Set<ItemRef.Kind>, keepingPlans plans: Set<UUID>? = nil, keepingMine mine: Set<UUID>? = nil
+    ) -> Bool {
         let before = entries.count
-        entries = entries.filter { key, _ in !Self.forgets(key, kinds: kinds, keepingPlans: plans) }
+        entries = entries.filter { key, _ in !Self.forgets(key, kinds: kinds, keepingPlans: plans, keepingMine: mine) }
         return entries.count != before
     }
 
-    /// Whether a mission's name goes, as its things' source is turned off, or as BriefBar no longer keeps its order: what
-    /// Apple Intelligence named it, kept in memory only, goes the same way.
-    /// - Parameter plans: the orders BriefBar keeps; nil for all of them.
-    public static func forgets(_ key: MissionKey, kinds: Set<ItemRef.Kind>, keepingPlans plans: Set<UUID>?) -> Bool {
-        if case .plan(let id) = key { return !(plans?.contains(id) ?? true) }
-        return !key.kinds.isDisjoint(with: kinds)
+    /// Whether a mission's name goes, as its things' source is turned off, as BriefBar no longer keeps its order, or as no
+    /// change of yours puts a pull request in a mission of your own anymore: what Apple Intelligence named it, kept in
+    /// memory only, goes the same way.
+    /// - Parameters:
+    ///   - plans: the orders BriefBar keeps; nil for all of them.
+    ///   - mine: the missions of your own your changes make (`OrderChanges.ownMissions`); nil for all of them.
+    public static func forgets(
+        _ key: MissionKey, kinds: Set<ItemRef.Kind>, keepingPlans plans: Set<UUID>?, keepingMine mine: Set<UUID>? = nil
+    ) -> Bool {
+        switch key {
+        case .plan(let id): return !(plans?.contains(id) ?? true)
+        case .mine(let id): return !(mine?.contains(id) ?? true)
+        case .stack, .chain, .family, .story: return !key.kinds.isDisjoint(with: kinds)
+        }
     }
 
     // MARK: Saving
@@ -180,14 +190,16 @@ public struct MissionNames: Equatable, Sendable {
     }
 
     /// Whether BriefBar could see a mission now, if it were there, for the time that counts against its name: a session's
-    /// order while BriefBar keeps it; any other while what makes it is on: Azure DevOps or GitHub for a chain, GitHub for
-    /// its stack, Copilot for a session's pull requests, and Azure DevOps with Show Links for a story's.
+    /// order while BriefBar keeps it; a mission of your own always, as your changes make it; any other while what makes it
+    /// is on: Azure DevOps or GitHub for a chain, GitHub for its stack, Copilot for a session's pull requests, and Azure
+    /// DevOps with Show Links for a story's.
     /// - Parameters:
     ///   - kindsOn: the kinds of thing whose source is on.
     ///   - readsStories: a source reads the stories its pull requests are for.
     public static func canSee(_ key: MissionKey, plans: Set<UUID>, kindsOn: Set<ItemRef.Kind>, readsStories: Bool) -> Bool {
         switch key {
         case .plan(let id): return plans.contains(id)
+        case .mine: return true
         case .story: return readsStories && kindsOn.contains(.pullRequest)
         case .stack, .chain, .family: return key.kinds.isSubset(of: kindsOn)
         }

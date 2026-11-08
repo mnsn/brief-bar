@@ -269,8 +269,7 @@ private struct RowSummaryContent: View {
                 Button("Summarize Again") { summaries.summarize(subject) }
             }
             Button("Copy Summary") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(summary.plainText, forType: .string)
+                ThisMac.copy(summary.plainText)
             }
             if !isUpdating {
                 Button("Hide Summary") { summaries.hide(subject) }

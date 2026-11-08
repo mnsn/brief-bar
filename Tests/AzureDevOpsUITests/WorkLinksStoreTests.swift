@@ -9,7 +9,7 @@ import Testing
 /// What Azure DevOps tells Show Links: the made-up links, pull requests, work items and tasks of the demo, which never use
 /// the Azure CLI or Azure DevOps.
 @MainActor
-@Suite struct WorkLinksStoreTests {
+@Suite(.opensNothing) struct WorkLinksStoreTests {
     private let organization = DemoData.organization
     private let session = ItemRef.session("1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b01")!
 

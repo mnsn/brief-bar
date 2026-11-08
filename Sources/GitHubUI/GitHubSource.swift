@@ -19,9 +19,9 @@ package final class GitHubSource: BriefBarSource {
     package let description = SourceDescription(
         version: GitHubSource.descriptionVersion,
         summary: "Your GitHub pull requests: reviews requested from you, and which of yours need changes, are failing or are approved",
-        reads: "On github.com: the open pull requests that request your review by name, and your own open pull requests, with their checks, reviews, branches and whether they can merge. BriefBar keeps none of it: it reads them again each time. Only if you turn on Show Links: which of your Copilot sessions work on each one's branch, and the links you add to them or hide, which BriefBar keeps in its preferences as references only, never titles. New: only if you turn on Pull Request Order: also, in the same query, the branch each one merges into, whether its branch is a fork's, its repository's default branch, and its place in a GitHub stack, with where each of the stack's pull requests stands; BriefBar keeps which of those it saw merge or close, for the orders that name them, as references only.",
-        network: "GitHub only: api.github.com, with the GitHub CLI's sign-in. One read-only GraphQL query (sent as a POST) each refresh, every 2 minutes by default; with Pull Request Order on, a longer fixed one in its place, and the usual one again when GitHub can't answer it. It never changes anything on GitHub.",
-        needs: "The GitHub CLI, signed in with gh auth login. No personal access token.",
+        reads: "On github.com: the open pull requests that request your review by name, and your own open pull requests, with their checks, reviews, branches and whether they can merge. New: those of every account the GitHub CLI is signed in to on github.com, rather than of its active account alone, and which accounts those are, which BriefBar asks the GitHub CLI every half hour. BriefBar keeps none of it: it reads them again each time. Only if you turn on Show Links: which of your Copilot sessions work on each one's branch, and the links you add to them or hide, which BriefBar keeps in its preferences as references only, never titles. New: only if you turn on Pull Request Order: also, in the same query, the branch each one merges into, whether its branch is a fork's, its repository's default branch, and its place in a GitHub stack, with where each of the stack's pull requests stands; BriefBar keeps which of those it saw merge or close, for the orders that name them, as references only.",
+        network: "GitHub only: api.github.com, with the GitHub CLI's sign-in. One read-only GraphQL query (sent as a POST) each refresh, every 2 minutes by default; with Pull Request Order on, a longer fixed one in its place, and the usual one again when GitHub can't answer it. New: one such query for each account the GitHub CLI is signed in to, with that account's sign-in; and, as BriefBar lists those accounts, every half hour, the GitHub CLI checks each one with GitHub, a request each. It never changes anything on GitHub.",
+        needs: "The GitHub CLI, signed in with gh auth login, to each account whose pull requests you want, in version 2.81 or later for more than one. No personal access token.",
         requirements: [.githubCLI]
     )
     package let sections = [
@@ -40,8 +40,8 @@ package final class GitHubSource: BriefBarSource {
     let settings: AppSettings
     let store: GitHubStore
     private var linkObservers: Set<AnyCancellable> = []
-    /// Who's signed in to the GitHub CLI, as the list last read it.
-    private var account: String?
+    /// The accounts the list was last read as; nil before it's read.
+    private var accounts: [String]?
 
     package init(services: AppServices) {
         self.services = services
@@ -91,18 +91,18 @@ package final class GitHubSource: BriefBarSource {
                 }
             }
             .store(in: &linkObservers)
-        store.$login.removeDuplicates()
-            .sink { [weak self] login in MainActor.assumeIsolated { self?.loginChanged(login) } }
+        store.$logins.removeDuplicates()
+            .sink { [weak self] logins in MainActor.assumeIsolated { self?.loginsChanged(logins) } }
             .store(in: &linkObservers)
     }
 
-    /// Someone else signed in to the GitHub CLI, or no one: what was told of its pull requests as the last one goes, with
-    /// the summaries made of it and those being written, as when the source stops; they're told again, as the new one,
-    /// when they're asked for. The first sign-in changes nothing.
-    func loginChanged(_ login: String?) {
-        let known = account
-        account = login
-        guard let known, known != login else { return }
+    /// Someone else signed in to the GitHub CLI, another account or no one: what was told of its pull requests as the last
+    /// ones goes, with the summaries made of it and those being written, as when the source stops; they're told again, as
+    /// the new ones, when they're asked for. The first sign-in changes nothing.
+    func loginsChanged(_ logins: [String]) {
+        let known = accounts
+        accounts = logins
+        guard let known, !known.isEmpty, known != logins else { return }
         services.stories.withdraw(.github)
         tellStories()
     }
@@ -114,7 +114,7 @@ package final class GitHubSource: BriefBarSource {
         services.links.withdraw(.github)
         services.stories.withdraw(.github)
         services.pullRequestOrder.withdraw(.github)
-        account = nil
+        accounts = nil
     }
 
     /// The list and the token are only ever in memory, and the refresh choice is a setting: only the links you added or
@@ -314,7 +314,7 @@ package final class GitHubSource: BriefBarSource {
     }
 }
 
-/// How the GitHub CLI's sign-in stands, on GitHub's page in Settings.
+/// How the GitHub CLI's sign-in stands, on GitHub's page in Settings, with the accounts BriefBar reads as.
 struct SignInStatusView: View {
     @EnvironmentObject private var store: GitHubStore
 
@@ -332,6 +332,9 @@ struct SignInStatusView: View {
             Spacer()
             if needsSignIn {
                 Button(store.problem == .cliNotFound ? "Install the GitHub CLI…" : "Sign In…") { store.signIn() }
+            } else if !store.logins.isEmpty {
+                Button("Add Account…") { store.addAccount() }
+                    .help("Sign the GitHub CLI in to another of your accounts, in Terminal, to see its pull requests too")
             }
         }
         .padding(12)
@@ -344,13 +347,13 @@ struct SignInStatusView: View {
     private var title: String {
         if store.problem == .cliNotFound { return "The GitHub CLI isn't installed" }
         if needsSignIn { return "Not signed in to the GitHub CLI" }
-        if let login = store.login { return "Signed in with the GitHub CLI as \(login)" }
+        if !store.logins.isEmpty { return "Signed in with the GitHub CLI as \(GitHubAccount.names(store.logins))" }
         return store.isStarted ? "Checking the GitHub CLI's sign-in…" : "Turn GitHub on to check the GitHub CLI's sign-in"
     }
 
     private var detail: String {
         needsSignIn
             ? "BriefBar reads your GitHub pull requests with the GitHub CLI's sign-in."
-            : "BriefBar uses whatever account the GitHub CLI is signed in to on github.com."
+            : "BriefBar reads every account the GitHub CLI is signed in to on github.com. Add Account signs in to another, in Terminal."
     }
 }

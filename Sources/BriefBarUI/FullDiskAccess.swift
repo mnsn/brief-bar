@@ -147,12 +147,12 @@ package final class FullDiskAccess: NSObject, ObservableObject, NSWindowDelegate
             "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
         ]
         for pane in panes {
-            if let url = URL(string: pane), NSWorkspace.shared.open(url) { return }
+            if let url = URL(string: pane), ThisMac.open(url) { return }
         }
     }
 
     package func showInFinder() {
-        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+        ThisMac.showInFinder([Bundle.main.bundleURL])
     }
 
     /// What Settings says when you turn off the last thing that needed the access.
@@ -169,7 +169,7 @@ package final class FullDiskAccess: NSObject, ObservableObject, NSWindowDelegate
         alert.addButton(withTitle: "Open Privacy Settings")
         alert.addButton(withTitle: "Not Now")
         NSApp.activate()
-        if alert.runModal() == .alertFirstButtonReturn {
+        if ThisMac.ask(alert) == .alertFirstButtonReturn {
             Self.openPrivacySettingsPane()
         }
     }

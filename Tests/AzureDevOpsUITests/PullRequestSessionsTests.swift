@@ -14,7 +14,7 @@ import Testing
 /// its checkout; only what Show Links knows without Send Work to Copilot, and nothing without either; and the demo's, made
 /// up. On the demo's made-up !4088, with made-up sessions in a folder of their own.
 @MainActor
-@Suite struct PullRequestSessionsTests {
+@Suite(.opensNothing) struct PullRequestSessionsTests {
     private let now = Date()
     private let onBranch = "44444444-4444-4444-8444-444444444444"
     private let other = "77777777-7777-4777-8777-777777777777"
