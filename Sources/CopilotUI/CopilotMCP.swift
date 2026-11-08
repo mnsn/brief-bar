@@ -119,7 +119,7 @@ struct CopilotAgent: Sendable {
     var teller: MCPRelated.Teller {
         MCPRelated.Teller(
             title: "Copilot sessions", tell: { query in try await related(query) }, sessions: { try await listing() },
-            stageSessions: { try await stageSessions() }
+            stageSessions: { await stageSessions() }
         )
     }
 
@@ -127,19 +127,27 @@ struct CopilotAgent: Sendable {
     /// (`CopilotSource.publishOrder`): each it lists, with what it does now, or how it ended, since when and its name; the
     /// pull requests each opened, as the app records them, and, with Updates from Copilot Sessions on, those it told
     /// BriefBar it opened (`OrderSessions`); and what each told BriefBar it works on.
-    func stageSessions(now: Date = Date()) async throws -> MCPRelated.StageSessions {
+    func stageSessions(now: Date = Date()) async -> MCPRelated.StageSessions {
         let paths = paths
         let state = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(returning: SessionEngine.loadOnce(paths: paths, links: true))
             }
         }
-        let sessions = CopilotCommandLine.resolve(state, now: now, defaults: isDemo ? MemoryDefaults() : nil)
-        if sessions.isEmpty, let problem = CopilotApp.problem(of: state) { throw MCPToolError(problem) }
         var told = SessionReports()
         if !isDemo, let defaults = AppIdentity.installedAppDefaults, SessionUpdatesSetting.isOn(in: defaults) {
             told = SessionReports.load(from: defaults, now: now)
         }
+        return Self.stageSessions(state, told: told, now: now, defaults: isDemo ? MemoryDefaults() : nil)
+    }
+
+    /// The same, from what was read, and what sessions told BriefBar. Where nothing could be read, it lists none, and
+    /// doesn't throw: the app's list then still has the tasks BriefBar sent, whose stages count
+    /// (`MCPRelated.StageSessions.listedByApp`).
+    static func stageSessions(
+        _ state: EngineSnapshot, told: SessionReports, now: Date, defaults: UserDefaults?
+    ) -> MCPRelated.StageSessions {
+        let sessions = CopilotCommandLine.resolve(state, now: now, defaults: defaults)
         let opened = told.opened(SessionReports.Listing(sessions: Set(told.reports.keys)), now: now)
         var listed: [ItemRef: MCPRelated.StageSessions.Session] = [:]
         for session in sessions {
@@ -148,7 +156,7 @@ struct CopilotAgent: Sendable {
         }
         return MCPRelated.StageSessions(
             sessions: OrderSessions.sessions(state.records.map(\.meta), told: opened),
-            working: told.workingOn(CopilotSource.listing(sessions), now: now), listed: listed
+            working: told.workingOn(CopilotSource.listing(sessions), now: now), listed: listed, listedByApp: state.listedByApp
         )
     }
 

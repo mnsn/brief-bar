@@ -120,11 +120,19 @@ package enum MCPRelated {
         package var working: [ItemRef: [ItemRef]]
         /// The sessions it lists now: only what these set counts (`SessionStages`).
         package var listed: [ItemRef: Session]
+        /// Whether the Copilot app's database lists them, rather than every recent session's folder, as when it can't be
+        /// read: then a task BriefBar sent goes by what BriefBar knows of it, as the app's list has it, not its folder
+        /// (`SessionStore`).
+        package var listedByApp: Bool
 
-        package init(sessions: [OrderSession] = [], working: [ItemRef: [ItemRef]] = [:], listed: [ItemRef: Session] = [:]) {
+        package init(
+            sessions: [OrderSession] = [], working: [ItemRef: [ItemRef]] = [:], listed: [ItemRef: Session] = [:],
+            listedByApp: Bool = true
+        ) {
             self.sessions = sessions
             self.working = working
             self.listed = listed
+            self.listedByApp = listedByApp
         }
 
         /// The listed sessions on each pull request, those that opened it or work on it, and those that told BriefBar they
@@ -159,7 +167,7 @@ package enum MCPRelated {
             StageSessions(
                 sessions: sessions + other.sessions.filter { session in !sessions.contains { $0.ref == session.ref } },
                 working: working.merging(other.working) { first, _ in first },
-                listed: listed.merging(other.listed) { first, _ in first }
+                listed: listed.merging(other.listed) { first, _ in first }, listedByApp: listedByApp && other.listedByApp
             )
         }
     }

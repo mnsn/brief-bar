@@ -185,6 +185,39 @@ import Testing
         #expect(stages(.finished).readings[pr]?.mark == nil)
     }
 
+    /// Without the Copilot app's database, its sessions' folders list a task BriefBar sent too: it goes by what BriefBar
+    /// knows of it, unnamed, as the app's list has it; where nothing could be read, it still counts. One the database lists
+    /// is the app's.
+    @Test func withoutTheAppsDatabaseASentTaskGoesByWhatBriefBarKnowsOfIt() throws {
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        let pr = ItemRef.pullRequest(organization: "contoso", number: 4093)
+        let task = try #require(ItemRef.session("c5a8e2d4-6f1b-4c97-a3e0-8b2d7f9c1e13"))
+        var sessionStages = SessionStages()
+        var taskStage = SessionStage(session: task)
+        taskStage.set(StageMark(stage: .inProgress, at: now - 60), of: pr)
+        sessionStages.replace(taskStage)
+        let kept = OrderKept(
+            orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: StageMarks(),
+            sessionStages: sessionStages
+        )
+        let facts = [pr: StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "")]
+        let finished = MCPRelated.StageSessions.Session(activity: .finished, since: now - 30, name: "Fix the checkout total")
+        func stages(listedByApp: Bool, listed: Bool = true) -> AgentStages {
+            AzureDevOpsAgent.stages(
+                facts: facts, pullRequests: [],
+                copilot: MCPRelated.StageSessions(listed: listed ? [task: finished] : [:], listedByApp: listedByApp),
+                sentTasks: [StageSession(ref: task, activity: .working, since: now - 120, name: "Copilot")], kept: kept,
+                account: "Robin@contoso.com", now: now
+            )
+        }
+        let folders = stages(listedByApp: false)
+        let reading = try #require(folders.readings[pr])
+        #expect(reading.mark?.by == task)
+        #expect(AgentText.stage(reading, stages: folders) == "Its stage: In progress: A Copilot session is on it (set 1m ago).")
+        #expect(stages(listedByApp: false, listed: false).readings[pr]?.mark?.by == task)
+        #expect(stages(listedByApp: true).readings[pr]?.mark == nil)
+    }
+
     /// Agents' words for a stage say what fails too, as the Board does, also where they put Find a reviewer more plainly; and
     /// what a session is called stays on its line, its line breaks written out, as other tools quote what others named.
     @Test func stageWordsSayWhatFailsAndQuoteWhatSessionsAreCalled() throws {

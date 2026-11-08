@@ -49,8 +49,8 @@ extension AzureDevOpsAgent {
         let watched = Set(await reader.watchedPullRequests.map(\.key))
         let facts = await PullRequestOrderFacts.stages(read.records, items: read.items, tasks: tasks, watched: watched, readAt: read.readAt)
         let pullRequests = await PullRequestOrderFacts.pullRequests(read.records, items: read.items, showToReview: read.showToReview)
+        // nil only while Copilot's off: one it couldn't read still lists the tasks BriefBar sent, as the app does.
         let copilot = await MCPRelated.stageSessions()
-        // As the app lists them with the Copilot app's sessions, while Copilot's on.
         let sentTasks = copilot == nil ? [] : tasks.compactMap(PullRequestOrderFacts.session)
         return Self.stages(
             facts: facts, pullRequests: pullRequests, copilot: copilot ?? MCPRelated.StageSessions(), sentTasks: sentTasks,
@@ -60,12 +60,17 @@ extension AzureDevOpsAgent {
 
     /// The same, from what was read: as `PullRequestOrder` rebuilds its missions and works its stages out, but noting and
     /// ending nothing, only in memory.
-    /// - Parameter sentTasks: the tasks BriefBar sent to Copilot, which the app lists with the Copilot app's sessions until
-    ///   you open one there, unnamed: what they set counts too, while they're listed.
+    /// - Parameter sentTasks: the tasks BriefBar sent to Copilot, which the app lists with the Copilot app's sessions,
+    ///   unnamed, until you open one there, or, while it can't read the app's database, in place of their folders: what
+    ///   they set counts too, while they're listed (`SessionStore`).
     static func stages(
         facts: [ItemRef: StageFacts], pullRequests: [OrderPullRequest], copilot: MCPRelated.StageSessions,
         sentTasks: [StageSession] = [], kept: OrderKept, account: String?, now: Date
     ) -> AgentStages {
+        var copilot = copilot
+        if !copilot.listedByApp {
+            for task in sentTasks { copilot.listed[task.ref] = nil }
+        }
         let orderFacts = OrderFacts(pullRequests: pullRequests, sessions: copilot.sessions, sourcesOn: [.pullRequest])
         var changes = kept.changes
         changes.noteOverrides(in: kept.orders, now: now)

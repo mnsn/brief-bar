@@ -3838,10 +3838,11 @@ While Pull Request Order is on, as the app has it, `needs_me` ends Azure DevOps'
 stage but Merged, what's next first, each pull request with its number, title and repository and why it's there, in
 BriefBar's words, with who set it; and `pull_request` says its stage, and, where a session's replaced yours, that you
 can put yours back. `--mcp` works them out itself (`AzureDevOpsAgent.stages`, `AgentStages`), as the app does, from what
-the lists read, the sessions the Copilot app lists, with the tasks BriefBar sent that you haven't opened there, as the
-app lists them, unnamed, what you set with the account the lists read with, what sessions set, and the missions, but in
-memory, noting and ending nothing; and with no mission's name, which only the app has: two orders that go round say
-**Another order puts !4102 after it: check the order**.
+the lists read, the sessions the Copilot app lists, with the tasks BriefBar sent, as the app lists them, unnamed: those
+you haven't opened there, and, while its database can't be read, every one, by what BriefBar knows of it rather than its
+folder (`MCPRelated.StageSessions.listedByApp`); what you set with the account the lists read with, what sessions set,
+and the missions, but in memory, noting and ending nothing; and with no mission's name, which only the app has: two
+orders that go round say **Another order puts !4102 after it: check the order**.
 
 Pull Request Order's tools, listed only while it was on as `--mcp` started and each checking again as it runs, are
 `order_pull_requests`, `pull_request_order` and `forget_pull_request_order`, for the orders sessions tell, and
