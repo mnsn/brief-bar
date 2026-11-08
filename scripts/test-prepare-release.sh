@@ -245,6 +245,9 @@ merge late 2026-01-12T11:00:00
 merge edits 2026-01-12T12:00:00
 in_repo checkout --quiet v1.1.0
 prepare --check || fail "--check refused the release's tag: $(cat "$WORK/err")"
+write changes/next.md "- **Next.** Written on a branch that starts at the tag, not committed yet."
+prepare --check || fail "--check refused, at the tag, notes not committed yet: $(cat "$WORK/err")"
+rm "$REPO/changes/next.md"
 in_repo checkout --quiet main
 prepare --check || fail "--check refused, on main after a release, the notes of the next: $(cat "$WORK/err")"
 in_repo tag --force v1.1.0 main > /dev/null
@@ -323,6 +326,34 @@ expect CHANGELOG.md "# Changelog
 - **First.** By name.
 - **Third.** Merged last.
 - **Second.** By name.
+
+${CHANGELOG_1_0_0#*
+
+}"
+
+# Notes only on the release's branch, which merged other branches, go in the order they merged into it, whenever they
+# were written.
+make_repo
+notes on-main 2026-01-10T10:00:00 "- **On main.** Merged first."
+merge on-main 2026-01-11T10:00:00
+in_repo checkout --quiet -b batch main
+in_repo checkout --quiet -b written-first batch
+write changes/written-first.md "- **Written first.** Into the batch."
+commit "Add written-first" 2026-01-12T10:00:00
+in_repo checkout --quiet -b written-second batch
+write changes/written-second.md "- **Written second.** Into the batch."
+commit "Add written-second" 2026-01-12T11:00:00
+in_repo checkout --quiet batch
+merge written-second 2026-01-13T10:00:00
+merge written-first 2026-01-13T11:00:00
+prepare --main main 1.1.0 2026-02-01 || fail "it refused the batch: $(cat "$WORK/err")"
+expect CHANGELOG.md "# Changelog
+
+## 1.1.0 - 2026-02-01
+
+- **On main.** Merged first.
+- **Written second.** Into the batch.
+- **Written first.** Into the batch.
 
 ${CHANGELOG_1_0_0#*
 

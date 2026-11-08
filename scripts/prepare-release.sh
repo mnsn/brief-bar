@@ -395,11 +395,15 @@ if [[ "$CHECK" == 1 ]]; then
     FILES="$(notes_files)"
     # A release's tag on a commit with notes that the release didn't gather, as when a pull request merged after the
     # release was prepared and the tag went on the commit that merged it: it would ship that change without its notes,
-    # and without raising the versions of the descriptions it changed. The release workflow's make test runs this.
-    if [[ -n "$FILES" ]] && [[ "$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)" == \
+    # and without raising the versions of the descriptions it changed. The release workflow's make test runs this on
+    # the tag. It reads the notes committed there, not those you're writing on a branch that starts at the tag.
+    if [[ "$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)" == \
         "$(git rev-parse --verify --quiet "refs/tags/$TAG^{commit}" 2>/dev/null || echo none)" ]]; then
-        fail "$TAG is tagged on a commit with notes that its section of $CHANGELOG doesn't have: ${FILES//$'\n'/, }." \
-            "Tag the commit that merged the release instead, or prepare the release again."
+        LEFT="$(git ls-tree -r --name-only "$TAG" -- "$NOTES/" | grep -vxF "$NOTES/README.md" || true)"
+        if [[ -n "$LEFT" ]]; then
+            fail "$TAG is tagged on a commit with notes that its section of $CHANGELOG doesn't have: ${LEFT//$'\n'/, }." \
+                "Tag the commit that merged the release instead, or prepare the release again."
+        fi
     fi
     if [[ -z "$FILES" ]]; then
         echo "No release notes in $NOTES/. $VERSIONS"
@@ -458,34 +462,37 @@ done <<< "$MAIN_NOTES"
 FILES="$(notes_files)"
 [[ -n "$FILES" ]] || fail "there are no release notes in $NOTES/."
 
-# In the order their pull requests merged: those on main by the commit of main's that added them, then any that are
-# only here, such as the last pull request's, by the commit that added them; by name, where that's the same. A note
-# added more than once, as after a release deleted another of its name, counts from the latest time.
+# In the order their pull requests merged: those on main by the commit of main's history that added them, then any
+# that are only here, such as the last pull request's, by the commit of HEAD's history that added them, its own commits
+# and its merges of other branches, each counting only its first parent; by name, where that's the same. A note added
+# more than once, as after a release deleted another of its name, counts from the latest time.
 git rev-list --first-parent --reverse "$MAIN_REF" > "$WORK/main"
 git log --first-parent --no-renames --diff-filter=A --format='commit %H' --name-only "$MAIN_REF" -- "$NOTES/" \
     > "$WORK/main-added"
-git log --no-renames --diff-filter=A --format='time %ct' --name-only HEAD -- "$NOTES/" > "$WORK/added"
+git rev-list --first-parent --reverse HEAD > "$WORK/here"
+git log --first-parent --no-renames --diff-filter=A --format='commit %H' --name-only HEAD -- "$NOTES/" > "$WORK/added"
 printf '%s\n' "$MAIN_NOTES" > "$WORK/main-notes"
 printf '%s\n' "$FILES" | awk -v main_notes="$WORK/main-notes" -v main="$WORK/main" -v main_added="$WORK/main-added" \
-    -v added="$WORK/added" '
+    -v here="$WORK/here" -v added="$WORK/added" '
+    # Each commit of a first-parent history, numbered from its oldest, and the notes those commits added.
+    function read_history(commits, adds, position, at_of,    line, count, at) {
+        while ((getline line < commits) > 0) position[line] = ++count
+        while ((getline line < adds) > 0) {
+            if (line ~ /^commit /) at = position[substr(line, 8)]
+            else if (line != "" && !(line in at_of)) at_of[line] = at
+        }
+    }
     BEGIN {
         while ((getline line < main_notes) > 0) on_main[line] = 1
-        while ((getline line < main) > 0) position[line] = ++commits
-        while ((getline line < main_added) > 0) {
-            if (line ~ /^commit /) at = position[substr(line, 8)]
-            else if (line != "" && !(line in main_at)) main_at[line] = at
-        }
-        while ((getline line < added) > 0) {
-            if (line ~ /^time /) at = substr(line, 6) + 0
-            else if (line != "" && !(line in here_at)) here_at[line] = at
-        }
+        read_history(main, main_added, main_position, main_at)
+        read_history(here, added, here_position, here_at)
     }
     {
         if ($0 in on_main) {
             if (!main_at[$0]) { print "no commit of main'"'"'s added " $0 > "/dev/stderr"; exit 1 }
             printf "0 %012d %s\n", main_at[$0], $0
         } else {
-            if (!here_at[$0]) { print "no commit added " $0 > "/dev/stderr"; exit 1 }
+            if (!here_at[$0]) { print "no commit of HEAD'"'"'s added " $0 > "/dev/stderr"; exit 1 }
             printf "1 %012d %s\n", here_at[$0], $0
         }
     }' > "$WORK/order" || fail "couldn't tell when those notes were added to $MAIN_REF, or here."
