@@ -11,7 +11,7 @@ import Testing
 /// pull request's page over another's details or over a work item's. With made-up pull requests, a stand-in reader, and
 /// the comments drawn in a window off screen.
 @MainActor
-@Suite struct PullRequestCommentsCodeTests {
+@Suite(.opensNothing) struct PullRequestCommentsCodeTests {
     /// Code that says whose it is: "// the code of !4102".
     struct Reader: ThreadCodeReader {
         func excerpt(

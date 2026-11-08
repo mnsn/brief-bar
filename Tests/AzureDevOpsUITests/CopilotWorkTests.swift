@@ -11,7 +11,7 @@ import Testing
 /// BriefBar's, which keeps what it took on with its run, or a prompt sent to one of the Copilot app's sessions, which
 /// BriefBar keeps by references only and follows from the session's log.
 @MainActor
-@Suite struct CopilotWorkTests {
+@Suite(.opensNothing) struct CopilotWorkTests {
     /// Now, as the store follows prompts by the clock.
     private let now = Date()
     private let key = PRKey("contoso", 4102)

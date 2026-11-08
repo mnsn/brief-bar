@@ -15,7 +15,7 @@ private struct DatabaseError: Error {
 /// Where a task goes instead of a new session: BriefBar's earlier tasks, the work item's task that opened the pull request,
 /// and the Copilot app's sessions, those that go with it first, by why; and what it goes to unless you choose.
 @MainActor
-@Suite struct SessionChoicesTests {
+@Suite(.opensNothing) struct SessionChoicesTests {
     private let now = Date(timeIntervalSince1970: 1_792_317_600)
     private let fixing = "11111111-1111-4111-8111-111111111111"
     private let opener = "22222222-2222-4222-8222-222222222222"

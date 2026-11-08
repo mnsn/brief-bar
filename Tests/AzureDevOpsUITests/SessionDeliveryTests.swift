@@ -109,7 +109,7 @@ private final class TakenAt: Sendable {
 /// (`CopilotTasksStore.deliver`): only while Send Prompts to Copilot Sessions is on; and, when the extension can't,
 /// copying the prompt for you to paste, as Open in Copilot did.
 @MainActor
-@Suite struct SessionDeliveryTests {
+@Suite(.opensNothing) struct SessionDeliveryTests {
     private let session = "a4444444-4444-4444-8444-44444444444f"
     private let fork = "b5555555-5555-4555-8555-55555555555e"
 
@@ -247,6 +247,56 @@ private final class TakenAt: Sendable {
         // Nothing starts here.
         #expect(store.pending.isEmpty)
         #expect(store.settings.copilotRuns.isEmpty)
+    }
+
+    /// Tests run BriefBar's code on your Mac, where a delivery that stands in for nothing would open its session in the
+    /// Copilot app, which, not knowing the session, says it can't find it. In tests, `ThisMac` refuses that, as every other
+    /// open, copy or alert, and notes it for the test, and this suite's `.opensNothing` fails any test whose code meets one.
+    /// So here, where nothing is stood in for, each is refused: showing the session once the prompt is sent; copying the
+    /// prompt and showing the session to paste it in, which BriefBar then says it couldn't; and showing the session to stop
+    /// its turn there.
+    @Test(.timeLimit(.minutes(1)))
+    func opensNothingWhenATestStandsInForNothing() async throws {
+        #expect(ThisMac.runsTests)
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        // One no other test uses, so that whatever opened it would be this test's.
+        let session = UUID().uuidString.lowercased()
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        ext.start()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        let link = "open ghapp://sessions/\(session)"
+        let notes = ThisMac.Notes()
+
+        try await ThisMac.$noting.withValue(notes) {
+            #expect(await store.deliver("Fix the comments", to: choice(session), handOff: handOff) == .sent)
+            #expect(notes.refused == [link])
+            CopilotSessionPrompts.set(false, in: store.settings.defaults)
+            let copied = await store.deliver("Fix the comments", to: choice(session), handOff: handOff)
+            guard case .notSent(let why) = copied else {
+                Issue.record("BriefBar said it showed the session: \(copied)")
+                return
+            }
+            #expect(why == CopilotTasksStore.cantOpenInApp)
+            #expect(notes.refused == [link, "copy Fix the comments", link])
+            #expect(await store.stopTurn(in: session)?.hasSuffix("Stop it in the session, in the Copilot app.") == true)
+            try #require(notes.refused == [link, "copy Fix the comments", link, link])
+        }
+        #expect(ext.received == ["Fix the comments"])
+    }
+
+    /// `.opensNothing` fails a test whose code did any of that, unless the test notes it itself, as the one above does.
+    @Test func failsATestWhoseCodeOpensSomething() async throws {
+        let test = try #require(Test.current)
+        let link = try #require(URL(string: "ghapp://sessions/\(UUID().uuidString.lowercased())"))
+        await withKnownIssue {
+            try await OpensNothing().provideScope(for: test, testCase: Test.Case.current) { _ = ThisMac.open(link) }
+        }
+        try await OpensNothing().provideScope(for: test, testCase: Test.Case.current) {
+            try await ThisMac.$noting.withValue(ThisMac.Notes()) { _ = ThisMac.open(link) }
+        }
     }
 
     /// A clone of the pull request's repository, as Azure DevOps names it, that fetches from one on disk: release/x and the
@@ -440,6 +490,8 @@ private final class TakenAt: Sendable {
         let (store, home) = try store()
         defer { try? FileManager.default.removeItem(at: home) }
         store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        var shown: [String] = []
+        store.showForTests = { id in shown.append(id); return true }
         let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
         try ext.listen()
         ext.start()
@@ -471,6 +523,7 @@ private final class TakenAt: Sendable {
             == .notSent("BriefBar couldn't read which branch the pull request merges into, so nothing went: \(ADOError.offline)"))
         #expect(reads == ["main", "unread"])
         #expect(ext.received.isEmpty && requests(home).isEmpty)
+        #expect(shown.isEmpty)
 
         (answers, reads) = (["main", "main"], [])
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
@@ -480,6 +533,7 @@ private final class TakenAt: Sendable {
         // Nothing else reads it.
         #expect(await store.deliver("Fix the comments", to: choice(session)) == .sent)
         #expect(reads == ["main", "main"])
+        #expect(shown == [session, session])
     }
 
     /// A Push & Reply doesn't go while Copilot runs a turn in the session, or another of the app's sessions runs one in the
@@ -492,6 +546,8 @@ private final class TakenAt: Sendable {
         defer { try? FileManager.default.removeItem(at: home) }
         store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
         store.readTarget = { _ in "main" }
+        var shown: [String] = []
+        store.showForTests = { id in shown.append(id); return true }
         // Listening, but it takes nothing until it starts.
         let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
         try ext.listen()
@@ -536,6 +592,7 @@ private final class TakenAt: Sendable {
         #expect(requests(home).isEmpty)
         #expect(store.deliveringFolders.isEmpty && store.delivering.isEmpty)
         #expect(ext.received.isEmpty)
+        #expect(shown.isEmpty)
 
         // Anything else, such as a fix, goes while another session runs a turn there, as before.
         ext.start()
@@ -544,6 +601,7 @@ private final class TakenAt: Sendable {
         try turns(running: [], home: home)
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
         #expect(ext.received == ["Fix the comments", "Push and reply"])
+        #expect(shown == [session, session])
     }
 
     /// Nor does a Push & Reply go when BriefBar can't tell whether a turn runs there: when the app's database can't be read,

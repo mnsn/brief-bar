@@ -12,7 +12,7 @@ import Testing
 /// with it shows on the thread then; and what of yours takes the keyboard's focus back once each closes. With the demo's
 /// made-up pull requests, read as a list that reads Azure DevOps would, and the comments drawn in a window off screen.
 @MainActor
-@Suite struct YourCommentsViewTests {
+@Suite(.opensNothing) struct YourCommentsViewTests {
     /// Which composer the details have open, as the test opens them.
     final class Composing: ObservableObject {
         @Published var open: CopilotComposing?

@@ -8,7 +8,7 @@ import Testing
 
 /// Where a composer in place on a pull request's comments, builds or conflicts sends what you ask, and how it says so.
 @MainActor
-@Suite struct CopilotSendingTests {
+@Suite(.opensNothing) struct CopilotSendingTests {
     private let task = "11111111-1111-4111-8111-111111111111"
     private let app = "2f8a4c6e-1b3d-4e5f-8a7b-9c0d1e2f3a14"
     private let other = "44444444-4444-4444-8444-444444444444"
