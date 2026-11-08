@@ -465,7 +465,7 @@ package final class PullRequestOrder: ObservableObject {
         let requests = onScreen.compactMap { key -> MissionNamer.Request? in
             guard names.name(for: key) == nil, let mission = missions.first(where: { $0.key == key }),
                   let inputs = MissionNaming.inputs(
-                      for: mission, stories: { facts.pullRequests[$0]?.stories ?? [] },
+                      for: mission, named: modelName(of: mission), stories: { facts.pullRequests[$0]?.stories ?? [] },
                       workItems: { facts.pullRequests[$0]?.workItems ?? [] }, sessionsWorking: sessionsWorking(on:),
                       name: name(of:)
                   )

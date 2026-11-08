@@ -34,9 +34,9 @@ package final class MissionNamer {
     package var named: @MainActor (MissionKey, String) -> Void = { _, _ in }
 
     private var requests: [Request] = []
-    /// What each mission was asked with last: it isn't asked again until that changes.
+    /// What each mission was asked with last, without its current name: it isn't asked again until that changes.
     private var asked: [MissionKey: MissionNameInputs] = [:]
-    /// Since when each mission on screen has been named from what it is now.
+    /// Since when each mission on screen has been named from what it is now, without its current name.
     private var since: [MissionKey: (inputs: MissionNameInputs, at: Date)] = [:]
     private var asking: MissionKey?
     /// The answer under way no longer counts: Pull Request Order went off, or its mission's name was forgotten, meanwhile.
@@ -68,10 +68,10 @@ package final class MissionNamer {
         let date = now()
         var since: [MissionKey: (inputs: MissionNameInputs, at: Date)] = [:]
         for request in requests {
-            if let was = self.since[request.key], was.inputs == request.inputs {
+            if let was = self.since[request.key], was.inputs == request.inputs.basis {
                 since[request.key] = was
             } else {
-                since[request.key] = (request.inputs, date)
+                since[request.key] = (request.inputs.basis, date)
             }
         }
         self.since = since
@@ -109,7 +109,7 @@ package final class MissionNamer {
         guard asking == nil else { return }
         let date = now()
         if let unavailable = unavailability() {
-            if unavailable != .notEligible, requests.contains(where: { $0.isSettled && asked[$0.key] != $0.inputs }) {
+            if unavailable != .notEligible, requests.contains(where: { $0.isSettled && asked[$0.key] != $0.inputs.basis }) {
                 wake(at: date.addingTimeInterval(Self.retryAfter))
             } else {
                 cancelWake()
@@ -121,7 +121,7 @@ package final class MissionNamer {
             return
         }
         var soonest: Date?
-        for request in requests where request.isSettled && asked[request.key] != request.inputs {
+        for request in requests where request.isSettled && asked[request.key] != request.inputs.basis {
             guard let since = since[request.key] else { continue }
             let due = since.at.addingTimeInterval(Self.settleFor)
             if due <= date {
@@ -142,7 +142,7 @@ package final class MissionNamer {
             asking = nil
             // Stopped or forgotten meanwhile, or named from something else now: the answer doesn't count, and the mission is
             // asked again once it settles.
-            let isStale = dropsAnswer || requests.contains { $0.key == request.key && $0.inputs != request.inputs }
+            let isStale = dropsAnswer || requests.contains { $0.key == request.key && $0.inputs.basis != request.inputs.basis }
             dropsAnswer = false
             guard !isStale else {
                 next()
@@ -150,7 +150,7 @@ package final class MissionNamer {
             }
             switch answer {
             case .success(let text):
-                asked[request.key] = request.inputs
+                asked[request.key] = request.inputs.basis
                 if let name = MissionNaming.clean(text) {
                     named(request.key, name)
                 } else {
@@ -160,7 +160,7 @@ package final class MissionNamer {
                 waitUntil = now().addingTimeInterval(Self.retryAfter)
                 Log.app.info("A mission's name waits: Apple Intelligence is busy, getting ready or off")
             case .failure(let failure):
-                asked[request.key] = request.inputs
+                asked[request.key] = request.inputs.basis
                 Log.app.info("A mission keeps its name: \(String(describing: failure), privacy: .public)")
             }
             next()

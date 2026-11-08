@@ -209,8 +209,8 @@ private struct NameLossy<Value: Decodable>: Decodable {
 /// (decision 11), and never a name you gave a mission. The same inputs ask the same question, so, with the likeliest words,
 /// they get the same name, today and after a restart.
 public struct MissionNameInputs: Hashable, Sendable {
-    /// The name BriefBar gives it without Apple Intelligence, to keep unless it no longer fits: never yours, nor a title
-    /// from GitHub.
+    /// The name it shows now, to keep unless it no longer fits: Apple Intelligence's, else the one BriefBar gives it; never
+    /// yours, nor a title from GitHub.
     public var current: String?
     /// Its story's title.
     public var story: String?
@@ -227,6 +227,13 @@ public struct MissionNameInputs: Hashable, Sendable {
         self.workItems = workItems
         self.pullRequests = pullRequests
         self.sessions = sessions
+    }
+
+    /// What it's named from, without its current name, which changes as it's named: it's asked again only when this does.
+    public var basis: MissionNameInputs {
+        var basis = self
+        basis.current = nil
+        return basis
     }
 }
 
@@ -249,13 +256,15 @@ public enum MissionNaming {
 
     /// What it's asked to name a mission from, or nil for one it doesn't name: one with no Azure DevOps pull request.
     /// - Parameters:
+    ///   - named: the name Apple Intelligence gave it, which it shows now, when it has one: the name to keep while it fits.
+    ///     Else BriefBar's own, when it's one of the titles it's asked from.
     ///   - stories: the stories each of its pull requests is for, as the sources read them: its tasks there come first.
     ///   - workItems: each of its pull requests' work items, all of them, as the sources read them.
     ///   - sessionsWorking: the sessions that told BriefBar they're working on each of its pull requests now, which come
     ///     after those that told its order or opened them.
     ///   - name: what a source calls a session, a work item or a pull request, when it says.
     public static func inputs(
-        for mission: OrderMission, stories: (ItemRef) -> [OrderStory], workItems: (ItemRef) -> [ItemRef],
+        for mission: OrderMission, named: String? = nil, stories: (ItemRef) -> [OrderStory], workItems: (ItemRef) -> [ItemRef],
         sessionsWorking: (ItemRef) -> [ItemRef], name: (ItemRef) -> String?
     ) -> MissionNameInputs? {
         let pullRequests = pullRequests(of: mission)
@@ -272,10 +281,10 @@ public enum MissionNaming {
             }
         }
         let withoutGitHub = { (ref: ItemRef) in ref.kind == .gitHubPullRequest ? nil : name(ref) }
-        let current = OrderText.title(of: mission, name: withoutGitHub)
+        let own = OrderText.title(of: mission, name: withoutGitHub)
         let titles = Set([mission.story?.ref].compactMap { $0 } + pullRequests + mission.sessions).compactMap(name)
         return MissionNameInputs(
-            current: titles.contains(current) ? current : nil, story: mission.story.flatMap { name($0.ref) },
+            current: named ?? (titles.contains(own) ? own : nil), story: mission.story.flatMap { name($0.ref) },
             workItems: items.compactMap(name), pullRequests: pullRequests.compactMap(name),
             sessions: sessions.compactMap(name)
         )

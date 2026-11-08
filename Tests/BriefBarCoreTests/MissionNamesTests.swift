@@ -259,6 +259,22 @@ import Testing
         #expect(inputs.current == "Checkout redesign")
     }
 
+    /// Asked again, it's given the name Apple Intelligence gave it, which it shows now, to keep while that fits, rather
+    /// than BriefBar's own; that name is no part of what it's asked again on.
+    @Test func askedAgainItsGivenTheNameItShowsNow() throws {
+        let (mission, stories) = Self.storyMission()
+        let named = try #require(MissionNaming.inputs(
+            for: mission, named: "Faster checkout", stories: { stories[$0] ?? [] }, workItems: { _ in [] },
+            sessionsWorking: { _ in [] }, name: { Self.titles[$0] }
+        ))
+        let own = try #require(MissionNaming.inputs(
+            for: mission, stories: { stories[$0] ?? [] }, workItems: { _ in [] }, sessionsWorking: { _ in [] },
+            name: { Self.titles[$0] }
+        ))
+        #expect(named.current == "Faster checkout" && own.current == "Checkout redesign")
+        #expect(named != own && named.basis == own.basis && named.basis.current == nil)
+    }
+
     @Test func gitHubsTitlesArentUsedAndAMissionWithoutAzureDevOpsIsntNamed() throws {
         let session = ItemRef.session("00000000-0000-4000-8000-000000000004")!
         let gitHub = ItemRef.gitHubPullRequest(repository: "octo/storefront", number: 212)

@@ -200,6 +200,8 @@ fileprivate final class Viewer {}
         order.namer?.next()
         try #require(await Self.eventually { model.prompts.count == 2 })
         #expect(model.prompts[1].contains("- Make checkout faster"))
+        // With the name it shows now, Apple Intelligence's, to keep while it fits.
+        #expect(model.prompts[1].hasPrefix("Current name: Faster checkout\n"))
         // Without Apple Intelligence: not at all.
         model.unavailability = .notEnabled
         Self.tell(order, firstTitle: "Checkout, faster")

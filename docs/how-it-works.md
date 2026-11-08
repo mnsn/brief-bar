@@ -44,7 +44,8 @@ requests, on this Mac (`MissionNamer`, `MissionNaming`), from their pull request
 are kept in memory only. It's asked only for the missions in sight in a window that shows By Mission on screen: not
 while that window is closed, minimized or covered, nor for one scrolled out of sight until it comes into it; and,
 while Apple Intelligence is off or getting ready, BriefBar looks again every half minute, never on a Mac that can't run
-it. No name goes to the log, to agents or to Apple Intelligence.
+it. No name goes to the log or to agents, and none you give goes to Apple Intelligence: it's asked with the name it
+gave, or else BriefBar's own, to keep while that fits.
 
 ## Permissions that macOS grants once
 
