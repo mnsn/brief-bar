@@ -75,8 +75,16 @@ struct PullRequestsPage: View {
         }
     }
 
+    /// The Board, Up Next and each mission's next steps, worked out once each time the page draws: a lane for each mission,
+    /// or, on the Board, as you chose its lanes. Nil while Pull Request Order is off.
+    private var board: PullRequestBoard? {
+        guard ordering.isOn else { return nil }
+        return ordering.board(kinds: PullRequestsByMission.kinds, lanes: showsBoard ? lanes ?? ordering.lanes : .missions)
+    }
+
     private var list: some View {
-        PageScroll {
+        let board = self.board
+        return PageScroll {
             VStack(alignment: .leading, spacing: 18) {
                 notices
                 // By Mission has no group to put a compact brief in: it shows above the missions.
@@ -85,17 +93,16 @@ struct PullRequestsPage: View {
                         .padding(.horizontal, -4)
                 }
                 // What's next, in every order: it changes no group or count.
-                if ordering.isOn, store.hasLoaded, !store.items.isEmpty {
-                    UpNextView(
-                        upNext: ordering.board(kinds: PullRequestsByMission.kinds).upNext, order: ordering, select: showDetails(of:),
-                        showColumn: showColumn
-                    )
+                if let board, store.hasLoaded, !store.items.isEmpty {
+                    UpNextView(upNext: board.upNext, order: ordering, select: showDetails(of:)) { stage in
+                        Self.showColumn(stage, settings: settings, ordering: ordering)
+                    }
                 }
                 if shownOrder == .byMission {
                     PullRequestsByMission(
                         view: shownView, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
                         card: boardCard, isSelected: isSelected, select: select, rest: { AnyView(groups($0, showsBrief: false)) },
-                        lanes: lanes, showByStatus: { settings.pullRequestOrder = .status }, now: store.now
+                        board: board, showByStatus: { settings.pullRequestOrder = .status }, now: store.now
                     )
                 } else if shownOrder.isByDate {
                     byDate
@@ -115,8 +122,8 @@ struct PullRequestsPage: View {
         if let item = store.items.first(where: { $0.key.linkRef == ref }) { select(item) }
     }
 
-    /// Up Next's "2 more ›": By Mission's Board, at that column.
-    private func showColumn(_ stage: PullRequestStage) {
+    /// Up Next's "2 more ›", from any order: By Mission's Board, at that column, which the page scrolls to.
+    static func showColumn(_ stage: PullRequestStage, settings: AppSettings, ordering: PullRequestOrder) {
         settings.pullRequestOrder = .byMission
         ordering.revealColumn(stage)
     }
@@ -157,7 +164,7 @@ struct PullRequestsPage: View {
         let byMission = shownOrder == .byMission
         return OrderRowContext.of(item.key.linkRef, in: ordering.missions, isReady: item.group == .ready, open: byMission ? nil : { key in
             settings.pullRequestOrder = .byMission
-            ordering.reveal(key)
+            ordering.reveal(key, kinds: PullRequestsByMission.kinds)
         })
     }
 

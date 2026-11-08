@@ -471,6 +471,16 @@ import Testing
         let ready = Self.reading(StageFacts(role: .author, isReady: true))!
         #expect(StageAction.offered(for: ready).map(\.title) == ["Move to In Progress", "Move to Your Review", "Move to Teammate's Review"])
         #expect(StageAction.offered(for: Self.reading(StageFacts(role: .author, state: .merged))!).isEmpty)
+
+        // Someone else's asks for its own reviews: Finished My Review, never Move to Teammate's Review, where yours has both.
+        let asked = Self.reading(StageFacts(role: .reviewer, asksYou: "Sam asked you", author: "Sam"))!
+        #expect(StageAction.offered(for: asked, isYours: false) == [.finishedReview, .move(.inProgress)])
+        let changes = Self.reading(StageFacts(role: .reviewer, youWantChanges: "Waiting for Sam's changes", author: "Sam"))!
+        #expect(changes.stage == .inProgress)
+        #expect(StageAction.offered(for: changes, isYours: false) == [.move(.yourReview)])
+        #expect(StageAction.offered(for: asked, canUndo: true, isYours: false) == [.finishedReview, .move(.inProgress), .undo])
+        #expect(StageText.whyNotTeammateReview(author: "Sam") == "It's Sam's: they ask for its reviews")
+        #expect(StageText.whyNotTeammateReview(author: nil) == "It's someone else's: they ask for its reviews")
     }
 
     /// After a change, VoiceOver hears where it is now and where Undo is; after Undo, where it is again.
@@ -481,6 +491,10 @@ import Testing
             StageFacts(role: .reviewer, asksYou: "Sam asked you"), marks: [StageMark(stage: .teammateReview, at: t(10))]
         )!
         #expect(StageText.changed(Self.pr(4110), to: reviewed) == "!4110 is off your board now. Undo is in its stage's menu.")
+        // On the Board, a card that left it leaves its Undo at the top of its lane; one still there has it in its menu.
+        #expect(StageText.changed(Self.pr(4110), to: reviewed, undo: .lane) == "!4110 is off your board now. Undo is at the top of its lane.")
+        #expect(StageText.changed(Self.pr(4110), to: nil, undo: .lane) == "!4110 is off your board now. Undo is at the top of its lane.")
+        #expect(StageText.changed(Self.pr(4093), to: set, undo: .lane) == "!4093 is in Teammate's review now. Undo is in its stage's menu.")
         let asked = Self.reading(StageFacts(role: .reviewer, asksYou: "Sam asked you"))!
         #expect(StageText.undone(Self.pr(4110), to: asked) == "Undone: !4110 is in Your review again")
         #expect(StageText.undone(Self.pr(4110), to: nil) == "Undone")

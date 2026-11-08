@@ -1,11 +1,11 @@
 import BriefBarCore
 import SwiftUI
 
-/// Up Next, at the top of Azure DevOps' Pull Requests page while Pull Request Order is on, By Status and By Mission alike: a
-/// slot for each kind of next that has something, side by side, each in its stage's color, with its pull request, why, its
-/// mission and how many more. A click on one shows its details; "2 more ›" shows By Mission's Board at that column. Narrow,
-/// or with bigger text, the slots wrap, two or three to a line. It folds with its chevron, remembered. It changes no group
-/// or count: it only points.
+/// Up Next, at the top of Azure DevOps' Pull Requests page while Pull Request Order is on, whatever the page's order: a slot
+/// for each kind of next that has something, side by side across the page, each in its stage's color, with its pull request,
+/// why, its mission and how many more. A click on one shows its details; "2 more ›" shows By Mission's Board at that column.
+/// Narrow, or with bigger text, the slots wrap, two or three to a line. It folds with its chevron, remembered. It changes no
+/// group or count: it only points.
 package struct UpNextView: View {
     let upNext: UpNext
     @ObservedObject var order: PullRequestOrder
@@ -33,10 +33,7 @@ package struct UpNextView: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)
                 } else {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 176 * textScale), spacing: 10, alignment: .top)], alignment: .leading,
-                        spacing: 10
-                    ) {
+                    UpNextGrid(minimum: 176 * textScale, spacing: 10) {
                         ForEach(upNext.slots) { slot in
                             UpNextSlotView(slot: slot, order: order, select: select, showColumn: showColumn)
                         }
@@ -158,7 +155,8 @@ private struct UpNextSlotView: View {
         .padding(.horizontal, 11)
         .padding(.top, 10)
         .padding(.bottom, 8)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        // As tall as the tallest on its line.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlassCard(cornerRadius: 12, isHovered: isHovered))
         .overlay {
             // Its stage's color along its top.
@@ -171,31 +169,26 @@ private struct UpNextSlotView: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// "2 more ›", or, for one alone, nothing in the same room, so the slots on a line keep one height.
+    /// "2 more ›", which shows the rest on the Board; nothing for one alone.
     @ViewBuilder
     private var moreLine: some View {
-        let label = HStack(spacing: 2) {
-            Text(slot.more ?? "1 more")
-            Image(systemName: "chevron.right")
-                .font(size: 8.5, weight: .bold)
-        }
-        .font(size: 11.5, weight: .medium)
         if let more = slot.more {
             Button {
                 showColumn(stage)
             } label: {
-                label
-                    .foregroundStyle(.tint)
-                    .contentShape(Rectangle())
+                HStack(spacing: 2) {
+                    Text(more)
+                    Image(systemName: "chevron.right")
+                        .font(size: 8.5, weight: .bold)
+                }
+                .font(size: 11.5, weight: .medium)
+                .foregroundStyle(.tint)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Show the rest on By Mission's Board, in \(stage.title)")
             .accessibilityLabel("\(more) in \(stage.title)")
             .accessibilityHint("Shows them on By Mission's Board")
-        } else {
-            label
-                .hidden()
-                .accessibilityHidden(true)
         }
     }
 
@@ -203,5 +196,71 @@ private struct UpNextSlotView: View {
     private var missionTitle: String {
         guard let key = slot.card.mission, let mission = order.missions.first(where: { $0.key == key }) else { return "Not in a mission" }
         return OrderText.title(of: mission, name: order.name(of:))
+    }
+}
+
+/// Up Next's slots in lines: as many to a line as fit at their narrowest, never more than there are, so that they always
+/// fill the line, as wide as it allows and as tall as the tallest of them on it.
+package struct UpNextGrid: Layout {
+    /// How narrow a slot can be.
+    let minimum: CGFloat
+    let spacing: CGFloat
+
+    package init(minimum: CGFloat, spacing: CGFloat) {
+        self.minimum = minimum
+        self.spacing = spacing
+    }
+
+    /// How many slots go on a line this wide.
+    package static func columns(count: Int, width: CGFloat, minimum: CGFloat, spacing: CGFloat) -> Int {
+        guard count > 0 else { return 0 }
+        guard width.isFinite, width > 0 else { return count }
+        let fit = Int(((width + spacing) / (minimum + spacing)).rounded(.down))
+        return min(count, max(1, fit))
+    }
+
+    package func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = finite(proposal.width, subviews: subviews)
+        let lines = arrange(width: width, subviews: subviews)
+        let height = lines.map(\.height).reduce(0, +) + spacing * CGFloat(max(lines.count - 1, 0))
+        return CGSize(width: width, height: height)
+    }
+
+    package func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for line in arrange(width: finite(bounds.width, subviews: subviews), subviews: subviews) {
+            for (column, index) in line.indices.enumerated() {
+                let x = bounds.minX + CGFloat(column) * (line.width + spacing)
+                subviews[index].place(
+                    at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: line.width, height: line.height)
+                )
+            }
+            y += line.height + spacing
+        }
+    }
+
+    private struct Line {
+        var indices: Range<Int>
+        /// Each slot's width on it.
+        var width: CGFloat
+        var height: CGFloat
+    }
+
+    /// The width to lay its slots out in: the one offered, or, asked for its ideal or its largest size, its slots side by
+    /// side at their narrowest. Never infinite, nor less than nothing, as SwiftUI needs a size it can use.
+    private func finite(_ width: CGFloat?, subviews: Subviews) -> CGFloat {
+        if let width, width.isFinite { return max(0, width) }
+        return max(0, CGFloat(subviews.count) * (minimum + spacing) - spacing)
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Line] {
+        let columns = Self.columns(count: subviews.count, width: width, minimum: minimum, spacing: spacing)
+        guard columns > 0 else { return [] }
+        let slot = max(0, (width - spacing * CGFloat(columns - 1)) / CGFloat(columns))
+        return stride(from: 0, to: subviews.count, by: columns).map { start in
+            let indices = start..<min(start + columns, subviews.count)
+            let height = indices.map { subviews[$0].sizeThatFits(ProposedViewSize(width: slot, height: nil)).height }.max() ?? 0
+            return Line(indices: indices, width: slot, height: height)
+        }
     }
 }

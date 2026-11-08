@@ -146,6 +146,8 @@ package struct StageMenuItems: View {
     @ObservedObject private var order: PullRequestOrder
     private let now: Date
 
+    @Environment(\.stageUndoPlace) private var undoPlace
+
     package init(ref: ItemRef, order: PullRequestOrder, now: Date = Date()) {
         self.ref = ref
         self.order = order
@@ -166,10 +168,21 @@ package struct StageMenuItems: View {
 
     @ViewBuilder
     private func changes(_ reading: StageReading) -> some View {
+        // Someone else's asks for its own reviews: Finished My Review takes it off your board instead.
+        let othersReviews = order.whyNotTeammateReview(ref)
         Divider()
         ForEach(PullRequestStage.settable, id: \.self) { stage in
-            Toggle(isOn: Self.choice(stage, of: ref, reading: reading, order: order)) {
-                Label(stage.title, systemImage: stage.symbol)
+            if stage == .teammateReview, let othersReviews, reading.stage != stage {
+                Button {} label: {
+                    Label(stage.title, systemImage: stage.symbol)
+                    Text(othersReviews)
+                }
+                .disabled(true)
+            } else {
+                Toggle(isOn: Self.choice(stage, of: ref, reading: reading, order: order, undo: undoPlace)) {
+                    Label(stage.title, systemImage: stage.symbol)
+                }
+                .disabled(stage == .teammateReview && othersReviews != nil)
             }
         }
         ForEach([PullRequestStage.canMerge, .waits], id: \.self) { stage in
@@ -183,23 +196,34 @@ package struct StageMenuItems: View {
             Divider()
         }
         if reading.stage == .yourReview {
-            Button("Finished My Review → Teammate's Review") { StageCommand.finishedReview(ref, order: order) }
+            if othersReviews == nil {
+                Button("Finished My Review → Teammate's Review") { StageCommand.finishedReview(ref, order: order, undo: undoPlace) }
+            } else {
+                Button {
+                    StageCommand.finishedReview(ref, order: order, undo: undoPlace)
+                } label: {
+                    Text("Finished My Review")
+                    Text(StageText.finishedOthersReview)
+                }
+            }
         }
         if let yours = reading.replaced {
-            Button(StageText.putBack(yours, now: now)) { StageCommand.putYoursBack(ref, order: order) }
+            Button(StageText.putBack(yours, now: now)) { StageCommand.putYoursBack(ref, order: order, undo: undoPlace) }
         }
         if reading.isSetByYou {
-            Button("Let BriefBar Decide") { StageCommand.letBriefBarDecide(ref, order: order) }
+            Button("Let BriefBar Decide") { StageCommand.letBriefBarDecide(ref, order: order, undo: undoPlace) }
         }
     }
 
     /// A stage you can set, checked while it's in it. Choosing it sets it as yours, the one it's in too, so that one
     /// BriefBar decided stays there until you change it, as someone else's you review does once you've voted; one you set
     /// already is unchanged.
+    /// - Parameter undo: where Undo is, for what VoiceOver hears once it's set.
     package static func choice(
-        _ stage: PullRequestStage, of ref: ItemRef, reading: StageReading, order: PullRequestOrder
+        _ stage: PullRequestStage, of ref: ItemRef, reading: StageReading, order: PullRequestOrder,
+        undo: StageUndoPlace = .stageMenu
     ) -> Binding<Bool> {
-        Binding(get: { reading.stage == stage }, set: { _ in StageCommand.set(stage, of: ref, order: order) })
+        Binding(get: { reading.stage == stage }, set: { _ in StageCommand.set(stage, of: ref, order: order, undo: undo) })
     }
 }
 
@@ -231,6 +255,8 @@ package struct StageAccessibilityActions: View {
     private let ref: ItemRef
     @ObservedObject private var order: PullRequestOrder
 
+    @Environment(\.stageUndoPlace) private var undoPlace
+
     package init(ref: ItemRef, order: PullRequestOrder) {
         self.ref = ref
         self.order = order
@@ -238,9 +264,10 @@ package struct StageAccessibilityActions: View {
 
     package var body: some View {
         let change = order.lastChange.flatMap { $0.ref == ref ? $0 : nil }
-        ForEach(StageAction.offered(for: order.stage(of: ref), canUndo: change != nil), id: \.self) { action in
+        let offered = StageAction.offered(for: order.stage(of: ref), canUndo: change != nil, isYours: order.isYours(ref))
+        ForEach(offered, id: \.self) { action in
             Button(action == .undo ? "Undo: \(change?.words ?? "")" : action.title) {
-                StageCommand.perform(action, on: ref, order: order)
+                StageCommand.perform(action, on: ref, order: order, undo: undoPlace)
             }
         }
     }
@@ -250,30 +277,31 @@ package struct StageAccessibilityActions: View {
 /// couldn't be, with a beep.
 @MainActor
 package enum StageCommand {
-    package static func perform(_ action: StageAction, on ref: ItemRef, order: PullRequestOrder) {
+    /// - Parameter undo: where you changed it, for where VoiceOver says Undo is.
+    package static func perform(_ action: StageAction, on ref: ItemRef, order: PullRequestOrder, undo: StageUndoPlace = .stageMenu) {
         switch action {
-        case .finishedReview: finishedReview(ref, order: order)
-        case .move(let stage): set(stage, of: ref, order: order)
-        case .putYoursBack: putYoursBack(ref, order: order)
-        case .letBriefBarDecide: letBriefBarDecide(ref, order: order)
-        case .undo: undo(order)
+        case .finishedReview: finishedReview(ref, order: order, undo: undo)
+        case .move(let stage): set(stage, of: ref, order: order, undo: undo)
+        case .putYoursBack: putYoursBack(ref, order: order, undo: undo)
+        case .letBriefBarDecide: letBriefBarDecide(ref, order: order, undo: undo)
+        case .undo: self.undo(order)
         }
     }
 
-    package static func set(_ stage: PullRequestStage, of ref: ItemRef, order: PullRequestOrder) {
-        tell(order.setStage(stage, of: ref), ref: ref, order: order)
+    package static func set(_ stage: PullRequestStage, of ref: ItemRef, order: PullRequestOrder, undo: StageUndoPlace = .stageMenu) {
+        tell(order.setStage(stage, of: ref), ref: ref, order: order, undo: undo)
     }
 
-    package static func finishedReview(_ ref: ItemRef, order: PullRequestOrder) {
-        tell(order.finishedReview(ref), ref: ref, order: order)
+    package static func finishedReview(_ ref: ItemRef, order: PullRequestOrder, undo: StageUndoPlace = .stageMenu) {
+        tell(order.finishedReview(ref), ref: ref, order: order, undo: undo)
     }
 
-    package static func putYoursBack(_ ref: ItemRef, order: PullRequestOrder) {
-        tell(order.putYoursBack(ref), ref: ref, order: order)
+    package static func putYoursBack(_ ref: ItemRef, order: PullRequestOrder, undo: StageUndoPlace = .stageMenu) {
+        tell(order.putYoursBack(ref), ref: ref, order: order, undo: undo)
     }
 
-    package static func letBriefBarDecide(_ ref: ItemRef, order: PullRequestOrder) {
-        tell(order.letBriefBarDecide(ref), ref: ref, order: order)
+    package static func letBriefBarDecide(_ ref: ItemRef, order: PullRequestOrder, undo: StageUndoPlace = .stageMenu) {
+        tell(order.letBriefBarDecide(ref), ref: ref, order: order, undo: undo)
     }
 
     package static func undo(_ order: PullRequestOrder) {
@@ -282,10 +310,10 @@ package enum StageCommand {
         SpokenText.announce(StageText.undone(ref, to: order.stage(of: ref)))
     }
 
-    private static func tell(_ outcome: StageChange.Outcome, ref: ItemRef, order: PullRequestOrder) {
+    private static func tell(_ outcome: StageChange.Outcome, ref: ItemRef, order: PullRequestOrder, undo: StageUndoPlace) {
         switch outcome {
         case .done:
-            SpokenText.announce(StageText.changed(ref, to: order.stage(of: ref)))
+            SpokenText.announce(StageText.changed(ref, to: order.stage(of: ref), undo: undo))
         case .unchanged:
             break
         case .refused(let why):
@@ -322,10 +350,13 @@ package struct FinishedReviewLabel: View {
     }
 }
 
-/// Finished My Review, where what it's on isn't a button: it's your teammates' turn now.
+/// Finished My Review, where what it's on isn't a button: it's your teammates' turn now, or, on someone else's, it leaves your
+/// board.
 package struct FinishedReviewButton: View {
     private let ref: ItemRef
     private let order: PullRequestOrder
+
+    @Environment(\.stageUndoPlace) private var undoPlace
 
     package init(ref: ItemRef, order: PullRequestOrder) {
         self.ref = ref
@@ -334,15 +365,34 @@ package struct FinishedReviewButton: View {
 
     package var body: some View {
         Button {
-            StageCommand.finishedReview(ref, order: order)
+            StageCommand.finishedReview(ref, order: order, undo: undoPlace)
         } label: {
             FinishedReviewLabel()
         }
         .buttonStyle(.plain)
-        .help(Self.help)
+        .help(Self.help(for: ref, order: order))
     }
 
     package static let help = "You reviewed it: it's your teammates' turn. Moves it to Teammate's review"
+
+    /// What it does to this one: on someone else's, it leaves your board, and your vote stays yours to cast.
+    @MainActor
+    package static func help(for ref: ItemRef, order: PullRequestOrder) -> String {
+        order.whyNotTeammateReview(ref) == nil ? help : StageText.finishedOthersReview
+    }
+}
+
+private struct StageUndoPlaceKey: EnvironmentKey {
+    static let defaultValue = StageUndoPlace.stageMenu
+}
+
+extension EnvironmentValues {
+    /// Where Undo is after you change a stage in these views, as VoiceOver tells it: in its stage's menu, or, on the Board,
+    /// at the top of its lane once its card left the board.
+    package var stageUndoPlace: StageUndoPlace {
+        get { self[StageUndoPlaceKey.self] }
+        set { self[StageUndoPlaceKey.self] = newValue }
+    }
 }
 
 // MARK: Over a row that's a button
@@ -413,7 +463,7 @@ private struct StageControlsOverRow: View {
                     .buttonStyle(.plain)
                     .frame(width: frame.width, height: frame.height)
                     .offset(x: frame.minX, y: frame.minY)
-                    .help(FinishedReviewButton.help)
+                    .help(FinishedReviewButton.help(for: ref, order: order))
                     .accessibilityLabel("Finished My Review")
                 }
             }

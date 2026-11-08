@@ -185,7 +185,7 @@ struct PullRequestsPage: View {
         let byMission = listsByMission
         return OrderRowContext.of(Self.ref(of: item), in: ordering.missions, isReady: item.group == .ready, open: byMission ? nil : { key in
             settings.listsByMission = true
-            ordering.reveal(key)
+            ordering.reveal(key, kinds: Self.kinds)
         })
     }
 

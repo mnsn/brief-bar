@@ -334,24 +334,29 @@ board until you vote in Azure DevOps, which is still yours to do, or something n
 **Up Next**, at the top of the window's page while [Pull Request Order](#settings) is on, says what's next for you,
 whichever way you sort: a slot for each kind of next, in its stage's color, each with its first pull request and
 how many it has. **Fix next** is what needs you to fix or answer: a session that asks you, then a build that
-failed, then changes someone wants. **Your next review** is the one that has waited longest, an earlier one in
-its mission first, as later ones build on it; **Next for a teammate**, one of yours that needs a reviewer first;
-**Merge next**, what can merge next; **Waits next**, the one closest to merging. The mission you focus on comes
-first in each. Click one for its details; **2 more ›** shows the rest on the Board. Click **Up Next** to fold it,
-and BriefBar remembers. It changes no group or count.
+failed, then changes someone wants. **Your next review** is the one that has waited longest, one that others
+build on counting as long as they've waited, as they can't merge before it; **Next for a teammate**, one of yours
+that needs a reviewer first; **Merge next**, what can merge next; **Waits next**, the one closest to merging. The
+mission you focus on comes first in each. Click one for its details; **2 more ›** shows the rest on the Board.
+Click **Up Next** to fold it, and BriefBar remembers. It changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
 review**, **Teammate's review**, **Can merge**, **Waits** and **Merged**, which shows only its count until you
 click it; and a lane for each mission, its header naming your next steps in it, such as **Review !4093** or
 **Find a reviewer: !4079**, then a lane for the pull requests in no mission. **Lanes: None** puts every card in
-one. Up Next's pull request wears **Next** in its column. Click a card for its details, or right-click it for its
-menu; drag it to another column of its lane, or press **⌘→** or **⌘←**, to change its stage, which says so with
-**Undo**. While you drag, the columns that take it light up, and those that don't say why: only Azure DevOps
-decides that a pull request can merge or merged, its order what it waits for, and someone else's pull request
-asks its own reviewers, so **Finished My Review** takes it off your board instead. Narrow, or with bigger text,
-the Board scrolls sideways; a line under it counts the pull requests in your lists that aren't on it, such as
-others' you approved, and **Show By Status** lists them. GitHub's page, whose pull requests have no stages,
-offers List and Map, and shows List where you chose the Board.
+one. Up Next's pull request wears **Next** in its column. Each column puts the mission you focus on first, but In
+progress puts what needs you before it, so that Fix next's is its first card. Click a card, or press **Return** or
+**Space** on it, for its details, or right-click it for its menu; drag it to another column of its lane, or click it, or
+Tab to it, and press **⌘→** or **⌘←**, to change its stage, which says so with **Undo** at the top of its lane, even
+once the card leaves the board. Where its details cover the Board, in a narrow window or with bigger text, ⌘→ and ⌘←
+move the pull request they show, and the card has the keyboard again once they close. While you drag, the columns that
+take it light up, and those that don't say why: only Azure DevOps decides that a pull request can merge or merged, its
+order what it waits for, and someone else's pull request asks its own reviewers, so **Finished My Review** takes it off
+your board instead, there and in its menus. A row's order capsule, such as **Next to merge**, clicked in another sort
+shows its mission's lane, and a lane for each mission again if they were None. Narrow, or with bigger text, the Board
+scrolls sideways; a line under it counts the pull requests in your lists that aren't on it, such as others' you
+approved, and **Show By Status** lists them. GitHub's page, whose pull requests have no stages, offers List and Map, and
+shows List where you chose the Board.
 
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote

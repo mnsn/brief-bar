@@ -1368,26 +1368,50 @@ no group, count, notification or brief: they only label rows.
 Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
 works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
 lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`), so Up Next's pull
-request is always the first card in its column:
+request is always the first in its column's order, which wears **Next** on the Board. The mission you focus on comes first
+in each stage, but in In progress, what needs you comes before it, so that Fix next is always its column's first:
 
-| Stage | Which comes first, after the mission you focus on |
+| Stage | Which comes first |
 |---|---|
-| In progress | What needs you, Fix next's: a session that asks you, then a build that failed, then changes someone wants, the oldest first; then the rest, as By Mission lists them |
-| Your review | The one that has waited longest; in a mission, an earlier one waits as long as the longest waiting after it, as they build on it |
-| Teammate's review | Find a reviewer first, then the earliest in its mission's order |
-| Can merge | Next to merge, then any time, then those with no order; the oldest first, then as By Mission lists them |
-| Waits | The one closest to merging: one merge away when what it waits for can merge, one more for each that waits itself |
-| Merged | The latest first |
+| In progress | What needs you, Fix next's, the mission you focus on first among it: a session that asks you, then a build that failed, then changes someone wants, the oldest first; then the rest, the mission you focus on first, as By Mission lists them |
+| Your review | The mission you focus on; then the one that has waited longest, one that others build on as long as the longest waiting of those that wait for it, directly or through others, in any mission, as none of them can merge before it; of those that waited as long, the one more build on |
+| Teammate's review | The mission you focus on; then Find a reviewer, then the earliest in its mission's merge order |
+| Can merge | The mission you focus on; then next to merge, then any time, then those with no order; the oldest first, then as By Mission lists them |
+| Waits | The mission you focus on; then the one closest to merging: one merge away when what it waits for can merge, one more for each that waits itself |
+| Merged | The mission you focus on; then the latest first |
 
+Only an open pull request its order numbers has a place in its mission's merge order (`BoardCard.position`): one that
+merges any time, one in a group with no order, such as a family's, and one stacked with the order's without being in
+it have none, and come after those that have one, as By Mission lists them. What waits for a pull request follows its
+steps' prerequisites and what they're stacked on, such as a base the order doesn't name that a step's changes show
+against (`BoardCard.waitingForIt`, `OrderMission.stackedBases(of:)`), not those places, as two lines in one order don't
+wait for each other. It's only between open pull requests: nothing waits through one that merged or closed, as its order
+then lets what comes after it merge, or holds it until you check the order. A mission's lane counts how long those in
+other missions have waited, as Up Next does.
 A pull request in two missions has a card in each lane, and counts once. On the Board (`OrderBoardView`), a card drags
-with SwiftUI's `draggable`, carrying only its reference, which a column takes only from a card of the same board, never
-text from another app; ⌘→ and ⌘← move a focused card to the next or previous stage you can set. `BoardRules` decides
-what a drop does: In progress, Your review and Teammate's review are set as you set them from a stage's menu, but
-someone else's pull request can't go to Teammate's review, as it asks its own reviewers; Can merge, Waits and Merged
+with SwiftUI's `draggable`, carrying its reference and a token made for that drag alone (`BoardDrag`), so a column takes
+only a card dragged from its own board, never text from another app that names a pull request. A drop, and the columns
+that light up as you drag, act on the card as the board has it then, looked up again (`BoardMoves`), not as it was when
+the drag started. A click, or Tab, gives a card the keyboard's focus as a text field takes it, whatever the Mac's keyboard
+navigation, and it keeps it as it moves: ⌘→ and ⌘← move it to the next or previous stage you can set, and from Waits, ⌘←
+to Can merge. Return or Space shows its details, as a click does. Where the details cover the Board (`DetailsSplit`),
+it's disabled, and none of its cards can have the focus: a key monitor of its window (`BoardKeys`) takes ⌘→ and ⌘← for
+the card of the pull request they show, but not from a text field you type in, and that card has the focus once they
+close. `BoardRules` decides what a move does: In progress, Your review and Teammate's review are set as you set them
+from a stage's menu; someone else's pull request can't go to Teammate's review, there, in its menus or in VoiceOver's
+actions, as it asks its own reviewers, and Finished My Review takes it off your board instead; Can merge, Waits and Merged
 come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge,
 and never for one stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
-(`OrderMission.whyNotNext`, which Set as Next to Merge uses too). The Board, its lanes and whether Up Next is folded are
-kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
+(`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card off
+it: in its mission's lane, which has Undo for all its pull requests, as List's card does, or in a lane of those in no
+mission, kept for it (`PullRequestBoard.lanes(keepingUndoOf:missions:)`), and with Lanes: None in the one lane, kept for
+it once no card is left in it. A row's order capsule, clicked in another sort, shows its mission's lane on the Board, as
+it shows the mission in List and on the Map; with Lanes: None, which has no lane for it, the Board shows a lane for each
+mission again, remembered (`PullRequestOrder.reveal(_:kinds:)`). The page scrolls the lane, the first too, just under
+the column titles, which stay at the page's top over the cards while it shows the board: offset as it scrolls
+(`PinnedTitles`), not a lazy stack's pinned header, which loses the lanes' places when the page narrows while scrolled
+down the board, as when the details open beside it. The Board, its lanes and whether Up Next is folded are kept as
+choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
 `order.boardLanes` and `order.upNextFolded`.
 
 ### A pull request's details

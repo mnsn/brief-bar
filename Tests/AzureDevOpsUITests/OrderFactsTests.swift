@@ -600,4 +600,57 @@ import Testing
         #expect(PullRequestBoardCard.flags(item, reading: reading).isEmpty)
         #expect(PullRequestBoardCard.details(item, reading: reading, order: nil, ordering: order) == ["shop-web"])
     }
+
+    // MARK: The Board
+
+    /// Someone else's says whose it is, by first name, for why it can't go to a teammate's review; yours names nobody.
+    @Test func someoneElsesSaysWhoseItIs() throws {
+        #expect(try #require(Self.stageFacts(4110, role: .reviewer, author: Self.sam)).author == "Sam")
+        #expect(try #require(Self.stageFacts(4088)).author == nil)
+        let sent = PRRecord(pullRequest: Self.pullRequest(4113, from: "dana/4113", author: Self.priya), role: .linked, me: Self.me.id)
+        #expect(PullRequestOrderFacts.stages([sent], items: [], tasks: [])[sent.id.linkRef]?.author == "Priya")
+    }
+
+    /// The Board counts only the cards it draws, those the list shows: one that merged that the lists read but don't show
+    /// isn't counted in Merged.
+    @Test func theBoardCountsOnlyWhatTheListShows() throws {
+        let (order, _) = try Self.order()
+        let records = [(4085, PullRequest.Status.completed), (4086, .completed), (4093, .active)].map { number, status in
+            PRRecord(pullRequest: Self.pullRequest(number, from: "robin/\(number)", status: status), role: .author, me: Self.me.id)
+        }
+        let now = Date(timeIntervalSince1970: 1_791_010_000)
+        let rows = try records.filter { $0.pullRequest.key.number != 4086 }.map { record in
+            try #require(PRClassifier.snapshot(for: record, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now))
+        }
+        order.publish(
+            .azureDevOps, pullRequests: records.compactMap { PullRequestOrderFacts.pullRequest($0.pullRequest, attention: nil) },
+            stages: PullRequestOrderFacts.stages(records, items: rows, tasks: []), account: "robin@contoso.com"
+        )
+
+        let board = order.board(kinds: [.pullRequest])
+        let listed = Set(rows.map(\.key.linkRef))
+        #expect(board.counts[.merged] == 1)
+        #expect(board.refs == listed)
+        #expect(board.counts.values.reduce(0, +) == board.refs.count)
+        let cards = board.lanes.flatMap { lane in lane.columns.values.flatMap { $0 } }
+        #expect(Set(cards.map(\.ref)) == listed)
+        #expect(Set(cards.filter { $0.stage == .merged }.map(\.ref)) == [.pullRequest(organization: "contoso", number: 4085)])
+    }
+
+    /// In the demo too, every card the Board counts is one its page draws.
+    @Test func theDemosBoardCountsWhatItDraws() async throws {
+        let store = await Self.demoStore()
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+        order.tellDemo(
+            DemoPullRequestOrder.orders(now: store.now), evidence: DemoPullRequestOrder.evidence(now: store.now),
+            focus: DemoPullRequestOrder.focus
+        )
+        facts.publish()
+
+        let board = order.board(kinds: [.pullRequest])
+        #expect(board.counts[.merged] ?? 0 > 0)
+        #expect(board.refs.isSubset(of: Set(store.items.map(\.key.linkRef))))
+        #expect(board.counts.values.reduce(0, +) == board.refs.count)
+    }
 }

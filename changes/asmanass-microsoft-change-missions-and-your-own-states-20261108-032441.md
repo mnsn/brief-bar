@@ -6,8 +6,9 @@
 - **See what's next for you at a glance, and your pull requests on a Board.** With Pull Request Order on, Azure DevOps'
   Pull Requests page starts with **Up Next**: the pull request to fix next, your next review, the next one for a
   teammate, the next to merge and the next that waits, each with how many more, however you sort the list. By Mission
-  adds a **Board** beside List and Map, with a column for each stage and a lane for each mission, whose header names
-  your next steps in it. Drag a card to another column, or press ⌘→ or ⌘←, to change its stage.
+  names each mission's next steps for you under its name, in List, on the Map and on a new **Board** beside them, with a
+  column for each stage and a lane for each mission. Drag a card to another column, or click it and press ⌘→ or ⌘←, to
+  change its stage.
 
 ## Descriptions
 

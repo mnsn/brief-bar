@@ -477,8 +477,7 @@ package struct OrderViewPicker: View {
     package var body: some View {
         let current = shown ?? order.view(offering: views)
         SegmentedPicker("By Mission View", selection: Binding(get: { current }, set: { view in
-            // What the page shows already saves nothing: GitHub's List, where you chose the Board.
-            if view != current { order.setView(view) }
+            Self.choose(view, showing: current, order: order)
         }), segments: views.map { view in
             SegmentedPicker<OrderView>.Segment(view, title: view.title, systemImage: Self.symbol(view))
         })
@@ -486,6 +485,12 @@ package struct OrderViewPicker: View {
         .help(views.contains(.board)
             ? "List: each mission's pull requests in their order, with the graph beside them. Map: each mission in merge waves. Board: a column for each stage, a lane for each mission"
             : "List: each mission's pull requests in their order, with the graph beside them. Map: each mission in merge waves")
+    }
+
+    /// A view you pick, while the page shows `current`: what the page shows already saves nothing, so picking GitHub's List,
+    /// which it shows where you chose the Board, leaves the Board for Azure DevOps' page.
+    package static func choose(_ view: OrderView, showing current: OrderView, order: PullRequestOrder) {
+        if view != current { order.setView(view) }
     }
 
     static func symbol(_ view: OrderView) -> String {
