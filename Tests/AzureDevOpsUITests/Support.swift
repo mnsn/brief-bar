@@ -1,6 +1,34 @@
+import BriefBarUI
 import Foundation
 import Testing
 @testable import AzureDevOpsUI
+
+/// Fails a test whose code did what BriefBar does on your Mac beyond its own windows: opening a link, such as a session's
+/// in the Copilot app, a file or an app, showing files in the Finder, putting text on the clipboard, or asking in an alert.
+/// In tests, `ThisMac` refuses each, so a test whose code meets one tests what BriefBar does when it fails, unawares: such
+/// a test stands in for it, as `showForTests` does for showing a session. A test that checks what's refused notes it
+/// itself, which this doesn't see (`ThisMac.$noting`).
+struct OpensNothing: SuiteTrait, TestTrait, TestScoping {
+    var isRecursive: Bool { true }
+
+    func scopeProvider(for test: Test, testCase: Test.Case?) -> Self? {
+        testCase == nil ? nil : self
+    }
+
+    func provideScope(
+        for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void
+    ) async throws {
+        let notes = ThisMac.Notes()
+        defer { #expect(notes.refused.isEmpty, "The test's code did on this Mac what tests stand in for: \(notes.refused)") }
+        try await ThisMac.$noting.withValue(notes) { try await function() }
+    }
+}
+
+extension Trait where Self == OpensNothing {
+    /// Fails a test whose code opens, shows or copies anything on this Mac, or asks in an alert, which `ThisMac` refuses
+    /// in tests: each test of the suite stands in for what it would do.
+    static var opensNothing: Self { Self() }
+}
 
 /// How long a test waits for something before it fails. `make test` runs every test's async work on one thread
 /// (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), and the tests on the main actor share the main thread, so a test may get

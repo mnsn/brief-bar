@@ -156,7 +156,7 @@ package struct StageMenuItems: View {
 
     package var body: some View {
         let reading = order.stage(of: ref)
-        if let change = order.lastChange, change.ref == ref {
+        if let change = order.lastStageChange, change.ref == ref {
             Button("Undo: \(change.words)") { StageCommand.undo(order) }
             if reading != nil { Divider() }
         }
@@ -263,7 +263,7 @@ package struct StageAccessibilityActions: View {
     }
 
     package var body: some View {
-        let change = order.lastChange.flatMap { $0.ref == ref ? $0 : nil }
+        let change = order.lastStageChange.flatMap { $0.ref == ref ? $0 : nil }
         let offered = StageAction.offered(for: order.stage(of: ref), canUndo: change != nil, isYours: order.isYours(ref))
         ForEach(offered, id: \.self) { action in
             Button(action == .undo ? "Undo: \(change?.words ?? "")" : action.title) {
@@ -305,8 +305,7 @@ package enum StageCommand {
     }
 
     package static func undo(_ order: PullRequestOrder) {
-        guard let ref = order.lastChange?.ref else { return }
-        order.undo()
+        guard let ref = order.lastStageChange?.ref, order.undo() else { return }
         SpokenText.announce(StageText.undone(ref, to: order.stage(of: ref)))
     }
 
@@ -486,7 +485,7 @@ package struct StageUndoLine: View {
     }
 
     package var body: some View {
-        if let change = order.lastChange, refs.contains(change.ref) {
+        if let change = order.lastStageChange, refs.contains(change.ref) {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.uturn.backward.circle")
                     .foregroundStyle(.secondary)

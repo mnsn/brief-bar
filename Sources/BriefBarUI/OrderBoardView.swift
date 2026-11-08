@@ -165,9 +165,9 @@ package struct OrderBoardView: View {
     let card: (BoardCard) -> BoardCardContent?
     let isSelected: (ItemRef) -> Bool
     let select: (ItemRef) -> Void
-    /// Set as Next to Merge, which dropping a card from Waits onto Can merge does: nil until you can change missions
-    /// yourself, and the Board says what it waits for instead.
-    let setAsNext: ((ItemRef) -> Void)?
+    /// Set as Next to Merge in a mission, which dropping a card from Waits onto Can merge does: nil where you can't change
+    /// missions yourself, and the Board says what it waits for instead.
+    let setAsNext: ((ItemRef, MissionKey) -> Void)?
     /// How many of the page's pull requests aren't on the board.
     let notOnBoard: Int
     /// Lists them By Status; nil where it can't.
@@ -208,7 +208,7 @@ package struct OrderBoardView: View {
     package init(
         board: PullRequestBoard, missions: [OrderMission], order: PullRequestOrder, elsewhere: String, openElsewhere: (() -> Void)?,
         place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
-        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, setAsNext: ((ItemRef) -> Void)?,
+        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, setAsNext: ((ItemRef, MissionKey) -> Void)?,
         notOnBoard: Int, showByStatus: (() -> Void)?, now: Date
     ) {
         self.board = board
@@ -228,7 +228,7 @@ package struct OrderBoardView: View {
 
     package var body: some View {
         let metrics = BoardMetrics(scale: textScale, available: width, showsMerged: showsMerged)
-        let lanes = board.lanes(keepingUndoOf: order.lastChange?.ref, missions: missions)
+        let lanes = board.lanes(keepingUndoOf: order.lastStageChange?.ref, missions: missions)
         let moves = BoardMoves(board: board, missions: missions, order: order, missionChanges: setAsNext != nil)
         VStack(alignment: .leading, spacing: 12) {
             if lanes.isEmpty {
@@ -487,7 +487,7 @@ package struct OrderBoardView: View {
     private func laneView(_ lane: BoardLane, metrics: BoardMetrics, moves: BoardMoves) -> some View {
         let mission = lane.mission.flatMap { key in missions.first { $0.key == key } }
         let isFolded = mission.map { $0.isFinished && !unfolded.contains($0.key) } ?? false
-        let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastChange?.ref)
+        let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastStageChange?.ref)
         return VStack(alignment: .leading, spacing: 8) {
             // The lane's header stays in view as the board scrolls sideways. Every card in one lane has none, but for the
             // Undo line or why a card couldn't move.
@@ -537,6 +537,10 @@ package struct OrderBoardView: View {
             case .all:
                 EmptyView()
             }
+            if let key = lane.mission, order.said.contains(where: { $0.mission == key }) {
+                OrderUndoLine(order: order, in: key)
+                    .padding(.horizontal, 4)
+            }
             StageUndoLine(refs: undoRefs, order: order)
                 .padding(.horizontal, 4)
             if let notice, notice.lane == lane.kind {
@@ -548,7 +552,7 @@ package struct OrderBoardView: View {
 
     /// Whether a lane has the Undo line of your last change, or why a card couldn't move.
     private func hasLines(_ lane: BoardLane, undoRefs: Set<ItemRef>) -> Bool {
-        order.lastChange.map { undoRefs.contains($0.ref) } == true || notice?.lane == lane.kind
+        order.lastStageChange.map { undoRefs.contains($0.ref) } == true || notice?.lane == lane.kind
     }
 
     /// A finished mission's lane folds to its header, as List's merged line does.
@@ -712,9 +716,16 @@ package struct OrderBoardView: View {
                     return started.payload
                 },
                 move: { forward in keyMove(card.ref, in: lane.kind, forward: forward, moves: moves) },
-                setAsNext: setAsNext.flatMap { setAsNext in card.stage == .waits ? { setAsNext(card.ref) } : nil }
+                setAsNext: Self.setAsNext(card, with: setAsNext)
             )
         }
+    }
+
+    /// Set as Next to Merge for a card that waits, in the mission whose lane it's in, as dropping it onto Can merge and
+    /// VoiceOver's action do; nil for one that doesn't wait, or where you can't change missions yourself.
+    package static func setAsNext(_ card: BoardCard, with setAsNext: ((ItemRef, MissionKey) -> Void)?) -> (() -> Void)? {
+        guard card.stage == .waits, let setAsNext, let mission = card.mission else { return nil }
+        return { setAsNext(card.ref, mission) }
     }
 
     // MARK: Moving
@@ -769,8 +780,9 @@ package struct OrderBoardView: View {
             // As the row's menu and VoiceOver's action move it, saying where Undo is.
             StageCommand.perform(.move(stage), on: card.ref, order: order, undo: .lane)
         case .setAsNext:
+            guard let setAsNext = Self.setAsNext(card, with: setAsNext) else { return false }
             notice = nil
-            setAsNext?(card.ref)
+            setAsNext()
         case .stays:
             return false
         case .refused(let why):

@@ -3,11 +3,12 @@ import BriefBarCore
 import BriefBarUI
 import CopilotTasks
 import Foundation
+import SwiftUI
 import Testing
 @testable import AzureDevOpsUI
 
 @MainActor
-@Suite struct OrderFactsTests {
+@Suite(.opensNothing) struct OrderFactsTests {
     private static let me = DemoData.me
 
     private static func pullRequest(
@@ -341,7 +342,7 @@ import Testing
         let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
         order.tellDemo(
             DemoPullRequestOrder.orders(now: store.now), evidence: DemoPullRequestOrder.evidence(now: store.now),
-            focus: DemoPullRequestOrder.focus
+            focus: DemoPullRequestOrder.focus, changes: DemoPullRequestOrder.changes(now: store.now)
         )
 
         facts.publish()
@@ -652,5 +653,70 @@ import Testing
         #expect(board.counts[.merged] ?? 0 > 0)
         #expect(board.refs.isSubset(of: Set(store.items.map(\.key.linkRef))))
         #expect(board.counts.values.reduce(0, +) == board.refs.count)
+    }
+
+    /// On a Board card in Can merge or Waits, the stage's words say where its order puts it: it has no capsule, and VoiceOver
+    /// doesn't hear its order again. One with no order known still shows the quiet ✎ of a change of yours, and VoiceOver
+    /// hears what it says.
+    @Test func aBoardCardKeepsWhatAChangeOfYoursSaysWhereItHasNoOrder() throws {
+        let order = Self.onOrder()
+        let now = Date(timeIntervalSince1970: 1_791_100_000)
+        let item = try #require(
+            PRClassifier.snapshot(for: Self.record(4130), seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now)
+        )
+        let ref = item.key.linkRef
+        let reading = StageReading(stage: .canMerge, why: .ready(autoComplete: false))
+        let moved = OrderRowContext(
+            step: OrderStep(ref: ref, status: .open, standing: .unordered, notes: [.moved(from: nil, now)]), isReady: true
+        )
+        let next = OrderRowContext(step: OrderStep(ref: ref, status: .open, standing: .next), isReady: true)
+        let said = try #require(moved.sentence)
+        #expect(PullRequestBoardCard.details(item, reading: reading, order: moved, ordering: order) == [said, "shop-web"])
+        #expect(PullRequestBoardCard.details(item, reading: reading, order: next, ordering: order) == ["shop-web"])
+
+        let copilot = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo, notifier: nil)
+        func height(_ context: OrderRowContext?) -> CGFloat {
+            let card = PullRequestBoardCard(
+                item: item, card: BoardCard(ref: ref, reading: reading), order: context, ordering: order, now: now
+            )
+            return NSHostingView(rootView: card.frame(width: 220).environmentObject(copilot)).fittingSize.height
+        }
+        #expect(height(moved) > height(nil) + 8)
+        #expect(abs(height(next) - height(nil)) < 0.5)
+    }
+
+    /// Your made-up changes in the demo hold over its orders: the order status rename goes first, the retry waits for it, and
+    /// the delivery estimates and the one-click checkout are a mission of your own.
+    @Test func theDemosChangesHoldOverItsOrders() async throws {
+        let store = await Self.demoStore()
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+        order.tellDemo(
+            DemoPullRequestOrder.orders(now: store.now), evidence: DemoPullRequestOrder.evidence(now: store.now),
+            focus: DemoPullRequestOrder.focus, changes: DemoPullRequestOrder.changes(now: store.now)
+        )
+
+        facts.publish()
+
+        let payments = try #require(order.missions.first { $0.key == DemoPullRequestOrder.focus })
+        let steps = Dictionary(uniqueKeysWithValues: payments.steps.map { ($0.ref, $0) })
+        let rename = try #require(steps[DemoPullRequestOrder.statusRename])
+        #expect(rename.standing == .next && rename.isYours && rename.isChangedByYou)
+        let retry = try #require(steps[DemoPullRequestOrder.retry])
+        #expect(retry.standing == .waiting(open: [DemoPullRequestOrder.statusRename], unknown: []) && retry.isYours)
+        #expect(OrderText.kind(of: payments) == "changed by you")
+        let yours = try #require(order.missions.first { $0.key == .mine(DemoPullRequestOrder.mineID) })
+        #expect(yours.steps.map(\.ref) == [DemoPullRequestOrder.deliveryEstimates, DemoPullRequestOrder.oneClickCheckout])
+        #expect(yours.steps.map(\.standing) == [.next, .waiting(open: [DemoPullRequestOrder.deliveryEstimates], unknown: [])])
+        #expect(OrderText.kind(of: yours) == "Your mission")
+    }
+
+    /// The pull requests listed only because someone sent them in a chat, which you don't watch.
+    @Test func itSaysWhichArentYoursButSentInAChat() async throws {
+        let store = await Self.demoStore()
+        let sent = PullRequestOrderFacts.sentInChats(store.records, watched: [])
+        let linked = store.records.filter { $0.role == .linked }.map(\.id)
+        #expect(!sent.isEmpty && sent == Set(linked.map(\.linkRef)))
+        #expect(PullRequestOrderFacts.sentInChats(store.records, watched: Set(linked)).isEmpty)
     }
 }

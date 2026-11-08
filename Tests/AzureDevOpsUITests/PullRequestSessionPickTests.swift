@@ -10,7 +10,7 @@ import Testing
 /// Copilot app's session that goes with it, asking when two go with it as well as each other, and never picking one whose
 /// log only mentions it; how work would reach it; and what's kept of your choice.
 @MainActor
-@Suite struct PullRequestSessionPickTests {
+@Suite(.opensNothing) struct PullRequestSessionPickTests {
     private let now = Date(timeIntervalSince1970: 1_792_317_600)
     private let fixing = "11111111-1111-4111-8111-111111111111"
     private let opener = "22222222-2222-4222-8222-222222222222"

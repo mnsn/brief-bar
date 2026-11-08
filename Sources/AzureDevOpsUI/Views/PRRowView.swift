@@ -34,6 +34,8 @@ struct PRRowView: View {
     var showsInWindow = false
     /// Where it stands in its mission, for its order capsule, on a window's Pull Requests page with Pull Request Order on.
     var order: OrderRowContext? = nil
+    /// Its Mission menu, and VoiceOver's actions for it, on a window's Pull Requests page with Pull Request Order on.
+    var mission: MissionMenuContext? = nil
     /// Its stage, on a line of its own under its title, while Pull Request Order is on: nil on a row of one line, such as a
     /// widget's, which keeps one height. A value, so that the row draws again as it changes.
     var stage: StageReading? = nil
@@ -80,6 +82,7 @@ struct PRRowView: View {
                     if let open = order?.open { Button("Show Its Mission", action: open) }
                     if let ordering { StageAccessibilityActions(ref: item.key.linkRef, order: ordering) }
                 }
+                .missionActions(item.key.linkRef, context: mission)
                 // Its stage's menu and Finished My Review, over the row's button, which would take their clicks.
                 .stageControls(ref: item.key.linkRef, order: stage == nil ? nil : ordering, now: now)
                 RowSummary(subject: item.key.linkRef)
@@ -200,7 +203,8 @@ struct PRRowView: View {
 
     private var additionalMenuItems: some View {
         PullRequestMenuItems(
-            item: item, openSource: openSource, dismiss: dismiss, stopWatching: stopWatching, ordering: ordering
+            item: item, openSource: openSource, dismiss: dismiss, stopWatching: stopWatching, mission: mission,
+            ordering: ordering
         )
     }
 
@@ -337,7 +341,8 @@ struct CountChips: View {
 }
 
 /// A row's stage, on its own line under its title, while Pull Request Order is on: its pill, why, and who set it; where
-/// it stands in its order, unless its stage says it, as Can merge and Waits do; and Finished My Review in Your review.
+/// it stands in its order, unless its stage says it, as Can merge and Waits do (`OrderRowContext.isSaid`), or the quiet
+/// ✎ of a change of yours where it has no order; and Finished My Review in Your review.
 /// As many lines as it needs, so it wraps rather than squeezes when narrow; why, and who set it, wrap too where they're
 /// longer than the row is wide, such as a session's long name with a failed build after it, rather than being cut off.
 /// The row is a button, which would take every click: the pill's menu and Finished My Review go over it, where their
@@ -364,7 +369,7 @@ struct RowStageLine: View {
                 Text("· " + who)
                     .foregroundStyle(.tertiary)
             }
-            if let order, stage.stage != .canMerge, stage.stage != .waits {
+            if let order, !order.isSaid(by: stage.stage) {
                 OrderCapsule(order)
             }
             if stage.isOnBoard, stage.stage == .yourReview {

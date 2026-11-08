@@ -322,17 +322,18 @@ changes; **Your review** once a session that wrote it finished, or when someone 
 commits come after your vote, also while Copilot's pre-review of it runs; **Teammate's review** while it waits for
 others, or **Find a reviewer** when nobody else is asked; **Can merge** once Azure DevOps says it's ready to complete
 and BriefBar saw what its order puts before it merge; **Waits for another PR** while its order puts it after one that
-hasn't merged; and **Merged**. BriefBar works it out from Azure DevOps and your Copilot sessions. Where a session or a
-stage you set decides it while your build failed, it says that too: **‘Cart’ asks you · build failed**. Click the label
-to pick another, or the one it's in to keep it there until you change it, or **Finished My Review** beside it to send it
-to your teammates; **Stage** in a row's Actions and right-click menus, and VoiceOver's actions, do the same. What you
-set holds until the pull request moves on: new commits, or a session that finishes writing it, end In progress; a vote
-ends Teammate's review, someone else's on yours, and yours on someone else's; merging or closing it ends any. **Let
-BriefBar Decide** forgets it, and **Undo** puts back your last change. Can merge and Waits come only from what Azure
-DevOps and its order show: nobody can set them. Its details show the whole track under its heading, with its next step,
-such as **Finished My Review** or **Add Reviewers in Azure DevOps**. Stages only label rows: groups, Needs You, counts,
-notifications and the brief stay as they were. On someone else's pull request, Finished My Review takes it off your
-board until you vote in Azure DevOps, which is still yours to do, or something new needs you there.
+hasn't merged, or until you retarget one still targeting the branch of one that merged; and **Merged**. BriefBar works
+it out from Azure DevOps and your Copilot sessions. Where a session or a stage you set decides it while your build
+failed, it says that too: **‘Cart’ asks you · build failed**. Click the label to pick another, or the one it's in to
+keep it there until you change it, or **Finished My Review** beside it to send it to your teammates; **Stage** in a
+row's Actions and right-click menus, and VoiceOver's actions, do the same. What you set holds until the pull request
+moves on: new commits, or a session that finishes writing it, end In progress; a vote ends Teammate's review, someone
+else's on yours, and yours on someone else's; merging or closing it ends any. **Let BriefBar Decide** forgets it, and
+**Undo** puts back your last change. Can merge and Waits come only from what Azure DevOps and its order show: nobody
+can set them. Its details show the whole track under its heading, with its next step, such as **Finished My Review**
+or **Add Reviewers in Azure DevOps**. Stages only label rows: groups, Needs You, counts, notifications and the brief
+stay as they were. On someone else's pull request, Finished My Review takes it off your board until you vote in Azure
+DevOps, which is still yours to do, or something new needs you there.
 
 **Up Next**, at the top of the window's page while [Pull Request Order](#settings) is on, says what's next for you,
 whichever way you sort: a slot for each kind of next, in its stage's color, each with its first pull request and
@@ -351,15 +352,16 @@ one. Up Next's pull request wears **Next** in its column. Each column puts the m
 progress puts what needs you before it, so that Fix next's is its first card. Click a card, or press **Return** or
 **Space** on it, for its details, or right-click it for its menu; drag it to another column of its lane, or click it, or
 Tab to it, and press **⌘→** or **⌘←**, to change its stage, which says so with **Undo** at the top of its lane, even
-once the card leaves the board. Where its details cover the Board, in a narrow window or with bigger text, ⌘→ and ⌘←
-move the pull request they show, and the card has the keyboard again once they close. While you drag, the columns that
-take it light up, and those that don't say why: only Azure DevOps decides that a pull request can merge or merged, its
-order what it waits for, and someone else's pull request asks its own reviewers, so **Finished My Review** takes it off
-your board instead, there and in its menus. A row's order capsule, such as **Next to merge**, clicked in another sort
-shows its mission's lane, and a lane for each mission again if they were None. Narrow, or with bigger text, the Board
-scrolls sideways; a line under it counts the pull requests in your lists that aren't on it, such as others' you
-approved, and **Show By Status** lists them. GitHub's page, whose pull requests have no stages, offers List and Map, and
-shows List where you chose the Board.
+once the card leaves the board. Drag one from **Waits** onto **Can merge**, or press **⌘←** on it there, to set it as
+next to merge in its lane's mission. Where its details cover the Board, in a narrow window or with bigger text, ⌘→ and
+⌘← move the pull request they show, and the card has the keyboard again once they close. While you drag, the columns
+that take it light up, and those that don't say why: only Azure DevOps decides that a pull request can merge or
+merged, its order what it waits for, and someone else's pull request asks its own reviewers, so **Finished My Review**
+takes it off your board instead, there and in its menus. A row's order capsule, such as **Next to merge**, clicked in
+another sort shows its mission's lane, and a lane for each mission again if they were None. Narrow, or with bigger
+text, the Board scrolls sideways; a line under it counts the pull requests in your lists that aren't on it, such as
+others' you approved, and **Show By Status** lists them. GitHub's page, whose pull requests have no stages, offers
+List and Map, and shows List where you chose the Board.
 
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote
@@ -489,12 +491,20 @@ backoff’, not pushed** or **Couldn't fix it in ‘Retry backoff’**, with wha
 couldn't; click it to see the session. One of BriefBar's own tasks, named for what it does, is called a task there,
 **Fixed in the ‘Fix Comments’ task, not pushed**. When you send a session something else
 before it's done with what you sent it, BriefBar can't tell from the session which of them ended how, so the earlier
-thread says **Sent to ‘Retry backoff’ · see the session** instead. Once fixes are done, of comments or of a build
+thread says **Sent to ‘Retry backoff’ · see the session** instead, as it does once a session hasn't finished in twelve
+hours, such as one that waited overnight for your answer. A line's **⋯**, or its right-click menu, has what it allows:
+**Stop**, while Copilot is at it, which stops one of BriefBar's tasks, or the session's turn in the Copilot app, or shows
+the session to stop it there when BriefBar's extension in it can't; **Try Again**, for a fix that failed or stopped,
+which sends it again with the same words, to where it went, or, when it can't go just as it did, opens it there for you to check and send, saying why; and **Clear**, which
+lets the line go. **Fix** waits while Copilot fixes the
+thread. Once fixes are done, of comments or of a build
 (below), a bar at the foot of the details, or of a pull request's
 page over a work item's or another pull request's, says what's ready, by what it fixed, **2 fixes ready in ‘Retry
 backoff’** or **1 fix and the conflicts' resolution ready in ‘Retry backoff’**, which takes you to what they fixed,
 with **Push & Reply…**, which opens the Send to Copilot window to commit them, push, and reply on the threads they
-fixed, from that session; they stay in the bar when Push & Reply fails or is stopped, to try again. What's Left says
+fixed, from that session, or **Push…** when they fixed no comment; they stay in the bar when Push & Reply fails or is
+stopped, to try again. Push & Reply commits all that session changed, so a comment it fixed before that Push & Reply
+doesn't list says **Pushed from ‘Retry backoff’, without a reply**, and stays so after a later push fails. What's Left says
 **Copilot's on it** while Copilot fixes, or pushes, its comments, a build or its conflicts, whether with one of
 BriefBar's tasks or a prompt to one of the Copilot app's sessions, and **Copilot asks you** while that session waits for
 your answer in the app. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
@@ -642,8 +652,8 @@ session or another; it doesn't commit, push or touch pipelines. The build then s
 state's color, above its buttons while it's open, under its name while it's closed, such as **Copilot is fixing this
 build in ‘Retry backoff’ · 2m** or **Fixed in ‘Retry backoff’, not pushed**, with what Copilot said once it's done; and,
 closed, that a session is explaining it, with **Stop**, or answered, with **Show**, which opens it. The fix counts in the
-bar at the details' foot, whose **Push & Reply…** pushes it; a rerun, or a push, that passes ends it, and so does a run
-that fails after its push, for you to fix it again.
+bar at the details' foot, whose **Push…** pushes it, or **Push & Reply…** with comments' fixes; a rerun, or a push, that
+passes ends it, and so does a run that fails after its push, for you to fix it again.
 
 **See which files conflict.** When Azure DevOps says a pull request has merge conflicts, its details list them
 right under **What's Left**, whose **Merge conflicts** takes you there: each file that conflicts with its target
@@ -657,9 +667,11 @@ retargets it, and, on your own pull request,
 **Resolve** has Copilot merge the target branch in and resolve them, as you say in **Tell Copilot how (optional)**,
 through the same composer in place, where it goes one **▾** away. Its prompt, and that of **Resolve Conflicts with
 Copilot…** in the pull request's menu while its details show it, lists the files and how each conflicts. It may commit
-the merge, but doesn't push: once it's done, **Push & Reply…**, in the bar at the foot of the details, does. A line
+the merge, but doesn't push: once it's done, **Push…**, in the bar at the foot of the details, does. A line
 under them says what Copilot does about them, such as **Copilot is resolving the conflicts in ‘Rename the order status
-enum’ · 2m** or **Resolved in ‘Rename the order status enum’, not pushed**. BriefBar reads which files conflict with
+enum’ · 2m** or **Resolved in ‘Rename the order status enum’, not pushed**, until they're gone, or the pull request
+targets another branch: a resolution of the old ones isn't offered to push, or to resolve them in, once it conflicts
+again. BriefBar reads which files conflict with
 one request as the details show a pull request with conflicts, in a window you can see, and again once its branch or
 its target moves, and keeps them in memory only, while the details show that pull request.
 
@@ -823,7 +835,7 @@ With it on, **your pull requests' menus send them to Copilot too** (right-click 
 | **Fix Comments with Copilot…** | your pull request with unresolved comments | addresses each one that waits on you, quoted word for word, with its file and line, then builds and tests; it doesn't commit, push or reply |
 | **Fix the Build with Copilot…** | your pull request whose build failed | reproduces the failure, from where it failed and the run's errors, and, for a build you opened in its details, the tests that failed and the end of its log, and fixes it, or says it's infrastructure or flaky; it doesn't push, or touch pipelines |
 | **Resolve Conflicts with Copilot…** | your pull request with merge conflicts | merges the target branch in and resolves the conflicts, with the files that conflict once its details read them; it may commit the merge, but doesn't push |
-| **Push & Reply with Copilot…** | your pull request, once one of those is done | goes on in the same session: commits, pushes the branch (never with force), replies on the threads it addressed and resolves them |
+| **Push & Reply with Copilot…** | your pull request, once one of those is done | goes on in the session the fixes are in, one session at a time: commits, pushes the branch (never with force), replies on the threads they fixed and resolves them; **Push with Copilot…** when they fixed no comment. Nothing goes while the session holds a merge of what the branch the pull request merges into doesn't have, as when it was retargeted after Copilot resolved its conflicts, while Azure DevOps or the list says it merges into another branch than the prompt names, or, for a Copilot app session, while a turn runs in it or in its checkout: BriefBar says why |
 | **Pre-review with Copilot…** | a pull request you review | reads the change and drafts your review, with each comment's file, line and how much it matters; it changes and posts nothing |
 
 The Copilot CLI refuses what an action shouldn't do, whatever a comment asks: only Push & Reply may push,
@@ -833,8 +845,8 @@ in the clone of its repository you choose the first time, and a later one goes o
 session, in its worktree, unless you start a new one. As with a work item, a notification says Copilot is
 on it, and the task is listed with your Copilot sessions. The pull request's row shows how its task is
 going, and its menu has the task's own menu. Once **Fix Comments** or **Push & Reply** starts, or you send
-it to a session in Copilot ([below](#sending-to-a-session-thats-already-there)), the comments its prompt quotes are
-off **Needs You**; one that comes while you check the prompt, in a thread you take out of it, or in one
+it to a session in Copilot ([below](#sending-to-a-session-thats-already-there)), or paste it there once BriefBar copied
+it for you, and BriefBar sees what you pasted, the comments its prompt quotes are off **Needs You**; one that comes while you check the prompt, in a thread you take out of it, or in one
 reopened meanwhile, still needs you. Comments are written by whoever wrote them, and go to an agent that
 may run any command: send only what you'd hand to Copilot yourself.
 
@@ -988,7 +1000,7 @@ to the Copilot CLI, as turning agents on does, and is checked once it's there. F
 |---|---|
 | `needs_me` | What the menu bar counts, in each source: pull requests that need you, fail or are ready to complete, pinned pipelines that failed, Copilot sessions waiting for you |
 | `pull_requests` | Your pull requests by group, each with why it's there and its link |
-| `pull_request` | One pull request: votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, as its details show it, and why, or the ones it asks you to choose from |
+| `pull_request` | One pull request: the branch it merges into, as Azure DevOps says when you ask, votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, as its details show it, and why, or the ones it asks you to choose from |
 | `pull_request_prompt` | The prompt of **Fix Comments**, **Fix the Build**, **Resolve Conflicts**, **Pre-review** or **Push & Reply**, for the agent to follow where it works |
 | `pipelines` | Your pinned pipelines, and the ones after your merges |
 | `sprint` | Your team's sprint, or only your part of it |
@@ -1198,7 +1210,7 @@ DevOps' gear menu has its own too: they're the same settings.
 
 | Works with | Setting | Options |
 |---|---|---|
-| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. **Forget All Orders…** forgets the orders sessions told it; **Forget Stages…**, the stages you set |
+| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. **Forget All Orders…** forgets the orders sessions told it, and your changes; **Forget Stages…**, the stages you set |
 | Azure DevOps only | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |

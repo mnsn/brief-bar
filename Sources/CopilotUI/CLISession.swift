@@ -137,7 +137,7 @@ enum CLISession {
             try? FileManager.default.removeItem(at: file)
             throw error
         }
-        guard NSWorkspace.shared.open(file) else {
+        guard ThisMac.open(file) else {
             try? FileManager.default.removeItem(at: file)
             return false
         }
@@ -157,7 +157,7 @@ enum CLISession {
         }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        ThisMac.openApplication(at: url, configuration: configuration)
     }
 
     static func alert(_ message: String, _ information: String) {
@@ -165,7 +165,7 @@ enum CLISession {
         alert.messageText = message
         alert.informativeText = information
         NSApp.activate()
-        alert.runModal()
+        ThisMac.ask(alert)
     }
 
     /// Where the scripts that open sessions in Terminal go: BriefBar's caches, as for **Continue in Terminal**.

@@ -7,9 +7,34 @@ import SwiftUI
 // it, and a small composer under it. For a comment thread's Explain and Fix, and Fix All, now; built to serve a failed
 // build and conflicts the same way.
 
+/// What a line that says what Copilot does about something can do, from its ⋯ menu, its context menu and VoiceOver's
+/// actions, as what it says allows (`CopilotTasksStore.canStop`, `canTryAgain`, `canClear`): stop what Copilot is at; send
+/// a fix that failed or stopped again, with the same words; or let the line go, as Dismiss does for an answer.
+struct CopilotLineActions {
+    var stop: (() -> Void)?
+    var tryAgain: (() -> Void)?
+    var clear: (() -> Void)?
+
+    var isEmpty: Bool { stop == nil && tryAgain == nil && clear == nil }
+
+    /// "Stop, Try Again or Clear", for the menu's tooltip.
+    var names: String {
+        let names = [stop.map { _ in "Stop" }, tryAgain.map { _ in "Try Again" }, clear.map { _ in "Clear" }].compactMap { $0 }
+        return names.count > 1 ? names.dropLast().joined(separator: ", ") + " or " + names[names.count - 1] : names.first ?? ""
+    }
+
+    @ViewBuilder
+    var items: some View {
+        if let stop { Button("Stop", action: stop) }
+        if let tryAgain { Button("Try Again", action: tryAgain) }
+        if let clear { Button("Clear", action: clear) }
+    }
+}
+
 /// What Copilot does about something, in a sentence, in its state's color, with since when: "Copilot is fixing this in
 /// ‘Retry backoff’ · 2m", and under it what it's at, such as the step it runs, or what Copilot said as it ended, such as why
-/// it couldn't. A click opens where it works, when something can; what's after it, such as Stop, is the caller's.
+/// it couldn't. A click opens where it works, when something can; ⋯ has what can be done about it (`actions`); what's after
+/// it, such as Stop for a question, is the caller's.
 struct CopilotWorkLine<Trailing: View>: View {
     /// Its symbol, in its state's color.
     let symbol: String
@@ -26,6 +51,8 @@ struct CopilotWorkLine<Trailing: View>: View {
     var detail: String?
     /// What a click does, and its tooltip.
     var open: (perform: () -> Void, help: String)?
+    /// What its menu can do about it, as its state allows.
+    var actions = CopilotLineActions()
     @ViewBuilder var trailing: () -> Trailing
 
     @LocalState private var isHovered = false
@@ -55,13 +82,32 @@ struct CopilotWorkLine<Trailing: View>: View {
                     .accessibilityLabel(spoken)
                     .accessibilityHint(open.help)
                     .accessibilityAddTraits(.isButton)
+                    .accessibilityActions { actions.items }
             } else {
                 label(opens: false)
                     .help(help)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(spoken)
+                    .accessibilityActions { actions.items }
             }
             trailing()
+            if !actions.isEmpty {
+                Menu {
+                    actions.items
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(size: 11, weight: .semibold)
+                        .frame(width: 18 * textScale, height: 18 * textScale)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(actions.names)
+                .accessibilityLabel("Copilot's Work")
+                .accessibilityHint(actions.names)
+            }
         }
         .padding(.leading, 8)
         .padding(.trailing, 4)
@@ -70,7 +116,21 @@ struct CopilotWorkLine<Trailing: View>: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill((state?.color ?? Color.primary).opacity(isHovered && open != nil ? 0.13 : 0.08))
         )
+        .modifier(LineMenu(actions: actions))
         .accessibilityElement(children: .contain)
+    }
+
+    /// Its context menu, while it has something to do: one without would take the place of what it's in's.
+    private struct LineMenu: ViewModifier {
+        let actions: CopilotLineActions
+
+        func body(content: Content) -> some View {
+            if actions.isEmpty {
+                content
+            } else {
+                content.contextMenu { actions.items }
+            }
+        }
     }
 
     private func label(opens: Bool) -> some View {
@@ -137,10 +197,11 @@ struct CopilotWorkLine<Trailing: View>: View {
 extension CopilotWorkLine where Trailing == EmptyView {
     init(
         symbol: String, text: String, state: ItemState?, since: Date?, now: Date, subtitle: String? = nil, detail: String? = nil,
-        open: (perform: () -> Void, help: String)? = nil
+        open: (perform: () -> Void, help: String)? = nil, actions: CopilotLineActions = CopilotLineActions()
     ) {
         self.init(
-            symbol: symbol, text: text, state: state, since: since, now: now, subtitle: subtitle, detail: detail, open: open
+            symbol: symbol, text: text, state: state, since: since, now: now, subtitle: subtitle, detail: detail, open: open,
+            actions: actions
         ) { EmptyView() }
     }
 }

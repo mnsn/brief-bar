@@ -110,11 +110,13 @@ struct PullRequestDetailsContent: View {
                 PullRequestSessionLine(item: item)
                 // Where it is in its flow, while Pull Request Order is on.
                 PullRequestStageTrack(item: item, ordering: ordering, now: store.now) { store.open(item) }
+                // Its mission, while Pull Request Order is on.
+                PullRequestOrderLine(item: item)
                 // Its summary, of it and what's linked to it, under what it is.
                 PageSummary(ref: ref)
                 if let readiness = panel.readiness, !readiness.items.isEmpty {
                     PullRequestLeftSection(
-                        readiness: readiness, completesByItself: record?.pullRequest.autoComplete == true, copilotAction: copilotAction,
+                        readiness: readiness, completesByItself: record?.pullRequest.autoComplete == true, copilotKinds: copilotKinds,
                         copilot: copilotOnIt(record)
                     ) { left in
                         if let place = PullRequestDetailsStore.Place.of(left, in: panel) { details.go(to: place) }
@@ -212,11 +214,12 @@ struct PullRequestDetailsContent: View {
         let page: String?
     }
 
-    /// What the task Copilot is at work on for the pull request does, while Send Work to Copilot is on; in pictures, what
-    /// they draw Copilot doing about each part says it (`copilotOnIt`).
-    private var copilotAction: PullRequestAction? {
-        guard preview == nil, copilot.isOn, let entry = copilot.latest(forPullRequest: item.key), entry.status.phase.isActive else { return nil }
-        return entry.action
+    /// What's left of the pull request that the task Copilot is at work on for it takes care of, while Send Work to Copilot
+    /// is on (`CopilotTaskEntry.kindsAtWork`); in pictures, what they draw Copilot doing about each part says it
+    /// (`copilotOnIt`).
+    private var copilotKinds: Set<PRReadiness.Item.Kind> {
+        guard preview == nil, copilot.isOn, let entry = copilot.latest(forPullRequest: item.key) else { return [] }
+        return entry.kindsAtWork
     }
 
     /// What Copilot does now about each kind of what's left (`CopilotTasksStore.onIt`); in pictures, as they draw it.

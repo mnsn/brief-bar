@@ -11,6 +11,16 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
     case sharedCheckout
     /// The Copilot CLI didn't fork the session (`CopilotLauncher.Request.forking`): why, in a sentence.
     case cantFork(String)
+    /// Push & Reply would push a merge of commits the branch the pull request merges into doesn't have
+    /// (`Git.checkPush(in:source:target:)`): that branch.
+    case foreignMerge(target: String)
+    /// BriefBar couldn't check what Push & Reply would push: what git said.
+    case cantCheckPush(String)
+    /// The pull request merges into another branch now than the one Push & Reply's prompt names, and the session was checked
+    /// against (`TaskPullRequest.targetBranch`): that branch.
+    case retargeted(String)
+    /// BriefBar couldn't read which branch the pull request merges into now (`Request.targetNow`): why.
+    case cantReadTarget(String)
 
     public var description: String {
         switch self {
@@ -22,6 +32,14 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
         case .sharedCheckout:
             return "Another Copilot session is working in the same checkout now, so Copilot didn't start there on its own. Send it again once that's done, or open the session in Copilot."
         case .cantFork(let reason): return reason
+        case .foreignMerge(let target):
+            return "This session holds a merge that \(target) doesn't have, so Copilot didn't push from it. Fix the pull request in a new session."
+        case .cantCheckPush(let message):
+            return "BriefBar couldn't check what this session would push, so Copilot didn't push from it: \(message)"
+        case .retargeted(let target):
+            return "The pull request merges into \(target) now, not the branch its prompt named, so Copilot didn't push from this session. Send Push & Reply again, for a prompt that names \(target)."
+        case .cantReadTarget(let why):
+            return "BriefBar couldn't read which branch the pull request merges into, so Copilot didn't push from this session: \(why)"
         }
     }
 }
@@ -52,10 +70,15 @@ public struct CopilotLauncher: Sendable {
         /// history and its checkout, stay as they were, even while it works, or the Copilot app has it open; and so do its
         /// changes that aren't committed, which the fork's worktree doesn't have, as with the CLI's own `/fork worktree`.
         public var forking: CopilotRun?
+        /// For Push & Reply, reads the branch the pull request merges into now, as Azure DevOps says, or the list has read
+        /// since, when that's another: right before git checks what the session would push against `targetBranch`, the one
+        /// its prompt names, and again right before Copilot starts. When it's another, or it throws, as when it can't be
+        /// read, Copilot doesn't start (`LaunchError.retargeted`, `LaunchError.cantReadTarget`). Nil when nothing reads it.
+        public var targetNow: (@Sendable () async throws -> String)?
 
         public init(
             subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, worktreesFolder: URL?,
-            continuing: CopilotRun? = nil, forking: CopilotRun? = nil
+            continuing: CopilotRun? = nil, forking: CopilotRun? = nil, targetNow: (@Sendable () async throws -> String)? = nil
         ) {
             self.subject = subject
             self.prompt = prompt
@@ -64,6 +87,7 @@ public struct CopilotLauncher: Sendable {
             self.worktreesFolder = worktreesFolder
             self.continuing = continuing
             self.forking = forking
+            self.targetNow = targetNow
         }
 
         public init(workItem: TaskWorkItem, prompt: String, options: CopilotRunOptions, repository: URL, worktreesFolder: URL?) {
@@ -211,6 +235,30 @@ public struct CopilotLauncher: Sendable {
             if let error = error as? GitError { throw LaunchError.git(error) }
             throw error
         }
+        // Push & Reply pushes what the session's checkout holds: never a merge of commits the branch the pull request merges
+        // into doesn't have, as when it was retargeted after its conflicts were resolved there. A new session's worktree
+        // starts at the branch's latest commit, with nothing to push yet.
+        if case .pullRequest(let pullRequest, .pushAndReply) = request.subject, request.continuing != nil || request.forking != nil {
+            // Against the branch the prompt names, while the pull request merges into it, as Azure DevOps says now: the
+            // list may not have read a retarget yet.
+            var refusal = await Self.targetProblem(of: request, pullRequest)
+            if refusal == nil {
+                do {
+                    if try await git.checkPush(in: worktree, source: pullRequest.sourceBranch, target: pullRequest.targetBranch) == .foreignMerge {
+                        refusal = .foreignMerge(target: pullRequest.targetBranch)
+                    }
+                } catch {
+                    refusal = .cantCheckPush((error as? GitError)?.description ?? String(describing: error))
+                }
+            }
+            // Again, once git is done, right before Copilot starts.
+            if refusal == nil { refusal = await Self.targetProblem(of: request, pullRequest) }
+            if let refusal {
+                if made { try? await git.removeWorktree(at: worktree, of: repository.root, force: true) }
+                if let fork { await forker.discard(fork) }
+                throw refusal
+            }
+        }
         // Again, after the git commands above, right before it starts: the app may have opened the session meanwhile, or
         // another of its sessions started a turn in the same checkout.
         if request.continuing != nil {
@@ -262,5 +310,17 @@ public struct CopilotLauncher: Sendable {
         // The fork is the task's session now, no longer one to delete.
         if let fork { await forker.forget(fork) }
         return run
+    }
+
+    /// Why Push & Reply mustn't go now, by the branch the pull request merges into as `Request.targetNow` reads it: another
+    /// than the one its prompt names, or none it could read. Nil when it's that one, or nothing reads it.
+    static func targetProblem(of request: Request, _ pullRequest: TaskPullRequest) async -> LaunchError? {
+        guard let targetNow = request.targetNow else { return nil }
+        do {
+            let target = try await targetNow()
+            return target == pullRequest.targetBranch ? nil : .retargeted(target)
+        } catch {
+            return .cantReadTarget(String(describing: error))
+        }
     }
 }

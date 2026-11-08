@@ -40,7 +40,9 @@ struct PullRequestsByMission: View {
             openElsewhere: services.hasPage(.githubPullRequests) ? { services.openWindow(.githubPullRequests) } : nil,
             listed: listed, apart: apart,
             row: { step, mission in
-                byRef[step.ref].map { item in row(item, OrderRowContext(step: step, mission: mission, isReady: item.group == .ready)) }
+                byRef[step.ref].map { item in
+                    row(item, OrderRowContext(step: step, mission: mission, isReady: item.group == .ready, names: ordering.names))
+                }
             },
             place: { byRef[$0]?.repository },
             isSelected: { ref in byRef[ref].map(isSelected) ?? false },
@@ -51,6 +53,7 @@ struct PullRequestsByMission: View {
             },
             rest: { refs in rest(refs.compactMap { byRef[$0] }) },
             board: board, card: { boardCard in byRef[boardCard.ref].map { card($0, boardCard) } },
+            setAsNext: { ref, mission in MissionMenuContext.setAsNext(ref, in: mission, order: ordering) },
             showByStatus: showByStatus, now: now
         )
     }
@@ -95,7 +98,7 @@ struct PullRequestBoardCard: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             let flags = Self.flags(item, reading: reading)
-            if !flags.isEmpty || order != nil && card.stage != .canMerge && card.stage != .waits {
+            if !flags.isEmpty || order?.isSaid(by: card.stage) == false {
                 FlowLayout(spacing: 5, lineSpacing: 4) {
                     ForEach(flags, id: \.text) { flag in
                         HStack(alignment: .firstTextBaseline, spacing: 3) {
@@ -106,7 +109,7 @@ struct PullRequestBoardCard: View {
                         .font(size: 11, weight: .semibold)
                         .foregroundStyle(flag.color)
                     }
-                    if let order, card.stage != .canMerge, card.stage != .waits {
+                    if let order, !order.isSaid(by: card.stage) {
                         OrderCapsule(order)
                     }
                 }
@@ -165,7 +168,7 @@ struct PullRequestBoardCard: View {
     @MainActor
     static func details(_ item: PRSnapshot, reading: StageReading, order: OrderRowContext?, ordering: PullRequestOrder) -> [String] {
         var details = flags(item, reading: reading).map(\.text)
-        if let sentence = order?.sentence, reading.stage != .canMerge, reading.stage != .waits { details.append(sentence) }
+        if let sentence = order?.sentence, order?.isSaid(by: reading.stage) == false { details.append(sentence) }
         if let worker = worker(on: item.key.linkRef, besides: reading, ordering: ordering) {
             details.append(SpokenText.unquoted("‘\(worker.label)’ works on it"))
         }
@@ -187,9 +190,9 @@ struct PullRequestBoardCard: View {
 
 extension PullRequestsByMission {
     /// For `--render`, with Pull Request Order on and a mission to show: the page By Mission, in List, on the Map and on the
-    /// Board, Up Next above each, also with text at 150%, and in a narrow window, its header's controls their symbols alone;
-    /// the Board with Lanes: None; and By Status, Up Next above it, with the order's capsules on the rows, also narrow and with
-    /// text at 150%, where Up Next's slots wrap.
+    /// Board, Up Next above each, also with text at 150%, and in a narrow window, its header's controls their symbols alone,
+    /// also all the way down to a mission of your own; the Board with Lanes: None; and By Status, Up Next above it, with the
+    /// order's capsules on the rows, also narrow and with text at 150%, where Up Next's slots wrap.
     @MainActor
     static func renderings(
         store: PRStore, services: AppServices, environment: (AnyView) -> AnyView
@@ -199,6 +202,7 @@ extension PullRequestsByMission {
         typealias Shown = (name: String, order: PROrder, view: OrderView, lanes: BoardLanes?, scale: CGFloat?, size: CGSize)
         let shown: [Shown] = [
             ("pull-requests-by-mission", .byMission, .list, nil, nil, CGSize(width: 1_000, height: 1_000)),
+            ("pull-requests-by-mission-narrow-tall", .byMission, .list, nil, nil, CGSize(width: 560, height: 1_400)),
             ("pull-requests-by-mission-map", .byMission, .map, nil, nil, CGSize(width: 1_000, height: 720)),
             ("pull-requests-by-mission-150", .byMission, .list, nil, 1.5, CGSize(width: 1_000, height: 1_000)),
             ("pull-requests-by-mission-narrow", .byMission, .list, nil, nil, CGSize(width: 560, height: 720)),

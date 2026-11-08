@@ -263,7 +263,7 @@ public final class SessionEngine: @unchecked Sendable {
 
     /// Whether there's nothing at all at `url`, rather than something that can't be reached, which
     /// `FileManager.fileExists` doesn't tell apart.
-    static func isMissing(_ url: URL) -> Bool {
+    public static func isMissing(_ url: URL) -> Bool {
         var info = stat()
         return lstat(url.path, &info) != 0 && errno == ENOENT
     }

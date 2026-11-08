@@ -76,6 +76,41 @@ import Testing
         #expect(announced.value == 3)
     }
 
+    /// `pull_request` names the branch a pull request merges into as Azure DevOps says as it's asked, with one request each
+    /// time, rather than as the lists read it, up to a minute before, since an agent checks it right before it pushes; and,
+    /// when it can't read it, says it can't tell whether it's still the one the lists read.
+    @Test func pullRequestReadsTheBranchItMergesIntoAsItsAsked() async throws {
+        let now = Date()
+        let server = StubServer()
+        let mine = Fixture.pullRequest(1, title: "Mine", created: now.addingTimeInterval(-day))
+        server.serveOrganization(mine: [mine])
+        var retargeted = mine
+        retargeted["targetRefName"] = "refs/heads/release/x"
+        // What Azure DevOps answers for it alone: that it merges into main, or into release/x, or nothing it can read.
+        let answers = [StubServer.Reply.json(mine), .json(retargeted), .status(404)]
+        let answer = Mutex(0)
+        server.on("/_apis/git/pullrequests/1") { _ in answers[answer.withLock { $0 }] }
+        let agent = AzureDevOpsAgent(reader: reader(server, defaults: defaults()))
+        func reads() -> Int { server.requests.filter { $0.url?.path.hasSuffix("/_apis/git/pullrequests/1") == true }.count }
+
+        let first = try await agent.pullRequest(.int(1), now: now)
+        #expect(first.contains(", from fix-total into main\n"))
+        #expect(!first.contains("can't tell"))
+        #expect(reads() == 1)
+        // Retargeted in Azure DevOps, within the minute the lists' read is kept for.
+        answer.withLock { $0 = 1 }
+        #expect(try await agent.pullRequest(.int(1), now: now.addingTimeInterval(10)).contains(", from fix-total into release/x\n"))
+        #expect(reads() == 2)
+        // Once it can't be read: the branch the lists read, and that it can't tell.
+        answer.withLock { $0 = 2 }
+        let unread = try await agent.pullRequest(.int(1), now: now.addingTimeInterval(20))
+        #expect(unread.contains(
+            ", from fix-total into main\n- BriefBar couldn't read which branch it merges into just now, so it can't tell whether that's still main: "
+        ))
+        #expect(reads() == 3)
+        #expect(server.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
+    }
+
     @Test func writesTheFixBuildPromptWithTheRunsErrors() async throws {
         let now = Date()
         let server = StubServer()

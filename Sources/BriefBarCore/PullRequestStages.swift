@@ -240,7 +240,7 @@ public enum StageOrder: Equatable, Sendable {
     /// What the missions say of a pull request: the first that holds it, else free. One stacked on another, which targets
     /// its branch or follows it in a GitHub stack, waits for it until BriefBar sees it merge, whatever its order says, and
     /// whether an order names that one, this order or another: completing it before would merge it into that one's
-    /// branch.
+    /// branch. Once that one merged, one still targeting its branch holds until it's retargeted.
     public static func of(_ ref: ItemRef, in missions: [OrderMission]) -> StageOrder {
         var statuses: [ItemRef: OrderStatus] = [:]
         for mission in missions {

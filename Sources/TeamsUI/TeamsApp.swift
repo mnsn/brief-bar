@@ -1,4 +1,5 @@
 import AppKit
+import BriefBarUI
 import TeamsCore
 
 /// Talking to the Microsoft Teams app.
@@ -25,9 +26,9 @@ enum TeamsApp {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         if let applicationURL {
-            NSWorkspace.shared.open([link], withApplicationAt: applicationURL, configuration: configuration)
+            ThisMac.open([link], with: applicationURL, configuration: configuration)
         } else {
-            NSWorkspace.shared.open(link)
+            ThisMac.open(link)
         }
     }
 
@@ -35,6 +36,6 @@ enum TeamsApp {
         guard let applicationURL else { return }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: applicationURL, configuration: configuration)
+        ThisMac.openApplication(at: applicationURL, configuration: configuration)
     }
 }

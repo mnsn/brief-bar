@@ -8,7 +8,7 @@
   teammate, the next to merge and the next that waits, each with how many more, however you sort the list. By Mission
   names each mission's next steps for you under its name, in List, on the Map and on a new **Board** beside them, with a
   column for each stage and a lane for each mission. Drag a card to another column, or click it and press ⌘→ or ⌘←, to
-  change its stage.
+  change its stage, or drag it from Waits onto Can merge, or press ⌘← on it there, to set it as next to merge.
 
 ## Descriptions
 
