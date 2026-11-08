@@ -1373,8 +1373,8 @@ went to, but those your changes moved into it or out of it, when that's their st
 a story's, as Show Links is turned off, to the chain, GitHub stack or session's they went to that has no other open one,
 when it's the only one (a teammate's on its own, in no mission, doesn't count), so what followed them in comes back out
 with them, and goes back in as they do. When they went to more than one, as a teammate's chain or a session's, it waits
-on the story's mission, as which one it came from isn't known: no mission has its Focus or your name, and what you put
-in it shows on its own card, saying it shows once Show Links reads the story. For a chain, it goes to the chain or
+on the story's mission, as which one it came from isn't known: only the card of what you put in it, if anything, has its
+Focus and your name, saying it shows once Show Links reads the story. For a chain, it goes to the chain or
 GitHub stack they're in now, or the one with the most of them, as you split it, the first shown of those with as many;
 else they wait. The mission one you didn't move was in, as you set it as next or put it after another there, goes on
 only to a mission that has it. Where you set one as next in a chain stays on the chain: in its story's mission it's next

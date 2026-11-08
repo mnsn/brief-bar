@@ -339,8 +339,8 @@ public enum MissionNaming {
     /// The answer as a name: its first line, without quotes, labels, markdown or the full stop, of a few words, in sentence
     /// case; nil when that leaves nothing a name could be, or when the answer isn't a name but talks about one, such as
     /// "Here's a name for the mission:" or "How about “Checkout coupons”?", or declines, such as "I'm sorry, but I can't
-    /// help with that.", or holds a place, as "N/A" or "Untitled". One that opens with the same word but goes on as a name
-    /// does, as "Sorry page redesign", is a name.
+    /// help with that.", or holds a place, as "N/A", "Untitled" or "Untitled mission". One that opens with the same word
+    /// but goes on as a name does, as "Sorry page redesign", is a name.
     /// - Parameter titles: what it was named from: a question one of them asks, as "Why is checkout slow?", can be its name,
     ///   and a first word in small letters that one starts with, as "npm" in "npm audit fixes", stays so.
     public static func clean(_ answer: String, titles: [String] = []) -> String? {
@@ -357,7 +357,7 @@ public enum MissionNaming {
         guard !line.hasSuffix("?") || titles.contains(where: { $0.localizedCaseInsensitiveContains(line) }) else { return nil }
         while let last = line.last, "\"”'’.!:;,".contains(last) { line.removeLast() }
         line = line.trimmingCharacters(in: .whitespaces)
-        guard !placeholders.contains(line.lowercased()) else { return nil }
+        guard !isPlaceholder(line) else { return nil }
         let words = line.split(whereSeparator: { $0.isWhitespace })
         guard !words.isEmpty, line.count >= 3 else { return nil }
         var name = words.prefix(mostWords).joined(separator: " ")
@@ -390,10 +390,10 @@ public enum MissionNaming {
 
     /// How an answer that isn't a name opens, lowercased, with its apostrophes straight: one that talks about the name, as
     /// "Here's", "Here you go:", "Sure —", "I propose" or "How about “…", or declines to give one, as "I'm sorry", "I can't",
-    /// "Apologies —", "Unable to tell from the titles" or "As a helpful assistant, I…". Not a name that opens with the same
-    /// word: "Here maps integration", "Here and now banner", "Sure Start rollout", "Okay button fix", "Certainly feature
-    /// flag", "Sorry page redesign", "I nuovi pagamenti", "Unable to sign in fix", "Suggested replies in Teams", "Apology
-    /// emails", "As a service model rollout" or "How about page cleanup".
+    /// "Apologies —", "Unable to tell from the titles", "Unable to do that" or "As an on-device model without context, I…".
+    /// Not a name that opens with the same word: "Here maps integration", "Here and now banner", "Sure Start rollout", "Okay
+    /// button fix", "Certainly feature flag", "Sorry page redesign", "I nuovi pagamenti", "Unable to sign in fix", "Suggested
+    /// replies in Teams", "Apology emails", "As a service model rollout" or "How about page cleanup".
     static var chatter: [Regex<Substring>] {
         [
             /^here(?:'s|\s+(?:is|are|it is|you go|goes)\b|\s*[:,.!;—–]|\s-\s)/,
@@ -403,8 +403,9 @@ public enum MissionNaming {
             /^unfortunately\b/,
             /^i(?:'(?:m|ll|ve|d)\b|\s+(?:am|will|would|can|cannot|can't|could|couldn't|do|don't|did|didn't|apologi[sz]e|think|suggest|recommend|propose|have|need|believe|regret|must|should|won't|call|called|name|named|went|chose|choose|picked|pick|see|saw|came|settled|opted|prefer|guess|feel|hope|want|wanted|might|may|found|noticed|understand)\b)/,
             /^i\s+[a-z]+\s+(?:it|this|that|these|those|the|a|an|no|with|for|on|you|one)\b/,
-            /^unable\s*(?:[,.!:;—–]|$|to\s+(?:determine|provide|generate|create|suggest|come up|name|help|assist|answer|comply|fulfill|complete|process|give|offer|decide|infer|produce|summarize|derive|discern)\b)/,
+            /^unable\s*(?:[,.!:;—–]|$|to\s+(?:determine|provide|generate|create|suggest|come up|name|help|assist|answer|comply|fulfill?|complete|process|give|offer|decide|infer|produce|summarize|derive|discern)\b)/,
             /^unable\s+to\s+[a-z]+(?:\s+[a-z]+)?\s+(?:a|an|any|the|this|these|that|from|which|what|whether|enough|one|it)\b.*\b(?:names?|titles?|themes?|missions?|information|context)\b/,
+            /^unable\s+to\s+[a-z]+(?:\s+[a-z]+)?\s+(?:that|this|it|so)\s*[.!]?$/,
             /^(?:cannot|can't|can not)\s+(?:determine|name|provide|generate|infer|suggest|tell)\b/,
             /^not enough\s+(?:information|context|details?|data)\b/,
             /^no\s+(?:names?|titles?)\b/,
@@ -413,17 +414,27 @@ public enum MissionNaming {
             /^suggest(?:ed|ion)?\s+(?:name|title)\b/,
             /^how about\s*[:"“'‘]/,
             /^as an?\s+(?:ai|assistant|language model|large language model)\b/,
-            /^as an?\s+(?:[\w-]+\s+){0,3}(?:ai|assistant|model|chatbot|llm)\s*(?:,|i\b)/,
+            /^as an?\s+(?:[\w-]+\s+){0,3}(?:ai|assistant|model|chatbot|llm)\b(?:\s+[\w-]+){0,4}\s*(?:,|i\b)/,
         ]
     }
 
     /// What holds a name's place rather than being one, as a field's answer may: "N/A", "None", "Unknown", "Untitled".
-    static let placeholders: Set<String> = ["n/a", "none", "unknown", "untitled", "null", "nil", "tbd", "nothing", "no name", "no title"]
+    static let placeholders: Set<String> = [
+        "n/a", "none", "unknown", "untitled", "unnamed", "null", "nil", "tbd", "nothing", "no name", "no title",
+    ]
 
-    /// Whether a line opens as an answer that isn't a name does, whatever quotes it opens with: "Here's", "Sure!",
-    /// "I’m sorry", "I'll call it", "As an AI language model", but not "Heredoc fixes", "iOS widgets" or "I/O retries".
+    /// Whether an answer holds a name's place, also with what it names after it, as "Untitled mission" or "Unknown name".
+    static func isPlaceholder(_ line: String) -> Bool {
+        let words = line.lowercased()
+        return placeholders.contains(words) || placeholders.contains(words.replacing(/\s+(?:mission|name|title)$/, with: ""))
+    }
+
+    /// Whether a line opens as an answer that isn't a name does, whatever quotes it's in: "Here's", "Sure!", "I’m sorry",
+    /// "I'll call it", "As an AI language model", “Unable to do this.”, but not "Heredoc fixes", "iOS widgets" or "I/O
+    /// retries". Its closing quotes go, with a full stop or "!" after them, for the openings that are a whole answer.
     static func isChatter(_ line: String) -> Bool {
         let opening = line.drop { "\"“'‘".contains($0) }.lowercased().replacingOccurrences(of: "’", with: "'")
+            .replacing(/["”']+[.!]*\s*$/, with: "")
         return chatter.contains { opening.firstMatch(of: $0) != nil }
     }
 

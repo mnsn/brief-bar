@@ -412,6 +412,11 @@ import Testing
             "Sorry - I can't name this mission", "Sorry can't help with that", "Apologies — the titles don't say",
             "Apologize, I can't name it", "As an on-device model, I can't name this", "As a helpful assistant, I can't name this",
             "I see no common theme here", "No name fits these titles", "Cannot determine a name", "Not enough information",
+            "Unable to do that", "Unable to do this.", "Unable to fulfil this request",
+            "As an on-device model without context, I can't",
+            // Quoted, as a whole answer, with its full stop inside the quotes or after them.
+            "\"Unable to do that\"", "“Unable to do this.”", "\"Unable to do that\".", "‘Unable to do it’",
+            "\"Sorry\"", "“My apologies”", "“Sorry.”", "\"Unable\"", "“Unable”",
             // Chatter around a name.
             "Here it is: Checkout coupons", "Here you go: Checkout coupons", "Here: Checkout coupons", "Sure thing! Checkout coupons",
             "Sure — Checkout coupons", "Sure - Checkout coupons", "Okay — Checkout coupons", "Of course — Checkout coupons",
@@ -419,7 +424,7 @@ import Testing
             "I propose Checkout coupons", "I named it Checkout coupons", "I went with Checkout coupons", "How about: Checkout coupons",
             "I made it Checkout coupons", "I gave it the name Checkout coupons", "I titled it Checkout coupons",
             // What holds a name's place.
-            "N/A", "None", "Unknown", "Untitled", "\"None.\"",
+            "N/A", "None", "Unknown", "Untitled", "\"None.\"", "Untitled mission", "Unnamed mission",
         ] {
             #expect(MissionNaming.clean(chatter) == nil, "\(chatter)")
         }
@@ -431,10 +436,14 @@ import Testing
             "Mission names: guided generation", "Mission: Impossible export", "Checkout: coupons and totals", "I-9 forms",
             "IT onboarding", "IPv6 support", "I18n for checkout", "Intune enrollment", "Title bar polish",
             "Here and now banner", "Certainly feature flag", "Of course list redesign", "Unable to load the cart",
-            "Okay-button fix", "None of the above option", "Not enough stock warning",
+            "Okay-button fix", "None of the above option", "Not enough stock warning", "Untitled drafts cleanup",
+            "Unknown title fix",
         ] {
             #expect(MissionNaming.clean(name) == name, "\(name)")
         }
+        // Quoted, it's still a name, without its quotes.
+        #expect(MissionNaming.clean("“Unable to sign in fix”") == "Unable to sign in fix")
+        #expect(MissionNaming.clean("\"Sorry page redesign\".") == "Sorry page redesign")
         // A question one of its titles asks can be its name; and a first word in small letters that one starts with, or
         // has after a colon, stays so. Elsewhere in a title, a word in small letters is only in its sentence.
         #expect(MissionNaming.clean("Why is checkout slow?", titles: ["Speed up the checkout page", "Why is checkout slow?"]) == "Why is checkout slow?")
