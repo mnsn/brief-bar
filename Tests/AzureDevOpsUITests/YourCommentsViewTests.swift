@@ -397,9 +397,10 @@ import Testing
         try await settle { fields(in: host) == [written] }
         let commandReturn = try key("\r", code: 36, .command, in: window)
 
-        // Unchanged since: it goes, as the stand-in refuses it.
+        // Unchanged since: it goes, as the stand-in refuses it, and Save is back once it has.
         #expect(try await press(commandReturn, in: host))
-        try await settle { sent.writes.count == 1 }
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: thread.id)
+        try await settle { if case .failed? = changes.state(of: threadKey) { true } else { false } }
         #expect(sent.writes.map(\.kind) == [.editComment])
 
         // Edited elsewhere, as the list reads it: your edit says so, as VoiceOver hears, and ⌘Return does nothing.
@@ -466,6 +467,8 @@ import Testing
         // Refused: what you chose stays chosen, and the notice gone.
         #expect(try await press(commandReturn, in: host))
         try await settle { sent.writes.count == 2 }
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: thread.id)
+        try await settle { if case .failed? = changes.state(of: threadKey) { true } else { false } }
         #expect(sent.edits == [written, written])
         #expect(!host.performKeyEquivalent(with: saveAnyway))
 
