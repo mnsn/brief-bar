@@ -3,8 +3,9 @@ import SwiftUI
 
 /// ⌘→ and ⌘← for the Board while its cards can't have the keyboard's focus: while the details of what you clicked cover it,
 /// in a narrow window or at a bigger text size, which disables it (`DetailsSplit`). They move the card of the pull request
-/// the details show, as its own keys would. Only in the Board's own window, and never while a text field or text view has
-/// the keys, which move its insertion point with them.
+/// whose own details show, as its own keys would, where you see it move: not while a page is over them, such as a linked
+/// item's or a file's. Only in the Board's own window, and never while a text field or text view has the keys, which move
+/// its insertion point with them.
 @MainActor
 final class BoardKeys {
     /// What ⌘→ (true) and ⌘← (false) do; nil while the Board's cards can have the keys themselves.
@@ -53,14 +54,32 @@ private struct BoardKey: Sendable {
     let isRepeat: Bool
 
     init(_ event: NSEvent) {
-        let isCommandOnly = event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command
+        let isCommandAlone = event.modifierFlags.isCommandAlone
         forward = switch event.keyCode {
-        case 124 where isCommandOnly: true
-        case 123 where isCommandOnly: false
+        case 124 where isCommandAlone: true
+        case 123 where isCommandAlone: false
         default: nil
         }
         windowNumber = event.windowNumber
         isRepeat = event.isARepeat
+    }
+}
+
+// The Board's keys take ⌘ alone, from a card that has the keyboard's focus as from the monitor: whatever else a key carries,
+// such as an arrow's numeric pad and function flags, or Caps Lock, but not ⇧, ⌥ or ⌃ with it, which make another shortcut,
+// such as ⇧⌘→, which selects text.
+
+extension NSEvent.ModifierFlags {
+    /// ⌘ alone, as the Board's keys take it.
+    var isCommandAlone: Bool {
+        intersection([.command, .shift, .option, .control]) == .command
+    }
+}
+
+extension EventModifiers {
+    /// ⌘ alone, as the Board's keys take it.
+    var isCommandAlone: Bool {
+        intersection([.command, .shift, .option, .control]) == .command
     }
 }
 
@@ -99,7 +118,8 @@ struct BoardKeysView: NSViewRepresentable {
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-        /// Out of its window, as when the window closes, it lets the keys go; back in, it takes them again.
+        /// Out of its window it lets the keys go; back in, it takes them again. A window that closes keeps its views, as
+        /// BriefBar's do, so the monitor stays while it's closed, but does nothing: no key comes to a closed window.
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if keys.view === self { keys.update() }

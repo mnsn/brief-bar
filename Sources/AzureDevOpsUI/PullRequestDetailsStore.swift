@@ -484,6 +484,12 @@ final class PullRequestDetailsStore: ObservableObject {
     /// Whether ‹ goes anywhere: back from a page, or from a file's page.
     var canGoBack: Bool { !pages.isEmpty || file != nil }
 
+    /// The pull request whose own details show, with no page or file's page over them: while they cover the Board, its
+    /// card is the one ⌘→ and ⌘← move, where its stage track shows it move. Nil while none shows, or something is over them.
+    var shownOnTop: ItemRef? {
+        canGoBack ? nil : selected?.key.linkRef
+    }
+
     func close() {
         selected = nil
         before = nil

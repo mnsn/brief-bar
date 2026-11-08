@@ -27,6 +27,9 @@ package struct MissionsBody: View {
     /// What clicking one of its pull requests' node does: what clicking its row does. False for one the page doesn't
     /// list, which then opens where it lives.
     let select: (ItemRef) -> Bool
+    /// The pull request whose own details show, with nothing over them, such as a linked item's page or a file's: while
+    /// they cover the Board, its card is the one ⌘→ and ⌘← move. Nil on a page that has no Board.
+    let shownOnTop: ItemRef?
     /// The pull requests in no mission, as the page groups them by status.
     let rest: ([ItemRef]) -> AnyView
     /// The Board, with Up Next and each mission's next steps, which the page works out once as it draws: a lane for each
@@ -47,7 +50,8 @@ package struct MissionsBody: View {
         view: OrderView, ordering: PullRequestOrder, kinds: Set<ItemRef.Kind>, elsewhere: String, openElsewhere: (() -> Void)?,
         listed: [ItemRef], apart: [ItemRef] = [], row: @escaping (OrderStep, MissionKey) -> AnyView?,
         place: @escaping (ItemRef) -> String?,
-        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, rest: @escaping ([ItemRef]) -> AnyView,
+        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, shownOnTop: ItemRef? = nil,
+        rest: @escaping ([ItemRef]) -> AnyView,
         board: PullRequestBoard? = nil, card: ((BoardCard) -> BoardCardContent?)? = nil, setAsNext: ((ItemRef) -> Void)? = nil,
         showByStatus: (() -> Void)? = nil, now: Date = Date()
     ) {
@@ -62,6 +66,7 @@ package struct MissionsBody: View {
         self.place = place
         self.isSelected = isSelected
         self.select = select
+        self.shownOnTop = shownOnTop
         self.rest = rest
         self.board = board
         self.card = card
@@ -121,7 +126,8 @@ package struct MissionsBody: View {
                         OrderBoardView(
                             board: board, missions: missions, order: ordering, elsewhere: elsewhere, openElsewhere: openElsewhere,
                             place: place(of:), card: card, isSelected: isSelected, select: { ref in _ = select(ref) },
-                            setAsNext: setAsNext, notOnBoard: board.notOnBoard(listed + apart), showByStatus: showByStatus, now: now
+                            shownOnTop: shownOnTop, setAsNext: setAsNext, notOnBoard: board.notOnBoard(listed + apart),
+                            showByStatus: showByStatus, now: now
                         )
                         .id(Self.boardTop)
                     }

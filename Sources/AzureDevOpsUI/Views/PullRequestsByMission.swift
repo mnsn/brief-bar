@@ -19,6 +19,9 @@ struct PullRequestsByMission: View {
     let card: (PRSnapshot, BoardCard) -> BoardCardContent
     let isSelected: (PRSnapshot) -> Bool
     let select: (PRSnapshot) -> Void
+    /// The pull request whose own details show, with nothing over them: while they cover the Board, its card is the one ⌘→
+    /// and ⌘← move.
+    let shownOnTop: ItemRef?
     /// The pull requests in no mission, by status, as the page groups them.
     let rest: ([PRSnapshot]) -> AnyView
     /// The Board, Up Next and each mission's next steps, as the page works them out once as it draws.
@@ -49,6 +52,7 @@ struct PullRequestsByMission: View {
                 select(item)
                 return true
             },
+            shownOnTop: shownOnTop,
             rest: { refs in rest(refs.compactMap { byRef[$0] }) },
             board: board, card: { boardCard in byRef[boardCard.ref].map { card($0, boardCard) } },
             showByStatus: showByStatus, now: now
