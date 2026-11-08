@@ -891,11 +891,6 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
     /// A session's order's: the pull requests for its story it doesn't name, nor stacks with its own, apart, in the story's
     /// task order, with no order known.
     public var sameStory: [OrderStep] = []
-    /// A session's order's: what it puts the pull request you set as next to merge in it after, of its pull requests that
-    /// haven't merged, as it is now. Your next goes first all the same; were it next in another mission, it would wait for
-    /// them here again. None for what you moved out of it or took away, nor where that line would go round with what's
-    /// before it: stacked branches, your changes or other orders.
-    public var orderBeforeYourNext: [ItemRef: [ItemRef]] = [:]
 
     public var id: MissionKey { key }
 
@@ -1806,7 +1801,6 @@ extension Board {
         var prerequisites: [ItemRef: [ItemRef]] = [:]
         var why: [OrderEdge: [OrderOrigin]] = [:]
         var added: [ItemRef: [OrderNote]] = [:]
-        var orderBeforeYourNext: [ItemRef: [ItemRef]] = [:]
         // What goes before each, for circles: every stacked branch, yours that hold, and what's added here.
         var before = layer.before
         func add(_ earlier: ItemRef, before ref: ItemRef, _ origins: [OrderOrigin]) {
@@ -1867,15 +1861,6 @@ extension Board {
                         withoutYours[ref, default: []].insert(earlier)
                     }
                 }
-            }
-            // What its order puts the one you set as next after, which those lines would keep, were it not next.
-            if let next, blocked == nil, let entry = plan.entry(for: next) {
-                let tookAway = layer.holding[next]?.notAfter ?? []
-                let kept = entry.after.filter { earlier in
-                    members.contains(earlier) && !tookAway.contains(earlier) && status(earlier) != .merged
-                        && !Self.isBefore(next, earlier, in: before, elsewhere)
-                }
-                if !kept.isEmpty { orderBeforeYourNext[next] = kept }
             }
         }
         for ref in refs {
@@ -2049,7 +2034,7 @@ extension Board {
             attached: notingOtherStories(attached, besides: story),
             cycles: cycles, isFocused: false, isFinished: isFinished, isStale: isStale, attention: attention(refs), date: date,
             sessions: sessions(of: steps.map(\.ref) + group.attached + sameStory.map(\.ref), first: first), story: story,
-            sameStory: sameStory, orderBeforeYourNext: orderBeforeYourNext
+            sameStory: sameStory
         )
     }
 

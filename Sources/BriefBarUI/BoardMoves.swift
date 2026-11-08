@@ -36,10 +36,10 @@ package struct BoardMoves {
         )
     }
 
-    /// The mission you set a pull request as next to merge in whose order, as it is now, puts it after one that hasn't
-    /// merged (`OrderMission.orderBeforeYourNext`): were it next in another, it would wait there again.
+    /// The mission you set a pull request as next to merge in whose order would hold it again were it set as next in
+    /// another that holds it now (`PullRequestOrder.nextsHeldAgain`).
     private func nextHolding(_ ref: ItemRef) -> MissionKey? {
-        order.missions.first { $0.orderBeforeYourNext[ref] != nil }?.key
+        order.nextsHeldAgain[ref]
     }
 
     /// What dropping what a drag carries on a column of a lane does, to the card as it is now: nil for anything but this
