@@ -38,14 +38,18 @@ extension OrderMission {
         return bases.filter { step.directPrerequisites.contains($0) } + bases.filter { !step.directPrerequisites.contains($0) }
     }
 
+    /// What stops one of its pull requests from being set as next to merge, as Set as Next to Merge refuses it: it still
+    /// targets the branch of one that merged, as its standing says, or a branch it targets that merged says, whatever its
+    /// standing says first; or it's stacked on one BriefBar hasn't seen merge, the nearest. Nil when nothing does.
+    public func notNext(_ ref: ItemRef) -> OrderChangeError? {
+        guard let step = (steps + attached).first(where: { $0.ref == ref }) else { return nil }
+        if let (merged, branch) = OrderChanges.retarget(of: step) { return .retarget(after: merged, to: branch) }
+        return stackedBases(of: ref).first.map { .stacked(on: $0) }
+    }
+
     /// Why one of its pull requests can't be set as next to merge: "Stacked on !4102: retarget it in Azure DevOps first",
     /// or, still targeting the branch of one that merged, "!4102 merged: retarget it to main"; nil when nothing stops it.
     public func whyNotNext(_ ref: ItemRef) -> String? {
-        if let step = (steps + attached).first(where: { $0.ref == ref }), case .retarget = step.standing {
-            return OrderText.standing(step)
-        }
-        guard let base = stackedBases(of: ref).first else { return nil }
-        let place = ref.kind == .gitHubPullRequest ? "on GitHub" : "in Azure DevOps"
-        return "Stacked on \(base.orderLabel(near: ref)): retarget it \(place) first"
+        notNext(ref)?.description
     }
 }

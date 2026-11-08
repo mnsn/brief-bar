@@ -424,7 +424,7 @@ private final class Clock {
 
         let refused = try #require(order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true)))
 
-        #expect(!refused.canUndo && refused.said == "Stacked on !4101: it can't merge before it unless you retarget it")
+        #expect(!refused.canUndo && refused.said == "Stacked on !4101: retarget it in Azure DevOps first")
         #expect(order.changes.isEmpty && defaults.object(forKey: OrderChanges.defaultsKey) == nil)
         #expect(order.refusal == refused && order.lastOrderChange == nil)
         #expect(!order.undo())

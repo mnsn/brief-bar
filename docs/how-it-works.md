@@ -1374,7 +1374,7 @@ what you set, and its order. The first rule that applies decides:
 | Yours: a draft | In progress | **Draft** |
 | Yours: ready to complete, and its order lets it | Can merge | **Complete it** |
 | Yours: ready to complete, after one BriefBar hasn't seen merge | Waits for another PR | **After !4102** |
-| Yours: ready to complete, still targeting the branch of one that merged, or its order needs checking | Waits for another PR | **!4101 merged: retarget it to main**, **Check the order** |
+| Yours: ready to complete, still targeting the branch of one that merged, or its order needs checking, or another order puts what it waits for after it | Waits for another PR | **!4101 merged: retarget it to main**, **Check the order**, **Another order puts !4102 after it: check the order** |
 | Yours: reviewed, with something else left | In progress | What's Left's first item |
 | Yours: otherwise | Teammate's review | Who it waits for, as What's Left says it, or **Find a reviewer** |
 

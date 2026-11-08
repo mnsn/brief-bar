@@ -77,10 +77,10 @@ extension OrderText {
     }
 
     /// A row's capsule's tone. One that waits for others turns orange when its source says it's ready to complete, so it
-    /// isn't completed out of order.
+    /// isn't completed out of order; and one that two orders put before and after another, as its order needs checking.
     /// - Parameter isReady: its source says it's ready to complete.
     public static func tone(of step: OrderStep, isReady: Bool) -> OrderCapsuleTone {
-        if step.standing.needsChecking { return .warning }
+        if step.standing.needsChecking || step.ordersGoRound != nil { return .warning }
         if step.standing.waitsForOthers { return isReady ? .warning : .waiting }
         switch step.standing {
         case .next: return .next

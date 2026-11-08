@@ -753,6 +753,14 @@ public struct OrderStep: Equatable, Sendable {
     public func isStacked(on other: ItemRef) -> Bool {
         prerequisites.first { $0.ref == other }?.origins.contains(where: \.isStacked) ?? false
     }
+
+    /// Its note that two orders put it and another in opposite orders (`OrderNote.ordersGoRound`), when they do: its order
+    /// needs checking, as its capsule's ⚠ and its stage say.
+    public var ordersGoRound: OrderNote? {
+        notes.first { note in
+            if case .ordersGoRound = note { true } else { false }
+        }
+    }
 }
 
 /// Pull requests that go together, in their order: a session's order, a stack BriefBar sees, the pull requests opened

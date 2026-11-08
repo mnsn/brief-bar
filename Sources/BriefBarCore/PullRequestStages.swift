@@ -240,7 +240,8 @@ public enum StageOrder: Equatable, Sendable {
     /// What the missions say of a pull request: the first that holds it, else free. One stacked on another, which targets
     /// its branch or follows it in a GitHub stack, waits for it until BriefBar sees it merge, whatever its order says, and
     /// whether an order names that one, this order or another: completing it before would merge it into that one's
-    /// branch. Once that one merged, one still targeting its branch holds until it's retargeted.
+    /// branch. Once that one merged, one still targeting its branch holds until it's retargeted. One that two orders put
+    /// before and after another holds, until you check them.
     public static func of(_ ref: ItemRef, in missions: [OrderMission]) -> StageOrder {
         var statuses: [ItemRef: OrderStatus] = [:]
         for mission in missions {
@@ -250,6 +251,11 @@ public enum StageOrder: Equatable, Sendable {
         }
         for mission in missions {
             if let step = mission.steps.first(where: { $0.ref == ref }) {
+                // Two orders put it and another in opposite orders, directly or through others' lines: neither can merge
+                // first, whatever else it waits for.
+                if !step.standing.needsChecking, let round = step.ordersGoRound {
+                    return .holds(OrderText.note(round, of: ref))
+                }
                 switch step.standing {
                 case .waiting(let open, let unknown):
                     return .waits(open + unknown, words: OrderText.capsule(step) ?? "After \(OrderText.list(open + unknown, near: ref))")
@@ -275,11 +281,10 @@ public enum StageOrder: Equatable, Sendable {
                 if !below.isEmpty { return stacked(on: below, ref) }
                 continue
             }
-            if let step = mission.attached.first(where: { $0.ref == ref }) {
-                let below = step.notes.compactMap { note -> ItemRef? in
-                    guard case .stackedWith(let other, true, _) = note, statuses[other] != .merged else { return nil }
-                    return other
-                }
+            if mission.attached.contains(where: { $0.ref == ref }) {
+                // What it's stacked on, wherever that is, the order's pull requests, another mission's or one in none, as Set
+                // as Next to Merge reads it.
+                let below = mission.stackedBases(of: ref).filter { statuses[$0] != .merged }
                 if !below.isEmpty { return stacked(on: below, ref) }
             }
         }
