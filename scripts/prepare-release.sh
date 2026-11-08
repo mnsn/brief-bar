@@ -310,13 +310,19 @@ HISTORY="$DECLARATION"' { if (start) for (i = start; i <= n; i++) print block[i]
     { n = 0; start = 0 }'
 
 # Fails unless each version, and its numbered doc lines, are those in the release that tag names, and CHANGELOG.md is
-# as it left it: only a release changes them.
+# as it left it: only a release changes them. A file that the release didn't have, such as a new source's, or one
+# that moved, isn't compared: NEW_SINCE says which.
 same_as_released() { # <tag>
     local key file variable line now released
+    NEW_SINCE=""
     for key in $SOURCES; do
         file="$(file_of "$key")"
         variable="$(variable_of "$key")"
         line="$(declaration "$file" "$variable")"
+        if ! git cat-file -e "$1:$file" 2> /dev/null; then
+            NEW_SINCE="$NEW_SINCE $file is new since $1: not compared."
+            continue
+        fi
         now="$(awk -v variable="$variable" "$HISTORY" "$file")"
         released="$(git show "$1:$file" 2>/dev/null | awk -v variable="$variable" "$HISTORY" || true)"
         if [[ "$released" != *"= "[0-9]* ]]; then
@@ -418,7 +424,7 @@ if [[ "$CHECK" == 1 ]]; then
     fi
     if git rev-parse --verify --quiet "refs/tags/$TAG^{commit}" > /dev/null; then
         same_as_released "$TAG"
-        VERSIONS="The descriptions' versions, and $CHANGELOG, are $TAG's."
+        VERSIONS="The descriptions' versions, and $CHANGELOG, are $TAG's.$NEW_SINCE"
     elif [[ "$FETCH" == 1 ]]; then
         VERSIONS="$TAG isn't tagged yet, so the descriptions' versions, and $CHANGELOG, are its own."
     else
@@ -486,6 +492,7 @@ git rev-parse --verify --quiet "refs/tags/v$LAST^{commit}" > /dev/null ||
     fail "there's no tag v$LAST, for the last release in $CHANGELOG: fetch the tags (git fetch --tags)."
 check_declarations
 same_as_released "v$LAST"
+if [[ -n "$NEW_SINCE" ]]; then echo "${NEW_SINCE# }"; fi
 EDITS=("$CHANGELOG" "$PLIST" "$NOTES")
 for key in $SOURCES; do EDITS+=("$(file_of "$key")"); done
 DIRTY="$(git status --porcelain --untracked-files=all -- "${EDITS[@]}")"

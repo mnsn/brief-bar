@@ -399,6 +399,46 @@ in_repo checkout --quiet release
 keep_in_merge main "$REUSED"
 check_refuses "$REUSED:1: has the bullet **First.**, but it's already in CHANGELOG.md: write a new file for new notes"
 
+# A pull request that adds a source, Slack: to the script's lists, as CONTRIBUTING.md says, with its version, which
+# the last release's tag doesn't have, so it isn't compared; and the release raises it as any other.
+make_repo
+in_repo checkout --quiet -b slack main
+awk '
+    $0 == "SOURCES=\"teams azure-devops copilot github agents\"" { $0 = "SOURCES=\"teams azure-devops copilot github slack agents\"" }
+    $0 == "LABELS=\"Teams|Azure DevOps|Copilot|GitHub|Agents\"" { $0 = "LABELS=\"Teams|Azure DevOps|Copilot|GitHub|Agents|Slack\"" }
+    $0 == "KEYS=\"teams|azure-devops|copilot|github|agents\"" { $0 = "KEYS=\"teams|azure-devops|copilot|github|agents|slack\"" }
+    { print }
+    $0 == "        github) echo Sources/GitHubUI/GitHubSource.swift ;;" { print "        slack) echo Sources/SlackUI/SlackSource.swift ;;" }
+    $0 == "        github) echo GitHub ;;" { print "        slack) echo Slack ;;" }
+' "$SCRIPT" > "$WORK/script"
+cat "$WORK/script" > "$REPO/scripts/prepare-release.sh"
+[[ "$(grep -ci 'slack' "$REPO/scripts/prepare-release.sh")" == 5 ]] || fail "couldn't add Slack to the script's lists."
+write Sources/SlackUI/SlackSource.swift "package final class SlackSource {
+    nonisolated package static let descriptionVersion = 1
+}"
+write changes/slack-20260101-000000.md "- **Your Slack messages.** A new source.
+
+## Descriptions
+
+Slack: its channels.
+
+After this update: Slack reads its channels."
+commit "Add Slack" 2026-01-10T10:00:00
+prepare --check || fail "--check refused a new source: $(cat "$WORK/err")"
+grep -qF "Sources/SlackUI/SlackSource.swift is new since v1.0.0: not compared." "$WORK/out" ||
+    fail "--check didn't say that a new source isn't compared: $(cat "$WORK/out")"
+in_repo checkout --quiet main
+merge slack 2026-01-11T10:00:00
+prepare --main main 1.1.0 2026-02-01 || fail "it refused a release with a new source: $(cat "$WORK/err")"
+grep -qF "Sources/SlackUI/SlackSource.swift is new since v1.0.0: not compared." "$WORK/out" ||
+    fail "the release didn't say that a new source isn't compared: $(cat "$WORK/out")"
+expect Sources/SlackUI/SlackSource.swift "package final class SlackSource {
+    /// 2: its channels.
+    nonisolated package static let descriptionVersion = 2
+}"
+says "- **After this update, Slack asks you once to look at what it reads, and waits until you have.** Slack reads its \
+channels. ## 1.0.0"
+
 # What it refuses, changing nothing.
 make_repo
 notes good 2026-01-10T10:00:00 "- **Good.** Notes."
