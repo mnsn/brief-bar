@@ -12,7 +12,7 @@ import Testing
 /// active app. One test at a time: the app gives a key to the window that was made key last, whichever test's it is.
 @MainActor
 @Suite(.serialized, .keepsTheMainRunLoopRunning) struct BoardKeyboardTests {
-    private final class KeyWindow: NSWindow {
+    private final class KeyWindow: TestWindow {
         override var canBecomeKey: Bool { true }
         override var isKeyWindow: Bool { true }
     }
@@ -546,8 +546,9 @@ import Testing
         }
     }
 
-    /// A move the keys can't make while the details cover the Board: they say why, under its stage, as the Board does under
-    /// the card's lane, which can't be seen then. No more once it's in another stage, or the Board shows again.
+    /// A move the keys can't make while the details cover the Board: they beep, and say why, under its stage, as the
+    /// Board does under the card's lane, which can't be seen then. No more once it's in another stage, or the Board
+    /// shows again.
     @Test func aMoveRefusedWhileTheDetailsCoverTheBoardSaysWhyInThem() async throws {
         let order = Self.order()
         let details = Details(covers: true)
@@ -567,8 +568,12 @@ import Testing
             }
             try await move(.rightArrow, to: .yourReview, "⌘→ to Your review")
             try await move(.rightArrow, to: .teammateReview, "⌘→ to Teammate's review")
-            // Only Azure DevOps decides that it can merge.
-            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            // Only Azure DevOps decides that it can merge. The key beeps, through ThisMac, which refuses it in tests.
+            let notes = ThisMac.Notes()
+            ThisMac.$noting.withValue(notes) {
+                Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            }
+            #expect(notes.refused == ["beep"])
             try await until("the details to say why it can't move on") {
                 order.stageRefusal(of: Self.ref) == Self.azureDevOpsDecides
             }

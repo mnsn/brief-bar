@@ -86,12 +86,12 @@ jobs:
           ./scripts/prepare-release.sh --check --fetch
           ./scripts/test-prepare-release.sh
 
-      # make test, build included, takes two to three minutes on GitHub's runners, so a test run that hangs ends
-      # at ten minutes, not at the job's limit.
+      # make test, build included, takes six to ten minutes on GitHub's runners (377-591 s for the Test step on
+      # 2026-11-08), so a test run that hangs ends at twenty minutes, not at the job's limit.
       - name: Test
         if: needs.changes.outputs.mac != 'false'
         run: make test
-        timeout-minutes: 10
+        timeout-minutes: 20
 
       # BriefBar's extension for the Copilot app's sessions, with the runner's Node and a stand-in for the Copilot SDK.
       - name: Test the session extension
