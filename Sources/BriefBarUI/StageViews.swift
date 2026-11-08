@@ -125,7 +125,7 @@ package enum StageWords {
     /// "‘Cart’ finished, worked out by BriefBar", without the quotes VoiceOver would read.
     @MainActor
     package static func spokenWhy(_ reading: StageReading, order: PullRequestOrder, now: Date) -> String {
-        SpokenText.unquoted(StageText.why(reading, name: order.name(of:)) + ", " + StageText.spokenWho(reading, now: now, name: order.name(of:)))
+        SpokenText.unquoted(StageText.why(reading, name: order.name(of:), then: ", ") + ", " + StageText.spokenWho(reading, now: now, name: order.name(of:)))
     }
 
     /// For a row's or a card's value: "Your review, ‘Cart’ finished, worked out by BriefBar".

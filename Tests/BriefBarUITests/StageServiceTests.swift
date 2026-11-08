@@ -214,6 +214,38 @@ private final class Clock {
         #expect(Self.why(order, 4093) == "‘Cart’ asks you")
     }
 
+    /// VoiceOver hears a failed build after the session that decides its stage, after a pause: in its row, its pill and
+    /// its details, in Up Next, and in its mission's chip.
+    @Test func voiceOverHearsAFailureAfterTheSessionThatDecides() throws {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        Self.tell(order, [4093: StageFacts(role: .author, failure: "Build failed")])
+        Self.tellSession(order, on: [4093], state: .needsYou, since: clock.now)
+        let reading = try #require(order.stage(of: Self.ref(4093)))
+        #expect(StageWords.spokenWhy(reading, order: order, now: clock.now) == "Cart asks you, build failed, worked out by BriefBar")
+        let board = order.board(kinds: [.pullRequest])
+        let slot = try #require(board.upNext.slots.first { $0.card.ref == Self.ref(4093) })
+        #expect(slot.kind == .fix)
+        #expect(UpNextView.spoken(slot, mission: "Not in a mission", order: order) == "Cart asks you, build failed, Not in a mission")
+        let lane = try #require(board.lanes.first { $0.cards.contains { $0.ref == Self.ref(4093) } })
+        let step = try #require(lane.nextSteps.first { $0.ref == Self.ref(4093) })
+        #expect(step.kind == .answer)
+        #expect(MissionNextStepsLine.spoken(step, in: lane, order: order) == "Cart asks you, build failed")
+    }
+
+    /// What a mission waits for says a failed build after the session at work on it, and VoiceOver hears it after a pause.
+    @Test func whatAMissionWaitsForSaysAFailureAfterTheSessionAtWork() throws {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        Self.tell(order, [4093: StageFacts(role: .author, failure: "Build failed")])
+        Self.tellSession(order, on: [4093], state: .running, since: clock.now)
+        let board = order.board(kinds: [.pullRequest])
+        let lane = try #require(board.lanes.first { $0.cards.contains { $0.ref == Self.ref(4093) } })
+        #expect(lane.nextSteps.isEmpty)
+        #expect(lane.waiting(name: order.name(of:)) == "‘Cart’ is writing it · build failed (!4093)")
+        #expect(MissionNextStepsLine.spokenWaiting(lane, order: order) == "Cart is writing it, build failed (!4093)")
+    }
+
     /// A task BriefBar sent that you went on with in the Copilot app does what the app says since: at work again after
     /// it finished, it's in progress again. A pre-review stays a review, so someone else's stays yours to review.
     @Test func aTaskYouWentOnWithInTheCopilotAppDoesWhatTheAppSays() {

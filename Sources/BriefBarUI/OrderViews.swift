@@ -404,6 +404,7 @@ package struct MissionNextStepsLine: View {
                 Text(waiting)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .accessibilityLabel(Self.spokenWaiting(lane, order: order) ?? waiting)
             }
             .font(size: 11.5)
             .foregroundStyle(.secondary)
@@ -437,8 +438,22 @@ package struct MissionNextStepsLine: View {
         .help([[step.title, order.name(of: step.ref)].compactMap { $0 }.joined(separator: " "), why, "Click to see its details"]
             .compactMap { $0 }.joined(separator: "\n"))
         .accessibilityLabel(step.title)
-        .accessibilityValue(SpokenText.unquoted([order.name(of: step.ref), why].compactMap { $0 }.joined(separator: ", ")))
+        .accessibilityValue(Self.spoken(step, in: lane, order: order))
         .accessibilityHint("Shows its details")
+    }
+
+    /// What VoiceOver hears after a chip's title: its pull request's name, and why, a second reason after a pause,
+    /// "Cart asks you, build failed", where its tooltip says "‘Cart’ asks you · build failed".
+    package static func spoken(_ step: MissionNextStep, in lane: BoardLane, order: PullRequestOrder) -> String {
+        let reading = lane.cards.first { $0.ref == step.ref }?.reading
+        let why = reading.map { StageText.why($0, name: order.name(of:), then: ", ") }
+        return SpokenText.unquoted([order.name(of: step.ref), why].compactMap { $0 }.joined(separator: ", "))
+    }
+
+    /// What VoiceOver hears of what a mission waits for, with a second reason after a pause: "Cart is writing it, build
+    /// failed (!4093)".
+    package static func spokenWaiting(_ lane: BoardLane, order: PullRequestOrder) -> String? {
+        lane.waiting(name: order.name(of:), then: ", ").map(SpokenText.unquoted)
     }
 }
 
