@@ -803,8 +803,8 @@ import Testing
     /// Push & Reply goes only while the pull request merges into the branch its prompt names, as the window wrote it, which
     /// the launcher checks what the session would push against (`Git.checkPush(in:source:target:)`): once the list has read
     /// another, nothing starts, and the task says why. The launcher asks Azure DevOps, right before git checks and again
-    /// right before Copilot starts (`CopilotLauncher.Request.targetNow`), whatever the list has read. Whatever else is sent
-    /// goes whatever the target.
+    /// right before Copilot starts (`CopilotLauncher.Request.targetNow`), and the list again as each answer comes, since a
+    /// read may answer from before a retarget the list has read meanwhile. Whatever else is sent goes whatever the target.
     @Test func pushAndReplyGoesOnlyWhileThePullRequestMergesIntoTheBranchItsPromptNames() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = store(settings)
@@ -843,8 +843,8 @@ import Testing
         store.send(.pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard, repository: repository)
         try await settle { launched.count == 4 }
         #expect(launched == ["fixComments main", "pushAndReply release/x", "pushAndReply main", "pushAndReply main"])
-        // Asked, it's what Azure DevOps says then, for the pull request, whatever the list has read; or it throws when that
-        // can't be read, or names no branch.
+        // Asked, it's what Azure DevOps says then, for the pull request, when that's another branch than the prompt names;
+        // or it throws when that can't be read, or names no branch.
         #expect(asks.map { $0 != nil } == [false, true, true, true])
         var asked: [PRKey] = []
         store.readTarget = { key in
@@ -857,6 +857,15 @@ import Testing
         await #expect(throws: ADOError.offline) { try await asks[1]?() }
         store.readTarget = { _ in "" }
         await #expect(throws: CopilotTasksStore.TargetUnread.self) { try await asks[1]?() }
+        // When Azure DevOps names the branch the prompt does, it's the one the list has read by then, if that's another:
+        // either one that says another branch keeps Copilot from starting.
+        store.readTarget = { _ in "main" }
+        store.currentTarget = { $0 == current ? "release/x" : nil }
+        #expect(try await asks[3]?() == "release/x")
+        store.currentTarget = { $0 == current ? "main" : nil }
+        #expect(try await asks[3]?() == "main")
+        store.currentTarget = { _ in nil }
+        #expect(try await asks[3]?() == "main")
     }
 
     // MARK: Prompts to the Copilot app's sessions

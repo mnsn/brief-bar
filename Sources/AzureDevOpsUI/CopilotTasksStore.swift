@@ -568,13 +568,16 @@ final class CopilotTasksStore: ObservableObject {
         if forking == nil { notifyStarted(entry) }
         // Push & Reply goes only while the pull request merges into the branch its prompt names, which the launcher checks what
         // the session would push against: as Azure DevOps says right before git checks that, and again right before Copilot
-        // starts.
+        // starts, and as the list has read by the time each answer comes, since a GET may answer from before a retarget the
+        // list has read meanwhile. Either one that says another branch keeps Copilot from starting.
         let pushing: TaskPullRequest? = if case .pullRequest(let pullRequest, .pushAndReply) = subject { pullRequest } else { nil }
         var askTarget: (@Sendable () async throws -> String)?
         if let pushing {
             askTarget = { [weak self] in
                 guard let self else { throw CancellationError() }
-                return try await self.freshTarget(of: pushing)
+                let target = try await self.freshTarget(of: pushing)
+                guard target == pushing.targetBranch else { return target }
+                return await self.retargeted(pushing) ?? target
             }
         }
         let request = CopilotLauncher.Request(

@@ -2356,7 +2356,8 @@ as the window wrote it, so the branch BriefBar checks against is the one the pro
 while the pull request still merges into it. The list may not have read a retarget yet, so BriefBar asks Azure DevOps,
 with one request for the pull request right before git checks and one right after (`CopilotTasksStore.freshTarget(of:)`,
 `CopilotLauncher.Request.targetNow`), and nothing goes when it can't be read (`LaunchError.cantReadTarget`); the list
-is asked too, as you send it, before the launcher starts, and until the prompt is sent or copied. Once either says
+is asked too, as you send it, before the launcher starts, as each of those reads answers, since a read may answer from
+before a retarget the list has read meanwhile, and until the prompt is sent or copied. Once either says
 another, nothing goes, and BriefBar says to open the window again, for a prompt that names it
 (`CopilotTasksStore.retargetProblem`, `LaunchError.retargeted`). Nor does a Push & Reply go to one of the app's
 sessions while Copilot runs a turn in it, or another of the app's sessions runs one in the checkout it works in, as the

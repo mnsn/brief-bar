@@ -70,10 +70,10 @@ public struct CopilotLauncher: Sendable {
         /// history and its checkout, stay as they were, even while it works, or the Copilot app has it open; and so do its
         /// changes that aren't committed, which the fork's worktree doesn't have, as with the CLI's own `/fork worktree`.
         public var forking: CopilotRun?
-        /// For Push & Reply, reads the branch the pull request merges into now, as Azure DevOps says: right before git
-        /// checks what the session would push against `targetBranch`, the one its prompt names, and again right before
-        /// Copilot starts. When it's another, or it throws, as when it can't be read, Copilot doesn't start
-        /// (`LaunchError.retargeted`, `LaunchError.cantReadTarget`). Nil when nothing reads it.
+        /// For Push & Reply, reads the branch the pull request merges into now, as Azure DevOps says, or the list has read
+        /// since, when that's another: right before git checks what the session would push against `targetBranch`, the one
+        /// its prompt names, and again right before Copilot starts. When it's another, or it throws, as when it can't be
+        /// read, Copilot doesn't start (`LaunchError.retargeted`, `LaunchError.cantReadTarget`). Nil when nothing reads it.
         public var targetNow: (@Sendable () async throws -> String)?
 
         public init(
