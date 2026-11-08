@@ -160,8 +160,6 @@ package struct MissionHeader: View {
     /// What the rename field started with.
     @LocalState private var original = ""
     @LocalState private var isFull = false
-    @FocusState private var isEditing: Bool
-    @Environment(\.textScale) private var textScale
 
     package init(mission: OrderMission, order: PullRequestOrder, place: String?) {
         self.mission = mission
@@ -224,7 +222,9 @@ package struct MissionHeader: View {
         let storyItem = mission.story.flatMap { order.describe($0.ref) }
         return HStack(spacing: 4) {
             if isRenaming {
-                renameField
+                MissionNameField(draft: $draft, keep: commit, cancel: cancel) {
+                    if isRenaming { stopRenaming() }
+                }
             } else {
                 Text(title)
                     .foregroundStyle(.primary)
@@ -283,32 +283,6 @@ package struct MissionHeader: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-    }
-
-    /// Its title as a field, as Finder renames: Return keeps it, Escape doesn't, and an empty one goes back to BriefBar's.
-    private var renameField: some View {
-        TextField("Name", text: $draft)
-            .textFieldStyle(.plain)
-            .font(size: 12, weight: .semibold)
-            .focused($isEditing)
-            .frame(minWidth: 140 * textScale, maxWidth: 320 * textScale)
-            .padding(.horizontal, 4)
-            .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .textBackgroundColor).opacity(0.8)))
-            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1))
-            .onSubmit(commit)
-            .onExitCommand(perform: cancel)
-            .onChange(of: isEditing) { _, editing in
-                // Clicking elsewhere keeps it, as in Finder.
-                if !editing, isRenaming { commit() }
-            }
-            .onAppear {
-                Task { @MainActor in isEditing = true }
-            }
-            .onDisappear {
-                if isRenaming { stopRenaming() }
-            }
-            .accessibilityLabel("Mission's Name")
-            .accessibilityHint("Return keeps it, and Escape doesn't. An empty name gives it BriefBar's name again.")
     }
 
     private func rename() {
