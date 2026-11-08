@@ -17,9 +17,9 @@ package final class PullRequestOrder: ObservableObject {
     /// The missions, as By Mission lists them (`OrderBoard.missions`): none while it's off.
     @Published package private(set) var missions: [OrderMission] = []
     /// The pull requests you set as next to merge in a session's order whose order would hold them again were they set as
-    /// next in another mission that holds them now, by the mission they're next in (`OrderBoard.nextsHeldAgain`): the
-    /// Board doesn't move where one's next back and forth. None while it's off.
-    @Published package private(set) var nextsHeldAgain: [ItemRef: MissionKey] = [:]
+    /// next in another mission that holds them now: by pull request, then by that mission, the mission they're next in
+    /// (`OrderBoard.nextsHeldAgain`). The Board doesn't move where one's next back and forth. None while it's off.
+    @Published package private(set) var nextsHeldAgain: [ItemRef: [MissionKey: MissionKey]] = [:]
     /// The mission you keep on top: none while it's off.
     @Published package private(set) var focus: MissionKey?
     /// The orders sessions told BriefBar: none while it's off.

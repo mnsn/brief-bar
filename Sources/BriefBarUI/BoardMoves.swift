@@ -32,14 +32,18 @@ package struct BoardMoves {
         return BoardRules.move(
             card, to: stage, sameLane: sameLane, isYours: order.isYours(card.ref), author: order.author(of: card.ref),
             missionChanges: missionChanges, missions: missions.filter { $0.contains(card.ref) }, names: order.names,
-            nextIn: stage == .canMerge ? nextHolding(card.ref) : nil
+            nextIn: stage == .canMerge ? nextHolding(card) : nil
         )
     }
 
-    /// The mission you set a pull request as next to merge in whose order would hold it again were it set as next in
-    /// another that holds it now (`PullRequestOrder.nextsHeldAgain`).
-    private func nextHolding(_ ref: ItemRef) -> MissionKey? {
-        order.nextsHeldAgain[ref]
+    /// The mission you set a card's pull request as next to merge in whose order would hold it again were it set as next
+    /// in the card's mission, its lane's, where that one holds it, as another's next can free it
+    /// (`PullRequestOrder.nextsHeldAgain`). In a lane whose mission doesn't hold it, as the one it's next in doesn't, that
+    /// mission wherever its order would hold it again: it still waits in another's.
+    private func nextHolding(_ card: BoardCard) -> MissionKey? {
+        guard let mission = card.mission, let held = order.nextsHeldAgain[card.ref] else { return nil }
+        if let first = held[mission] { return first }
+        return StageOrder.holders(of: card.ref, in: missions).contains(mission) ? nil : held.values.first
     }
 
     /// What dropping what a drag carries on a column of a lane does, to the card as it is now: nil for anything but this

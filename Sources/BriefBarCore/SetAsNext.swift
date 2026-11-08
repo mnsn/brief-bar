@@ -56,9 +56,10 @@ extension OrderMission {
 
 extension OrderBoard {
     /// The pull requests you set as next to merge in a session's order whose order would hold them again were they set as
-    /// next in another mission that holds them now, by the mission they're next in. Only one mission has a pull request as
-    /// next, so set as next there instead, it would only wait in the first again, back and forth: the Board doesn't
-    /// (`BoardRules.move`'s `nextIn`). Worked out from the missions as they'd be then, made as they are now with your next
+    /// next in another mission that holds them now: by pull request, then by that other mission, the mission they're next
+    /// in. Only one mission has a pull request as next, so set as next there instead, it would only wait in the first
+    /// again, back and forth: the Board doesn't (`BoardRules.move`'s `nextIn`). Worked out for each of the others, as one's
+    /// next can free it where another's wouldn't, from the missions as they'd be then, made as they are now with your next
     /// there instead: without the first's, so that the lines of its order it set aside come back, and with the other's,
     /// whose own lines can set one of them aside, as missions with your next are made first.
     /// - Parameters:
@@ -67,8 +68,8 @@ extension OrderBoard {
     public static func nextsHeldAgain(
         facts: OrderFacts, orders: DeclaredOrders, evidence: OrderEvidence, changes: OrderChanges, missions: [OrderMission],
         stacked: [ItemRef: Set<ItemRef>], now: Date
-    ) -> [ItemRef: MissionKey] {
-        var held: [ItemRef: MissionKey] = [:]
+    ) -> [ItemRef: [MissionKey: MissionKey]] {
+        var held: [ItemRef: [MissionKey: MissionKey]] = [:]
         for (ref, change) in changes.changes {
             // Only an order has lines your next sets aside, to come back once it goes.
             guard case .plan? = change.first, let first = change.first, change.holds(in: orders) else { continue }
@@ -78,10 +79,7 @@ extension OrderBoard {
                     != nil
                 else { continue }
                 let made = Self.missions(facts: facts, orders: orders, evidence: evidence, changes: then, now: now)
-                if StageOrder.holders(of: ref, in: made).contains(first) {
-                    held[ref] = first
-                    break
-                }
+                if StageOrder.holders(of: ref, in: made).contains(first) { held[ref, default: [:]][other] = first }
             }
         }
         return held
