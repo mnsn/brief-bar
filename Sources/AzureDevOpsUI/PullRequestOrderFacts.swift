@@ -7,11 +7,12 @@ import Foundation
 
 /// Tells Pull Request Order what Azure DevOps shows, while it's on: the pull requests the list read, the ones Done keeps a
 /// day included, merged or abandoned, for what BriefBar sees become of them; with their branches, repositories and
-/// authors, what each means for you now, and how each looks and opens, as its row does; and what each one's stage is worked
-/// out from (`stageFacts`), with the Copilot tasks BriefBar sent on it and the account it was read with, whose stages you
-/// set apply. It reads nothing more from Azure DevOps for it. As the list doesn't read which branches are forks' or which
-/// is a repository's default, a pull request that targets another's branch goes after it only when the same person opened
-/// both.
+/// authors, what each means for you now, how each looks and opens, as its row does; what each one's stage is worked out
+/// from (`stageFacts`), with the Copilot tasks BriefBar sent on it and the account it was read with, whose stages you set
+/// apply; and, with Show Links on too, the stories and work items each is for, by reference, with those stories and work
+/// items, for their titles. Only Show Links reads more from Azure DevOps for it, the stories (`WorkLinksStore`). As the
+/// list doesn't read which branches are forks' or which is a repository's default, a pull request that targets another's
+/// branch goes after it only when the same person opened both.
 @MainActor
 final class PullRequestOrderFacts {
     private let order: PullRequestOrder
@@ -19,6 +20,10 @@ final class PullRequestOrderFacts {
     private let settings: AppSettings
     /// Where a pull request shows in its details, on the window's Pull Requests page.
     private weak var details: PullRequestDetailsStore?
+    /// The stories your pull requests are for, with Show Links on.
+    private weak var workLinks: WorkLinksStore?
+    /// Shows a story or a task in BriefBar's window, or opens it in Azure DevOps.
+    private let showWorkItem: ((WorkItem) -> Void)?
     /// The tasks BriefBar sent to Copilot, whose sessions on a pull request its stage follows.
     private weak var copilot: CopilotTasksStore?
     private var cancellables: Set<AnyCancellable> = []
@@ -27,12 +32,14 @@ final class PullRequestOrderFacts {
 
     init(
         order: PullRequestOrder, store: PRStore, settings: AppSettings, details: PullRequestDetailsStore?,
-        copilot: CopilotTasksStore? = nil
+        workLinks: WorkLinksStore? = nil, showWorkItem: ((WorkItem) -> Void)? = nil, copilot: CopilotTasksStore? = nil
     ) {
         self.order = order
         self.store = store
         self.settings = settings
         self.details = details
+        self.workLinks = workLinks
+        self.showWorkItem = showWorkItem
         self.copilot = copilot
     }
 
@@ -55,6 +62,7 @@ final class PullRequestOrderFacts {
         store.$items.map { _ in () }
             .merge(with: store.refreshed)
             .merge(with: settings.$showToReview.removeDuplicates().map { _ in () })
+            .merge(with: workLinks?.$storiesRead.removeDuplicates().map { _ in () }.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher())
             // Watching one keeps the stage you set on it, and what you change of its mission, in the preferences, rather
             // than only in memory.
             .merge(with: settings.$watchedPullRequests.dropFirst().map { _ in () })
@@ -84,7 +92,6 @@ final class PullRequestOrderFacts {
         return self
     }
 
-    /// The demo's orders, as if its sessions had told them.
     /// The demo's stages, as if you'd set them, once its pull requests are listed, which they're set on.
     private func tellDemoStages() {
         guard store.mode == .demo, !toldDemoStages, !store.records.isEmpty else { return }
@@ -92,12 +99,14 @@ final class PullRequestOrderFacts {
         order.tellDemo(stages: DemoPullRequestOrder.stages(now: store.now))
     }
 
+    /// The demo's orders, as if its sessions had told them, your made-up changes to its missions, and the names Apple
+    /// Intelligence would give them.
     private func tellDemo() {
         guard store.mode == .demo else { return }
         let now = store.now
         order.tellDemo(
             DemoPullRequestOrder.orders(now: now), evidence: DemoPullRequestOrder.evidence(now: now), focus: DemoPullRequestOrder.focus,
-            changes: DemoPullRequestOrder.changes(now: now)
+            changes: DemoPullRequestOrder.changes(now: now), names: DemoPullRequestOrder.names
         )
     }
 
@@ -108,12 +117,15 @@ final class PullRequestOrderFacts {
             return
         }
         let showToReview = settings.showToReview
+        let stories = workLinks?.storiesRead ?? WorkLinksStore.Stories()
         let tasks = copilot.flatMap { $0.isOn ? $0.entries : nil } ?? []
         order.publish(
-            .azureDevOps, pullRequests: Self.pullRequests(store.records, items: store.items, showToReview: showToReview),
-            items: store.items.map { describe($0, showToReview: showToReview) },
+            .azureDevOps,
+            pullRequests: Self.pullRequests(store.records, items: store.items, showToReview: showToReview, stories: stories),
+            items: store.items.map { describe($0, showToReview: showToReview) } + stories.workItems.map(describe),
             stages: Self.stages(store.records, items: store.items, tasks: tasks, watched: settings.watchedKeys),
-            account: settings.account, inMemory: Self.sentInChats(store.records, watched: settings.watchedKeys)
+            account: settings.account, inMemory: Self.sentInChats(store.records, watched: settings.watchedKeys),
+            readsStories: stories.areRead
         )
         tellDemoStages()
     }
@@ -126,11 +138,20 @@ final class PullRequestOrderFacts {
 
     // MARK: What an order sees
 
-    /// Every pull request the list read, as an order sees it, with what it means for you now, as its group counts it.
-    static func pullRequests(_ records: [PRRecord], items: [PRSnapshot], showToReview: Bool) -> [OrderPullRequest] {
+    /// Every pull request the list read, as an order sees it, with what it means for you now, as its group counts it, and,
+    /// while they're read, the stories it's for.
+    static func pullRequests(
+        _ records: [PRRecord], items: [PRSnapshot], showToReview: Bool, stories: WorkLinksStore.Stories = WorkLinksStore.Stories()
+    ) -> [OrderPullRequest] {
         let groups = Dictionary(items.map { ($0.key, $0.group) }, uniquingKeysWith: { first, _ in first })
         return records.compactMap { record in
-            pullRequest(record.pullRequest, attention: groups[record.id]?.state(showToReview: showToReview))
+            var seen = pullRequest(record.pullRequest, attention: groups[record.id]?.state(showToReview: showToReview))
+            if stories.areRead {
+                let key = PRKey(record.id.organization.lowercased(), record.id.number)
+                seen?.stories = stories.byPullRequest[key]
+                seen?.workItems = stories.workItemsByPullRequest[key]
+            }
+            return seen
         }
     }
 
@@ -150,6 +171,14 @@ final class PullRequestOrderFacts {
             sourceBranch: pullRequest.sourceBranch, targetBranch: pullRequest.targetBranch, author: pullRequest.author.id,
             state: state, attention: attention, createdAt: pullRequest.createdAt
         )
+    }
+
+    /// How a story or a task looks, as Show Links shows it, and what opening it does: it shows in BriefBar's window, or
+    /// opens in Azure DevOps.
+    private func describe(_ workItem: WorkItem) -> LinkedItem {
+        var item = WorkLinksStore.item(workItem)
+        if let showWorkItem { item.open = { showWorkItem(workItem) } }
+        return item
     }
 
     // MARK: What a stage is worked out from

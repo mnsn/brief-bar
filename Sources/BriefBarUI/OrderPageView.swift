@@ -46,6 +46,15 @@ package struct MissionsBody: View {
     let now: Date
 
     @EnvironmentObject private var services: AppServices
+    /// The section and window whose page this is, when it's on one: its missions are named only while that page is on
+    /// screen, and never off a window's page.
+    @Environment(\.shownSection) private var section
+    @Environment(\.shownWindow) private var window
+    /// Who shows the missions, for Apple Intelligence to name them while they're on screen.
+    @LocalState private var viewer = MissionsViewer()
+    /// The missions whose card, band or lane is in the page's sight now, in each view: Apple Intelligence names only those
+    /// of the view it shows.
+    @LocalState private var inSight: [OrderView: Set<MissionKey>] = [:]
 
     package init(
         view: OrderView, ordering: PullRequestOrder, kinds: Set<ItemRef.Kind>, elsewhere: String, openElsewhere: (() -> Void)?,
@@ -102,6 +111,8 @@ package struct MissionsBody: View {
         let rest = listed.filter { !Self.isIn(missions, $0) }
         // Each mission's next steps, as its lane on the Board has them, where its pull requests have stages.
         let missionLanes = board?.mode == .missions ? board : nil
+        // Apple Intelligence names only the missions on screen: those scrolled out of sight wait.
+        let onScreen = missions.map(\.key).filter { inSight[view]?.contains($0) == true }
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 18) {
                 // What you changed last of a mission, and why BriefBar didn't make a change, when no mission's card or lane
@@ -118,6 +129,7 @@ package struct MissionsBody: View {
                 case .list:
                     ForEach(missions) { mission in
                         missionCard(mission, lane: missionLanes?.lane(for: mission.key))
+                            .onSightChange { see(mission.key, $0) }
                     }
                     if !rest.isEmpty {
                         Text("Not in a mission")
@@ -134,6 +146,7 @@ package struct MissionsBody: View {
                             lane: missionLanes?.lane(for: mission.key), isSelected: isSelected, select: open,
                             list: { AnyView(missionCard(mission, lane: missionLanes?.lane(for: mission.key))) }
                         )
+                        .onSightChange { see(mission.key, $0) }
                     }
                     let undrawn = OrderMap.undrawn(listed + apart, in: missions)
                     NotInAMissionLine(inNoMission: undrawn.inNoMission, notInOrder: undrawn.notInOrder) { ordering.setView(.list) }
@@ -143,7 +156,7 @@ package struct MissionsBody: View {
                             board: board, missions: missions, order: ordering, elsewhere: elsewhere, openElsewhere: openElsewhere,
                             place: place(of:), card: card, isSelected: isSelected, select: { ref in _ = select(ref) },
                             shownOnTop: shownOnTop, setAsNext: setAsNext, notOnBoard: board.notOnBoard(listed + apart),
-                            showByStatus: showByStatus, now: now
+                            showByStatus: showByStatus, now: now, see: see
                         )
                         .id(Self.boardTop)
                     }
@@ -153,9 +166,23 @@ package struct MissionsBody: View {
             .onAppear {
                 reveal(ordering.revealed, with: proxy)
                 revealBoard(ordering.revealedColumn, with: proxy)
+                ordering.showing(onScreen, in: viewer, on: page)
             }
             .onChange(of: ordering.revealedColumn) { _, stage in revealBoard(stage, with: proxy) }
+            .onChange(of: onScreen) { _, keys in ordering.showing(keys, in: viewer, on: page) }
+            .onDisappear { ordering.stopShowing(in: viewer) }
         }
+    }
+
+    /// The window's page this is, when it's on one, for Pull Request Order to know when it's on screen.
+    private var page: String? {
+        guard let section, let window else { return nil }
+        return PullRequestOrder.page(section, window: window)
+    }
+
+    /// A mission's card, band or lane came into the page's sight, or left it.
+    private func see(_ key: MissionKey, _ isInSight: Bool) {
+        if isInSight { inSight[view, default: []].insert(key) } else { inSight[view]?.remove(key) }
     }
 
     private func missionCard(_ mission: OrderMission, lane: BoardLane?) -> MissionCard {
@@ -210,5 +237,18 @@ package struct MissionsBody: View {
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(Self.boardTop, anchor: .top) }
         }
+    }
+}
+
+/// A page that shows missions, as Pull Request Order knows it while it does.
+final class MissionsViewer {}
+
+extension View {
+    /// Says whether it's in the page's sight, as it comes in or leaves it: in that of the innermost scroll view that scrolls
+    /// up and down, such as the page's, rather than the Board's, which scrolls sideways. Outside one, it is.
+    func onSightChange(_ action: @escaping (Bool) -> Void) -> some View {
+        onGeometryChange(for: Bool.self) { proxy in
+            proxy.bounds(of: .scrollView(axis: .vertical)).map { $0.intersects(CGRect(origin: .zero, size: proxy.size)) } ?? true
+        } action: { action($0) }
     }
 }

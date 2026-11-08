@@ -79,6 +79,11 @@ final class AppModel: ObservableObject {
         }
         // `--render` keeps the brief in BriefBar's own words, so pictures don't depend on the model, unless asked to wait.
         briefWriter = BriefWriter(isEnabled: !rendering || Attribution.environment["BRIEFBAR_RENDER_SUMMARIES"] == "1")
+        // Only the app itself asks Apple Intelligence to name missions: the demo's names are made up, and `--render` draws
+        // the ones it has.
+        if !demo && !rendering {
+            services.pullRequestOrder.namer = MissionNamer()
+        }
         // Only the app itself reads Notification Center for pull requests sent in chats.
         sources = SourceCatalog.sources(services: services, chats: demo || rendering ? .inert : .notificationCenter())
         var choices = SourceChoices.load(from: defaults)

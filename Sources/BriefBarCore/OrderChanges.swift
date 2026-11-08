@@ -417,7 +417,8 @@ public struct OrderChanges: Equatable, Sendable {
 
     /// Forgets the things of the sources you turned off, as each source forgets what it kept: changes to their pull
     /// requests, what others merge after of theirs, and placements in their missions: a GitHub stack, a chain of their pull
-    /// requests, or the pull requests opened under a Copilot session. True when that forgot something.
+    /// requests, the pull requests opened under a Copilot session, or a story's, by its Azure DevOps work item. True when
+    /// that forgot something.
     @discardableResult
     public mutating func forget(_ kinds: Set<ItemRef.Kind>) -> Bool {
         guard !kinds.isEmpty else { return false }
@@ -427,6 +428,7 @@ public struct OrderChanges: Equatable, Sendable {
             case .stack?: return kinds.contains(.gitHubPullRequest)
             case .chain(let anchor)?: return kinds.contains(anchor.kind)
             case .family(let session)?: return kinds.contains(session.kind)
+            case .story(let story)?: return kinds.contains(story.kind)
             case .plan?, .mine?, nil: return false
             }
         }
@@ -520,16 +522,66 @@ public struct OrderChanges: Equatable, Sendable {
 
     /// Names the chains that changes name by another of their pull requests, where `anchor` gives one.
     mutating func rename(_ anchor: (ItemRef) -> ItemRef?) {
-        func renamed(_ key: MissionKey?) -> MissionKey? {
-            guard case .chain(let old)? = key, let new = anchor(old) else { return key }
+        func chain(_ key: MissionKey) -> MissionKey? {
+            guard case .chain(let old) = key, let new = anchor(old) else { return nil }
             return .chain(new)
         }
+        renameMissions(chain, nexts: chain, froms: { key, _ in chain(key) })
+    }
+
+    /// Names the missions your changes name as they went on, where `successor` gives where one went
+    /// (`OrderBoard.successor`): the pull requests opened under a session, or a chain, to their story's, and back; a chain
+    /// to another chain or a GitHub stack. Where each puts its pull request and the mission one you moved came from, by
+    /// `successor`; where it's set as next, by `nexts`, which can leave it where it was, so that others where they went
+    /// don't wait for it. The mission one you didn't move was in, as you set it as next or put it after another there, goes
+    /// as where you set it as next does, or by `successor`, and only to a mission that has it (`holds`): Undo Your Changes
+    /// to This Mission takes it back only where it is.
+    /// - Returns: what each mission it renamed was named, and is now.
+    @discardableResult
+    public mutating func followMissions(
+        _ successor: (MissionKey) -> MissionKey?, nexts: ((MissionKey) -> MissionKey?)? = nil,
+        holds: ((MissionKey, ItemRef) -> Bool)? = nil
+    ) -> [MissionKey: MissionKey] {
+        var renamed: [MissionKey: MissionKey] = [:]
+        func went(_ key: MissionKey, to next: MissionKey?) -> MissionKey? {
+            if let next { renamed[key] = next }
+            return next
+        }
+        func follow(_ key: MissionKey) -> MissionKey? { went(key, to: successor(key)) }
+        func followNext(_ key: MissionKey) -> MissionKey? {
+            guard let nexts else { return follow(key) }
+            return went(key, to: nexts(key))
+        }
+        func followFrom(_ key: MissionKey, of change: OrderChange) -> MissionKey? {
+            let next: MissionKey? = if change.first != nil, let nexts { nexts(key) } else { successor(key) }
+            guard let next, holds?(next, change.ref) ?? true else { return nil }
+            return went(key, to: next)
+        }
+        renameMissions(follow, nexts: followNext, froms: followFrom)
+        return renamed
+    }
+
+    /// Names the missions changes name as `rename` gives, where it gives one; where each is set as next, as `nexts` gives;
+    /// the mission one that doesn't move its pull request was in, as `froms` gives.
+    private mutating func renameMissions(
+        _ rename: (MissionKey) -> MissionKey?, nexts: (MissionKey) -> MissionKey?,
+        froms: (MissionKey, OrderChange) -> MissionKey?
+    ) {
+        func renamed(_ key: MissionKey?, by rename: (MissionKey) -> MissionKey?) -> MissionKey? {
+            key.map { rename($0) ?? $0 }
+        }
         for (ref, change) in changes {
-            var change = change
-            if let placement = change.placement?.mission { change.placement = renamed(placement).map(OrderPlacement.into) }
-            change.from = renamed(change.from)
-            change.first = renamed(change.first)
-            if change != changes[ref] { changes[ref] = change }
+            var renaming = change
+            if let placement = change.placement?.mission {
+                renaming.placement = renamed(placement, by: rename).map(OrderPlacement.into)
+            }
+            if change.placement != nil {
+                renaming.from = renamed(change.from, by: rename)
+            } else if let from = change.from {
+                renaming.from = froms(from, change) ?? from
+            }
+            renaming.first = renamed(change.first, by: nexts)
+            if renaming != changes[ref] { changes[ref] = renaming }
         }
     }
 
@@ -842,7 +894,8 @@ extension OrderChanges {
         case .move(let refs, let placement, let from):
             let moving = Set(refs)
             for ref in refs {
-                let source = from ?? missions.first { $0.contains(ref) }?.key
+                // Not an order that lists it apart, for its story: it isn't in that one.
+                let source = from ?? missions.first { mission in (mission.steps + mission.attached).contains { $0.ref == ref } }?.key
                 if let source, placement == .into(source) { continue }
                 var change = current(ref)
                 change.first = nil
@@ -902,14 +955,15 @@ extension OrderChanges {
         switch key {
         case .plan(let id): orders.plan(id) != nil
         case .mine: true
-        case .stack, .chain, .family: false
+        case .stack, .chain, .family, .story: false
         }
     }
 
-    /// Whether a mission is the one a key names: by its own key, or a chain by one of its own pull requests.
+    /// Whether a mission is the one a key names: by its own key, or a chain by one of its own pull requests, as a story's
+    /// mission can have a chain among its own.
     static func names(_ mission: OrderMission, _ key: MissionKey) -> Bool {
         if mission.key == key { return true }
-        guard case .chain(let anchor) = key, mission.kind == .stack else { return false }
+        guard case .chain(let anchor) = key, mission.kind == .stack || mission.isStory else { return false }
         return mission.steps.contains { $0.ref == anchor }
     }
 

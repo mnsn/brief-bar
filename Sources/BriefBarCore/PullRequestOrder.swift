@@ -50,6 +50,27 @@ public struct GitHubStack: Equatable, Sendable, Codable {
     }
 }
 
+/// A story a pull request is for, through one of its work items, as its source read them: references, the story's type
+/// and its task's place in the backlog, never titles.
+public struct OrderStory: Hashable, Sendable {
+    /// The story: a work item on the backlog, such as a user story, a product backlog item, a requirement, an issue or a
+    /// bug.
+    public var ref: ItemRef
+    /// Its type, such as "User Story", once BriefBar read it.
+    public var type: String?
+    /// The pull request's work item under it, a task; nil for a pull request linked to the story itself.
+    public var task: ItemRef?
+    /// That task's place in the backlog, lower first; nil when it isn't known, or for the story itself.
+    public var rank: Double?
+
+    public init(ref: ItemRef, type: String? = nil, task: ItemRef? = nil, rank: Double? = nil) {
+        self.ref = ref
+        self.type = type
+        self.task = task
+        self.rank = rank
+    }
+}
+
 /// A pull request a source lists now, with what its order needs to know: never its title.
 public struct OrderPullRequest: Equatable, Sendable {
     public var ref: ItemRef
@@ -71,11 +92,17 @@ public struct OrderPullRequest: Equatable, Sendable {
     public var createdAt: Date?
     /// The GitHub stack it's in.
     public var stack: GitHubStack?
+    /// The stories it's for, through its work items, each once: none when none of its work items is a story or a story's
+    /// task; nil until its source read them, or for a source that doesn't.
+    public var stories: [OrderStory]?
+    /// Its work items, all of them, whatever they are, for its mission's name; nil until its source read them, or for a
+    /// source that doesn't.
+    public var workItems: [ItemRef]?
 
     public init(
         ref: ItemRef, repository: String, sourceBranch: String, targetBranch: String, isFork: Bool? = nil,
         defaultBranch: String? = nil, author: String? = nil, state: PullRequestState = .open, attention: ItemState? = nil,
-        createdAt: Date? = nil, stack: GitHubStack? = nil
+        createdAt: Date? = nil, stack: GitHubStack? = nil, stories: [OrderStory]? = nil, workItems: [ItemRef]? = nil
     ) {
         self.ref = ref
         self.repository = repository.lowercased()
@@ -88,6 +115,8 @@ public struct OrderPullRequest: Equatable, Sendable {
         self.attention = attention
         self.createdAt = createdAt
         self.stack = stack
+        self.stories = stories
+        self.workItems = workItems
     }
 }
 
@@ -126,13 +155,28 @@ public struct OrderFacts: Equatable, Sendable {
     public private(set) var sessions: [ItemRef: OrderSession]
     /// The kinds of pull request whose source is on: one of another kind can't be seen because its source is off.
     public var sourcesOn: Set<ItemRef.Kind>
+    /// Whether a source reads the stories its pull requests are for: Azure DevOps, with Show Links on. Without it, there
+    /// are no stories' missions, and their names wait.
+    public var readsStories: Bool
+
+    /// Whether a source reads stories but hasn't read yet what some of its pull requests' work items are for, as right after
+    /// BriefBar starts or Show Links is turned on: until it has, which stories' missions there are can't be told.
+    public var storiesArePending: Bool {
+        readsStories && pullRequests.values.contains { $0.ref.kind == .pullRequest && $0.stories == nil }
+    }
+
+    /// Whether BriefBar can tell which stories' missions there are: a source reads stories, and has read them for each of
+    /// its pull requests.
+    public var seesStories: Bool {
+        readsStories && !storiesArePending
+    }
 
     /// - Parameters:
     ///   - pullRequests: the first of each wins.
     ///   - sessions: the first of each wins.
     public init(
         pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [],
-        sourcesOn: Set<ItemRef.Kind> = [.pullRequest, .gitHubPullRequest]
+        sourcesOn: Set<ItemRef.Kind> = [.pullRequest, .gitHubPullRequest], readsStories: Bool = false
     ) {
         var byRef: [ItemRef: OrderPullRequest] = [:]
         for pullRequest in pullRequests where pullRequest.ref.kind.isPullRequest && byRef[pullRequest.ref] == nil {
@@ -145,6 +189,7 @@ public struct OrderFacts: Equatable, Sendable {
         self.pullRequests = byRef
         self.sessions = sessionsByRef
         self.sourcesOn = sourcesOn
+        self.readsStories = readsStories
     }
 
     /// Where each pull request of a GitHub stack stands, as the stack shows it, though no list has it, such as one that
@@ -442,33 +487,37 @@ enum OrderGraph {
 
 /// Which group of pull requests a mission is, so that Focus finds it again: a session's order, by the ID BriefBar gave it;
 /// a GitHub stack; a chain of branches, by its earliest pull request; the pull requests opened under a session; or a
-/// mission of your own, by the ID BriefBar gave it as you made it.
+/// story's pull requests, by the story's work item; or a mission of your own, by the ID BriefBar gave it as you made
+/// it.
 public enum MissionKey: Hashable, Sendable, CustomStringConvertible {
     case plan(UUID)
     /// `owner/name`, lowercased, and the stack's number.
     case stack(repository: String, number: Int)
     case chain(ItemRef)
     case family(ItemRef)
+    /// A story's work item.
+    case story(ItemRef)
     /// A mission of your own, made with Move to Mission ▸ New Mission (`OrderChanges`).
     case mine(UUID)
 
-    /// One BriefBar works out, from what it sees: a stack, a chain or a session's pull requests. Not an order, nor one of
-    /// yours.
+    /// One BriefBar works out, from what it sees: a stack, a chain, a session's pull requests or a story's. Not an order,
+    /// nor one of yours.
     public var isWorkedOut: Bool {
         switch self {
-        case .stack, .chain, .family: true
+        case .stack, .chain, .family, .story: true
         case .plan, .mine: false
         }
     }
 
-    /// `plan/<id>`, `stack/octo/storefront/41`, `chain/pullRequest/contoso/4101`, `family/session//<id>`, `mine/<id>`: what
-    /// the preferences keep.
+    /// `plan/<id>`, `stack/octo/storefront/41`, `chain/pullRequest/contoso/4101`, `family/session//<id>`,
+    /// `story/workItem/contoso/5101`, `mine/<id>`: what the preferences keep.
     public var description: String {
         switch self {
         case .plan(let id): return "plan/\(id.uuidString.lowercased())"
         case .stack(let repository, let number): return "stack/\(repository)/\(number)"
         case .chain(let ref): return "chain/\(ref.description)"
         case .family(let ref): return "family/\(ref.description)"
+        case .story(let ref): return "story/\(ref.description)"
         case .mine(let id): return "mine/\(id.uuidString.lowercased())"
         }
     }
@@ -494,11 +543,25 @@ public enum MissionKey: Hashable, Sendable, CustomStringConvertible {
         case "family":
             guard let ref = ItemRef(rest), ref.kind == .session else { return nil }
             self = .family(ref)
+        case "story":
+            guard let ref = ItemRef(rest), ref.kind == .workItem else { return nil }
+            self = .story(ref)
         case "mine":
             guard let id = UUID(uuidString: rest) else { return nil }
             self = .mine(id)
         default:
             return nil
+        }
+    }
+
+    /// The kinds of thing whose source makes the mission it names, but for a session's order, which BriefBar keeps: a
+    /// GitHub stack's pull requests, a chain's, the sessions a family's pull requests were opened under, and a story's
+    /// work items.
+    public var kinds: Set<ItemRef.Kind> {
+        switch self {
+        case .plan, .mine: return []
+        case .stack: return [.gitHubPullRequest]
+        case .chain(let ref), .family(let ref), .story(let ref): return [ref.kind]
         }
     }
 }
@@ -605,6 +668,8 @@ public enum OrderNote: Equatable, Sendable {
     case alsoIn([UUID])
     /// Stacked with one of the order's pull requests: it comes after that one, or before it.
     case stackedWith(ItemRef, comesAfter: Bool, OrderOrigin)
+    /// Its work items are for this story too, whose mission it isn't in.
+    case alsoFor(MissionStory)
     /// You set it as next to merge, then.
     case yourNext(Date)
     /// You put it after these, then.
@@ -616,6 +681,9 @@ public enum OrderNote: Equatable, Sendable {
     /// The mission you put it in is gone, its order forgotten or its pull requests gone: it stays with the others you put
     /// there, as a mission of yours.
     case placementGone(MissionKey)
+    /// The story's mission you put it in isn't gone, but unseen while BriefBar can't read stories, as before Show Links has
+    /// read them: it stays with the others you put there meanwhile.
+    case placementUnseen(MissionKey)
     /// It waits for this one, which you set as next to merge.
     case afterYourNext(ItemRef)
     /// It doesn't wait for this one, which you set as next to merge: you took that away.
@@ -638,6 +706,9 @@ public enum OrderNote: Equatable, Sendable {
     case nextDoesntHold(ItemRef, retarget: Bool)
     /// You set it as next to merge in that mission, which it isn't in now, or which is gone, its order forgotten.
     case nextElsewhere(MissionKey)
+    /// You set it as next to merge in that story's mission, which isn't gone, but unseen while BriefBar can't tell stories'
+    /// missions, as before Show Links has read them: it holds again once the mission shows.
+    case nextUnseen(MissionKey)
     /// You set this one as next to merge here after it, such as in a chain that came to be one with another: that one's
     /// next, and yours doesn't hold.
     case nextSince(ItemRef)
@@ -660,12 +731,12 @@ public enum OrderNote: Equatable, Sendable {
     /// the details' order line says, and what a row with no order known marks.
     public var isAboutYourChanges: Bool {
         switch self {
-        case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .afterYourNext, .notAfterYourNext, .yoursDoesntHold,
-             .nextDoesntHold, .nextElsewhere, .nextSince, .orderChangedIt, .yourNextGoesFirst:
+        case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .placementUnseen, .afterYourNext, .notAfterYourNext,
+             .yoursDoesntHold, .nextDoesntHold, .nextElsewhere, .nextUnseen, .nextSince, .orderChangedIt, .yourNextGoesFirst:
             return true
         case .setAside(_, _, let circle):
             return circle == .yours || circle == .yourChanges
-        case .showsAgainst, .orderDisagrees, .alsoIn, .stackedWith, .goesRound, .ordersGoRound:
+        case .showsAgainst, .orderDisagrees, .alsoIn, .stackedWith, .alsoFor, .goesRound, .ordersGoRound:
             return false
         }
     }
@@ -763,8 +834,21 @@ public struct OrderStep: Equatable, Sendable {
     }
 }
 
+/// The story a mission is for: a story's mission's own, or the one all of another mission's pull requests are for. Its
+/// work item, and its type once BriefBar read it: never its title.
+public struct MissionStory: Hashable, Sendable {
+    public var ref: ItemRef
+    /// Such as "User Story"; nil until it's read, or when it can't be.
+    public var type: String?
+
+    public init(ref: ItemRef, type: String? = nil) {
+        self.ref = ref
+        self.type = type
+    }
+}
+
 /// Pull requests that go together, in their order: a session's order, a stack BriefBar sees, the pull requests opened
-/// under a session, whose order nobody told BriefBar, or a mission of your own.
+/// under a session, or a story's pull requests, whose order nobody told BriefBar; or a mission of your own.
 public struct OrderMission: Identifiable, Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         /// A session's order: who said it was theirs, for information only, and when it last changed.
@@ -773,6 +857,9 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
         case stack
         /// Pull requests opened under this session, whose order nobody told BriefBar.
         case family(session: ItemRef)
+        /// The pull requests of a story's tasks, or of the story itself, in its tasks' backlog order: BriefBar can't see
+        /// which merges first, but for those stacked on each other.
+        case story(ItemRef)
         /// Pull requests you put together, with New Mission; or those you'd put in a mission that's gone since, by its key.
         case mine
     }
@@ -798,6 +885,12 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
     /// The sessions it goes with, for its header's menu: the one that told its order, or that its pull requests were
     /// opened under, first; then those that opened them or work on them, each once.
     public var sessions: [ItemRef]
+    /// The story it's for: a story's mission's own; for another mission, the one story all its pull requests are for, when
+    /// they are.
+    public var story: MissionStory? = nil
+    /// A session's order's: the pull requests for its story it doesn't name, nor stacks with its own, apart, in the story's
+    /// task order, with no order known.
+    public var sameStory: [OrderStep] = []
 
     public var id: MissionKey { key }
 
@@ -806,14 +899,14 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
         steps.filter { $0.status == .merged }.count
     }
 
-    /// Its pull requests, those it doesn't name but are stacked with its own aside.
+    /// Its pull requests, those it doesn't name but are stacked with its own, or for its story, aside.
     public var pullRequestCount: Int {
         steps.count
     }
 
-    /// Whether a pull request is in it, or stacked with its own.
+    /// Whether a pull request is in it, stacked with its own, or for its story apart from it.
     public func contains(_ ref: ItemRef) -> Bool {
-        steps.contains { $0.ref == ref } || attached.contains { $0.ref == ref }
+        steps.contains { $0.ref == ref } || attached.contains { $0.ref == ref } || sameStory.contains { $0.ref == ref }
     }
 
     /// Whether it's a group with no known order.
@@ -822,9 +915,21 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
         return false
     }
 
+    /// Whether it's a story's pull requests.
+    public var isStory: Bool {
+        if case .story = kind { return true }
+        return false
+    }
+
     /// Whether it's a mission of your own.
     public var isMine: Bool {
         kind == .mine
+    }
+
+    /// Whether its header shows how far it got, a bar and "1 of 3 merged": all but the pull requests opened under a session
+    /// and a story's, which nothing told BriefBar go together in an order, whatever order some of them have.
+    public var showsProgress: Bool {
+        !isFamily && !isStory
     }
 
     /// Whether any of its pull requests has a place in an order: not a group whose order nobody knows, whatever became of
@@ -854,8 +959,10 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
 public enum OrderBoard {
     /// Each session's order is a mission of its own, however many a session told, even when they share pull requests.
     /// The pull requests no order names group by what BriefBar sees: those stacked with only one order's pull requests
-    /// show with it, apart from what it names; others stacked together are a stack of their own; the rest group by the
-    /// session they were opened under, two or more, with no order. A pull request alone isn't shown. Your changes come over
+    /// show with it, apart from what it names; then, with what they're stacked with, by the story their work items are
+    /// for: apart in the one unfinished order with a pull request of its own for that story, or else as that story's
+    /// mission, two or more; others stacked together are a stack of their own; the rest group by the session they were
+    /// opened under, two or more, with no order. A pull request alone isn't shown, nor a story's. Your changes come over
     /// it all, those that hold (`OrderChange.holds`): a pull request you moved shows only where you put it, and those you
     /// put in a mission of your own, or in one that's gone, together; then what you set as next, put after another or took
     /// away. What decides what a pull request merges after: stacked branches, which nobody changes but by retargeting;
@@ -896,7 +1003,7 @@ public enum OrderBoard {
             guard let first = layer.holding[ref]?.first,
                   !built.contains(where: { OrderChanges.names($0, first) && $0.steps.contains { $0.ref == ref } })
             else { return nil }
-            return .nextElsewhere(first)
+            return elsewhere(first, seesStories: facts.seesStories, isShown: built.contains { $0.key == first && !$0.isMine })
         }
         for index in missions.indices {
             missions[index].isFocused = missions[index].key == focus
@@ -905,6 +1012,9 @@ public enum OrderBoard {
             }
             for step in missions[index].attached.indices {
                 if let note = nextElsewhere(missions[index].attached[step].ref) { missions[index].attached[step].notes.append(note) }
+            }
+            for step in missions[index].sameStory.indices {
+                if let note = nextElsewhere(missions[index].sameStory[step].ref) { missions[index].sameStory[step].notes.append(note) }
             }
             // What the missions made after it found its order's lines go round with.
             guard let notes = lines.notes[missions[index].key] else { continue }
@@ -918,14 +1028,25 @@ public enum OrderBoard {
     }
 
     /// What your change to a pull request in no mission says: that an order went against it, or that you set it as next in a
-    /// mission it isn't in now, or that's gone; for its details, where no mission's card shows it.
-    public static func notes(outside ref: ItemRef, missions: [OrderMission], changes: OrderChanges, orders: DeclaredOrders) -> [OrderNote] {
+    /// mission it isn't in now, or that's gone, or a story's that BriefBar can't see yet; for its details, where no mission's
+    /// card shows it.
+    /// - Parameter seesStories: BriefBar can tell which stories' missions there are (`OrderFacts.seesStories`).
+    public static func notes(
+        outside ref: ItemRef, missions: [OrderMission], changes: OrderChanges, orders: DeclaredOrders, seesStories: Bool = true
+    ) -> [OrderNote] {
         guard let change = changes[ref] else { return [] }
         guard change.holds(in: orders) else { return change.overridden(in: orders).map { [.orderChangedIt($0)] } ?? [] }
         if let first = change.first, !missions.contains(where: { OrderChanges.names($0, first) && $0.contains(ref) }) {
-            return [.nextElsewhere(first)]
+            return [elsewhere(first, seesStories: seesStories, isShown: missions.contains { $0.key == first && !$0.isMine })]
         }
         return []
+    }
+
+    /// Where you set it as next to merge, which it isn't in now: gone, or, for a story's while BriefBar can't tell stories'
+    /// missions and doesn't show that one, unseen. Shown, as while its own work items are read again, it's elsewhere.
+    static func elsewhere(_ first: MissionKey, seesStories: Bool, isShown: Bool) -> OrderNote {
+        if case .story = first, !seesStories, !isShown { return .nextUnseen(first) }
+        return .nextElsewhere(first)
     }
 
     /// The one you focus on first, then those still going, then those with an order; the most pressing for you first, then
@@ -933,13 +1054,78 @@ public enum OrderBoard {
     static func showsFirst(_ lhs: OrderMission, _ rhs: OrderMission) -> Bool {
         if lhs.isFocused != rhs.isFocused { return lhs.isFocused }
         if lhs.isFinished != rhs.isFinished { return !lhs.isFinished }
-        if lhs.isFamily != rhs.isFamily { return !lhs.isFamily }
+        if lhs.hasOrder != rhs.hasOrder { return lhs.hasOrder }
         let urgency = { (mission: OrderMission) in
             mission.attention.flatMap { ItemState.allCases.firstIndex(of: $0) } ?? ItemState.allCases.count
         }
         if urgency(lhs) != urgency(rhs) { return urgency(lhs) < urgency(rhs) }
         if lhs.date != rhs.date { return (lhs.date ?? .distantPast) > (rhs.date ?? .distantPast) }
         return lhs.key.description < rhs.key.description
+    }
+
+    /// Where something kept by a mission's key goes once that mission is gone, as the missions change: Focus, the name you
+    /// gave it, and your changes that name it. The mission all its open pull requests went to, but those your changes moved
+    /// into it or out of it, wherever they are now, when that's their story's; for a chain whose earliest pull request
+    /// left, the chain or GitHub stack they're in now; or, for a story's, as Show Links is turned off or their work items
+    /// change, the chain, GitHub stack or session's they're in now, when it has no other open one, so that what followed
+    /// them into the story's mission comes back out with them, and goes back in as they do. A chain split as you moved one
+    /// from its middle goes to the part with the most of them, the first shown of those with as many. A story's split in
+    /// more than one such mission, as a teammate's chain or a session's of the same story, waits: which one what's kept
+    /// came from isn't known. Its pull requests on their own, in no mission, don't count. Nil while it's still there, or
+    /// when its open pull requests went different ways, or none is open: what's kept waits, as it would. A session's order
+    /// and a mission of your own never move: they're kept by their IDs. One that's gone but for what you'd put in it, which
+    /// By Mission shows as yours, is gone.
+    /// - Parameters:
+    ///   - old: the missions as they were.
+    ///   - new: the missions now.
+    ///   - moved: the pull requests your changes that hold put in a mission, or out of one (`OrderChange.placement`).
+    ///   - alone: only to a mission with all of them, and no open pull request but those and the ones your changes moved,
+    ///     never to a part of one that split: for where you set one as next to merge, which shouldn't have others wait for
+    ///     it, such as a teammate's of the same story, and holds again as the mission comes back whole. Never a chain's into
+    ///     its story's mission: the chain's key names the story's mission that holds the chain, where it's next among the
+    ///     chain's own pull requests. Out of a story's mission only into another story's, as their tasks move there: never
+    ///     to a chain's, a GitHub stack's or a session's, as it's the story's, though its pull requests change while it
+    ///     doesn't show.
+    public static func successor(
+        of key: MissionKey, from old: [OrderMission], to new: [OrderMission], moved: Set<ItemRef> = [], alone: Bool = false
+    ) -> MissionKey? {
+        switch key {
+        case .plan, .mine: return nil
+        case .stack, .chain, .family, .story: break
+        }
+        guard !new.contains(where: { $0.key == key && !$0.isMine }), let was = old.first(where: { $0.key == key }) else { return nil }
+        let open = (was.steps + was.attached + was.sameStory).filter { $0.status.isOpen && !moved.contains($0.ref) }.map(\.ref)
+        guard !open.isEmpty else { return nil }
+        let had = Set((was.steps + was.attached + was.sameStory).map(\.ref))
+        let held = { (mission: OrderMission) in open.filter { ref in mission.steps.contains { $0.ref == ref } }.count }
+        // Whether a mission has no open pull request but the gone one's and those your changes moved.
+        let within = { (mission: OrderMission) in
+            !(mission.steps + mission.attached).contains { $0.status.isOpen && !had.contains($0.ref) && !moved.contains($0.ref) }
+        }
+        // Where what's kept can go on, with all of them; and with some of them, as they split.
+        func goesOn(_ mission: OrderMission, split: Bool) -> Bool {
+            guard !mission.isMine else { return false }
+            switch (key, mission.key) {
+            case (.chain, .story): return !split && !alone
+            case (_, .story): return !split
+            case (.chain, .chain), (.chain, .stack): return true
+            case (.story, .chain), (.story, .stack), (.story, .family): return !alone && within(mission)
+            default: return false
+            }
+        }
+        var now = new.first { goesOn($0, split: false) && held($0) == open.count }
+        if now == nil, !alone {
+            let parts = new.filter { goesOn($0, split: true) && held($0) > 0 }
+            if case .story = key {
+                now = parts.count == 1 ? parts.first : nil
+            } else {
+                for mission in parts where held(mission) > (now.map(held) ?? 0) {
+                    now = mission
+                }
+            }
+        }
+        guard let now, !alone || within(now) else { return nil }
+        return now.key
     }
 }
 
@@ -1154,6 +1340,115 @@ private struct Board {
     }
 }
 
+// MARK: Stories
+
+extension Board {
+    /// The stories a pull request is for, as its source read them, each once, with its first task in the backlog.
+    func stories(of ref: ItemRef) -> [OrderStory] {
+        var stories: [OrderStory] = []
+        for story in facts.pullRequests[ref]?.stories ?? [] where story.ref.kind == .workItem {
+            if let index = stories.firstIndex(where: { $0.ref == story.ref }) {
+                if Self.earlier(story.rank, stories[index].rank) == true { stories[index].rank = story.rank }
+                if stories[index].type == nil { stories[index].type = story.type }
+            } else {
+                stories.append(story)
+            }
+        }
+        return stories
+    }
+
+    /// A story, with its type when any pull request's source read it.
+    func missionStory(_ story: ItemRef) -> MissionStory {
+        let type = facts.pullRequests.values.sorted { $0.ref < $1.ref }.lazy
+            .compactMap { $0.stories?.first { $0.ref == story && $0.type != nil }?.type }.first
+        return MissionStory(ref: story, type: type)
+    }
+
+    /// The story pull requests stacked together go with: the one most of them are for, then the one whose task comes
+    /// first in the backlog, then the one with the lowest ID. Nil when none of them is for a story.
+    func story(of component: [ItemRef]) -> ItemRef? {
+        var counts: [ItemRef: Int] = [:]
+        var ranks: [ItemRef: Double] = [:]
+        for ref in component {
+            for story in stories(of: ref) {
+                counts[story.ref, default: 0] += 1
+                if let rank = story.rank { ranks[story.ref] = min(ranks[story.ref] ?? rank, rank) }
+            }
+        }
+        return counts.keys.min { lhs, rhs in
+            if counts[lhs] != counts[rhs] { return counts[lhs, default: 0] > counts[rhs, default: 0] }
+            return Self.earlier(ranks[lhs], ranks[rhs]) ?? (lhs < rhs)
+        }
+    }
+
+    /// The one story all these pull requests are for, of those the sources show: for a mission that isn't a story's. Nil
+    /// when the sources show none of them, or they aren't all for one story.
+    func commonStory(of refs: [ItemRef]) -> MissionStory? {
+        let shown = refs.filter { facts.pullRequests[$0] != nil }
+        guard let first = shown.first else { return nil }
+        var common = Set(stories(of: first).map(\.ref))
+        for ref in shown.dropFirst() { common.formIntersection(stories(of: ref).map(\.ref)) }
+        guard common.count == 1, let story = common.first else { return nil }
+        return missionStory(story)
+    }
+
+    /// Whether one of a story's pull requests comes before another in its tasks' order: by its task's place in the
+    /// backlog, then when it was opened, then by reference, what isn't known last. A total order, for rows whose order
+    /// isn't known only: `isEarlier` stays as it is.
+    func comesFirst(in story: ItemRef) -> (ItemRef, ItemRef) -> Bool {
+        { lhs, rhs in
+            let rank = { (ref: ItemRef) in self.stories(of: ref).first { $0.ref == story }?.rank }
+            if let earlier = Self.earlier(rank(lhs), rank(rhs)) { return earlier }
+            if let earlier = Self.earlier(self.facts.pullRequests[lhs]?.createdAt, self.facts.pullRequests[rhs]?.createdAt) {
+                return earlier
+            }
+            return lhs < rhs
+        }
+    }
+
+    /// The order of a story's pull requests, for its mission: those stacked together together, each group by its first in
+    /// the story's tasks' order, as BriefBar sees them stacked within; the rest in that order too.
+    func inTasksOrder(_ refs: [ItemRef], of story: ItemRef) -> (ItemRef, ItemRef) -> Bool {
+        let comesFirst = comesFirst(in: story)
+        var firstOf: [ItemRef: ItemRef] = [:]
+        for component in components(of: Set(refs)) {
+            let first = component.min(by: comesFirst) ?? component[0]
+            for ref in component { firstOf[ref] = first }
+        }
+        return { lhs, rhs in
+            let (left, right) = (firstOf[lhs] ?? lhs, firstOf[rhs] ?? rhs)
+            return left != right ? comesFirst(left, right) : self.isEarlier(lhs, rhs)
+        }
+    }
+
+    /// Whether `lhs` comes before `rhs`, what's missing last: nil when they're the same.
+    static func earlier<Value: Comparable>(_ lhs: Value?, _ rhs: Value?) -> Bool? {
+        switch (lhs, rhs) {
+        case let (left?, right?) where left != right: return left < right
+        case (.some, nil): return true
+        case (nil, .some): return false
+        default: return nil
+        }
+    }
+
+    /// That a pull request's work items are for other stories than the one whose mission, or part of one, it's in.
+    func alsoFor(_ ref: ItemRef, besides story: ItemRef) -> [OrderNote] {
+        stories(of: ref).filter { $0.ref != story }.sorted { $0.ref < $1.ref }
+            .map { .alsoFor(MissionStory(ref: $0.ref, type: $0.type ?? missionStory($0.ref).type)) }
+    }
+
+    /// A mission's steps, each saying the other stories its pull request is for, when the mission names one story, the one
+    /// all its own are for.
+    func notingOtherStories(_ steps: [OrderStep], besides story: MissionStory?) -> [OrderStep] {
+        guard let story else { return steps }
+        return steps.map { step in
+            var step = step
+            step.notes += alsoFor(step.ref, besides: story.ref)
+            return step
+        }
+    }
+}
+
 // MARK: Your changes
 
 /// Your changes as they apply now: those that hold (`OrderChange.holds`), where they put pull requests, and what you put
@@ -1201,12 +1496,15 @@ private struct Layer {
 // MARK: Building missions
 
 extension Board {
-    /// A mission's pull requests, before their order: an order's, a stack's, those opened under a session, or yours.
+    /// A mission's pull requests, before their order: an order's, a stack's, those opened under a session, a story's, or
+    /// yours.
     struct Group {
         enum Kind {
             case plan(OrderPlan)
             case stack
             case family(ItemRef)
+            /// By the story's work item.
+            case story(ItemRef)
             case mine
         }
 
@@ -1218,6 +1516,9 @@ extension Board {
         var placed: [ItemRef] = []
         /// Pull requests its order doesn't name that are stacked with its own.
         var attached: [ItemRef] = []
+        /// An order's: the pull requests for one of its own's story it doesn't name, nor stacks with its own, by that story,
+        /// stacked together or alone.
+        var sameStory: [(story: ItemRef, component: [ItemRef])] = []
 
         var refs: [ItemRef] { members + placed }
 
@@ -1231,9 +1532,20 @@ extension Board {
             return false
         }
 
-        /// Whether it's the stack you put a pull request in: by its key, or a chain by one of its pull requests.
+        var isStory: Bool {
+            story != nil
+        }
+
+        /// A story's work item, for a story's pull requests.
+        var story: ItemRef? {
+            if case .story(let story) = kind { return story }
+            return nil
+        }
+
+        /// Whether it's the stack, or the story's pull requests, you put a pull request in: by its key, or a chain by one of
+        /// its pull requests, which a story's can have stacked among its own.
         func isStack(_ target: MissionKey) -> Bool {
-            guard isStack else { return false }
+            guard isStack || isStory else { return false }
             if key == target { return true }
             if case .chain(let anchor) = target { return members.contains(anchor) }
             return false
@@ -1323,9 +1635,10 @@ extension Board {
     }
 
     /// The missions' pull requests: each order's, but those you moved elsewhere, with those you put in it; then the pull
-    /// requests no order names, by what BriefBar sees, but those you moved, which join the stack, the chain or the pull
-    /// requests opened under a session you put them in; then those you put in a mission of your own, or in one that's gone,
-    /// together, by its key.
+    /// requests no order names, by what BriefBar sees: with what they're stacked with, by the story their work items are
+    /// for, apart in the one unfinished order with a pull request of its own for it, or else as its mission, two or more;
+    /// but those you moved, which join the stack, the chain, the story's pull requests or the pull requests opened under a
+    /// session you put them in; then those you put in a mission of your own, or in one that's gone, together, by its key.
     func groups(orders: DeclaredOrders, layer: Layer) -> [Group] {
         let placed = layer.placed
         let placedRefs = placed.keys.sorted { lhs, rhs in
@@ -1349,6 +1662,15 @@ extension Board {
         var attached: [UUID: [ItemRef]] = [:]
         var stacks: [[ItemRef]] = []
         var alone: [ItemRef] = []
+        var byStory: [ItemRef: [[ItemRef]]] = [:]
+        // Those that go as they would without a story: a stack, or the pull requests opened under a session.
+        func unstoried(_ component: [ItemRef]) {
+            if component.count > 1 || anchors.contains(component[0]) {
+                stacks.append(component)
+            } else {
+                alone += component
+            }
+        }
         for component in components(of: known.subtracting(plansByRef.keys).subtracting(placed.keys)) {
             var touched: Set<UUID> = []
             for ref in component {
@@ -1356,14 +1678,42 @@ extension Board {
             }
             if touched.count == 1, let plan = touched.first {
                 attached[plan, default: []] += component
-            } else if component.count > 1 || anchors.contains(component[0]) {
-                stacks.append(component)
+            } else if let story = story(of: component) {
+                byStory[story, default: []].append(component)
             } else {
-                alone += component
+                unstoried(component)
             }
         }
         for index in groups.indices {
             if let plan = groups[index].plan { groups[index].attached = attached[plan.id] ?? [] }
+        }
+        // An order claims the stories of all its own pull requests, merged ones included, until it's finished: until each
+        // of its pull requests has merged or closed, as far as BriefBar knows, one it can't see counting as neither. A
+        // finished order leaves its stories' new pull requests to go as they would without it. Not the stories of those you
+        // put in it: a Move moves only what you moved.
+        var plansByStory: [ItemRef: Set<UUID>] = [:]
+        for group in groups where group.refs.contains(where: { !status($0).hasEnded }) {
+            guard let plan = group.plan else { continue }
+            for ref in group.members {
+                for story in stories(of: ref) { plansByStory[story.ref, default: []].insert(plan.id) }
+            }
+        }
+        // A story you put a pull request in has its mission, though it has only one of its own.
+        let storiesPlacedIn = Set(placed.values.compactMap { placement -> ItemRef? in
+            if case .into(.story(let story)) = placement { return story }
+            return nil
+        })
+        for story in byStory.keys.sorted() {
+            let components = byStory[story] ?? []
+            if let plans = plansByStory[story], plans.count == 1, let plan = plans.first,
+               let index = groups.firstIndex(where: { $0.plan?.id == plan }) {
+                groups[index].sameStory += components.map { (story, $0) }
+            } else if components.joined().count > 1 || storiesPlacedIn.contains(story) {
+                groups.append(Group(key: .story(story), kind: .story(story), members: Array(components.joined())))
+            } else {
+                // A story with one pull request is no mission: it goes as it would without its story.
+                components.forEach(unstoried)
+            }
         }
         groups += stacks.map(stackGroup)
         var families = familyGroups(alone)
@@ -1412,6 +1762,15 @@ extension Board {
         return groups.keys.sorted().map { session in
             Group(key: .family(session), kind: .family(session), members: (groups[session] ?? []).sorted(by: isEarlier))
         }
+    }
+
+    /// In a story's mission, the pull requests of the chain you set this one as next in, by the chain's key, and those you
+    /// put in the mission, as what you put in the chain went there with it; nil where you set it as next by the mission's
+    /// own key.
+    func chainsOwn(of next: ItemRef, in group: Group, layer: Layer) -> Set<ItemRef>? {
+        guard group.isStory, case .chain(let anchor)? = layer.holding[next]?.first else { return nil }
+        let chain = components(of: Set(group.members)).first { $0.contains(anchor) } ?? []
+        return Set(chain).union(group.placed)
     }
 
     /// A mission, from its pull requests: what goes before each, their order, where each stands, and what each says. Nil
@@ -1528,11 +1887,15 @@ extension Board {
                     added[ref, default: []].append(.notAfterYourNext(next))
                 }
                 // Every line the missions made before kept, other orders' between this one's pull requests too: what waits for
-                // nothing here waits for yours, unless that goes round with them.
+                // nothing here waits for yours, unless that goes round with them. In a story's mission, where you set it as
+                // next in a chain it holds, only that chain's own and those you put in the mission: a teammate's of the same
+                // story doesn't wait for it.
                 let everywhere = lines.orders().merging(lines.next()) { $0.union($1) }
+                let among = chainsOwn(of: next, in: group, layer: layer)
                 var waiting: Set<ItemRef> = []
                 for ref in refs where ref != next && status(ref).isOpen && layer.holding[ref]?.notAfter.contains(next) != true {
-                    guard prerequisites[ref, default: []].allSatisfy({ status($0).hasEnded }),
+                    guard among?.contains(ref) ?? true,
+                          prerequisites[ref, default: []].allSatisfy({ status($0).hasEnded }),
                           !Self.isBefore(ref, next, in: before, everywhere)
                     else { continue }
                     add(next, before: ref, [.yourNext])
@@ -1578,6 +1941,7 @@ extension Board {
         let goesFirst: (ItemRef, ItemRef) -> Bool = switch group.kind {
         case .plan, .mine: { place[$0, default: 0] < place[$1, default: 0] }
         case .stack, .family: isEarlier
+        case .story(let story): inTasksOrder(refs, of: story)
         }
         let (order, cycles) = OrderGraph.ordered(refs, before: within, isEarlier: goesFirst)
         let inCycle = cycleMembers(cycles)
@@ -1640,20 +2004,56 @@ extension Board {
             kind = .family(session: session)
             date = newest(refs)
             first = session
+        case .story(let story):
+            kind = .story(story)
+            date = newest(refs)
+            first = nil
         case .mine:
             kind = .mine
             date = [newest(refs), refs.compactMap { layer.holding[$0]?.changedAt }.max()].compactMap { $0 }.max()
             first = nil
         }
         let group = group
+        // The story it's for: a story's own, or the one all its pull requests are for, of which each says the others it's
+        // for too.
+        let story = group.story.map(missionStory) ?? commonStory(of: refs)
+        let attached = group.attached.sorted(by: isEarlier).map {
+            attachedStep($0, among: members.union(group.attached), in: group, orders: orders, layer: layer)
+        }
+        let sameStory = sameStorySteps(group.sameStory, in: group, orders: orders, layer: layer)
         return OrderMission(
-            key: group.key, kind: kind, steps: steps,
-            attached: group.attached.sorted(by: isEarlier).map {
-                attachedStep($0, among: members.union(group.attached), in: group, orders: orders, layer: layer)
-            },
+            key: group.key, kind: kind, steps: notingOtherStories(steps, besides: story),
+            attached: notingOtherStories(attached, besides: story),
             cycles: cycles, isFocused: false, isFinished: isFinished, isStale: isStale, attention: attention(refs), date: date,
-            sessions: sessions(of: steps.map(\.ref) + group.attached, first: first)
+            sessions: sessions(of: steps.map(\.ref) + group.attached + sameStory.map(\.ref), first: first), story: story,
+            sameStory: sameStory
         )
+    }
+
+    /// The pull requests for an order's story it doesn't name, apart: each group in the order of its story's tasks, by its
+    /// first there; one alone with no order known, those stacked together in their order, each saying how; and what your
+    /// change to each says, as one stacked with the order's does.
+    func sameStorySteps(
+        _ parts: [(story: ItemRef, component: [ItemRef])], in group: Group, orders: DeclaredOrders, layer: Layer
+    ) -> [OrderStep] {
+        let sorted = parts.map { part in
+            (story: part.story, component: part.component, first: part.component.min(by: comesFirst(in: part.story)) ?? part.component[0])
+        }.sorted { lhs, rhs in
+            lhs.story != rhs.story ? lhs.story < rhs.story : comesFirst(in: lhs.story)(lhs.first, rhs.first)
+        }
+        return sorted.flatMap { part -> [OrderStep] in
+            let members = Set(part.component)
+            var within: [ItemRef: [ItemRef]] = [:]
+            for ref in part.component {
+                within[ref] = before[ref, default: []].filter(members.contains).sorted(by: isEarlier)
+            }
+            return OrderGraph.ordered(part.component, before: within, isEarlier: isEarlier).order.map { ref in
+                var step = attachedStep(ref, among: members, in: group, orders: orders, layer: layer)
+                if members.count == 1 { step.standing = .unordered }
+                step.notes += alsoFor(ref, besides: part.story)
+                return step
+            }
+        }
     }
 
     /// What a pull request says of itself in its mission, as facts: its changes show against an open pull request's branch;
@@ -1688,7 +2088,12 @@ extension Board {
         }
         if case .into(let target)? = change.placement {
             if case .mine = group.kind, target == group.key, !Self.isOwn(target) {
-                notes.append(.placementGone(target))
+                // A story's mission isn't gone while BriefBar can't tell stories' missions yet, only unseen.
+                if case .story = target, !facts.seesStories {
+                    notes.append(.placementUnseen(target))
+                } else {
+                    notes.append(.placementGone(target))
+                }
             } else if !change.isAttached {
                 notes.append(.moved(from: change.from, change.changedAt))
             }
@@ -1878,6 +2283,8 @@ public enum OrderText {
                 return "\(comesAfter ? "After" : "Before") \(label) in GitHub stack \(number)"
             }
             return comesAfter ? "Targets \(label)'s branch" : "\(label) targets its branch"
+        case .alsoFor(let story):
+            return "Also for \(Self.story(story))"
         case .yourNext(let date):
             return "You set it as next to merge\(ago(date))"
         case .yourAfter(let refs, let date):
@@ -1890,6 +2297,8 @@ public enum OrderText {
         case .placementGone(let key):
             if case .plan = key { return "Its order is gone: you'd put it here" }
             return "Its mission is gone: you'd put it here"
+        case .placementUnseen:
+            return "You put it in a story's mission, which shows once Show Links reads the story"
         case .afterYourNext(let next):
             return "You set \(next.orderLabel(near: ref)) as next to merge"
         case .notAfterYourNext(let next):
@@ -1929,11 +2338,19 @@ public enum OrderText {
             if let title = names.title(mission) { return "You set it as next to merge in ‘\(title)’, which it isn't in now" }
             if case .plan = mission { return "Its order is gone: you'd set it as next to merge there" }
             return "The mission you set it as next to merge in is gone"
+        case .nextUnseen:
+            return "You set it as next to merge in a story's mission, which shows once Show Links reads the story"
         case .nextSince(let later):
             return "You set \(later.orderLabel(near: ref)) as next to merge here later, so your ‘next to merge’ doesn't hold"
         case .orderChangedIt(let override):
             return overridden(override, of: ref, names: names)
         }
+    }
+
+    /// A story by its type and number, "User Story 5101", once BriefBar read its type; else "Work Item 5101".
+    public static func story(_ story: MissionStory) -> String {
+        let type = story.type?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return "\(type.isEmpty ? "Work Item" : type) \(story.ref.id)"
     }
 
     /// An order that changed a pull request's place after you had: "‘Fix the payments bugs’ put it after !4102 · 5m, after

@@ -35,6 +35,27 @@ Pull Request Order, with Azure DevOps' and GitHub's, then Azure DevOps' own, whi
 same keys. A source's settings work only while it's on: while it's off or paused, they show all the same,
 disabled, saying so, drawn from its settings alone, as a source that's off reads nothing for them.
 
+Pull Request Order keeps the names you give missions with **Rename…** (`MissionNames`, under `order.names`), by what
+makes each mission: only names you typed, never one left as it was or set back to BriefBar's own, up to 200, of 80
+characters at most. A name is forgotten once its mission hasn't shown for 14 days, counted only while Pull Request
+Order, and what makes the mission, are on, and for a story's, once Show Links has read what each pull request is for
+(`OrderFacts.seesStories`), or failed to: a pull request whose work items, or one of them, couldn't be read counts as
+read, for no story, until a read gets them, rather than keep every story's mission unseen; with the order that makes it;
+with the source whose things make it, as you turn that off; for a mission of your own, once no change of yours puts a
+pull request in it, nor would Undo; and with
+**Forget All Orders…**. As a mission's key changes, its name follows it, as Focus and your changes do
+(`OrderBoard.successor`, below). The names Apple Intelligence gives missions with Azure DevOps' pull requests, on this
+Mac (`MissionNamer`, `MissionNaming`), from their pull requests', work items' and sessions' titles,
+are kept in memory only, and all go as you turn Azure DevOps off, with the answer under way. It's asked only for the missions in sight in a window that shows By Mission on screen: not
+while that window is closed, minimized or covered, nor for one scrolled out of sight until it comes into it; and,
+while Apple Intelligence is off or getting ready, BriefBar looks again every half minute, never on a Mac that can't run
+it. No name goes to the log or to agents, and none you give goes to Apple Intelligence: it's asked with the name it
+gave, or else BriefBar's own, to keep while that fits, each title quoted as data. Its answer is the name alone, by
+guided generation (`OnDeviceModel.Shape`), and one that declines, asks or talks about the name rather than give one
+leaves the mission's name as it was (`MissionNaming.clean`), by how such an answer opens, as "I'm sorry," or "Here's",
+not a name that opens with the same word, as "Sorry page redesign", and one that holds a name's place, as "N/A" or
+"Untitled"; a question is a name only when a title asks it.
+
 ## Permissions that macOS grants once
 
 macOS gives some permissions to the whole app, and asks for them only once. That's why BriefBar's own
@@ -1199,7 +1220,8 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
-| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed |
+| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
+| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links and Pull Request Order: for the parents of the tasks linked to your pull requests, their stories, that BriefBar doesn't read already, every quarter of an hour; 200 a request | their title, type, state, project and when they changed, to name a story's mission |
 | `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
@@ -1322,37 +1344,56 @@ row's menu, its details, a Map node's right-click and a Board card's menu, chang
 (`OrderChanges`): **Set as Next to Merge**, one for each mission, so that what waited for nothing there waits for it;
 **Merge After ▸**, to check or uncheck what it merges after; and **Move to Mission ▸**, into another mission, named by
 what lasts (an order by its ID, a chain of branches by one of its pull requests, the pull requests opened under a
-session by that session), a **New Mission** of your own, or **Not in a Mission**. A stacked branch is a fact: it
-counts wherever it leads, in a session's order and from one mission to another, where the Map puts the pull request a
-wave on and says where the other is; only retargeting changes it, and Set as Next waits for the one it's stacked on to
-merge and for the retarget. Then come your changes, then sessions' orders: an order's line that would go round with
-them is set aside and says so, also when it goes round through another mission, such as with what you set as next
-there. Two orders that put the same pull requests the other way round each keep their own, and both say so, for you to
-check the order. Your changes are a layer, kept by pull request and never written into an order, so sessions go on
-telling theirs. Each keeps the place the orders gave the pull request when you made it, and a session's later change
+session by that session, a story's by its work item), a **New Mission** of your own, or **Not in a Mission**. A stacked
+branch is a fact: it counts wherever it leads, in a session's order and from one mission to another, where the Map puts
+the pull request a wave on and says where the other is; only retargeting changes it, and Set as Next waits for the one
+it's stacked on to merge and for the retarget. Then come your changes, then sessions' orders: an order's line that would
+go round with them is set aside and says so, also when it goes round through another mission, such as with what you set
+as next there. Two orders that put the same pull requests the other way round each keep their own, and both say so, for
+you to check the order. Your changes are a layer, kept by pull request and never written into an order, so sessions go
+on telling theirs. Each keeps the place the orders gave the pull request when you made it, and a session's later change
 wins only where it goes against yours: a revision told after yours that names it in another mission than the one you
 moved it to, takes it out of the order you moved it to or changed it in, or puts it after what you took away, or after
-anything where you set it as next, also in a stack, a chain or a session's pull requests that it takes it out of,
-shows instead, says so, and **Put Yours Back** makes yours hold again. One that moves it toward yours, such as an
-order taking out what you moved out of it, naming what you moved into its mission, or naming as you had them what you
-changed among a stack's, a chain's or a session's pull requests, where what you set there goes over to that order
-(your next only while no other of yours is next there, and back to where you set it once the order no longer names
-it), or one that changes what you didn't, becomes what yours replaced, and yours holds; so does telling the same order
-again, or as it was when you made yours, whatever it said between, and a revision told before yours that BriefBar saw
-only after. An order forgotten since is no change. One limit: an order that takes in only the one you set as next
-among a stack's, a chain's or a session's pull requests takes your next with it, and the others wait for it only where
-they're stacked on it, with no note, as BriefBar doesn't keep which were with it when you set it. A row with no order
-known shows a quiet ✎ where your change says something of it, such as that you moved it there, or that the order you
-set it as next in is gone; and one beside an order that doesn't name it, stacked with its pull requests, shows your
-change as any row does: what you put it after, with ✎, that the mission you set it as next in is gone, or that an
-order went against it, with Put Yours Back. **Undo** takes back your last change, to a mission or to a stage, one at a
-time, in memory only; a change to a mission shows its Undo in the card you made it in, or in its mission's lane on the
-Board, or at the top of the list once that card is gone, or with the Board's Lanes: None. A change BriefBar refuses
-says why beside it. BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never
-titles, those about a pull request sent to you in a chat in memory only; at most 500, refusing more rather than
-dropping one; each until two weeks after BriefBar saw its pull requests merge or close. Turning a source off forgets
-those about its pull requests, turning Pull Request Order off keeps them, unused, and **Forget All Orders…** forgets
-them. Nothing goes to Azure DevOps.
+anything where you set it as next, also in a stack, a chain or a session's pull requests that it takes it out of, shows
+instead, says so, and **Put Yours Back** makes yours hold again. One that moves it toward yours, such as an order taking
+out what you moved out of it, naming what you moved into its mission, or naming as you had them what you changed among a
+stack's, a chain's or a session's pull requests, where what you set there goes over to that order (your next only while
+no other of yours is next there, and back to where you set it once the order no longer names it), or one that changes
+what you didn't, becomes what yours replaced, and yours holds; so does telling the same order again, or as it was when
+you made yours, whatever it said between, and a revision told before yours that BriefBar saw only after. An order
+forgotten since is no change. One limit: an order that takes in only the one you set as next among a stack's, a chain's
+or a session's pull requests takes your next with it, and the others wait for it only where they're stacked on it, with
+no note, as BriefBar doesn't keep which were with it when you set it. A row with no order known shows a quiet ✎ where
+your change says something of it, such as that you moved it there, or that the order you set it as next in is gone; and
+one beside an order that doesn't name it, stacked with its pull requests, shows your change as any row does: what you
+put it after, with ✎, that the mission you set it as next in is gone, or that an order went against it, with Put Yours
+Back. A mission your changes name that's gone, as its key changed, is followed by them and by what Undo would put back,
+as Focus and the name you gave it are, by one rule (`OrderBoard.successor`): to the mission all its open pull requests
+went to, but those your changes moved into it or out of it, when that's their story's, once Show Links reads it; out of
+a story's, as Show Links is turned off, to the chain, GitHub stack or session's they went to that has no other open one,
+when it's the only one (a teammate's on its own, in no mission, doesn't count), so what followed them in comes back out
+with them, and goes back in as they do. When they went to more than one, as a teammate's chain or a session's, it waits
+on the story's mission, as which one it came from isn't known: no mission has its Focus or your name, and what you put
+in it shows on its own card, saying it shows once Show Links reads the story. For a chain, it goes to the chain or
+GitHub stack they're in now, or the one with the most of them, as you split it, the first shown of those with as many;
+else they wait. The mission one you didn't move was in, as you set it as next or put it after another there, goes on
+only to a mission that has it. Where you set one as next in a chain stays on the chain: in its story's mission it's next
+among the chain's own pull requests and those you put in the mission, so a teammate's of the same story doesn't wait for
+it. One you set as next in a story's mission stays that mission's, following its pull requests only to another story's,
+as all their tasks move to it and no other is open there: while it doesn't show, its row says so, and a teammate's pull
+request for the story that comes meanwhile waits for it too once it does; and one set among a session's pull requests
+that went whole to their story's mission is that mission's from then on, so a teammate's that joins it later waits for
+it too. Elsewhere it follows only to a mission with all of them and nothing else open but what you moved, never to a
+part of one that split, so that others there don't wait for it, and it holds again as the mission comes back whole; else
+that row says the mission you set it as next in is gone, or, for a story's while Show Links hasn't read the stories,
+that it shows once it does. **Undo** takes back your last change, to a mission or to a stage, one at a time, in memory
+only; a change to a mission shows its Undo in the card you made it in, or in its mission's lane on the Board, or at the
+top of the list once that card is gone, or with the Board's Lanes: None. A change BriefBar refuses says why beside it.
+BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never titles, those about a
+pull request sent to you in a chat in memory only; at most 500, refusing more rather than dropping one; each until two
+weeks after BriefBar saw its pull requests merge or close. Turning a source off forgets those about its pull requests,
+turning Pull Request Order off keeps them, unused, and **Forget All Orders…** forgets them. Nothing goes to Azure
+DevOps.
 
 ### A pull request's stage
 
@@ -2373,7 +2414,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 |---|---|---|
 | `_apis/teams?$mine=true` | every six hours while the sprint shows | your teams, in every project |
 | `{project}/{team}/_apis/work/teamsettings/iterations?$timeframe=current` | every hour, and once per team to find one with a sprint today | the team's current sprint and its dates |
-| `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, and each state's category |
+| `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, which are features and epics (its portfolio backlogs'), and each state's category |
 | `{project}/{team}/_apis/work/teamsettings/iterations/{id}/workitems` | every refresh | the sprint's work items, and which task is under which story or bug |
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
 | `_apis/wit/workitems/{id}?$expand=relations` | when you open a work item's details, unless they were read less than a minute ago; and again when the sprint shows it changed while they show | all its fields, its links, attachments and web pages, and which of its long text fields are Markdown |

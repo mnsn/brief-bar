@@ -70,11 +70,22 @@ package enum OnDeviceModel {
     }
 
     /// Asks the on-device model, giving up after `timeout`.
+    /// - Parameters:
+    ///   - likeliestWords: always the likeliest words, so the same question gets the same answer, as mission names need;
+    ///     otherwise only after `useLikeliestWords`.
+    ///   - shape: what the answer must be, by guided generation: then it's that one string alone, never wrapped in talk,
+    ///     Markdown or other lines.
     package static func respond(
-        to prompt: String, instructions: String, maximumTokens: Int, temperature: Double = 0.2, timeout: TimeInterval = 20
+        to prompt: String, instructions: String, maximumTokens: Int, temperature: Double = 0.2, timeout: TimeInterval = 20,
+        likeliestWords: Bool = false, shape: Shape? = nil
     ) async -> Result<String, Failure> {
         await withTaskGroup(of: Result<String, Failure>?.self) { group in
-            group.addTask { await answer(prompt, instructions: instructions, maximumTokens: maximumTokens, temperature: temperature) }
+            group.addTask {
+                await answer(
+                    prompt, instructions: instructions, maximumTokens: maximumTokens, temperature: temperature,
+                    likeliestWords: likeliestWords, shape: shape
+                )
+            }
             group.addTask {
                 try? await Task.sleep(for: .seconds(timeout))
                 return nil
@@ -85,18 +96,50 @@ package enum OnDeviceModel {
         }
     }
 
+    /// An answer that's one string alone, as guided generation makes it: the string property of a schema of its own.
+    /// Built from a schema made as the app runs (`DynamicGenerationSchema`), since `@Generable`'s macro comes only with
+    /// Xcode.
+    package struct Shape: Sendable {
+        fileprivate let schema: GenerationSchema
+        fileprivate let property: String
+
+        /// One string, `property`, that `description` says what it is, of a schema called `name`.
+        package init(_ name: String, property: String, description: String) throws {
+            schema = try GenerationSchema(
+                root: DynamicGenerationSchema(name: name, properties: [
+                    DynamicGenerationSchema.Property(
+                        name: property, description: description, schema: DynamicGenerationSchema(type: String.self)
+                    ),
+                ]),
+                dependencies: []
+            )
+            self.property = property
+        }
+
+        /// The string an answer of this shape holds, from the content the model generated, as JSON.
+        package func text(ofJSON json: String) throws -> String {
+            try GeneratedContent(json: json).value(String.self, forProperty: property)
+        }
+    }
+
     private static func answer(
-        _ prompt: String, instructions: String, maximumTokens: Int, temperature: Double
+        _ prompt: String, instructions: String, maximumTokens: Int, temperature: Double, likeliestWords: Bool, shape: Shape?
     ) async -> Result<String, Failure> {
         if let reason = unavailableReason { return .failure(.unavailable(reason)) }
         // Explicitly the on-device model.
         let session = LanguageModelSession(model: model, instructions: instructions)
-        let options = picksLikeliestWords.withLock { $0 }
+        let options = likeliestWords || picksLikeliestWords.withLock { $0 }
             ? GenerationOptions(sampling: .greedy, maximumResponseTokens: maximumTokens)
             : GenerationOptions(temperature: temperature, maximumResponseTokens: maximumTokens)
         do {
-            let response = try await session.respond(to: prompt, options: options)
-            return response.content.isEmpty ? .failure(.empty) : .success(response.content)
+            let text: String
+            if let shape {
+                let response = try await session.respond(to: prompt, schema: shape.schema, options: options)
+                text = try response.content.value(String.self, forProperty: shape.property)
+            } else {
+                text = try await session.respond(to: prompt, options: options).content
+            }
+            return text.isEmpty ? .failure(.empty) : .success(text)
         } catch let error as LanguageModelSession.GenerationError {
             switch error {
             case .unsupportedLanguageOrLocale: return .failure(.unsupportedLanguage)

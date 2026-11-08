@@ -410,6 +410,24 @@ import Testing
         #expect(one.lanes[0].cards.map(\.ref.shortOrderLabel) == ["!4101", "!4102", "!4103", "!4200"])
     }
 
+    /// One for an order's story that the order doesn't name is in that order's lane, as its card in List lists it apart, but
+    /// with no place there: no order puts it anywhere.
+    @Test func oneForAnOrdersStoryThatItDoesntNameIsInItsLaneWithNoPlace() throws {
+        var order = Self.mission([
+            Self.step(4101, .next, place: 1), Self.step(4102, .waiting(open: [Self.pr(4101)], unknown: []), place: 2, after: [4101]),
+        ])
+        order.sameStory = [Self.step(4120, .notInOrder)]
+        let review = Self.reading(.yourReview, .asked("Priya asked you"), at: 1)
+        let board = Self.board([4101: review, 4102: review, 4120: review], missions: [order])
+        #expect(board.lanes.map(\.kind) == [.mission(order.key)])
+        #expect(Set(board.lanes[0].cards.map(\.ref)) == [Self.pr(4101), Self.pr(4102), Self.pr(4120)])
+        let card = try #require(board.lanes[0].cards.first { $0.ref == Self.pr(4120) })
+        #expect(card.mission == order.key)
+        #expect(card.position == nil)
+        #expect(card.listIndex == 2)
+        #expect(board.lanes[0].cards.compactMap(\.position).sorted() == [0, 1])
+    }
+
     @Test func onlyThePagesKindsAndAMissionWithNoneOfThemHasNoLane() {
         let github = OrderMission(
             key: .stack(repository: "contoso/shop-web", number: 41), kind: .stack,

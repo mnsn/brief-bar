@@ -72,7 +72,11 @@ package struct MissionCard: View {
                 }
                 let attached = mission.attached.filter { kinds.contains($0.ref.kind) }
                 if !attached.isEmpty {
-                    attachedRows(attached, width: width)
+                    apartRows(attached, title: "Not in this order", width: width)
+                }
+                let sameStory = mission.sameStory.filter { kinds.contains($0.ref.kind) }
+                if !sameStory.isEmpty {
+                    apartRows(sameStory, title: OrderText.sameStory, width: width)
                 }
                 if order.said.contains(where: { $0.mission == mission.key }) {
                     OrderUndoLine(order: order, in: mission.key)
@@ -144,10 +148,11 @@ package struct MissionCard: View {
         .accessibilityLabel(showsFolded ? "Hide \(OrderText.folded(folded))" : "Show \(OrderText.folded(folded))")
     }
 
-    private func attachedRows(_ steps: [OrderStep], width: CGFloat) -> some View {
+    /// Pull requests that show with it apart: those stacked with its own that its order doesn't name, or those for its story.
+    private func apartRows(_ steps: [OrderStep], title: String, width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Divider().padding(.horizontal, 12)
-            Text("Not in this order")
+            Text(title)
                 .font(size: 11, weight: .semibold)
                 .foregroundStyle(.secondary)
                 .padding(.leading, max(width, 6) + 8)

@@ -1216,7 +1216,7 @@ DevOps' gear menu has its own too: they're the same settings.
 
 | Works with | Setting | Options |
 |---|---|---|
-| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. **Forget All Orders…** forgets the orders sessions told it, and your changes; **Forget Stages…**, the stages you set |
+| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. **Forget All Orders…** forgets the orders sessions told it, your changes, and the names you gave missions; **Forget Stages…**, the stages you set |
 | Azure DevOps only | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
@@ -1325,14 +1325,18 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   preferences or to disk, where other programs running as you could read it. It forgets them when you turn it off.
 - **Show Links** reads more only if you turn it on, with the same sign-ins: from Azure DevOps, through
   GET requests, the work items linked to your pull requests, the pull requests linked to the sprint's
-  work items while it's on screen, and what the linked ones your lists don't show are; from the Copilot
+  work items while it's on screen, and what the linked ones your lists don't show are; with **Pull Request
+  Order** on too, each linked work item's parent and place in the backlog, and what those parents, its stories, are
+  when BriefBar hasn't read them, kept in memory only, to put a story's pull requests together; from the Copilot
   app's database, read-only, which pull request each session started from or opened. The links you add
   or hide stay in BriefBar, in its preferences, as references only, never titles: nothing goes back to
   Azure DevOps, GitHub or Copilot.
-- **Apple Intelligence summaries and the brief are made on your Mac**, by Apple's on-device model, never
-  Private Cloud Compute or any other model, and are kept in memory only: the brief's, for ten minutes
+- **Apple Intelligence summaries, the brief and missions' names are made on your Mac**, by Apple's on-device model,
+  never Private Cloud Compute or any other model, and are kept in memory only: the brief's, for ten minutes
   after its line was last on screen. With **Show Message Previews** off, no message text goes into the
-  brief.
+  brief. With **Pull Request Order** on, a mission's name comes from the titles of its Azure DevOps pull requests,
+  their work items and stories, and the Copilot sessions on them, only while By Mission shows it on screen, never
+  from GitHub's titles or the names you give missions.
 - **Summaries**, off until you turn them on, are written by Claude Haiku 5.5 through GitHub Copilot
   when the Copilot CLI is installed, and by Apple Intelligence on your Mac when it isn't, unless you
   choose a model. Only with a model through Copilot, chosen or the default, do a work item's, pull
@@ -1357,8 +1361,9 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   account, by their numbers, with only the commit and the votes that would end them, but for those only sent to you in
   a chat, which stay in memory; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
   sessions you've cleared; the links you added or hid, with Show Links; with Make Changes in Azure DevOps, the tags you
-  added to pull requests, up to 20 for each project, to suggest them; and its settings. Turning a source off deletes
-  what it saved, and the links you added or hid to its things.
+  added to pull requests, up to 20 for each project, to suggest them; with Pull Request Order, the names you give
+  missions with **Rename…**, up to 200, each forgotten once its mission hasn't shown for 14 days; and its settings.
+  Turning a source off deletes what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
   are on: your Azure DevOps pull requests and their comments, pipelines, sprint, a work item's
   description, comments and the pull requests linked to it, and Copilot tasks and sessions, never Teams

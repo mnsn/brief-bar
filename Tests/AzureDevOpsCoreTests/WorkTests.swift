@@ -55,6 +55,10 @@ enum WorkFixture {
 
     static var backlogConfiguration: [String: Any] { [
         "taskBacklog": ["name": "Tasks", "workItemTypes": [["name": "Task", "url": "https://example.invalid"]]],
+        "portfolioBacklogs": [
+            ["name": "Features", "workItemTypes": [["name": "Feature", "url": "https://example.invalid"]]],
+            ["name": "Epics", "workItemTypes": [["name": "Epic", "url": "https://example.invalid"], "junk"]],
+        ],
         "workItemTypeMappedStates": [
             ["workItemTypeName": "Task", "states": ["New": "Proposed", "Active": "InProgress", "Closed": "Completed"]],
             ["workItemTypeName": "User Story",
@@ -263,6 +267,7 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
     @Test func decodesTheBacklogConfiguration() throws {
         let configuration = try Fixture.decode(ADOBacklogConfiguration.self, WorkFixture.backlogConfiguration)
         #expect(configuration.taskBacklog?.workItemTypes?.elements.map(\.name) == ["Task"])
+        #expect(configuration.portfolioBacklogs?.elements.map { $0.workItemTypes?.elements.map(\.name) ?? [] } == [["Feature"], ["Epic"]])
         #expect(configuration.workItemTypeMappedStates?.elements.first { $0.workItemTypeName == "User Story" }?.states["Ready to Code"] == "Proposed")
     }
 
@@ -632,6 +637,8 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         #expect(board.rows[0].progress == .inProgress)
         #expect(board.myWork.map(\.id) == [3])
         #expect(board.remainingWork == 3)
+        // What its backlogs are, for which stories pull requests are for.
+        #expect(board.taskTypes == ["Task"] && board.portfolioTypes == ["Feature", "Epic"])
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
         // Your teams, your identity, the sprint, the board's setup, the sprint's work items and their fields.
         #expect(server.requests.count == 6)
