@@ -547,8 +547,9 @@ private final class TakenAt: Sendable {
     }
 
     /// Nor does a Push & Reply go when BriefBar can't tell whether a turn runs there: when the app's database can't be read,
-    /// or doesn't say which sessions run one, as when the app keeps that another way now. Anything else goes, as before; and
-    /// once the database says no turn runs there, so does the push.
+    /// or doesn't keep the flag that says which sessions run one, as the app might once it keeps that another way. Anything
+    /// else goes, as before. Whatever else the app changes of what it keeps of its sessions, the flag is read as it is, and
+    /// the push goes once it says no turn runs there; and without the database, as without the Copilot app, it goes too.
     @Test(.timeLimit(.minutes(1)))
     func sendsNoPushWhenItCantTellWhetherATurnRuns() async throws {
         let (store, home) = try store()
@@ -567,13 +568,17 @@ private final class TakenAt: Sendable {
         func unknown(_ why: AppSessions.TurnsUnknown) -> SessionDelivery {
             .notSent("BriefBar couldn't tell whether Copilot is running a turn in ‘Fix the totals’, or in the checkout it works in, so nothing went: \(why)")
         }
+        let file = home.appendingPathComponent("data.db")
 
-        // No database it could read.
+        // One it can't read.
+        try Data("Not a database".utf8).write(to: file)
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == unknown(.unreadable))
         #expect(unknown(.unreadable) == .notSent(
             "BriefBar couldn't tell whether Copilot is running a turn in ‘Fix the totals’, or in the checkout it works in, so nothing went: the Copilot app's database couldn't be read."
         ))
-        // One that doesn't say which sessions run a turn, as the app's might once it keeps that another way.
+        // One that doesn't keep the flag that says which sessions run a turn, as the app's might once it keeps that another
+        // way.
+        try FileManager.default.removeItem(at: file)
         try sql("""
             CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL, archived_at TEXT);
@@ -586,14 +591,28 @@ private final class TakenAt: Sendable {
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == unknown(.unsaid))
         CopilotSessionPrompts.set(true, in: store.settings.defaults)
         #expect(ext.received.isEmpty && requests(home).isEmpty && copied.isEmpty)
-
         // A fix goes all the same.
         #expect(await store.deliver("Fix the comments", to: choice(session)) == .sent)
-        // Once it says no turn runs there, the push goes.
-        try FileManager.default.removeItem(at: home.appendingPathComponent("data.db"))
-        try database(at: home, forks: [])
+
+        // One that keeps the flag, though not the workspaces the app's session list reads: the flag says.
+        try FileManager.default.removeItem(at: file)
+        try sql("""
+            CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL,
+                is_running INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT);
+            INSERT INTO sessions (id, title, session_type, is_running, created_at, updated_at)
+                VALUES ('\(session)', 'Fix the totals', 'project', 1, '2026-10-01T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
+            """, home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .notSent(
+            "Copilot is running a turn in ‘Fix the totals’, so nothing went: what that turn changes would go with the push, unchecked. Send it again once that turn is done."
+        ))
+        try sql("UPDATE sessions SET is_running = 0;", home: home)
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
-        #expect(ext.received == ["Fix the comments", "Push and reply"])
+        // Without the database, as without the Copilot app, it goes too.
+        try FileManager.default.removeItem(at: file)
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(ext.received == ["Fix the comments", "Push and reply", "Push and reply"])
+        #expect(copied.isEmpty)
     }
 
     /// A prompt about comments is kept as sent from when delivering it started, before the session's extension took it:

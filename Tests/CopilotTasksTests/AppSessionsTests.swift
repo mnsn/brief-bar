@@ -221,36 +221,68 @@ import Testing
         #expect(throws: (any Error).self) { try AppSessions.load(home: home.appendingPathComponent("nowhere")) }
     }
 
+    /// Runs SQL in a stand-in for the app's `data.db`, making it if it isn't there.
+    private func sql(_ statements: String, home: URL) throws {
+        var handle: OpaquePointer?
+        guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw TestError("no database") }
+        defer { sqlite3_close(handle) }
+        guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else {
+            throw TestError(String(cString: sqlite3_errmsg(handle)))
+        }
+    }
+
     /// Which of the app's sessions run a turn, by its own flag. Strictly, for a check that mustn't take what it can't tell
-    /// for none, it says it can't tell when the database can't be read, or doesn't say for a session whether it runs one, as
-    /// when the app keeps that another way now and BriefBar reads it with its fallback; otherwise it throws as before, or
-    /// finds none.
-    @Test func saysWhenItCantTellWhichSessionsRunATurn() throws {
+    /// for none, it reads the flag alone: whatever else the app changes of what the session list reads, the flag is read as
+    /// the app keeps it. It can't tell when the database can't be read, or doesn't keep the flag, or say it for a session, as
+    /// BriefBar reads it; and without the database, as without the Copilot app, none of the app's sessions runs one.
+    @Test func readsWhichSessionsRunATurnStrictlyByTheirFlagAlone() throws {
         let home = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
-        #expect(throws: AppSessions.TurnsUnknown.unreadable) { try AppSessions.running(home: home, strictly: true) }
+        let file = home.appendingPathComponent("data.db")
+        // None without the database; the session list can't be read, as before. Nothing makes one.
+        #expect(try AppSessions.running(home: home, strictly: true).isEmpty)
         #expect(throws: (any Error).self) { try AppSessions.running(home: home) }
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        // One it can't read.
+        try Data("Not a database".utf8).write(to: file)
+        #expect(throws: AppSessions.TurnsUnknown.unreadable) { try AppSessions.running(home: home, strictly: true) }
         #expect(AppSessions.TurnsUnknown.unreadable.description == "the Copilot app's database couldn't be read.")
+        try FileManager.default.removeItem(at: file)
 
         try database(at: home)
         #expect(try AppSessions.running(home: home) == [opener])
         #expect(try AppSessions.running(home: home, strictly: true) == [opener])
+        // Not an archived one, however its flag stayed.
+        try sql("UPDATE sessions SET is_running = 1 WHERE id = '\(archived)';", home: home)
+        #expect(try AppSessions.running(home: home, strictly: true) == [opener])
+        // Its workspaces gone, or kept another way: the session list goes without the flag, and tells of none; the flag is
+        // read as the app keeps it.
+        try sql("DROP TABLE workspace_pull_request_links; DROP TABLE workspaces;", home: home)
+        #expect(Set(try AppSessions.load(home: home).map(\.id)) == [chat, opener])
+        #expect(try AppSessions.running(home: home).isEmpty)
+        #expect(try AppSessions.running(home: home, strictly: true) == [opener])
 
-        // An app that keeps it another way: its session list has no flag to read.
-        let changed = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: changed) }
-        var handle: OpaquePointer?
-        try #require(sqlite3_open(changed.appendingPathComponent("data.db").path, &handle) == SQLITE_OK)
-        defer { sqlite3_close(handle) }
-        try #require(sqlite3_exec(handle, """
+        // An app that doesn't record which sessions are archived as BriefBar reads it: every session's flag.
+        try FileManager.default.removeItem(at: file)
+        try sql("""
+            CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, is_running INTEGER);
+            INSERT INTO sessions (id, is_running) VALUES ('\(opener)', 1), ('\(archived)', 1), ('\(chat)', 0);
+            """, home: home)
+        #expect(Set(try AppSessions.running(home: home, strictly: true)) == [opener, archived])
+        // One that doesn't say it for a session.
+        try sql("INSERT INTO sessions (id, is_running) VALUES ('6c7d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e04', NULL);", home: home)
+        #expect(throws: AppSessions.TurnsUnknown.unsaid) { try AppSessions.running(home: home, strictly: true) }
+        // An app that keeps it another way: its sessions have no flag to read.
+        try FileManager.default.removeItem(at: file)
+        try sql("""
             CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL, archived_at TEXT);
             INSERT INTO sessions (id, title, session_type, created_at, updated_at)
                 VALUES ('\(opener)', 'Fix the checkout total', 'project', '2026-10-20T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
-            """, nil, nil, nil) == SQLITE_OK)
-        #expect(try AppSessions.load(home: changed).map(\.id) == [opener])
-        #expect(try AppSessions.running(home: changed).isEmpty)
-        #expect(throws: AppSessions.TurnsUnknown.unsaid) { try AppSessions.running(home: changed, strictly: true) }
+            """, home: home)
+        #expect(try AppSessions.load(home: home).map(\.id) == [opener])
+        #expect(try AppSessions.running(home: home).isEmpty)
+        #expect(throws: AppSessions.TurnsUnknown.unsaid) { try AppSessions.running(home: home, strictly: true) }
     }
 
     @Test func findsTheFolderASessionWorksInWithoutFollowingLinks() throws {

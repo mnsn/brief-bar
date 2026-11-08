@@ -75,26 +75,34 @@ public enum AppSessions {
     }
 
     /// The sessions that run a turn now, by the app's own flag, as its database says now: their IDs. Throws when it can't
-    /// be read; and, `strictly`, for a check that mustn't take what it can't tell for none, `TurnsUnknown`: also when the
-    /// database doesn't say for a session whether it runs one, as when the app keeps that another way now, and BriefBar
-    /// reads it with its fallback (`AppDatabase.fallbackQuery`).
+    /// be read. `strictly`, for a check that mustn't take what it can't tell for none, it reads the flag alone
+    /// (`AppDatabase.turns(at:)`), so that a change to anything else the app keeps of its sessions leaves it to be read; it
+    /// throws `TurnsUnknown` when the database can't be read, or doesn't keep the flag, or say it for a session, as BriefBar
+    /// reads it; and with no database at all, as without the Copilot app, none of its sessions runs one.
     public static func running(home: URL, strictly: Bool = false) throws -> [String] {
-        let sessions: [SessionMeta]
-        do {
-            sessions = try AppDatabase.load(at: CopilotPaths(root: home).database).sessions.filter { isSessionID($0.id) }
-        } catch {
-            if strictly { throw TurnsUnknown.unreadable }
-            throw error
+        let database = CopilotPaths(root: home).database
+        guard strictly else {
+            return try AppDatabase.load(at: database).sessions.filter { $0.isRunning == true && isSessionID($0.id) }.map(\.id)
         }
-        if strictly, sessions.contains(where: { $0.isRunning == nil }) { throw TurnsUnknown.unsaid }
-        return sessions.filter { $0.isRunning == true }.map(\.id)
+        // Nothing there, not even a link.
+        guard (try? FileManager.default.attributesOfItem(atPath: database.path)) != nil else { return [] }
+        let turns: [(id: String, isRunning: Bool?)]?
+        do {
+            turns = try AppDatabase.turns(at: database)
+        } catch {
+            throw TurnsUnknown.unreadable
+        }
+        guard let sessions = turns?.filter({ isSessionID($0.id) }), !sessions.contains(where: { $0.isRunning == nil }) else {
+            throw TurnsUnknown.unsaid
+        }
+        return sessions.filter { $0.isRunning == true }.map { $0.id }
     }
 
     /// Why BriefBar can't tell which of the app's sessions run a turn now (`running(home:strictly:)`), as a sentence ends.
     public enum TurnsUnknown: Error, Equatable, CustomStringConvertible {
         /// Its database can't be read.
         case unreadable
-        /// It doesn't say for a session whether it runs one, as BriefBar reads it.
+        /// It doesn't keep the flag that says which sessions run one, or say it for a session, as BriefBar reads it.
         case unsaid
 
         public var description: String {
