@@ -127,19 +127,17 @@ import Testing
             Self.click(at: try #require(drawn.frame), in: host)
             try await until("the click to show its details") { drawn.shown == 1 }
 
-            // Each key once the card is drawn in its column, a moment later, as you'd press the next.
             @MainActor func move(_ arrow: KeyEquivalent, to stage: PullRequestStage, _ what: String) async throws {
-                let before = drawn.frame?.minX
-                Self.press(arrow, command: true, in: window)
-                try await until(what) { order.stage(of: Self.ref)?.stage == stage && drawn.frame?.minX != before }
-                try await Task.sleep(for: .milliseconds(200))
+                try await Self.move(arrow, to: stage, what, order: order, drawn: drawn, in: window)
             }
             try await move(.rightArrow, to: .yourReview, "⌘→ to move the card")
             // Drawn anew in Your review, it has the keyboard again.
             try await move(.rightArrow, to: .teammateReview, "⌘→ to move it on from its new column")
             try await move(.leftArrow, to: .yourReview, "⌘← to move it back")
-            Self.press(.return, in: window)
-            try await until("Return to show its details") { drawn.shown == 2 }
+            try await Self.pressUntil("Return to show its details") {
+                Self.press(.return, in: window)
+                return drawn.shown == 2
+            }
         }
     }
 
@@ -148,10 +146,11 @@ import Testing
     @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
     func tabReachesACardWithTheMacsKeyboardNavigationOff() async throws {
         let order = Self.order()
-        try await Self.showing(order) { window, _, _ in
+        try await Self.showing(order) { window, _, drawn in
             window.selectNextKeyView(nil)
-            Self.press(.rightArrow, command: true, in: window)
-            try await until("⌘→ to move the card Tab reached") { order.stage(of: Self.ref)?.stage == .yourReview }
+            try await Self.move(
+                .rightArrow, to: .yourReview, "⌘→ to move the card Tab reached", order: order, drawn: drawn, in: window
+            )
         }
     }
 
@@ -173,9 +172,12 @@ import Testing
             try await Task.sleep(for: .milliseconds(200))
             #expect(order.stage(of: Self.ref)?.stage == .inProgress)
 
+            // Each key once the card is drawn in its new column, a moment later: the keys move it from where the Board
+            // last drew it.
             @MainActor func move(_ arrow: KeyEquivalent, to stage: PullRequestStage, _ what: String) async throws {
+                let before = drawn.frame?.minX
                 Self.press(arrow, command: true, in: window, throughTheApp: true)
-                try await until(what) { order.stage(of: Self.ref)?.stage == stage }
+                try await until(what) { order.stage(of: Self.ref)?.stage == stage && drawn.frame?.minX != before }
                 try await Task.sleep(for: .milliseconds(200))
             }
             try await move(.rightArrow, to: .yourReview, "⌘→ to move the card the details show")
@@ -201,9 +203,10 @@ import Testing
 
             // Once they close, the card has the keyboard's focus back, as its own keys show.
             details.shown = nil
-            try await Task.sleep(for: .milliseconds(300))
-            Self.press(.rightArrow, command: true, in: window)
-            try await until("⌘→ to move the card that has the focus back") { order.stage(of: Self.ref)?.stage == .yourReview }
+            try await Self.move(
+                .rightArrow, to: .yourReview, "⌘→ to move the card that has the focus back", order: order, drawn: drawn,
+                in: window
+            )
         }
     }
 
@@ -272,9 +275,10 @@ import Testing
             #expect(window.makeFirstResponder(nil))
             try await Task.sleep(for: .milliseconds(200))
             details.shown = nil
-            try await Task.sleep(for: .milliseconds(300))
-            Self.press(.rightArrow, command: true, in: window)
-            try await until("⌘→ to move the card that has the focus back") { order.stage(of: Self.ref)?.stage == .yourReview }
+            try await Self.move(
+                .rightArrow, to: .yourReview, "⌘→ to move the card that has the focus back", order: order, drawn: drawn,
+                in: window
+            )
         }
     }
 
@@ -308,19 +312,24 @@ import Testing
         try await Self.showing(order) { window, host, drawn in
             Self.click(at: try #require(drawn.frame), in: host)
             try await until("the click to show its details") { drawn.shown == 1 }
-            for other: NSEvent.ModifierFlags in [.shift, .option, .control] {
-                Self.press(.rightArrow, command: true, also: other, in: window)
+            // ⇧⌘→, ⌥⌘→ and ⌃⌘→, then ⌘→ with Caps Lock on, with nothing between them: once that moves it, the card had
+            // the keys for the others too.
+            var movedByAnother = false
+            try await Self.pressUntil("⌘→ with Caps Lock on") {
+                for other: NSEvent.ModifierFlags in [.shift, .option, .control] {
+                    Self.press(.rightArrow, command: true, also: other, in: window)
+                }
+                movedByAnother = order.stage(of: Self.ref)?.stage != .inProgress
+                Self.press(.rightArrow, command: true, also: .capsLock, in: window)
+                return order.stage(of: Self.ref)?.stage != .inProgress
             }
-            try await Task.sleep(for: .milliseconds(300))
-            #expect(order.stage(of: Self.ref)?.stage == .inProgress, "Another shortcut moved the card")
-            Self.press(.rightArrow, command: true, also: .capsLock, in: window)
-            try await until("⌘→ with Caps Lock on") { order.stage(of: Self.ref)?.stage == .yourReview }
+            #expect(!movedByAnother, "Another shortcut moved the card")
+            #expect(order.stage(of: Self.ref)?.stage == .yourReview)
         }
     }
 
     /// A move the keys can't make while the details cover the Board: they say why, under its stage, as the Board does under
-    /// the card's lane, which can't be seen then. No more once it's in another stage, or the Board shows again; and never
-    /// while the Board shows, which says it itself.
+    /// the card's lane, which can't be seen then. No more once it's in another stage, or the Board shows again.
     @Test func aMoveRefusedWhileTheDetailsCoverTheBoardSaysWhyInThem() async throws {
         let order = Self.order()
         let details = Details(covers: true)
@@ -330,12 +339,11 @@ import Testing
             #expect(window.makeFirstResponder(nil))
             try await Task.sleep(for: .milliseconds(200))
 
-            // Each key once the card is drawn in its new column, a moment later, as you'd press the next: a card that has the
-            // keyboard's focus takes it back as it appears there, and a key before that goes to no card.
-            @MainActor func move(_ arrow: KeyEquivalent, to stage: PullRequestStage, _ what: String, throughTheApp: Bool = true)
-                async throws {
+            // Each key as the app takes it, once the card is drawn in its new column, a moment later, as you'd press
+            // the next: the keys move it from where the Board last drew it.
+            @MainActor func move(_ arrow: KeyEquivalent, to stage: PullRequestStage, _ what: String) async throws {
                 let before = drawn.frame?.minX
-                Self.press(arrow, command: true, in: window, throughTheApp: throughTheApp)
+                Self.press(arrow, command: true, in: window, throughTheApp: true)
                 try await until(what) { order.stage(of: Self.ref)?.stage == stage && drawn.frame?.minX != before }
                 try await Task.sleep(for: .milliseconds(200))
             }
@@ -367,16 +375,28 @@ import Testing
             // Once they close, the Board says it under the card's lane.
             details.shown = nil
             try await until("the details' line to go as the Board shows again") { order.stageRefusal == nil }
-            try await Task.sleep(for: .milliseconds(300))
-            // The card, which has the keys back, can't move on either: the Board says why itself, not the details.
-            try await move(.leftArrow, to: .yourReview, "⌘← on the card", throughTheApp: false)
-            try await move(.rightArrow, to: .teammateReview, "⌘→ on the card", throughTheApp: false)
-            Self.press(.rightArrow, command: true, in: window)
-            try await Task.sleep(for: .milliseconds(300))
-            #expect(order.stage(of: Self.ref)?.stage == .teammateReview)
-            #expect(order.stageRefusal == nil, "The details were told why, though the Board showed")
-            // The card had the keys all along, so that key reached it: they move it back.
-            try await move(.leftArrow, to: .yourReview, "⌘← on the card after the key it couldn't take", throughTheApp: false)
+        }
+    }
+
+    /// While the Board shows, beside the details, a card that can't move says why itself, under its lane: the details
+    /// aren't told.
+    @Test func whileTheBoardShowsTheDetailsArentToldWhyACardCantMove() async throws {
+        let order = Self.order()
+        #expect(order.setStage(.teammateReview, of: Self.ref) == .done)
+        let details = Details(covers: false)
+        try await Self.showing(order, details: details) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details beside the Board") { details.shown == Self.ref }
+            // ⌘→, which it can't take, as only Azure DevOps decides that it can merge, then ⌘←, which moves it, with
+            // nothing between them: once ⌘← moves it, the card had the keys for ⌘→ too.
+            var toldTheDetails = false
+            try await Self.pressUntil("⌘← to move the card after ⌘→, which it couldn't take") {
+                Self.press(.rightArrow, command: true, in: window)
+                toldTheDetails = order.stageRefusal != nil
+                Self.press(.leftArrow, command: true, in: window)
+                return order.stage(of: Self.ref)?.stage == .yourReview
+            }
+            #expect(!toldTheDetails, "The details were told why, though the Board showed")
         }
     }
 
@@ -397,6 +417,32 @@ import Testing
             ) else { continue }
             window.sendEvent(event)
         }
+    }
+
+    /// Keys on the card that has the keyboard's focus, pressed again until what they do is done: the card takes the
+    /// focus a moment after a click, Tab, its move or its details closing, later on a busy machine, and a key before
+    /// that goes to no card. A key that reaches the card does what it does as it's pressed, so none does it twice.
+    private static func pressUntil(_ what: String, _ pressed: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !pressed() {
+            guard ContinuousClock.now < deadline else { throw TestError("Timed out waiting for \(what)") }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
+    /// ⌘ and an arrow on the card that has the keyboard's focus, until it moves the card to `stage`, then until the
+    /// Board draws it there: the next key moves it from there. Until then, the card the Board drew before has the keys,
+    /// and moves it from where it was.
+    private static func move(
+        _ arrow: KeyEquivalent, to stage: PullRequestStage, _ what: String, order: PullRequestOrder, drawn: Drawn,
+        in window: NSWindow
+    ) async throws {
+        let before = drawn.frame?.minX
+        try await pressUntil(what) {
+            press(arrow, command: true, in: window)
+            return order.stage(of: ref)?.stage == stage
+        }
+        try await until("the Board to draw the card where \(what) moved it") { drawn.frame?.minX != before }
     }
 
     /// A key, pressed and let go: an arrow or Return, with ⌘ and other modifiers, or held down, as its repeats come. To the
