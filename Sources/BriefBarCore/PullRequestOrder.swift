@@ -1074,14 +1074,14 @@ public enum OrderBoard {
     ///     never to a part of one that split: for where you set one as next to merge, which shouldn't have others wait for
     ///     it, such as a teammate's of the same story, and holds again as the mission comes back whole. Never a chain's into
     ///     its story's mission: the chain's key names the story's mission that holds the chain, where it's next among the
-    ///     chain's own pull requests. Never out of a story's mission, whose it is, though its pull requests change while
-    ///     it doesn't show.
+    ///     chain's own pull requests. Out of a story's mission only into another story's, as their tasks move there: never
+    ///     to a chain's, a GitHub stack's or a session's, as it's the story's, though its pull requests change while it
+    ///     doesn't show.
     public static func successor(
         of key: MissionKey, from old: [OrderMission], to new: [OrderMission], moved: Set<ItemRef> = [], alone: Bool = false
     ) -> MissionKey? {
         switch key {
         case .plan, .mine: return nil
-        case .story where alone: return nil
         case .stack, .chain, .family, .story: break
         }
         guard !new.contains(where: { $0.key == key && !$0.isMine }), let was = old.first(where: { $0.key == key }) else { return nil }
@@ -1100,7 +1100,7 @@ public enum OrderBoard {
             case (.chain, .story): return !split && !alone
             case (_, .story): return !split
             case (.chain, .chain), (.chain, .stack): return true
-            case (.story, .chain), (.story, .stack), (.story, .family): return within(mission)
+            case (.story, .chain), (.story, .stack), (.story, .family): return !alone && within(mission)
             default: return false
             }
         }

@@ -1035,6 +1035,49 @@ fileprivate final class Viewer {}
         expectTheStorys(went)
     }
 
+    /// One you set as next in a story's mission follows its pull requests to another story's, as all their tasks move to
+    /// it, and back as they return; but not into one where a teammate's is open, which would wait for it: there it waits,
+    /// as the mission it was set in is gone, and holds again as that comes back.
+    @Test func aNextInAStorysMissionFollowsItsTasksToAnotherStorysAndBack() {
+        let other = ItemRef.workItem(organization: "contoso", id: 5190)
+        let (story, others) = (MissionKey.story(Self.story), MissionKey.story(other))
+        func task(_ id: Int, of story: ItemRef) -> [OrderStory] {
+            [OrderStory(ref: story, type: "User Story", task: .workItem(organization: "contoso", id: id), rank: Double(id % 10))]
+        }
+        func publish(_ order: PullRequestOrder, to story: ItemRef, teammate: Bool = false) {
+            let theirs = teammate ? [Self.ado(4120, task(5194, of: other))] : []
+            order.publish(
+                .azureDevOps, pullRequests: [Self.ado(4113, task(5181, of: story)), Self.ado(4105, task(5183, of: story))] + theirs,
+                readsStories: true
+            )
+        }
+        func step(_ order: PullRequestOrder, _ number: Int) -> OrderStep? {
+            order.missions.lazy.compactMap { $0.steps.first { $0.ref == Self.pr(number) } }.first
+        }
+        func expectNext(_ order: PullRequestOrder, in key: MissionKey, sourceLocation: SourceLocation = #_sourceLocation) {
+            #expect(order.missions.map(\.key) == [key], sourceLocation: sourceLocation)
+            #expect(order.changes[Self.pr(4105)]?.first == key, sourceLocation: sourceLocation)
+            #expect(step(order, 4105)?.standing == .next, sourceLocation: sourceLocation)
+            #expect(step(order, 4113)?.notes.contains(.afterYourNext(Self.pr(4105))) == true, sourceLocation: sourceLocation)
+        }
+
+        let order = Self.service(clock: Clock())
+        publish(order, to: Self.story)
+        order.change(.setNext(Self.pr(4105), in: story, true))
+        order.dismissLastChange()
+        publish(order, to: other)
+        expectNext(order, in: others)
+        publish(order, to: Self.story)
+        expectNext(order, in: story)
+
+        publish(order, to: other, teammate: true)
+        #expect(order.changes[Self.pr(4105)]?.first == story)
+        #expect(step(order, 4105)?.notes.contains(.nextElsewhere(story)) == true)
+        #expect(step(order, 4120)?.notes.contains(.afterYourNext(Self.pr(4105))) == false)
+        publish(order, to: Self.story, teammate: true)
+        #expect(order.missions.first { $0.key == story }?.steps.first { $0.ref == Self.pr(4105) }?.standing == .next)
+    }
+
     /// Apple Intelligence's name of a mission of your own waits with it while Undo would bring it back, then goes with it.
     @Test func appleIntelligencesNameOfAMissionOfYourOwnGoesWithIt() async throws {
         let clock = Clock()
