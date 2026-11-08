@@ -40,7 +40,7 @@ package struct MissionsBody: View {
     let card: ((BoardCard) -> BoardCardContent?)?
     /// Set as Next to Merge in a mission, for a card dropped from Waits onto Can merge: nil where you can't change missions
     /// yourself.
-    let setAsNext: ((ItemRef, MissionKey) -> Void)?
+    let setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?
     /// Lists the page By Status, for what isn't on the Board.
     let showByStatus: (() -> Void)?
     let now: Date
@@ -53,7 +53,8 @@ package struct MissionsBody: View {
         place: @escaping (ItemRef) -> String?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, shownOnTop: ItemRef? = nil,
         rest: @escaping ([ItemRef]) -> AnyView,
-        board: PullRequestBoard? = nil, card: ((BoardCard) -> BoardCardContent?)? = nil, setAsNext: ((ItemRef, MissionKey) -> Void)? = nil,
+        board: PullRequestBoard? = nil, card: ((BoardCard) -> BoardCardContent?)? = nil,
+        setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)? = nil,
         showByStatus: (() -> Void)? = nil, now: Date = Date()
     ) {
         self.view = view

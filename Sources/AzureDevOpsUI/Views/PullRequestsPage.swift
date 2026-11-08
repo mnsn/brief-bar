@@ -142,7 +142,7 @@ struct PullRequestsPage: View {
         let order = card.step.map {
             OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready, names: ordering.names)
         }
-        let mission = missionMenu(item, in: card.mission, undo: PullRequestsByMission.undoPlace(lanes: lanes ?? ordering.lanes))
+        let mission = missionMenu(item, in: card.mission, undo: .onBoard(lanes ?? ordering.lanes))
         return BoardCardContent(
             view: AnyView(PullRequestBoardCard(item: item, card: card, order: order, ordering: ordering, now: store.now)),
             menu: AnyView(Group {

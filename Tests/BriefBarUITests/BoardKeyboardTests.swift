@@ -417,6 +417,238 @@ import Testing
         }
     }
 
+    /// Why a move was refused, under the card's lane, goes once its stage changes, from anywhere, as from its stage's menu in
+    /// the details: the Board, back, doesn't say it.
+    @Test func aLanesLineOfWhyACardCouldntMoveGoesOnceItsStageChangesElsewhere() async throws {
+        let order = Self.order()
+        let details = Details(covers: true)
+        try await Self.showing(order, details: details) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details over the Board") { details.shown == Self.ref }
+            #expect(window.makeFirstResponder(nil))
+            try await Task.sleep(for: .milliseconds(200))
+            for stage in [PullRequestStage.yourReview, .teammateReview] {
+                Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+                try await until("⌘→ to \(stage.title)") { order.stage(of: Self.ref)?.stage == stage }
+                try await Task.sleep(for: .milliseconds(300))
+            }
+            let withoutIt = host.fittingSize.height
+            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            try await until("the details to say why") { order.stageRefusal(of: Self.ref) == Self.azureDevOpsDecides }
+            try await Task.sleep(for: .milliseconds(300))
+            let withIt = host.fittingSize.height
+            #expect(withIt > withoutIt + 8, "The lane didn't say why under it")
+
+            #expect(order.setStage(.yourReview, of: Self.ref) == .done)
+            details.shown = nil
+            try await Task.sleep(for: .milliseconds(500))
+            #expect(host.fittingSize.height < withIt - 8, "The lane still said why a move was refused, though it moved since")
+        }
+    }
+
+    /// While the details cover the Board, ⌘← sets a pull request in two missions as next to merge where it waits: in the lane
+    /// of the mission whose order holds it, though its details were shown from elsewhere, as from Up Next, and saying its
+    /// Undo is beside it, in the details. Clicked in the other mission's lane, it says where it waits instead. Once they
+    /// close, ⌘← on the card says its Undo is in its mission's lane.
+    @Test func whileTheyCoverTheBoardCommandLeftSetsItAsNextWhereItWaits() async throws {
+        let order = try Self.twoOrders([4100, 4101], [4101, 4105], ready: [4101])
+        let ref = ItemRef.pullRequest(organization: "contoso", number: 4101)
+        let holder = MissionKey.plan(Self.planID), other = MissionKey.plan(Self.otherID)
+        #expect(order.stage(of: ref)?.stage == .waits)
+        #expect(StageOrder.holders(of: ref, in: order.missions) == [holder])
+        // The first lane that has it is the other mission's, which doesn't hold it.
+        #expect(order.board(kinds: [.pullRequest]).lanes.first { $0.cards.contains { $0.ref == ref } }?.mission == other)
+        let details = Details(covers: true)
+        try await Self.showingWired(order, details: details) { window, host, wired in
+            details.shown = ref
+            try await Task.sleep(for: .milliseconds(300))
+            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+            try await until("⌘← to set it as next where it waits") { order.stage(of: ref)?.stage == .canMerge }
+            #expect(order.lastOrderChange?.mission == holder)
+            #expect(wired.places == [.details])
+            _ = order.undo()
+            #expect(order.stage(of: ref)?.stage == .waits)
+            details.shown = nil
+            try await Task.sleep(for: .milliseconds(300))
+
+            Self.click(at: try #require(wired.frames[Self.key(ref, other)]), in: host)
+            try await until("the click in the other mission's lane") { details.shown == ref }
+            #expect(window.makeFirstResponder(nil))
+            try await Task.sleep(for: .milliseconds(200))
+            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+            try await until("the details to say where it waits") { order.stageRefusal(of: ref) != nil }
+            let mission = try #require(order.missions.first { $0.key == holder })
+            let title = order.names.title(holder) ?? OrderText.title(of: mission, name: order.names.name)
+            #expect(order.stageRefusal(of: ref) == "It waits in ‘\(title)’: set it as next there")
+            #expect(order.lastOrderChange == nil && order.stage(of: ref)?.stage == .waits)
+            details.shown = nil
+            try await until("the Board back") { order.stageRefusal == nil }
+            try await Task.sleep(for: .milliseconds(300))
+
+            Self.click(at: try #require(wired.frames[Self.key(ref, holder)]), in: host)
+            try await until("the click in its mission's lane") { details.shown == ref }
+            #expect(window.makeFirstResponder(nil))
+            try await Task.sleep(for: .milliseconds(200))
+            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+            try await until("⌘← to set it as next there") { order.stage(of: ref)?.stage == .canMerge }
+            #expect(order.lastOrderChange?.mission == holder)
+            #expect(wired.places == [.details, .details])
+            _ = order.undo()
+            details.shown = nil
+            try await Task.sleep(for: .milliseconds(500))
+
+            // The card you clicked has the keys back.
+            Self.press(.leftArrow, command: true, in: window)
+            try await until("⌘← on the card to set it as next") { order.stage(of: ref)?.stage == .canMerge }
+            #expect(wired.places == [.details, .details, .byMission])
+        }
+    }
+
+    /// With a lane for every card, a pull request in two missions has one card, that of the mission whose order holds it:
+    /// while the details cover the Board, ⌘← sets it as next to merge there, with its Undo beside it, in the details.
+    @Test func withALaneForEveryCardCommandLeftSetsItAsNextWhereItWaits() async throws {
+        let order = try Self.twoOrders([4100, 4101], [4101, 4105], ready: [4101], lanes: BoardLanes.none)
+        let ref = ItemRef.pullRequest(organization: "contoso", number: 4101)
+        #expect(order.board(kinds: [.pullRequest]).mode == BoardLanes.none)
+        let details = Details(covers: true)
+        try await Self.showingWired(order, details: details) { window, _, wired in
+            details.shown = ref
+            try await Task.sleep(for: .milliseconds(300))
+            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+            try await until("⌘← to set it as next where it waits") { order.stage(of: ref)?.stage == .canMerge }
+            #expect(order.lastOrderChange?.mission == .plan(Self.planID))
+            #expect(wired.places == [.details])
+        }
+    }
+
+    /// Set as next to merge where each of two missions' orders holds it, a pull request still waits in the other: while the
+    /// details cover the Board, they say where, as its lane does.
+    @Test func setAsNextWhereBothOrdersHoldItTheDetailsSayWhereItStillWaits() async throws {
+        let order = try Self.twoOrders([4100, 4101], [4102, 4101], ready: [4101])
+        let ref = ItemRef.pullRequest(organization: "contoso", number: 4101)
+        let holders = StageOrder.holders(of: ref, in: order.missions)
+        #expect(Set(holders) == [.plan(Self.planID), .plan(Self.otherID)])
+        let details = Details(covers: true)
+        try await Self.showingWired(order, details: details) { window, _, _ in
+            details.shown = ref
+            try await Task.sleep(for: .milliseconds(300))
+            Self.press(.leftArrow, command: true, in: window, throughTheApp: true)
+            try await until("⌘← to set it as next where it waits first") { order.lastOrderChange?.mission == holders.first }
+            #expect(order.stage(of: ref)?.stage == .waits)
+            let still = try #require(BoardText.stillWaits(ref, besides: holders[0], in: order.missions, names: order.names))
+            #expect(still.hasPrefix("It still waits for !"))
+            try await until("the details to say where it still waits") { order.stageRefusal(of: ref) == still }
+        }
+    }
+
+    // MARK: Two missions, with Set as Next to Merge
+
+    private static let planID = UUID(uuidString: "11111111-2222-4333-8444-555555555555")!
+    private static let otherID = UUID(uuidString: "22222222-3333-4444-8555-666666666666")!
+
+    /// What a Board wired as the page wires it drew and was told: each card's frame, by its lane's mission, and where each
+    /// Set as Next to Merge said its Undo is.
+    @MainActor
+    private final class Wired {
+        var frames: [String: CGRect] = [:]
+        var places: [MissionMenuContext.UndoPlace] = []
+    }
+
+    private static func key(_ ref: ItemRef, _ mission: MissionKey?) -> String {
+        "\(ref.shortOrderLabel) in \(String(describing: mission))"
+    }
+
+    /// The Board as `Board` draws it, with Set as Next to Merge as the page wires it.
+    private struct WiredBoard: View {
+        @ObservedObject var order: PullRequestOrder
+        @ObservedObject var details: Details
+        let wired: Wired
+
+        var body: some View {
+            let kinds: Set<ItemRef.Kind> = [.pullRequest]
+            let covered = details.covers && details.shown != nil
+            OrderBoardView(
+                board: order.board(kinds: kinds), missions: MissionsBody.missions(order.missions, kinds: kinds), order: order,
+                elsewhere: "GitHub", openElsewhere: nil, place: { _ in nil },
+                card: { [wired] card in
+                    let label = "\(card.ref.shortOrderLabel) Totals"
+                    let key = BoardKeyboardTests.key(card.ref, card.mission)
+                    let content = Text(label)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { wired.frames[key] = $0 }
+                    return BoardCardContent(view: AnyView(content), menu: AnyView(EmptyView()), label: label)
+                },
+                isSelected: { [details] in details.shown == $0 },
+                select: { [details] ref in details.shown = ref },
+                shownOnTop: details.hasPageOver ? nil : details.shown,
+                setAsNext: { [order, wired] ref, mission, undo in
+                    wired.places.append(undo)
+                    MissionMenuContext.setAsNext(ref, in: mission, order: order, undo: undo)
+                },
+                notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000)
+            )
+            .disabled(covered)
+        }
+    }
+
+    /// Pull Request Order, on, with two sessions' orders of pull requests you opened, each one's in turn, these ready to
+    /// complete.
+    private static func twoOrders(_ first: [Int], _ other: [Int], ready: Set<Int>, lanes: BoardLanes = .missions) throws
+        -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        lanes.save(to: defaults)
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        var orders = DeclaredOrders()
+        for (index, (numbers, id)) in [(first, planID), (other, otherID)].enumerated() {
+            let entries = numbers.enumerated().map { place, number in
+                OrderRequest.Entry(link: link(number), after: place == 0 ? [] : ["\(numbers[place - 1])"])
+            }
+            try orders.apply(OrderRequest(entries: entries), now: Date(timeIntervalSince1970: 1_791_900_000 + Double(index)), newID: id)
+        }
+        orders.save(to: defaults)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
+        let numbers = Array(Set(first + other)).sorted()
+        order.publish(
+            .azureDevOps,
+            pullRequests: numbers.map { number in
+                OrderPullRequest(
+                    ref: .pullRequest(organization: "contoso", number: number), repository: "contoso/7d3f9a12/shop-web",
+                    sourceBranch: "robin/\(number)", targetBranch: "main", author: "robin",
+                    createdAt: Date(timeIntervalSince1970: 1_791_000_000 + Double(number))
+                )
+            },
+            stages: Dictionary(uniqueKeysWithValues: numbers.map { number in
+                (ItemRef.pullRequest(organization: "contoso", number: number),
+                 StageFacts(role: .author, isReady: ready.contains(number), votes: "0", commit: "c\(number)"))
+            }),
+            account: "robin@contoso.com"
+        )
+        return order
+    }
+
+    /// Shows the wired Board in a window while `body` runs, once its cards are drawn.
+    private static func showingWired(
+        _ order: PullRequestOrder, details: Details,
+        _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ wired: Wired) async throws -> Void
+    ) async throws {
+        _ = NSApplication.shared
+        let wired = Wired()
+        let host = NSHostingView(rootView: WiredBoard(order: order, details: details, wired: wired))
+        let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_400, height: 700), styleMask: .borderless,
+                               backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFrontRegardless()
+        window.makeKey()
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+        host.layoutSubtreeIfNeeded()
+        try await until("the cards") { wired.frames.count >= 3 }
+        try await body(window, host, wired)
+    }
+
     /// The first AppKit view of this type in a view, or under it.
     private static func first<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
         if let found = view as? T { return found }

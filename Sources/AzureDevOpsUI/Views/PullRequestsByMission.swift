@@ -57,23 +57,18 @@ struct PullRequestsByMission: View {
             shownOnTop: shownOnTop,
             rest: { refs in rest(refs.compactMap { byRef[$0] }) },
             board: board, card: { boardCard in byRef[boardCard.ref].map { card($0, boardCard) } },
-            setAsNext: Self.setAsNext(ordering, lanes: board?.mode ?? .missions),
+            setAsNext: Self.setAsNext(ordering),
             showByStatus: showByStatus, now: now
         )
     }
 
-    /// The Board's Set as Next to Merge, as dropping a card from Waits onto Can merge does it: VoiceOver hears its Undo is in
-    /// its mission's lane, or at the top with a lane for every card.
-    static func setAsNext(_ ordering: PullRequestOrder, lanes: BoardLanes) -> (ItemRef, MissionKey) -> Void {
-        { ref, mission in
-            MissionMenuContext.setAsNext(ref, in: mission, order: ordering, undo: undoPlace(lanes: lanes))
+    /// The Board's Set as Next to Merge, as dropping a card from Waits onto Can merge does it: VoiceOver hears its Undo is
+    /// where the Board says, in its mission's lane, at the top with a lane for every card, or beside its mission in the
+    /// details while they cover the Board.
+    static func setAsNext(_ ordering: PullRequestOrder) -> (ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void {
+        { ref, mission, undo in
+            MissionMenuContext.setAsNext(ref, in: mission, order: ordering, undo: undo)
         }
-    }
-
-    /// Where the Board shows the Undo of a change to a mission: in its mission's lane, or at the top with a lane for every
-    /// card, which shows no mission's.
-    static func undoPlace(lanes: BoardLanes) -> MissionMenuContext.UndoPlace {
-        lanes == .none ? .top : .byMission
     }
 
     /// The missions with Azure DevOps' pull requests.

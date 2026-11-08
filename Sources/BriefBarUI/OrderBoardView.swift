@@ -57,6 +57,9 @@ private struct LaneAnchor: Hashable {
 private struct BoardNotice: Equatable {
     var lane: BoardLane.Kind
     var text: String
+    /// The pull request it's about, and how its stage read then: once that changes, from anywhere, it's said no more.
+    var ref: ItemRef
+    var reading: StageReading?
 }
 
 /// How wide the Board's columns are: as wide as the page allows, never narrower than their text needs, Merged narrow while
@@ -171,9 +174,9 @@ package struct OrderBoardView: View {
     /// The pull request whose own details show, with nothing over them, such as a linked item's page or a file's: while
     /// they cover the board, ⌘→ and ⌘← move its card, where you see it move. Nil while none show, or something is over them.
     let shownOnTop: ItemRef?
-    /// Set as Next to Merge in a mission, which dropping a card from Waits onto Can merge does: nil where you can't change
-    /// missions yourself, and the Board says what it waits for instead.
-    let setAsNext: ((ItemRef, MissionKey) -> Void)?
+    /// Set as Next to Merge in a mission, which dropping a card from Waits onto Can merge does, saying where its Undo is:
+    /// nil where you can't change missions yourself, and the Board says what it waits for instead.
+    let setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?
     /// How many of the page's pull requests aren't on the board.
     let notOnBoard: Int
     /// Lists them By Status; nil where it can't.
@@ -216,7 +219,7 @@ package struct OrderBoardView: View {
         board: PullRequestBoard, missions: [OrderMission], order: PullRequestOrder, elsewhere: String, openElsewhere: (() -> Void)?,
         place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, shownOnTop: ItemRef?,
-        setAsNext: ((ItemRef, MissionKey) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?, now: Date
+        setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?, now: Date
     ) {
         self.board = board
         self.missions = missions
@@ -263,9 +266,10 @@ package struct OrderBoardView: View {
             if order.stageRefusal != nil { order.stageRefusal = nil }
         }
         // Each change to a stage, as it comes: once the refused one's changes, from anywhere, as from its stage's menu, the
-        // details say why no more, even back in the stage it couldn't leave.
+        // details say why no more, even back in the stage it couldn't leave; nor does its lane.
         .onReceive(order.$stages) { stages in
             if let refusal = order.stageRefusal, stages[refusal.ref] != refusal.reading { order.stageRefusal = nil }
+            if let notice, stages[notice.ref] != notice.reading { self.notice = nil }
         }
         .onDisappear {
             if order.stageRefusal != nil { order.stageRefusal = nil }
@@ -722,13 +726,15 @@ package struct OrderBoardView: View {
     }
 
     /// Set as Next to Merge for a card that waits, as dropping it onto Can merge and ⌘← do, for VoiceOver's action: in its
-    /// lane's mission, where that one holds it. Nil where the Board wouldn't take it there, such as for one that doesn't
-    /// wait, one that waits in another of its missions, or where you can't change missions yourself.
+    /// lane's mission, where that one holds it, with its Undo there, or at the top with a lane for every card. Nil where the
+    /// Board wouldn't take it there, such as for one that doesn't wait, one that waits in another of its missions, or where
+    /// you can't change missions yourself.
     package static func setAsNext(
-        _ card: BoardCard, in lane: BoardLane.Kind, moves: BoardMoves, with setAsNext: ((ItemRef, MissionKey) -> Void)?
+        _ card: BoardCard, in lane: BoardLane.Kind, moves: BoardMoves,
+        with setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?
     ) -> (() -> Void)? {
         guard let setAsNext, case .setAsNext(let mission) = moves.move(card, to: .canMerge, in: lane) else { return nil }
-        return { setAsNext(card.ref, mission) }
+        return { setAsNext(card.ref, mission, .onBoard(moves.board.mode)) }
     }
 
     // MARK: Moving
@@ -764,17 +770,19 @@ package struct OrderBoardView: View {
     }
 
     /// The card of the pull request whose own details show, with nothing over them: in the lane of the card you clicked,
-    /// where it has it, else in the first that does; nil for one that isn't on the board, and while something is over them.
+    /// where it has it, else in the lane of the mission whose order holds it, where ⌘← sets it as next to merge, as its card
+    /// in Up Next and with a lane for every card is that one's, else in the first that has it; nil for one that isn't on the
+    /// board, and while something is over them.
     private func shownSpot(in lanes: [BoardLane]) -> CardSpot? {
         guard let shown = shownOnTop else { return nil }
         if let spot = lastFocus, spot.ref == shown,
            lanes.contains(where: { $0.kind == spot.lane && $0.cards.contains { $0.ref == shown } }) {
             return spot
         }
-        for lane in lanes where lane.cards.contains(where: { $0.ref == shown }) {
-            return CardSpot(lane: lane.kind, ref: shown)
-        }
-        return nil
+        let having = lanes.filter { $0.cards.contains { $0.ref == shown } }
+        let holder = StageOrder.holders(of: shown, in: missions).first
+        let lane = having.first { holder != nil && $0.mission == holder } ?? having.first
+        return lane.map { CardSpot(lane: $0.kind, ref: shown) }
     }
 
     private func apply(_ move: BoardMove, to card: BoardCard, in lane: BoardLane.Kind, keepsFocus: Bool) -> Bool {
@@ -786,21 +794,32 @@ package struct OrderBoardView: View {
         case .setAsNext(let mission):
             guard let setAsNext else { return false }
             notice = nil
-            setAsNext(card.ref, mission)
+            // Its Undo is beside its mission in the details while they cover the board.
+            setAsNext(card.ref, mission, isEnabled ? .onBoard(board.mode) : .details)
+            // Another mission's order that holds it too keeps it waiting: the lane says where, as VoiceOver hears it.
+            if let still = BoardText.stillWaits(card.ref, besides: mission, in: order.missions, names: order.names) {
+                say(still, about: card.ref, in: lane)
+            }
         case .stays:
             return false
         case .refused(let why):
             NSSound.beep()
             SpokenText.announce(why)
-            notice = BoardNotice(lane: lane, text: why)
-            // While the details cover the board, which hides that line under its lane, they say it, under its stage.
-            if !isEnabled, let reading = order.stage(of: card.ref) {
-                order.stageRefusal = StageRefusal(ref: card.ref, why: why, reading: reading)
-            }
+            say(why, about: card.ref, in: lane)
             return false
         }
         if keepsFocus { keepFocus(on: CardSpot(lane: lane, ref: card.ref)) }
         return true
+    }
+
+    /// Why a card didn't move, under its lane until its stage changes; and while the details cover the board, which hides
+    /// that line, under its stage in them.
+    private func say(_ why: String, about ref: ItemRef, in lane: BoardLane.Kind) {
+        let reading = order.stage(of: ref)
+        notice = BoardNotice(lane: lane, text: why, ref: ref, reading: reading)
+        if !isEnabled, let reading {
+            order.stageRefusal = StageRefusal(ref: ref, why: why, reading: reading)
+        }
     }
 
     /// The card keeps the keyboard's focus in its new column: drawn anew there once the board has its new stage, it takes it

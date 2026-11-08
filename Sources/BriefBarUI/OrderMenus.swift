@@ -16,6 +16,12 @@ package struct MissionMenuContext {
         case top
         /// In the pull request's details, beside its mission.
         case details
+
+        /// Where the Board shows the Undo of a change to a mission: in its mission's lane, or at the top with a lane for
+        /// every card, which shows no mission's.
+        package static func onBoard(_ lanes: BoardLanes) -> UndoPlace {
+            lanes == .none ? .top : .byMission
+        }
     }
 
     package let order: PullRequestOrder
@@ -37,13 +43,21 @@ package struct MissionMenuContext {
         return MissionMenuContext(order: order, mission: mission, undo: undo)
     }
 
-    /// Makes a change, and says it to VoiceOver, with where its Undo is.
+    /// Makes a change, and says it to VoiceOver.
     @MainActor
     package func change(_ edit: OrderEdit) {
         guard let done = order.change(edit) else { return }
-        AccessibilityNotification.Announcement(
-            OrderText.spoken(done.said, undo: done.canUndo ? undoPlace(of: edit, in: done.mission) : nil)
-        ).post()
+        AccessibilityNotification.Announcement(spoken(done, of: edit)).post()
+    }
+
+    /// What VoiceOver hears of a change you made: what it did, and where its Undo is; and, for a pull request set as next
+    /// to merge in one of two missions whose orders held it, where it still waits.
+    @MainActor
+    package func spoken(_ done: OrderLastChange, of edit: OrderEdit) -> String {
+        let spoken = OrderText.spoken(done.said, undo: done.canUndo ? undoPlace(of: edit, in: done.mission) : nil)
+        guard case .setNext(let ref, let mission, true) = edit,
+              let still = BoardText.stillWaits(ref, besides: mission, in: order.missions, names: order.names) else { return spoken }
+        return spoken + " " + OrderText.spoken(SpokenText.unquoted(still), undo: nil) + "."
     }
 
     /// Where VoiceOver says a change's Undo is: in the mission's card or lane, or at the top of the list where none shows
@@ -67,7 +81,8 @@ package struct MissionMenuContext {
 
 extension MissionMenuContext {
     /// Set as Next to Merge in a mission, as dropping a card from Waits onto Can merge on the Board does, and says so to
-    /// VoiceOver, with where its Undo is: in its mission's lane, or at the top with a lane for every card.
+    /// VoiceOver, with where its Undo is: in its mission's lane, at the top with a lane for every card, or beside its
+    /// mission in the details, while they cover the Board.
     @MainActor
     package static func setAsNext(_ ref: ItemRef, in mission: MissionKey, order: PullRequestOrder, undo: UndoPlace = .byMission) {
         of(ref, order: order, mission: mission, undo: undo)?.change(.setNext(ref, in: mission, true))

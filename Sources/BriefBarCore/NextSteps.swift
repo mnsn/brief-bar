@@ -553,11 +553,13 @@ public struct PullRequestBoard: Equatable, Sendable {
             laneCards.append(cards)
         }
         // One that waits, in the first mission that holds it, as its stage says: with a lane for every card too, its card
-        // speaks for that mission, its capsule, its menu and Set as Next to Merge.
+        // speaks for that mission, its capsule, its menu and Set as Next to Merge. It stays among the mission you focus
+        // on's, where that one has it too, as each column puts those first.
         for (ref, card) in first where card.stage == .waits {
             guard let holder = StageOrder.holders(of: ref, in: shown).first, holder != card.mission,
                   let index = shown.firstIndex(where: { $0.key == holder }),
-                  let held = laneCards[index].first(where: { $0.ref == ref }) else { continue }
+                  var held = laneCards[index].first(where: { $0.ref == ref }) else { continue }
+            held.isFocused = held.isFocused || card.isFocused
             first[ref] = held
         }
         let outside = onBoard.keys.filter { first[$0] == nil }.sorted().compactMap { ref in
@@ -784,7 +786,7 @@ public enum BoardRules {
             guard let holder = holders.first.flatMap({ key in missions.first { $0.key == key } }) else {
                 return .refused(BoardText.waitsUntilMerged(card))
             }
-            return .refused(BoardText.waitsIn(names.title(holder.key) ?? OrderText.title(of: holder, name: names.name)))
+            return .refused(BoardText.waitsIn(BoardText.title(of: holder, names: names)))
         case .waits:
             return .refused(BoardText.orderDecides(missionChanges: missionChanges))
         case .merged:
@@ -846,6 +848,28 @@ public enum BoardText {
     /// Why a card that waits isn't set as next to merge in its lane's mission, which doesn't hold it.
     static func waitsIn(_ mission: String) -> String {
         "It waits in ‘\(mission)’: set it as next there"
+    }
+
+    /// Where a pull request still waits once set as next to merge in a mission whose order held it, as another's holds it
+    /// too: "It still waits for !4102 in ‘Payments’". Only one mission has it as next, so Set as Next there would leave it
+    /// waiting here again; that mission's Merge After takes away what it waits for. Nil where no other mission holds it.
+    public static func stillWaits(
+        _ ref: ItemRef, besides mission: MissionKey, in missions: [OrderMission], names: OrderNames = .none
+    ) -> String? {
+        for other in missions where other.key != mission {
+            guard let hold = StageOrder.hold(ref, in: other, among: missions) else { continue }
+            let title = title(of: other, names: names)
+            if case .waits(let refs, _) = hold, !refs.isEmpty {
+                return "It still waits for \(OrderText.list(refs, near: ref)) in ‘\(title)’"
+            }
+            return "It still waits in ‘\(title)’, whose order needs checking"
+        }
+        return nil
+    }
+
+    /// A mission as these words name it: as its header does.
+    static func title(of mission: OrderMission, names: OrderNames) -> String {
+        names.title(mission.key) ?? OrderText.title(of: mission, name: names.name)
     }
 
     static func someoneElses(_ author: String?) -> String {

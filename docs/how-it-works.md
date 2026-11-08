@@ -1439,18 +1439,24 @@ the drag started. A click, or Tab, gives a card the keyboard's focus as a text f
 navigation, and it keeps it as it moves: ⌘→ and ⌘← move it to the next or previous stage you can set, and from Waits, ⌘←
 to Can merge. Return or Space shows its details, as a click does. Where the details cover the Board (`DetailsSplit`),
 it's disabled, and none of its cards can have the focus: a key monitor of its window (`BoardKeys`) takes ⌘→ and ⌘← for
-the card of the pull request whose own details show, but not from a text field you type in, nor while a page is over
+the card of the pull request whose own details show, in the lane you clicked it in, else in that of the mission whose
+order holds it, as for details shown from Up Next, but not from a text field you type in, nor while a page is over
 them, such as a linked pull request's, whose card isn't that one, or a file's, which doesn't show its stage
 (`PullRequestDetailsStore.shownOnTop`). That card has the focus once they close. A move it can't make, the details say
-why under its stage track (`StageRefusalLine`), as the line under its lane can't be seen, until its stage changes, from
-anywhere, or the Board shows again. Like the monitor, a card takes ⌘ alone: ⇧⌘→ is another shortcut. `BoardRules`
+why under its stage track (`StageRefusalLine`), as the line under its lane can't be seen; each goes once its stage
+changes, from anywhere, and the details' once the Board shows again. A change it makes to a mission says its Undo is
+beside it, in the details' order line. Like the monitor, a card takes ⌘ alone: ⇧⌘→ is another shortcut. `BoardRules`
 decides what a move does: In progress, Your review and Teammate's review are set as you set them
 from a stage's menu; someone else's pull request can't go to Teammate's review, there, in its menus or in VoiceOver's
 actions, as it asks its own reviewers, and Finished My Review takes it off your board instead; Can merge, Waits and Merged
 come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge
 in its lane's mission, only where that mission's order holds it, as its stage says (`StageOrder.holders(of:in:)`): in
 another's lane, set as next there, it would still wait, so the lane says where it waits, "It waits in ‘Payments’: set
-it as next there"; with Lanes: None, a card that waits is the mission's that holds it. None is set as next while
+it as next there"; with Lanes: None, a card that waits is the mission's that holds it, and keeps its place among those
+of the mission you focus on, where it's in that one too. Where two missions' orders hold it, it's set as next in the
+lane's, and still waits in the other's, which its lane says, as VoiceOver does: "It still waits for !4102 in
+‘Payments’" (`BoardText.stillWaits`). Only one mission has a pull request as next, so set as next there, it would wait
+in the first again; that mission's Merge After takes away what it waits for. None is set as next while
 stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
 (`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card
 off it: in its mission's lane, which has Undo for all its pull requests, as List's card does, or in a lane of those in

@@ -979,13 +979,17 @@ private final class Clock {
         #expect(unchangeable.key(waits.ref, in: .mission(plan), forward: false)?.move != .setAsNext(plan))
 
         var asked: [ItemRef: MissionKey] = [:]
-        let tell = { (ref: ItemRef, mission: MissionKey) in asked[ref] = mission }
+        var places: [MissionMenuContext.UndoPlace] = []
+        let tell = { (ref: ItemRef, mission: MissionKey, undo: MissionMenuContext.UndoPlace) in
+            asked[ref] = mission
+            places.append(undo)
+        }
         #expect(OrderBoardView.setAsNext(first, in: .mission(plan), moves: moves, with: tell) == nil)
         #expect(OrderBoardView.setAsNext(waits, in: .mission(plan), moves: moves, with: nil) == nil)
         #expect(OrderBoardView.setAsNext(waits, in: .mission(plan), moves: unchangeable, with: tell) == nil)
         let set = try #require(OrderBoardView.setAsNext(waits, in: .mission(plan), moves: moves, with: tell))
         set()
-        #expect(asked == [Self.ref(4102): plan])
+        #expect(asked == [Self.ref(4102): plan] && places == [.byMission])
 
         MissionMenuContext.setAsNext(Self.ref(4102), in: plan, order: order)
         #expect(order.lastOrderChange?.said == "You set !4102 as next to merge" && order.lastOrderChange?.mission == plan)
@@ -999,9 +1003,10 @@ private final class Clock {
 
     private static let otherID = UUID(uuidString: "22222222-3333-4444-8555-666666666666")!
 
-    /// Two sessions' orders, the first's then the other's, of pull requests you opened, these ready to complete.
+    /// Two sessions' orders, the first's then the other's, of pull requests you opened, these ready to complete, and these
+    /// closed without merging.
     private static func twoOrders(
-        _ first: [OrderRequest.Entry], _ other: [OrderRequest.Entry], numbers: [Int], ready: Set<Int>
+        _ first: [OrderRequest.Entry], _ other: [OrderRequest.Entry], numbers: [Int], ready: Set<Int>, closed: Set<Int> = []
     ) throws -> PullRequestOrder {
         let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
@@ -1011,7 +1016,7 @@ private final class Clock {
         orders.save(to: defaults)
         let order = Self.service(defaults)
         order.publish(
-            .azureDevOps, pullRequests: numbers.map { Self.ado($0, from: "robin/\($0)") },
+            .azureDevOps, pullRequests: numbers.map { Self.ado($0, from: "robin/\($0)", state: closed.contains($0) ? .closed : .open) },
             stages: Dictionary(uniqueKeysWithValues: numbers.map { number in
                 (Self.ref(number), StageFacts(role: .author, isReady: ready.contains(number), votes: "0", commit: "c\(number)"))
             }),
@@ -1048,16 +1053,22 @@ private final class Clock {
         let drag = BoardDrag(ref: Self.ref(4101))
         #expect(moves.drop(drag.payload, of: drag, on: .canMerge, in: .mission(other))?.move == why)
         #expect(moves.key(Self.ref(4101), in: .mission(other), forward: false)?.move == why)
-        #expect(OrderBoardView.setAsNext(elsewhere, in: .mission(other), moves: moves, with: { _, _ in }) == nil)
+        #expect(OrderBoardView.setAsNext(elsewhere, in: .mission(other), moves: moves, with: { _, _, _ in }) == nil)
 
         // With a lane for every card, its card speaks for the first order, which holds it.
         let all = BoardMoves(board: order.board(kinds: [.pullRequest], lanes: BoardLanes.none), missions: order.missions, order: order, missionChanges: true)
         #expect(all.card(Self.ref(4101), in: .all)?.mission == first)
         #expect(all.key(Self.ref(4101), in: .all, forward: false)?.move == .setAsNext(first))
+        // Its VoiceOver action there says its Undo is at the top, as that lane shows no mission's.
+        var places: [MissionMenuContext.UndoPlace] = []
+        let allCard = try #require(all.card(Self.ref(4101), in: .all))
+        let setAll = try #require(OrderBoardView.setAsNext(allCard, in: .all, moves: all, with: { _, _, undo in places.append(undo) }))
+        setAll()
+        #expect(places == [.top])
 
         let held = try #require(moves.card(Self.ref(4101), in: .mission(first)))
-        let set = try #require(OrderBoardView.setAsNext(held, in: .mission(first), moves: moves) { ref, mission in
-            MissionMenuContext.setAsNext(ref, in: mission, order: order)
+        let set = try #require(OrderBoardView.setAsNext(held, in: .mission(first), moves: moves) { ref, mission, undo in
+            MissionMenuContext.setAsNext(ref, in: mission, order: order, undo: undo)
         })
         #expect(moves.drop(drag.payload, of: drag, on: .canMerge, in: .mission(first))?.move == .setAsNext(first))
         set()
@@ -1091,5 +1102,85 @@ private final class Clock {
         MissionMenuContext.setAsNext(Self.ref(4101), in: first, order: order)
         #expect(order.stage(of: Self.ref(4101))?.stage == .canMerge)
         #expect(order.stage(of: Self.ref(4102))?.stage == .waits)
+    }
+
+    /// A pull request both missions' orders hold waits in each. Set as next to merge in one, it still waits in the other: the
+    /// Board and VoiceOver say what for, and where. Only one mission has it as next, so Set as Next there leaves it waiting
+    /// in the first again; that one's Merge After takes away what it waits for, and it can merge.
+    @Test func setAsNextWhereBothOrdersHoldItSaysWhereItStillWaits() throws {
+        // !4101 after !4100 in the first order, and after !4102 in the other.
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
+            [.init(link: Self.link(4102)), .init(link: Self.link(4101), after: ["4102"])],
+            numbers: [4100, 4101, 4102], ready: [4101]
+        )
+        let first = MissionKey.plan(Self.planID), other = MissionKey.plan(Self.otherID)
+        #expect(Set(StageOrder.holders(of: Self.ref(4101), in: order.missions)) == [first, other])
+        let title = { (key: MissionKey) throws -> String in
+            let mission = try #require(order.missions.first { $0.key == key })
+            return order.names.title(key) ?? OrderText.title(of: mission, name: order.names.name)
+        }
+        let stillInFirst = "It still waits for !4100 in ‘\(try title(first))’"
+        let stillInOther = "It still waits for !4102 in ‘\(try title(other))’"
+        #expect(BoardText.stillWaits(Self.ref(4101), besides: other, in: order.missions, names: order.names) == stillInFirst)
+        #expect(BoardText.stillWaits(Self.ref(4101), besides: first, in: order.missions, names: order.names) == stillInOther)
+
+        let context = try #require(MissionMenuContext.of(Self.ref(4101), order: order, mission: other, undo: .byMission))
+        let edit = OrderEdit.setNext(Self.ref(4101), in: other, true)
+        let done = try #require(order.change(edit))
+        #expect(order.stage(of: Self.ref(4101))?.stage == .waits)
+        #expect(BoardText.stillWaits(Self.ref(4101), besides: other, in: order.missions, names: order.names) == stillInFirst)
+        #expect(context.spoken(done, of: edit) == OrderText.spoken(done.said, undo: "in its mission") + " "
+            + OrderText.spoken(SpokenText.unquoted(stillInFirst), undo: nil) + ".")
+        #expect(!context.spoken(done, of: edit).contains("‘") && !context.spoken(done, of: edit).contains("!"))
+
+        #expect(order.change(.setNext(Self.ref(4101), in: first, true)) != nil)
+        #expect(order.stage(of: Self.ref(4101))?.stage == .waits)
+        #expect(BoardText.stillWaits(Self.ref(4101), besides: first, in: order.missions, names: order.names) == stillInOther)
+
+        let free = OrderEdit.mergeAfter(Self.ref(4101), Self.ref(4102), in: other, false)
+        let freed = try #require(order.change(free))
+        #expect(order.stage(of: Self.ref(4101))?.stage == .canMerge)
+        #expect(BoardText.stillWaits(Self.ref(4101), besides: first, in: order.missions, names: order.names) == nil)
+        #expect(context.spoken(freed, of: free) == OrderText.spoken(freed.said, undo: freed.canUndo ? "in its mission" : nil))
+    }
+
+    /// Where the other mission's order needs checking, as one it puts before the pull request closed, that's where it's
+    /// said to wait.
+    @Test func whereTheOtherMissionsOrderNeedsCheckingItSaysSo() throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
+            [.init(link: Self.link(4102)), .init(link: Self.link(4101), after: ["4102"])],
+            numbers: [4100, 4101, 4102], ready: [4101], closed: [4102]
+        )
+        let first = MissionKey.plan(Self.planID), other = MissionKey.plan(Self.otherID)
+        let mission = try #require(order.missions.first { $0.key == other })
+        let hold = StageOrder.hold(Self.ref(4101), in: mission, among: order.missions)
+        if case .holds = hold {} else { Issue.record("Its order there doesn't need checking: \(String(describing: hold))") }
+        let title = order.names.title(other) ?? OrderText.title(of: mission, name: order.names.name)
+        #expect(BoardText.stillWaits(Self.ref(4101), besides: first, in: order.missions, names: order.names)
+            == "It still waits in ‘\(title)’, whose order needs checking")
+    }
+
+    /// A waiting pull request in the mission you focus on, whose card is another mission's that holds it, still counts as
+    /// the focused mission's: first in Waits and Up Next, as the earliest of its order there.
+    @Test func aWaitingPullRequestInTheMissionYouFocusOnStaysFirstThoughAnotherOrderHoldsIt() throws {
+        // The mission to focus on: !4101, then !4105, then !4106. Another's order puts !4101 after !4100: it holds !4101.
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4101)), .init(link: Self.link(4105), after: ["4101"]), .init(link: Self.link(4106), after: ["4105"])],
+            [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
+            numbers: [4100, 4101, 4105, 4106], ready: [4101, 4106]
+        )
+        let focused = MissionKey.plan(Self.planID), other = MissionKey.plan(Self.otherID)
+        order.setFocus(focused)
+        #expect(order.missions.first?.key == focused && order.missions.first?.isFocused == true)
+        #expect(order.stage(of: Self.ref(4101))?.stage == .waits && order.stage(of: Self.ref(4106))?.stage == .waits)
+        #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions) == [other])
+
+        let board = order.board(kinds: [.pullRequest], lanes: .missions)
+        let waitsNext = try #require(board.upNext.slots.first { $0.kind == .waits }?.card)
+        #expect(waitsNext.ref == Self.ref(4101) && waitsNext.mission == other && waitsNext.isFocused)
+        let all = order.board(kinds: [.pullRequest], lanes: BoardLanes.none)
+        #expect(all.lanes.first?.cards(in: .waits).first?.ref == Self.ref(4101))
     }
 }

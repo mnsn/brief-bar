@@ -75,6 +75,35 @@ import Testing
         #expect(ordering.revealedColumn == .teammateReview)
     }
 
+    /// While the details cover the Board, why its keys couldn't move a pull request shows under its stage track in them, as
+    /// it would under its card's lane: for that pull request only.
+    @Test func theDetailsStageTrackSaysWhyTheBoardsKeysCouldntMoveIt() throws {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        let ordering = PullRequestOrder(defaults: defaults, isDemo: false, now: { now })
+        ordering.publish(
+            .azureDevOps,
+            pullRequests: [OrderPullRequest(
+                ref: Self.ref(4088), repository: "contoso/7a0c4e1d/repository-shop", sourceBranch: "robin/work-4088",
+                targetBranch: "main", author: "robin", createdAt: Date(timeIntervalSince1970: 1_791_000_000)
+            )],
+            stages: [Self.ref(4088): StageFacts(role: .author, failure: "Build failed")], account: Self.account
+        )
+        let item = try Self.item(4088, group: .failing, headline: "Build failed")
+        let reading = try #require(ordering.stage(of: Self.ref(4088)))
+        func height() -> CGFloat {
+            let track = PullRequestStageTrack(item: item, ordering: ordering, now: now, openInAzureDevOps: {})
+            return NSHostingView(rootView: track.frame(width: 460)).fittingSize.height
+        }
+        let without = height()
+        let why = "Azure DevOps decides when it can merge: once it says it's ready to complete"
+        ordering.stageRefusal = StageRefusal(ref: Self.ref(4089), why: why, reading: reading)
+        #expect(abs(height() - without) < 0.5, "It said why another pull request couldn't move")
+        ordering.stageRefusal = StageRefusal(ref: Self.ref(4088), why: why, reading: reading)
+        #expect(height() > without + 8, "Its stage track didn't say why it couldn't move")
+    }
+
     /// A card says what needs you, what failed and a draft, as its row does, each only where its stage's why doesn't.
     @Test func aCardFlagsOnlyWhatItsStageDoesntSay() throws {
         func flags(_ item: PRSnapshot, _ reading: StageReading) -> [String] {

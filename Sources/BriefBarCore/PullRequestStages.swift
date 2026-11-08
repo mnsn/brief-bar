@@ -255,6 +255,11 @@ public enum StageOrder: Equatable, Sendable {
         return missions.filter { hold(ref, in: $0, statuses: statuses) != nil }.map(\.key)
     }
 
+    /// What one of the missions says of a pull request, as `of(_:in:)` reads each in turn: nil where it doesn't hold it.
+    public static func hold(_ ref: ItemRef, in mission: OrderMission, among missions: [OrderMission]) -> StageOrder? {
+        hold(ref, in: mission, statuses: statuses(in: missions))
+    }
+
     private static func statuses(in missions: [OrderMission]) -> [ItemRef: OrderStatus] {
         var statuses: [ItemRef: OrderStatus] = [:]
         for mission in missions {
