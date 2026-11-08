@@ -284,8 +284,9 @@ import Testing
         #expect(Set(saved.seenAt.keys) == Set(needsYou.filter { $0.role != .linked }.map(\.key.description)))
     }
 
-    /// What you change of the mission of a pull request Dana sent you, in the demo, stays in memory: the preferences never
-    /// hold it.
+    /// What you change of the mission of a pull request sent to you only in a chat stays in memory, while the
+    /// preferences keep the rest of the same change. The pull requests are the demo's, Dana's sent in a chat among
+    /// them; the order is an ordinary one, with Pull Request Order on, as outside the demo.
     @Test func whatYouChangeOfTheMissionOfOneSentToYouStaysInMemory() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let orderDefaults = MemoryDefaults()
@@ -294,14 +295,15 @@ import Testing
         let demo = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         await demo.loadOnce()
         let sent = try #require(demo.records.first { $0.role == .linked })
+        let yours = try #require(demo.records.first { $0.role == .author && $0.pullRequest.status == .active })
         order.publish(
             .azureDevOps, pullRequests: PullRequestOrderFacts.pullRequests(demo.records, items: demo.items, showToReview: false),
             inMemory: PullRequestOrderFacts.sentInChats(demo.records, watched: settings.watchedKeys)
         )
 
-        order.change(.move([sent.id.linkRef], to: .into(.mine(UUID())), from: nil))
+        order.change(.move([sent.id.linkRef, yours.id.linkRef], to: .into(.mine(UUID())), from: nil))
 
-        #expect(order.changes[sent.id.linkRef] != nil)
-        #expect(orderDefaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(order.changes[sent.id.linkRef] != nil && order.changes[yours.id.linkRef] != nil)
+        #expect(OrderChanges.load(from: orderDefaults).all.map(\.ref) == [yours.id.linkRef])
     }
 }

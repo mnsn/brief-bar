@@ -1317,7 +1317,7 @@ Counts, the brief, notifications, widgets and lists by state stay by status.
 
 **Changing a mission yourself.** With Pull Request Order on, an Azure DevOps pull request's **Mission** menu, in its
 row's menu, its details and a Map node's right-click, changes where it goes By Mission (`OrderChanges`): **Set as Next
-to Merge**, which what waits for nothing there then waits for, one for each mission; **Merge After ▸**, to check or
+to Merge**, one for each mission, so that what waited for nothing there waits for it; **Merge After ▸**, to check or
 uncheck what it merges after; and **Move to Mission ▸**, into another mission, named by what lasts (an order by its ID,
 a chain of branches by one of its pull requests, the pull requests opened under a session by that session), a **New
 Mission** of your own, or **Not in a Mission**. A stacked branch is a fact: it counts wherever it leads, in a session's
