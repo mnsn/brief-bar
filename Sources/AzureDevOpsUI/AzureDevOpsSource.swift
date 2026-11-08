@@ -309,6 +309,10 @@ package final class AzureDevOpsSource: BriefBarSource {
         }
         copilot.showPullRequest = { [weak pullRequestDetails] key in pullRequestDetails?.revealAtWhatItsAbout(key) ?? false }
         copilot.currentTarget = { [weak store] key in store?.record(for: key)?.pullRequest.targetBranch }
+        copilot.readTarget = { [weak store] key in
+            guard let store else { throw CopilotTasksStore.TargetUnread() }
+            return try await store.readTarget(of: key)
+        }
         workLinks?.showPullRequest = { [weak pullRequestDetails] key in pullRequestDetails?.revealAtWhatItsAbout(key) ?? false }
         return store
     }

@@ -951,6 +951,15 @@ final class PRStore: ObservableObject {
         return settings.watchedKeys.contains(key) ? record.watched() : record
     }
 
+    /// The branch a pull request merges into, as Azure DevOps says now, read with one request: what a Push & Reply checks
+    /// what it would push against, right before it goes, since the list may not have read a retarget yet. Throws when it
+    /// can't be read, as in the demo.
+    func readTarget(of key: PRKey) async throws -> String {
+        guard mode == .live else { throw CopilotTasksStore.TargetUnread() }
+        let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
+        return PullRequest(organization: key.organization, dto).targetBranch
+    }
+
     /// When you last looked at a pull request, as far as BriefBar remembers.
     func seenCutoff(for key: PRKey) -> Date {
         settings.seenCutoff(for: key)

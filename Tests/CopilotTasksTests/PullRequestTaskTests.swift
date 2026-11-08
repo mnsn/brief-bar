@@ -103,7 +103,8 @@ import Testing
 
     /// Push & Reply going on with a session whose worktree holds a merge of what the pull request's target doesn't have, as
     /// when it was retargeted after its conflicts were resolved there: nothing starts, and the worktree stays as it is; nor
-    /// when the list reads such a retarget while git checks. Against the branch it merged, it goes.
+    /// when Azure DevOps says, right before git checks or right before Copilot starts, that the pull request merges into
+    /// another branch than the prompt names, or that can't be read. Against the branch it merged, it goes.
     @Test(.timeLimit(.minutes(1)))
     func pushesNoMergeOfWhatTheTargetDoesntHave() async throws {
         let fixture = try await repositoryWithBranch()
@@ -138,21 +139,32 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: resolve.worktree.appendingPathComponent("main.txt").path))
         #expect(LaunchError.foreignMerge(target: "release/x").description.hasPrefix("This session holds a merge that release/x doesn't have"))
 
-        // Checked against main, while the list read that it merges into release/x: asked again right before Copilot starts,
-        // it doesn't start.
-        let retargetedMeanwhile = CopilotLauncher.Request(
-            subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
-            repository: fixture.checkout, worktreesFolder: nil, continuing: resolve, targetNow: { "release/x" }
-        )
-        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(retargetedMeanwhile, id: resolve.id) { _ in } }
+        // The prompt names main, but Azure DevOps says the pull request merges into release/x: as BriefBar reads it right
+        // before git checks, or right before Copilot starts, once git is done; or it can't be read. Nothing starts.
+        var reads = TargetReads([])
+        func request(_ targets: [String]) -> CopilotLauncher.Request {
+            let answers = TargetReads(targets)
+            reads = answers
+            return CopilotLauncher.Request(
+                subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+                repository: fixture.checkout, worktreesFolder: nil, continuing: resolve, targetNow: { try answers.next() }
+            )
+        }
+        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(request(["release/x"]), id: resolve.id) { _ in } }
+        #expect(reads.read == ["release/x"])
+        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(request(["main", "release/x"]), id: resolve.id) { _ in } }
+        #expect(reads.read == ["main", "release/x"])
+        await #expect(throws: LaunchError.cantReadTarget("Azure DevOps didn't answer in time.")) {
+            try await launcher.launch(request(["main"]), id: resolve.id) { _ in }
+        }
+        #expect(reads.read == ["main", "unread"])
         #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
         #expect(FileManager.default.fileExists(atPath: resolve.worktree.appendingPathComponent("main.txt").path))
         #expect(LaunchError.retargeted("release/x").description.hasPrefix("The pull request merges into release/x now, not the branch its prompt named"))
+        #expect(LaunchError.cantReadTarget("Azure DevOps didn't answer in time.").description == "BriefBar couldn't read which branch the pull request merges into, so Copilot didn't push from this session: Azure DevOps didn't answer in time.")
 
-        let ship = try await launch(launcher, CopilotLauncher.Request(
-            subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
-            repository: fixture.checkout, worktreesFolder: nil, continuing: resolve, targetNow: { "main" }
-        ), id: resolve.id)
+        let ship = try await launch(launcher, request(["main", "main"]), id: resolve.id)
+        #expect(reads.read == ["main", "main"])
         #expect(ship.worktree.path == resolve.worktree.path)
         #expect(try String(contentsOf: argumentsFile, encoding: .utf8).contains("Push and reply"))
     }
@@ -575,6 +587,26 @@ private final class MeanwhileRunner: ProcessRunning {
 
 /// Runs programs as `ProcessRunner` does, and leaves a lock in a session's folder as the first one starts, as the Copilot app
 /// does when it opens the session.
+/// What Azure DevOps says a pull request merges into, read by read, as `CopilotLauncher.Request.targetNow` reads it: once
+/// the answers run out, it can't be read. What was read, in order.
+private final class TargetReads: Sendable {
+    private let answers: Mutex<[String]>
+    private let reads = Mutex<[String]>([])
+
+    init(_ answers: [String]) {
+        self.answers = Mutex(answers)
+    }
+
+    var read: [String] { reads.withLock { $0 } }
+
+    func next() throws -> String {
+        let target = answers.withLock { $0.isEmpty ? "unread" : $0.removeFirst() }
+        reads.withLock { $0.append(target) }
+        guard target != "unread" else { throw TestError("Azure DevOps didn't answer in time.") }
+        return target
+    }
+}
+
 private final class OpensSessionRunner: ProcessRunning {
     let lock: URL
     private let inner = ProcessRunner()

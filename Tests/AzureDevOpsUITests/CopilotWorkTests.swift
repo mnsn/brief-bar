@@ -802,13 +802,14 @@ import Testing
 
     /// Push & Reply goes only while the pull request merges into the branch its prompt names, as the window wrote it, which
     /// the launcher checks what the session would push against (`Git.checkPush(in:source:target:)`): once the list has read
-    /// another, nothing starts, and the task says why. The launcher asks the list again right before Copilot starts
-    /// (`CopilotLauncher.Request.targetNow`). Whatever else is sent goes whatever the target.
+    /// another, nothing starts, and the task says why. The launcher asks Azure DevOps, right before git checks and again
+    /// right before Copilot starts (`CopilotLauncher.Request.targetNow`), whatever the list has read. Whatever else is sent
+    /// goes whatever the target.
     @Test func pushAndReplyGoesOnlyWhileThePullRequestMergesIntoTheBranchItsPromptNames() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = store(settings)
         var launched: [String] = []
-        var asks: [(@Sendable () async -> String?)?] = []
+        var asks: [(@Sendable () async throws -> String)?] = []
         store.launchForTests = { request, id, now in
             guard case .pullRequest(let pullRequest, let action) = request.subject else { throw CancellationError() }
             launched.append("\(action) \(pullRequest.targetBranch)")
@@ -842,12 +843,20 @@ import Testing
         store.send(.pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard, repository: repository)
         try await settle { launched.count == 4 }
         #expect(launched == ["fixComments main", "pushAndReply release/x", "pushAndReply main", "pushAndReply main"])
-        // Asked again, it's what the list has read since; or, once the list doesn't have it, the branch the prompt names.
+        // Asked, it's what Azure DevOps says then, for the pull request, whatever the list has read; or it throws when that
+        // can't be read, or names no branch.
         #expect(asks.map { $0 != nil } == [false, true, true, true])
-        store.currentTarget = { $0 == current ? "release/y" : nil }
-        #expect(await asks[1]?() == "release/y")
-        store.currentTarget = { _ in nil }
-        #expect(await asks[1]?() == "release/x")
+        var asked: [PRKey] = []
+        store.readTarget = { key in
+            asked.append(key)
+            return "release/y"
+        }
+        #expect(try await asks[1]?() == "release/y")
+        #expect(asked == [current])
+        store.readTarget = { _ in throw ADOError.offline }
+        await #expect(throws: ADOError.offline) { try await asks[1]?() }
+        store.readTarget = { _ in "" }
+        await #expect(throws: CopilotTasksStore.TargetUnread.self) { try await asks[1]?() }
     }
 
     // MARK: Prompts to the Copilot app's sessions

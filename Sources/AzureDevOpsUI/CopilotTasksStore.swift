@@ -155,7 +155,40 @@ final class CopilotTasksStore: ObservableObject {
     /// a branch the pull request no longer merges into. Nil while it merges into that one, or for anything but a push.
     func retargetProblem(_ pullRequest: TaskPullRequest?) -> String? {
         guard let pullRequest, let target = retargeted(pullRequest) else { return nil }
-        return "The pull request merges into \(target) now, not the branch this prompt names, so nothing went. Close this window and open it again, for a prompt that names \(target)."
+        return Self.retargetedMessage(target)
+    }
+
+    static func retargetedMessage(_ target: String) -> String {
+        "The pull request merges into \(target) now, not the branch this prompt names, so nothing went. Close this window and open it again, for a prompt that names \(target)."
+    }
+
+    /// Reads the branch a pull request merges into from Azure DevOps, with one request: right before Git checks what a
+    /// Push & Reply would push, and again after, since the list may not have read a retarget yet. Throws when it can't be
+    /// read. The source's.
+    var readTarget: @MainActor (PRKey) async throws -> String = { _ in throw TargetUnread() }
+
+    /// Nothing reads it, as in the demo.
+    struct TargetUnread: Error, CustomStringConvertible {
+        var description: String { "Azure DevOps isn't on." }
+    }
+
+    /// The branch a pull request merges into, as Azure DevOps says now (`readTarget`): what a Push & Reply's prompt has to
+    /// name for it to go. Throws when it can't be read, or Azure DevOps names none.
+    func freshTarget(of pullRequest: TaskPullRequest) async throws -> String {
+        let target = try await readTarget(PRKey(pullRequest.organization, pullRequest.id))
+        guard !target.isEmpty else { throw TargetUnread() }
+        return target
+    }
+
+    /// Why a Push & Reply mustn't go, by the branch its pull request merges into as Azure DevOps says now (`freshTarget`):
+    /// another than its prompt names, or none BriefBar could read. Nil when it's the one the prompt names.
+    func freshTargetProblem(_ pullRequest: TaskPullRequest) async -> String? {
+        do {
+            let target = try await freshTarget(of: pullRequest)
+            return target == pullRequest.targetBranch ? nil : Self.retargetedMessage(target)
+        } catch {
+            return "BriefBar couldn't read which branch the pull request merges into, so nothing went: \(error)"
+        }
     }
     /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
     var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
@@ -534,11 +567,15 @@ final class CopilotTasksStore: ObservableObject {
         // once the CLI made it (`rekey`): the notification goes by its ID, for the one that says how it ended to replace.
         if forking == nil { notifyStarted(entry) }
         // Push & Reply goes only while the pull request merges into the branch its prompt names, which the launcher checks what
-        // the session would push against: asked again once git has done that, right before Copilot starts.
+        // the session would push against: as Azure DevOps says right before git checks that, and again right before Copilot
+        // starts.
         let pushing: TaskPullRequest? = if case .pullRequest(let pullRequest, .pushAndReply) = subject { pullRequest } else { nil }
-        var askTarget: (@Sendable () async -> String?)?
+        var askTarget: (@Sendable () async throws -> String)?
         if let pushing {
-            askTarget = { [weak self] in await self?.targetNow(of: pushing) }
+            askTarget = { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.freshTarget(of: pushing)
+            }
         }
         let request = CopilotLauncher.Request(
             subject: subject, prompt: prompt, options: options, repository: repository,
@@ -690,6 +727,7 @@ final class CopilotTasksStore: ObservableObject {
         case .foreignMerge?: return "the session holds a merge its target doesn't have"
         case .cantCheckPush?: return "couldn't check what it would push"
         case .retargeted?: return "the pull request's target changed"
+        case .cantReadTarget?: return "couldn't read the pull request's target"
         case nil: return "unexpected error"
         }
     }
