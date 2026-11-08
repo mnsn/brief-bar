@@ -1361,27 +1361,33 @@ only label rows.
 Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
 works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
 lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`), so Up Next's pull
-request is always the first card in its column:
+request is always the first in its column's order, which wears **Next** on the Board. The mission you focus on comes first
+in each stage, but in In progress, what needs you comes before it, so that Fix next is always its column's first:
 
-| Stage | Which comes first, after the mission you focus on |
+| Stage | Which comes first |
 |---|---|
-| In progress | What needs you, Fix next's: a session that asks you, then a build that failed, then changes someone wants, the oldest first; then the rest, as By Mission lists them |
-| Your review | The one that has waited longest; in a mission, an earlier one waits as long as the longest waiting after it, as they build on it |
-| Teammate's review | Find a reviewer first, then the earliest in its mission's order |
-| Can merge | Next to merge, then any time, then those with no order; the oldest first, then as By Mission lists them |
-| Waits | The one closest to merging: one merge away when what it waits for can merge, one more for each that waits itself |
-| Merged | The latest first |
+| In progress | What needs you, Fix next's, the mission you focus on first among it: a session that asks you, then a build that failed, then changes someone wants, the oldest first; then the rest, the mission you focus on first, as By Mission lists them |
+| Your review | The mission you focus on; then the one that has waited longest; in a mission, an earlier one waits as long as the longest waiting after it, as they build on it |
+| Teammate's review | The mission you focus on; then Find a reviewer, then the earliest in its mission's order |
+| Can merge | The mission you focus on; then next to merge, then any time, then those with no order; the oldest first, then as By Mission lists them |
+| Waits | The mission you focus on; then the one closest to merging: one merge away when what it waits for can merge, one more for each that waits itself |
+| Merged | The mission you focus on; then the latest first |
 
 A pull request in two missions has a card in each lane, and counts once. On the Board (`OrderBoardView`), a card drags
-with SwiftUI's `draggable`, carrying only its reference, which a column takes only from a card of the same board, never
-text from another app; ⌘→ and ⌘← move a focused card to the next or previous stage you can set. `BoardRules` decides
-what a drop does: In progress, Your review and Teammate's review are set as you set them from a stage's menu, but
-someone else's pull request can't go to Teammate's review, as it asks its own reviewers; Can merge, Waits and Merged
+with SwiftUI's `draggable`, carrying its reference and a token made for that drag alone (`BoardDrag`), so a column takes
+only a card dragged from its own board, never text from another app that names a pull request. A drop, and the columns
+that light up as you drag, act on the card as the board has it then, looked up again (`BoardMoves`), not as it was when
+the drag started. A click, or Tab, gives a card the keyboard's focus as a text field takes it, whatever the Mac's keyboard
+navigation, and it keeps it as it moves: ⌘→ and ⌘← move it to the next or previous stage you can set, and from Waits, ⌘←
+to Can merge. `BoardRules` decides what a move does: In progress, Your review and Teammate's review are set as you set them
+from a stage's menu; someone else's pull request can't go to Teammate's review, there, in its menus or in VoiceOver's
+actions, as it asks its own reviewers, and Finished My Review takes it off your board instead; Can merge, Waits and Merged
 come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge,
 and never for one stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
-(`OrderMission.whyNotNext`, which Set as Next to Merge uses too). The Board, its lanes and whether Up Next is folded are
-kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
-`order.boardLanes` and `order.upNextFolded`.
+(`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card off
+it: in its mission's lane, which has Undo for all its pull requests, as List's card does, or in a lane of those in no
+mission, kept for it. The Board, its lanes and whether Up Next is folded are kept as choices only: `order.view`, which
+GitHub's page reads as List where it's the Board, without saving that, `order.boardLanes` and `order.upNextFolded`.
 
 ### A pull request's details
 

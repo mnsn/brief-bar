@@ -199,6 +199,8 @@ final class PullRequestOrderFacts {
             sessions: tasks.compactMap(session),
             since: state.isOpen ? item?.since ?? pr.createdAt : pr.closedAt ?? item?.since
         )
+        // Someone else's asks for its own reviews: its stage's menu says whose it is.
+        if record.role != .author { facts.author = pr.author.firstName }
         let sentInChat = item.flatMap { item in
             item.pendingEvents.contains { $0.kind == .sentInChat } ? item.chatSource.map(sent) : nil
         }

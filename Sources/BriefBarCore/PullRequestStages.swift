@@ -170,12 +170,14 @@ public struct StageFacts: Equatable, Sendable {
     /// Whether one of its source's lists has it now. One it still reads that no list has, such as one sent to you in a chat
     /// once you answered it, has no stage to show, but what was set on it still ends as it moves on.
     public var isListed: Bool
+    /// Someone else's: who opened it, by their first name, such as "Priya", as its row names them: they ask for its reviews.
+    public var author: String?
 
     public init(
         role: Role, state: PullRequestState = .open, failure: String? = nil, changesWanted: String? = nil, asksYou: String? = nil,
         isReady: Bool = false, autoComplete: Bool = false, leftAfterReviews: String? = nil, waitingFor: String? = nil,
         othersVoted: Bool = false, youWantChanges: String? = nil, votes: String = "", commit: String? = nil,
-        sessions: [StageSession] = [], since: Date? = nil, isListed: Bool = true
+        sessions: [StageSession] = [], since: Date? = nil, isListed: Bool = true, author: String? = nil
     ) {
         self.role = role
         self.state = state
@@ -193,6 +195,7 @@ public struct StageFacts: Equatable, Sendable {
         self.sessions = sessions
         self.since = since
         self.isListed = isListed
+        self.author = author
     }
 
     public var isYours: Bool { role == .author }
@@ -494,22 +497,34 @@ public enum StageAction: Hashable, Sendable {
 
     /// What's offered for a pull request with this stage, or none, and Undo last while your last change was to it: even
     /// once it has no stage left to show, so what you did can always be undone where you did it.
-    public static func offered(for reading: StageReading?, canUndo: Bool) -> [StageAction] {
-        (reading.map(offered(for:)) ?? []) + (canUndo ? [.undo] : [])
+    /// - Parameter isYours: you opened it: someone else's asks for its own reviews.
+    public static func offered(for reading: StageReading?, canUndo: Bool, isYours: Bool = true) -> [StageAction] {
+        (reading.map { offered(for: $0, isYours: isYours) } ?? []) + (canUndo ? [.undo] : [])
     }
 
     /// What's offered for a pull request in this stage: Finished My Review in Your review; each stage you can set but the
-    /// one it's in, where someone else's that you finished reviewing is in Teammate's review; Put Yours Back once a
-    /// session's change replaced yours; Let BriefBar Decide for one you set. Nothing once it merged.
-    public static func offered(for reading: StageReading) -> [StageAction] {
+    /// one it's in, where someone else's that you finished reviewing is in Teammate's review, and but Teammate's review on
+    /// someone else's, whose author asks for its reviews: Finished My Review takes it off your board instead; Put Yours Back
+    /// once a session's change replaced yours; Let BriefBar Decide for one you set. Nothing once it merged.
+    /// - Parameter isYours: you opened it.
+    public static func offered(for reading: StageReading, isYours: Bool = true) -> [StageAction] {
         guard reading.stage != .merged else { return [] }
         var actions: [StageAction] = []
         if reading.stage == .yourReview { actions.append(.finishedReview) }
-        actions += PullRequestStage.settable.filter { $0 != reading.stage }.map(StageAction.move)
+        actions += PullRequestStage.settable.filter { $0 != reading.stage && (isYours || $0 != .teammateReview) }
+            .map(StageAction.move)
         if reading.replaced != nil { actions.append(.putYoursBack) }
         if reading.isSetByYou { actions.append(.letBriefBarDecide) }
         return actions
     }
+}
+
+/// Where Undo is, after you change a stage, as VoiceOver tells it.
+public enum StageUndoPlace: Sendable {
+    /// In the pull request's stage's menu, on its row or card.
+    case stageMenu
+    /// On the Board: a card that leaves it leaves its Undo at the top of its lane.
+    case lane
 }
 
 // MARK: - Words
@@ -578,10 +593,22 @@ public enum StageText {
     /// What VoiceOver hears once you changed it: where it is now, and where Undo is. "!4093 is in Teammate's review now.
     /// Undo is in its stage's menu." With no stage left, such as someone else's that asks nothing of you once BriefBar
     /// decides, it's off your board.
-    public static func changed(_ ref: ItemRef, to reading: StageReading?) -> String {
+    /// - Parameter undo: where you changed it: on the Board, a card that left the board leaves its Undo at the top of its lane.
+    public static func changed(_ ref: ItemRef, to reading: StageReading?, undo: StageUndoPlace = .stageMenu) -> String {
+        let isOnBoard = reading?.isOnBoard ?? false
         let place = reading.map { $0.isOnBoard ? "is in \($0.stage.title) now" : "is off your board now" } ?? "is off your board now"
-        return "\(ref.shortOrderLabel) \(place). Undo is in its stage's menu."
+        let undoPlace = undo == .lane && !isOnBoard ? "at the top of its lane" : "in its stage's menu"
+        return "\(ref.shortOrderLabel) \(place). Undo is \(undoPlace)."
     }
+
+    /// Why someone else's pull request can't be set to Teammate's review: "It's Priya's: they ask for its reviews".
+    /// - Parameter author: who opened it, by their first name, when known.
+    public static func whyNotTeammateReview(author: String?) -> String {
+        (author.map { "It's \($0)'s" } ?? "It's someone else's") + ": they ask for its reviews"
+    }
+
+    /// What Finished My Review does to someone else's pull request, under it in its stage's menu.
+    public static let finishedOthersReview = "It leaves your board; your vote stays yours to cast in Azure DevOps"
 
     /// What VoiceOver hears once you undid it: "Undone: !4093 is in Your review again".
     public static func undone(_ ref: ItemRef, to reading: StageReading?) -> String {

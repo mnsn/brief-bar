@@ -94,8 +94,10 @@ struct PullRequestStageTrack: View {
         .fixedSize()
         let spoken = "\(shown == .waits ? "Waits for another PR, " + title : shown.title), "
             + (state == .done ? "done" : state == .current ? "current" : "to come")
+        // Someone else's asks for its own reviews: Finished My Review takes it off your board instead.
+        let othersReviews = stage == .teammateReview ? ordering.whyNotTeammateReview(item.key.linkRef) : nil
         // Merged ticks them all, and nothing moves it on.
-        if stage.isSettable, state != .current, reading.stage != .merged {
+        if stage.isSettable, othersReviews == nil, state != .current, reading.stage != .merged {
             Button {
                 StageCommand.set(stage, of: item.key.linkRef, order: ordering)
             } label: {
@@ -107,7 +109,9 @@ struct PullRequestStageTrack: View {
             .accessibilityHint("Moves it to \(stage.title)")
         } else {
             label
-                .help(stage == .canMerge ? (shown == .waits ? title : StageText.canMergeHelp) : StageText.sentence(reading, now: now, name: ordering.name(of:)))
+                .help(othersReviews.map { state == .current ? StageText.sentence(reading, now: now, name: ordering.name(of:)) : $0 }
+                    ?? (stage == .canMerge ? (shown == .waits ? title : StageText.canMergeHelp)
+                        : StageText.sentence(reading, now: now, name: ordering.name(of:))))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(spoken)
         }
@@ -145,7 +149,7 @@ struct PullRequestStageTrack: View {
                         ControlLabel("Finished My Review", systemImage: "arrow.right")
                     }
                     .glassButtonStyle()
-                    .help(FinishedReviewButton.help)
+                    .help(FinishedReviewButton.help(for: ref, order: ordering))
                 case .teammateReview where reading.why == .findReviewer:
                     Button(action: openInAzureDevOps) {
                         ControlLabel("Add Reviewers in Azure DevOps", systemImage: "arrow.up.forward.app")

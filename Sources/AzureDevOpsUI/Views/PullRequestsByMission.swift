@@ -21,8 +21,8 @@ struct PullRequestsByMission: View {
     let select: (PRSnapshot) -> Void
     /// The pull requests in no mission, by status, as the page groups them.
     let rest: ([PRSnapshot]) -> AnyView
-    /// The Board's lanes, for pictures; nil for those you chose.
-    var lanes: BoardLanes? = nil
+    /// The Board, Up Next and each mission's next steps, as the page works them out once as it draws.
+    let board: PullRequestBoard?
     /// Lists the page By Status, for what isn't on the Board.
     let showByStatus: () -> Void
     let now: Date
@@ -50,9 +50,8 @@ struct PullRequestsByMission: View {
                 return true
             },
             rest: { refs in rest(refs.compactMap { byRef[$0] }) },
-            card: { boardCard in byRef[boardCard.ref].map { card($0, boardCard) } },
-            author: { ref in byRef[ref].flatMap { $0.role == .author ? nil : Self.firstName($0.author) } },
-            showByStatus: showByStatus, lanes: lanes, now: now
+            board: board, card: { boardCard in byRef[boardCard.ref].map { card($0, boardCard) } },
+            showByStatus: showByStatus, now: now
         )
     }
 
@@ -63,11 +62,6 @@ struct PullRequestsByMission: View {
 
     static func isIn(_ missions: [OrderMission], _ item: PRSnapshot) -> Bool {
         MissionsBody.isIn(missions, item.key.linkRef)
-    }
-
-    /// "Priya", of "Priya Raman".
-    static func firstName(_ name: String) -> String? {
-        name.split(separator: " ").first.map(String.init)
     }
 }
 
@@ -184,7 +178,7 @@ struct PullRequestBoardCard: View {
     @MainActor
     static func worker(on ref: ItemRef, besides reading: StageReading, ordering: PullRequestOrder) -> LinkedItem? {
         let named: ItemRef? = switch reading.why {
-        case .working(let session), .asksYou(let session), .finished(let session): session.ref
+        case .working(let session), .asksYou(let session), .finished(let session), .preReviewing(let session): session.ref
         default: nil
         }
         return ordering.sessionsWorking(on: ref).filter { $0 != named }.lazy.compactMap(ordering.describe).first

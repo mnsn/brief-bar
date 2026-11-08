@@ -4,9 +4,10 @@ import SwiftUI
 
 // By Mission's Board, on Azure DevOps' Pull Requests page: a column for each stage, as a kanban board has them, a lane for
 // each mission, and a card for each pull request on your board. Drag a card to another column of its lane to change its
-// stage, or move it with ⌘→ and ⌘←; the columns that take it light up as you drag, and those that don't say why as you hover
-// them. Its column titles stay at the top as the page scrolls, and the board scrolls sideways when the window is too narrow
-// for its columns, which grow with the text.
+// stage, or click it and press ⌘→ or ⌘←; the columns that take it light up as you drag, and those that don't say why as you
+// hover them. Its column titles stay at the top as the page scrolls, and the board scrolls sideways when the window is too
+// narrow for its columns, which grow with the text. Scrolling redraws only what follows it: the column titles and the lanes'
+// headers.
 
 /// What a page draws on a card, which the Board frames: its content, its menu, and what VoiceOver says of it.
 package struct BoardCardContent {
@@ -31,7 +32,8 @@ private struct BoardCell: Hashable {
     var stage: PullRequestStage
 }
 
-/// A card where it shows: a pull request in two missions' lanes has a card in each.
+/// A card where it shows, for the keyboard's focus: a pull request in two missions' lanes has a card in each. It stays the
+/// same as the card moves to another column.
 private struct CardSpot: Hashable {
     var lane: BoardLane.Kind
     var ref: ItemRef
@@ -80,15 +82,34 @@ private struct BoardMetrics {
     }
 }
 
+/// How far the board is scrolled sideways, which only the column titles and the lanes' headers follow: the rest of the
+/// board isn't drawn again as it scrolls.
+@MainActor
+private final class BoardScroll: ObservableObject {
+    @Published var x: CGFloat = 0
+}
+
+/// What follows the board as it scrolls sideways: the column titles, which move with the columns under them, and a lane's
+/// header, which stays in view.
+private struct FollowsScroll<Content: View>: View {
+    @ObservedObject var scroll: BoardScroll
+    /// -1 to move with the columns, 1 to stay in view.
+    let direction: CGFloat
+    let content: Content
+
+    var body: some View {
+        content.offset(x: direction * scroll.x)
+    }
+}
+
 /// By Mission's Board: Up Next's pull request wears Next in its column, and each mission's lane has its header, its next
-/// steps and the Undo line of your last change to one of its stages. With Lanes: None, every card is in one lane.
+/// steps and the Undo line of your last change to one of its pull requests, on the board or not. With Lanes: None, every card
+/// is in one lane. A change that takes a pull request in no mission off the board keeps a lane for its Undo line.
 package struct OrderBoardView: View {
     let board: PullRequestBoard
     /// The missions the page shows, as By Mission lists them, for the lanes' headers.
     let missions: [OrderMission]
     @ObservedObject var order: PullRequestOrder
-    /// The kinds of pull request the page lists.
-    let kinds: Set<ItemRef.Kind>
     /// The page that lists the missions' other pull requests, "GitHub", and opening it; nil when it can't open.
     let elsewhere: String
     let openElsewhere: (() -> Void)?
@@ -98,8 +119,6 @@ package struct OrderBoardView: View {
     let card: (BoardCard) -> BoardCardContent?
     let isSelected: (ItemRef) -> Bool
     let select: (ItemRef) -> Void
-    /// Who opened someone else's pull request: why it can't go to Teammate's review says so.
-    let author: (ItemRef) -> String?
     /// Set as Next to Merge, which dropping a card from Waits onto Can merge does: nil until you can change missions
     /// yourself, and the Board says what it waits for instead.
     let setAsNext: ((ItemRef) -> Void)?
@@ -109,37 +128,43 @@ package struct OrderBoardView: View {
     let showByStatus: (() -> Void)?
     let now: Date
 
-    @LocalState private var dragging: BoardCard?
+    /// The card you drag, or dragged last: only what this drag carries drops.
+    @LocalState private var drag: BoardDrag?
+    /// A card is being dragged now: the columns that take it light up.
+    @LocalState private var isDragging = false
     @LocalState private var hovered: BoardCell?
     @LocalState private var notice: BoardNotice?
     @LocalState private var showsMerged = false
     @LocalState private var unfolded: Set<MissionKey> = []
-    @LocalState private var scrollX: CGFloat = 0
     @LocalState private var width: CGFloat = 0
     @LocalState private var flashing: PullRequestStage?
-    /// Where the board's top and its column titles are, on screen: the titles stay at the page's top once they're below it.
-    @LocalState private var sectionTop: CGFloat = 0
-    @LocalState private var titlesTop: CGFloat = 0
+    /// The column titles stay at the page's top, over the cards that scroll under them.
+    @LocalState private var isPinned = false
+    @LocalState private var scroll = BoardScroll()
+    /// Where each mission's lane starts, for By Mission to show it, as a row's capsule asks.
+    @LocalState private var laneTops: [MissionKey: CGFloat] = [:]
+    @LocalState private var titlesHeight: CGFloat = 0
     @FocusState private var focused: CardSpot?
+    /// The card a key, or a drop, just moved while it had the keyboard's focus: drawn anew in its new column, it takes the
+    /// focus back as it appears, so that the next key moves it on.
+    @LocalState private var refocus: CardSpot?
     @Environment(\.textScale) private var textScale
 
     package init(
-        board: PullRequestBoard, missions: [OrderMission], order: PullRequestOrder, kinds: Set<ItemRef.Kind>, elsewhere: String,
-        openElsewhere: (() -> Void)?, place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
-        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, author: @escaping (ItemRef) -> String?,
-        setAsNext: ((ItemRef) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?, now: Date
+        board: PullRequestBoard, missions: [OrderMission], order: PullRequestOrder, elsewhere: String, openElsewhere: (() -> Void)?,
+        place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
+        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, setAsNext: ((ItemRef) -> Void)?,
+        notOnBoard: Int, showByStatus: (() -> Void)?, now: Date
     ) {
         self.board = board
         self.missions = missions
         self.order = order
-        self.kinds = kinds
         self.elsewhere = elsewhere
         self.openElsewhere = openElsewhere
         self.place = place
         self.card = card
         self.isSelected = isSelected
         self.select = select
-        self.author = author
         self.setAsNext = setAsNext
         self.notOnBoard = notOnBoard
         self.showByStatus = showByStatus
@@ -148,8 +173,10 @@ package struct OrderBoardView: View {
 
     package var body: some View {
         let metrics = BoardMetrics(scale: textScale, available: width, showsMerged: showsMerged)
+        let lanes = board.lanes(keepingUndoOf: order.lastChange?.ref, missions: missions)
+        let moves = BoardMoves(board: board, missions: missions, order: order, missionChanges: setAsNext != nil)
         VStack(alignment: .leading, spacing: 12) {
-            if board.lanes.isEmpty {
+            if lanes.isEmpty {
                 Text("Nothing's on your board yet. Your pull requests, and those you're asked to review, show here by stage.")
                     .font(size: 12.5)
                     .foregroundStyle(.secondary)
@@ -159,23 +186,24 @@ package struct OrderBoardView: View {
                 // Its column titles stay at the top as the page scrolls.
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     Section {
-                        lanes(metrics)
+                        lanesView(lanes, metrics: metrics, moves: moves)
                     } header: {
                         columnTitles(metrics)
                     }
                 }
-                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { sectionTop = $0 }
             }
             notOnBoardLine
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        // On the Board, a card that a change takes off it leaves its Undo at the top of its lane, as VoiceOver says.
+        .environment(\.stageUndoPlace, .lane)
         // A drag that ends anywhere, dropped or not: the columns stop lighting up.
-        .task(id: dragging?.ref) {
-            while !Task.isCancelled, dragging != nil {
+        .task(id: isDragging) {
+            while !Task.isCancelled, isDragging {
                 try? await Task.sleep(for: .milliseconds(200))
                 if NSEvent.pressedMouseButtons & 1 == 0 {
-                    dragging = nil
+                    isDragging = false
                     hovered = nil
                 }
             }
@@ -185,25 +213,28 @@ package struct OrderBoardView: View {
     // MARK: Columns
 
     private func columnTitles(_ metrics: BoardMetrics) -> some View {
-        HStack(alignment: .bottom, spacing: metrics.gap) {
+        FollowsScroll(scroll: scroll, direction: -1, content: HStack(alignment: .bottom, spacing: metrics.gap) {
             ForEach(PullRequestStage.columns, id: \.self) { stage in
                 columnTitle(stage, width: metrics.width(stage))
             }
-        }
-        .offset(x: -scrollX)
+        })
         .frame(width: metrics.visible, alignment: .leading)
         .clipped()
         .padding(.vertical, 6)
         .background {
-            // Once it stays at the top, over the cards that scroll under it: below where the board starts.
-            if titlesTop - sectionTop > 1 {
+            // Once it stays at the top, over the cards that scroll under it.
+            if isPinned {
                 Rectangle()
                     .fill(Color(nsColor: .windowBackgroundColor))
                     .overlay(alignment: .bottom) { Divider().opacity(0.6) }
                     .padding(.horizontal, -18)
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { titlesTop = $0 }
+        // Only as it reaches the top and leaves it, not each time the page scrolls.
+        .onGeometryChange(for: Bool.self) { proxy in
+            (proxy.bounds(of: .scrollView)?.minY ?? -1) > -1
+        } action: { isPinned = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { titlesHeight = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Stages")
     }
@@ -278,7 +309,10 @@ package struct OrderBoardView: View {
 
     // MARK: Lanes
 
-    private func lanes(_ metrics: BoardMetrics) -> some View {
+    /// The coordinate space of the board's lanes, where each lane's top is measured.
+    private static let lanesSpace = "boardLanes"
+
+    private func lanesView(_ lanes: [BoardLane], metrics: BoardMetrics, moves: BoardMoves) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -291,52 +325,78 @@ package struct OrderBoardView: View {
                         }
                     }
                     VStack(alignment: .leading, spacing: 18) {
-                        ForEach(board.lanes) { lane in
-                            laneView(lane, metrics: metrics)
+                        ForEach(lanes) { lane in
+                            laneView(lane, metrics: metrics, moves: moves)
+                                // Changes as lanes grow or shrink, never as the board scrolls.
+                                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.lanesSpace)).minY } action: { top in
+                                    if let key = lane.mission { laneTops[key] = top }
+                                }
                         }
                     }
                 }
                 .padding(.top, 8)
                 .frame(width: metrics.content, alignment: .leading)
+                .coordinateSpace(.named(Self.lanesSpace))
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(metrics.content > metrics.visible + 1 ? .automatic : .hidden)
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in scrollX = x }
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in scroll.x = x }
             .onChange(of: order.revealedColumn) { _, stage in reveal(stage, with: proxy) }
             .onAppear { reveal(order.revealedColumn, with: proxy) }
+            .overlay(alignment: .topLeading) { missionAnchors(lanes) }
         }
     }
 
-    private func laneView(_ lane: BoardLane, metrics: BoardMetrics) -> some View {
+    /// Where each mission's lane starts, as By Mission shows a mission a row's capsule asks for: outside the board's sideways
+    /// scroll, so that it scrolls the page, just under the column titles that stay at its top.
+    private func missionAnchors(_ lanes: [BoardLane]) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(lanes.compactMap(\.mission), id: \.self) { key in
+                VStack(spacing: 0) {
+                    Color.clear.frame(width: 1, height: max(0, (laneTops[key] ?? 0) - titlesHeight))
+                    Color.clear.frame(width: 1, height: 1).id(key)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func laneView(_ lane: BoardLane, metrics: BoardMetrics, moves: BoardMoves) -> some View {
         let mission = lane.mission.flatMap { key in missions.first { $0.key == key } }
         let isFolded = mission.map { $0.isFinished && !unfolded.contains($0.key) } ?? false
+        let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastChange?.ref)
         return VStack(alignment: .leading, spacing: 8) {
             // The lane's header stays in view as the board scrolls sideways. Every card in one lane has none, but for the
             // Undo line or why a card couldn't move.
-            if lane.kind != .all || hasLines(lane) {
-                laneHeader(lane, mission: mission, isFolded: isFolded)
-                    .frame(width: metrics.visible, alignment: .leading)
-                    .offset(x: scrollX)
+            if lane.kind != .all || hasLines(lane, undoRefs: undoRefs) {
+                FollowsScroll(
+                    scroll: scroll, direction: 1, content: laneHeader(lane, mission: mission, isFolded: isFolded, undoRefs: undoRefs)
+                )
+                .frame(width: metrics.visible, alignment: .leading)
             }
-            if !isFolded {
+            // A lane kept only for the Undo line of a pull request that left the board has no columns to show.
+            if !isFolded, !(lane.isEmpty && lane.mission == nil) {
                 HStack(alignment: .top, spacing: metrics.gap) {
                     ForEach(PullRequestStage.columns, id: \.self) { stage in
-                        cell(lane, stage: stage, width: metrics.width(stage))
+                        cell(lane, stage: stage, width: metrics.width(stage), moves: moves)
                     }
                 }
+                // Its columns are as tall as its tallest, so that each is as big a place to drop a card.
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
-    private func laneHeader(_ lane: BoardLane, mission: OrderMission?, isFolded: Bool) -> some View {
+    private func laneHeader(_ lane: BoardLane, mission: OrderMission?, isFolded: Bool, undoRefs: Set<ItemRef>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             switch lane.kind {
             case .mission:
                 if let mission {
                     MissionHeader(mission: mission, order: order, place: place(mission))
-                    let outside = mission.count(outside: kinds)
+                    let outside = mission.count(outside: board.kinds)
                     if outside > 0 {
                         OrderElsewhereLine(count: outside, elsewhere: elsewhere, open: openElsewhere)
                             .padding(.leading, 4)
@@ -355,7 +415,7 @@ package struct OrderBoardView: View {
             case .all:
                 EmptyView()
             }
-            StageUndoLine(refs: Set(lane.cards.map(\.ref)), order: order)
+            StageUndoLine(refs: undoRefs, order: order)
                 .padding(.horizontal, 4)
             if let notice, notice.lane == lane.kind {
                 noticeLine(notice)
@@ -364,10 +424,9 @@ package struct OrderBoardView: View {
         }
     }
 
-    /// Whether a lane has the Undo line of your last change to one of its stages, or why a card couldn't move.
-    private func hasLines(_ lane: BoardLane) -> Bool {
-        let refs = Set(lane.cards.map(\.ref))
-        return order.lastChange.map { refs.contains($0.ref) } == true || notice?.lane == lane.kind
+    /// Whether a lane has the Undo line of your last change, or why a card couldn't move.
+    private func hasLines(_ lane: BoardLane, undoRefs: Set<ItemRef>) -> Bool {
+        order.lastChange.map { undoRefs.contains($0.ref) } == true || notice?.lane == lane.kind
     }
 
     /// A finished mission's lane folds to its header, as List's merged line does.
@@ -421,10 +480,11 @@ package struct OrderBoardView: View {
 
     // MARK: Cells
 
-    private func cell(_ lane: BoardLane, stage: PullRequestStage, width: CGFloat) -> some View {
+    private func cell(_ lane: BoardLane, stage: PullRequestStage, width: CGFloat, moves: BoardMoves) -> some View {
         let cards = lane.cards(in: stage)
         let target = BoardCell(lane: lane.kind, stage: stage)
-        let move = dragging.map { self.move($0, to: stage, in: lane) }
+        // What dropping the dragged card here would do, to the card as it is now.
+        let move = isDragging ? drag.flatMap { moves.card($0.ref, in: lane.kind) }.map { moves.move($0, to: stage, in: lane.kind) } : nil
         let takes = move?.isTaken == true
         let isHovered = hovered == target
         let refusal: String? = if case .refused(let why)? = move { why } else { nil }
@@ -433,15 +493,15 @@ package struct OrderBoardView: View {
                 foldedMerged(cards)
             } else {
                 ForEach(cards) { card in
-                    cardView(card, in: lane)
+                    cardView(card, in: lane, moves: moves)
                 }
             }
         }
         // Those that don't take the card dim while you drag it.
-        .opacity(dragging != nil && refusal != nil ? 0.4 : 1)
+        .opacity(isDragging && refusal != nil ? 0.4 : 1)
         .padding(6 * textScale)
         .frame(width: width, alignment: .topLeading)
-        .frame(minHeight: 70 * textScale, alignment: .top)
+        .frame(minHeight: 70 * textScale, maxHeight: .infinity, alignment: .top)
         .background(cellBackground(stage, takes: takes, isHovered: isHovered))
         .overlay(alignment: .top) {
             // Why it can't go there, as you hover.
@@ -461,7 +521,7 @@ package struct OrderBoardView: View {
             }
         }
         .dropDestination(for: String.self) { items, _ in
-            drop(items, on: stage, in: lane)
+            drop(items, on: stage, in: lane, moves: moves)
         } isTargeted: { isOver in
             if isOver {
                 hovered = target
@@ -506,21 +566,25 @@ package struct OrderBoardView: View {
     }
 
     @ViewBuilder
-    private func cardView(_ card: BoardCard, in lane: BoardLane) -> some View {
+    private func cardView(_ card: BoardCard, in lane: BoardLane, moves: BoardMoves) -> some View {
         if let content = self.card(card) {
+            let spot = CardSpot(lane: lane.kind, ref: card.ref)
             BoardCardView(
                 card: card, content: content, isNext: board.next[card.stage] == card.ref, isSelected: isSelected(card.ref),
-                order: order, now: now, spot: CardSpot(lane: lane.kind, ref: card.ref), focus: $focused,
+                order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus == spot,
+                tookFocus: { if refocus == spot { refocus = nil } },
                 select: { select(card.ref) },
                 drag: {
-                    // As the drag starts: the columns that take it light up.
+                    // As the drag starts: only what it carries drops, and the columns that take it light up.
+                    let started = BoardDrag(ref: card.ref)
                     DispatchQueue.main.async {
-                        dragging = card
+                        drag = started
+                        isDragging = true
                         notice = nil
                     }
-                    return card.ref.description
+                    return started.payload
                 },
-                move: { forward in keyMove(card, in: lane, forward: forward) },
+                move: { forward in keyMove(card.ref, in: lane, forward: forward, moves: moves) },
                 setAsNext: setAsNext.flatMap { setAsNext in card.stage == .waits ? { setAsNext(card.ref) } : nil }
             )
         }
@@ -528,47 +592,37 @@ package struct OrderBoardView: View {
 
     // MARK: Moving
 
-    private func move(_ card: BoardCard, to stage: PullRequestStage, in lane: BoardLane) -> BoardMove {
-        let sameLane = lane.kind == .all || lane.cards.contains { $0.ref == card.ref }
-        return BoardRules.move(
-            card, to: stage, sameLane: sameLane, isYours: order.isYours(card.ref), author: author(card.ref),
-            missionChanges: setAsNext != nil, missions: missions.filter { $0.contains(card.ref) }
-        )
-    }
-
-    private func drop(_ items: [String], on stage: PullRequestStage, in lane: BoardLane) -> Bool {
-        let dragged = dragging
-        dragging = nil
+    private func drop(_ items: [String], on stage: PullRequestStage, in lane: BoardLane, moves: BoardMoves) -> Bool {
+        let started = drag
+        isDragging = false
         hovered = nil
-        // Only a card of this board: not text dragged in from another app.
-        guard let raw = items.first, let ref = ItemRef(raw), board.refs.contains(ref),
-              let card = dragged?.ref == ref ? dragged : board.lanes.lazy.compactMap({ $0.cards.first { $0.ref == ref } }).first
-        else { return false }
-        return apply(move(card, to: stage, in: lane), to: card, in: lane)
+        // Only a card dragged from this board, as it is now: never text dragged in from another app.
+        guard let payload = items.first, let (card, move) = moves.drop(payload, of: started, on: stage, in: lane.kind) else {
+            return false
+        }
+        drag = nil
+        return apply(move, to: card, in: lane, keepsFocus: focused?.ref == card.ref)
     }
 
-    /// ⌘→ and ⌘← on a card: the next or previous stage you can set, or why it can't go further.
-    private func keyMove(_ card: BoardCard, in lane: BoardLane, forward: Bool) {
-        guard let stage = BoardRules.keyTarget(from: card.stage, forward: forward) else {
+    /// ⌘→ and ⌘← on a card: the next or previous stage you can set, or why it can't go further. The card keeps the
+    /// keyboard's focus.
+    private func keyMove(_ ref: ItemRef, in lane: BoardLane, forward: Bool, moves: BoardMoves) {
+        guard let (card, move) = moves.key(ref, in: lane.kind, forward: forward) else {
             NSSound.beep()
             return
         }
-        _ = apply(move(card, to: stage, in: lane), to: card, in: lane)
+        _ = apply(move, to: card, in: lane, keepsFocus: true)
     }
 
-    private func apply(_ move: BoardMove, to card: BoardCard, in lane: BoardLane) -> Bool {
+    private func apply(_ move: BoardMove, to card: BoardCard, in lane: BoardLane, keepsFocus: Bool) -> Bool {
         switch move {
         case .setStage(let stage):
             notice = nil
-            // As the row's menu and VoiceOver's action move it.
-            StageCommand.perform(.move(stage), on: card.ref, order: order)
-            keepFocus(on: card, in: lane)
-            return true
+            // As the row's menu and VoiceOver's action move it, saying where Undo is.
+            StageCommand.perform(.move(stage), on: card.ref, order: order, undo: .lane)
         case .setAsNext:
             notice = nil
             setAsNext?(card.ref)
-            keepFocus(on: card, in: lane)
-            return true
         case .stays:
             return false
         case .refused(let why):
@@ -577,13 +631,18 @@ package struct OrderBoardView: View {
             notice = BoardNotice(lane: lane.kind, text: why)
             return false
         }
+        if keepsFocus { keepFocus(on: CardSpot(lane: lane.kind, ref: card.ref)) }
+        return true
     }
 
-    /// The card keeps the keyboard's focus in its new column.
-    private func keepFocus(on card: BoardCard, in lane: BoardLane) {
-        guard focused?.ref == card.ref else { return }
-        let spot = CardSpot(lane: lane.kind, ref: card.ref)
-        DispatchQueue.main.async { focused = spot }
+    /// The card keeps the keyboard's focus in its new column: drawn anew there once the board has its new stage, it takes it
+    /// as it appears. Should it not be drawn anew, as when nothing changed, it still has it, and isn't owed it later.
+    private func keepFocus(on spot: CardSpot) {
+        refocus = spot
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            if refocus == spot { refocus = nil }
+        }
     }
 
     private func reveal(_ stage: PullRequestStage?, with proxy: ScrollViewProxy) {
@@ -620,8 +679,10 @@ package struct OrderBoardView: View {
 
 // MARK: - A card
 
-/// A card on the Board: the page's content, framed in its stage's color, Next on Up Next's, a click showing its details. It
-/// drags to another column, and moves with ⌘→ and ⌘←; VoiceOver has every move among its actions.
+/// A card on the Board: the page's content, framed in its stage's color, Next on Up Next's, a click showing its details and
+/// giving it the keyboard's focus, as a field takes it, whatever the Mac's keyboard navigation: then ⌘→ and ⌘← move it, and
+/// Return or Space shows its details. Tab goes from card to card. It drags to another column, and VoiceOver has every move
+/// among its actions.
 private struct BoardCardView: View {
     let card: BoardCard
     let content: BoardCardContent
@@ -631,6 +692,9 @@ private struct BoardCardView: View {
     let now: Date
     let spot: CardSpot
     var focus: FocusState<CardSpot?>.Binding
+    /// Drawn anew in another column by a move it made with the keyboard's focus: it takes the focus back as it appears.
+    let takesFocus: Bool
+    let tookFocus: () -> Void
     let select: () -> Void
     /// The drag's payload, as it starts.
     let drag: () -> String
@@ -678,14 +742,25 @@ private struct BoardCardView: View {
                 }
             }
             .contentShape(shape)
+            .contentShape(.focusEffect, shape)
             .onHover { isHovered = $0 }
-            .onTapGesture(perform: select)
+            .onTapGesture {
+                focus.wrappedValue = spot
+                select()
+            }
             .contextMenu { content.menu }
             .draggable(drag()) {
                 preview
             }
-            .focusable(interactions: .activate)
+            // As a field takes the keyboard's focus, on a click and with Tab, whatever the Mac's keyboard navigation.
+            .focusable(interactions: .edit)
             .focused(focus, equals: spot)
+            .onAppear {
+                guard takesFocus else { return }
+                tookFocus()
+                // Once this update is done, which also takes its old card away, and the focus with it.
+                DispatchQueue.main.async { focus.wrappedValue = spot }
+            }
             .onKeyPress(keys: [.leftArrow, .rightArrow], phases: .down) { press in
                 guard press.modifiers.contains(.command) else { return .ignored }
                 move(press.key == .rightArrow)
@@ -695,7 +770,7 @@ private struct BoardCardView: View {
                 select()
                 return .handled
             }
-            .help("\(content.label)\nClick to see its details. Drag it to another column, or press ⌘→ or ⌘←, to change its stage")
+            .help("\(content.label)\nClick to see its details. Drag it to another column, or click it and press ⌘→ or ⌘←, to change its stage")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(content.label)
             .accessibilityValue(accessibilityValue)

@@ -67,9 +67,11 @@ extension PullRequestStage {
 // MARK: - Which comes first
 
 /// Which comes first in a stage: on the Board, in Up Next and in a mission's next steps. The mission you focus on first, in
-/// every stage; then, in each:
-/// - **In progress:** what needs you first, as Fix next has it: a session that asks you, then what failed, then changes
-///   someone wants, the oldest first; then the rest, as By Mission lists them.
+/// every stage but In progress, where what needs you comes before it, so that Fix next is always its column's first card;
+/// then, in each:
+/// - **In progress:** what needs you first, as Fix next has it, the mission you focus on first among it: a session that
+///   asks you, then what failed, then changes someone wants, the oldest first; then the rest, the mission you focus on
+///   first, as By Mission lists them.
 /// - **Your review:** the one that has waited longest; within a mission, the earlier in its merge order, as later ones
 ///   build on it: an earlier one waits as long as the longest waiting after it.
 /// - **Teammate's review:** Find a reviewer first, as that's yours to do; then the earliest in its mission's merge order.
@@ -480,21 +482,27 @@ public struct PullRequestBoard: Equatable, Sendable {
     public var lanes: [BoardLane]
     /// How many pull requests each column has, each once, whatever lanes show it.
     public var counts: [PullRequestStage: Int]
-    /// The pull request that wears Next in each column: Up Next's, the first in it across the lanes.
+    /// The pull request that wears Next in each column: Up Next's, the first in its column's order, across the lanes.
     public var next: [PullRequestStage: ItemRef]
     public var upNext: UpNext
     /// Each pull request on the board, once.
     public var refs: Set<ItemRef>
+    /// The kinds of pull request its page lists.
+    public var kinds: Set<ItemRef.Kind>
+    /// A lane for each mission, or one for every card.
+    public var mode: BoardLanes
 
     public init(
         lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [PullRequestStage: ItemRef] = [:], upNext: UpNext = UpNext(),
-        refs: Set<ItemRef> = []
+        refs: Set<ItemRef> = [], kinds: Set<ItemRef.Kind> = [], mode: BoardLanes = .missions
     ) {
         self.lanes = lanes
         self.counts = counts
         self.next = next
         self.upNext = upNext
         self.refs = refs
+        self.kinds = kinds
+        self.mode = mode
     }
 
     /// - Parameters:
@@ -556,12 +564,57 @@ public struct PullRequestBoard: Equatable, Sendable {
         case .none:
             if !all.isEmpty { boardLanes.append(BoardLane(kind: .all, columns: sorted)) }
         }
-        return PullRequestBoard(lanes: boardLanes, counts: counts, next: next, upNext: UpNext(slots: slots), refs: Set(onBoard.keys))
+        return PullRequestBoard(
+            lanes: boardLanes, counts: counts, next: next, upNext: UpNext(slots: slots), refs: Set(onBoard.keys), kinds: kinds,
+            mode: lanes
+        )
     }
 
     /// A mission's lane, as a lane for each mission has it, for its next steps in List and on the Map too.
     public func lane(for mission: MissionKey) -> BoardLane? {
         lanes.first { $0.mission == mission }
+    }
+
+    /// A pull request's card as the board has it now: in this lane, where it has it, else in the first lane that does; nil
+    /// once it left the board.
+    public func card(_ ref: ItemRef, preferring lane: BoardLane.Kind) -> BoardCard? {
+        let preferred = lanes.first { $0.kind == lane }?.cards.first { $0.ref == ref }
+        return preferred ?? lanes.lazy.compactMap { $0.cards.first { $0.ref == ref } }.first
+    }
+
+    // MARK: Undo
+
+    /// Its lanes, with one more where your last change was to one of the page's pull requests that no lane has now: it left
+    /// the board, and no mission's lane has it. That lane, of those in no mission, or of every card, shows its Undo line,
+    /// though it has no card.
+    /// - Parameter missions: the missions the page shows, as the lanes' headers have them.
+    public func lanes(keepingUndoOf changed: ItemRef?, missions: [OrderMission]) -> [BoardLane] {
+        guard let changed, isUnhosted(changed, missions: missions) else { return lanes }
+        let kind: BoardLane.Kind = mode == .none ? .all : .notInAMission
+        return lanes.contains { $0.kind == kind } ? lanes : lanes + [BoardLane(kind: kind, columns: [:])]
+    }
+
+    /// The pull requests whose Undo line a lane shows, when your last change was to one of them: a mission's lane, every
+    /// one of its mission's, on the board or not, as List's card does; the lane of those in no mission, or of every card,
+    /// its cards, and the one you changed once it left the board where no mission's lane has it.
+    public func undoRefs(of lane: BoardLane, missions: [OrderMission], changed: ItemRef?) -> Set<ItemRef> {
+        var refs = Set(lane.cards.map(\.ref))
+        switch lane.kind {
+        case .mission(let key):
+            if let mission = missions.first(where: { $0.key == key }) {
+                refs.formUnion((mission.steps + mission.attached).map(\.ref))
+            }
+        case .notInAMission, .all:
+            if let changed, isUnhosted(changed, missions: missions) { refs.insert(changed) }
+        }
+        return refs
+    }
+
+    /// Whether a pull request of the page's kinds has no lane to show its Undo in: it left the board, and, with a lane for
+    /// each mission, no mission has it.
+    func isUnhosted(_ ref: ItemRef, missions: [OrderMission]) -> Bool {
+        guard kinds.contains(ref.kind), !refs.contains(ref) else { return false }
+        return mode == .none || !missions.contains { $0.shows(kinds) && $0.contains(ref) }
     }
 
     /// Of a page's pull requests, how many aren't on the board, such as others' that you approved, others' drafts, and those
@@ -588,6 +641,28 @@ public struct PullRequestBoard: Equatable, Sendable {
 }
 
 // MARK: - Moving a card
+
+/// A card you drag on the Board: its pull request, and a token that only this drag carries, so that a column takes only a card
+/// dragged from its own board, never text dragged in from another app that names a pull request.
+public struct BoardDrag: Equatable, Sendable {
+    public let ref: ItemRef
+    public let token: UUID
+
+    public init(ref: ItemRef, token: UUID = UUID()) {
+        self.ref = ref
+        self.token = token
+    }
+
+    /// What the drag carries.
+    public var payload: String {
+        "\(token.uuidString)|\(ref.description)"
+    }
+
+    /// The pull request a drop carries, when it's this drag's: nil for anything else.
+    public func ref(dropped payload: String) -> ItemRef? {
+        payload == self.payload ? ref : nil
+    }
+}
 
 /// What moving a card to a column does, by dragging it or with ⌘→ and ⌘←.
 public enum BoardMove: Equatable, Sendable {
@@ -646,8 +721,11 @@ public enum BoardRules {
     }
 
     /// Where ⌘→ or ⌘← takes a card in a stage: the next or previous stage you can set, in the columns' order; else the next
-    /// or previous column, which says why it can't go there; nil at either end.
+    /// or previous column, which says why it can't go there; nil at either end. From Waits, ⌘← is Can merge: Set as Next to
+    /// Merge, as dropping it there is.
     public static func keyTarget(from stage: PullRequestStage, forward: Bool) -> PullRequestStage? {
+        // From Waits, back is Can merge: Set as Next to Merge, which `move` takes or refuses.
+        if stage == .waits, !forward { return .canMerge }
         let columns = PullRequestStage.columns
         guard let index = columns.firstIndex(of: stage) else { return nil }
         let ahead = forward ? Array(columns[(index + 1)...]) : Array(columns[..<index].reversed())
@@ -694,8 +772,7 @@ public enum BoardText {
     }
 
     static func someoneElses(_ author: String?) -> String {
-        let whose = author.map { "It's \($0)'s: \($0) asks for its reviews" } ?? "It's someone else's: its author asks for its reviews"
-        return whose + ". Finished My Review takes it off your board"
+        StageText.whyNotTeammateReview(author: author) + ". Finished My Review takes it off your board"
     }
 
     /// Without Set as Next to Merge: what it waits for, and when it can merge.

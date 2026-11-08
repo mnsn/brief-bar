@@ -29,17 +29,16 @@ package struct MissionsBody: View {
     let select: (ItemRef) -> Bool
     /// The pull requests in no mission, as the page groups them by status.
     let rest: ([ItemRef]) -> AnyView
-    /// A card's content on the Board, as the page draws it; nil on a page whose pull requests have no stages, which offers no
-    /// Board, and shows no next steps.
+    /// The Board, with Up Next and each mission's next steps, which the page works out once as it draws: a lane for each
+    /// mission, but on the Board with Lanes: None. Nil on a page whose pull requests have no stages, which offers no Board and
+    /// shows no next steps.
+    let board: PullRequestBoard?
+    /// A card's content on the Board, as the page draws it.
     let card: ((BoardCard) -> BoardCardContent?)?
-    /// Who opened someone else's pull request, for why its card can't go to Teammate's review.
-    let author: (ItemRef) -> String?
     /// Set as Next to Merge, for a card dropped from Waits onto Can merge: nil until you can change missions yourself.
     let setAsNext: ((ItemRef) -> Void)?
     /// Lists the page By Status, for what isn't on the Board.
     let showByStatus: (() -> Void)?
-    /// The Board's lanes, for pictures; nil for those you chose.
-    let lanes: BoardLanes?
     let now: Date
 
     @EnvironmentObject private var services: AppServices
@@ -49,8 +48,8 @@ package struct MissionsBody: View {
         listed: [ItemRef], apart: [ItemRef] = [], row: @escaping (OrderStep, MissionKey) -> AnyView?,
         place: @escaping (ItemRef) -> String?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, rest: @escaping ([ItemRef]) -> AnyView,
-        card: ((BoardCard) -> BoardCardContent?)? = nil, author: @escaping (ItemRef) -> String? = { _ in nil },
-        setAsNext: ((ItemRef) -> Void)? = nil, showByStatus: (() -> Void)? = nil, lanes: BoardLanes? = nil, now: Date = Date()
+        board: PullRequestBoard? = nil, card: ((BoardCard) -> BoardCardContent?)? = nil, setAsNext: ((ItemRef) -> Void)? = nil,
+        showByStatus: (() -> Void)? = nil, now: Date = Date()
     ) {
         self.view = view
         self.ordering = ordering
@@ -64,11 +63,10 @@ package struct MissionsBody: View {
         self.isSelected = isSelected
         self.select = select
         self.rest = rest
+        self.board = board
         self.card = card
-        self.author = author
         self.setAsNext = setAsNext
         self.showByStatus = showByStatus
-        self.lanes = lanes
         self.now = now
     }
 
@@ -89,7 +87,7 @@ package struct MissionsBody: View {
         let missions = Self.missions(ordering.missions, kinds: kinds)
         let rest = listed.filter { !Self.isIn(missions, $0) }
         // Each mission's next steps, as its lane on the Board has them, where its pull requests have stages.
-        let missionLanes = card == nil ? nil : ordering.board(kinds: kinds, lanes: .missions)
+        let missionLanes = board?.mode == .missions ? board : nil
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 18) {
                 if missions.isEmpty, view != .board {
@@ -119,13 +117,11 @@ package struct MissionsBody: View {
                     let undrawn = OrderMap.undrawn(listed + apart, in: missions)
                     NotInAMissionLine(inNoMission: undrawn.inNoMission, notInOrder: undrawn.notInOrder) { ordering.setView(.list) }
                 case .board:
-                    if let card {
-                        let board = ordering.board(kinds: kinds, lanes: lanes)
+                    if let board, let card {
                         OrderBoardView(
-                            board: board, missions: missions, order: ordering, kinds: kinds, elsewhere: elsewhere,
-                            openElsewhere: openElsewhere, place: place(of:), card: card, isSelected: isSelected,
-                            select: { ref in _ = select(ref) }, author: author, setAsNext: setAsNext,
-                            notOnBoard: board.notOnBoard(listed + apart), showByStatus: showByStatus, now: now
+                            board: board, missions: missions, order: ordering, elsewhere: elsewhere, openElsewhere: openElsewhere,
+                            place: place(of:), card: card, isSelected: isSelected, select: { ref in _ = select(ref) },
+                            setAsNext: setAsNext, notOnBoard: board.notOnBoard(listed + apart), showByStatus: showByStatus, now: now
                         )
                         .id(Self.boardTop)
                     }

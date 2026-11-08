@@ -433,9 +433,21 @@ package final class PullRequestOrder: ObservableObject {
         stages[ref]
     }
 
-    /// Whether you opened a pull request, as its source tells for its stage: only yours go to Teammate's review on the Board.
+    /// Whether you opened a pull request, as its source tells for its stage: only yours can be set to Teammate's review.
     package func isYours(_ ref: ItemRef) -> Bool {
         stageFacts[ref]?.isYours ?? false
+    }
+
+    /// Who opened someone else's pull request, by their first name, as its source tells for its stage.
+    package func author(of ref: ItemRef) -> String? {
+        stageFacts[ref]?.author
+    }
+
+    /// Why a pull request can't be set to Teammate's review, wherever you'd set it: someone else's asks for its own reviews,
+    /// and Finished My Review takes it off your board instead. Nil for yours, or one whose source tells no stage.
+    package func whyNotTeammateReview(_ ref: ItemRef) -> String? {
+        guard let facts = stageFacts[ref], !facts.isYours else { return nil }
+        return StageText.whyNotTeammateReview(author: facts.author)
     }
 
     /// The Board, Up Next and each mission's next steps, for a page of these kinds, with its lanes as you chose them, or
