@@ -185,12 +185,17 @@ import Testing
         #expect(step.notes.isEmpty && !step.isYours && !step.isChangedByYou)
         #expect(!MissionChoices.of(Self.pr(4102), missions: Self.missions(facts, orders, changes), changes: changes, orders: orders).canPutBack)
 
-        // Once BriefBar saw that, putting it after 4101 again goes against yours: it shows, and says so.
+        // Once BriefBar saw that, telling the order again as it was when you changed it changes nothing, as BriefBar can't
+        // tell that from a session telling again what it read before; putting it after 4101 another way goes against yours:
+        // it shows, and says so.
         let noted = changes.noteOverrides(in: orders, now: t(120))
         #expect(noted && changes[Self.pr(4102)]?.replaced == OrderPlace(orders: [planID: []]))
-        orders = try tell([(4101, []), (4102, [4101])], replacing: orders, at: 180)
-        #expect(changes[Self.pr(4102)]?.overridden(in: orders)
-            == OrderOverride(by: Self.session, at: t(180), now: .after([Self.pr(4101)]), yours: .tookAway([Self.pr(4101)])))
+        let again = try tell([(4101, []), (4102, [4101])], replacing: orders, at: 180)
+        #expect(changes[Self.pr(4102)]?.holds(in: again) == true)
+        orders = try tell([(4101, []), (4103, []), (4102, [4101, 4103])], replacing: orders, at: 180)
+        #expect(changes[Self.pr(4102)]?.overridden(in: orders) == OrderOverride(
+            by: Self.session, at: t(180), now: .after([Self.pr(4101), Self.pr(4103)]), yours: .tookAway([Self.pr(4101)])
+        ))
     }
 
     // MARK: Merge After
@@ -386,9 +391,14 @@ import Testing
             OrderChange(ref: Self.pr(4104), after: [Self.pr(4101)], notAfter: [Self.pr(4102)], placement: .into(.chain(Self.pr(4101))),
                         from: .plan(planID), changedAt: t(70)),
             OrderChange(ref: Self.pr(4105), placement: .outside, changedAt: t(80)),
+            OrderChange(
+                ref: Self.pr(4106), placement: .into(.plan(otherID)), changedAt: t(90),
+                replaced: OrderPlace(orders: [otherID: [Self.pr(4105)]]), found: OrderPlace()
+            ),
         ])
         changes.save(to: defaults)
         #expect(OrderChanges.load(from: defaults) == changes)
+        #expect(OrderChanges.load(from: defaults)[Self.pr(4106)]?.found == OrderPlace())
         let text = try #require(defaults.data(forKey: OrderChanges.defaultsKey).flatMap { String(data: $0, encoding: .utf8) })
         #expect(text.contains("\"placed\":\"chain/pullRequest/contoso/4101\"") && text.contains("\"placed\":\"none\""))
         #expect(!text.contains("title"))
@@ -1098,7 +1108,8 @@ import Testing
     // MARK: An order that agrees with yours
 
     /// A session that takes a pull request you moved out of its order out of it too agrees with you: yours holds, and what
-    /// the order says now is what it replaced. Naming it there again goes against yours.
+    /// the order says now is what it replaced. Naming it there again goes against yours, but as it was when you moved it,
+    /// which changes nothing.
     @Test func aSessionThatTakesOutWhatYouMovedOutOfItsOrderAgreesWithYou() throws {
         var orders = try tell([(4101, []), (4102, [4101]), (4103, [4102])])
         let facts = Self.facts([4101, 4102, 4103, 4110])
@@ -1118,16 +1129,19 @@ import Testing
         #expect(yours.steps.map(\.ref) == [Self.pr(4103), Self.pr(4110)])
         #expect(try Self.step(4103, in: yours).notes == [.moved(from: .plan(planID), t(60))])
 
-        orders = try tell([(4101, []), (4102, [4101]), (4103, [4102])], replacing: orders, at: 180)
+        let again = try tell([(4101, []), (4102, [4101]), (4103, [4102])], replacing: orders, at: 180)
+        #expect(changes[Self.pr(4103)]?.holds(in: again) == true)
+        orders = try tell([(4101, []), (4102, [4101]), (4103, [4101])], replacing: orders, at: 180)
         #expect(changes[Self.pr(4103)]?.holds(in: orders) == false)
         missions = Self.missions(facts, orders, changes)
         let back = try Self.step(4103, in: Self.mission(.plan(planID), in: missions))
-        #expect(back.notes == [.orderChangedIt(OrderOverride(by: Self.session, at: t(180), now: .after([Self.pr(4102)]), yours: .moved))])
+        #expect(back.notes == [.orderChangedIt(OrderOverride(by: Self.session, at: t(180), now: .after([Self.pr(4101)]), yours: .moved))])
     }
 
     /// A session that takes a pull request you moved into its mission into its order agrees with you, whatever it puts it
     /// after there, and so do its later revisions of that, which you didn't change: the order you moved it out of, which
-    /// still names it, doesn't get it back. Taking it out of the order you moved it to goes against yours.
+    /// still names it, doesn't get it back, nor does it once that session takes it out again, as it was when you moved it.
+    /// Another order naming it goes against yours.
     @Test func aSessionThatTakesInWhatYouMovedIntoItsMissionAgreesWithYou() throws {
         var orders = try tell([(4101, []), (4102, [4101])])
         orders = try tell([(4111, []), (4112, [4111])], replacing: orders, id: otherID, at: 10)
@@ -1154,9 +1168,14 @@ import Testing
         #expect(try Self.mission(.plan(planID), in: missions).steps.map(\.ref) == [Self.pr(4101)])
 
         orders = try tell([(4111, []), (4112, [4111])], replacing: orders, id: otherID, at: 240)
-        #expect(changes[Self.pr(4102)]?.holds(in: orders) == false)
+        #expect(changes[Self.pr(4102)]?.holds(in: orders) == true)
         missions = Self.missions(facts, orders, changes)
-        #expect(try Self.mission(.plan(planID), in: missions).steps.map(\.ref) == [Self.pr(4101), Self.pr(4102)])
+        #expect(try Self.mission(.plan(planID), in: missions).steps.map(\.ref) == [Self.pr(4101)])
+        #expect(try Self.mission(.plan(otherID), in: missions).contains(Self.pr(4102)))
+
+        let thirdID = UUID(uuidString: "33333333-4444-4555-8666-777777777777")!
+        let named = try tell([(4120, []), (4102, [4120])], replacing: orders, id: thirdID, at: 300)
+        #expect(changes[Self.pr(4102)]?.holds(in: named) == false)
     }
 
     /// A session that names one you set as next beside its order, stacked with its own, agrees with you while it puts it
@@ -1181,7 +1200,8 @@ import Testing
     }
 
     /// A session that puts a pull request after what you did, or puts the one you set as next after nothing, agrees with
-    /// you; once BriefBar saw that, putting the one you set as next after another again goes against yours.
+    /// you; once BriefBar saw that, putting the one you set as next after another goes against yours, though telling the
+    /// order again as it was when you set it changes nothing.
     @Test func aSessionThatOrdersItAsYouDidAgreesWithYou() throws {
         var orders = try tell([(4101, []), (4102, [4101]), (4103, [4101])])
         let facts = Self.facts([4101, 4102, 4103])
@@ -1197,8 +1217,105 @@ import Testing
         let noted = changes.noteOverrides(in: orders, now: t(120))
         #expect(noted && changes[Self.pr(4102)]?.replaced == OrderPlace(orders: [planID: []]))
 
-        orders = try tell([(4101, []), (4102, [4101]), (4103, [4101, 4102])], replacing: orders, at: 180)
+        let again = try tell([(4101, []), (4102, [4101]), (4103, [4101, 4102])], replacing: orders, at: 180)
+        #expect(changes[Self.pr(4102)]?.holds(in: again) == true && changes[Self.pr(4103)]?.holds(in: again) == true)
+        orders = try tell([(4101, []), (4104, []), (4102, [4104]), (4103, [4101, 4102])], replacing: orders, at: 180)
         #expect(changes[Self.pr(4102)]?.holds(in: orders) == false && changes[Self.pr(4103)]?.holds(in: orders) == true)
+    }
+
+    /// A session that tells its first order of the pull requests it opened, as you'd ordered them among them, agrees with
+    /// you: what you set there goes over to its order, and holds. One that puts the one you set as next after another goes
+    /// against yours, and Put Yours Back makes it next in that order.
+    @Test func aSessionsFirstOrderOfItsPullRequestsAsYouOrderedThemAgreesWithYou() throws {
+        let opener = ItemRef.session("7a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9")!
+        let facts = Self.facts([4110, 4111, 4112], sessions: [
+            OrderSession(ref: opener, pullRequests: [Self.pr(4110), Self.pr(4111), Self.pr(4112)]),
+        ])
+        let none = DeclaredOrders()
+        var changes = OrderChanges()
+        try changes.apply(.setNext(Self.pr(4111), in: .family(opener), true), missions: Self.missions(facts, none, changes), orders: none, now: t(60))
+        try changes.apply(
+            .mergeAfter(Self.pr(4112), Self.pr(4111), in: .family(opener), true), missions: Self.missions(facts, none, changes),
+            orders: none, now: t(70)
+        )
+        var against = changes
+
+        let orders = try tell([(4111, []), (4110, [4111]), (4112, [4111])], at: 120)
+        #expect(changes[Self.pr(4111)]?.holds(in: orders) == true && changes[Self.pr(4112)]?.holds(in: orders) == true)
+        let noted = changes.noteOverrides(in: orders, now: t(120))
+        #expect(noted)
+        #expect(changes[Self.pr(4111)]?.first == .plan(planID) && changes[Self.pr(4112)]?.from == .plan(planID))
+        let mission = try Self.mission(.plan(planID), in: Self.missions(facts, orders, changes))
+        let next = try Self.step(4111, in: mission)
+        #expect(next.standing == .next && next.isChangedByYou && next.notes == [.yourNext(t(60))])
+        #expect(try Self.step(4112, in: mission).notes == [.yourAfter([Self.pr(4111)], t(70))])
+
+        let other = try tell([(4110, []), (4111, [4110]), (4112, [4111])], at: 120)
+        #expect(against[Self.pr(4111)]?.holds(in: other) == false)
+        let overridden = against.noteOverrides(in: other, now: t(120))
+        #expect(overridden)
+        try against.apply(.putBack(Self.pr(4111)), missions: Self.missions(facts, other, against), orders: other, now: t(180))
+        #expect(against[Self.pr(4111)]?.first == .plan(planID) && against[Self.pr(4111)]?.holds(in: other) == true)
+        #expect(try Self.step(4111, in: Self.mission(.plan(planID), in: Self.missions(facts, other, against))).standing == .next)
+    }
+
+    /// The same in a chain: what you set among its pull requests, as next or after another of its own, goes over to the first
+    /// order that names them as you ordered them, and holds. One that puts the one you set as next after another goes against
+    /// yours, and Put Yours Back makes it next in that order.
+    @Test func anOrdersFirstOrderOfAChainAsYouOrderedItAgreesWithYou() throws {
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a"), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            OrderBoardTests.ado(4103, from: "users/robin/c", into: "users/robin/a"), Self.ado(4110),
+        ])
+        let none = DeclaredOrders()
+        let chain = MissionKey.chain(Self.pr(4101))
+        var changes = OrderChanges()
+        #expect(try Self.mission(chain, in: Self.missions(facts, none, changes)).steps.count == 3)
+        try changes.apply(.setNext(Self.pr(4101), in: chain, true), missions: Self.missions(facts, none, changes), orders: none, now: t(60))
+        try changes.apply(
+            .mergeAfter(Self.pr(4103), Self.pr(4102), in: chain, true), missions: Self.missions(facts, none, changes), orders: none,
+            now: t(70)
+        )
+        #expect(changes[Self.pr(4101)]?.placement == nil && changes[Self.pr(4103)]?.placement == nil)
+        var against = changes
+
+        let orders = try tell([(4101, []), (4102, [4101]), (4103, [4102])], at: 120)
+        #expect(changes[Self.pr(4101)]?.holds(in: orders) == true && changes[Self.pr(4103)]?.holds(in: orders) == true)
+        let noted = changes.noteOverrides(in: orders, now: t(120))
+        #expect(noted)
+        #expect(changes[Self.pr(4101)]?.first == .plan(planID) && changes[Self.pr(4103)]?.from == .plan(planID))
+        let mission = try Self.mission(.plan(planID), in: Self.missions(facts, orders, changes))
+        let next = try Self.step(4101, in: mission)
+        #expect(next.standing == .next && next.isChangedByYou && next.notes.contains(.yourNext(t(60))))
+        #expect(try Self.step(4103, in: mission).notes.contains(.yourAfter([Self.pr(4102)], t(70))))
+
+        let other = try tell([(4110, []), (4101, [4110]), (4102, [4101]), (4103, [4102])], at: 120)
+        #expect(against[Self.pr(4101)]?.holds(in: other) == false)
+        let overridden = against.noteOverrides(in: other, now: t(120))
+        #expect(overridden)
+        try against.apply(.putBack(Self.pr(4101)), missions: Self.missions(facts, other, against), orders: other, now: t(180))
+        #expect(against[Self.pr(4101)]?.first == .plan(planID) && against[Self.pr(4101)]?.holds(in: other) == true)
+        #expect(try Self.step(4101, in: Self.mission(.plan(planID), in: Self.missions(facts, other, against))).standing == .next)
+    }
+
+    /// A revision its session told before your change, which BriefBar sees only after, is what yours replaced, not an order
+    /// that went against it: yours is later. The same, told after your change, goes against it.
+    @Test func aRevisionToldBeforeYourChangeIsWhatItReplaced() throws {
+        let orders = try tell([(4101, []), (4102, []), (4103, [4102])])
+        let facts = Self.facts([4101, 4102, 4103])
+        var changes = OrderChanges()
+        try changes.apply(.setNext(Self.pr(4103), in: .plan(planID), true), missions: Self.missions(facts, orders, changes), orders: orders, now: t(60))
+        let fresh = changes
+
+        let earlier = try tell([(4101, []), (4102, []), (4103, [4101, 4102])], replacing: orders, at: 50)
+        #expect(changes[Self.pr(4103)]?.holds(in: earlier) == true)
+        let noted = changes.noteOverrides(in: earlier, now: t(120))
+        #expect(noted)
+        #expect(changes[Self.pr(4103)]?.overridden == nil)
+        #expect(changes[Self.pr(4103)]?.found == OrderPlace(orders: [planID: [Self.pr(4101), Self.pr(4102)]]))
+
+        let later = try tell([(4101, []), (4102, []), (4103, [4101, 4102])], replacing: orders, at: 90)
+        #expect(fresh[Self.pr(4103)]?.holds(in: later) == false)
     }
 
     /// An order that went against yours, forgotten since, is no change: yours holds again, and BriefBar notes that.

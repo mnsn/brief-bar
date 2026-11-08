@@ -646,6 +646,33 @@ private final class Clock {
         order.change(.setNext(Self.ref(4102), in: other, true))
 
         #expect(order.lastChange?.mission == other && order.lastChange?.canUndo == true)
+
+        // A Move's shows in the card you moved it from, where you are, not in the one it went to, which can be out of sight.
+        order.change(.move([Self.ref(4103)], to: .into(.mine(UUID())), from: .plan(otherID)))
+        #expect(order.lastChange?.mission == .plan(otherID) && order.lastChange?.canUndo == true)
+    }
+
+    /// A change is made against the orders as agents last saved them, though BriefBar hasn't heard yet: what it replaced is
+    /// the latest, so it holds once BriefBar hears.
+    @Test func aChangeIsMadeAgainstTheOrdersAsAgentsLastSavedThem() throws {
+        let defaults = try Self.defaults(on: true)
+        let clock = Clock()
+        let order = Self.service(defaults, clock: clock)
+        order.publish(.azureDevOps, pullRequests: [4101, 4102, 4103].map { Self.ado($0, from: "robin/part-\($0)") })
+        var saved = DeclaredOrders.load(from: defaults)
+        try saved.apply(
+            OrderRequest(
+                plan: Self.planID.uuidString, revision: saved.plan(Self.planID)?.revision,
+                entries: [.init(link: Self.link(4101)), .init(link: Self.link(4103)), .init(link: Self.link(4102), after: ["4101", "4103"])]
+            ),
+            now: clock.now.addingTimeInterval(-1), newID: Self.planID
+        )
+        saved.save(to: defaults)
+
+        order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true))
+        #expect(order.changes[Self.ref(4102)]?.replaced == OrderPlace(orders: [Self.planID: [Self.ref(4101), Self.ref(4103)]]))
+        order.reloadOrders()
+        #expect(order.changes[Self.ref(4102)]?.holds(in: order.orders) == true)
     }
 
     /// What BriefBar saw become of a pull request goes with the changes it's kept for: to memory once it's listed only

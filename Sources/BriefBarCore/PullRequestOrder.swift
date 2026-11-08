@@ -451,6 +451,15 @@ public enum MissionKey: Hashable, Sendable, CustomStringConvertible {
     /// A mission of your own, made with Move to Mission ▸ New Mission (`OrderChanges`).
     case mine(UUID)
 
+    /// One BriefBar works out, from what it sees: a stack, a chain or a session's pull requests. Not an order, nor one of
+    /// yours.
+    public var isWorkedOut: Bool {
+        switch self {
+        case .stack, .chain, .family: true
+        case .plan, .mine: false
+        }
+    }
+
     /// `plan/<id>`, `stack/octo/storefront/41`, `chain/pullRequest/contoso/4101`, `family/session//<id>`, `mine/<id>`: what
     /// the preferences keep.
     public var description: String {

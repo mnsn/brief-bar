@@ -89,15 +89,20 @@ public struct OrderChange: Equatable, Sendable {
     public var from: MissionKey?
     /// When you last changed it, or put it back.
     public var changedAt: Date
-    /// Where its orders put it then: what your change replaced.
+    /// Where its orders put it then, or since, as they moved it toward yours: what an order's next change is told from.
     public var replaced: OrderPlace
+    /// Where its orders put it when you changed it, or put it back, or before, as BriefBar saw it since: an order that puts
+    /// it back there changed nothing, whatever it said between, as BriefBar can't tell that from a session telling again
+    /// what it read before.
+    public var found: OrderPlace
     /// The order that went against it since, as BriefBar saw it: yours doesn't hold from then on, though that order puts it
     /// back where it was, until you put yours back, or BriefBar forgets that order.
     public var overridden: Overridden?
 
     public init(
         ref: ItemRef, first: MissionKey? = nil, after: [ItemRef] = [], notAfter: [ItemRef] = [], placement: OrderPlacement? = nil,
-        from: MissionKey? = nil, changedAt: Date, replaced: OrderPlace = OrderPlace(), overridden: Overridden? = nil
+        from: MissionKey? = nil, changedAt: Date, replaced: OrderPlace = OrderPlace(), found: OrderPlace? = nil,
+        overridden: Overridden? = nil
     ) {
         self.ref = ref
         self.first = first
@@ -107,6 +112,7 @@ public struct OrderChange: Equatable, Sendable {
         self.from = from
         self.changedAt = changedAt
         self.replaced = replaced
+        self.found = found ?? replaced
         self.overridden = overridden
     }
 
@@ -139,8 +145,10 @@ public struct OrderChange: Equatable, Sendable {
 
     /// Whether it holds: no order BriefBar still keeps went against it since, as BriefBar saw it (`changedBy`). One that did
     /// changed its place after you did: it shows instead, until you put yours back. Telling the same order again, in another
-    /// sequence or with other review advice, changes nothing; nor does an order that moved it toward yours, or changed what
-    /// you didn't; and an order forgotten since is no change, nor is its having gone against yours.
+    /// sequence or with other review advice, changes nothing, nor does telling it again as it was when you changed it,
+    /// whatever it said between; nor does an order that moved it toward yours, or changed what you didn't, or a revision its
+    /// session told before your change, which BriefBar saw only after; and an order forgotten since is no change, nor is its
+    /// having gone against yours.
     public func holds(in orders: DeclaredOrders) -> Bool {
         !isOverridden(in: orders) && changedBy(in: orders).isEmpty
     }
@@ -151,39 +159,60 @@ public struct OrderChange: Equatable, Sendable {
     }
 
     /// The orders that went against yours since you changed it, by what they say of it now and what they said then, the
-    /// latest first (`goesAgainst`).
+    /// latest first (`goesAgainst`): only a revision told after your change, and not one that puts it back where it was then.
     public func changedBy(in orders: DeclaredOrders) -> [OrderPlan] {
         orders.plans.filter { plan in
             let then = replaced.orders[plan.id]
             let now = plan.entry(for: ref).map { Set($0.after) }
-            return then != now && goesAgainst(from: then, to: now, in: plan.id)
+            return plan.updatedAt > changedAt && then != now && now != found.orders[plan.id]
+                && goesAgainst(from: then, to: now, in: plan.id)
         }.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     /// Whether an order changing what it says of the pull request, from what it put it after then to what it does now, nil
-    /// where it doesn't name it, goes against yours: it names it in another mission than the one you moved it to, or out of
-    /// a stack, chain or session's pull requests you changed it in, which that takes it out of; it takes it out of the order
-    /// you moved it to, set it as next in or put it after another in; or it puts it after what you took away, or after
-    /// anything in the order you set it as next in. One that moves it toward yours doesn't: taking it out of an order you
-    /// moved it out of, naming it in the one you moved it to, putting it after what you did, or no longer after what you
-    /// took away or anything where you set it as next. Nor does one of what you didn't change.
+    /// where it doesn't name it, goes against yours: it names it in another mission than the one you moved it to; it takes
+    /// it out of the order you moved it to, set it as next in or put it after another in; or it puts it after what you took
+    /// away, or after anything in the order you set it as next in, or in the stack, chain or session's pull requests you
+    /// set it as next in, which naming it takes it out of. One that moves it toward yours doesn't: taking it out of an order
+    /// you moved it out of, naming it in the one you moved it to, or where you changed it in a stack, chain or session's pull
+    /// requests, as you did, putting it after what you did, or no longer after what you took away or anything where you set
+    /// it as next. Nor does one of what you didn't change.
     func goesAgainst(from then: Set<ItemRef>?, to now: Set<ItemRef>?, in id: UUID) -> Bool {
         let key = MissionKey.plan(id)
         guard let now else {
             if let placement { return placement == .into(key) }
             return (first ?? from) == key
         }
+        // Where you set it as next, as this order has it: in a mission BriefBar worked out that its naming it takes it out
+        // of, as for an order you moved it into.
+        var isNextHere = first == key
         if then == nil {
             if let placement, placement != .into(key) { return true }
-            if placement == nil, let changedIn = first ?? from {
-                switch changedIn {
-                case .plan, .mine: break
-                case .stack, .chain, .family: return true
-                }
-            }
+            if placement == nil, let changedIn = first ?? from, changedIn.isWorkedOut { isNextHere = isFirst }
         }
         let added = now.subtracting(then ?? [])
-        return !added.isEmpty && (first == key || !added.isDisjoint(with: notAfter))
+        return !added.isEmpty && (isNextHere || !added.isDisjoint(with: notAfter))
+    }
+
+    /// What you set in a mission BriefBar worked out, a stack, a chain or a session's pull requests, goes over to an order
+    /// that names it since it was there, as it took it out of there: Set as Next to Merge and Merge After are that order's
+    /// now, and Put Yours Back puts it back there.
+    mutating func follow(into orders: DeclaredOrders) {
+        guard placement == nil, (first ?? from)?.isWorkedOut == true,
+              let plan = orders.plans.first(where: { replaced.orders[$0.id] == nil && $0.entry(for: ref) != nil })
+        else { return }
+        if first?.isWorkedOut == true { first = .plan(plan.id) }
+        if from?.isWorkedOut == true { from = .plan(plan.id) }
+    }
+
+    /// A revision of an order its session told before you changed it, which BriefBar sees only now, is what your change
+    /// replaced: yours is later.
+    mutating func rebase(on orders: DeclaredOrders) {
+        for plan in orders.plans where plan.updatedAt <= changedAt {
+            let place = plan.entry(for: ref).map { Set($0.after) }
+            replaced.orders[plan.id] = place
+            found.orders[plan.id] = place
+        }
     }
 
     /// Whether it would still change anything over where its orders put it now: not one that only took away what they no
@@ -387,6 +416,7 @@ public struct OrderChanges: Equatable, Sendable {
             if isForgotten(change.from) { change.from = nil }
             if isForgotten(change.first) { change.first = nil }
             change.replaced.orders = change.replaced.orders.mapValues { $0.filter { !kinds.contains($0.kind) } }
+            change.found.orders = change.found.orders.mapValues { $0.filter { !kinds.contains($0.kind) } }
             if !change.isEmpty { kept[ref] = change }
         }
         changes = kept
@@ -476,9 +506,11 @@ public struct OrderChanges: Equatable, Sendable {
 
     /// Notes what the orders did to each change since BriefBar last looked: one that went against it overrides it from then
     /// on, though that order puts it back where it was, until you put yours back (`OrderChange.overridden`); one that moved
-    /// it toward yours, or changed what you didn't, becomes what yours replaced, for what it does next to be told from; and
-    /// an override by an order BriefBar forgot since is no more, so that yours holds again. Telling the same order again
-    /// notes nothing. True when that noted something.
+    /// it toward yours, or changed what you didn't, becomes what yours replaced, for what it does next to be told from, and
+    /// one that took it out of a stack, chain or session's pull requests you changed it in, agreeing, gets what you set
+    /// there (`OrderChange.follow`); a revision told before your change, which BriefBar sees only now, is what yours
+    /// replaced; and an override by an order BriefBar forgot since is no more, so that yours holds again. Telling the same
+    /// order again notes nothing. True when that noted something.
     /// - Parameter now: when BriefBar saw it, for an order whose last change it can't tell.
     @discardableResult
     public mutating func noteOverrides(in orders: DeclaredOrders, now: Date = Date()) -> Bool {
@@ -489,9 +521,11 @@ public struct OrderChanges: Equatable, Sendable {
                 guard orders.plan(overridden.by) == nil else { continue }
                 change.overridden = nil
             }
+            change.rebase(on: orders)
             if let plan = change.changedBy(in: orders).first {
                 change.overridden = OrderChange.Overridden(by: plan.id, at: min(plan.updatedAt, now))
             } else if orders.plans.contains(where: { change.replaced.orders[$0.id] != $0.entry(for: ref).map { Set($0.after) } }) {
+                change.follow(into: orders)
                 change.replaced = OrderPlace(of: ref, in: orders)
             }
             if change != before {
@@ -541,11 +575,13 @@ private struct ChangeRecord: Codable {
     var from: String?
     var changedAt: Date
     var replaced: [Replaced]?
+    /// Where its orders put it when you changed it, when that's not what it replaced since; nil when it is.
+    var found: [Replaced]?
     var overriddenBy: UUID?
     var overriddenAt: Date?
 
     private enum CodingKeys: String, CodingKey {
-        case pullRequest, first, after, notAfter, placed, from, changedAt, replaced, overriddenBy, overriddenAt
+        case pullRequest, first, after, notAfter, placed, from, changedAt, replaced, found, overriddenBy, overriddenAt
     }
 
     init(_ change: OrderChange) {
@@ -556,8 +592,8 @@ private struct ChangeRecord: Codable {
         placed = change.placement?.description
         from = change.from?.description
         changedAt = change.changedAt
-        let orders = change.replaced.orders.sorted { $0.key.uuidString < $1.key.uuidString }
-        replaced = orders.isEmpty ? nil : orders.map { Replaced(order: $0.key, after: $0.value.sorted()) }
+        replaced = Self.records(change.replaced)
+        found = change.found == change.replaced ? nil : Self.records(change.found) ?? []
         overriddenBy = change.overridden?.by
         overriddenAt = change.overridden?.at
     }
@@ -572,8 +608,14 @@ private struct ChangeRecord: Codable {
         placed = try? container.decodeIfPresent(String.self, forKey: .placed)
         from = try? container.decodeIfPresent(String.self, forKey: .from)
         replaced = (try? container.decodeIfPresent([ReplacedLossy].self, forKey: .replaced))?.compactMap(\.value)
+        found = (try? container.decodeIfPresent([ReplacedLossy].self, forKey: .found))?.compactMap(\.value)
         overriddenBy = try? container.decodeIfPresent(UUID.self, forKey: .overriddenBy)
         overriddenAt = try? container.decodeIfPresent(Date.self, forKey: .overriddenAt)
+    }
+
+    private static func records(_ place: OrderPlace) -> [Replaced]? {
+        let orders = place.orders.sorted { $0.key.uuidString < $1.key.uuidString }
+        return orders.isEmpty ? nil : orders.map { Replaced(order: $0.key, after: $0.value.sorted()) }
     }
 
     private static func refs(_ container: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> [ItemRef]? {
@@ -592,15 +634,19 @@ private struct ChangeRecord: Codable {
             return kept
         }
         let after = refs(after)
-        var orders: [UUID: Set<ItemRef>] = [:]
-        for record in replaced ?? [] where orders[record.order] == nil {
-            orders[record.order] = Set(record.after.filter { $0.kind.isPullRequest && $0 != pullRequest })
+        func place(_ records: [Replaced]) -> OrderPlace {
+            var orders: [UUID: Set<ItemRef>] = [:]
+            for record in records where orders[record.order] == nil {
+                orders[record.order] = Set(record.after.filter { $0.kind.isPullRequest && $0 != pullRequest })
+            }
+            return OrderPlace(orders: orders)
         }
         let overridden = overriddenBy.map { OrderChange.Overridden(by: $0, at: overriddenAt ?? changedAt) }
         let change = OrderChange(
             ref: pullRequest, first: first.flatMap(MissionKey.init), after: after,
             notAfter: refs(notAfter).filter { !after.contains($0) }, placement: placed.flatMap(OrderPlacement.init),
-            from: from.flatMap(MissionKey.init), changedAt: changedAt, replaced: OrderPlace(orders: orders), overridden: overridden
+            from: from.flatMap(MissionKey.init), changedAt: changedAt, replaced: place(replaced ?? []), found: found.map(place),
+            overridden: overridden
         )
         return change.isEmpty ? nil : change
     }
@@ -685,6 +731,7 @@ extension OrderChanges {
             if stamped {
                 change.changedAt = now
                 change.replaced = OrderPlace(of: change.ref, in: orders)
+                change.found = change.replaced
                 change.overridden = nil
             }
             try edited.set(change)
@@ -787,6 +834,8 @@ extension OrderChanges {
 
         case .putBack(let ref):
             guard var change = edited.changes[ref] else { break }
+            // What you set in a mission BriefBar worked out, which an order took it out of, is that order's.
+            change.follow(into: orders)
             // Back in the mission you set it as next or put it after another in, where its order no longer has it, even when
             // nothing's left there to show it but this one.
             if change.placement == nil, let key = change.first ?? change.from {

@@ -42,7 +42,14 @@ package struct MissionMenuContext {
     package func change(_ edit: OrderEdit) {
         guard let done = order.change(edit) else { return }
         let place = switch undo {
-        case .byMission: done.mission == nil ? "at the top of the list" : "in its mission"
+        case .byMission:
+            if done.mission == nil {
+                "at the top of the list"
+            } else if case .move(_, _, let from) = edit, from == done.mission {
+                "in the mission you moved it from"
+            } else {
+                "in its mission"
+            }
         case .top: "at the top of the list"
         case .details: "beside it"
         }

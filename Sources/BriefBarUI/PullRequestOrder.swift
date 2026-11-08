@@ -387,6 +387,9 @@ package final class PullRequestOrder: ObservableObject {
     @discardableResult
     package func change(_ edit: OrderEdit) -> OrderLastChange? {
         guard isOn else { return nil }
+        // Against the orders as agents last told them, though BriefBar hasn't heard yet: a revision told before your change
+        // is what it replaced, not one that goes against it.
+        reloadOrders()
         let before = Set(missions.map(\.key))
         var changed = changes
         let touched: [ItemRef: OrderChange?]
@@ -447,19 +450,18 @@ package final class PullRequestOrder: ObservableObject {
         [refusal, lastChange].compactMap { $0 }
     }
 
-    /// The mission whose card shows what an edit did: the one you changed it in, else where its pull request is now, else
-    /// where it was.
+    /// The mission whose card shows what an edit did: where you made it, the one you changed it in or moved it from, so
+    /// that Undo is where you are, else where its pull request is now.
     private func cardMission(for edit: OrderEdit) -> MissionKey? {
         switch edit {
         case .undoMission(let key):
             return missions.contains { $0.key == key } ? key : nil
-        case .setNext(_, let key, _), .mergeAfter(_, _, let key, _):
+        case .setNext(_, let key, _), .mergeAfter(_, _, let key, _), .move(_, _, let key?):
             if missions.contains(where: { $0.key == key }) { return key }
         case .move, .undo, .putBack:
             break
         }
         if let ref = edit.refs.first, let mission = OrderBoard.mission(of: ref, in: missions) { return mission.key }
-        if case .move(_, _, let from?) = edit, missions.contains(where: { $0.key == from }) { return from }
         return nil
     }
 
