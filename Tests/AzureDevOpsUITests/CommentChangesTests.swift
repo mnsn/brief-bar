@@ -315,6 +315,37 @@ import Testing
         #expect(changes.changedSince(started.base, now: theirs, editing: "Capped it at 30 seconds.", on: threadKey))
     }
 
+    /// An edit that may have gone, checked by reading its thread again, finds the comment as you began; but a refresh that
+    /// came while it was read brought it edited elsewhere: nothing goes, which would replace what BriefBar has read unseen,
+    /// and the list keeps what the refresh brought.
+    @Test func anEditCheckedWhileARefreshBroughtAnotherVersionSendsNothing() async throws {
+        let (store, changes, azure, _) = live()
+        let record = try #require(store.record(for: key))
+        let (mine, _) = try comments(store)
+        let started = changes.startEditing(mine, in: try thread(store), of: record.pullRequest)
+        azure.fails = .network(ADOClient.unansweredMessage)
+        #expect(await changes.edit("Capped it.", from: started.base, of: mine, in: try thread(store), of: key) == false)
+        azure.fails = nil
+
+        let elsewhere = "Capped it at a minute."
+        var snapshot = DemoData.snapshot(now: store.now)
+        let index = try #require(snapshot.records.firstIndex { $0.id == key })
+        let at = try #require(snapshot.records[index].details?.threads.firstIndex { $0.id == 11 })
+        let comment = try #require(snapshot.records[index].details?.threads[at].comments.firstIndex { $0.id == mine.id })
+        snapshot.records[index].details?.threads[at].comments[comment].text = elsewhere
+        snapshot.records[index].details?.threads[at].comments[comment].markdown = elsewhere
+        let refreshed = snapshot, read = [try thread(store)]
+        changes.readThreads = { _ in
+            store.receive(refreshed)
+            return read
+        }
+        #expect(await changes.edit("Capped it.", from: started.base, of: mine, in: try thread(store), of: key) == false)
+        #expect(azure.sent.count == 1)
+        #expect(try comments(store).mine.markdown == elsewhere)
+        #expect(changes.changedSince(started.base, now: try comments(store).mine, editing: "Capped it.",
+                                     on: ThreadChanges.Key(pullRequest: key, thread: 11)))
+    }
+
     /// An edit that may have gone, checked by reading its thread again, finds the comment says something else, which you
     /// haven't seen: nothing goes, and it shows what the thread has, for your edit to say what it says now.
     @Test func anEditCheckedAfterTheCommentChangedElsewhereSendsNothing() async throws {

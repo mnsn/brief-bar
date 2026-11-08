@@ -432,8 +432,7 @@ struct ThreadReplyComposer: View {
             header
             editor
             if let changedSince {
-                CommentChangedNotice(now: changedSince, isSending: isSending, startOver: startOver) {
-                    replacing = changedSince.kept
+                CommentChangedNotice(now: changedSince, isSending: isSending, canSave: canSend, startOver: startOver) {
                     save(replacing: changedSince.kept)
                 }
             }
@@ -483,7 +482,9 @@ struct ThreadReplyComposer: View {
         .onAppear(perform: appear)
         // VoiceOver hears it as it changes, as when a refresh brings what someone saved meanwhile.
         .onChange(of: changedSince?.kept) { old, now in
-            if now != nil, old == nil { SpokenText.announce(ThreadChanges.changedSentence + " " + ThreadChanges.changedChoices) }
+            if Self.announcesChange(from: old, to: now) {
+                SpokenText.announce(ThreadChanges.changedSentence + " " + ThreadChanges.changedChoices)
+            }
         }
         // Fix Grammar is this reply's own: it stops as the reply closes. What it sends isn't: a reply you sent goes on.
         // Off screen, as a file's page scrolls it away while keeping what it holds: Fix Grammar stops, and nothing waits on it
@@ -498,6 +499,13 @@ struct ThreadReplyComposer: View {
 
     /// The composer, for the details to scroll to as it opens: one is open at a time.
     static let scrollID = "thread-reply-composer"
+
+    /// Whether VoiceOver hears that the comment you edit changed since you began, as what it says now goes from `old` to
+    /// `now` (`changedSince`): as your edit first says so, and each time it says something else again, which Save Anyway
+    /// would replace then; not as your edit stops saying so.
+    static func announcesChange(from old: String?, to now: String?) -> Bool {
+        now != nil && now != old
+    }
 
     private func appear() {
         guard !hasAppeared else { return }
@@ -724,17 +732,19 @@ struct ThreadReplyComposer: View {
     }
 
     /// Saves your comment as you edited it, its names as the mentions they showed as you began; in place of what it says now,
-    /// once you chose Save Anyway, only while it says what it did then.
+    /// once you chose Save Anyway (`chosen`), only while it says what it did then. That choice counts only once your edit can
+    /// be saved: otherwise, nothing changes, and the notice stays.
     private func save(replacing chosen: String? = nil) {
         guard canSend, let editing, let editBase else {
             NSSound.beep()
             return
         }
-        let markdown = text, replacing = chosen ?? replacing
+        if let chosen { replacing = chosen }
+        let markdown = text, accepted = replacing
         hold(thread)
         changes.dismiss(key)
         Task {
-            guard await changes.edit(markdown, from: editBase, replacing: replacing, of: editing.comment, in: thread.thread, of: item.key)
+            guard await changes.edit(markdown, from: editBase, replacing: accepted, of: editing.comment, in: thread.thread, of: item.key)
             else { return }
             close()
         }

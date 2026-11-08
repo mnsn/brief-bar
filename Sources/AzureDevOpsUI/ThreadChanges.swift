@@ -440,7 +440,8 @@ final class ThreadChanges: ObservableObject {
     /// begun before the comment changed, as in Azure DevOps or in another window, which you haven't seen (`changedSince`),
     /// unless it's what you chose to replace (`accepted`, Save Anyway). After one that may have gone, as one Azure DevOps
     /// didn't answer in time, the same edit goes only once the thread, read again first, says the comment doesn't say it,
-    /// nor something else you haven't seen. Called off, it settles as a reply does (`reply(_:then:to:of:)`).
+    /// nor something else you haven't seen, and nor does the list, as when a refresh brought something else meanwhile.
+    /// Called off, it settles as a reply does (`reply(_:then:to:of:)`).
     @discardableResult
     func edit(
         _ text: String, from base: CommentEditing? = nil, replacing accepted: String? = nil, of comment: ReviewComment,
@@ -499,6 +500,14 @@ final class ThreadChanges: ObservableObject {
             // over what the list showed, for your edit to say what it says now.
             if changedSince(base, now: read, editing: text, replacing: accepted, on: key) {
                 store.changed(pullRequest, by: ThreadChange(thread: thread.id, edited: [read]))
+                SpokenText.announce(Self.changedSentence + " Your edit wasn't saved. " + Self.changedChoices)
+                return false
+            }
+            // Nor once the list has something else since you began, as a refresh brought meanwhile, though the thread, read
+            // before it, didn't: it shows already.
+            if let latest = store.record(for: pullRequest)?.details?.threads.first(where: { $0.id == thread.id })?
+                .comments.first(where: { $0.id == comment.id }),
+                changedSince(base, now: latest, editing: text, replacing: accepted, on: key) {
                 SpokenText.announce(Self.changedSentence + " Your edit wasn't saved. " + Self.changedChoices)
                 return false
             }

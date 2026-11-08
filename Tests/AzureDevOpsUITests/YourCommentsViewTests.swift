@@ -400,6 +400,16 @@ import Testing
         window.contentView = nil
     }
 
+    /// VoiceOver hears that the comment you edit changed since you began as your edit first says so, and again each time it
+    /// says something else, which Save Anyway would replace then; not as it stops saying so, nor while it says the same.
+    @Test func voiceOverHearsEachVersionYourEditSaysChanged() {
+        #expect(ThreadReplyComposer.announcesChange(from: nil, to: "A minute."))
+        #expect(ThreadReplyComposer.announcesChange(from: "A minute.", to: "Two minutes."))
+        #expect(!ThreadReplyComposer.announcesChange(from: "A minute.", to: "A minute."))
+        #expect(!ThreadReplyComposer.announcesChange(from: "A minute.", to: nil))
+        #expect(!ThreadReplyComposer.announcesChange(from: nil, to: nil))
+    }
+
     // MARK: Spell checking
 
     /// Your edit is spell checked as you type, and nothing corrects, replaces or substitutes what you write by itself, nor

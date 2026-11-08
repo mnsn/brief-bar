@@ -88,6 +88,8 @@ struct CommentChangedNotice: View {
     let now: ReviewComment
     /// Your edit is on its way.
     let isSending: Bool
+    /// Your edit can be saved now: it says something, and isn't on its way, nor being fixed.
+    let canSave: Bool
     let startOver: () -> Void
     let saveAnyway: () -> Void
 
@@ -133,12 +135,13 @@ struct CommentChangedNotice: View {
                 Button(action: startOver) { ControlLabel("Start Over") }
                     .buttonStyle(.bordered)
                     .help("Put what your comment says now in your edit, in place of what you wrote")
+                    .disabled(isSending)
                 Button(action: saveAnyway) { ControlLabel("Save Anyway") }
                     .buttonStyle(.bordered)
                     .help("Replace what your comment says now with your edit, in Azure DevOps, as you")
+                    .disabled(!canSave)
             }
             .controlSize(.small)
-            .disabled(isSending)
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
