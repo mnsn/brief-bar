@@ -94,7 +94,7 @@ import Testing
         #expect(Array(report.opened.keys) == [Self.pullRequest])
     }
 
-    @Test func dropsTheSessionsThatToldLongestAgo() {
+    @Test(.onTestThreads) func dropsTheSessionsThatToldLongestAgo() {
         let defaults = MemorySettings()
         for minute in 0..<SessionReports.mostSessions {
             let session = ItemRef.session(UUID().uuidString)!

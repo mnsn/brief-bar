@@ -126,7 +126,7 @@ import Testing
         #expect(past.isLinedUp ? changes == fewest : changes >= fewest)
     }
 
-    @Test func comparesLargeFilesWithAFewChangesQuickly() {
+    @Test(.onTestThreads) func comparesLargeFilesWithAFewChangesQuickly() {
         let old = (1...20_000).map { "line \($0) of a long file" }
         var new = old
         new[100] = "changed near the top"

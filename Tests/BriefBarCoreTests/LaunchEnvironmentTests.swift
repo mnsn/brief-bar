@@ -84,7 +84,7 @@ import Testing
 
     /// What BriefBar reads and writes in your home folder, it finds in `UserHome`: FileManager's home folder and its
     /// search paths follow `CFFIXED_USER_HOME`, and `~` in a path follows it too.
-    @Test func findsYourFilesOnlyInTheUserDatabasesHomeFolder() throws {
+    @Test(.onTestThreads) func findsYourFilesOnlyInTheUserDatabasesHomeFolder() throws {
         let homeFolder = /homeDirectoryForCurrentUser|NSHomeDirectory\(|userDomainMask|"~\//
         // The check itself: each of these would be caught.
         for sample in [
