@@ -337,19 +337,68 @@ public enum AppDatabase {
     /// `load`, with `afterClosedRead` run after each read of the database as the app closed it: for tests, the app opening
     /// or writing it as it's read.
     static func load(at url: URL, links: Bool, afterClosedRead: (() -> Void)?) throws -> DatabaseSnapshot {
+        try read(at: url, afterClosedRead: afterClosedRead) { try read($0, links: links) }
+    }
+
+    /// The running flag alone of the sessions that aren't archived (`turns(at:)`).
+    static let turnsQuery = "SELECT id, is_running FROM sessions WHERE archived_at IS NULL"
+
+    /// The running flag alone of every session, archived or not: for an app that doesn't record which are as BriefBar
+    /// reads it.
+    static let everyTurnQuery = "SELECT id, is_running FROM sessions"
+
+    /// Which sessions run a turn now, by the app's own flag, read alone: so that a change to anything else the session
+    /// list reads, which leaves `load` without the flag (`fallbackQuery`), leaves the flag to be read. Each session's ID,
+    /// and whether it runs one, nil where it doesn't say; of the sessions that aren't archived, or of every session when
+    /// the app doesn't record which are as BriefBar reads it. Nil when the app doesn't keep the flag as BriefBar reads it;
+    /// throws when the database can't be read, as `load` does.
+    public static func turns(at url: URL) throws -> [(id: String, isRunning: Bool?)]? {
+        try turns(at: url, afterClosedRead: nil)
+    }
+
+    /// `turns`, with `afterClosedRead` as `load` has it, for tests.
+    static func turns(at url: URL, afterClosedRead: (() -> Void)?) throws -> [(id: String, isRunning: Bool?)]? {
+        try read(at: url, afterClosedRead: afterClosedRead) { connection in
+            for sql in [turnsQuery, everyTurnQuery] {
+                do {
+                    return try connection.rows(sql) { row -> (id: String, isRunning: Bool?) in
+                        (id: row.string(0) ?? "", isRunning: row.isNull(1) ? nil : row.bool(1))
+                    }.filter { !$0.id.isEmpty }
+                } catch let error as SQLiteError where error.primaryCode == SQLITE_ERROR {
+                    // No such table or column, as BriefBar reads them: the next query, if any.
+                    continue
+                }
+            }
+            return nil
+        }
+    }
+
+    /// What `body` reads of the database, read-only, with what SQLite says went wrong as an `AppDatabaseError`. While the app
+    /// has it closed, it's read as the app closed it, without locks (`readClosed`), with `afterClosedRead` run after each
+    /// such read; again while the app opens or writes it as it's read, up to `readAttempts` times.
+    private static func read<T>(at url: URL, afterClosedRead: (() -> Void)?, _ body: (SQLiteConnection) throws -> T) throws -> T {
         for _ in 1...readAttempts {
             do {
-                return try load(from: open(url), links: links)
+                return try query(open(url), body)
             } catch let error as AppDatabaseError where error.code == SQLITE_CANTOPEN {
                 // A read-only connection can't recreate the write-ahead log, which SQLite removes when the app closes the
                 // database, so it's read as it is, without locks; or, if the app opened or wrote it meanwhile, read again.
                 guard let closed = closedWALStamp(url) else { throw error }
-                if let snapshot = try readClosed(url, links: links, closed: closed, afterRead: afterClosedRead, failure: error) {
-                    return snapshot
+                if let value = try readClosed(url, closed: closed, afterRead: afterClosedRead, failure: error, body) {
+                    return value
                 }
             }
         }
         throw AppDatabaseError.query("it kept changing as it was read", code: SQLITE_BUSY)
+    }
+
+    /// What `body` reads with a connection, with what SQLite says went wrong as an `AppDatabaseError`.
+    private static func query<T>(_ connection: SQLiteConnection, _ body: (SQLiteConnection) throws -> T) throws -> T {
+        do {
+            return try body(connection)
+        } catch let error as SQLiteError {
+            throw AppDatabaseError.query(error.message, code: error.code)
+        }
     }
 
     private static func open(_ url: URL, immutable: Bool = false) throws -> SQLiteConnection {
@@ -360,18 +409,18 @@ public enum AppDatabase {
         }
     }
 
-    /// The database as the app closed it, read without locks. Without a log or journal, the file holds every committed
-    /// change, but only while the app leaves it alone: one that opens it and checkpoints could change it under the read.
-    /// Nil when the app opened or wrote it meanwhile, to read it again; a read that fails while it stayed as it was throws
-    /// `failure`, the error reading it the usual way.
-    private static func readClosed(
-        _ url: URL, links: Bool, closed: FileInfo, afterRead: (() -> Void)?, failure: AppDatabaseError
-    ) throws -> DatabaseSnapshot? {
-        let result = try? load(from: open(url, immutable: true), links: links)
+    /// What `body` reads of the database as the app closed it, without locks. Without a log or journal, the file holds every
+    /// committed change, but only while the app leaves it alone: one that opens it and checkpoints could change it under
+    /// the read. Nil when the app opened or wrote it meanwhile, to read it again; a read that fails while it stayed as it
+    /// was throws `failure`, the error reading it the usual way.
+    private static func readClosed<T>(
+        _ url: URL, closed: FileInfo, afterRead: (() -> Void)?, failure: AppDatabaseError, _ body: (SQLiteConnection) throws -> T
+    ) throws -> T? {
+        let result = Result { try query(open(url, immutable: true), body) }
         afterRead?()
         guard closedWALStamp(url) == closed else { return nil }
-        guard let snapshot = result else { throw failure }
-        return snapshot
+        guard case .success(let value) = result else { throw failure }
+        return value
     }
 
     /// The database's identity, size and time while the app has it closed, without its write-ahead log or a journal; nil
@@ -383,14 +432,6 @@ public enum AppDatabase {
             return nil
         }
         return FileInfo(path: url.path)
-    }
-
-    private static func load(from connection: SQLiteConnection, links: Bool) throws -> DatabaseSnapshot {
-        do {
-            return try read(connection, links: links)
-        } catch let error as SQLiteError {
-            throw AppDatabaseError.query(error.message, code: error.code)
-        }
     }
 
     private static func read(_ connection: SQLiteConnection, links: Bool) throws -> DatabaseSnapshot {

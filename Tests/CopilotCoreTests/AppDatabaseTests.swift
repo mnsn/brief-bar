@@ -412,7 +412,69 @@ import BriefBarCore
         try withTemporaryDirectory { directory in
             let url = directory.appendingPathComponent("data.db")
             #expect(throws: AppDatabaseError.self) { try AppDatabase.load(at: url) }
+            #expect(throws: AppDatabaseError.self) { try AppDatabase.turns(at: url) }
             #expect(!FileManager.default.fileExists(atPath: url.path))
+        }
+    }
+
+    /// Each session's running flag, by its ID, as `turns(at:)` reads it.
+    private static func turns(at url: URL) throws -> [String: Bool?]? {
+        try AppDatabase.turns(at: url).map { Dictionary(uniqueKeysWithValues: $0.map { ($0.id, $0.isRunning) }) }
+    }
+
+    /// The running flag, read alone: whatever else the app changes of what the session list reads, which leaves `load`
+    /// without the flag, it's read as the app keeps it, of the sessions that aren't archived; of every session, when the
+    /// app doesn't record which are. Nil once the app doesn't keep the flag as BriefBar reads it, and nil for a session it
+    /// doesn't say it for.
+    @Test func readsWhichSessionsRunATurnByTheirFlagAlone() throws {
+        try withTemporaryDirectory { directory in
+            let url = directory.appendingPathComponent("data.db")
+            let db = try TestDatabase(at: url)
+            defer { db.close() }
+            try db.createAppSchema()
+            try db.addSession(Self.sessionId, title: "Working", running: true)
+            try db.addSession(Self.chatId, title: "Idle", type: "general_chat")
+            try db.addSession("archived", title: "Archived", running: true, archived: true)
+            #expect(try Self.turns(at: url) == [Self.sessionId: true, Self.chatId: false])
+
+            // Its workspaces gone, or kept another way: the list goes without the flag, which is read all the same.
+            try db.exec("DROP TABLE workspaces;")
+            #expect(try AppDatabase.load(at: url).sessions.map(\.isRunning) == [nil, nil])
+            #expect(try Self.turns(at: url) == [Self.sessionId: true, Self.chatId: false])
+
+            // An app that doesn't record which sessions are archived, as BriefBar reads it: every session's.
+            let unarchived = directory.appendingPathComponent("unarchived.db")
+            let other = try TestDatabase(at: unarchived)
+            defer { other.close() }
+            try other.exec("""
+                CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, is_running INTEGER);
+                INSERT INTO sessions (id, is_running) VALUES ('a', 1), ('b', 0);
+                """)
+            #expect(try Self.turns(at: unarchived) == ["a": true, "b": false])
+            // Nor for a session it doesn't say it for.
+            try other.exec("INSERT INTO sessions (id, is_running) VALUES ('c', NULL);")
+            #expect(try Self.turns(at: unarchived) == ["a": true, "b": false, "c": nil])
+            // One that keeps the flag another way.
+            try other.exec("ALTER TABLE sessions RENAME COLUMN is_running TO running;")
+            #expect(try Self.turns(at: unarchived) == nil)
+
+            // A file that isn't a database: it can't be read.
+            let garbled = directory.appendingPathComponent("garbled.db")
+            try Data("Not a database".utf8).write(to: garbled)
+            #expect(throws: AppDatabaseError.self) { try AppDatabase.turns(at: garbled) }
+        }
+    }
+
+    /// The running flag of a database as the app closed it is read as `load` reads the rest: as it is, without locks.
+    @Test func readsWhichSessionsRunATurnWhileTheAppIsClosed() throws {
+        try withTemporaryDirectory { directory in
+            let url = try Self.closedDatabase(in: directory)
+            var closedReads = 0
+            let turns = try AppDatabase.turns(at: url) { closedReads += 1 }
+            #expect(turns?.map { $0.id } == [Self.chatId])
+            #expect(turns?.map { $0.isRunning } == [false])
+            #expect(closedReads == 1)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["data.db"])
         }
     }
 
