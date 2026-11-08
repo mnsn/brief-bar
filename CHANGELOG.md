@@ -1,5 +1,114 @@
 # Changelog
 
+## 0.18.0 - 2026-11-08
+
+- **GitHub reads every account you're signed in to.** When the GitHub CLI is signed in to more than one account on
+  github.com, such as your work account and your own, GitHub's list has the pull requests of each, each once, and its
+  foot names them all. **Add Account…**, on GitHub's page in Settings, signs the GitHub CLI in to another account in
+  Terminal, keeping the account it uses there as it was, and its pull requests show within a minute. When an account
+  can't be read, the list says why, and the others' pull requests stay. It takes GitHub CLI 2.81 or later; with an
+  older one, BriefBar reads the account it uses, as before. Still no personal access token: the GitHub CLI keeps every
+  sign-in.
+- **Change a mission yourself.** With Pull Request Order on, an Azure DevOps pull request's menu, in its row, its
+  details and on the Map, has **Mission**: set it as next to merge, check or uncheck what it merges after, or move it to
+  another mission, a new one of your own, or out of missions. A Copilot session's later change wins only where it goes
+  against yours, and By Mission says who made it: **Put Yours Back** makes yours hold again, and **Undo** takes back your
+  last change. BriefBar keeps your changes in its preferences, as references only, those about a pull request someone
+  sent you in a chat in memory only, and changes nothing in Azure DevOps.
+- **A stacked branch counts in a session's order too.** By Mission now puts a pull request after the one whose branch it
+  targets, also when that one is in another mission, though the order a Copilot session told doesn't say so, and says
+  why. Where the branches only look stacked, **Move to Mission ▸ Not in a Mission** takes it out.
+- **Stop, try again or clear what Copilot does, from its line.** With Send Work to Copilot on, the line that says what
+  Copilot does about a comment, a build or a pull request's merge conflicts has **⋯**, as its right-click menu does, and
+  VoiceOver's actions: **Stop** while Copilot is at it, which stops one of BriefBar's tasks, or the turn of a prompt you
+  sent to a Copilot app session, through BriefBar's extension there, as the app's own Stop does; **Try Again** for a fix
+  that failed or stopped, with the same words, to where it went; and **Clear**, to let the line go. **Fix** waits while
+  Copilot fixes it.
+- **Push & Reply ships one session's fixes, wherever you start it.** **Push & Reply with Copilot…**, in a pull request's
+  ⋯ and right-click menus, offers each session's fixes, as the bar at the foot of its details does, rather than replying
+  on every comment from its last task's session; and it always starts in the session the fixes are in, even before the
+  details have found its sessions. Fixes of no comment, such as a build's alone, say **Push…**. A comment fixed in a
+  session whose Push & Reply didn't list it, which pushes all the session changed, says **Pushed from ‘Retry backoff’,
+  without a reply**, rather than staying ready to push, and stays so after a later push fails.
+- **A resolution of conflicts that are gone goes too.** Copilot's resolution of a pull request's merge conflicts ends
+  once the pull request merges cleanly, or targets another branch, rather than coming back, ready to push, as it
+  conflicts again.
+- **Push & Reply won't push another branch's work.** Right before a Push & Reply goes, BriefBar asks Azure DevOps which
+  branch the pull request merges into, fetches it and the pull request's branch into the folder its session works in,
+  checks each merge it would push, and asks Azure DevOps again: when a merge brought in what that branch doesn't have,
+  as when Copilot resolved the conflicts against main and the pull request was then retargeted to release/x, nothing
+  goes, and BriefBar says why, so you can fix it in a new session. Nothing goes either when Azure DevOps, or the list by
+  then, says the pull request merges into another branch than its prompt names: the list reads it again at once, so the
+  window, opened again, writes a prompt that names that branch. Nor when BriefBar can't read which it is, or can't tell
+  what it would push, as in a shallow clone; nor to a Copilot app session while a turn runs in it, or in its checkout,
+  or while BriefBar can't tell whether one does. After that, the prompt has Copilot check the same right before it
+  pushes, and again after a rebase, stop if it finds a merge of any other branch or, with tools that read the pull
+  request, that it merges into another now, and push the commit it checked. BriefBar's own pull_request tool reads the
+  branch it merges into each time it's asked, for that check.
+- **Comments you'll paste to Copilot stay on Needs You until you do.** When BriefBar copies a prompt for you to paste in
+  a Copilot app session, the comments it quotes leave Needs You once BriefBar sees you pasted it there, not as it's
+  copied, nor when you send the session something else. A prompt whose session waits overnight for your answer says to
+  see the session, rather than going.
+- **A fix in a fork stays on the side.** Fixing something in a fork of the pull request's session no longer makes the
+  fork its session: it keeps the one it had, or the one you chose, unless you choose the fork.
+- **What's Left says what Copilot is on.** While Copilot pushes comments' fixes, What's Left no longer says it's on the
+  builds and conflicts that push doesn't ship.
+- **A session that starts working on a pull request takes its work over.** With Updates from Copilot Sessions and Show
+  Links on, once another Copilot session starts telling BriefBar it's working on a pull request, after you chose a
+  session for its work, its work goes to that session from then on, as it does once a task starts on it in another
+  session. What you chose is forgotten, so it doesn't come back when that session stops saying so. A session that only
+  tells BriefBar again what it began before you chose leaves your choice be.
+- **Agents' `pull_request` names the session the pull request's details do.** It now counts what sessions told BriefBar
+  they're working on and opened, as the details do with Show Links on, so a session that said it opened a pull request,
+  or works on it, is its session for agents too, rather than none, or a guess at another that only mentions it.
+- **See each pull request's stage, and change it in one click.** With Pull Request Order on, every Azure DevOps pull
+  request shows where it is in its flow, in color, in BriefBar's window and the menu bar: In progress, Your review,
+  Teammate's review, Can merge, or Waits for another PR. BriefBar works it out from Azure DevOps and your Copilot
+  sessions; click it to pick another, or **Finished My Review** to send it to your teammates. Its details show the
+  whole track, and who set it, and By Mission draws each mission's pull requests in their stages' colors.
+- **See what's next for you at a glance, and your pull requests on a Board.** With Pull Request Order on, Azure DevOps'
+  Pull Requests page starts with **Up Next**: the pull request to fix next, your next review, the next one for a
+  teammate, the next to merge and the next that waits, each with how many more, however you sort the list. By Mission
+  names each mission's next steps for you under its name, in List, on the Map and on a new **Board** beside them, with a
+  column for each stage and a lane for each mission. Drag a card to another column, or click it and press ⌘→ or ⌘←, to
+  change its stage, or drag it from Waits onto Can merge, or press ⌘← on it there, to set it as next to merge in its
+  lane's mission.
+- **Pull requests for one story go together.** With Pull Request Order and Show Links on, By Mission puts the Azure
+  DevOps pull requests of one story's tasks together as that story's mission, in its tasks' backlog order, unless you,
+  a stack or a session's order say otherwise. It doesn't claim an order it can't see: they show "No order known", as the
+  pull requests opened under one session do, and the story's number opens it. While Apple Intelligence is on, it names
+  each mission on your Mac from its pull requests, work items and Copilot sessions, as the work changes; **Rename…**
+  gives one a name of your own.
+- **Fix with Copilot… on notifications.** With **Send Work to Copilot** on, a notification that your pull request's
+  build failed, that it has merge conflicts, or that someone commented, replied, mentioned you or wants changes has
+  **Fix with Copilot…**, which opens the Send to Copilot window with the fix's prompt, going where that pull request's
+  work goes, as its menu would. It's there while the menu would offer that fix, so not while Copilot's last task on the
+  pull request is still under way. On the Notifications page, it's in the entry's right-click menu.
+- **Sessions can wait on your pull request's build, for up to two hours.** For one of your open pull requests, an
+  agent's `pull_request` now gives a command, `BriefBar --wait <link> --timeout <minutes>`, which a session starts in
+  the background. It reads that pull request every minute, and ends on its next build's result, comments that wait on
+  you, merge conflicts or its closing, printing what happened with the prompt to fix it; or at its timeout, 90 minutes
+  unless it says otherwise. BriefBar's skill for Copilot has a session end its turn once it pushes, rather than wait on
+  a pipeline, since BriefBar's notifications follow that for you, and wait only on a short build that its next step
+  needs.
+- **Change a mission from the Board too.** With Pull Request Order on, a card's menu on the Board has **Mission**, as a
+  row's does: set it as next to merge, check or uncheck what it merges after, or move it to another mission, a new one of
+  your own, or out of missions.
+- **After this update, Azure DevOps, Copilot, GitHub and agents ask you once to look at what they read and get, and wait
+  until you have.** GitHub reads the pull requests of every account the GitHub CLI is signed in to, not only of the one
+  it uses. Azure DevOps stops a prompt's turn through BriefBar's extension in the session; to tell that you pasted a
+  prompt BriefBar copied, it reads the messages sent the session since; BriefBar keeps the branch a pull request's
+  conflicts were with, for those Copilot took on, and when each Push & Reply in a task's session ran, and how it ended;
+  and right before a Push & Reply goes, Azure DevOps reads which branch the pull request merges into, twice, and your
+  lists again when that's another than they have, git fetches that branch and the pull request's into the clone its
+  session works in, and, for a Copilot app session, BriefBar reads which of the app's sessions run a turn. With Pull
+  Request Order on, Azure DevOps shows each pull request's stage, worked out from what it reads already and your Copilot
+  sessions, and keeps the stages you set for each account, never in Azure DevOps. With Pull Request Order and Show Links
+  on, Azure DevOps reads the stories your pull requests' work items are for; and, while Apple Intelligence is on, the
+  titles of Azure DevOps' pull requests, work items and stories, and of the Copilot sessions on them, name your missions
+  on this Mac. BriefBar keeps only the names you give them. Agents can wait on one of your pull requests, for up to two
+  hours, until its next build passes or fails, comments wait on you, or it has merge conflicts.
+
 ## 0.17.1 - 2026-11-08
 
 - **Your edit says when your comment changed meanwhile.** If a comment you're editing changes in Azure DevOps or another

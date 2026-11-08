@@ -12,7 +12,9 @@ package final class CopilotSource: BriefBarSource {
     /// 2: Show Links. 3: what Copilot recorded of a session's work, for a work item's details. 4: a session's
     /// conversation, for summaries. 5: with Pull Request Order on, which pull request each session started from or opened.
     /// 6: with Updates from Copilot Sessions on, what sessions tell BriefBar they work on and opened.
-    nonisolated package static let descriptionVersion = 6
+    /// 7: with Pull Request Order on, while Apple Intelligence is on, the titles of the sessions on a mission's pull
+    /// requests help Apple's on-device model name it, on this Mac.
+    nonisolated package static let descriptionVersion = 7
 
     package let id = SourceID.copilot
     package let name = "GitHub Copilot"
