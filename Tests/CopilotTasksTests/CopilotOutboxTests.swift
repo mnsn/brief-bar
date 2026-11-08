@@ -668,9 +668,11 @@ import Testing
         try forked.listen()
         forked.start()
         let claimed = Mutex(false)
+        // It says how it went only once BriefBar is stopped.
+        let stopped = Mutex(false)
         original.start { [fork] request in
             claimed.withLock { $0 = true }
-            return .after(.milliseconds(300), request.kind == "fork" ? .done(fork: fork) : .done())
+            return .once({ stopped.withLock { $0 } }, request.kind == "fork" ? .done(fork: fork) : .done())
         }
         defer {
             original.stop()
@@ -682,14 +684,17 @@ import Testing
             try await Task.sleep(for: FakeExtension.lookEvery)
         }
         sending.cancel()
+        stopped.withLock { $0 = true }
         #expect(await sending.value == .sent)
 
         claimed.withLock { $0 = false }
+        stopped.withLock { $0 = false }
         let forking = Task { await sender.forkAndSend("Try it", from: session) }
         for _ in 0..<400 where !claimed.withLock({ $0 }) {
             try await Task.sleep(for: FakeExtension.lookEvery)
         }
         forking.cancel()
+        stopped.withLock { $0 = true }
         #expect(await forking.value == .forkedNotSent(fork: fork, .cancelled))
         #expect(forked.received.isEmpty)
     }
@@ -762,9 +767,10 @@ import Testing
         forked.start()
         let claimed = Mutex(false)
         let answer = Mutex<FakeExtension.Answer>(.done(fork: fork))
-        original.start { _ in
+        // It says how it went only once BriefBar is turned off.
+        original.start { [effects] _ in
             claimed.withLock { $0 = true }
-            return .after(.milliseconds(300), answer.withLock { $0 })
+            return .once({ !effects.allowed.withLock { $0 } }, answer.withLock { $0 })
         }
         defer {
             original.stop()
