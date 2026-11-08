@@ -1,5 +1,34 @@
 import Foundation
+import Testing
 @testable import ChromiumIndexedDB
+
+/// Threads of the tests' own, beside Swift's cooperative pool, which `make test` gives one thread for every test at
+/// once: synchronous work that takes long there holds up every other test. Async code under test stays in the pool,
+/// where a blocking wait hangs as it would on a runner with few cores.
+final class TestThreads: TaskExecutor {
+    static let shared = TestThreads()
+    private let queue = DispatchQueue(label: "BriefBarTests.TestThreads", attributes: .concurrent)
+
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        queue.async { job.runSynchronously(on: self.asUnownedTaskExecutor()) }
+    }
+}
+
+/// Runs a test on `TestThreads`: one that checks synchronous work that takes long, such as reading a large input to
+/// show it's read in linear time, and waits for nothing. Not one of async code, which belongs in the pool.
+struct OnTestThreads: TestTrait, TestScoping {
+    func provideScope(
+        for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void
+    ) async throws {
+        try await withTaskExecutorPreference(TestThreads.shared, operation: function)
+    }
+}
+
+extension Trait where Self == OnTestThreads {
+    /// Runs the test on `TestThreads`, beside Swift's cooperative pool.
+    static var onTestThreads: Self { Self() }
+}
 
 // MARK: - The fixture
 

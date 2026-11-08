@@ -61,7 +61,7 @@ import Testing
     /// Whoever starts BriefBar as an app chooses its environment, so the variables that point it at other data are
     /// read only through `Attribution.environment`. Any other read of the environment has to be one of these, each
     /// with its reason, or be added here with one.
-    @Test func readsTheEnvironmentOnlyThroughAttribution() throws {
+    @Test(.onTestThreads) func readsTheEnvironmentOnlyThroughAttribution() throws {
         let allowed: [String: String] = [
             "BriefBarCore/Attribution.swift": "where the variables are read",
             "BriefBarCore/LaunchEnvironment.swift": "puts back HOME, and drops what moves where macOS keeps your files, before anything reads them",
