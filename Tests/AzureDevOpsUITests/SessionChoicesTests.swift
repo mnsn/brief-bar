@@ -181,18 +181,67 @@ private struct DatabaseError: Error {
         #expect(choices.first { $0.id == linkedChat }?.place == "a chat")
         #expect(choices.first { $0.id == fixing }?.opensInApp == false)
         #expect(choices.first { $0.id == other }?.opensInApp == true)
+        #expect(choices.allSatisfy { $0.toldSince == nil })
+
+        // One that tells BriefBar it's working on it says since when.
+        let began = now.addingTimeInterval(-600)
+        store.linkedSessions = { [linkedChat] _ in [LinkedSession(id: linkedChat, origins: [.you, .session], isThrough: false, began: began)] }
+        let told = await store.sessionChoices(for: subject)
+        #expect(told.filter { $0.toldSince != nil }.map(\.id) == [linkedChat])
+        #expect(told.first { $0.id == linkedChat }?.toldSince == began)
+
+        // A task BriefBar ran with the Copilot CLI for another pull request, which the app lists since you opened it there,
+        // that says so too goes with it for that, but takes the place of nothing you chose, as BriefBar's own.
+        store.settings.copilotRuns.append(run(other, worktree: worktree, onPullRequest: 4088))
+        store.linkedSessions = { [linkedChat, other] _ in
+            [linkedChat, other].map { LinkedSession(id: $0, origins: [.session], isThrough: false, began: began) }
+        }
+        let own = await store.sessionChoices(for: subject)
+        #expect(own.first { $0.id == other }?.appSession != nil)
+        #expect(own.first { $0.id == other }?.reasons == [.toldBriefBar])
+        #expect(own.filter { $0.toldSince != nil }.map(\.id) == [linkedChat])
+    }
+
+    /// What you chose gives way only to a session the app's database lists, as the window lists them, read only once one
+    /// may have taken its place: not to one only Copilot's list has, such as a session of the Copilot CLI's when there's no
+    /// database to read.
+    @Test func onlyTheAppsSessionsTakeYourChoicesPlace() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let store = store(home: home)
+        let key = PRKey("contoso", 4071)
+        let began = now
+        store.settings.choose(session: other, for: key, at: now.addingTimeInterval(-60))
+        store.linkedSessions = { [onBranch] ref in
+            ref == key.linkRef ? [LinkedSession(id: onBranch, origins: [.session], isThrough: false, began: began)] : []
+        }
+        await store.forgetChoicesToldSince()
+        #expect(store.settings.chosenSession(for: key)?.isReplaced == false)
+        try database(at: home, sessions: [(other, "Docs", "project", "main", "docs", nil, "2026-10-28T10:00:00.000Z")])
+        await store.forgetChoicesToldSince()
+        #expect(store.settings.chosenSession(for: key)?.isReplaced == false)
+
+        try FileManager.default.removeItem(at: home.appendingPathComponent("data.db"))
+        try database(at: home, sessions: [
+            (other, "Docs", "project", "main", "docs", nil, "2026-10-28T10:00:00.000Z"),
+            (onBranch, "Fix the totals", "project", "fix-totals", "shop", nil, "2026-10-27T10:00:00.000Z"),
+        ])
+        await store.forgetChoicesToldSince()
+        #expect(store.settings.chosenSession(for: key)?.isReplaced == true)
     }
 
     /// A session that told BriefBar it's working on the pull request, as Show Links has it with Updates from Copilot
-    /// Sessions on, goes with it for that, besides its other reasons.
+    /// Sessions on, goes with it for that, besides its other reasons, with when it began to say so.
     @Test func aSessionThatToldBriefBarItsWorkingOnItGoesWithIt() throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
         let store = store(home: home)
-        store.linkedSessions = { [linkedChat, onBranch] _ in
+        let began = now.addingTimeInterval(-600)
+        store.linkedSessions = { [linkedChat, onBranch, other] _ in
             [
-                LinkedSession(id: linkedChat, origins: [.session], isThrough: false),
+                LinkedSession(id: linkedChat, origins: [.session], isThrough: false, began: began),
                 LinkedSession(id: onBranch, origins: [.session, .branch], isThrough: false),
+                LinkedSession(id: other, origins: [], isThrough: true, began: began),
             ]
         }
         let reasons = store.linkedReasons(for: subject)
@@ -200,6 +249,7 @@ private struct DatabaseError: Error {
         #expect(Set(reasons[onBranch] ?? []) == [.toldBriefBar, .onItsBranch])
         #expect(SessionChoice.Reason.toldBriefBar.phrase == "told BriefBar it's working on it")
         #expect(SessionChoice.Reason.recordedByCopilot < .toldBriefBar && SessionChoice.Reason.toldBriefBar < .onItsBranch)
+        #expect(store.toldSince(.pullRequest(organization: "contoso", number: 4071)) == [linkedChat: began])
     }
 
     @Test func findsTheSessionsWhoseLogsMentionIt() async throws {

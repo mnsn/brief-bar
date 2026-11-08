@@ -91,15 +91,20 @@ import Testing
     /// - Parameters:
     ///   - links: the links you made in Show Links, which is on with them.
     ///   - chosen: the session you chose for !4088's work, or a new session for nil, and when.
+    ///   - told: what sessions told BriefBar, with Updates from Copilot Sessions on.
     private func reader(
-        home: URL, sending: Bool = true, links: LinkEdits? = nil, chosen: (session: String?, at: Date)? = nil
+        home: URL, sending: Bool = true, links: LinkEdits? = nil, chosen: (session: String?, at: Date)? = nil, replaced: Bool = false,
+        told: [SessionReport] = [], turnsOff setting: String? = nil
     ) -> AzureDevOpsReader {
         // As the app keeps it: Use for This Pull Request, in the line's menu; in preferences of their own, as what the main
         // actor's settings hold can't go to the reader's actor.
         var kept: Data?
         if let chosen {
             let app = MemoryDefaults()
-            AppSettings(defaults: app).choose(session: chosen.session, for: PRKey("contoso", 4088), at: chosen.at)
+            let settings = AppSettings(defaults: app)
+            settings.choose(session: chosen.session, for: PRKey("contoso", 4088), at: chosen.at)
+            // As the app keeps it once a session took its place.
+            if replaced { settings.copilotPullRequestSessions = settings.copilotPullRequestSessions.map { $0.givenWay() } }
             kept = app.data(forKey: SettingsKey.copilotPullRequestSessions)
         }
         let defaults = MemoryDefaults()
@@ -109,6 +114,15 @@ import Testing
             defaults.set(true, forKey: Links.enabledKey)
         }
         if let kept { defaults.set(kept, forKey: SettingsKey.copilotPullRequestSessions) }
+        if !told.isEmpty {
+            defaults.set(true, forKey: SessionUpdatesSetting.defaultsKey)
+            for report in told { SessionReports.save(report, to: defaults) }
+        }
+        if let setting {
+            return AzureDevOpsReader(
+                demo: false, organizations: ["contoso"], defaults: TurnedOffAfterFirstRead(setting, of: defaults), appHome: home
+            )
+        }
         return AzureDevOpsReader(demo: false, organizations: ["contoso"], defaults: defaults, appHome: home)
     }
 
@@ -353,6 +367,81 @@ import Testing
         #expect(chosen.suggested?.choice.id == linked)
     }
 
+    /// What sessions told BriefBar counts for agents as it does in its details, with Show Links and Updates from Copilot
+    /// Sessions on, for the sessions Copilot's list has, which the Copilot source says while it's on: one that said it
+    /// opened it is its; one that began to say it's working on it after you chose another takes that one's place, even once
+    /// what you chose gave way to it, which then doesn't come back; and one you chose since stays.
+    @Test func countsWhatSessionsToldBriefBar() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home, [
+            Session(id: opener, title: "Estimates tests", project: "shop", branch: "estimates-tests"),
+            Session(id: elsewhere, title: "Shipping rules", project: "shop", branch: "shipping", updated: -7_200),
+        ])
+        let record = try await pullRequest()
+        let pullRequest = ItemRef.pullRequest(organization: "contoso", number: 4088)
+        let openerRef = try #require(ItemRef.session(opener))
+        let elsewhereRef = try #require(ItemRef.session(elsewhere))
+        var opened = SessionReport(session: openerRef)
+        opened.addOpened([pullRequest], at: now.addingTimeInterval(-3_600))
+        func listing(_ sessions: Set<ItemRef>) -> MCPRelated.Teller {
+            MCPRelated.Teller(title: "Copilot sessions", tell: { _ in [] }, sessions: { SessionReports.Listing(sessions: sessions) })
+        }
+        let copilot = listing([openerRef, elsewhereRef])
+        func session(_ reader: AzureDevOpsReader, tellers: [MCPRelated.Teller]? = nil) async -> AgentSession? {
+            await MCPRelated.$tellers.withValue(tellers ?? [copilot]) { await reader.session(for: record, tasks: [], now: now) }
+        }
+
+        let found = try #require(await session(reader(home: home, links: LinkEdits(), told: [opened])))
+        #expect(found.suggested?.choice.id == opener)
+        #expect(found.suggested?.choice.reasons == [.recordedByCopilot])
+        #expect(found.suggested?.basis == .recordedByCopilot)
+        #expect(AgentText.session(found, now: now).hasPrefix(
+            "Its session, where BriefBar sends its work unless you choose another: “Estimates tests”, in the Copilot app, recorded by Copilot.\n"
+        ))
+        // Not without Show Links, or Updates from Copilot Sessions; nor without Copilot's list, which a source that's off
+        // doesn't give; and only for a session it lists.
+        #expect(await session(reader(home: home, told: [opened])) == nil)
+        #expect(await session(reader(home: home, links: LinkEdits())) == nil)
+        #expect(await session(reader(home: home, links: LinkEdits(), told: [opened]), tellers: []) == nil)
+        let off = MCPRelated.Teller(title: "Copilot sessions", tell: { _ in [] }, sessions: { throw MCPToolError("GitHub Copilot is off in BriefBar.") })
+        #expect(await session(reader(home: home, links: LinkEdits(), told: [opened]), tellers: [off]) == nil)
+        #expect(await session(reader(home: home, links: LinkEdits(), told: [opened]), tellers: [listing([elsewhereRef])]) == nil)
+        // Nor once either is turned off in the app while Copilot's list is read; nor, then, the links you made, once Show
+        // Links is off, though the list couldn't be read.
+        #expect(await session(reader(home: home, links: LinkEdits(), told: [opened], turnsOff: Links.enabledKey)) == nil)
+        #expect(await session(reader(home: home, links: LinkEdits(), told: [opened], turnsOff: SessionUpdatesSetting.defaultsKey)) == nil)
+        var yours = LinkEdits()
+        yours.link(pullRequest, elsewhereRef, at: now)
+        #expect(await session(reader(home: home, links: yours, told: [opened]), tellers: [off])?.suggested?.choice.id == elsewhere)
+        #expect(await session(reader(home: home, links: yours, told: [opened], turnsOff: Links.enabledKey), tellers: [off]) == nil)
+
+        var working = SessionReport(session: openerRef)
+        working.setWorkingOn([pullRequest], at: now.addingTimeInterval(-600))
+        let since = try #require(await session(reader(
+            home: home, links: LinkEdits(), chosen: (elsewhere, now.addingTimeInterval(-3_600)), told: [working]
+        )))
+        #expect(since.suggested?.choice.id == opener)
+        #expect(since.suggested?.basis == .toldBriefBar)
+        #expect(AgentText.session(since, now: now).contains("“Estimates tests”, in the Copilot app, told BriefBar it's working on it.\n"))
+        let before = try #require(await session(reader(
+            home: home, links: LinkEdits(), chosen: (elsewhere, now.addingTimeInterval(-60)), told: [working]
+        )))
+        #expect(before.suggested?.choice.id == elsewhere)
+        #expect(before.suggested?.basis == .chosenByYou)
+
+        // Once what you chose gave way to it, as the app keeps it, it goes on taking its place; once none says so, what you
+        // chose doesn't come back.
+        let gaveWay = try #require(await session(reader(
+            home: home, links: LinkEdits(), chosen: (elsewhere, now.addingTimeInterval(-3_600)), replaced: true, told: [working]
+        )))
+        #expect(gaveWay.suggested?.choice.id == opener)
+        #expect(gaveWay.suggested?.basis == .toldBriefBar)
+        let chosen = (session: Optional(elsewhere), at: now.addingTimeInterval(-3_600))
+        #expect(await session(reader(home: home, links: LinkEdits(), chosen: chosen))?.suggested?.choice.id == elsewhere)
+        #expect(await session(reader(home: home, links: LinkEdits(), chosen: chosen, replaced: true)) == nil)
+    }
+
     @Test func namesNoneWhileSendingIsOffInTheDemoOrWhenTheresNone() async throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -409,4 +498,35 @@ private final class TurnedOffOnceRead: UserDefaults, @unchecked Sendable {
     override func set(_ value: Any?, forKey defaultName: String) {}
 
     override func removeObject(forKey defaultName: String) {}
+}
+
+/// Preferences as the app keeps them, but for one setting, which is turned off in the app once it's been read: as while
+/// an agent's tool waits on Copilot's list.
+private final class TurnedOffAfterFirstRead: UserDefaults, @unchecked Sendable {
+    private let setting: String
+    private let kept: MemoryDefaults
+    private let reads = Mutex(0)
+
+    init(_ setting: String, of kept: MemoryDefaults) {
+        self.setting = setting
+        self.kept = kept
+        super.init(suiteName: nil)!
+    }
+
+    override func object(forKey defaultName: String) -> Any? {
+        if defaultName == setting, reads.withLock({ count in count += 1; return count > 1 }) { return false }
+        return kept.object(forKey: defaultName)
+    }
+
+    override func dictionaryRepresentation() -> [String: Any] {
+        kept.dictionaryRepresentation()
+    }
+
+    override func set(_ value: Any?, forKey defaultName: String) {
+        kept.set(value, forKey: defaultName)
+    }
+
+    override func removeObject(forKey defaultName: String) {
+        kept.removeObject(forKey: defaultName)
+    }
 }

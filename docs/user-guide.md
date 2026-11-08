@@ -354,7 +354,8 @@ to, such as **Comments** from What's Left, rather than their title.
 page over a work item's, names the Copilot session the pull request's work goes to, why it's its, and how it
 stands, in its state's color, such as **Copilot · ‘Retry backoff’ · on its branch · Finished 1d ago**: the
 session you chose for it; else its last task's; else the session of the work item's task that opened it;
-else the Copilot app's session that Copilot recorded with it, that you linked to it with Show Links, or
+else the Copilot app's session that Copilot recorded with it, that told BriefBar it's working on it or opened
+it, that you linked to it with Show Links, or
 that's on its branch. When two of those go with it as well as each other, the line asks **Which session is
 this pull request's?** instead of guessing, and its work goes to the one you choose. One whose log only has
 a link to it may have opened it, but that's a guess, so it's offered in the line's menu, never chosen for
@@ -367,7 +368,8 @@ sends the prompt itself with [Send Prompts to Copilot Sessions](#agents) on, or 
 It opens the session in Copilot, or **Continue in Terminal** for a task BriefBar runs with the Copilot CLI;
 and, under **Use for This Pull Request**, lists the sessions that go with it, each with why and how it
 stands, the app's other sessions, and **New Session**: the one you check is where the pull request's work
-goes from then on, in the Send to Copilot window too, until a task starts on it in another session. **Let
+goes from then on, in the Send to Copilot window too, until a task starts on it in another session, or, with
+Updates from Copilot Sessions and Show Links on, another session starts telling BriefBar it's working on it. **Let
 BriefBar Choose** goes back to BriefBar's choice. BriefBar reads the Copilot app's sessions for the line only
 while the details show in a window you can see: as they come on screen, then every ten seconds. Without Send
 Work to Copilot, the line shows only the sessions Show Links links to it, to look at.
@@ -810,7 +812,8 @@ opened the pull request; then your Copilot app's sessions that go with it, such 
 request's branch, one the app records with it, one you linked to it with [Show Links](#links), or one
 whose log links to it; and, under **Other Copilot Sessions**, the rest, the most recently active first.
 A pull request's task goes where its details say its work goes ([above](#azure-devops)): to the session you
-chose for it there, unless a task started on it since; else on with its last task's session, as before; without
+chose for it there, unless a task started on it since, or another session started telling BriefBar it's working on it
+since; else on with its last task's session, as before; without
 one, to the session of the work item's task that opened it, or to the app's session that goes with it best. When
 two go with it as well as each other, it starts a new session unless you choose one, as its details ask which; and so
 it does while the session they name is busy, rather than go to another.

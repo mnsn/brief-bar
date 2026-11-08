@@ -1458,9 +1458,12 @@ closes it.
 **Its Copilot session.** With **Send Work to Copilot** on, a line under the heading, in its details and on its page
 over a work item's or another pull request's (`PullRequestDetailsContent`), names the Copilot session the pull
 request's work goes to (`PullRequestSessionLine`), one for each pull request (`PullRequestSession`): the session you
-chose for it, unless a task of BriefBar's started on it since, in whatever session; else its last task's, while its
+chose for it, unless a task of BriefBar's started on it since, in whatever session, or, as Show Links shows what sessions
+tell BriefBar with Updates from Copilot Sessions on, another of the Copilot app's sessions began to say it's working on
+it since (`PullRequestSession.toldSince`), when two such ask which; else its last task's, while its
 worktree is there, even while Copilot still works in it, which then says it's busy; else the session of the work
-item's task that opened it; else the Copilot app's session that the app records with it, that you linked to it in Show Links or
+item's task that opened it; else the Copilot app's session that the app records with it, that told BriefBar it's working
+on it or opened it, that you linked to it in Show Links or
 that's on its branch. Two of those that go with it as well as each other, neither with every reason the other has
 and more, aren't ranked by which was active last: the line asks which is its, and goes on with the one you choose.
 One whose log only has a link to it, and that was there before it was created, is a guess (`PullRequestSession.guess`),
@@ -1491,7 +1494,20 @@ shows the session's page in the details, and it isn't under **Also Linked**. **U
 menu, keeps your choice in the preferences (`ado.copilot.pullRequestSessions`), by references only, the pull
 request's and the session's, never names, as Show Links keeps the links you make, and for as long
 (`PullRequestSessionChoice`): what's older leaves the preferences as BriefBar reads them, a task that starts on the
-pull request in another session forgets it, so clearing that task doesn't bring it back, and turning Azure DevOps off
+pull request in another session forgets it, so clearing that task doesn't bring it back, and so does another of the
+app's sessions its work could go to, not one of its tasks' or of BriefBar's own, that Show Links shows began to tell
+BriefBar it's working on it after you chose, so it doesn't come back once that session stops saying so: the app
+forgets it as it sees that, while Send Work to Copilot is on (`CopilotTasksStore.forgetChoicesToldSince`), so one that
+began and stopped saying so while BriefBar wasn't running, or Send Work to Copilot was off, leaves it be. The app's
+sessions are those its database lists, as the line reads them, read off the main thread only once one may have taken
+your choice's place, so that a session only Copilot's list has, such as one of the Copilot CLI's when there's no
+database to read, never does. It keeps when
+you chose, though, marked as given way (`PullRequestSessionChoice.givenWay`), with what you chose for an older
+BriefBar's `--mcp`, which reads it as before: while a session that began to say so since does, that session goes on
+taking its place, ahead of a task that started before you chose, and two such ask which; once none does, the rest
+decide; and **Let BriefBar Choose** doesn't show. What a
+session told before BriefBar kept when it began to say it works on something, or tells through an older BriefBar's
+`--mcp`, which doesn't keep that, began, as far as BriefBar knows, when the session last said so. Turning Azure DevOps off
 forgets it. The Send to Copilot window goes there too, unless you choose otherwise
 (`CopilotTasksStore.suggestedChoice`), following what you choose in the details while it's open, and so do agents
 ([below](#agents)). Without Send Work to Copilot, the line shows only the sessions Show Links links to
@@ -2478,9 +2494,11 @@ with it:
 
 The rest of the app's sessions follow, the most recently active first. A pull request's task goes where its
 details say its work goes ([above](#a-pull-requests-details)), by the same rules (`CopilotTasksStore.suggestedChoice`,
-with `PullRequestSession.pick`): to the session you chose for it there, unless a task started on it since; else on
+with `PullRequestSession.pick`): to the session you chose for it there, unless a task started on it since, or another
+session began to tell BriefBar it's working on it since; else on
 with its last task's session, as before; else with the session of the work item's task that opened it; else with the
-app's session that the app records with it, that you linked, or that's on its branch, when one goes with it better
+app's session that the app records with it, that told BriefBar it's working on it or opened it, that you linked, or
+that's on its branch, when one goes with it better
 than the others. When two go with it as well as each other, which its details ask about, or only one whose log
 mentions it and that was there before it was created may have opened it, which they offer, it starts a new session
 unless you choose one, rather than guess; so it does while the session they name is busy, rather than go to another.
@@ -3519,8 +3537,10 @@ While **Send Work to Copilot** is on, `pull_request` also names an open pull req
 Copilot session BriefBar sends its work to, as its details show it (see [A pull request's
 details](#a-pull-requests-details)), by its name and session ID, with why and where it is, and whether Copilot
 still works in it. It's found the same way (`CopilotTasksStore.pullRequestSession`, with `PullRequestSession`):
-the session you chose for it, unless a task started on it since; else its last task's session; else the session
-of the work item's task that opened it; else the Copilot app's session that the app records with it, that you
+the session you chose for it, unless a task started on it since, or another session began to tell BriefBar it's working
+on it since; else its last task's session; else the session
+of the work item's task that opened it; else the Copilot app's session that the app records with it, that told BriefBar
+it's working on it or opened it, that you
 linked to it in Show Links, or that's on its branch. When you chose a new session, it says so; when two sessions
 go with it as well as each other, it names both, and that BriefBar asks you which; and when none does, it names
 one whose log mentions it and that was there before it was created as one that may have opened it, not as its
@@ -3529,8 +3549,13 @@ finds it with a store of its own (`AzureDevOpsReader.session`): over a copy of t
 sessions you chose for pull requests' work, in memory, each task as its log says it stands, with the pull request
 one opened while BriefBar was quit, as the app finds it when it next looks (`RunTranscript.openedPullRequest`), so
 nothing it does is saved; with the environment
-`--mcp` started with, rather than your login shell's, which it would have to start; and with the links
-you made, from the app's settings, only while Show Links is on. Like the composer, it reads the Copilot
+`--mcp` started with, rather than your login shell's, which it would have to start; and with what Show Links knows,
+from the app's settings, only while it's on: the links you made, and, with Updates from Copilot Sessions on too, what
+sessions told BriefBar they work on and opened, with when each began to say it works on something, for the sessions
+Copilot's part of `--mcp` lists, as the app's Copilot list has them (`MCPRelated.sessionListing`), which it asks only
+once a session told BriefBar something of that pull request, and which says nothing while Copilot is off; both settings
+are checked again once it has, in case either was turned off meanwhile. Like the
+composer, it reads the Copilot
 app's database read-only, the folder each of its sessions works in and, for mentions, their logs, and
 nothing at all while Send Work to Copilot is off or in the demo, whose composer reads no sessions. Its
 store has a copy of the app's setting, so it reads the app's again every tenth of a second while it

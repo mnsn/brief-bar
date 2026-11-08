@@ -76,10 +76,18 @@ package enum MCPRelated {
         /// Its things that go with what was asked about, the most telling first. What it throws says why it can't tell,
         /// such as being off in BriefBar.
         package var tell: @Sendable (Query) async throws -> [Item]
+        /// The sessions it lists now, and since when each idle one has been, as its own list has them: what sessions told
+        /// BriefBar counts only while they're listed, as Show Links shows it (`SessionReports.links`). Nil for a source
+        /// with no sessions.
+        package var sessions: (@Sendable () async throws -> SessionReports.Listing)?
 
-        package init(title: String, tell: @escaping @Sendable (Query) async throws -> [Item]) {
+        package init(
+            title: String, tell: @escaping @Sendable (Query) async throws -> [Item],
+            sessions: (@Sendable () async throws -> SessionReports.Listing)? = nil
+        ) {
             self.title = title
             self.tell = tell
+            self.sessions = sessions
         }
     }
 
@@ -102,6 +110,25 @@ package enum MCPRelated {
     /// What each of the sources whose tool runs tells of a query.
     package static func ask(_ query: Query) async -> [Part] {
         await ask(tellers, query)
+    }
+
+    /// The sessions the sources whose tool runs list now (`Teller.sessions`), for what sessions told BriefBar: nil when
+    /// none of them lists sessions or can say now, as when it's off in BriefBar.
+    package static func sessionListing() async -> SessionReports.Listing? {
+        await sessionListing(tellers)
+    }
+
+    /// The sessions these sources list now, together.
+    package static func sessionListing(_ tellers: [Teller]) async -> SessionReports.Listing? {
+        var listing: SessionReports.Listing?
+        for teller in tellers {
+            guard let sessions = teller.sessions, let listed = try? await sessions() else { continue }
+            var all = listing ?? SessionReports.Listing()
+            all.sessions.formUnion(listed.sessions)
+            all.idleSince.merge(listed.idleSince) { first, _ in first }
+            listing = all
+        }
+        return listing
     }
 
     /// What each source tells of a query, asked at the same time, in the sources' order.

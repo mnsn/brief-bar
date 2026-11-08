@@ -159,7 +159,7 @@ package final class CopilotSource: BriefBarSource {
 
     /// The sessions it lists, the app's and the tasks BriefBar sent, and since when each idle one has been: what a session
     /// told BriefBar shows only while it's listed, and what it works on until it's been idle for a day.
-    static func listing(_ sessions: [SessionSnapshot]) -> SessionReports.Listing {
+    nonisolated static func listing(_ sessions: [SessionSnapshot]) -> SessionReports.Listing {
         var listing = SessionReports.Listing()
         for session in sessions {
             guard let ref = ItemRef.session(session.id) else { continue }

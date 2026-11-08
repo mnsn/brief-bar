@@ -1,3 +1,4 @@
+import BriefBarCore
 import Foundation
 
 /// A JSON value: a message of the Model Context Protocol, what an agent gives a tool, and a tool's schema.
@@ -200,10 +201,19 @@ package struct MCPSource: Sendable {
     package func available(while isAvailable: @escaping @Sendable () -> Bool, refusal: String) -> MCPSource {
         let needsYou = self.needsYou
         let related = self.related.map { teller in
-            MCPRelated.Teller(title: teller.title) { query in
-                guard isAvailable() else { throw MCPToolError(refusal) }
-                return try await teller.tell(query)
-            }
+            MCPRelated.Teller(
+                title: teller.title,
+                tell: { query in
+                    guard isAvailable() else { throw MCPToolError(refusal) }
+                    return try await teller.tell(query)
+                },
+                sessions: teller.sessions.map { sessions in
+                    { @Sendable () async throws -> SessionReports.Listing in
+                        guard isAvailable() else { throw MCPToolError(refusal) }
+                        return try await sessions()
+                    }
+                }
+            )
         }
         return MCPSource(name: name, tools: tools.map { $0.available(while: isAvailable, refusal: refusal) }, related: related) {
             guard isAvailable() else { throw MCPToolError(refusal) }

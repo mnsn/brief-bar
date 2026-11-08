@@ -51,12 +51,57 @@ import Testing
         report.expire(now: Self.now)
         #expect(report.workingOn.isEmpty)
         #expect(report.workingOnSince == nil)
+        #expect(report.workingOnBegan.isEmpty)
         #expect(Array(report.opened.keys) == [Self.another])
 
         var recent = SessionReport(session: Self.session)
         recent.setWorkingOn([Self.task], at: Self.now - 6 * Self.day)
         recent.expire(now: Self.now)
         #expect(recent.workingOn == [Self.task])
+    }
+
+    /// When it began to say it works on each is kept while it goes on saying so, whatever else it tells, and starts again
+    /// once it said it stopped: as saved, too.
+    @Test func remembersWhenItBeganEachUntilItStops() throws {
+        var report = SessionReport(session: Self.session)
+        report.setWorkingOn([Self.task, Self.pullRequest], at: Self.now - 3_600)
+        report.setWorkingOn([Self.pullRequest, Self.story], at: Self.now - 600)
+        #expect(report.workingOnBegan == [Self.pullRequest: Self.now - 3_600, Self.story: Self.now - 600])
+        #expect(report.workingOnSince == Self.now - 600)
+        report.setWorkingOn([], at: Self.now - 300)
+        #expect(report.workingOnBegan.isEmpty)
+        report.setWorkingOn([Self.pullRequest, Self.gitHub], at: Self.now)
+        #expect(report.workingOnBegan == [Self.pullRequest: Self.now, Self.gitHub: Self.now])
+        report.forget([.gitHubPullRequest])
+        #expect(report.workingOnBegan == [Self.pullRequest: Self.now])
+
+        let defaults = MemorySettings()
+        SessionReports.change(Self.session, in: defaults, now: Self.now - 3_600) { $0.setWorkingOn([Self.pullRequest], at: Self.now - 3_600) }
+        SessionReports.change(Self.session, in: defaults, now: Self.now) { $0.setWorkingOn([Self.pullRequest, Self.task], at: Self.now) }
+        let kept = try #require(SessionReports.load(Self.session, from: defaults))
+        #expect(kept.workingOnBegan == [Self.pullRequest: Self.now - 3_600, Self.task: Self.now])
+        #expect(SessionReports.load(from: defaults, now: Self.now)[Self.session] == kept)
+    }
+
+    /// What was kept before BriefBar kept when each began began, as far as it knows, when it last told it; and a date later
+    /// than that, which no session told, isn't taken.
+    @Test func takesWhatItLastToldAsWhenItBeganWhenThatWasntKept() throws {
+        let defaults = MemorySettings()
+        let since = Self.now.timeIntervalSinceReferenceDate - 600
+        let record = """
+            {"opened": {}, "session": "session//\(Self.session.id)", "since": \(since),
+             "began": {"workItem/contoso/5124": \(since - 3_000), "pullRequest/contoso/4102": \(since + 60)},
+             "workingOn": ["workItem/contoso/5124", "pullRequest/contoso/4102", "workItem/contoso/5101"]}
+            """
+        defaults.set(Data(record.utf8), forKey: SessionReports.key(for: Self.session))
+        let report = try #require(SessionReports.load(Self.session, from: defaults))
+        #expect(report.workingOnBegan == [Self.task: Self.now - 3_600, Self.pullRequest: Self.now - 600, Self.story: Self.now - 600])
+
+        let old = """
+            {"opened": {}, "session": "session//\(Self.other.id)", "since": \(since), "workingOn": ["workItem/contoso/5124"]}
+            """
+        defaults.set(Data(old.utf8), forKey: SessionReports.key(for: Self.other))
+        #expect(SessionReports.load(Self.other, from: defaults)?.workingOnBegan == [Self.task: Self.now - 600])
     }
 
     // MARK: Saving
