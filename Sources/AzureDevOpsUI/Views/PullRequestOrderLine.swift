@@ -138,9 +138,9 @@ extension OrderNote {
     var isAboutChanges: Bool {
         switch self {
         case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .afterYourNext, .setAside, .yoursDoesntHold, .nextDoesntHold,
-             .orderChangedIt:
+             .orderChangedIt, .yourNextGoesFirst:
             return true
-        case .showsAgainst, .orderDisagrees, .alsoIn, .stackedWith, .goesRound:
+        case .showsAgainst, .orderDisagrees, .alsoIn, .stackedWith, .goesRound, .ordersGoRound:
             return false
         }
     }

@@ -858,8 +858,35 @@ import Testing
         var orders = try tell([(4101, [4102]), (4102, [])])
         orders = try tell([(4101, []), (4102, [4101])], replacing: orders, id: otherID, at: 10)
         let missions = Self.missions(Self.facts([4101, 4102]), orders, OrderChanges())
-        #expect(try Self.step(4101, in: Self.mission(.plan(planID), in: missions)).standing == .waiting(open: [Self.pr(4102)], unknown: []))
-        #expect(try Self.step(4102, in: Self.mission(.plan(otherID), in: missions)).standing == .waiting(open: [Self.pr(4101)], unknown: []))
+        let first = try Self.step(4101, in: Self.mission(.plan(planID), in: missions))
+        let second = try Self.step(4102, in: Self.mission(.plan(otherID), in: missions))
+        #expect(first.standing == .waiting(open: [Self.pr(4102)], unknown: []))
+        #expect(second.standing == .waiting(open: [Self.pr(4101)], unknown: []))
+
+        // Each says the other order goes the other way, so that you check the order.
+        #expect(first.notes.contains(.ordersGoRound(Self.pr(4102), order: otherID, direct: true)))
+        #expect(second.notes.contains(.ordersGoRound(Self.pr(4101), order: planID, direct: true)))
+        let names = OrderNames(title: { [otherID] key in key == .plan(otherID) ? "Search" : nil })
+        #expect(OrderText.note(.ordersGoRound(Self.pr(4102), order: otherID, direct: true), of: Self.pr(4101), names: names)
+            == "‘Search’ puts !4102 after it: check the order")
+        #expect(OrderText.note(.ordersGoRound(Self.pr(4102), order: otherID, direct: false), of: Self.pr(4101))
+            == "!4102 waits for it through another order: check the order")
+    }
+
+    /// Three orders whose lines go round only together, each between pull requests the last one has too: the last one and
+    /// the order whose line closes the circle say so.
+    @Test func ordersThatGoRoundTogetherSaySo() throws {
+        let thirdID = UUID(uuidString: "33333333-4444-4555-8666-777777777777")!
+        var orders = try tell([(4101, []), (4102, [4101])])
+        orders = try tell([(4102, []), (4103, [4102])], replacing: orders, id: otherID, at: 10)
+        orders = try tell([(4101, [4103]), (4102, []), (4103, [])], replacing: orders, id: thirdID, at: 20)
+        let missions = Self.missions(Self.facts([4101, 4102, 4103]), orders, OrderChanges())
+
+        let last = try Self.step(4101, in: Self.mission(.plan(thirdID), in: missions))
+        #expect(last.standing == .waiting(open: [Self.pr(4103)], unknown: []))
+        #expect(last.notes.contains(.ordersGoRound(Self.pr(4103), order: planID, direct: false)))
+        #expect(try Self.step(4102, in: Self.mission(.plan(planID), in: missions)).notes
+            .contains(.ordersGoRound(Self.pr(4101), order: thirdID, direct: false)))
     }
 
     /// Put Yours Back puts the one you set as next back in its order's mission, though nothing else is left there to show
@@ -918,7 +945,11 @@ import Testing
             == ["1 !4101 Next to merge", "2 !4102 Merge after !4101"])
         let other = try Self.mission(.plan(otherID), in: missions)
         let aside = try Self.step(4101, in: other)
-        #expect(aside.prerequisites.isEmpty && aside.notes.contains(.goesRound(Self.pr(4103), by: Self.session)))
+        #expect(aside.prerequisites.isEmpty
+            && aside.notes.contains(.yourNextGoesFirst(Self.pr(4103), by: Self.session, next: Self.pr(4101), in: .plan(planID))))
+        let names = OrderNames(title: { [planID] key in key == .plan(planID) ? "Cart" : nil })
+        #expect(OrderText.note(aside.notes.last { if case .yourNextGoesFirst = $0 { true } else { false } }!, of: Self.pr(4101), names: names)
+            .hasSuffix("puts it after !4103, but you set it as next to merge in ‘Cart’"))
         #expect(try Self.step(4103, in: other).standing == .waiting(open: [Self.pr(4102)], unknown: []))
         #expect(missions.allSatisfy { mission in mission.steps.allSatisfy { if case .inCycle = $0.standing { false } else { true } } })
     }
@@ -964,5 +995,87 @@ import Testing
         }
         let unseen = try Self.step(4111, in: Self.mission(mine, in: Self.missions(Self.facts([4112]), DeclaredOrders(), changes)))
         #expect(unseen.status.isUnknown && unseen.standing != .unordered)
+    }
+
+    /// What you set as next goes before a session's order of another mission that names both, though it says the other way
+    /// round: that order's line is set aside, saying so, and neither waits for the other.
+    @Test func setAsNextGoesBeforeAnOrderOfTheSamePullRequests() throws {
+        var orders = try tell([(4101, []), (4102, [])])
+        orders = try tell([(4102, []), (4101, [4102])], replacing: orders, id: otherID, at: 10)
+        let facts = Self.facts([4101, 4102])
+        var changes = OrderChanges()
+        try changes.apply(.setNext(Self.pr(4101), in: .plan(planID), true), missions: Self.missions(facts, orders, changes), orders: orders, now: t(60))
+
+        let missions = Self.missions(facts, orders, changes)
+        #expect(OrderBoardTests.summary(try Self.mission(.plan(planID), in: missions).steps)
+            == ["1 !4101 Next to merge", "2 !4102 Merge after !4101"])
+        let other = try Self.mission(.plan(otherID), in: missions)
+        let next = try Self.step(4101, in: other)
+        #expect(next.prerequisites.isEmpty && next.standing == .anyTime)
+        #expect(next.notes.contains(.yourNextGoesFirst(Self.pr(4102), by: Self.session, next: Self.pr(4101), in: .plan(planID))))
+        #expect(!next.notes.contains { if case .ordersGoRound = $0 { true } else { false } })
+        let names = OrderNames(title: { [planID] key in key == .plan(planID) ? "Cart" : nil })
+        #expect(OrderText.note(.yourNextGoesFirst(Self.pr(4103), by: nil, next: Self.pr(4101), in: .plan(planID)), of: Self.pr(4102), names: names)
+            .hasSuffix("puts it after !4103, but !4103 waits for it since you set !4101 as next to merge in ‘Cart’"))
+    }
+
+    /// While the one you set as next doesn't hold, stacked on one that hasn't merged, what its order puts it after stays.
+    @Test func aNextThatDoesntHoldKeepsWhatItsOrderPutsItAfter() throws {
+        let orders = try tell([(4102, []), (4103, [4102])])
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a"), Self.ado(4102), OrderBoardTests.ado(4103, from: "users/robin/c", into: "users/robin/a"),
+        ])
+        let changes = OrderChanges([
+            OrderChange(ref: Self.pr(4103), first: .plan(planID), changedAt: t(60), replaced: OrderPlace(of: Self.pr(4103), in: orders)),
+        ])
+        let step = try Self.step(4103, in: Self.mission(.plan(planID), in: Self.missions(facts, orders, changes)))
+        #expect(step.notes.contains(.nextDoesntHold(Self.pr(4101), retarget: false)))
+        #expect(Set(step.prerequisites.map(\.ref)) == [Self.pr(4101), Self.pr(4102)])
+        #expect(step.prerequisites.first { $0.ref == Self.pr(4102) }?.origins.contains(where: \.isDeclared) == true)
+    }
+
+    /// One that still targets the branch of one that merged is retargeted before it's next, though its standing says first
+    /// that what its order puts it after closed.
+    @Test func oneThatStillTargetsAMergedBranchIsRetargetedFirstWhateverItsStanding() throws {
+        let orders = try tell([(4101, []), (4102, [4103]), (4103, [])])
+        let facts = OrderFacts(pullRequests: [
+            OrderBoardTests.ado(4101, from: "users/robin/a", state: .merged), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a"),
+            Self.ado(4103, state: .closed),
+        ])
+        var changes = OrderChanges()
+        let missions = Self.missions(facts, orders, changes)
+        #expect(try Self.step(4102, in: Self.mission(.plan(planID), in: missions)).standing == .prerequisiteClosed(Self.pr(4103)))
+        #expect(MissionChoices.of(Self.pr(4102), missions: missions, changes: changes, orders: orders).next == .retarget(after: Self.pr(4101), to: nil))
+        #expect(throws: OrderChangeError.retarget(after: Self.pr(4101), to: nil)) {
+            try changes.apply(.setNext(Self.pr(4102), in: .plan(planID), true), missions: missions, orders: orders)
+        }
+        #expect(changes.isEmpty)
+    }
+
+    /// The one you set as next shows so in its menu while BriefBar can't see it, so that choosing it takes that away.
+    @Test func setAsNextShowsSetWhileBriefBarCantSeeIt() throws {
+        let orders = try tell([(4101, []), (4102, [4101])])
+        var changes = OrderChanges([
+            OrderChange(ref: Self.pr(4102), first: .plan(planID), changedAt: t(60), replaced: OrderPlace(of: Self.pr(4102), in: orders)),
+        ])
+        let missions = Self.missions(Self.facts([4101]), orders, changes)
+        #expect(try Self.step(4102, in: Self.mission(.plan(planID), in: missions)).status.isUnknown)
+        #expect(MissionChoices.of(Self.pr(4102), missions: missions, changes: changes, orders: orders).next == .isSet)
+        try changes.apply(.setNext(Self.pr(4102), in: .plan(planID), false), missions: missions, orders: orders, now: t(70))
+        #expect(changes.isEmpty)
+    }
+
+    /// A chain goes on by one of its own that what Undo would put back moved out of it: only where your changes put pull
+    /// requests now counts.
+    @Test func aChainGoesOnByOneUndoWouldMoveOut() throws {
+        let chain = [OrderBoardTests.ado(4101, from: "users/robin/a"), OrderBoardTests.ado(4102, from: "users/robin/b", into: "users/robin/a")]
+        var changes = OrderChanges([OrderChange(ref: Self.pr(4110), placement: .into(.chain(Self.pr(4101))), changedAt: t(60))])
+        let undo = OrderChanges([OrderChange(ref: Self.pr(4102), placement: .outside, changedAt: t(70))])
+        var merged = chain
+        merged[0].state = .merged
+        let missions = Self.missions(OrderFacts(pullRequests: merged + [Self.ado(4110)]), DeclaredOrders(), changes)
+
+        #expect(changes.moveAnchors(in: missions, alsoFor: undo) == [Self.pr(4101): Self.pr(4102)])
+        #expect(changes[Self.pr(4110)]?.placement == .into(.chain(Self.pr(4102))))
     }
 }

@@ -376,7 +376,8 @@ public struct OrderChanges: Equatable, Sendable {
     @discardableResult
     public mutating func moveAnchors(in missions: [OrderMission], alsoFor pending: OrderChanges = OrderChanges()) -> [ItemRef: ItemRef] {
         var moved: [ItemRef: ItemRef] = [:]
-        let placed = changes.merging(pending.changes) { live, _ in live }
+        // Where your changes put pull requests now, not where Undo would: one Undo would move out is the chain's own today.
+        let placed = changes
         func anchor(after ended: ItemRef) -> ItemRef? {
             if let known = moved[ended] { return known }
             guard let mission = missions.first(where: { $0.kind == .stack && $0.steps.contains { $0.ref == ended } }),
@@ -778,11 +779,11 @@ extension OrderChanges {
     }
 
     /// What a pull request was stacked on that merged, while it still targets that one's branch: retarget it first. Its
-    /// standing says so; one its order doesn't name has none, and a branch it targets that merged says so.
+    /// standing says so, with the branch to retarget it to; else a branch it targets that merged says so, whatever its
+    /// standing says first, such as one its order puts it after that closed, or none, for one its order doesn't name.
     static func retarget(of step: OrderStep) -> (after: ItemRef, to: String?)? {
         if case .retarget(let merged, let branch) = step.standing { return (merged, branch) }
-        guard step.standing == .notInOrder,
-              let merged = step.prerequisites.first(where: { $0.status == .merged && $0.origins.contains(.branch) })
+        guard let merged = step.prerequisites.first(where: { $0.status == .merged && $0.origins.contains(.branch) })
         else { return nil }
         return (merged.ref, nil)
     }
@@ -902,13 +903,11 @@ public struct MissionChoices: Equatable, Sendable {
                 ref: ref, mission: nil, next: nil, prerequisites: [], targets: targets, canUndo: change != nil, canPutBack: canPutBack
             )
         }
-        // The one set as next there: what it says, whether or not a stacked branch lets it be.
-        let isSet = step.notes.contains { note in
-            switch note {
-            case .yourNext, .nextDoesntHold: return true
-            default: return false
-            }
-        }
+        // The one you set as next there, by your change that holds, whether or not a stacked branch lets it be or BriefBar can
+        // see it now.
+        let isSet = change.map { change in
+            change.holds(in: orders) && change.first.map { OrderChanges.names(shown, $0) } == true
+        } ?? false
         let next: Next = if step.status.hasEnded {
             .ended
         } else if isSet {

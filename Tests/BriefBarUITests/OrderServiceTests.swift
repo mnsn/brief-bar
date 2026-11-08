@@ -699,4 +699,27 @@ private final class Clock {
         #expect(OrderEvidence.load(from: defaults).records.isEmpty)
         #expect(order.changes.all.map(\.ref) == [gitHub.ref])
     }
+
+    /// What BriefBar sees become of a pull request only what Undo would put back names goes with it until you click Undo:
+    /// abandoned, reactivated, then merged, before it left the lists, it's merged once Undo puts your change back.
+    @Test func undoPutsBackWhatBriefBarSawBecomeOfItsPullRequestsMeanwhile() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        let yours = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")]
+        let search = { (state: PullRequestState) in Self.ado(4130, from: "sam/search", state: state) }
+        order.publish(.azureDevOps, pullRequests: yours + [search(.open)])
+        order.change(.move([Self.ref(4130)], to: .into(.mine(UUID())), from: nil))
+        order.change(.undo(Self.ref(4130)))
+        #expect(order.changes.isEmpty && order.lastChange?.canUndo == true)
+
+        for state in [PullRequestState.closed, .open, .merged] {
+            order.publish(.azureDevOps, pullRequests: yours + [search(state)])
+        }
+        order.publish(.azureDevOps, pullRequests: yours)
+        #expect(order.undoLastChange())
+
+        let step = OrderBoard.mission(of: Self.ref(4130), in: order.missions)?.steps.first { $0.ref == Self.ref(4130) }
+        #expect(step?.status == .merged && step?.standing == .merged)
+        #expect(OrderEvidence.load(from: defaults).records[Self.ref(4130)]?.outcome == .merged)
+    }
 }

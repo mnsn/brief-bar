@@ -498,6 +498,16 @@ package final class PullRequestOrder: ObservableObject {
         where orders.refs.contains(observation.ref) || observation.ref == focused || subjects.contains(observation.ref) {
             evidence.observe(observation, at: date)
         }
+        // What Undo would put back can name pull requests no change of yours names now: what BriefBar sees become of them
+        // goes with it, in memory, for as long as Undo is there.
+        if let last = lastChange, last.canUndo {
+            let named = OrderChanges(last.touched.values.compactMap { $0 }).subjects
+            var seen = last.evidence
+            for observation in facts.observations where named.contains(observation.ref) {
+                seen.observe(observation, at: date)
+            }
+            if seen != last.evidence { lastChange = last.seeing(seen) }
+        }
         let finished = orders.removeFinished(evidence: evidence, now: date)
         if !finished.isEmpty {
             // As the preferences have them, with what an agent told since.
@@ -562,6 +572,11 @@ package struct OrderLastChange: Equatable {
 
     /// Whether it was made, and Undo can put back what it touched.
     package var canUndo: Bool { !touched.isEmpty }
+
+    /// The same, with what BriefBar saw become of its pull requests since.
+    func seeing(_ evidence: OrderEvidence) -> OrderLastChange {
+        OrderLastChange(said: said, refs: refs, mission: mission, touched: touched, evidence: evidence)
+    }
 
     /// The same, with the chains it names named as `OrderChanges.moveAnchors` renamed them.
     func renamingChains(_ renamed: [ItemRef: ItemRef]) -> OrderLastChange {
