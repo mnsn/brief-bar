@@ -20,7 +20,8 @@ fileprivate final class Clock {
 fileprivate final class Model {
     var prompts: [String] = []
     var answer: Result<String, OnDeviceModel.Failure> = .success("Faster checkout")
-    var isAvailable = true
+    /// Why it can't answer now, or nil when it can.
+    var unavailability: OnDeviceModel.Unavailability?
     /// Whether it holds its answers until `release()`.
     var holds = false
     private var held: [CheckedContinuation<Void, Never>] = []
@@ -33,7 +34,7 @@ fileprivate final class Model {
 
     func namer(clock: Clock) -> MissionNamer {
         MissionNamer(
-            isAvailable: { [unowned self] in isAvailable },
+            unavailability: { [unowned self] in unavailability },
             respond: { [unowned self] prompt, _ in
                 prompts.append(prompt)
                 if holds {
@@ -200,7 +201,7 @@ fileprivate final class Viewer {}
         try #require(await Self.eventually { model.prompts.count == 2 })
         #expect(model.prompts[1].contains("- Make checkout faster"))
         // Without Apple Intelligence: not at all.
-        model.isAvailable = false
+        model.unavailability = .notEnabled
         Self.tell(order, firstTitle: "Checkout, faster")
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
@@ -343,7 +344,7 @@ fileprivate final class Viewer {}
     @Test func whileAppleIntelligenceIsOffItLooksAgainEveryHalfMinute() async throws {
         let clock = Clock()
         let model = Model()
-        model.isAvailable = false
+        model.unavailability = .notEnabled
         let order = Self.service(clock: clock)
         let namer = model.namer(clock: clock)
         order.namer = namer
@@ -356,11 +357,81 @@ fileprivate final class Viewer {}
         #expect(model.prompts.isEmpty)
         #expect(namer.wakesAt == clock.now.addingTimeInterval(MissionNamer.retryAfter))
         // Turned on meanwhile: it's asked as it looks again.
-        model.isAvailable = true
+        model.unavailability = nil
         clock.advance(MissionNamer.retryAfter)
         namer.next()
         #expect(await Self.eventually { model.prompts.count == 1 })
         order.stopShowing(in: viewer)
+    }
+
+    /// On a Mac that can't run Apple Intelligence, it never looks again.
+    @Test func onAMacThatCantRunAppleIntelligenceItNeverLooksAgain() throws {
+        let clock = Clock()
+        let model = Model()
+        model.unavailability = .notEligible
+        let order = Self.service(clock: clock)
+        let namer = model.namer(clock: clock)
+        order.namer = namer
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let viewer = Viewer()
+        order.showing([key], in: viewer)
+        clock.advance(MissionNamer.settleFor)
+        namer.next()
+        #expect(model.prompts.isEmpty && namer.wakesAt == nil)
+        order.stopShowing(in: viewer)
+    }
+
+    /// BriefBar keeps a window it closes, to open it again, with its page's views, so By Mission doesn't hear it went.
+    /// What the window's page tells its source as the window closes does: nothing it shows is named anymore, and it stops
+    /// looking for Apple Intelligence.
+    @Test func aClosedWindowsMissionsArentNamed() async throws {
+        _ = NSApplication.shared
+        let clock = Clock()
+        let model = Model()
+        model.unavailability = .notReady
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let page = PullRequestOrder.page(.azureDevOpsPullRequests, window: "1")
+        let body = ScrollView {
+            MissionsBody(
+                view: .list, ordering: order, kinds: [.pullRequest], elsewhere: "GitHub", openElsewhere: nil,
+                listed: [Self.pr(4113), Self.pr(4105)], row: { step, _ in AnyView(Text(step.ref.id)) },
+                place: { _ in nil }, isSelected: { _ in false }, select: { _ in false }, rest: { _ in AnyView(EmptyView()) }
+            )
+        }
+        .environment(\.shownSection, .azureDevOpsPullRequests)
+        .environment(\.shownWindow, "1")
+        .environmentObject(AppServices(defaults: MemoryDefaults(), isDemo: true))
+        .frame(width: 600, height: 400)
+        // As BriefBar's windows are.
+        let window = NSWindow(
+            contentRect: CGRect(x: -20_000, y: -20_000, width: 600, height: 400), styleMask: [.titled, .closable],
+            backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: AnyView(body))
+        defer { window.contentView = nil }
+        order.setVisible(true, for: page)
+        try await until("its mission is on screen") { order.onScreen == [key] }
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        // Apple Intelligence is getting ready: it looks again in half a minute.
+        #expect(order.namer?.wakesAt != nil)
+
+        // ⌘W, and the page off screen, as its source hears.
+        window.close()
+        order.setVisible(false, for: page)
+        #expect(order.onScreen.isEmpty)
+        #expect(order.namer?.wakesAt == nil)
+        model.unavailability = nil
+        Self.tell(order, firstTitle: "Make checkout faster")
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(model.prompts.isEmpty)
     }
 
     @Test func aRenameLeftAsItWasKeepsNothingThoughAppleIntelligenceNamedItMeanwhile() async throws {

@@ -41,8 +41,10 @@ characters at most. A name is forgotten once its mission hasn't shown for 14 day
 Order, and what makes the mission, are on; with the order that makes it; with the source whose things make it, as you
 turn that off; and with **Forget All Orders…**. The names Apple Intelligence gives missions with Azure DevOps' pull
 requests, on this Mac (`MissionNamer`, `MissionNaming`), from their pull requests', work items' and sessions' titles,
-only for the missions By Mission shows on screen, those scrolled out of sight once they come into it, are kept in memory
-only. No name goes to the log, to agents or to Apple Intelligence.
+are kept in memory only. It's asked only for the missions in sight in a window that shows By Mission on screen: not
+while that window is closed, minimized or covered, nor for one scrolled out of sight until it comes into it; and,
+while Apple Intelligence is off or getting ready, BriefBar looks again every half minute, never on a Mac that can't run
+it. No name goes to the log, to agents or to Apple Intelligence.
 
 ## Permissions that macOS grants once
 

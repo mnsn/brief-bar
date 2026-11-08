@@ -45,18 +45,19 @@ package final class MissionNamer {
     private var timer: Timer?
     /// When it comes back to see what's due, if it will.
     package private(set) var wakesAt: Date?
-    private let isAvailable: @MainActor () -> Bool
+    private let unavailability: @MainActor () -> OnDeviceModel.Unavailability?
     private let respond: Respond
     private let now: () -> Date
 
+    /// - Parameter unavailability: why Apple Intelligence can't answer now, or nil when it can.
     package init(
-        isAvailable: @escaping @MainActor () -> Bool = { OnDeviceModel.isAvailable },
+        unavailability: @escaping @MainActor () -> OnDeviceModel.Unavailability? = { OnDeviceModel.unavailability },
         respond: @escaping Respond = { prompt, instructions in
             await OnDeviceModel.respond(to: prompt, instructions: instructions, maximumTokens: 24, likeliestWords: true)
         },
         now: @escaping () -> Date = { Date() }
     ) {
-        self.isAvailable = isAvailable
+        self.unavailability = unavailability
         self.respond = respond
         self.now = now
     }
@@ -86,9 +87,7 @@ package final class MissionNamer {
         since = [:]
         asked = [:]
         if asking != nil { dropsAnswer = true }
-        timer?.invalidate()
-        timer = nil
-        wakesAt = nil
+        cancelWake()
     }
 
     /// Forgets what it asked for these missions, whose names went, as when their source was turned off, and the answer under
@@ -100,13 +99,20 @@ package final class MissionNamer {
     }
 
     /// Asks for the next mission that's due, or comes back when one will be: while Apple Intelligence is off or getting
-    /// ready, every `retryAfter`, as long as one waits for a name.
+    /// ready, every `retryAfter`, as long as one waits for a name; never on a Mac that can't run it. With nothing on
+    /// screen, it doesn't come back.
     package func next() {
-        guard asking == nil, !requests.isEmpty else { return }
+        guard !requests.isEmpty else {
+            cancelWake()
+            return
+        }
+        guard asking == nil else { return }
         let date = now()
-        guard isAvailable() else {
-            if requests.contains(where: { $0.isSettled && asked[$0.key] != $0.inputs }) {
+        if let unavailable = unavailability() {
+            if unavailable != .notEligible, requests.contains(where: { $0.isSettled && asked[$0.key] != $0.inputs }) {
                 wake(at: date.addingTimeInterval(Self.retryAfter))
+            } else {
+                cancelWake()
             }
             return
         }
@@ -164,13 +170,22 @@ package final class MissionNamer {
     private func wake(at date: Date) {
         timer?.invalidate()
         wakesAt = date
-        let timer = Timer(timeInterval: max(date.timeIntervalSince(now()), 0) + 0.05, repeats: false) { [weak self] _ in
+        let interval = max(date.timeIntervalSince(now()), 0) + 0.05
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.wakesAt = nil
                 self?.next()
             }
         }
+        // A second or a few later is as good, and lets the Mac sleep in between.
+        timer.tolerance = min(interval / 5, 5)
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+
+    private func cancelWake() {
+        timer?.invalidate()
+        timer = nil
+        wakesAt = nil
     }
 }
