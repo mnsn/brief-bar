@@ -1044,8 +1044,9 @@ public enum OrderBoard {
     /// gave it, and your changes that name it. The mission all its open pull requests went to, but those your changes moved
     /// into it or out of it, wherever they are now, when that's their story's; for a chain whose earliest pull request
     /// left, the chain or GitHub stack they're in now; or, for a story's, as Show Links is turned off or their work items
-    /// change, the chain, GitHub stack or session's they're in now, so that what followed them into it comes back with
-    /// them. A chain split in two, as you moved one from its middle, goes to the chain or GitHub stack with the most of
+    /// change, the chain, GitHub stack or session's they're in now, when it has no other open one, so that what followed
+    /// them into the story's mission comes back out with them, and goes back in as they do. Split, a chain as you moved one
+    /// from its middle, or a story's in such missions and pull requests on their own, it goes to the one with the most of
     /// them, the first shown of those with as many. Nil while it's still there, or when its open pull requests went
     /// different ways, or none is open: what's kept waits, as it would. A session's order and a mission of your own never
     /// move: they're kept by their IDs. One that's gone but for what you'd put in it, which By Mission shows as yours, is
@@ -1066,26 +1067,29 @@ public enum OrderBoard {
         guard !new.contains(where: { $0.key == key && !$0.isMine }), let was = old.first(where: { $0.key == key }) else { return nil }
         let open = (was.steps + was.attached + was.sameStory).filter { $0.status.isOpen && !moved.contains($0.ref) }.map(\.ref)
         guard !open.isEmpty else { return nil }
+        let had = Set((was.steps + was.attached + was.sameStory).map(\.ref))
         let held = { (mission: OrderMission) in open.filter { ref in mission.steps.contains { $0.ref == ref } }.count }
-        var now = new.first { !$0.isMine && held($0) == open.count }
-        if now == nil, case .chain = key {
-            for mission in new where !mission.isMine && held(mission) > (now.map(held) ?? 0) {
-                switch mission.key {
-                case .chain, .stack: now = mission
-                default: break
-                }
+        // Whether a mission has no open pull request but the gone one's and those your changes moved.
+        let within = { (mission: OrderMission) in
+            !(mission.steps + mission.attached).contains { $0.status.isOpen && !had.contains($0.ref) && !moved.contains($0.ref) }
+        }
+        // Where what's kept can go on, with all of them; and with the most of them, as they split.
+        func goesOn(_ mission: OrderMission, split: Bool) -> Bool {
+            guard !mission.isMine else { return false }
+            switch (key, mission.key) {
+            case (_, .story): return !split
+            case (.chain, .chain), (.chain, .stack): return true
+            case (.story, .chain), (.story, .stack), (.story, .family): return within(mission)
+            default: return false
             }
         }
-        guard let now else { return nil }
-        switch (key, now.key) {
-        case (_, .story), (.chain, .chain), (.chain, .stack), (.story, .chain), (.story, .stack), (.story, .family): break
-        default: return nil
+        var now = new.first { goesOn($0, split: false) && held($0) == open.count }
+        if now == nil {
+            for mission in new where goesOn(mission, split: true) && held(mission) > (now.map(held) ?? 0) {
+                now = mission
+            }
         }
-        if alone {
-            let had = Set((was.steps + was.attached + was.sameStory).map(\.ref))
-            guard !(now.steps + now.attached).contains(where: { $0.status.isOpen && !had.contains($0.ref) && !moved.contains($0.ref) })
-            else { return nil }
-        }
+        guard let now, !alone || within(now) else { return nil }
         return now.key
     }
 }

@@ -421,7 +421,7 @@ import Testing
         #expect(read.map(\.key) == [.story(Self.item(5101))])
         #expect(OrderBoard.successor(of: .chain(Self.pr(4111)), from: moved, to: read) == .story(Self.item(5101)))
         #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: read, to: moved) == .chain(Self.pr(4111)))
-        // A story's that held others too: it waits, as they went different ways.
+        // A story's split in two chains: the first shown.
         let more = Self.missions(Self.facts([
             Self.ado(4111, [Self.task(5102, rank: 1)], from: "users/robin/b", into: "users/robin/a"),
             Self.ado(4112, [Self.task(5103, rank: 2)], from: "users/robin/c", into: "users/robin/b"),
@@ -432,7 +432,30 @@ import Testing
             Self.ado(4120, nil, from: "users/sam/a"), Self.ado(4121, nil, from: "users/sam/b", into: "users/sam/a"),
         ]))
         #expect(Set(unread.map(\.key)) == [.chain(Self.pr(4111)), .chain(Self.pr(4120))])
-        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: more, to: unread) == nil)
+        let shownFirst = try #require(unread.first)
+        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: more, to: unread) == shownFirst.key)
+        // Split in a chain and a teammate's on its own: the chain, which has the most of them.
+        let withTheirs = Self.missions(Self.facts([
+            Self.ado(4111, [Self.task(5102, rank: 1)], from: "users/robin/b", into: "users/robin/a"),
+            Self.ado(4112, [Self.task(5103, rank: 2)], from: "users/robin/c", into: "users/robin/b"),
+            Self.ado(4120, [Self.task(5104, rank: 3)], from: "users/sam/a"),
+        ]))
+        #expect(withTheirs.map(\.key) == [.story(Self.item(5101))])
+        let theirsAlone = Self.missions(Self.facts([
+            Self.ado(4111, nil, from: "users/robin/b", into: "users/robin/a"), Self.ado(4112, nil, from: "users/robin/c", into: "users/robin/b"),
+            Self.ado(4120, nil, from: "users/sam/a"),
+        ]))
+        #expect(theirsAlone.map(\.key) == [.chain(Self.pr(4111))])
+        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: withTheirs, to: theirsAlone) == .chain(Self.pr(4111)))
+        // Not to a session's that has another open, for no story: what went there wouldn't come back with the story's.
+        let three = [OrderSession(ref: coordinator, pullRequests: [Self.pr(4101), Self.pr(4102), Self.pr(4103)])]
+        let storys = Self.missions(Self.facts([
+            Self.ado(4101, [Self.task(5102, rank: 1)]), Self.ado(4102, [Self.task(5103, rank: 2)]), Self.ado(4103, []),
+        ], sessions: three))
+        #expect(storys.map(\.key) == [.story(Self.item(5101))])
+        let sessions3 = Self.missions(Self.facts([4101, 4102, 4103].map { Self.ado($0, nil) }, sessions: three))
+        #expect(sessions3.map(\.key) == [.family(coordinator)])
+        #expect(OrderBoard.successor(of: .story(Self.item(5101)), from: storys, to: sessions3) == nil)
         // A family whose pull requests went to a chain: it waits, as today.
         let stacked = Self.missions(Self.facts([
             Self.ado(4101, [], from: "users/robin/a"), Self.ado(4102, [], from: "users/robin/b", into: "users/robin/a"),

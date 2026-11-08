@@ -688,52 +688,57 @@ fileprivate final class Viewer {}
     }
 
     /// What's kept by a chain follows its pull requests into their story's mission as Show Links reads them, and back out
-    /// as it's turned off: Focus, your name, and the one you put in it, which never shows apart from them.
+    /// as it's turned off: Focus, your name, and the one you put in it, which never shows apart from them. So it does when a
+    /// teammate's pull request is for the story too: out, it goes with the chain, which has the most of the story's.
     @Test func focusYourNameAndWhatYouPutInAChainFollowItIntoItsStoryAndBackOut() throws {
-        let clock = Clock()
-        let defaults = MemoryDefaults()
-        let order = Self.service(defaults, clock: clock)
-        let (chain, story) = (MissionKey.chain(Self.pr(4110)), MissionKey.story(Self.story))
-        func publish(reading: Bool, stories: Bool) {
-            order.publish(.azureDevOps, pullRequests: [
-                Self.stacked(4110, from: "robin/a", into: "main", reading ? (stories ? [Self.task(5181, rank: 1)] : []) : nil),
-                Self.stacked(4111, from: "robin/b", into: "robin/a", reading ? (stories ? [Self.task(5182, rank: 2)] : []) : nil),
-                Self.ado(4130, reading ? [] : nil),
-            ], readsStories: reading)
-        }
-        func expectKept(by key: MissionKey) throws {
-            #expect(order.missions.map(\.key) == [key])
-            let mission = try #require(order.missions.first)
-            #expect(mission.steps.map(\.ref) == [4110, 4111, 4130].map(Self.pr))
-            #expect(mission.steps.allSatisfy { step in
-                step.notes.allSatisfy { note in
-                    switch note {
-                    case .placementGone, .placementUnseen: return false
-                    default: return true
+        for teammate in [false, true] {
+            let clock = Clock()
+            let defaults = MemoryDefaults()
+            let order = Self.service(defaults, clock: clock)
+            let (chain, story) = (MissionKey.chain(Self.pr(4110)), MissionKey.story(Self.story))
+            func publish(reading: Bool, stories: Bool) {
+                let theirs = teammate ? [Self.ado(4120, reading ? (stories ? [Self.task(5184, rank: 4)] : []) : nil)] : []
+                order.publish(.azureDevOps, pullRequests: [
+                    Self.stacked(4110, from: "robin/a", into: "main", reading ? (stories ? [Self.task(5181, rank: 1)] : []) : nil),
+                    Self.stacked(4111, from: "robin/b", into: "robin/a", reading ? (stories ? [Self.task(5182, rank: 2)] : []) : nil),
+                    Self.ado(4130, reading ? [] : nil),
+                ] + theirs, readsStories: reading)
+            }
+            func expectKept(by key: MissionKey) throws {
+                #expect(order.missions.map(\.key) == [key], "teammate: \(teammate)")
+                let mission = try #require(order.missions.first)
+                let theirs = teammate && key == story ? [4120] : []
+                #expect(Set(mission.steps.map(\.ref)) == Set(([4110, 4111, 4130] + theirs).map(Self.pr)), "teammate: \(teammate)")
+                #expect(mission.steps.allSatisfy { step in
+                    step.notes.allSatisfy { note in
+                        switch note {
+                        case .placementGone, .placementUnseen: return false
+                        default: return true
+                        }
                     }
-                }
-            })
-            #expect(mission.isFocused && order.focus == key && OrderFocus.load(from: defaults) == key)
-            #expect(order.title(of: mission) == "Totals" && MissionNames.load(from: defaults).entries.keys.map { $0 } == [key])
-            #expect(order.changes[Self.pr(4130)]?.placement == .into(key))
-            #expect(OrderChanges.load(from: defaults)[Self.pr(4130)]?.placement == .into(key))
+                })
+                #expect(mission.isFocused && order.focus == key && OrderFocus.load(from: defaults) == key)
+                #expect(order.title(of: mission) == "Totals" && MissionNames.load(from: defaults).entries.keys.map { $0 } == [key])
+                #expect(order.changes[Self.pr(4130)]?.placement == .into(key))
+                #expect(OrderChanges.load(from: defaults)[Self.pr(4130)]?.placement == .into(key))
+            }
+            publish(reading: true, stories: false)
+            #expect(order.missions.map(\.key) == [chain])
+            order.setFocus(chain)
+            order.rename(try #require(order.missions.first), to: "Totals")
+            order.change(.move([Self.pr(4130)], to: .into(chain), from: nil))
+            order.dismissLastChange()
+            try expectKept(by: chain)
+            // Show Links read that the chain's are for User Story 5180: they go to its mission, with the one you put there.
+            publish(reading: true, stories: true)
+            try expectKept(by: story)
+            // Turned off: they come back to the chain, as you left it.
+            publish(reading: false, stories: false)
+            try expectKept(by: chain)
+            // And on again.
+            publish(reading: true, stories: true)
+            try expectKept(by: story)
         }
-        publish(reading: true, stories: false)
-        #expect(order.missions.map(\.key) == [chain])
-        order.setFocus(chain)
-        order.rename(try #require(order.missions.first), to: "Totals")
-        order.change(.move([Self.pr(4130)], to: .into(chain), from: nil))
-        order.dismissLastChange()
-        try expectKept(by: chain)
-        // Show Links read that the chain's are for User Story 5180: all three go to its mission.
-        publish(reading: true, stories: true)
-        try expectKept(by: story)
-        // Turned off: they come back to the chain, as you left it.
-        publish(reading: false, stories: false)
-        try expectKept(by: chain)
-        // And on again.
-        publish(reading: true, stories: true)
-        try expectKept(by: story)
     }
 
     /// A chain you split in two, moving one from its middle into a mission of your own, goes on as the part with the most

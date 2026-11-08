@@ -817,8 +817,9 @@ package final class PullRequestOrder: ObservableObject {
             }
         }
         // What's kept by a mission's key follows it, once it's gone, to where all its open pull requests went: a session's
-        // pull requests, or a chain, to their story's and back, a chain to the chain or GitHub stack they're in now, as the
-        // one it was named by ended, moved out or came back with Undo, or to the one with the most of them, as you split it.
+        // pull requests, or a chain, to their story's, and back out to the part with the most of the story's, made of them
+        // alone; a chain to the chain or GitHub stack they're in now, as the one it was named by ended, moved out or came
+        // back with Undo, or to the one with the most of them, as you split it.
         // Not by those your changes moved, into it or out of it, wherever they are now. Else it waits, as ever. One rule
         // for all of it: your changes and what Undo would put back, Focus, and the name you gave the mission; but where you
         // set one as next follows only where nothing else open is, so that others there don't wait for it.

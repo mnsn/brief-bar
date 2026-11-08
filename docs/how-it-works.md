@@ -1367,9 +1367,10 @@ pull requests, shows your change as any row does: what you put it after, with âœ
 is gone, or that an order went against it, with Put Yours Back. A mission your changes name that's gone, as its key
 changed, is followed by them and by what Undo would put back, as Focus and the name you gave it are, by one rule
 (`OrderBoard.successor`): to the mission all its open pull requests went to, but those your changes moved into it or out
-of it, when that's their story's, once Show Links reads it; from a story's, the chain, GitHub stack or session's they're
-all in, as Show Links is turned off, so what followed them in comes back out with them; or, for a chain, the chain or
-GitHub stack they're in now, or the one with the most of them, as you split it; else they wait. Where you set one as
+of it, when that's their story's, once Show Links reads it; out of a story's, as Show Links is turned off, to the
+chain, GitHub stack or session's with the most of them that has no other open one, so what followed them in comes back
+out with them, and goes back in as they do; or, for a chain, the chain or GitHub stack they're in now, or the one with
+the most of them, as you split it; the first shown of those with as many; else they wait. Where you set one as
 next follows only to a mission with nothing else open but what you moved, so that a teammate's of the same story doesn't
 wait for it; else that row says the mission you set it as next in is gone. **Undo** takes back your last change, in
 memory only,
