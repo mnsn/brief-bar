@@ -117,17 +117,19 @@ import Testing
         return (window, host)
     }
 
-    /// Lets SwiftUI lay the window out and run what its views start, until `done`, or for a moment.
-    private func settle(until done: () -> Bool = { false }, at most: Int = 300) async throws {
-        for _ in 0..<most where !done() {
-            Self.runLoop()
-            try await Task.sleep(for: .milliseconds(10))
+    /// Awaits until `done`, for as long as a busy machine could need (`waitLimit`), while SwiftUI lays the window out and
+    /// runs what its views start, on the main run loop Swift runs meanwhile: never running that run loop itself, which would
+    /// hold the main actor from other tests. What didn't come, the test's expectations say.
+    private func settle(until done: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !done(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
         }
     }
 
-    /// The main run loop, for a moment, where SwiftUI lays windows out and starts their views' tasks.
-    private static func runLoop() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    /// Awaits a moment, `moments` times 20 ms, for what would come by then, as when nothing should.
+    private func settle(at moments: Int) async throws {
+        try await Task.sleep(for: .milliseconds(20 * moments))
     }
 
     /// The long thread, as the pull request's details have it.
