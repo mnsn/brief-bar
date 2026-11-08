@@ -327,6 +327,94 @@ import Testing
         #expect(checked == 2)
     }
 
+    /// Shown on screen before anything that following it asked for could start, as on a busy Mac, where a read can be done
+    /// before the next starts: its sessions are read once, and how work would reach its session checked once.
+    @Test func readsOnceAsAWindowShowsItsDetailsBeforeFollowingCouldRead() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        // Between reads, an hour: what's read is what showing it reads.
+        sessions.refreshEvery = .seconds(3_600)
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        var checked = 0
+        sessions.deliveryCheckedForTests = { _ in checked += 1 }
+        var reads = 0
+        sessions.sessionsReadForTests = { _ in reads += 1 }
+        // As on a busy Mac: a read asked for before the window shows the page starts only once it does, and any read after
+        // the first only once that one is done.
+        var shown = false
+        var started = 0
+        var waiting: [CheckedContinuation<Void, Never>] = []
+        sessions.readStartsForTests = { _ in
+            started += 1
+            if !shown || started > 1 { await withCheckedContinuation { waiting.append($0) } }
+        }
+        let following = Task { await sessions.follow(item, record: record, on: page) }
+        defer { following.cancel() }
+        try await Task.sleep(for: .milliseconds(300))
+
+        sessions.setVisible(true, for: page)
+        shown = true
+        waiting.forEach { $0.resume() }
+        waiting = []
+        try await until { sessions.session(for: item.key)?.delivery != nil }
+        // Then whatever waited goes on: there's nothing more to read, nor to check.
+        let late = waiting.count
+        waiting.forEach { $0.resume() }
+        try await until { reads == 1 + late }
+        #expect(reads == 1)
+        #expect(checked == 1)
+    }
+
+    /// Shown on screen again before anything that the pause going off screen cut short could start, as on a busy Mac: its
+    /// sessions are read once as it shows again, and how work would reach its session checked once.
+    @Test func readsOnceAsAWindowShowsItsDetailsAgainBeforeTheirPauseCouldRead() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        // Between reads, an hour: what's read is what showing it reads.
+        sessions.refreshEvery = .seconds(3_600)
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        var checked = 0
+        sessions.deliveryCheckedForTests = { _ in checked += 1 }
+        var reads = 0
+        sessions.sessionsReadForTests = { _ in reads += 1 }
+        // As on a busy Mac: a read asked for while the window doesn't show the page starts only once it does again, and any
+        // read after that one only once it's done.
+        var shown = true
+        var started = 0
+        var waiting: [CheckedContinuation<Void, Never>] = []
+        sessions.readStartsForTests = { _ in
+            started += 1
+            if !shown || started > 2 { await withCheckedContinuation { waiting.append($0) } }
+        }
+        let following = followOnScreen(sessions, item, record: record)
+        defer { following.cancel() }
+        try await until { sessions.session(for: item.key)?.delivery != nil }
+        #expect(reads == 1 && checked == 1)
+
+        sessions.setVisible(false, for: page)
+        shown = false
+        try await Task.sleep(for: .milliseconds(300))
+        sessions.setVisible(true, for: page)
+        shown = true
+        waiting.forEach { $0.resume() }
+        waiting = []
+        try await until { reads == 2 }
+        // Then whatever waited goes on: there's nothing more to read, nor to check.
+        let late = waiting.count
+        waiting.forEach { $0.resume() }
+        try await until { reads == 2 + late }
+        #expect(reads == 2)
+        #expect(checked == 2)
+    }
+
     /// Shown again while a read that going off screen called off is still ending, as when its window is covered and
     /// uncovered while the sessions are read: it's read again as that read ends, rather than at the next turn.
     @Test func readsAgainWhenShownWhileAReadWasCalledOff() async throws {
