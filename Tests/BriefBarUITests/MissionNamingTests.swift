@@ -197,7 +197,7 @@ fileprivate final class Viewer {}
         #expect(model.prompts.count == 1)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
-        #expect(await Self.eventually { model.prompts.count == 2 })
+        try #require(await Self.eventually { model.prompts.count == 2 })
         #expect(model.prompts[1].contains("- Make checkout faster"))
         // Without Apple Intelligence: not at all.
         model.isAvailable = false
@@ -255,7 +255,7 @@ fileprivate final class Viewer {}
                       items: [Self.item(Self.pr(4113), "Speed up the checkout page")], readsStories: true)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
-        #expect(await Self.eventually { model.prompts.count == 1 })
+        try #require(await Self.eventually { model.prompts.count == 1 })
         #expect(model.prompts[0].hasPrefix("Current name: Checkout speed\n"))
         #expect(model.prompts[0].contains("Copilot sessions:\n- Checkout speed"))
         order.stopShowing(in: viewer)
@@ -312,7 +312,7 @@ fileprivate final class Viewer {}
         #expect(order.modelNames[key] == nil)
         clock.advance(MissionNamer.settleFor)
         order.namer?.next()
-        #expect(await Self.eventually { model.prompts.count == 2 })
+        try #require(await Self.eventually { model.prompts.count == 2 })
         #expect(model.prompts[1].contains("- Make checkout faster"))
 
         // Pull Request Order went off meanwhile: on again, it's asked again.
@@ -562,6 +562,67 @@ fileprivate final class Viewer {}
         model.release()
         try await Task.sleep(for: .milliseconds(50))
         #expect(order.modelNames[other] == nil)
+        order.stopShowing(in: viewer)
+    }
+
+    /// A window's page that's minimized, hidden or covered names nothing, though what it shows changes, until its source
+    /// says it's on screen again.
+    @Test func aCoveredOrMinimizedPageNamesNothingUntilItShowsAgain() async throws {
+        let clock = Clock()
+        let model = Model()
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let viewer = Viewer()
+        let page = PullRequestOrder.page(.azureDevOpsPullRequests, window: "1")
+        order.showing([key], in: viewer, on: page)
+        #expect(order.onScreen.isEmpty)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(model.prompts.isEmpty)
+
+        order.setVisible(true, for: page)
+        #expect(order.onScreen == [key])
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await Self.eventually { model.prompts.count == 1 })
+
+        order.setVisible(false, for: page)
+        #expect(order.onScreen.isEmpty)
+        Self.tell(order, firstTitle: "Make checkout faster")
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(model.prompts.count == 1)
+        order.stopShowing(in: viewer)
+    }
+
+    /// A session that tells BriefBar it's working on one of a mission's pull requests helps name it, with its title; once
+    /// it stops, the mission is asked about again, without it.
+    @Test func aSessionWorkingOnItsPullRequestHelpsNameIt() async throws {
+        let clock = Clock()
+        let model = Model()
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let working = ItemRef.session("00000000-0000-4000-8000-000000000005")!
+        let titled = [Self.item(working, "Make checkout faster")]
+        order.publish(.copilot, items: titled, working: [working: [Self.pr(4113)]])
+        let viewer = Viewer()
+        order.showing([key], in: viewer)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try #require(await Self.eventually { model.prompts.count == 1 })
+        #expect(model.prompts[0].contains("Copilot sessions:\n- Make checkout faster"))
+
+        order.publish(.copilot, items: titled)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try #require(await Self.eventually { model.prompts.count == 2 })
+        #expect(!model.prompts[1].contains("Make checkout faster"))
         order.stopShowing(in: viewer)
     }
 

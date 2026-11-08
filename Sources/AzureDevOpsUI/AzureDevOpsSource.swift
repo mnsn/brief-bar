@@ -689,6 +689,10 @@ package final class AzureDevOpsSource: BriefBarSource {
             pullRequestSessions?.setVisible(isShowing, for: page)
             tagChanges?.setVisible(isShowing, for: page)
         }
+        // By Mission names its missions only while a window shows them on screen.
+        if viewer.kind == .window, section == .azureDevOpsPullRequests {
+            services.pullRequestOrder.setVisible(isShowing, for: PullRequestOrder.page(section, window: viewer.id))
+        }
         // The sprint and pipelines are read only while something shows them.
         switch section {
         case .azureDevOpsSprint:

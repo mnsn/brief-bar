@@ -50,8 +50,11 @@ package final class PullRequestOrder: ObservableObject {
     private var clock: Timer?
     /// When it last counted the time against the names you gave missions, while it's on.
     private var namesCounted: Date?
-    /// The missions By Mission shows now, by the views that show them, the first to show first.
-    private var shown: [(viewer: WeakViewer, keys: [MissionKey])] = []
+    /// The missions By Mission shows now, by the views that show them, the first to show first, with the window's page each
+    /// is on, when it's on one.
+    private var shown: [(viewer: WeakViewer, keys: [MissionKey], page: String?)] = []
+    /// The windows' pages on screen now that can list pull requests By Mission, as their sources say (`setVisible`).
+    private var visiblePages: Set<String> = []
 
     /// How often it looks at the time, for what time alone changes: an order that hasn't changed for 30 days shows as stale,
     /// and one that finished goes two weeks later, whether or not the sources show anything new meanwhile.
@@ -403,13 +406,17 @@ package final class PullRequestOrder: ObservableObject {
         askNames()
     }
 
-    /// By Mission shows these missions now, in this view, the first first: Apple Intelligence names them as they settle.
-    package func showing(_ keys: [MissionKey], in viewer: AnyObject) {
+    /// By Mission shows these missions now, in this view, the first first: Apple Intelligence names them as they settle,
+    /// while the window's page the view is on is on screen.
+    /// - Parameter page: the window's page it's on (`page(_:window:)`); nil outside a window, where what it shows is on
+    ///   screen.
+    package func showing(_ keys: [MissionKey], in viewer: AnyObject, on page: String? = nil) {
         if let index = shown.firstIndex(where: { $0.viewer.object === viewer }) {
-            guard shown[index].keys != keys else { return }
+            guard shown[index].keys != keys || shown[index].page != page else { return }
             shown[index].keys = keys
+            shown[index].page = page
         } else {
-            shown.append((WeakViewer(object: viewer), keys))
+            shown.append((WeakViewer(object: viewer), keys, page))
         }
         askNames()
     }
@@ -421,10 +428,26 @@ package final class PullRequestOrder: ObservableObject {
         askNames()
     }
 
+    /// What a window's page is called here: the section it shows, in that window, by the ID its `SectionViewer` has.
+    package nonisolated static func page(_ section: SectionID, window: String) -> String {
+        "\(section.rawValue) in window \(window)"
+    }
+
+    /// A window started or stopped showing, on screen, a page that can list pull requests By Mission, as its source says
+    /// (`sectionVisibilityChanged`): minimized, hidden or covered, the missions it shows aren't named until it shows again.
+    package func setVisible(_ visible: Bool, for page: String) {
+        if visible {
+            guard visiblePages.insert(page).inserted else { return }
+        } else {
+            guard visiblePages.remove(page) != nil else { return }
+        }
+        askNames()
+    }
+
     /// The missions By Mission shows on screen now, in all its views, the first first: those Apple Intelligence names.
     package var onScreen: [MissionKey] {
         var keys: [MissionKey] = []
-        for view in shown where view.viewer.object != nil {
+        for view in shown where view.viewer.object != nil && view.page.map(visiblePages.contains) ?? true {
             for key in view.keys where !keys.contains(key) { keys.append(key) }
         }
         return keys
@@ -443,7 +466,8 @@ package final class PullRequestOrder: ObservableObject {
             guard names.name(for: key) == nil, let mission = missions.first(where: { $0.key == key }),
                   let inputs = MissionNaming.inputs(
                       for: mission, stories: { facts.pullRequests[$0]?.stories ?? [] },
-                      workItems: { facts.pullRequests[$0]?.workItems ?? [] }, name: name(of:)
+                      workItems: { facts.pullRequests[$0]?.workItems ?? [] }, sessionsWorking: sessionsWorking(on:),
+                      name: name(of:)
                   )
             else { return nil }
             return MissionNamer.Request(key: key, inputs: inputs, isSettled: MissionNaming.isSettled(mission, facts: facts))

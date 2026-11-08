@@ -255,6 +255,12 @@ package final class GitHubSource: BriefBarSource {
         store.refreshIfStale()
     }
 
+    package func sectionVisibilityChanged(_ section: SectionID, isShowing: Bool, by viewer: SectionViewer) {
+        // By Mission names its missions only while a window shows them on screen.
+        guard viewer.kind == .window, section == .githubPullRequests else { return }
+        services.pullRequestOrder.setVisible(isShowing, for: PullRequestOrder.page(section, window: viewer.id))
+    }
+
     // MARK: Widgets
 
     package func widget(for section: SectionID, size: WidgetSize, rows: Int) -> AnyView {

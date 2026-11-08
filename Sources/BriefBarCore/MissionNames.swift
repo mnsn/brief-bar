@@ -251,17 +251,24 @@ public enum MissionNaming {
     /// - Parameters:
     ///   - stories: the stories each of its pull requests is for, as the sources read them: its tasks there come first.
     ///   - workItems: each of its pull requests' work items, all of them, as the sources read them.
+    ///   - sessionsWorking: the sessions that told BriefBar they're working on each of its pull requests now, which come
+    ///     after those that told its order or opened them.
     ///   - name: what a source calls a session, a work item or a pull request, when it says.
     public static func inputs(
-        for mission: OrderMission, stories: (ItemRef) -> [OrderStory], workItems: (ItemRef) -> [ItemRef], name: (ItemRef) -> String?
+        for mission: OrderMission, stories: (ItemRef) -> [OrderStory], workItems: (ItemRef) -> [ItemRef],
+        sessionsWorking: (ItemRef) -> [ItemRef], name: (ItemRef) -> String?
     ) -> MissionNameInputs? {
         let pullRequests = pullRequests(of: mission)
         guard !pullRequests.isEmpty else { return nil }
         var items: [ItemRef] = []
+        var sessions = mission.sessions
         for ref in pullRequests {
             for item in stories(ref).map({ $0.task ?? $0.ref }) + workItems(ref)
             where item != mission.story?.ref && !items.contains(item) {
                 items.append(item)
+            }
+            for session in sessionsWorking(ref) where !sessions.contains(session) {
+                sessions.append(session)
             }
         }
         let withoutGitHub = { (ref: ItemRef) in ref.kind == .gitHubPullRequest ? nil : name(ref) }
@@ -270,7 +277,7 @@ public enum MissionNaming {
         return MissionNameInputs(
             current: titles.contains(current) ? current : nil, story: mission.story.flatMap { name($0.ref) },
             workItems: items.compactMap(name), pullRequests: pullRequests.compactMap(name),
-            sessions: mission.sessions.compactMap(name)
+            sessions: sessions.compactMap(name)
         )
     }
 

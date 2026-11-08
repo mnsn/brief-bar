@@ -188,7 +188,8 @@ import Testing
     @Test func itsAskedFromAzureDevOpsAndSessionsTitlesWithBriefBarsOwnName() throws {
         let (mission, stories) = Self.storyMission()
         let inputs = try #require(MissionNaming.inputs(
-            for: mission, stories: { stories[$0] ?? [] }, workItems: { _ in [] }, name: { Self.titles[$0] }
+            for: mission, stories: { stories[$0] ?? [] }, workItems: { _ in [] }, sessionsWorking: { _ in [] },
+            name: { Self.titles[$0] }
         ))
         #expect(inputs == MissionNameInputs(
             current: "Checkout redesign", story: "Checkout redesign", workItems: ["Add the coupon field", "Gift cards", "Round coupon totals"],
@@ -210,7 +211,9 @@ import Testing
             The mission's name:
             """)
         // While BriefBar can't read the story, its name is no title, and isn't given.
-        let unread = try #require(MissionNaming.inputs(for: mission, stories: { stories[$0] ?? [] }, workItems: { _ in [] }) { ref in
+        let unread = try #require(MissionNaming.inputs(
+            for: mission, stories: { stories[$0] ?? [] }, workItems: { _ in [] }, sessionsWorking: { _ in [] }
+        ) { ref in
             ref.kind == .workItem ? nil : Self.titles[ref]
         })
         #expect(unread.current == nil && unread.story == nil && unread.workItems.isEmpty)
@@ -228,11 +231,32 @@ import Testing
         titles[.workItem(organization: "contoso", id: 5001)] = "Faster checkout"
         titles[.workItem(organization: "contoso", id: 5104)] = "Coupons for gift cards"
         let inputs = try #require(MissionNaming.inputs(
-            for: mission, stories: { stories[$0] ?? [] }, workItems: { workItems[$0] ?? [] }, name: { titles[$0] }
+            for: mission, stories: { stories[$0] ?? [] }, workItems: { workItems[$0] ?? [] }, sessionsWorking: { _ in [] },
+            name: { titles[$0] }
         ))
         #expect(inputs.workItems == [
             "Add the coupon field", "Gift cards", "Faster checkout", "Coupons for gift cards", "Round coupon totals",
         ])
+    }
+
+    /// The sessions that told BriefBar they're working on its pull requests help name it, after those that told its order
+    /// or opened them, each once; BriefBar's own name, which it's asked to keep while that fits, stays what it was.
+    @Test func theSessionsWorkingOnItsPullRequestsHelpNameItAfterItsOwn() throws {
+        let (mission, stories) = Self.storyMission()
+        let opener = try #require(mission.sessions.first)
+        let working = ItemRef.session("00000000-0000-4000-8000-000000000005")!
+        let sessionsWorking: [ItemRef: [ItemRef]] = [
+            .pullRequest(organization: "contoso", number: 4101): [working, opener],
+            .pullRequest(organization: "contoso", number: 4102): [working],
+        ]
+        var titles = Self.titles
+        titles[working] = "Speed up checkout"
+        let inputs = try #require(MissionNaming.inputs(
+            for: mission, stories: { stories[$0] ?? [] }, workItems: { _ in [] }, sessionsWorking: { sessionsWorking[$0] ?? [] },
+            name: { titles[$0] }
+        ))
+        #expect(inputs.sessions == ["Coupons", "Speed up checkout"])
+        #expect(inputs.current == "Checkout redesign")
     }
 
     @Test func gitHubsTitlesArentUsedAndAMissionWithoutAzureDevOpsIsntNamed() throws {
@@ -241,10 +265,14 @@ import Testing
         let azure = ItemRef.pullRequest(organization: "contoso", number: 4101)
         let titles: [ItemRef: String] = [gitHub: "Secret GitHub title", azure: "Round coupon totals", session: "Ship it"]
         let onlyGitHub = OrderPresentationTests.mission([OrderPresentationTests.step(gitHub, .next)])
-        #expect(MissionNaming.inputs(for: onlyGitHub, stories: { _ in [] }, workItems: { _ in [] }, name: { titles[$0] }) == nil)
+        #expect(MissionNaming.inputs(
+            for: onlyGitHub, stories: { _ in [] }, workItems: { _ in [] }, sessionsWorking: { _ in [] }, name: { titles[$0] }
+        ) == nil)
         // A stack whose first open pull request is GitHub's: its name today is that title, so it isn't given.
         let mixed = OrderPresentationTests.mission([OrderPresentationTests.step(gitHub, .next), OrderPresentationTests.step(azure, .next)])
-        let inputs = try #require(MissionNaming.inputs(for: mixed, stories: { _ in [] }, workItems: { _ in [] }, name: { titles[$0] }))
+        let inputs = try #require(MissionNaming.inputs(
+            for: mixed, stories: { _ in [] }, workItems: { _ in [] }, sessionsWorking: { _ in [] }, name: { titles[$0] }
+        ))
         #expect(inputs.current == nil && inputs.pullRequests == ["Round coupon totals"])
         #expect(!MissionNaming.prompt(inputs).contains("Secret"))
     }
@@ -266,7 +294,8 @@ import Testing
         ]
         let workItems: [ItemRef: [ItemRef]] = [pr(4103): [item(5103)], pr(4105): [item(5105)]]
         let inputs = try #require(MissionNaming.inputs(
-            for: mission, stories: { _ in [] }, workItems: { workItems[$0] ?? [] }, name: { titles[$0] }
+            for: mission, stories: { _ in [] }, workItems: { workItems[$0] ?? [] }, sessionsWorking: { _ in [] },
+            name: { titles[$0] }
         ))
         #expect(inputs.pullRequests == ["Round coupon totals", "Test the coupon flow"])
         #expect(inputs.workItems == ["Rounding", "Coupon tests"])

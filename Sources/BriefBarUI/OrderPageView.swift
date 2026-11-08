@@ -31,6 +31,10 @@ package struct MissionsBody: View {
     let rest: ([ItemRef]) -> AnyView
 
     @EnvironmentObject private var services: AppServices
+    /// The section and window whose page this is, when it's on one: its missions are named only while that page is on
+    /// screen.
+    @Environment(\.shownSection) private var section
+    @Environment(\.shownWindow) private var window
     /// Who shows the missions, for Apple Intelligence to name them while they're on screen.
     @LocalState private var viewer = MissionsViewer()
     /// The missions whose card or band is in the scroll view's sight now: Apple Intelligence names only those.
@@ -105,11 +109,17 @@ package struct MissionsBody: View {
             .onChange(of: ordering.revealed) { _, key in reveal(key, with: proxy) }
             .onAppear {
                 reveal(ordering.revealed, with: proxy)
-                ordering.showing(onScreen, in: viewer)
+                ordering.showing(onScreen, in: viewer, on: page)
             }
-            .onChange(of: onScreen) { _, keys in ordering.showing(keys, in: viewer) }
+            .onChange(of: onScreen) { _, keys in ordering.showing(keys, in: viewer, on: page) }
             .onDisappear { ordering.stopShowing(in: viewer) }
         }
+    }
+
+    /// The window's page this is, when it's on one, for Pull Request Order to know when it's on screen.
+    private var page: String? {
+        guard let section, let window else { return nil }
+        return PullRequestOrder.page(section, window: window)
     }
 
     /// A mission's card or band came into the scroll view's sight, or left it.

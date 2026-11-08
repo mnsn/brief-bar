@@ -201,6 +201,26 @@ import Testing
         #expect(!withoutLinks.missions.contains { $0.contains(.pullRequest(organization: "contoso", number: 4113)) })
     }
 
+    /// By Mission on a window's Pull Requests page is named only while the window shows that page on screen, as it tells
+    /// the source; the Sprint's page, or a popover, says nothing of it.
+    @Test func byMissionIsNamedOnlyWhileAWindowShowsItsPageOnScreen() {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
+        let order = services.pullRequestOrder
+        let viewer = NSObject()
+        let key = MissionKey.story(DemoPullRequestOrder.checkoutRedesign)
+        order.showing([key], in: viewer, on: PullRequestOrder.page(.azureDevOpsPullRequests, window: "7"))
+        #expect(order.onScreen.isEmpty)
+        source.sectionVisibilityChanged(.azureDevOpsPullRequests, isShowing: true, by: SectionViewer(.window, id: "7"))
+        #expect(order.onScreen == [key])
+        source.sectionVisibilityChanged(.azureDevOpsSprint, isShowing: false, by: SectionViewer(.window, id: "7"))
+        source.sectionVisibilityChanged(.azureDevOpsPullRequests, isShowing: false, by: SectionViewer(.popover, id: "7"))
+        #expect(order.onScreen == [key])
+        source.sectionVisibilityChanged(.azureDevOpsPullRequests, isShowing: false, by: SectionViewer(.window, id: "7"))
+        #expect(order.onScreen.isEmpty)
+        withExtendedLifetime(viewer) {}
+    }
+
     /// The demo's orders are ones an agent could tell: BriefBar would keep them as they are.
     @Test func theDemosOrdersAreOnesAnAgentCouldTell() throws {
         let demos = DemoPullRequestOrder.orders(now: Date()).plans

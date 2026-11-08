@@ -131,4 +131,24 @@ import Testing
         #expect(defaults.bool(forKey: AppSettings.Key.listsByMission))
         #expect(AppSettings(defaults: defaults).listsByMission)
     }
+
+    /// By Mission on a window's page is named only while the window shows that page on screen, as it tells the source; a
+    /// popover, or another page, says nothing of it.
+    @Test func byMissionIsNamedOnlyWhileAWindowShowsItsPageOnScreen() {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = GitHubSource(services: services)
+        let order = services.pullRequestOrder
+        let viewer = NSObject()
+        let key = MissionKey.chain(Self.shopWeb(212))
+        order.showing([key], in: viewer, on: PullRequestOrder.page(.githubPullRequests, window: "7"))
+        #expect(order.onScreen.isEmpty)
+        source.sectionVisibilityChanged(.githubPullRequests, isShowing: true, by: SectionViewer(.window, id: "7"))
+        #expect(order.onScreen == [key])
+        source.sectionVisibilityChanged(.githubPullRequests, isShowing: false, by: SectionViewer(.popover, id: "7"))
+        source.sectionVisibilityChanged(.githubPullRequests, isShowing: false, by: SectionViewer(.window, id: "8"))
+        #expect(order.onScreen == [key])
+        source.sectionVisibilityChanged(.githubPullRequests, isShowing: false, by: SectionViewer(.window, id: "7"))
+        #expect(order.onScreen.isEmpty)
+        withExtendedLifetime(viewer) {}
+    }
 }
