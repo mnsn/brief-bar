@@ -57,7 +57,8 @@ private struct LaneAnchor: Hashable {
 private struct BoardNotice: Equatable {
     var lane: BoardLane.Kind
     var text: String
-    /// The pull request it's about, and how its stage read then: once that changes, from anywhere, it's said no more.
+    /// The pull request it's about, and how its stage read then: once that changes, from anywhere, it's said no more; a new
+    /// name for a mission its stage's words name is no change (`StageReading.readTheSame`).
     var ref: ItemRef
     var reading: StageReading?
     /// Why it didn't move; false for where it still waits once it did.
@@ -278,10 +279,13 @@ package struct OrderBoardView: View {
             if order.stageRefusal != nil { order.stageRefusal = nil }
         }
         // Each change to a stage, as it comes: once the refused one's changes, from anywhere, as from its stage's menu, the
-        // details say why no more, even back in the stage it couldn't leave; nor does its lane.
+        // details say why no more, even back in the stage it couldn't leave; nor does its lane. A mission's new name, which
+        // its words may say, as where two orders go round, changes no stage.
         .onReceive(order.$stages) { stages in
-            if let refusal = order.stageRefusal, stages[refusal.ref] != refusal.reading { order.stageRefusal = nil }
-            if let notice, stages[notice.ref] != notice.reading { self.notice = nil }
+            if let refusal = order.stageRefusal, !StageReading.readTheSame(stages[refusal.ref], refusal.reading) {
+                order.stageRefusal = nil
+            }
+            if let notice, !StageReading.readTheSame(stages[notice.ref], notice.reading) { self.notice = nil }
         }
         .onDisappear {
             if order.stageRefusal != nil { order.stageRefusal = nil }

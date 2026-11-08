@@ -338,6 +338,10 @@ public struct StageReading: Equatable, Sendable {
     /// On yours, a failed build or merge, where a session or a stage you set decides its stage rather than the failure: its
     /// words still say it, after their reason: "‘Cart’ asks you · build failed".
     public var alsoFailing: String?
+    /// Where why it's in its stage names a mission, as the order where two go round does: the same naming none, "Another
+    /// order puts !4102 after it: check the order", as agents read it. Whether it reads the same goes by that
+    /// (`readTheSame`).
+    public var unnamedWhy: StageWhy?
 
     public init(
         stage: PullRequestStage, why: StageWhy, since: Date? = nil, mark: StageMark? = nil, replaced: StageMark? = nil,
@@ -354,6 +358,20 @@ public struct StageReading: Equatable, Sendable {
 
     /// Whether you set what it shows.
     public var isSetByYou: Bool { mark?.isYours == true }
+
+    /// Whether two readings of a pull request, or none, say the same, whatever names the missions they name: a rename, or
+    /// Apple Intelligence's name, changes only their words, not its stage.
+    public static func readTheSame(_ a: StageReading?, _ b: StageReading?) -> Bool {
+        a?.unnamed == b?.unnamed
+    }
+
+    /// As it reads naming no mission.
+    private var unnamed: StageReading {
+        var reading = self
+        reading.why = unnamedWhy ?? why
+        reading.unnamedWhy = nil
+        return reading
+    }
 }
 
 /// Why a pull request is in its stage, as its row says it.

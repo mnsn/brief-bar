@@ -1225,7 +1225,7 @@ fileprivate final class Viewer {}
     }
 
     /// Where two orders go round, the stage names the other by Apple Intelligence's name as soon as it comes, as its
-    /// mission's header does.
+    /// mission's header does; and why a card didn't move stays, as its stage didn't change.
     @Test func theStageNamesAnOrderThatGoesRoundByAppleIntelligencesNameAsSoonAsItComes() async throws {
         let clock = Clock()
         let model = Model()
@@ -1250,6 +1250,16 @@ fileprivate final class Viewer {}
         let briefBars = try #require(order.names.title(key))
         let says = { (name: String) -> StageWhy in .orderHolds("‘\(name)’ puts !4105 after it: check the order") }
         #expect(order.stage(of: Self.pr(4113))?.why == says(briefBars))
+        // ⌘← in the lane of the order its stage names, which doesn't hold it, says where it waits, as the Board keeps it
+        // while the details cover it (`OrderBoardView.say`).
+        #expect(StageOrder.holders(of: Self.pr(4113), in: order.missions) == [.plan(Self.otherPlanID)])
+        let moves = BoardMoves(board: order.board(kinds: [.pullRequest], lanes: .missions), missions: order.missions, order: order, missionChanges: true)
+        guard case .refused(let why)? = moves.key(Self.pr(4113), in: .mission(key), forward: false)?.move else {
+            Issue.record("⌘← in the other order's lane set it as next")
+            return
+        }
+        #expect(why.hasPrefix("It waits in ‘"))
+        order.stageRefusal = StageRefusal(ref: Self.pr(4113), why: why, reading: try #require(order.stage(of: Self.pr(4113))))
 
         let viewer = Viewer()
         Self.show([key], in: viewer, by: order)
@@ -1257,6 +1267,7 @@ fileprivate final class Viewer {}
         order.namer?.next()
         #expect(await Self.eventually { order.modelNames[key] == "Faster checkout" })
         #expect(order.stage(of: Self.pr(4113))?.why == says("Faster checkout"))
+        #expect(order.stageRefusal(of: Self.pr(4113)) == why)
     }
 
     /// Apple Intelligence's name for an order's mission goes with the order, however it goes: forgotten, or left with no

@@ -1292,7 +1292,13 @@ package final class PullRequestOrder: ObservableObject {
             guard facts.isListed else { continue }
             marksInMemory[ref]?.listedAt = now()
             let order = StageOrder.of(ref, in: missions, names: names)
-            if let reading = StageRules.reading(facts: facts, sessions: sessions, marks: [mine].compactMap { $0 }, order: order) {
+            if var reading = StageRules.reading(facts: facts, sessions: sessions, marks: [mine].compactMap { $0 }, order: order) {
+                // Its words name the other order where two go round: what they say naming none, as agents read it, so that
+                // a rename, which restages it, changes only its words (`StageReading.readTheSame`).
+                if case .orderHolds = reading.why, case .holds(let words) = StageOrder.of(ref, in: missions),
+                   reading.why != .orderHolds(words) {
+                    reading.unnamedWhy = .orderHolds(words)
+                }
                 readings[ref] = reading
             }
         }

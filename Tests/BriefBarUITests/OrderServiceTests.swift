@@ -1501,8 +1501,41 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4101))?.why == says(briefBars))
     }
 
+    /// Where two orders go round, why a card didn't move stays as you rename the other, whose name its stage's words say at
+    /// once, or give it BriefBar's name back: its stage didn't change. It goes once its stage does.
+    @Test func renamingTheOrderItsStageNamesKeepsWhyACardDidntMove() throws {
+        let order = try Self.twoOrders(
+            [.init(link: Self.link(4101), after: ["4102"]), .init(link: Self.link(4102))],
+            [.init(link: Self.link(4101)), .init(link: Self.link(4102), after: ["4101"])],
+            numbers: [4101, 4102], ready: [4101, 4102]
+        )
+        let first = MissionKey.plan(Self.planID), other = MissionKey.plan(Self.otherID)
+        #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions) == [first])
+        let moves = BoardMoves(board: order.board(kinds: [.pullRequest], lanes: .missions), missions: order.missions, order: order, missionChanges: true)
+        let refused = try Self.waitsIn(first, order)
+        #expect(moves.key(Self.ref(4101), in: .mission(other), forward: false)?.move == refused)
+        guard case .refused(let why) = refused else { return }
+        let reading = try #require(order.stage(of: Self.ref(4101)))
+        // As the Board keeps it while the details cover it (`OrderBoardView.say`).
+        order.stageRefusal = StageRefusal(ref: Self.ref(4101), why: why, reading: reading)
+
+        let mission = try #require(order.missions.first { $0.key == other })
+        #expect(order.rename(mission, to: "Payments") == .named)
+        let renamed = try #require(order.stage(of: Self.ref(4101)))
+        #expect(renamed.why == .orderHolds("‘Payments’ puts !4102 after it: check the order") && renamed != reading)
+        #expect(order.stageRefusal(of: Self.ref(4101)) == why)
+        order.useBriefBarsName(other)
+        #expect(order.stage(of: Self.ref(4101)) == reading)
+        #expect(order.stageRefusal(of: Self.ref(4101)) == why)
+
+        StageCommand.perform(.move(.yourReview), on: Self.ref(4101), order: order, undo: .lane)
+        #expect(order.stage(of: Self.ref(4101))?.stage == .yourReview)
+        #expect(order.stageRefusal(of: Self.ref(4101)) == nil)
+    }
+
     /// Where its order no longer puts it after one that hasn't merged, set as next there, the Board sets it as next in the
-    /// other: it doesn't wait in the first again.
+    /// other: it doesn't wait in the first again. Also once that one left the lists, as Azure DevOps' do once one completes,
+    /// where BriefBar knows it merged only by what it saw (`OrderEvidence`), and there it can merge.
     @Test func whereTheFirstNoLongerHoldsItTheBoardSetsItAsNextInTheOther() throws {
         let order = try Self.twoOrders(
             [.init(link: Self.link(4100)), .init(link: Self.link(4101), after: ["4100"])],
@@ -1512,17 +1545,31 @@ private final class Clock {
         let first = MissionKey.plan(Self.planID), other = MissionKey.plan(Self.otherID)
         MissionMenuContext.setAsNext(Self.ref(4101), in: first, order: order, undo: .top)
         #expect(order.changes[Self.ref(4101)]?.first == first && StageOrder.holders(of: Self.ref(4101), in: order.missions) == [other])
-        order.publish(
-            .azureDevOps,
-            pullRequests: [4100, 4101, 4102].map { Self.ado($0, from: "robin/\($0)", state: $0 == 4100 ? .merged : .open) },
-            stages: Dictionary(uniqueKeysWithValues: [4100, 4101, 4102].map { number in
-                (Self.ref(number), StageFacts(role: .author, state: number == 4100 ? .merged : .open, isReady: number == 4101, votes: "0", commit: "c\(number)"))
-            }),
-            account: Self.account
-        )
+        #expect(order.nextsHeldAgain == [Self.ref(4101): [other: first]])
+        let publish = { (numbers: [Int]) in
+            order.publish(
+                .azureDevOps,
+                pullRequests: numbers.map { Self.ado($0, from: "robin/\($0)", state: $0 == 4100 ? .merged : .open) },
+                stages: Dictionary(uniqueKeysWithValues: numbers.map { number in
+                    (Self.ref(number), StageFacts(role: .author, state: number == 4100 ? .merged : .open, isReady: number == 4101, votes: "0", commit: "c\(number)"))
+                }),
+                account: Self.account
+            )
+        }
+        let moves = {
+            BoardMoves(board: order.board(kinds: [.pullRequest], lanes: .missions), missions: order.missions, order: order, missionChanges: true)
+        }
+        publish([4100, 4101, 4102])
+        #expect(order.nextsHeldAgain.isEmpty)
+        #expect(moves().key(Self.ref(4101), in: .mission(other), forward: false)?.move == .setAsNext(other))
 
-        let moves = BoardMoves(board: order.board(kinds: [.pullRequest], lanes: .missions), missions: order.missions, order: order, missionChanges: true)
-        #expect(moves.key(Self.ref(4101), in: .mission(other), forward: false)?.move == .setAsNext(other))
+        publish([4101, 4102])
+        #expect(order.missions.first { $0.key == first }?.steps.first { $0.ref == Self.ref(4100) }?.status == .merged)
+        #expect(order.nextsHeldAgain.isEmpty)
+        #expect(moves().key(Self.ref(4101), in: .mission(other), forward: false)?.move == .setAsNext(other))
+        MissionMenuContext.setAsNext(Self.ref(4101), in: other, order: order)
+        #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions).isEmpty)
+        #expect(order.stage(of: Self.ref(4101))?.stage == .canMerge)
     }
 
     /// Refused, as at the most changes BriefBar keeps, Set as Next says why, and not where it still waits: it isn't next
