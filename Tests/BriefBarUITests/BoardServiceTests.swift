@@ -302,6 +302,24 @@ import Testing
         #expect(order.stageRefusal(of: Self.ref(4093)) == nil)
     }
 
+    /// A card a key moved is owed the keyboard's focus until it takes it, drawn anew in its new column, or until that move's
+    /// wait for it ends: not when the last move's wait ends just after the next key, which owes it the focus anew.
+    @Test func aCardIsOwedTheFocusUntilItTakesItOrItsOwnMovesWaitEnds() {
+        var owed = OwedFocus<ItemRef>()
+        let first = owed.owe(Self.ref(4093))
+        owed.took(Self.ref(4094))
+        #expect(owed.spot == Self.ref(4093), "Another card took what this one is owed")
+        owed.took(Self.ref(4093))
+        #expect(owed.spot == nil)
+
+        // The next key, then the first's wait ends before the card is drawn anew, as on a busy Mac.
+        let second = owed.owe(Self.ref(4093))
+        owed.waitEnded(first)
+        #expect(owed.spot == Self.ref(4093), "The last move's wait let go of what the next one owes")
+        owed.waitEnded(second)
+        #expect(owed.spot == nil, "Not drawn anew, it was still owed the focus once its wait ended")
+    }
+
     // MARK: Undo, once a card leaves the board
 
     /// Finished My Review on someone else's card, the only one in no mission, takes it off the board, and its lane with it:

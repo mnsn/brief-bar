@@ -1435,9 +1435,11 @@ A pull request in two missions has a card in each lane, and counts once. On the 
 with SwiftUI's `draggable`, carrying its reference and a token made for that drag alone (`BoardDrag`), so a column takes
 only a card dragged from its own board, never text from another app that names a pull request. A drop, and the columns
 that light up as you drag, act on the card as the board has it then, looked up again (`BoardMoves`), not as it was when
-the drag started. A click, or Tab, gives a card the keyboard's focus as a text field takes it, whatever the Mac's keyboard
-navigation, and it keeps it as it moves: ⌘→ and ⌘← move it to the next or previous stage you can set, and from Waits, ⌘←
-to Can merge. Return or Space shows its details, as a click does. Where the details cover the Board (`DetailsSplit`),
+the drag started. A click, or Tab, gives a card the keyboard's focus as a text field takes it, whatever the Mac's
+keyboard navigation, and it keeps it as it moves: drawn anew in its new column, it takes the focus back, which each move
+owes it for a second, so that a key that comes just as the last move's second ends doesn't lose it (`OwedFocus`). ⌘→ and
+⌘← move it to the next or previous stage you can set, and from Waits, ⌘← to Can merge. Return or Space shows its
+details, as a click does. Where the details cover the Board (`DetailsSplit`),
 it's disabled, and none of its cards can have the focus: a key monitor of its window (`BoardKeys`) takes ⌘→ and ⌘← for
 the card of the pull request whose own details show, in the lane you clicked it in, else in that of the mission whose
 order holds it, as for details shown from Up Next, but not from a text field you type in, nor while a page is over

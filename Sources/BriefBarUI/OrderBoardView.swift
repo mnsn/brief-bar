@@ -205,7 +205,7 @@ package struct OrderBoardView: View {
     @FocusState private var focused: CardSpot?
     /// The card a key, or a drop, just moved while it had the keyboard's focus: drawn anew in its new column, it takes the
     /// focus back as it appears, so that the next key moves it on.
-    @LocalState private var refocus: CardSpot?
+    @LocalState private var refocus = OwedFocus<CardSpot>()
     /// The card that had the keyboard's focus while the board could take it, or that you clicked last: when the details
     /// cover the board, which can't take the focus then, it has it back once they close, and the keys move it meanwhile.
     @LocalState private var lastFocus: CardSpot?
@@ -701,8 +701,8 @@ package struct OrderBoardView: View {
             let spot = CardSpot(lane: lane.kind, ref: card.ref)
             BoardCardView(
                 card: card, content: content, isNext: board.next[card.stage] == card.ref, isSelected: isSelected(card.ref),
-                order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus == spot,
-                tookFocus: { if refocus == spot { refocus = nil } },
+                order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
+                tookFocus: { refocus.took(spot) },
                 select: {
                     // A click gives it the keyboard's focus, which it has back once its details close, should they cover
                     // the board.
@@ -825,10 +825,10 @@ package struct OrderBoardView: View {
     /// The card keeps the keyboard's focus in its new column: drawn anew there once the board has its new stage, it takes it
     /// as it appears. Should it not be drawn anew, as when nothing changed, it still has it, and isn't owed it later.
     private func keepFocus(on spot: CardSpot) {
-        refocus = spot
+        let move = refocus.owe(spot)
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1))
-            if refocus == spot { refocus = nil }
+            refocus.waitEnded(move)
         }
     }
 
