@@ -1315,7 +1315,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   read; which of your Azure DevOps pull requests you've seen or taken off Needs You, and the comment threads you
   marked as read there, by their numbers, with each account,
   your organizations, and the pull requests you watch; with Pull Request Order, the stages you set on them, for each
-  account, by their numbers, but for those only sent to you in a chat, which stay in memory; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
+  account, by their numbers, with only the commit and the votes that would end them, but for those only sent to you in
+  a chat, which stay in memory; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
   sessions you've cleared; the links you added or hid, with Show Links; with Make Changes in Azure DevOps, the tags you
   added to pull requests, up to 20 for each project, to suggest them; and its settings. Turning a source off deletes
   what it saved, and the links you added or hid to its things.

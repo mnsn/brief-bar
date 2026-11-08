@@ -1353,13 +1353,15 @@ Teammate's review: on someone else's, it takes it off your board until you vote 
 you there. Sessions never put someone else's pull request in progress. BriefBar never votes or changes anything in Azure
 DevOps for a stage.
 
-What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one
-entry for each pull request: its number, the stage, when, the votes' digest and its commit. For a pull request listed
-only because someone sent it to you in a chat, it's kept in memory only, as what you've seen of it is. Either way, an
-account keeps up to 500, those in memory counted with the others, and one no list has had for 30 days goes; what Undo
-puts back once there's no room waits in memory until there is. **Forget
-Stages…** forgets them all, and turning Azure DevOps off forgets its own; turning Pull Request Order off keeps them,
-unused, those in memory too. Stages change no group, count, notification or brief: they only label rows.
+What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one entry
+for each pull request: its number, the stage, when, and only what would end it (`StageRules.mark`): the commit, for In
+progress and for Teammate's review on someone else's, and the votes, for Teammate's review alone, on yours their digest,
+how many of each others cast, never who, on someone else's your own vote; Your review keeps neither. For a pull request
+listed only because someone sent it to you in a chat, it's kept in memory only, as what you've seen of it is. Either
+way, an account keeps up to 500, those in memory counted with the others, and one no list has had for 30 days goes; what
+Undo puts back once there's no room waits in memory until there is. **Forget Stages…** forgets them all, and turning
+Azure DevOps off forgets its own; turning Pull Request Order off keeps them, unused, those in memory too. Stages change
+no group, count, notification or brief: they only label rows.
 
 ### What's next, and the Board
 

@@ -203,8 +203,8 @@ public struct StageFacts: Equatable, Sendable {
     }
 }
 
-/// A stage you or a session set, when, and what it was set over: the others' votes and the pull request's commit then,
-/// which some stages end with (`StageRules.stands`).
+/// A stage you or a session set, when, and of what it was set over only what would end it (`StageRules.mark`): the votes
+/// then, for Teammate's review, and the pull request's commit, where new commits end it (`StageRules.stands`).
 public struct StageMark: Equatable, Sendable {
     public var stage: PullRequestStage
     public var at: Date
@@ -453,6 +453,14 @@ public enum StageRules {
         guard !latest.isYours, let yours = marks.filter(\.isYours).max(by: { $0.at < $1.at }), yours.stage != latest.stage
         else { return (latest, nil) }
         return (latest, yours)
+    }
+
+    /// A stage you set now, keeping of what it was set over only what `stands` reads to end it: the commit, for In
+    /// progress, and for Teammate's review on someone else's; the votes, for Teammate's review alone, on yours how many of
+    /// each others cast, on someone else's your own vote. Your review keeps neither.
+    public static func mark(_ stage: PullRequestStage, at date: Date, facts: StageFacts) -> StageMark {
+        let keepsCommit = stage == .inProgress || (stage == .teammateReview && !facts.isYours)
+        return StageMark(stage: stage, at: date, votes: stage == .teammateReview ? facts.votes : nil, commit: keepsCommit ? facts.commit : nil)
     }
 
     /// Whether a stage set still stands, as the pull request moved on since (plan §2.4). A later change replaces it, which

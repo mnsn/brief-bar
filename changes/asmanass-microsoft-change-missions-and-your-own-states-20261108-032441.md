@@ -12,7 +12,8 @@
 ## Descriptions
 
 Azure DevOps: with Pull Request Order on, each pull request's stage, worked out from what it reads already and Copilot's
-sessions, and the stages you set, kept for each account you sign in with.
+sessions, and the stages you set, kept for each account you sign in with, with only what would end them: the commit an
+In progress was set at, and the votes a Teammate's review was set over.
 
 After this update: with Pull Request Order on, Azure DevOps shows each pull request's stage, worked out from what it
 reads already and your Copilot sessions, and keeps the stages you set for each account, never in Azure DevOps.

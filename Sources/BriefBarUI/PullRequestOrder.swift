@@ -338,13 +338,14 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// The demo's stages, as if you'd set them then, on those of its pull requests whose source told their stages and that
-    /// you haven't set: only in the demo, while it's on. Each holds as the pull request is now, its votes and commit.
+    /// you haven't set: only in the demo, while it's on. Each keeps what would end it as the pull request is now, as one
+    /// you set does (`StageRules.mark`).
     package func tellDemo(stages demo: [ItemRef: StageMark]) {
         guard isDemo, isOn else { return }
         var kept = false
         for (ref, set) in demo.sorted(by: { $0.key < $1.key }) {
             guard let facts = stageFacts[ref], yourMark(of: ref, facts: facts) == nil else { continue }
-            let mark = StageMark(stage: set.stage, at: set.at, votes: facts.votes, commit: facts.commit)
+            let mark = StageRules.mark(set.stage, at: set.at, facts: facts)
             if keep(mark, of: ref, facts: facts) { kept = true }
         }
         if kept { restage() }
@@ -490,7 +491,7 @@ package final class PullRequestOrder: ObservableObject {
         guard facts.state.isOpen else { return .refused(facts.state == .merged ? StageChange.merged : StageChange.closed) }
         let before = yourMark(of: ref, facts: facts)
         if let before, before.stage == stage, stages[ref]?.mark == before { return .unchanged }
-        let mark = StageMark(stage: stage, at: now(), votes: facts.votes, commit: facts.commit)
+        let mark = StageRules.mark(stage, at: now(), facts: facts)
         guard keep(mark, of: ref, facts: facts) else {
             return .refused(
                 "BriefBar keeps up to \(StageMarks.mostPerAccount) stages you set. Let BriefBar decide one you no longer need first."

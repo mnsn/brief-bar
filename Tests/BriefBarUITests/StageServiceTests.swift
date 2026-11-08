@@ -95,7 +95,7 @@ private final class Clock {
         #expect(order.lastChange?.words == "Moved !4093 to Your review")
         let kept = StageMarks.load(from: defaults)
         #expect(kept.mark(of: Self.ref(4093), for: Self.account)?.stage == .yourReview)
-        #expect(kept.mark(of: Self.ref(4093), for: Self.account)?.commit == "a1b2c3d")
+        #expect(kept.mark(of: Self.ref(4093), for: Self.account)?.commit == nil)
         #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .unchanged)
 
         #expect(order.finishedReview(Self.ref(4093)) == .done)
@@ -244,6 +244,35 @@ private final class Clock {
         #expect(lane.nextSteps.isEmpty)
         #expect(lane.waiting(name: order.name(of:)) == "‘Cart’ is writing it · build failed (!4093)")
         #expect(MissionNextStepsLine.spokenWaiting(lane, order: order) == "Cart is writing it, build failed (!4093)")
+    }
+
+    /// A stage you set keeps of what it was set over only what would end it: In progress, the commit; Your review,
+    /// nothing; Teammate's review, the votes, and on someone else's the commit too. So your own vote on someone else's is
+    /// kept only once you finished reviewing it.
+    @Test func aStageYouSetKeepsOnlyWhatWouldEndIt() throws {
+        let defaults = Self.defaults()
+        let order = Self.service(defaults)
+        Self.tell(order, [
+            4093: StageFacts(role: .author, votes: "10", commit: "c4093"),
+            4110: StageFacts(role: .reviewer, votes: "-5", commit: "c4110"),
+        ])
+        /// What BriefBar's preferences keep with its stage: its votes and its commit.
+        func kept(_ number: Int) throws -> [String?] {
+            let mark = try #require(StageMarks.load(from: defaults).mark(of: Self.ref(number), for: Self.account))
+            return [mark.votes, mark.commit]
+        }
+        #expect(order.setStage(.inProgress, of: Self.ref(4110)) == .done)
+        #expect(try kept(4110) == [nil, "c4110"])
+        #expect(order.setStage(.yourReview, of: Self.ref(4110)) == .done)
+        #expect(try kept(4110) == [nil, nil])
+        #expect(order.finishedReview(Self.ref(4110)) == .done)
+        #expect(try kept(4110) == ["-5", "c4110"])
+        #expect(order.setStage(.inProgress, of: Self.ref(4093)) == .done)
+        #expect(try kept(4093) == [nil, "c4093"])
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        #expect(try kept(4093) == [nil, nil])
+        #expect(order.finishedReview(Self.ref(4093)) == .done)
+        #expect(try kept(4093) == ["10", nil])
     }
 
     /// A task BriefBar sent that you went on with in the Copilot app does what the app says since: at work again after
@@ -467,7 +496,7 @@ private final class Clock {
         demo.tellDemo(stages: stages)
         let reading = demo.stage(of: Self.ref(4105))
         #expect(reading?.stage == .teammateReview && reading?.why == .findReviewer)
-        #expect(reading?.mark?.at == earlier && reading?.mark?.votes == "0" && reading?.mark?.commit == "c4105")
+        #expect(reading?.mark?.at == earlier && reading?.mark?.votes == "0" && reading?.mark?.commit == nil)
         #expect(demo.stage(of: Self.ref(4106))?.stage == .inProgress)
 
         let real = Self.service(Self.defaults())

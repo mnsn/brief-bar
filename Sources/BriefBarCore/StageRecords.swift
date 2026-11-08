@@ -1,12 +1,14 @@
 import Foundation
 
 /// The stages you set, in BriefBar's preferences, for each Azure DevOps account you sign in with, as what you've seen is:
-/// one key, `order.stages`, which only the app writes, of references, stages and dates, and what a stage was set over, the
-/// others' votes as a digest of the votes alone and a commit. A pull request listed only because someone sent it to you
-/// isn't kept here: its stage stays in memory (`PullRequestOrder`). One goes once it no longer stands, its pull request
-/// merges or closes, or no list has had it for 30 days; turning a source off forgets its own, and Forget Stages… all of
-/// them. At most 500 for each account, counting those `PullRequestOrder` keeps in memory for it: past that, a new one
-/// is refused, never one dropped to make room.
+/// one key, `order.stages`, which only the app writes, of references, stages and dates, and of what a stage was set over
+/// only what would end it (`StageRules.mark`): the commit, for In progress and for Teammate's review on someone else's;
+/// the votes, for Teammate's review alone, on yours a digest of the votes others cast, how many of each, never who cast
+/// them, and on someone else's your own vote. A pull request listed only because someone sent it to you isn't kept here:
+/// its stage stays in memory (`PullRequestOrder`). One goes once it no longer stands, its pull request merges or closes,
+/// or no list has had it for 30 days; turning a source off forgets its own, and Forget Stages… all of them. At most 500
+/// for each account, counting those `PullRequestOrder` keeps in memory for it: past that, a new one is refused, never
+/// one dropped to make room.
 public struct StageMarks: Equatable, Sendable {
     public static let defaultsKey = "order.stages"
     public static let mostPerAccount = 500
