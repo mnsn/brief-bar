@@ -58,7 +58,7 @@ import Testing
 
     /// `.font(size:)` and `.font(style:)` follow the text size on windows' pages; `.font(.system(size:))` and `.font(.headline)`
     /// never would.
-    @Test func everyViewsTextCanFollowTheTextSize() throws {
+    @Test(.onTestThreads) func everyViewsTextCanFollowTheTextSize() throws {
         let fixed = /\.font\((Font)?\.(system|largeTitle|title|title2|title3|headline|subheadline|body|callout|footnote|caption|caption2)\b/
         for font in [".font(.system(size: 12))", ".font(.headline)", ".font(.title2.weight(.semibold))", ".font(Font.system(size: 11))"] {
             #expect(font.contains(fixed), "\(font)")
