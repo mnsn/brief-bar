@@ -27,16 +27,18 @@ import Testing
             ThisMac.showInFinder([terminal])
             ThisMac.copy("Fix the comments")
             #expect(ThisMac.ask(alert) == .abort)
+            ThisMac.beep()
             await Task { ThisMac.copy("Push and reply") }.value
         }
         #expect(notes.refused == [
             "open \(session.absoluteString)", "open \(session.absoluteString) with Terminal.app", "open Terminal.app",
             "open Login Items in System Settings", "activate \(itself.bundleIdentifier ?? itself.localizedName ?? "an app")",
-            "show \(terminal.path) in the Finder", "copy Fix the comments", "ask Remove the worktree?", "copy Push and reply",
+            "show \(terminal.path) in the Finder", "copy Fix the comments", "ask Remove the worktree?", "beep",
+            "copy Push and reply",
         ])
         // What's done after, outside the test's scope, isn't noted for it.
         ThisMac.copy("Nothing")
-        #expect(notes.refused.count == 9)
+        #expect(notes.refused.count == 10)
     }
 
     /// SwiftUI's links open with what its environment says opens them (`openURL`): a `Link` that `link(to:label:)` makes,
