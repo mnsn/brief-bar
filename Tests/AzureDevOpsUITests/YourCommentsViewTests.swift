@@ -13,8 +13,11 @@ import Testing
 /// do in your edit; what your edit says, does and lets you do once its comment changed since you began, and what VoiceOver
 /// hears of it; and its spell checking. With the demo's made-up pull requests, read as a list that reads Azure DevOps
 /// would, a stand-in for Azure DevOps that takes nothing, and the comments drawn in a window off screen.
+///
+/// One at a time: each draws a pull request's comments, which on CI's busy runner keeps the main actor busy long enough
+/// that, all at once, they kept the other tests on it waiting past their time limits.
 @MainActor
-@Suite struct YourCommentsViewTests {
+@Suite(.serialized) struct YourCommentsViewTests {
     /// Which composer the details have open, as the test opens them.
     final class Composing: ObservableObject {
         @Published var open: CopilotComposing?
