@@ -169,12 +169,12 @@ struct MissionMenuItems: View {
 
 extension View {
     /// A pull request's Mission menu's main items as VoiceOver's actions: Set as Next to Merge, Put Yours Back and Undo
-    /// Your Changes to It. The rest is in its menu.
+    /// Your Changes to It. The rest is in its menu, which works out Merge After's as it opens.
     @MainActor
     package func missionActions(_ ref: ItemRef, context: MissionMenuContext?) -> some View {
         accessibilityActions {
             if let context {
-                let choices = context.order.choices(for: ref, in: context.mission)
+                let choices = context.order.choices(for: ref, in: context.mission, withPrerequisites: false)
                 if let mission = choices.mission, let next = choices.next, next == .offered || next == .isSet {
                     Button(next == .isSet ? "Not Next to Merge" : "Set as Next to Merge") {
                         context.change(.setNext(ref, in: mission, next != .isSet))
@@ -191,51 +191,74 @@ extension View {
     }
 }
 
-/// What you did last, with Undo and ×: "You set !4079 as next to merge.  Undo  ×"; or why BriefBar didn't. Until your next
-/// change, or until you dismiss it.
+/// What you did last, with Undo and ×: "You set !4079 as next to merge.  Undo  ×"; and above it, why BriefBar didn't make the
+/// change you asked for after that, with its own ×. Each until your next change, or until you dismiss it.
 package struct OrderUndoLine: View {
     @ObservedObject var order: PullRequestOrder
-    /// Only the last change about these, such as a pull request's in its details; nil for any.
+    /// Only what's about these, such as a pull request's in its details; nil for any.
     let refs: Set<ItemRef>?
-    /// Only the last change shown in this mission's card; nil for any.
+    /// Only what shows in this mission's card; nil for any.
     let mission: MissionKey?
+    /// Only what no card of these missions shows; nil for any.
+    let outside: Set<MissionKey>?
 
-    package init(order: PullRequestOrder, about refs: Set<ItemRef>? = nil, in mission: MissionKey? = nil) {
+    package init(order: PullRequestOrder, about refs: Set<ItemRef>? = nil, in mission: MissionKey? = nil, outside: Set<MissionKey>? = nil) {
         self.order = order
         self.refs = refs
         self.mission = mission
+        self.outside = outside
+    }
+
+    /// Whether one shows here.
+    static func shows(_ last: OrderLastChange, about refs: Set<ItemRef>?, in mission: MissionKey?, outside: Set<MissionKey>?) -> Bool {
+        guard refs.map({ !$0.isDisjoint(with: last.refs) }) ?? true, mission.map({ $0 == last.mission }) ?? true else { return false }
+        guard let outside, let shown = last.mission else { return true }
+        return !outside.contains(shown)
     }
 
     package var body: some View {
-        if let last = order.lastChange, refs.map({ !$0.isDisjoint(with: last.refs) }) ?? true, mission.map({ $0 == last.mission }) ?? true {
-            HStack(spacing: 8) {
-                Image(systemName: last.canUndo ? "pencil" : "exclamationmark.circle")
-                    .foregroundStyle(last.canUndo ? Color.secondary : Color.orange)
-                    .accessibilityHidden(true)
-                Text(last.said + ".")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if last.canUndo {
-                    Button("Undo") { undo() }
-                        .buttonStyle(.borderless)
-                        .help("Put back what this change did")
+        let said = order.said.filter { Self.shows($0, about: refs, in: mission, outside: outside) }
+        if !said.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(said, id: \.canUndo) { last in
+                    line(last)
                 }
-                Spacer(minLength: 4)
-                Button {
-                    order.dismissLastChange()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(size: 9, weight: .bold)
-                        .foregroundStyle(.secondary)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(last.canUndo ? "Hide this: your change stays" : "Hide this")
-                .accessibilityLabel(last.canUndo ? "Hide, keeping the change" : "Hide")
             }
-            .font(size: 11.5)
-            .accessibilityElement(children: .contain)
         }
+    }
+
+    private func line(_ last: OrderLastChange) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: last.canUndo ? "pencil" : "exclamationmark.circle")
+                .foregroundStyle(last.canUndo ? Color.secondary : Color.orange)
+                .accessibilityHidden(true)
+            Text(last.said + ".")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if last.canUndo {
+                Button("Undo") { undo() }
+                    .buttonStyle(.borderless)
+                    .help("Put back what this change did")
+            }
+            Spacer(minLength: 4)
+            Button {
+                if last.canUndo {
+                    order.dismissLastChange()
+                } else {
+                    order.dismissRefusal()
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(size: 9, weight: .bold)
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(last.canUndo ? "Hide this: your change stays" : "Hide this")
+            .accessibilityLabel(last.canUndo ? "Hide, keeping the change" : "Hide")
+        }
+        .font(size: 11.5)
+        .accessibilityElement(children: .contain)
     }
 
     private func undo() {

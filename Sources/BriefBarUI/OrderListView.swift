@@ -61,7 +61,7 @@ package struct MissionCard: View {
                 if !attached.isEmpty {
                     attachedRows(attached, width: width)
                 }
-                if order.lastChange?.mission == mission.key {
+                if order.said.contains(where: { $0.mission == mission.key }) {
                     OrderUndoLine(order: order, in: mission.key)
                         .padding(.leading, max(width, 6) + 8)
                         .padding(.trailing, 12)

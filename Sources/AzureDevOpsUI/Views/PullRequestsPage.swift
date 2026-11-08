@@ -73,7 +73,7 @@ struct PullRequestsPage: View {
                     )
                 } else {
                     // What you changed last of a mission, from a row's Mission menu: By Status has no mission's card to say it.
-                    if ordering.isOn, ordering.lastChange != nil {
+                    if ordering.isOn, !ordering.said.isEmpty {
                         OrderUndoLine(order: ordering)
                             .padding(.horizontal, 4)
                     }

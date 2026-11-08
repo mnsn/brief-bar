@@ -426,9 +426,70 @@ private final class Clock {
 
         #expect(!refused.canUndo && refused.said == "Stacked on !4101: it can't merge before it unless you retarget it.")
         #expect(order.changes.isEmpty && defaults.object(forKey: OrderChanges.defaultsKey) == nil)
+        #expect(order.refusal == refused && order.lastChange == nil)
         #expect(!order.undoLastChange())
-        order.dismissLastChange()
-        #expect(order.lastChange == nil)
+        order.dismissRefusal()
+        #expect(order.refusal == nil && order.said.isEmpty)
+    }
+
+    /// A change BriefBar refuses says why beside your last change's Undo, which stays.
+    @Test func aRefusedChangeKeepsYourLastChangesUndo() throws {
+        let defaults = try Self.defaults(on: true)
+        let order = Self.service(defaults)
+        order.publish(.azureDevOps, pullRequests: [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart")])
+        let done = try #require(order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true)))
+
+        let refused = try #require(order.change(.setNext(Self.ref(4130), in: .plan(Self.planID), true)))
+
+        #expect(!refused.canUndo && refused.said == "It isn't in a mission: move it to one first.")
+        #expect(order.lastChange == done && order.refusal == refused && order.said == [refused, done])
+        #expect(order.undoLastChange())
+        #expect(order.changes.isEmpty && order.lastChange == nil && order.refusal == nil)
+    }
+
+    /// A change to your own pull request is saved though its order puts it after one only sent to you in a chat: the order
+    /// keeps that one's reference already.
+    @Test func aChangeToYourOwnIsSavedThoughItsOrderNamesOneSentInAChat() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4102)), .init(link: Self.link(4079), after: ["4102"])])
+        let order = Self.service(defaults)
+        order.publish(
+            .azureDevOps, pullRequests: [Self.ado(4079, from: "robin/coupons"), Self.ado(4102, from: "priya/cart")], inMemory: [Self.ref(4102)]
+        )
+
+        order.change(.setNext(Self.ref(4079), in: .plan(Self.planID), true))
+
+        #expect(OrderChanges.load(from: defaults)[Self.ref(4079)]?.isFirst == true)
+        #expect(Self.service(defaults).changes[Self.ref(4079)]?.isFirst == true)
+    }
+
+    /// An order an agent tells that goes against your change shows instead once BriefBar reads it again, and still does after
+    /// BriefBar starts again, with Put Yours Back.
+    @Test func anOrderAnAgentToldAgainstYoursShowsInsteadForGood() throws {
+        let defaults = try Self.defaults(on: true)
+        let clock = Clock()
+        let order = Self.service(defaults, clock: clock)
+        let pullRequests = [Self.ado(4101, from: "robin/rounding"), Self.ado(4102, from: "robin/cart"), Self.ado(4103, from: "robin/tax")]
+        order.publish(.azureDevOps, pullRequests: pullRequests)
+        order.change(.setNext(Self.ref(4102), in: .plan(Self.planID), true))
+
+        clock.advance(days: 1)
+        var orders = DeclaredOrders.load(from: defaults)
+        _ = try orders.apply(
+            OrderRequest(plan: Self.planID.uuidString, revision: 1, entries: [
+                .init(link: Self.link(4101)), .init(link: Self.link(4103)), .init(link: Self.link(4102), after: ["4101", "4103"]),
+            ]),
+            now: clock.now
+        )
+        orders.save(to: defaults)
+        order.reloadOrders()
+
+        #expect(OrderChanges.load(from: defaults)[Self.ref(4102)]?.overridden?.by == Self.planID)
+        let relaunched = Self.service(defaults, clock: clock)
+        relaunched.publish(.azureDevOps, pullRequests: pullRequests)
+        let step = try #require(relaunched.missions.first { $0.key == .plan(Self.planID) }?.steps.first { $0.ref == Self.ref(4102) })
+        #expect(Set(step.prerequisites.map(\.ref)) == [Self.ref(4101), Self.ref(4103)] && !step.isYours)
+        #expect(step.notes.contains { if case .orderChangedIt = $0 { return true } else { return false } })
+        #expect(relaunched.choices(for: Self.ref(4102)).canPutBack)
     }
 
     /// What you change of a pull request listed only because someone sent it in a chat stays in memory, until it's listed

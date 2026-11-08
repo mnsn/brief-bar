@@ -3,9 +3,10 @@ import Foundation
 // Your changes to missions, as you make them By Mission: which pull request merges next, what one merges after, and which
 // mission one is in. A layer over what BriefBar sees and what sessions tell it (`DeclaredOrders`), kept by pull request and
 // never written into an order or to a source, so that sessions go on telling theirs. Each change keeps the place its orders
-// gave the pull request when you made it: an order that changes that place afterwards shows instead, as the latest change
-// wins, until you put yours back. Kept in the preferences as references, codes and dates, never titles; for a pull request
-// listed only because someone sent it in a chat, in memory only (`PullRequestOrder`).
+// gave the pull request when you made it: an order that goes against yours afterwards shows instead, as the latest change
+// wins, until you put yours back; one that moves it toward yours, or changes what you didn't, leaves yours as it is. Kept in
+// the preferences as references, codes and dates, never titles; for a pull request listed only because someone sent it in a
+// chat, in memory only (`PullRequestOrder`).
 
 // MARK: - A change
 
@@ -90,8 +91,8 @@ public struct OrderChange: Equatable, Sendable {
     public var changedAt: Date
     /// Where its orders put it then: what your change replaced.
     public var replaced: OrderPlace
-    /// The order that changed its place since, as BriefBar saw it: yours doesn't hold from then on, though that order puts
-    /// it back where it was, until you put yours back.
+    /// The order that went against it since, as BriefBar saw it: yours doesn't hold from then on, though that order puts it
+    /// back where it was, until you put yours back, or BriefBar forgets that order.
     public var overridden: Overridden?
 
     public init(
@@ -112,24 +113,77 @@ public struct OrderChange: Equatable, Sendable {
     /// Set as Next to Merge, in some mission.
     public var isFirst: Bool { first != nil }
 
+    /// Whether it puts the pull request in the mission whose order doesn't name it but that it's stacked with, only for what
+    /// you set it as next or put it after there: never a mission you moved it to, which is never the one it was in.
+    public var isAttached: Bool {
+        placement != nil && placement == from.map(OrderPlacement.into)
+    }
+
+    /// Puts it in the mission it's stacked with, for what you set there (`isAttached`).
+    mutating func attach(to key: MissionKey) {
+        guard placement == nil || isAttached else { return }
+        placement = .into(key)
+        from = key
+    }
+
+    /// Takes it out of the mission it's stacked with once nothing you set there is left of it (`isAttached`).
+    mutating func detachIfDone() {
+        guard isAttached, !isFirst, after.isEmpty, notAfter.isEmpty else { return }
+        placement = nil
+    }
+
     /// Nothing's left of it.
     public var isEmpty: Bool {
         !isFirst && after.isEmpty && notAfter.isEmpty && placement == nil
     }
 
-    /// Whether it holds: no order changed its place since, as BriefBar saw it; and every order that named the pull request
-    /// when you changed it, and that BriefBar still keeps, names it with what it merged after then, as a set, and no other
-    /// order names it. An order that changed that since, revision after revision, or started or stopped naming it, changed
-    /// its place after you did: it shows instead, until you put yours back. Telling the same order again, in another
-    /// sequence or with other review advice, changes nothing, and an order forgotten since is no change.
+    /// Whether it holds: no order BriefBar still keeps went against it since, as BriefBar saw it (`changedBy`). One that did
+    /// changed its place after you did: it shows instead, until you put yours back. Telling the same order again, in another
+    /// sequence or with other review advice, changes nothing; nor does an order that moved it toward yours, or changed what
+    /// you didn't; and an order forgotten since is no change, nor is its having gone against yours.
     public func holds(in orders: DeclaredOrders) -> Bool {
-        overridden == nil && changedBy(in: orders).isEmpty
+        !isOverridden(in: orders) && changedBy(in: orders).isEmpty
     }
 
-    /// The orders that put it elsewhere than when you changed it, the latest first.
+    /// Whether an order that BriefBar still keeps changed its place since, as BriefBar saw it (`OrderChanges.noteOverrides`).
+    func isOverridden(in orders: DeclaredOrders) -> Bool {
+        overridden.map { orders.plan($0.by) != nil } ?? false
+    }
+
+    /// The orders that went against yours since you changed it, by what they say of it now and what they said then, the
+    /// latest first (`goesAgainst`).
     public func changedBy(in orders: DeclaredOrders) -> [OrderPlan] {
-        orders.plans.filter { plan in replaced.orders[plan.id] != plan.entry(for: ref).map { Set($0.after) } }
-            .sorted { $0.updatedAt > $1.updatedAt }
+        orders.plans.filter { plan in
+            let then = replaced.orders[plan.id]
+            let now = plan.entry(for: ref).map { Set($0.after) }
+            return then != now && goesAgainst(from: then, to: now, in: plan.id)
+        }.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Whether an order changing what it says of the pull request, from what it put it after then to what it does now, nil
+    /// where it doesn't name it, goes against yours: it names it in another mission than the one you moved it to, or out of
+    /// a stack, chain or session's pull requests you changed it in, which that takes it out of; it takes it out of the order
+    /// you moved it to, set it as next in or put it after another in; or it puts it after what you took away, or after
+    /// anything in the order you set it as next in. One that moves it toward yours doesn't: taking it out of an order you
+    /// moved it out of, naming it in the one you moved it to, putting it after what you did, or no longer after what you
+    /// took away or anything where you set it as next. Nor does one of what you didn't change.
+    func goesAgainst(from then: Set<ItemRef>?, to now: Set<ItemRef>?, in id: UUID) -> Bool {
+        let key = MissionKey.plan(id)
+        guard let now else {
+            if let placement { return placement == .into(key) }
+            return (first ?? from) == key
+        }
+        if then == nil {
+            if let placement, placement != .into(key) { return true }
+            if placement == nil, let changedIn = first ?? from {
+                switch changedIn {
+                case .plan, .mine: break
+                case .stack, .chain, .family: return true
+                }
+            }
+        }
+        let added = now.subtracting(then ?? [])
+        return !added.isEmpty && (first == key || !added.isDisjoint(with: notAfter))
     }
 
     /// Whether it would still change anything over where its orders put it now: not one that only took away what they no
@@ -169,14 +223,13 @@ public struct OrderChange: Equatable, Sendable {
         Set([ref] + after + notAfter)
     }
 
-    /// Every pull request it names, the chains it names a mission by included: kept in memory when one was only sent to
-    /// you in a chat.
+    /// Every pull request it's about or names a mission by, a chain by one of its own: kept in memory when one was only sent
+    /// to you in a chat. Not those its orders named when you changed it, which `order.plans` keeps already.
     public var named: Set<ItemRef> {
         var refs = subjects
         for key in [placement?.mission, from, first].compactMap({ $0 }) {
             if case .chain(let anchor) = key { refs.insert(anchor) }
         }
-        for after in replaced.orders.values { refs.formUnion(after) }
         return refs
     }
 }
@@ -421,17 +474,30 @@ public struct OrderChanges: Equatable, Sendable {
         }
     }
 
-    /// Notes, for each change that holds by what its orders say, whether one of them changed its place since: from then on,
-    /// it doesn't hold, though that order puts it back where it was, until you put yours back (`OrderChange.overridden`).
-    /// Telling the same order again notes nothing. True when that noted something.
+    /// Notes what the orders did to each change since BriefBar last looked: one that went against it overrides it from then
+    /// on, though that order puts it back where it was, until you put yours back (`OrderChange.overridden`); one that moved
+    /// it toward yours, or changed what you didn't, becomes what yours replaced, for what it does next to be told from; and
+    /// an override by an order BriefBar forgot since is no more, so that yours holds again. Telling the same order again
+    /// notes nothing. True when that noted something.
     /// - Parameter now: when BriefBar saw it, for an order whose last change it can't tell.
     @discardableResult
     public mutating func noteOverrides(in orders: DeclaredOrders, now: Date = Date()) -> Bool {
         var noted = false
-        for (ref, change) in changes where change.overridden == nil {
-            guard let plan = change.changedBy(in: orders).first else { continue }
-            changes[ref]?.overridden = OrderChange.Overridden(by: plan.id, at: min(plan.updatedAt, now))
-            noted = true
+        for (ref, before) in changes {
+            var change = before
+            if let overridden = change.overridden {
+                guard orders.plan(overridden.by) == nil else { continue }
+                change.overridden = nil
+            }
+            if let plan = change.changedBy(in: orders).first {
+                change.overridden = OrderChange.Overridden(by: plan.id, at: min(plan.updatedAt, now))
+            } else if orders.plans.contains(where: { change.replaced.orders[$0.id] != $0.entry(for: ref).map { Set($0.after) } }) {
+                change.replaced = OrderPlace(of: ref, in: orders)
+            }
+            if change != before {
+                changes[ref] = change
+                noted = true
+            }
         }
         return noted
     }
@@ -650,10 +716,11 @@ extension OrderChanges {
                 change.first = key
                 change.after = []
                 change.notAfter = []
-                if isAttached { change.placement = .into(key) }
+                if isAttached { change.attach(to: key) }
                 try clearOtherFirsts(named: key, in: mission, besides: ref)
             } else {
                 change.first = nil
+                change.detachIfDone()
             }
             if change.placement == nil { change.from = key }
             try keep(change)
@@ -667,7 +734,7 @@ extension OrderChanges {
                 change.first = nil
                 if !change.after.contains(other) { change.after.append(other) }
                 change.notAfter.removeAll { $0 == other }
-                if isAttached { change.placement = .into(key) }
+                if isAttached { change.attach(to: key) }
             } else {
                 let prerequisite = step.prerequisites.first { $0.ref == other }
                 if prerequisite?.origins.contains(where: \.isStacked) == true { throw OrderChangeError.stacked(on: other) }
@@ -678,6 +745,7 @@ extension OrderChanges {
                     return origin == .yourNext
                 } ?? false
                 if byOthers, !change.notAfter.contains(other) { change.notAfter.append(other) }
+                change.detachIfDone()
             }
             if change.placement == nil { change.from = key }
             try keep(change)
@@ -711,13 +779,7 @@ extension OrderChanges {
             remove(ref)
 
         case .undoMission(let key):
-            let mission = missions.first { $0.key == key }
-            let refs = Set((mission?.steps ?? []).map(\.ref) + (mission?.attached ?? []).map(\.ref))
-            func isThis(_ named: MissionKey?) -> Bool {
-                guard let named else { return false }
-                return mission.map { Self.names($0, named) } ?? (named == key)
-            }
-            for change in edited.all where refs.contains(change.ref) || isThis(change.placement?.mission) || isThis(change.from) {
+            for change in edited.undone(in: key, missions: missions) {
                 remove(change.ref)
             }
 
@@ -758,6 +820,20 @@ extension OrderChanges {
         return mission.steps.contains { $0.ref == anchor }
     }
 
+    /// The changes Undo Your Changes to This Mission takes back, as `apply` does and its ⋯ counts them: to the mission's pull
+    /// requests, and those that put pull requests in it or moved them out of it, set one as next or put one after another
+    /// in it, a chain by any of its own pull requests.
+    /// - Parameter missions: as By Mission shows them now.
+    public func undone(in key: MissionKey, missions: [OrderMission]) -> [OrderChange] {
+        let mission = missions.first { $0.key == key }
+        let refs = Set((mission?.steps ?? []).map(\.ref) + (mission?.attached ?? []).map(\.ref))
+        func isThis(_ named: MissionKey?) -> Bool {
+            guard let named else { return false }
+            return mission.map { Self.names($0, named) } ?? (named == key)
+        }
+        return all.filter { refs.contains($0.ref) || isThis($0.placement?.mission) || isThis($0.from) }
+    }
+
     /// Puts back the changes an edit touched, as `apply` said they were.
     public mutating func restore(_ touched: [ItemRef: OrderChange?]) {
         for (ref, change) in touched {
@@ -794,6 +870,11 @@ extension OrderChanges {
     static func waits(
         _ later: ItemRef, for earlier: ItemRef, in missions: [OrderMission], stacked: [ItemRef: Set<ItemRef>] = [:]
     ) -> Bool {
+        waits(later, for: earlier, in: waitGraph(missions, stacked: stacked))
+    }
+
+    /// What each pull request waits for by a stacked branch or a change of yours, for `waits`: worked out once for a menu.
+    static func waitGraph(_ missions: [OrderMission], stacked: [ItemRef: Set<ItemRef>]) -> [ItemRef: Set<ItemRef>] {
         var before = stacked
         for mission in missions {
             for step in mission.steps + mission.attached {
@@ -802,6 +883,11 @@ extension OrderChanges {
                 }
             }
         }
+        return before
+    }
+
+    /// Whether one waits for another, directly or through others, by `waitGraph`.
+    static func waits(_ later: ItemRef, for earlier: ItemRef, in before: [ItemRef: Set<ItemRef>]) -> Bool {
         var pending = Array(before[later] ?? [])
         var seen: Set<ItemRef> = []
         while let ref = pending.popLast() {
@@ -888,9 +974,10 @@ public struct MissionChoices: Equatable, Sendable {
     ///   - mission: the mission whose card it's in, where it's in two; nil for the first that has it.
     ///   - missions: as By Mission shows them now.
     ///   - stacked: what BriefBar sees each pull request stacked on (`OrderBoard.stacked`), those in no mission included.
+    ///   - withPrerequisites: Merge After's, which only its menu needs; without them, such as for VoiceOver's actions, none.
     public static func of(
         _ ref: ItemRef, in mission: MissionKey? = nil, missions: [OrderMission], changes: OrderChanges, orders: DeclaredOrders,
-        stacked: [ItemRef: Set<ItemRef>] = [:]
+        stacked: [ItemRef: Set<ItemRef>] = [:], withPrerequisites: Bool = true
     ) -> MissionChoices {
         let shown = mission.flatMap { key in missions.first { $0.key == key && $0.contains(ref) } }
             ?? missions.first { $0.contains(ref) }
@@ -920,6 +1007,11 @@ public struct MissionChoices: Equatable, Sendable {
             .offered
         }
         // What it can go after, and what it goes after now, whatever became of that, for you to take it away.
+        guard withPrerequisites else {
+            return MissionChoices(
+                ref: ref, mission: shown.key, next: next, prerequisites: [], targets: targets, canUndo: change != nil, canPutBack: canPutBack
+            )
+        }
         let current = Set(step.prerequisites.map(\.ref))
         var others = (shown.steps + shown.attached).filter { other in
             other.ref != ref && (current.contains(other.ref) || !other.status.hasEnded)
@@ -927,16 +1019,18 @@ public struct MissionChoices: Equatable, Sendable {
         for prerequisite in step.prerequisites where !others.contains(prerequisite.ref) {
             others.append(prerequisite.ref)
         }
+        var waits: [ItemRef: Set<ItemRef>]?
         let prerequisites = others.map { other in
             let origins = step.prerequisites.first { $0.ref == other }?.origins
-            let state: Prerequisite.State = if origins?.contains(where: \.isStacked) == true {
-                .stacked
+            let state: Prerequisite.State
+            if origins?.contains(where: \.isStacked) == true {
+                state = .stacked
             } else if origins != nil {
-                .checked
-            } else if OrderChanges.waits(other, for: ref, in: missions, stacked: stacked) {
-                .waitsForIt
+                state = .checked
             } else {
-                .unchecked
+                let graph = waits ?? OrderChanges.waitGraph(missions, stacked: stacked)
+                waits = graph
+                state = OrderChanges.waits(other, for: ref, in: graph) ? .waitsForIt : .unchecked
             }
             return Prerequisite(ref: other, state: state)
         }

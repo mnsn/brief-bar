@@ -22,8 +22,8 @@ package struct PullRequestOrderSettingView: View {
         the order they should merge, as a graph and on a map, with the order on each row. The order comes from stacks \
         BriefBar sees, and from what Copilot sessions tell it, which may be incomplete or late. On Azure DevOps' pull \
         requests, you can change a mission yourself, from a pull request's menu: which merges next, what it merges after, \
-        and which mission it's in. The latest change to where a pull request goes wins, yours or a session's, and says \
-        who made it; you can put yours back. It never changes a pull request's status, what's left before you can complete \
+        and which mission it's in. A session's later change wins only where it goes against yours, and says who made \
+        it; you can put yours back. It never changes a pull request's status, what's left before you can complete \
         it, or your lists. While it's on, BriefBar also reads, from GitHub, each pull request's base branch, whether it's \
         from a fork, its repository's default branch and its place in a stack, in its usual refresh; and, from the Copilot \
         app, which pull request each session opened. With agents on, sessions get the tools to tell BriefBar an order as \

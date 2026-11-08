@@ -608,9 +608,8 @@ public enum OrderNote: Equatable, Sendable {
     case placementGone(MissionKey)
     /// It waits for this one, which you set as next to merge.
     case afterYourNext(ItemRef)
-    /// Its order, told by that session when known, puts it after this one, which goes after it by a stacked branch or a
-    /// change of yours: BriefBar set that aside.
-    case setAside(ItemRef, by: ItemRef?, stacked: Bool)
+    /// Its order, told by that session when known, puts it after this one, which goes after it: BriefBar set that aside.
+    case setAside(ItemRef, by: ItemRef?, through: Circle)
     /// Its order, told by that session when known, puts it after this one, which waits for it through stacked branches and
     /// another mission's order: BriefBar set that aside.
     case goesRound(ItemRef, by: ItemRef?)
@@ -625,8 +624,36 @@ public enum OrderNote: Equatable, Sendable {
     /// It's stacked on this one now, which hasn't merged, or which merged while it still targets its branch: your "next to
     /// merge" doesn't hold, until that one merges or you retarget it.
     case nextDoesntHold(ItemRef, retarget: Bool)
+    /// You set it as next to merge in that mission, which it isn't in now, or which is gone, its order forgotten.
+    case nextElsewhere(MissionKey)
     /// An order changed its place after you had: it shows the order's, until you put yours back.
     case orderChangedIt(OrderOverride)
+
+    /// What makes the one its order puts it after go after it, for `setAside`.
+    public enum Circle: Equatable, Sendable {
+        /// Stacked branches alone: it's stacked on it.
+        case stacked
+        /// Its order's other lines and stacked branches.
+        case itsOrder
+        /// You put that one after it.
+        case yours
+        /// Your changes, with others.
+        case yourChanges
+    }
+
+    /// Whether it's about your changes, or about an order's later change or a stacked branch going against one of yours: what
+    /// the details' order line says, and what a row with no order known marks.
+    public var isAboutYourChanges: Bool {
+        switch self {
+        case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .afterYourNext, .yoursDoesntHold, .nextDoesntHold,
+             .nextElsewhere, .orderChangedIt, .yourNextGoesFirst:
+            return true
+        case .setAside(_, _, let circle):
+            return circle == .yours || circle == .yourChanges
+        case .showsAgainst, .orderDisagrees, .alsoIn, .stackedWith, .goesRound, .ordersGoRound:
+            return false
+        }
+    }
 }
 
 /// An order that changed a pull request's place after you had (`OrderChange.holds`).
@@ -840,6 +867,14 @@ public enum OrderBoard {
         }
         for index in missions.indices {
             missions[index].isFocused = missions[index].key == focus
+            for step in missions[index].steps.indices {
+                let ref = missions[index].steps[step].ref
+                // What you set as next in a mission it isn't in now, or that's gone: wherever it shows, it says so.
+                if let first = layer.holding[ref]?.first,
+                   !missions.contains(where: { OrderChanges.names($0, first) && $0.steps.contains { $0.ref == ref } }) {
+                    missions[index].steps[step].notes.append(.nextElsewhere(first))
+                }
+            }
             // What the missions made after it found its order's lines go round with.
             guard let notes = lines.notes[missions[index].key] else { continue }
             for step in missions[index].steps.indices {
@@ -849,6 +884,17 @@ public enum OrderBoard {
             }
         }
         return missions.sorted(by: showsFirst)
+    }
+
+    /// What your change to a pull request in no mission says: that an order went against it, or that you set it as next in a
+    /// mission it isn't in now, or that's gone; for its details, where no mission's card shows it.
+    public static func notes(outside ref: ItemRef, missions: [OrderMission], changes: OrderChanges, orders: DeclaredOrders) -> [OrderNote] {
+        guard let change = changes[ref] else { return [] }
+        guard change.holds(in: orders) else { return change.overridden(in: orders).map { [.orderChangedIt($0)] } ?? [] }
+        if let first = change.first, !missions.contains(where: { OrderChanges.names($0, first) && $0.contains(ref) }) {
+            return [.nextElsewhere(first)]
+        }
+        return []
     }
 
     /// The one you focus on first, then those still going, then those with an order; the most pressing for you first, then
@@ -1389,13 +1435,24 @@ extension Board {
         let otherOrders = lines.orders(besides: members)
         let elsewhere = otherOrders.merging(lines.next()) { $0.union($1) }
         if let plan {
+            // What goes before each by stacked branches and the order's lines kept so far, without yours: for what a line that
+            // goes round is set aside by.
+            var withoutYours = self.before
             for ref in group.members where blocked != nil || ref != next {
                 guard let entry = plan.entry(for: ref) else { continue }
                 let tookAway = layer.holding[ref]?.notAfter ?? []
                 for earlier in entry.after where members.contains(earlier) && !tookAway.contains(earlier) {
                     if Self.isBefore(ref, earlier, in: before) {
-                        let stacked = Self.isBefore(ref, earlier, in: self.before)
-                        added[ref, default: []].append(.setAside(earlier, by: plan.declaredBy, stacked: stacked))
+                        let circle: OrderNote.Circle = if Self.isBefore(ref, earlier, in: self.before) {
+                            .stacked
+                        } else if Self.isBefore(ref, earlier, in: withoutYours) {
+                            .itsOrder
+                        } else if layer.yours[earlier]?.contains(ref) == true {
+                            .yours
+                        } else {
+                            .yourChanges
+                        }
+                        added[ref, default: []].append(.setAside(earlier, by: plan.declaredBy, through: circle))
                     } else if Self.isBefore(ref, earlier, in: before, otherOrders) {
                         added[ref, default: []].append(.goesRound(earlier, by: plan.declaredBy))
                     } else if Self.isBefore(ref, earlier, in: before, elsewhere),
@@ -1406,6 +1463,7 @@ extension Board {
                         added[ref, default: []].append(.yourNextGoesFirst(earlier, by: plan.declaredBy, next: set.next, in: set.mission))
                     } else {
                         add(earlier, before: ref, [.declared(revision: plan.revision)])
+                        withoutYours[ref, default: []].insert(earlier)
                     }
                 }
             }
@@ -1482,10 +1540,13 @@ extension Board {
         let (order, cycles) = OrderGraph.ordered(refs, before: within, isEarlier: goesFirst)
         let inCycle = cycleMembers(cycles)
         let ancestry = Self.ancestry(prerequisites)
-        // Whether your change to a pull request does something here: not one set as next in another mission only.
+        // Whether your change to a pull request does something here: not one set as next in another mission only, nor one that
+        // takes away only what nothing here puts it after.
         func changesHere(_ ref: ItemRef) -> Bool {
             guard let change = layer.holding[ref] else { return false }
-            return !change.after.isEmpty || !change.notAfter.isEmpty || change.placement != nil || change.first.map(group.names) == true
+            if !change.after.isEmpty || change.placement != nil || change.first.map(group.names) == true { return true }
+            let entry = own.contains(ref) ? plan?.entry(for: ref) : nil
+            return change.notAfter.contains { entry?.after.contains($0) == true || $0 == chosen }
         }
         func step(_ ref: ItemRef, number: Int?) -> OrderStep {
             let earlier = prerequisites[ref, default: []]
@@ -1584,7 +1645,7 @@ extension Board {
         if case .into(let target)? = change.placement {
             if case .mine = group.kind, target == group.key, !Self.isOwn(target) {
                 notes.append(.placementGone(target))
-            } else {
+            } else if !change.isAttached {
                 notes.append(.moved(from: change.from, change.changedAt))
             }
         }
@@ -1778,11 +1839,14 @@ public enum OrderText {
             return "Its mission is gone: you'd put it here"
         case .afterYourNext(let next):
             return "You set \(next.orderLabel(near: ref)) as next to merge"
-        case .setAside(let earlier, let session, let stacked):
+        case .setAside(let earlier, let session, let circle):
             let label = earlier.orderLabel(near: ref)
-            return stacked
-                ? "\(teller(session)) puts it after \(label), but \(label) is stacked on it"
-                : "\(teller(session)) puts it after \(label); you put \(label) after it"
+            switch circle {
+            case .stacked: return "\(teller(session)) puts it after \(label), but \(label) is stacked on it"
+            case .itsOrder: return "\(teller(session)) puts it after \(label), but \(label) waits for it through its order and a stacked branch"
+            case .yours: return "\(teller(session)) puts it after \(label); you put \(label) after it"
+            case .yourChanges: return "\(teller(session)) puts it after \(label), but \(label) waits for it through your changes"
+            }
         case .goesRound(let earlier, let session):
             let label = earlier.orderLabel(near: ref)
             return "\(teller(session)) puts it after \(label), but \(label) waits for it through another mission"
@@ -1806,6 +1870,10 @@ public enum OrderText {
             return "Stacked on \(earlier.orderLabel(near: ref)) now, so your ‘next to merge’ doesn't hold"
         case .nextDoesntHold(let earlier, true):
             return "\(earlier.orderLabel(near: ref)) merged: your ‘next to merge’ holds once you retarget it"
+        case .nextElsewhere(let mission):
+            if let title = names.title(mission) { return "You set it as next to merge in ‘\(title)’, which it isn't in now" }
+            if case .plan = mission { return "Its order is gone: you'd set it as next to merge there" }
+            return "The mission you set it as next to merge in is gone"
         case .orderChangedIt(let override):
             return overridden(override, of: ref, names: names)
         }

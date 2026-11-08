@@ -1327,13 +1327,20 @@ changes, then sessions' orders: an order's line that would go round with them is
 goes round through another mission, such as with what you set as next there. Two orders that put the same pull requests
 the other way round each keep their own, and both say so, for you to check the order. Your changes are a layer, kept by
 pull request and never written into an order, so sessions go on telling theirs. Each keeps the place the orders gave the
-pull request when you made it: the latest change wins, so a revision that changes what that pull request merges after,
-or whether the order names it, shows instead, says so, and **Put Yours Back** makes yours hold again; telling the same
-order again changes nothing. **Undo** takes back your last change, in memory only. BriefBar keeps them in the
-preferences (`order.changes`) as references, codes and dates, never titles, those about a pull request sent to you in a
-chat in memory only; at most 500, refusing more rather than dropping one; each until two weeks after BriefBar saw its
-pull requests merge or close. Turning a source off forgets those about its pull requests, turning Pull Request Order off
-keeps them, unused, and **Forget All Orders…** forgets them. Nothing goes to Azure DevOps.
+pull request when you made it, and a session's later change wins only where it goes against yours: a revision that names
+it in another mission than the one you moved it to, takes it out of the order you moved it to or changed it in, or puts
+it after what you took away, or after anything where you set it as next, shows instead, says so, and **Put Yours Back**
+makes yours hold again. One that moves it toward yours, such as an order taking out what you moved out of it or naming
+what you moved into its mission, or that changes what you didn't, becomes what yours replaced, and yours holds; so does
+telling the same order again, and an order forgotten since is no change. This follows the plan's intent, that a session
+re-telling its order never wipes what you changed, over its first rule, which counted any change of the pull request's
+place. A row with no order known shows a quiet ✎ where your change says something of it, such as that you moved it
+there, or that the order you set it as next in is gone. **Undo** takes back your last change, in memory only; a change
+BriefBar refuses says why beside it. BriefBar keeps them in the preferences (`order.changes`) as references, codes and
+dates, never titles, those about a pull request sent to you in a chat in memory only; at most 500, refusing more rather
+than dropping one; each until two weeks after BriefBar saw its pull requests merge or close. Turning a source off
+forgets those about its pull requests, turning Pull Request Order off keeps them, unused, and **Forget All Orders…**
+forgets them. Nothing goes to Azure DevOps.
 
 ### A pull request's details
 

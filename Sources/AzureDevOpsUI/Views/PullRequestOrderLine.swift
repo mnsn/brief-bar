@@ -29,9 +29,10 @@ private struct OrderLineContent: View {
             let mission = OrderBoard.mission(of: ref, in: order.missions)
             let step = mission.flatMap { mission in (mission.steps + mission.attached).first { $0.ref == ref } }
             let names = order.names
-            // What your changes say, and an order's later one; that one too where it took it out of every mission.
-            let notes = step.map { step in step.notes.filter(\.isAboutChanges).map { OrderText.note($0, of: ref, names: names) } }
-                ?? order.changes[ref]?.overridden(in: order.orders).map { [OrderText.overridden($0, of: ref, names: names)] } ?? []
+            // What your changes say, and an order's later one; and where no mission has it, what became of your change.
+            let notes = (step?.notes.filter(\.isAboutYourChanges)
+                ?? OrderBoard.notes(outside: ref, missions: order.missions, changes: order.changes, orders: order.orders))
+                .map { OrderText.note($0, of: ref, names: names) }
             let canPutBack = order.changes[ref] != nil && order.choices(for: ref, in: mission?.key).canPutBack
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -129,19 +130,5 @@ private struct OrderLineContent: View {
         formatter.numberStyle = .ordinal
         formatter.locale = Locale(identifier: "en_US")
         return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
-    }
-}
-
-extension OrderNote {
-    /// Whether it's about your changes, or about an order's later change or a stacked branch going against one of yours: what
-    /// the details' order line says.
-    var isAboutChanges: Bool {
-        switch self {
-        case .yourNext, .yourAfter, .tookAway, .moved, .placementGone, .afterYourNext, .setAside, .yoursDoesntHold, .nextDoesntHold,
-             .orderChangedIt, .yourNextGoesFirst:
-            return true
-        case .showsAgainst, .orderDisagrees, .alsoIn, .stackedWith, .goesRound, .ordersGoRound:
-            return false
-        }
     }
 }

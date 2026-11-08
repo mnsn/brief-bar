@@ -57,7 +57,8 @@ extension OrderCapsuleTone {
 
 /// A row's order capsule, beside its links: "Next to merge", "After !4103 · stacked", "Any time", "Check the order"; with ✎
 /// where a change of yours decides it. It says the rest in its tooltip. From another list, a click shows its mission in By
-/// Mission.
+/// Mission. With no order known, a quiet ✎ alone, where a change of yours says something of it, such as that you moved it
+/// there, in its tooltip.
 package struct OrderCapsule: View {
     private let context: OrderRowContext
 
@@ -86,6 +87,18 @@ package struct OrderCapsule: View {
             .help(help)
             .accessibilityLabel(context.sentence ?? text)
             .highPriorityGesture(TapGesture().onEnded { context.open?() }, including: context.open == nil ? .subviews : .all)
+        } else if context.step.notes.contains(where: \.isAboutYourChanges), let sentence = context.sentence {
+            Image(systemName: "pencil")
+                .font(size: 10, weight: .semibold)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1.5)
+                .background(Capsule().fill(Color.secondary.opacity(0.10)))
+                .contentShape(Capsule())
+                .fixedSize()
+                .help(sentence + (context.open == nil ? "" : "\nClick to show it By Mission"))
+                .accessibilityLabel(sentence)
+                .highPriorityGesture(TapGesture().onEnded { context.open?() }, including: context.open == nil ? .subviews : .all)
         }
     }
 }

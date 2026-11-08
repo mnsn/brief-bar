@@ -295,7 +295,7 @@ import Testing
         #expect(Self.summary(mission.steps) == ["1 !4101 Next to merge", "2 !4102 Merge after !4101"])
         #expect(mission.cycles.isEmpty)
         let first = try #require(mission.steps.first)
-        #expect(first.notes == [.setAside(Self.pr(4102), by: nil, stacked: true)])
+        #expect(first.notes == [.setAside(Self.pr(4102), by: nil, through: .stacked)])
         #expect(OrderText.note(first.notes[0], of: first.ref) == "Its order puts it after !4102, but !4102 is stacked on it")
     }
 

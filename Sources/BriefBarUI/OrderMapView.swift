@@ -45,7 +45,7 @@ package struct MissionBand: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .background(GlassCard(cornerRadius: 18))
-                if order.lastChange?.mission == mission.key {
+                if order.said.contains(where: { $0.mission == mission.key }) {
                     OrderUndoLine(order: order, in: mission.key)
                         .padding(.horizontal, 12)
                 }

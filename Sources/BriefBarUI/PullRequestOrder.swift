@@ -20,8 +20,11 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var orders = DeclaredOrders()
     /// Your changes to missions, those kept in memory included: none while it's off.
     @Published package private(set) var changes = OrderChanges()
-    /// Your last change, for its Undo line, until your next one or until you dismiss it; or why BriefBar didn't make it.
+    /// Your last change, for its Undo line, until your next one or until you dismiss it.
     @Published package private(set) var lastChange: OrderLastChange?
+    /// Why BriefBar didn't make the change you asked for last, beside your last change's Undo, which stays: until your next
+    /// change, Undo, or you dismiss it.
+    @Published package private(set) var refusal: OrderLastChange?
     /// By Mission's view, List or Map, on both Pull Requests pages.
     @Published package private(set) var view: OrderView
     /// The mission a row's capsule asked By Mission to show, until it has.
@@ -118,6 +121,7 @@ package final class PullRequestOrder: ObservableObject {
             focus = nil
             changes = OrderChanges()
             lastChange = nil
+            refusal = nil
             missions = []
         }
     }
@@ -226,6 +230,7 @@ package final class PullRequestOrder: ObservableObject {
             self.changes = changes
             self.focus = kept
             lastChange = nil
+            refusal = nil
         }
         withdraw(source)
         guard isOn else { return }
@@ -298,6 +303,7 @@ package final class PullRequestOrder: ObservableObject {
         changes = OrderChanges()
         changesInMemory = OrderChanges()
         lastChange = nil
+        refusal = nil
         rebuild()
     }
 
@@ -339,16 +345,19 @@ package final class PullRequestOrder: ObservableObject {
     // MARK: Your changes to missions
 
     /// What a pull request's Mission menu offers now.
-    /// - Parameter mission: the mission whose card it's in, where it's in two.
-    package func choices(for ref: ItemRef, in mission: MissionKey? = nil) -> MissionChoices {
-        MissionChoices.of(ref, in: mission, missions: missions, changes: changes, orders: orders, stacked: stacked)
+    /// - Parameters:
+    ///   - mission: the mission whose card it's in, where it's in two.
+    ///   - withPrerequisites: Merge After's, which only its menu needs: VoiceOver's actions do without.
+    package func choices(for ref: ItemRef, in mission: MissionKey? = nil, withPrerequisites: Bool = true) -> MissionChoices {
+        MissionChoices.of(
+            ref, in: mission, missions: missions, changes: changes, orders: orders, stacked: stacked, withPrerequisites: withPrerequisites
+        )
     }
 
     /// How many of your changes Undo Your Changes to This Mission takes back: to its pull requests, those you put in it and
-    /// those you moved out of it.
+    /// those you moved out of it (`OrderChanges.undone`).
     package func changes(in mission: OrderMission) -> Int {
-        let refs = Set(mission.steps.map(\.ref) + mission.attached.map(\.ref))
-        return changes.all.filter { refs.contains($0.ref) || $0.placement == .into(mission.key) || $0.from == mission.key }.count
+        changes.undone(in: mission.key, missions: missions).count
     }
 
     /// What names sessions, pull requests and missions in the order's words, as the sources say now, and the time: worked
@@ -373,7 +382,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Changes a mission as you asked, from a pull request's Mission menu or a mission's ⋯, and says what you did, for its
-    /// Undo line and for VoiceOver; or, refused, why, and changes nothing. Nil when there was nothing to change.
+    /// Undo line and for VoiceOver; or, refused, why, beside your last change's Undo, and changes nothing. Nil when there was
+    /// nothing to change.
     @discardableResult
     package func change(_ edit: OrderEdit) -> OrderLastChange? {
         guard isOn else { return nil }
@@ -383,11 +393,11 @@ package final class PullRequestOrder: ObservableObject {
         do {
             touched = try changed.apply(edit, missions: missions, orders: orders, stacked: stacked, now: now())
         } catch {
-            let refusal = OrderLastChange(
+            let refused = OrderLastChange(
                 said: "\(error)", refs: edit.refs, mission: cardMission(for: edit), touched: [:], evidence: OrderEvidence()
             )
-            lastChange = refusal
-            return refusal
+            refusal = refused
+            return refused
         }
         guard !touched.isEmpty else { return nil }
         // What BriefBar saw become of the pull requests the changes it touched were about, which can go with them, for Undo
@@ -402,6 +412,7 @@ package final class PullRequestOrder: ObservableObject {
             said: OrderText.did(edit, names: names, newMission: made), refs: edit.refs, mission: cardMission(for: edit), touched: touched,
             evidence: seen
         )
+        refusal = nil
         lastChange = last
         return last
     }
@@ -413,6 +424,7 @@ package final class PullRequestOrder: ObservableObject {
         var changed = changes
         changed.restore(last.touched)
         lastChange = nil
+        refusal = nil
         evidence = evidence.merging(last.evidence)
         keep(changed)
         rebuild()
@@ -422,6 +434,17 @@ package final class PullRequestOrder: ObservableObject {
     /// × beside the Undo line: it goes, and your change stays.
     package func dismissLastChange() {
         lastChange = nil
+    }
+
+    /// × beside why BriefBar didn't make a change: it goes.
+    package func dismissRefusal() {
+        refusal = nil
+    }
+
+    /// What the Undo lines say, the latest first: why BriefBar didn't make the change you asked for last, then your last
+    /// change, with Undo.
+    package var said: [OrderLastChange] {
+        [refusal, lastChange].compactMap { $0 }
     }
 
     /// The mission whose card shows what an edit did: the one you changed it in, else where its pull request is now, else
