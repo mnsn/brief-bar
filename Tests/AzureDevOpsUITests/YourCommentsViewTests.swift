@@ -417,7 +417,13 @@ import Testing
         // AppKit, as the system's settings change, here to on, in memory only: it gives the text view each as it says so.
         let defaults = UserDefaults.standard
         let arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
-        defer { defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain) }
+        defer {
+            // As they were, and every text view in the process, as other tests', with the machine's own settings again.
+            defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+            for name in SpellCheckingProbe.ProbeView.systemSettingChanges {
+                NotificationCenter.default.post(name: name, object: nil)
+            }
+        }
         defaults.setVolatileDomain(arguments.merging(Self.substitutionsOn) { _, on in on }, forName: UserDefaults.argumentDomain)
         for name in SpellCheckingProbe.ProbeView.systemSettingChanges {
             NotificationCenter.default.post(name: name, object: nil)
