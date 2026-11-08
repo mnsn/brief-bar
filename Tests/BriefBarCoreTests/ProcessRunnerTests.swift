@@ -96,8 +96,8 @@ import Testing
                 group.addTask {
                     _ = try await ProcessRunner().run(
                         URL(fileURLWithPath: "/bin/sh"),
-                        arguments: ["-c", "echo $$ > \"$0.new\" && mv \"$0.new\" \"$0\" && exec /bin/sleep 30", file.path],
-                        environment: nil, timeout: 30
+                        arguments: ["-c", "echo $$ > \"$0.new\" && mv \"$0.new\" \"$0\" && exec /bin/sleep 600", file.path],
+                        environment: nil, timeout: 600
                     )
                 }
                 var written: pid_t?
@@ -147,12 +147,12 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("pid")
         let script = """
-            (trap '' TERM; exec sh -c 'echo $$ > "$0.new" && mv "$0.new" "$0" && exec sleep 30' "$0" >/dev/null 2>&1) & wait
+            (trap '' TERM; exec sh -c 'echo $$ > "$0.new" && mv "$0.new" "$0" && exec sleep 600' "$0" >/dev/null 2>&1) & wait
             """
         let child = try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 _ = try await ProcessRunner().run(
-                    URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script, file.path], environment: nil, timeout: 30
+                    URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script, file.path], environment: nil, timeout: 600
                 )
             }
             var written: pid_t?
@@ -280,10 +280,11 @@ import Testing
         let file = directory.appendingPathComponent("pid")
         let run = Task {
             try await ProcessRunner().run(
-                URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "echo $$ > \"$0.new\" && mv \"$0.new\" \"$0\" && exec sleep 30", file.path],
-                environment: nil, timeout: 30
+                URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "echo $$ > \"$0.new\" && mv \"$0.new\" \"$0\" && exec sleep 600", file.path],
+                environment: nil, timeout: 600
             )
         }
+        defer { run.cancel() }
         var shell: pid_t?
         let deadline = ContinuousClock.now.advanced(by: waitLimit)
         while shell == nil, ContinuousClock.now < deadline {
