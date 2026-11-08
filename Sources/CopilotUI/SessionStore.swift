@@ -26,6 +26,8 @@ final class SessionStore: ObservableObject {
     private let settings: AppSettings
     private let openSession: @MainActor (String) -> Void
     private let openCLISession: @MainActor (String) -> Void
+    /// Opens sessions without the app, in a terminal, unless `openCLISession` was given: it stops as this does.
+    let cliSessions: CLISession.Opener
     private let isAppInstalled: @MainActor () -> Bool
     /// Where the Copilot app's files are; nil for the demo without made-up data, which reads nothing.
     let paths: CopilotPaths?
@@ -42,7 +44,7 @@ final class SessionStore: ObservableObject {
 
     /// - Parameters:
     ///   - openSession: opens a session in the Copilot app.
-    ///   - openCLISession: opens one without the app; by default, as `CLISession` does.
+    ///   - openCLISession: opens one without the app; by default, as `cliSessions` does.
     ///   - isAppInstalled: whether the Copilot app is on this Mac, looked at again every so often.
     init(
         settings: AppSettings, paths: CopilotPaths?, sentTasks: SentTasks? = nil,
@@ -53,8 +55,10 @@ final class SessionStore: ObservableObject {
         self.settings = settings
         self.paths = paths
         self.openSession = openSession
+        let cliSessions = CLISession.Opener()
+        self.cliSessions = cliSessions
         self.openCLISession = openCLISession ?? { id in
-            if let paths { CLISession.open(id, paths: paths) }
+            if let paths { cliSessions.open(id, paths: paths) }
         }
         self.isAppInstalled = isAppInstalled
         self.sentTasks = sentTasks
@@ -136,6 +140,8 @@ final class SessionStore: ObservableObject {
         counts = PhaseCounts()
         problem = nil
         hasLoaded = false
+        // A session still being opened in Terminal opens nothing now.
+        cliSessions.stop()
     }
 
     func refresh() {
