@@ -5,16 +5,23 @@ import GitHubCore
 import Testing
 @testable import GitHubUI
 
-/// Runs nothing: answers every run the same way, after a delay.
+/// Runs nothing: answers each run, by what it runs, after a delay.
 final class FakeRunner: ProcessRunning, @unchecked Sendable {
     private let lock = NSLock()
     private var log: [[String]] = []
     private var stops = 0
-    let result: ProcessResult
+    private let respond: @Sendable ([String]) -> ProcessResult
     let delay: Duration
 
+    /// Answers every run the same way.
     init(_ result: ProcessResult, delay: Duration = .zero) {
-        self.result = result
+        respond = { _ in result }
+        self.delay = delay
+    }
+
+    /// Answers each run by its arguments.
+    init(delay: Duration = .zero, _ respond: @escaping @Sendable ([String]) -> ProcessResult) {
+        self.respond = respond
         self.delay = delay
     }
 
@@ -33,25 +40,39 @@ final class FakeRunner: ProcessRunning, @unchecked Sendable {
                 throw error
             }
         }
-        return result
+        return respond(arguments)
     }
 }
 
 enum FakeCLI {
     static let path = "/fake/bin/gh"
     static let signedOut = "You are not logged into any GitHub hosts. To log in, run: gh auth login"
+    static let listing = ["auth", "status", "--json", "hosts", "--hostname", "github.com"]
+    static let token = ["auth", "token", "--hostname", "github.com"]
+    /// What `gh auth status --json hosts` prints when it's signed in to one account, robin.
+    static let robin = #"{"hosts":{"github.com":[{"state":"success","active":true,"host":"github.com","login":"robin","tokenSource":"keyring"}]}}"#
 
     /// The GitHub CLI isn't installed: nothing runs, and nothing connects.
-    static func missing() -> GitHubCLITokenProvider {
+    static func missing() -> GitHubAccountsReader {
         let runner = FakeRunner(ProcessResult(status: 1))
-        let locator = GitHubCLILocator(environment: [:], candidates: [], useLoginShell: false, runner: runner) { _ in false }
-        return GitHubCLITokenProvider(locator: locator, runner: runner)
+        return reader(runner, locator: GitHubCLILocator(environment: [:], candidates: [], useLoginShell: false, runner: runner) { _ in false })
     }
 
-    /// Installed, but signed out: it never gets a token, so nothing connects.
-    static func signedOut(_ runner: FakeRunner = FakeRunner(ProcessResult(status: 1, stderr: Data(signedOut.utf8)))) -> GitHubCLITokenProvider {
-        let locator = GitHubCLILocator(environment: [:], candidates: [path], useLoginShell: false, runner: runner) { $0 == path }
-        return GitHubCLITokenProvider(locator: locator, runner: runner)
+    /// Installed, but signed out: it lists no account and never gets a token, so nothing connects.
+    static func signedOut(_ runner: FakeRunner = FakeRunner(ProcessResult(status: 1, stderr: Data(signedOut.utf8)))) -> GitHubAccountsReader {
+        installed(runner)
+    }
+
+    /// Installed, answering as `runner` does. Unless it gives a token, nothing connects.
+    static func installed(_ runner: FakeRunner) -> GitHubAccountsReader {
+        reader(runner, locator: GitHubCLILocator(environment: [:], candidates: [path], useLoginShell: false, runner: runner) { $0 == path })
+    }
+
+    /// Lists the accounts with `runner`, and gets their tokens with it, from where `locator` finds the GitHub CLI.
+    private static func reader(_ runner: FakeRunner, locator: GitHubCLILocator) -> GitHubAccountsReader {
+        GitHubAccountsReader(accounts: GitHubCLIAccounts(locator: locator, runner: runner)) { account in
+            GitHubClient(tokens: GitHubCLITokenProvider(user: account.tokenUser, locator: locator, runner: runner))
+        }
     }
 }
 
@@ -72,6 +93,6 @@ func eventually(_ condition: () -> Bool) async {
 }
 
 @MainActor
-func liveStore(_ makeTokens: @escaping () -> GitHubCLITokenProvider, settings: AppSettings = AppSettings(defaults: MemoryDefaults())) -> GitHubStore {
-    GitHubStore(settings: settings, mode: .live, makeTokens: makeTokens)
+func liveStore(_ makeReader: @escaping () -> GitHubAccountsReader, settings: AppSettings = AppSettings(defaults: MemoryDefaults())) -> GitHubStore {
+    GitHubStore(settings: settings, mode: .live, makeReader: makeReader)
 }

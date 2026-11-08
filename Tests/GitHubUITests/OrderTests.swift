@@ -93,7 +93,7 @@ import Testing
         let runner = FakeRunner(ProcessResult(status: 1, stderr: Data(FakeCLI.signedOut.utf8)), delay: .seconds(3_600))
         var on = false
         let store = GitHubStore(
-            settings: AppSettings(defaults: MemoryDefaults()), mode: .live, makeTokens: { FakeCLI.signedOut(runner) }
+            settings: AppSettings(defaults: MemoryDefaults()), mode: .live, makeReader: { FakeCLI.signedOut(runner) }
         )
         store.ordersOn = { on }
         store.start()

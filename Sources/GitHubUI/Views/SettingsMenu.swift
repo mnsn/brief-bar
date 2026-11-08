@@ -17,7 +17,7 @@ struct SourceMenuContent: View {
 
     var body: some View {
         GitHubSettings()
-        Button("Refresh Now") { store.refresh() }
+        Button("Refresh Now") { store.refresh(listingAccounts: true) }
             .disabled(store.mode == .demo)
         Divider()
         Button("Open GitHub") { store.openPullRequestsPage() }
