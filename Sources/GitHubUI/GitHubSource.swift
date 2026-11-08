@@ -11,7 +11,10 @@ import SwiftUI
 package final class GitHubSource: BriefBarSource {
     /// 2: each pull request's branch, and Show Links. 3: with Pull Request Order on, what an order needs of each pull
     /// request.
-    nonisolated package static let descriptionVersion = 3
+    /// 4: the pull requests of every account the GitHub CLI is signed in to on github.com, with one query for each
+    /// account each refresh, and which accounts those are, every half hour, which the GitHub CLI checks with GitHub as
+    /// it lists them.
+    nonisolated package static let descriptionVersion = 4
 
     package let id = SourceID.github
     package let name = "GitHub"

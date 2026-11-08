@@ -18,7 +18,9 @@ public struct AgentConsent: Codable, Equatable, Sendable {
 public enum AgentAccess {
     /// What agents get. The release that gives them something new, such as another tool or another source's data,
     /// raises it, from what pull requests say under Descriptions in their notes (scripts/prepare-release.sh).
-    public static let version = 5
+    /// 6: BriefBar --wait, for one of your pull requests, read every minute for up to two hours until its next build
+    /// passes or fails, comments wait on you, it has merge conflicts or it closes.
+    public static let version = 6
 
     public static let defaultsKey = "agents"
 
