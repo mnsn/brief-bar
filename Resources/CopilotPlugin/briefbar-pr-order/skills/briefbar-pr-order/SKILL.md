@@ -65,6 +65,15 @@ briefbar-order_pull_requests.
   session you are.
 - Never claim a pull request can merge, waits or merged: BriefBar sees those itself, from Azure DevOps and the order.
 
+## Stories
+
+- With Show Links on in BriefBar too, BriefBar puts the Azure DevOps pull requests of one story's tasks together by
+  itself, in the tasks' backlog order. Link each pull request to its task in Azure DevOps as you open it.
+- Tell an order for them only where they must merge in another order, or wait for one another: BriefBar lists them in
+  their tasks' order, but never says they merge in it.
+- `pull_request` names a pull request's work items and the story each is for; `work_item` lists a story's tasks in
+  backlog order, each with its pull requests.
+
 ## What the user set
 
 - BriefBar's answers say what the user changed: where pull requests go in an order, and the stages they set. Keep it,

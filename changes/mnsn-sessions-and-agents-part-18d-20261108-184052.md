@@ -12,6 +12,11 @@
   and who set it: `needs_me` lists them as the Board does, and `pull_request` says its stage. When a session tells or
   reads an order, BriefBar tells it what you changed in that order, to keep: a later change of its that goes against
   yours shows instead, and you can put yours back.
+- **Agents know each pull request's story.** `pull_request` names an Azure DevOps pull request's work items and the
+  story each is for, and `work_item` lists a story's tasks in backlog order, each with its pull requests. With Pull
+  Request Order on, sessions are told to link each pull request to its task as they open it, since BriefBar puts a
+  story's pull requests together by itself with Show Links on, and to tell an order only where they must merge in
+  another.
 
 ## Descriptions
 
@@ -22,7 +27,9 @@ only while the Copilot app lists the session.
 Agents: with Pull Request Order on, a tool for sessions to set the stages of the Azure DevOps pull requests they work
 on, `pull_request_stage`; each Azure DevOps pull request's stage, why, and who set it, in `needs_me` and
 `pull_request`; and, in the order tools' answers, what you changed in the orders sessions told, which still holds.
+Whatever the setting, each Azure DevOps pull request's work items and the story each is for, in `pull_request`, and
+the pull requests linked to a work item's tasks, in `work_item`.
 
 After this update: with Pull Request Order and agents on, Copilot sessions tell Azure DevOps' pull requests' stages,
 which BriefBar keeps for each session, never in Azure DevOps; and agents get each pull request's stage, and what you
-changed in the orders sessions told.
+changed in the orders sessions told; and, whatever the setting, each pull request's work items and their story.

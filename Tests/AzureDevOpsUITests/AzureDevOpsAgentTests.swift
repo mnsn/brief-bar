@@ -93,6 +93,22 @@ import Testing
         #expect(text.contains("- Fix the Build on !4088 in shop-web: working"))
         // The demo's window reads no sessions, so neither does the demo's pull_request.
         #expect(!text.contains("Its session"))
+        // Its work items, each with the story it's for, as Azure DevOps links them.
+        #expect(text.contains("\n- Its work items: Task 5182 “Show delivery estimates”, under User Story 5180 “Checkout redesign”.\n"))
+        let coupons = try await call("pull_request", ["pull_request": .int(4091)])
+        #expect(coupons.contains("""
+            - Its work items: Bug 5110 “Coupon totals round down instead of to the nearest cent”; Task 5112 “Round half up in the \
+            coupon service”, under Bug 5110 “Coupon totals round down instead of to the nearest cent”.
+
+            """))
+        let unlinked = try await call("pull_request", ["pull_request": .int(4099)])
+        #expect(unlinked.contains("\n- No work item is linked to it in Azure DevOps.\n"))
+        // One whose story couldn't be read names it by its number; titles stay on their line.
+        let task = WorkItem(
+            id: 5103, organization: "contoso", project: "Storefront", type: "Task", title: "Show saved\nitems", state: "Active",
+            category: .inProgress, parentId: 5101
+        )
+        #expect(AgentText.work([LinkedWork(item: task)]) == "Task 5103 “Show saved\\nitems”, under work item 5101")
 
         // By its link, and with its comment threads, word for word. You've opened it since Sam replied: his reply still
         // waits on you, but isn't new.
@@ -211,13 +227,15 @@ import Testing
         #expect(lines[4] == "- Waiting on: reviewers of Sam Rivera's !4120 · Copilot, on task 5103")
         // Your task that isn't started; not 5103, which Copilot works on.
         #expect(lines[5] == "- You can: start task 5104")
-        // Its tasks in work order, each with its state, who has it and its hours, and the work sent to Copilot for one.
+        // Its tasks in backlog order, as its story's mission lists their pull requests, each with its state, who has it and
+        // its hours, and the work sent to Copilot for one.
         #expect(story.contains("""
             ## Tasks
+            - 5102 Add a saved items table to the cart service: Closed · you
             - 5103 Show saved items under the cart: Active · you · 3 h left · Copilot working (started 6m ago): Run the cart tests
             - 5104 Move a saved item back to the cart: New · you · 2 h left
+            - 5105 Test saving with an empty cart: New · Sam Rivera · 1 h left
             """))
-        #expect(story.contains("- 5102 Add a saved items table to the cart service: Closed · you\n"))
         #expect(!story.contains("◐") && !story.contains("Type:") && !story.contains("## Sent to Copilot"))
         // A teammate's pull request, as it says itself, and what BriefBar doesn't read of it.
         #expect(story.contains("""
@@ -269,19 +287,37 @@ import Testing
             """))
         #expect(!task.contains("Claude") && !task.contains("BriefBar's Ready to Complete"))
 
-        // Its bug: the work sent for the task goes on the task's line, and its repro steps are under their name.
+        // Its bug: each task with its pull requests, in backlog order; the work sent for the task goes on the task's line,
+        // and its repro steps are under their name.
         let bug = try await call("work_item", ["work_item": .int(5110)])
         #expect(bug.contains("- State: Active (work started), changed 1h ago · assigned to Priya Shah\n"))
         #expect(bug.contains("- Waiting on: you, to complete !4091\n- You can: complete !4091\n"))
         #expect(bug.contains("""
-            - 5112 Round half up in the coupon service: Active · you · 2 h left · Copilot finished 12m ago. Coupon totals now round \
-            half up, with tests for every currency. Opened pull request 4091.
+            ## Tasks
+            - 5111 Reproduce with a negative total: Closed · Priya Shah
+            - 5112 Round half up in the coupon service: Active · you · 2 h left · pull request !4091 · Copilot finished 12m ago. \
+            Coupon totals now round half up, with tests for every currency. Opened pull request 4091.
+            - 5113 Add rounding tests for every currency: New · Priya Shah · 3 h left
             """))
         #expect(!bug.contains("## Sent to Copilot"))
         #expect(bug.contains("## Description\n\n### Repro Steps\n> 1. Add a $19.99 item to the cart"))
         #expect(bug.contains("### System Info\n> Storefront web 3.42.0 · Safari 26 · macOS 26.1"))
 
         await #expect(throws: MCPToolError("The demo's sprint has no work item 1.")) { try await call("work_item", ["work_item": .int(1)]) }
+    }
+
+    /// When its tasks' pull requests couldn't be read, it says so under them, so that no task looks as if none is linked.
+    @Test func saysWhenItsTasksPullRequestsCouldntBeRead() async throws {
+        var bug = try await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).workItem(5110, organization: nil)
+        #expect(bug.tasksPullRequests[5112] != nil && bug.tasksPullRequestsProblem == nil)
+        bug.tasksPullRequests = [:]
+        bug.tasksPullRequestsProblem = "Azure DevOps didn't answer."
+        #expect(AgentText.workItem(bug, tasks: [], now: Date()).contains("""
+            - 5113 Add rounding tests for every currency: New · Priya Shah · 3 h left
+            BriefBar couldn't read which pull requests are linked to them: Azure DevOps didn't answer.
+
+            ## Pull requests
+            """))
     }
 
     /// What the other sources know of its pull requests, such as the Copilot sessions on them: asked about with the pull
@@ -481,7 +517,7 @@ import Testing
         let opening = text.split(separator: "\n").filter(QuotedText.mayOpenFence)
         #expect(opening.isEmpty, "\(opening)")
         for written in [
-            "- \\u{7E}~~ Sprint 42 ends ", "- 5103 \\u{60}``Task: ", "- \\u{60}``Sam wants changes · ", "- \\u{60}``Sam, ", "  > \\u{60}``\n",
+            "- \\u{7E}~~ Sprint 42 ends ", "- 5102 \\u{60}``Task: ", "- \\u{60}``Sam wants changes · ", "- \\u{60}``Sam, ", "  > \\u{60}``\n",
             "  > \\u{7E}~~", "- \\u{60}``\n", "- > \\u{7E}~~ Did: pushed",
         ] {
             #expect(text.contains(written), "\(written)")

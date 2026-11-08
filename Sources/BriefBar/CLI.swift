@@ -215,12 +215,12 @@ enum CLI {
                  Keep BriefBar current on your pull requests without being asked: when you open pull requests that go \
                 together, tell their order with order_pull_requests as each opens; after you push a pull request's work, \
                 tell its stage with pull_request_stage, user_review; when the user says they've reviewed it, \
-                teammate_review. What you tell shows as yours; the user can change it.
+                teammate_review. What you tell shows as yours; the user can change it. \(Self.stories)
                 """
         } else if !orderTools.isEmpty {
             ordering = """
                  When you open pull requests that must merge in an order, tell BriefBar with order_pull_requests, and again \
-                whenever that order changes.
+                whenever that order changes. \(Self.stories)
                 """
         }
         if !updateTools.isEmpty {
@@ -241,6 +241,13 @@ enum CLI {
         )
         MCPStandardIO.serve(identity: identity, tools: tools)
     }
+
+    /// What `--mcp`'s instructions tell sessions of stories, with Pull Request Order's tools (plan §7.4.6).
+    static let stories = """
+        With Show Links on, BriefBar puts the Azure DevOps pull requests of one story's tasks together by itself, in the \
+        tasks' backlog order: link each to its task as you open it, and tell an order only where they must merge in another \
+        order, or wait for one another.
+        """
 
     /// Pull Request Order's tools, while it's on in the app, as it's off until you turn it on; the demo's always are, and
     /// keep their orders, and the stages they're told, in memory. An order says which Copilot session told it: the one

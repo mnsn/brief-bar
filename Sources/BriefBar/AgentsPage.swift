@@ -795,11 +795,11 @@ struct AgentsDescriptionBox: View {
     var body: some View {
         DescriptionBox(entries: [
             .init(title: "What agents get", symbol: "text.bubble", text: """
-                What needs you, from the sources that are on: your pull requests, one at a time with its comment threads \
-                word for word and, with Send Work to Copilot on, the Copilot session BriefBar sends its work to, your \
-                pipelines and sprint, a work item with its description, latest comments, the pull requests linked to it and \
-                the Copilot sessions on those, with what Copilot recorded of their work, the work BriefBar sent to Copilot, \
-                and your Copilot sessions. They can wait on one of your pull requests, for up to two hours, until its next \
+                What needs you, from the sources that are on: your pull requests, one at a time with its work items and \
+                their story, its comment threads word for word and, with Send Work to Copilot on, the Copilot session \
+                BriefBar sends its work to, your pipelines and sprint, a work item with its description, latest comments, \
+                its tasks with their pull requests, the pull requests linked to it and the Copilot sessions on those, with \
+                what Copilot recorded of their work, the work BriefBar sent to Copilot, and your Copilot sessions. They can wait on one of your pull requests, for up to two hours, until its next \
                 build passes or fails, comments wait on you, or it has merge conflicts. With Pull Request Order on, the \
                 orders sessions told BriefBar their pull requests merge in, with what you changed in them, and your Azure \
                 DevOps pull requests' stages, with who set them. Never your Teams chats or your pull requests on GitHub.

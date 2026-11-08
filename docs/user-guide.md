@@ -1023,11 +1023,11 @@ to the Copilot CLI, as turning agents on does, and is checked once it's there. F
 |---|---|
 | `needs_me` | What the menu bar counts, in each source: pull requests that need you, fail or are ready to complete, pinned pipelines that failed, Copilot sessions waiting for you |
 | `pull_requests` | Your pull requests by group, each with why it's there and its link |
-| `pull_request` | One pull request: the branch it merges into, as Azure DevOps says when you ask, votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, as its details show it, and why, or the ones it asks you to choose from |
+| `pull_request` | One pull request: its work items and the story each is for, the branch it merges into, as Azure DevOps says when you ask, votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, as its details show it, and why, or the ones it asks you to choose from |
 | `pull_request_prompt` | The prompt of **Fix Comments**, **Fix the Build**, **Resolve Conflicts**, **Pre-review** or **Push & Reply**, for the agent to follow where it works |
 | `pipelines` | Your pinned pipelines, and the ones after your merges |
 | `sprint` | Your team's sprint, or only your part of it |
-| `work_item` | One work item and what goes with it: where it stands and who it waits on, its tasks, each pull request linked to it with its votes, comments and pipelines, the Copilot sessions on those pull requests with what Copilot recorded of their work, the work BriefBar sent to Copilot for it, and its description and latest comments |
+| `work_item` | One work item and what goes with it: where it stands and who it waits on, its tasks in backlog order with their pull requests, each pull request linked to it with its votes, comments and pipelines, the Copilot sessions on those pull requests with what Copilot recorded of their work, the work BriefBar sent to Copilot for it, and its description and latest comments |
 | `copilot_tasks` | The work BriefBar sent to the Copilot CLI, and how it's going |
 | `copilot_sessions` | Your Copilot app sessions, as BriefBar shows them |
 | `watch_pull_request`, `stop_watching_pull_request` | Watches a pull request by its link, or stops |
@@ -1398,8 +1398,9 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   missions with **Rename…**, up to 200, each forgotten once its mission hasn't shown for 14 days; and its settings.
   Turning a source off deletes what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
-  are on: your Azure DevOps pull requests and their comments, pipelines, sprint, a work item's
-  description, comments and the pull requests linked to it, and Copilot tasks and sessions, never Teams
+  are on: your Azure DevOps pull requests, their comments and their work items with the story each is for,
+  pipelines, sprint, a work item's description, comments, its tasks' pull requests and the pull requests linked
+  to it, and Copilot tasks and sessions, never Teams
   or GitHub; and, for the Copilot sessions on a work item's pull requests, found by their branches and
   the pull requests the Copilot app records with them, what Copilot recorded of their work: the latest
   checkpoint's overview and next step, and the last thing a session said, whether Show Links is on or

@@ -519,6 +519,57 @@ actor AzureDevOpsReader {
         return store
     }
 
+    // MARK: The work that goes with pull requests
+
+    /// A pull request's work items, each with the one it's under, such as a task's story, as `pull_request` tells them:
+    /// read as it answers (`PullRequestWork.read`), or the demo's; or why they couldn't be read.
+    func work(of pullRequest: PullRequest, now: Date = Date()) async -> (work: [LinkedWork]?, problem: String?) {
+        if demo {
+            let links = DemoData.workLinks(now: now)
+            let known = Self.demoWorkItems(now: now)
+            let items = (links.workItemsOfPullRequests[pullRequest.key] ?? []).compactMap { known[$0] }
+            return (PullRequestWork.linked(items, known: known), nil)
+        }
+        guard let client else { return (nil, "BriefBar can't read Azure DevOps here.") }
+        do {
+            return (try await PullRequestWork.read(pullRequest, client: client), nil)
+        } catch {
+            return (nil, Self.describe(error))
+        }
+    }
+
+    /// The pull requests linked to each of a work item's tasks, as `work_item` lists them: one GET for all of them, or the
+    /// demo's; or why they couldn't be read.
+    func pullRequests(ofTasks tasks: [WorkItem], now: Date = Date()) async -> (found: [Int: [PRKey]], problem: String?) {
+        guard let organization = tasks.first?.organization else { return ([:], nil) }
+        let ids = tasks.filter { $0.organization.caseInsensitiveCompare(organization) == .orderedSame }.map(\.id)
+        if demo {
+            let links = DemoData.workLinks(now: now).pullRequestsOfWorkItems
+            return (Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+                links[WorkItemKey(organization, id)].map { (id, $0) }
+            }), nil)
+        }
+        guard let client else { return ([:], "BriefBar can't read Azure DevOps here.") }
+        do {
+            return (try await PullRequestWork.pullRequests(of: ids, in: organization, client: client), nil)
+        } catch {
+            return ([:], Self.describe(error))
+        }
+    }
+
+    /// Every made-up work item, by its ID: the sprint's, and those linked to its pull requests with what they're under.
+    static func demoWorkItems(now: Date) -> [Int: WorkItem] {
+        var known: [Int: WorkItem] = [:]
+        for row in DemoData.sprintBoard(now: now).rows {
+            for item in [row.parent].compactMap({ $0 }) + row.tasks { known[item.id] = item }
+        }
+        let links = DemoData.workLinks(now: now)
+        for (key, item) in links.workItems.merging(links.parents, uniquingKeysWith: { first, _ in first }) where known[key.id] == nil {
+            known[key.id] = item
+        }
+        return known
+    }
+
     // MARK: A work item
 
     /// A work item, as the `work_item` tool tells it: its details, where it is in the sprint, and the pull requests it
@@ -526,10 +577,14 @@ actor AzureDevOpsReader {
     struct WorkItemRead: Sendable {
         var item: WorkItem
         var details: WorkItemDetails?
-        /// Its tasks in the sprint, in work order, for a story or a bug; or its children, as its details have them, for one
-        /// that isn't in the sprint.
+        /// Its tasks in the sprint, in backlog order, for a story or a bug; or its children, as its details have them, for
+        /// one that isn't in the sprint.
         var tasks: [WorkItem]
         var tasksAreInSprint: Bool
+        /// The pull requests linked to each of its tasks, by the task's ID.
+        var tasksPullRequests: [Int: [PRKey]] = [:]
+        /// Why they couldn't be read, so that no task looks as if none is linked to it.
+        var tasksPullRequestsProblem: String?
         /// The story or bug it's a task of.
         var parent: WorkItem?
         /// You, in the sprint's organization, to mark your tasks.
@@ -550,7 +605,8 @@ actor AzureDevOpsReader {
     }
 
     /// Reads a work item by its number, in the organization its link names, or else the sprint's or one of yours, with the
-    /// GET requests its details make, and one for each pull request it links to that your lists don't have.
+    /// GET requests its details make, one for each pull request it links to that your lists don't have, and one for the
+    /// pull requests of its tasks.
     func workItem(_ id: Int, organization: String?, now: Date = Date()) async throws -> WorkItemRead {
         let board = await sprint(now: now).board
         let rows = board?.rows ?? []
@@ -561,11 +617,18 @@ actor AzureDevOpsReader {
         let parentRow = row == nil ? rows.first { $0.tasks.contains(where: isIt) } : nil
         let inSprint = row?.parent ?? parentRow?.tasks.first(where: isIt)
         let lists = await pullRequests(now: now)
+        // With the pull requests of each of its tasks.
+        func withTasksPullRequests(_ read: WorkItemRead) async -> WorkItemRead {
+            var read = read
+            (read.tasksPullRequests, read.tasksPullRequestsProblem) = await pullRequests(ofTasks: read.tasks, now: now)
+            return read
+        }
         func told(_ details: WorkItemDetails, others: LinkEngine.Lookups) -> WorkItemRead {
-            let children = SprintBoard.Row(parent: nil, tasks: details.children.compactMap(\.item)).tasksInWorkOrder
+            // In backlog order, as a story's mission lists their pull requests.
+            let tasks = (row?.tasks ?? details.children.compactMap(\.item)).sorted(by: WorkItem.ordered)
             return WorkItemRead(
                 item: WorkItemDetailsStore.newest(inSprint, details.item) ?? details.item, details: details,
-                tasks: row?.tasksInWorkOrder ?? children, tasksAreInSprint: row != nil,
+                tasks: tasks, tasksAreInSprint: row != nil,
                 parent: parentRow?.parent ?? details.parent?.item, me: board?.me, sprint: board?.sprint,
                 pullRequests: details.pullRequests, lists: lists, others: others
             )
@@ -575,7 +638,7 @@ actor AzureDevOpsReader {
             guard let details = DemoData.workItemDetails(organization: organization, id: id, now: now) else {
                 throw MCPToolError("The demo's sprint has no work item \(id).")
             }
-            return told(details, others: LinkEngine.Lookups(read: DemoData.workLinks(now: now).pullRequests))
+            return await withTasksPullRequests(told(details, others: LinkEngine.Lookups(read: DemoData.workLinks(now: now).pullRequests)))
         }
         guard let client else { throw MCPToolError("BriefBar can't read Azure DevOps here.") }
         var organizations = organization.map { [$0] } ?? inSprint.map { [$0.organization] } ?? []
@@ -590,7 +653,7 @@ actor AzureDevOpsReader {
             let read = await WorkItemDetailsStore.read(item, client: client)
             switch read.result {
             case .success(let details):
-                return told(details, others: await lookUp(details.pullRequests, notIn: lists, client: client))
+                return await withTasksPullRequests(told(details, others: await lookUp(details.pullRequests, notIn: lists, client: client)))
             case .failure(let error):
                 // Another of your organizations may have it.
                 if case .notFound = error, organizations.count > 1 { continue }
@@ -704,9 +767,9 @@ struct AzureDevOpsAgent: Sendable {
                 title: "Pull Request",
                 description: """
                     One pull request in detail, by its number or link: where it stands in BriefBar, its branches, the one \
-                    it merges into as Azure DevOps says when you ask, reviewers' votes, checks and where a failed build \
-                    failed, merge conflicts, the pipelines after its \
-                    merge, what's new for the user and what they've seen that still waits on them, its unresolved \
+                    it merges into as Azure DevOps says when you ask, its work items and the story each is for, reviewers' \
+                    votes, checks and where a failed build failed, merge conflicts, the pipelines after its merge, what's \
+                    new for the user and what they've seen that still waits on them, its unresolved \
                     comment threads word for word with their files and lines, what Copilot can do with it, with Pull \
                     Request Order on, its stage and who set it, and, while Send Work to Copilot is on, its session: the \
                     Copilot session BriefBar sends its work to.
@@ -755,7 +818,8 @@ struct AzureDevOpsAgent: Sendable {
                 title: "Work Item",
                 description: """
                     One work item and what goes with it, by its number or link: where it stands, who has it and who it \
-                    waits on, its tasks, each pull request linked to it in Azure DevOps with its reviewers' votes, \
+                    waits on, its tasks in backlog order, each with its pull requests, each pull request linked to it in \
+                    Azure DevOps with its reviewers' votes, \
                     comments, merge and the pipelines that ran on it, the Copilot sessions on those pull requests with \
                     what Copilot recorded of their work, the work BriefBar sent to Copilot for it, and its description and \
                     latest comments. For what's going on with a story, a bug or a task.
@@ -889,10 +953,11 @@ struct AzureDevOpsAgent: Sendable {
         let session = await reader.session(for: record, tasks: sent, now: now)
         let stages = await stages(read, now: now)
         let stage = stages.flatMap { stages in stages.readings[record.id.linkRef].map { AgentText.stage($0, stages: stages) } }
+        let work = await reader.work(of: record.pullRequest, now: now)
         let waits = record.role == .author && record.pullRequest.status == .active
         return AgentText.details(
             record, item: item, actions: PullRequestTasks.actions(for: record, canShip: false), tasks: sent.filter { $0.isOn(record.id) },
-            session: session, stage: stage, unreadTarget: unreadTarget,
+            session: session, stage: stage, work: work, unreadTarget: unreadTarget,
             wait: waits ? WaitCLI.command(executable: executable, link: record.pullRequest.webURL, demo: reader.demo) : nil, now: now
         )
     }
@@ -1187,12 +1252,14 @@ enum AgentText {
     /// - Parameters:
     ///   - session: its Copilot session, as its details show it, if there's something to say.
     ///   - stage: its stage, with Pull Request Order on (`AgentText.stage`).
+    ///   - work: its work items, each with the one it's under, as Azure DevOps links them, or why they couldn't be read.
     ///   - unreadTarget: why BriefBar couldn't read again which branch it merges into, as it asked, for the agent to know
     ///     that the one named may not be it any more (`AzureDevOpsReader.targetNow(of:)`).
     ///   - wait: the command that waits on it for an agent (`--wait`), for one of your open pull requests.
     static func details(
         _ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], session: AgentSession? = nil,
-        stage: String? = nil, unreadTarget: String? = nil, wait: String? = nil, now: Date
+        stage: String? = nil, work: (work: [LinkedWork]?, problem: String?)? = nil, unreadTarget: String? = nil, wait: String? = nil,
+        now: Date
     ) -> String {
         let pr = record.pullRequest
         let (source, target) = (QuotedText.commandWord(pr.sourceBranch), QuotedText.commandWord(pr.targetBranch))
@@ -1223,6 +1290,11 @@ enum AgentText {
             lines.append(status)
         }
         if let stage { lines.append("- " + stage) }
+        if let items = work?.work {
+            lines.append(items.isEmpty ? "- No work item is linked to it in Azure DevOps." : "- Its work items: " + Self.work(items) + ".")
+        } else if let problem = work?.problem {
+            lines.append("- BriefBar couldn't read its work items: " + QuotedText.oneLine(problem))
+        }
         let reviewers = pr.reviewers.map { reviewer in
             var name = QuotedText.oneLine(reviewer.person.name)
             if reviewer.isRequired { name += " (required)" }
@@ -1292,6 +1364,21 @@ enum AgentText {
             lines.append(Self.task(task, titles: [:], workItems: [:], now: now))
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// "Task 5182 “Show delivery estimates”, under User Story 5180 “Checkout redesign”": a pull request's work items, each
+    /// with the one it's under, such as a task's story, its type and title on its line, as `work_item` quotes them.
+    static func work(_ items: [LinkedWork]) -> String {
+        items.map { linked in
+            let item = linked.item
+            var text = "\(QuotedText.oneLine(item.type)) \(item.id) “\(QuotedText.oneLine(item.title))”"
+            if let parent = linked.parent {
+                text += ", under \(QuotedText.oneLine(parent.type)) \(parent.id) “\(QuotedText.oneLine(parent.title))”"
+            } else if let parent = item.parentId {
+                text += ", under work item \(parent)"
+            }
+            return text
+        }.joined(separator: "; ")
     }
 
     /// What the lists say of a pull request after its headline, on its line (`QuotedText.oneLine`), with its branches as a
@@ -1536,7 +1623,12 @@ enum AgentText {
 
         if !read.tasks.isEmpty {
             lines += ["", read.tasksAreInSprint ? "## Tasks" : "## Children"]
-            lines += read.tasks.map { "- " + taskLine($0, me: me, copilot: latest[$0.id], now: now) }
+            lines += read.tasks.map { task in
+                "- " + taskLine(task, me: me, copilot: latest[task.id], pullRequests: read.tasksPullRequests[task.id] ?? [], now: now)
+            }
+            if let problem = read.tasksPullRequestsProblem {
+                lines.append("BriefBar couldn't read which pull requests are linked to them: \(QuotedText.oneLine(problem))")
+            }
         }
         lines += ["", "## Pull requests"]
         if read.pullRequests.isEmpty { lines.append("None is linked to it in Azure DevOps.") }
@@ -1620,10 +1712,14 @@ enum AgentText {
     /// "5103 Show saved items under the cart: Active · you · 3 h left · Copilot working (started 6m ago): Run the cart
     /// tests": a task, who has it, its hours left, and the latest work sent to Copilot for it. All on its line, with no
     /// fence after its number, whatever its title (`QuotedText.oneLine`).
-    static func taskLine(_ task: WorkItem, me: String?, copilot: CopilotTaskEntry?, now: Date) -> String {
+    static func taskLine(_ task: WorkItem, me: String?, copilot: CopilotTaskEntry?, pullRequests: [PRKey] = [], now: Date) -> String {
         var parts = [task.state.isEmpty ? "unknown" : task.state]
         parts.append(task.assignedTo.map { isMe($0, me) ? "you" : $0.name } ?? "unassigned")
         if let hours = task.remainingWork, hours > 0, !task.isDone { parts.append("\(Hours.text(hours)) left") }
+        if !pullRequests.isEmpty {
+            let numbers = OrderText.list(pullRequests.sorted().map(\.linkRef))
+            parts.append((pullRequests.count == 1 ? "pull request " : "pull requests ") + numbers)
+        }
         if let copilot { parts.append("Copilot " + sentStatus(copilot, now: now)) }
         return QuotedText.oneLine("\(task.id) \(task.title): " + parts.joined(separator: " · "))
     }

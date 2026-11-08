@@ -63,7 +63,8 @@ done
 
 # Agents: --mcp speaks the Model Context Protocol, one JSON-RPC message a line, with the made-up data. Teams and GitHub
 # have no tools. Pull Request Order's come next, and Updates from Copilot Sessions' last: both on in the demo, which keeps
-# what agents tell them in memory.
+# what agents tell them in memory. With Pull Request Order on, agents get pull requests' stages and work items, and
+# BriefBar's prompts end by asking for the stage.
 MCP="$(printf '%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}' \
     '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -73,11 +74,13 @@ MCP="$(printf '%s\n' \
     '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"work_item","arguments":{"work_item":"5112"}}}' \
     '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"work_item","arguments":{"work_item":"5101"}}}' \
     '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"order_pull_requests","arguments":{"pull_requests":["https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/4120",{"link":"https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/4121","after":[4120]}]}}}' \
-    '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"changed_in_azure_devops","arguments":{"work_items":["5124"],"organization":"contoso"}}}' |
+    '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"changed_in_azure_devops","arguments":{"work_items":["5124"],"organization":"contoso"}}}' \
+    '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"pull_request_stage","arguments":{"pull_requests":["4093"],"organization":"contoso","stage":"user_review"}}}' \
+    '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"pull_request","arguments":{"pull_request":4088}}}' |
     within 60 "$BIN" --demo --mcp)"
 [[ "$(jq -sr 'map(select(.id == 1))[0].result.serverInfo.name' <<<"$MCP")" == briefbar ]] ||
     fail "--demo --mcp doesn't answer initialize"
-EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","work_item","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions","order_pull_requests","pull_request_order","forget_pull_request_order","working_on","changed_in_azure_devops"]'
+EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","work_item","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions","order_pull_requests","pull_request_order","forget_pull_request_order","pull_request_stage","working_on","changed_in_azure_devops"]'
 TOOLS="$(jq -sc 'map(select(.id == 2))[0].result.tools | map(.name)' <<<"$MCP")"
 [[ "$TOOLS" == "$EXPECTED_TOOLS" ]] || fail "--demo --mcp lists the tools $TOOLS"
 NEEDS_ME="$(jq -sr 'map(select(.id == 3))[0].result.content[0].text' <<<"$MCP")"
@@ -88,8 +91,13 @@ grep '^- “Add dark mode to settings” (shop-web, dark-mode): Waiting for your
 if grep 'Add dark mode to the checkout page' <<<"$NEEDS_ME" >/dev/null; then
     fail "--demo --mcp's needs_me has GitHub's pull requests"
 fi
-jq -sr 'map(select(.id == 4))[0].result.content[0].text' <<<"$MCP" | grep '2 tests failed in DeliveryEstimateTests' >/dev/null ||
+grep "^  - !4102 “Add retry with backoff to the payments client” in payments-api: ‘Retry backoff’ says it's ready" \
+    <<<"$NEEDS_ME" >/dev/null || fail "--demo --mcp's needs_me doesn't have the stage a session set"
+PROMPT="$(jq -sr 'map(select(.id == 4))[0].result.content[0].text' <<<"$MCP")"
+grep '2 tests failed in DeliveryEstimateTests' <<<"$PROMPT" >/dev/null ||
     fail "--demo --mcp's pull_request_prompt doesn't have the failed build's errors"
+[[ "$(tail -n 1 <<<"$PROMPT")" == "When you've pushed, tell BriefBar the pull request is ready for my review with pull_request_stage, if that tool is there." ]] ||
+    fail "--demo --mcp's pull_request_prompt doesn't end by asking for the stage"
 jq -sr 'map(select(.id == 5))[0].result.content[0].text' <<<"$MCP" | grep '^### !4091 “Fix the coupon rounding error”$' >/dev/null ||
     fail "--demo --mcp's work_item doesn't have the task's pull request"
 # Azure DevOps' work_item asks Copilot, the other source, for the sessions on the story's pull request's branch.
@@ -101,6 +109,12 @@ jq -sr 'map(select(.id == 7))[0].result.content[0].text' <<<"$MCP" | grep '^- !4
 jq -sr 'map(select(.id == 8))[0].result.content[0].text' <<<"$MCP" |
     grep '^BriefBar reads Work Item 5124 again shortly, if it.s running, rather than at its next refresh. (The demo keeps it in memory.)$' \
     >/dev/null || fail "--demo --mcp's changed_in_azure_devops doesn't say it reads the work item again"
+jq -sr 'map(select(.id == 9))[0].result.content[0].text' <<<"$MCP" |
+    grep '^BriefBar shows !4093 in contoso in Your review now, set by this session' >/dev/null ||
+    fail "--demo --mcp's pull_request_stage doesn't keep the stage"
+jq -sr 'map(select(.id == 10))[0].result.content[0].text' <<<"$MCP" |
+    grep '^- Its work items: Task 5182 “Show delivery estimates”, under User Story 5180 “Checkout redesign”.$' >/dev/null ||
+    fail "--demo --mcp's pull_request doesn't have the pull request's work items and their story"
 for source in teams github; do
     if within 60 "$BIN" --demo --source "$source" --mcp </dev/null >/dev/null 2>&1; then
         fail "--demo --source $source --mcp serves $source"

@@ -49,8 +49,10 @@ package enum PullRequestOrderMCP {
                     for what. Name each by its link, with the ones in the list that must merge before it; leave those out \
                     for one that can merge any time. Optionally, say when to review one. A new order gets an ID and \
                     revision 1: keep them, and send the whole order again with them whenever it changes. The answer says \
-                    what the user changed of it in BriefBar: keep that in what you send. It changes nothing in Azure \
-                    DevOps or on GitHub.
+                    what the user changed of it in BriefBar: keep that in what you send. With Show Links on, BriefBar puts \
+                    the Azure DevOps pull requests of one story's tasks together by itself, in the tasks' backlog order: \
+                    link each to its task as you open it, and tell an order only where they must merge in another order, \
+                    or wait for one another. It changes nothing in Azure DevOps or on GitHub.
                     """,
                 inputSchema: MCPSchema.object([
                     "pull_requests": array(

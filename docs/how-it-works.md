@@ -3759,14 +3759,21 @@ of its own, one a task went on with, or a task's that you opened there, which it
 or not. Otherwise it's a task BriefBar runs with the Copilot CLI, which the app doesn't have. When no
 session goes with it and none may have opened it, it says nothing.
 
+`pull_request` also names the pull request's work items, each with the one it's under, such as a task's story, so that
+the orders sessions tell follow it: **Its work items: Task 5182 “Show delivery estimates”, under User Story 5180
+“Checkout redesign”** (`AgentText.work`), or that none is linked to it, or why they couldn't be read. It reads them as it
+answers, whether Show Links is on or not, as `work_item` reads a work item's (`PullRequestWork.read`): one GET for the
+pull request's work items, one for what they are, and one for what those they're under are, when they aren't among
+them, up to 200 each.
+
 `work_item` tells a work item, by its number or link, as its details and Where It Stands do (see [Where
 it stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a few
 lines: its state and why, who has it, its sprint, with the day it ends and the days left when it's the
 sprint going on, whose dates the sprint has, how many of its tasks are done, the hours left, who it
 waits on, and what you can do now: what waits on you, without "you, to", and your tasks that aren't
 started, unless Copilot works on one, such as "complete !4091 · start task 5104", or that nothing waits
-on you. Then its tasks in the sprint, or its children when it isn't there, each with the latest work
-sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the panel's rows
+on you. Then its tasks in the sprint, or its children when it isn't there, in backlog order, as a story's mission
+lists their pull requests, each with its pull requests and the latest work sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the panel's rows
 are: yours as your lists have them, with their checks and merge pipelines, and with `pull_request` to
 call for their threads while one is open, and the others as they say themselves, with what isn't read of
 them; what the other sources know of those pull requests, such as the Copilot sessions on them; the rest
@@ -3782,8 +3789,9 @@ relays its question, in the session where you answer it, which its lines link to
 with the same GETs as its details, whose `$expand=relations` already names its pull requests, so it
 works whether Show Links is on or not, then one GET for each of those pull requests your lists don't
 have, one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow down: one it
-didn't get to says so, rather than that it couldn't be read. Without a link, it looks in the sprint,
-then in each of your organizations.
+didn't get to says so, rather than that it couldn't be read; and one more for the pull requests linked to its tasks,
+up to 200 of them (`PullRequestWork.pullRequests`), whose failure it says under them, so that no task looks as if
+none is linked to it. Without a link, it looks in the sprint, then in each of your organizations.
 
 It asks the other sources about its pull requests (`MCPRelated.ask`), with what links each to a session
 by its branch: its branch, its target and its repository (`BranchHint`). Copilot (`CopilotAgent.related`)
