@@ -80,8 +80,7 @@ struct SessionRowView: View {
     /// row and menu have their own ways to it.
     private func answerOpener(_ task: SentTask?) -> (perform: () -> Void, help: String)? {
         guard task == nil else { return nil }
-        let help = store.appInstalled ? "Opens the session in GitHub Copilot" : "Opens the session in Terminal"
-        return ({ store.openItself(session) }, help)
+        return ({ store.openItself(session) }, store.opensItselfHelp)
     }
 
     private func row(_ task: SentTask?) -> some View {
@@ -184,7 +183,7 @@ struct SessionRowView: View {
         .accessibilityHint(
             task.map(hint)
                 ?? session.answerIn.map { "Opens “\($0.name)”, where you answer it" }
-                ?? (store.appInstalled ? "Opens the session in GitHub Copilot" : "Opens the session in Terminal")
+                ?? store.opensItselfHelp
         )
         .accessibilityActions {
             if let parent = otherParent {

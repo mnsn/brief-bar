@@ -8,8 +8,8 @@ import Foundation
 /// session's history stays as it was; with the session's own model, as one premium request, as Explain asks one about a
 /// pull request. It asks only through what the app gives it (`setAsker`): Azure DevOps, while Send Work to Copilot is on,
 /// or its demo, which makes the answers up. While there's none, Ask… doesn't show. What's asked and answered, and what you
-/// write in a field before you ask, stay in memory only, until you dismiss it, BriefBar quits, or asking turns off, which
-/// stops what's being asked.
+/// write in a field before you ask, stay in memory only, until you dismiss it, BriefBar quits, asking turns off, or the
+/// source that lists the session stops (`forgetSessions`), each of which stops what's being asked.
 @MainActor
 package final class SessionAsks: ObservableObject {
     /// What a session is asked.
@@ -138,9 +138,10 @@ package final class SessionAsks: ObservableObject {
     }
 
     /// Opens a session's field, wherever the session shows, closing any other session's: with what you wrote in it, if it's
-    /// open already.
+    /// open already. Not while the session is being asked: asking it there would stop that question, which is a premium
+    /// request already, for another.
     package func openField(for session: ItemRef) {
-        guard offers(session), !isFieldOpen(for: session) else { return }
+        guard offers(session), questions[session]?.isAsking != true, !isFieldOpen(for: session) else { return }
         field = Field(session: session, words: "")
     }
 
@@ -171,9 +172,11 @@ package final class SessionAsks: ObservableObject {
         start(session, asked: question, earlier: questions[session]?.answer, asker: asker)
     }
 
-    /// Asks again what a session couldn't answer, as it was asked: following up on what that followed up on.
+    /// Asks again what a session couldn't answer, as it was asked: following up on what that followed up on. Its field
+    /// closes, as when you ask, so nothing there stops the question.
     package func tryAgain(_ session: ItemRef) {
-        guard let asker, let question = questions[session], case .failed = question.state else { return }
+        guard let asker, offers(session), let question = questions[session], case .failed = question.state else { return }
+        closeField(for: session)
         start(session, asked: question.asked, earlier: question.earlier, asker: asker)
     }
 
@@ -181,6 +184,16 @@ package final class SessionAsks: ObservableObject {
     package func dismiss(_ session: ItemRef) {
         asking.removeValue(forKey: session)?.cancel()
         questions[session] = nil
+    }
+
+    /// Stops what's being asked of the sessions that `isForgotten` picks, deleting their copies, and forgets what was asked
+    /// of them and what they answered, and their field: as the source that lists them stops, such as GitHub Copilot, for
+    /// all but the tasks BriefBar sent, which Azure DevOps lists.
+    package func forgetSessions(where isForgotten: (ItemRef) -> Bool) {
+        for session in Set(questions.keys).union(asking.keys) where isForgotten(session) {
+            dismiss(session)
+        }
+        if let open = field?.session, isForgotten(open) { field = nil }
     }
 
     /// Whether VoiceOver should hear that a question ended, as a view that shows it hears of it: once, though the session

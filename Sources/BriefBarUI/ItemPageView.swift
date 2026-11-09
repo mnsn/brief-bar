@@ -38,6 +38,21 @@ package struct ItemPageView: View {
             return sent.label.map { "✈ \($0)" } ?? "Sent to Copilot"
         }
     }
+
+    /// What ↗ on a session's Ask… answer does on its page, and its tooltip: opens the session itself, as on its row, even
+    /// where opening it opens the session that asks you its question, and where its source says, the Copilot app or
+    /// Terminal (`LinkedItem.openItself`). Nothing for a task BriefBar sent, whose page opens what it's for.
+    static func answerOpener(of item: LinkedItem) -> (perform: () -> Void, help: String)? {
+        guard item.sent == nil else { return nil }
+        return item.openItself ?? item.open.map { ($0, "Opens the session") }
+    }
+
+    /// Whether a page has Ask…, and what was asked of its session: a Copilot session that a source says what it is,
+    /// Copilot's list or, for a task BriefBar sent, Azure DevOps; not one only its reference is known of, as once GitHub
+    /// Copilot is turned off with its page open.
+    static func offersAsk(on ref: ItemRef, links: Links) -> Bool {
+        ref.kind == .session && links.isDescribed(ref)
+    }
 }
 
 private struct PageContent: View {
@@ -59,13 +74,10 @@ private struct PageContent: View {
         let story = stories.story(for: ref)
         VStack(alignment: .leading, spacing: 20) {
             heading(item, story: story)
-            // What you asked a Copilot session with Ask…, and its field, under its heading. ↗ on its answer opens the session
-            // itself, as on its row, even where opening it opens the session that asks you its question.
-            if ref.kind == .session {
+            // What you asked a Copilot session with Ask…, and its field, under its heading.
+            if offersAsk {
                 SessionAskPart(
-                    ref: ref, name: item.label, isTask: item.sent != nil, place: .page,
-                    open: item.sent == nil
-                        ? (item.openItself ?? item.open).map { ($0, "Opens the session in GitHub Copilot") } : nil
+                    ref: ref, name: item.label, isTask: item.sent != nil, place: .page, open: ItemPageView.answerOpener(of: item)
                 )
             }
             // Its summary, of it and what's linked to it, under what it is.
@@ -92,6 +104,10 @@ private struct PageContent: View {
               let connection = links.connections(of: previous).first(where: { $0.item.ref == ref })
         else { return nil }
         return WhereItStandsSection.linkFact(connection, from: links.describe(previous))
+    }
+
+    private var offersAsk: Bool {
+        ItemPageView.offersAsk(on: ref, links: links)
     }
 
     private func heading(_ item: LinkedItem, story: ItemStory?) -> some View {
@@ -134,7 +150,9 @@ private struct PageContent: View {
                 StoryActions(item: item)
                     .glassButtonStyle()
                 PageSummarizeButton(ref: ref)
-                SessionAskButton(ref: ref)
+                if offersAsk {
+                    SessionAskButton(ref: ref)
+                }
             }
             .controlSize(.small)
         }
