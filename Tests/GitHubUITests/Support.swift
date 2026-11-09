@@ -93,7 +93,11 @@ func eventually(_ condition: () -> Bool) async {
     }
 }
 
+/// A store that reads, through `makeReader`, as it starts and when the test says, but never by itself (`ticks`). Its
+/// timer reads again every minute while there's something to fix, and a test may get its turn a minute or more after
+/// its store started: as on CI on 2026-11-09 (run 42609043118), the test would find a read under way that it hadn't
+/// started, or one read more than it made. The tests of when a read is due ask `isDue(at:)`, with the dates they mean.
 @MainActor
 func liveStore(_ makeReader: @escaping () -> GitHubAccountsReader, settings: AppSettings = AppSettings(defaults: MemoryDefaults())) -> GitHubStore {
-    GitHubStore(settings: settings, mode: .live, makeReader: makeReader)
+    GitHubStore(settings: settings, mode: .live, makeReader: makeReader, ticks: false)
 }

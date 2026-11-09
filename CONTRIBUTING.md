@@ -304,6 +304,11 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   scan of the sources or a test of synchronous work that takes long goes on `TestThreads`, a task
   executor of the tests' own: `Task(executorPreference: TestThreads.shared)`,
   `withTaskExecutorPreference(TestThreads.shared)`, or the `.onTestThreads` trait for a whole test.
+- **Keep the code's own timers out of what a test checks.** On CI a test may get its turn a minute or more
+  after it started, and a store's ticker, a look again every half minute or an engine's safety rescan can
+  fire meanwhile and read again. Unless the test is about that timer, turn it off, as `liveStore` does
+  `GitHubStore`'s (`ticks`), or make it an hour, as `TagChangesTests` does its `checkEvery` and the
+  engines' tests their `safetyInterval`.
 - **Don't run the main run loop from a test.** Await what a window or control does instead (`until`),
   which leaves the main actor to other tests meanwhile. Swift runs that run loop for the whole test
   process and ends the process, with status 0, as soon as it returns. AppKit makes it return once a

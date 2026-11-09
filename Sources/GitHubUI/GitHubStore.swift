@@ -33,6 +33,10 @@ final class GitHubStore: ObservableObject {
     let settings: AppSettings
     /// Reads the GitHub CLI's accounts, made when it starts; tests give it a CLI that isn't there.
     private let makeReader: () -> GitHubAccountsReader
+    /// Whether, while it runs, its timer reads again as that's due (`isDue(at:)`) and moves `now` on. Tests turn it off
+    /// and read when they say: a busy runner can give a test its turn a minute or more after its store's first read,
+    /// and a read the timer started meanwhile would change what the test checks.
+    private let ticks: Bool
     /// Whether Pull Request Order is on: each read then sends the order's query, which reads what an order needs too.
     var ordersOn: () -> Bool = { false }
     /// While it runs: it's made by `start()`, so nothing runs `gh` or connects before then.
@@ -58,10 +62,14 @@ final class GitHubStore: ObservableObject {
     /// For how long after you choose to sign in each read lists the GitHub CLI's accounts again.
     static let signInWait: TimeInterval = 10 * 60
 
-    init(settings: AppSettings, mode: Mode, makeReader: @escaping () -> GitHubAccountsReader = { GitHubAccountsReader() }) {
+    init(
+        settings: AppSettings, mode: Mode,
+        makeReader: @escaping () -> GitHubAccountsReader = { GitHubAccountsReader() }, ticks: Bool = true
+    ) {
         self.settings = settings
         self.mode = mode
         self.makeReader = makeReader
+        self.ticks = ticks
     }
 
     func start() {
@@ -75,6 +83,7 @@ final class GitHubStore: ObservableObject {
             reader = makeReader()
             refresh()
         }
+        guard ticks else { return }
         let ticker = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
