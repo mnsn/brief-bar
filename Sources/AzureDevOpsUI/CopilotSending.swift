@@ -183,9 +183,11 @@ struct CopilotSending {
         var action: PullRequestAction
         var parts: [PullRequestPart]
         var handOff: CommentHandOff?
-        /// The pull request as its prompts quote it, when they're written after a wait, as for the files its conflicts are
-        /// in, pushed to or retargeted meanwhile or not: what's kept with what it takes on, such as the branch its conflicts
-        /// are with, and the task it starts, go by it too. Nil for the pull request as the fix was asked for.
+        /// The pull request as its prompts quote it, when they're written after a wait, as for the files its conflicts are in,
+        /// or the code a comment is on, pushed to or retargeted meanwhile or not: what's kept with what it takes on, such as
+        /// the branch its conflicts are with, and the task it starts, go by it too, as do the checks of a push, against the
+        /// branch its prompt names, though its sender read the pull request again since, as Edit the Whole Prompt… does.
+        /// Nil for the pull request as the fix was asked for.
         var record: PRRecord?
         /// For a thread's fix, the change suggested in it that it applies as written, for Try Again to apply it again.
         var suggestion: CommentSuggestion?
@@ -357,7 +359,7 @@ extension CopilotSending {
                     PullRequestPrompt.fixComments(record, workplace: .agent, note: how, ships: ships)
                 ),
                 action: action, parts: PullRequestTasks.parts(.fixComments, for: record), handOff: store.commentHandOff(.fixComments, for: record),
-                fixes: ships
+                record: record, fixes: ships
             )
         }
         var handOff: CommentHandOff?
@@ -376,7 +378,7 @@ extension CopilotSending {
                     record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .agent, ships: ships
                 )
             ),
-            action: action, parts: [.thread(thread.id)], handOff: handOff, suggestion: suggestion, fixes: ships
+            action: action, parts: [.thread(thread.id)], handOff: handOff, record: record, suggestion: suggestion, fixes: ships
         )
     }
 }

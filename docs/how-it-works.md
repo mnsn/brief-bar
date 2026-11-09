@@ -2752,7 +2752,12 @@ prompt's own turn, is left to Copilot's own check. When BriefBar can't check, no
 isn't a clone of the pull request's repository; where what it would push has a commit without parents, as where a
 shallow clone's history stops, which git takes for a root though it may be a merge, of anything; or while a merge is
 going on whose `MERGE_HEAD` it can't read, such as a link, which it doesn't follow. The check needs only the clone's
-`origin`, not a branch new work would start from (`Git.checkClone(at:of:)`).
+`origin`, not a branch new work would start from (`Git.checkClone(at:of:)`). A comment's fix sent to push and reply to a
+fork of one of the app's sessions goes from the fork, which the app makes with the session's commits and changes, in a
+worktree of its own: BriefBar checks the session's folder before the fork is made, and watches the session, and its
+checkout, until it is; then, once BriefBar took the fork for the prompt, the fork, and the worktree it works in, as its
+state says, rather than the session, until the fork's extension takes the prompt, or right before BriefBar copies the
+prompt for the fork (`CopilotTasksStore.PushOnItsWay.forked(_:in:)`).
 
 Copilot checks too, as late as it can: Push & Reply's prompt has it commit, then, right before it pushes, and again
 after a rebase when a push is rejected, read the pull request with BriefBar's `pull_request` tool, which reads the
@@ -3111,7 +3116,9 @@ session changed, so that once it finished it pushed all the session changed, as 
 the session's other fixes go by, below; but it replies why, and leaves the thread active. It's sent as a Push &
 Reply that fixes first (`CopilotSending.commentFix`, `TakenPart.fixes`, `SentPrompt.fixes`), so the CLI denies it
 nothing, and it goes only as a Push & Reply goes, with the checks of what it would push and where
-([above](#send-work-to-copilot)): to one of the app's sessions, not while a turn runs there, so, unlike a fix, it doesn't
+([above](#send-work-to-copilot)), against the branch its prompt names: it goes for the pull request as its prompt quotes
+it, though the pull request was read again since, as Edit the Whole Prompt… reads it once the code is read
+(`CopilotSending.Fix.record`). To one of the app's sessions, it doesn't go while a turn runs there, so, unlike a fix, it doesn't
 wait for one. Unlike Push & Reply, which ships what an earlier task changed, it goes wherever a fix goes, a fork too
 (`CopilotComposerView.mustContinue(_:fixes:)`): it commits what's in the checkout it works in, all the session changed
 before too, and, in a fork of one of the app's sessions, the session's changes that it hasn't committed, which the fork

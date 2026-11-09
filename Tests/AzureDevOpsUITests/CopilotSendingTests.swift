@@ -229,6 +229,47 @@ import Testing
         #expect(settings.copilotSentPrompts.isEmpty)
     }
 
+    /// A comment's fix goes for the pull request as its prompts quote it, though its sender read the pull request again
+    /// since, as Edit the Whole Prompt… does once the code it quotes is read: retargeted meanwhile, a fix sent to push and
+    /// reply goes for the branch its prompt names, which BriefBar's reads of the branch the pull request merges into then
+    /// refuse, rather than for the one the sender read.
+    @Test func aCommentsFixGoesForThePullRequestAsItsPromptsQuoteIt() async throws {
+        let prs = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        await prs.loadOnce()
+        let item = try #require(prs.items.first { prs.record(for: $0.key)?.role == .author && prs.record(for: $0.key)?.details?.threads.isEmpty == false })
+        let record = try #require(prs.record(for: item.key))
+        let thread = try #require(record.details?.threads.first)
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        copilot.useEnvironment(["COPILOT_HOME": "/nonexistent"])
+        copilot.appHomeForTests = URL(fileURLWithPath: "/nonexistent/copilot-app", isDirectory: true)
+        final class Sent { var requests: [CopilotLauncher.Request] = [] }
+        let sent = Sent()
+        copilot.launchForTests = { request, _, _ in
+            sent.requests.append(request)
+            throw CancellationError()
+        }
+        let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
+        let ships = sending.commentFix(thread, how: nil, suggestion: nil, excerpt: nil, ships: true)
+        #expect(ships.record == record)
+        #expect(sending.commentFix(nil, how: nil, suggestion: nil, excerpt: nil).record == record)
+        var retargeted = record
+        retargeted.pullRequest.targetBranch = "release/2"
+        try #require(record.pullRequest.targetBranch != "release/2")
+        let later = CopilotSending(item: item, record: retargeted, store: prs, copilot: copilot, session: nil)
+        #expect(await later.fix(ships, to: .fork(task), choice: taskChoice()).outcome == .sent)
+        for _ in 0..<200 where sent.requests.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        let request = try #require(sent.requests.first)
+        guard case .pullRequest(let pullRequest, .pushAndReply) = request.subject else {
+            Issue.record("Not sent as a Push & Reply for the pull request")
+            return
+        }
+        #expect(pullRequest.targetBranch == record.pullRequest.targetBranch)
+        #expect(request.prompt == ships.prompts.session)
+        #expect(request.targetNow != nil)
+    }
+
     /// Sent while the pull request's branches move, as its conflicts are read again, a fix or a question doesn't build on
     /// what a session answered about them as they were: it stops, saying so, and goes without it once sent again. Builds'
     /// and comments' answers go as they are.
