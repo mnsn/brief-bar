@@ -709,10 +709,11 @@ public enum StageText {
     }
 
     /// For its tooltip, and its menu's first line: "Your review: ‘Cart’ finished. Worked out by BriefBar.", "Your review:
-    /// ‘Cart’ says it's ready. Set 5m ago."
+    /// ‘Cart’ says it's ready. Set 5m ago.", and "…, after you." where a session's replaced yours.
     public static func sentence(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String {
         let who = reading.mark.map { mark in
             (namesWhoSetIt(reading) ? "Set " : setter(mark, name: name) + " set it ") + agoWords(mark.at, now: now)
+                + (reading.replaced != nil ? ", after you" : "")
         } ?? "Worked out by BriefBar"
         return "\(reading.stage.title): \(why(reading, name: name)). \(who)."
     }
