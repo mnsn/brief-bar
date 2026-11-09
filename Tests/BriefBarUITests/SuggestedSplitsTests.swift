@@ -24,6 +24,16 @@ fileprivate final class SplitModel {
     var unavailability: OnDeviceModel.Unavailability?
     /// Its answer to a split's question, where a test gives one; else it tells coupons from build agents.
     var splitAnswer: ((String) -> String)?
+    /// Whether it holds its answers to splits' questions, or to names, until `release()`.
+    var holdsSplits = false
+    var holdsNames = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+
+    func release() {
+        let waiting = held
+        held = []
+        for answer in waiting { answer.resume() }
+    }
 
     /// Held strongly, as nothing it holds holds the namer: a question the namer asked can be answered after its test
     /// ends, on a busy machine, and finds it there.
@@ -32,10 +42,16 @@ fileprivate final class SplitModel {
             unavailability: { [self] in unavailability },
             respond: { [self] prompt, _ in
                 namePrompts.append(prompt)
+                if holdsNames {
+                    await withCheckedContinuation { held.append($0) }
+                }
                 return .success(Self.name(prompt))
             },
             respondSplit: { [self] prompt, _, _ in
                 splitPrompts.append(prompt)
+                if holdsSplits {
+                    await withCheckedContinuation { held.append($0) }
+                }
                 return .success(splitAnswer?(prompt) ?? Self.split(prompt))
             },
             now: { clock.now }
@@ -299,6 +315,80 @@ fileprivate final class SplitViewer {}
         order.namer?.next()
         try await Task.sleep(for: .milliseconds(50))
         #expect(model.splitPrompts.count == 4)
+        order.stopShowing(in: viewer)
+    }
+
+    /// Pull Request Order going off while Apple Intelligence answers a split's first question stops it there: the second
+    /// isn't asked, nor are the groups named, and on again, what's on screen is asked at once, not after the rest of it.
+    @Test func aSplitUnderWayAsksNothingMoreOnceItsAnswerCantCount() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        model.holdsSplits = true
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let viewer = SplitViewer()
+        Self.show([key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try #require(await MissionNamingTests.eventually { model.splitPrompts.count == 1 })
+        #expect(model.namePrompts.count == 1)
+
+        order.setOn(false)
+        order.setOn(true)
+        Self.tell(order)
+        clock.advance(MissionNamer.settleFor)
+        model.release()
+        // Its name first, as Pull Request Order forgot what it asked, then the first question again: not the second.
+        try #require(await MissionNamingTests.eventually { model.splitPrompts.count == 2 })
+        #expect(model.splitPrompts[1].hasPrefix("Story: “Checkout redesign”\nPart 1:\n- “Add the coupon field”\n"))
+        #expect(model.namePrompts.count == 2)
+        #expect(model.namePrompts[1] == model.namePrompts[0])
+
+        model.holdsSplits = false
+        model.release()
+        let mission = try #require(Self.mission(key, in: order))
+        #expect(await MissionNamingTests.eventually { order.suggestedSplit(for: mission) != nil })
+        #expect(model.splitPrompts.count == 3)
+        order.stopShowing(in: viewer)
+    }
+
+    /// A split under way whose mission leaves the screen asks Apple Intelligence nothing more of it, and keeps what it
+    /// found: back on screen and settled, it's asked only the rest.
+    @Test func aSplitUnderWayWhoseMissionLeavesTheScreenIsAskedTheRestOnceItsBack() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        model.holdsSplits = true
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let viewer = SplitViewer()
+        Self.show([key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try #require(await MissionNamingTests.eventually { model.splitPrompts.count == 1 && model.namePrompts.count == 1 })
+        // Both questions, then the first group's name, which it's answering as the mission leaves the screen.
+        model.holdsSplits = false
+        model.holdsNames = true
+        model.release()
+        try #require(await MissionNamingTests.eventually { model.namePrompts.count == 2 })
+        #expect(model.splitPrompts.count == 2)
+        order.stopShowing(in: viewer)
+        model.holdsNames = false
+        model.release()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(model.namePrompts.count == 2)
+        let mission = try #require(Self.mission(key, in: order))
+        #expect(order.suggestedSplit(for: mission) == nil)
+
+        Self.show([key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await MissionNamingTests.eventually { order.suggestedSplit(for: mission) != nil })
+        #expect(model.splitPrompts.count == 2)
+        #expect(model.namePrompts.count == 3)
         order.stopShowing(in: viewer)
     }
 

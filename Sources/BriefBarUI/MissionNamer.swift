@@ -11,8 +11,9 @@ import Foundation
 /// Then, once no name is due, it asks whether a mission on screen has become different pieces of work (§7.4.8), the same
 /// way: one at a time, once settled, what it's made of unchanged for `settleFor`, and again only when that changes, not when
 /// a title alone does. Twice, its parts in order with what it's for, then reversed without, and only what both answers
-/// separate counts (`MissionSplitting.join`); then it names the groups that need a name, as it names missions. Pull Request
-/// Order tells it which missions to look at, without those you kept together.
+/// separate counts (`MissionSplitting.join`); then it names the groups that need a name, as it names missions. Between one
+/// answer and the next, it stops once the mission has left the screen, keeping what it found for when it's back, or once
+/// what it finds can't count. Pull Request Order tells it which missions to look at, without those you kept together.
 @MainActor
 package final class MissionNamer {
     package typealias Respond = @MainActor (_ prompt: String, _ instructions: String) async -> Result<String, OnDeviceModel.Failure>
@@ -280,6 +281,8 @@ package final class MissionNamer {
         var grouping: (makeup: MissionSplitQuestion.Makeup?, grouping: [Set<ItemRef>]?)?
         var names: [MissionNameInputs: String?]
         var waits = false
+        /// It stopped asking, as the question is no longer wanted (`stillAsks`): it tells nothing.
+        var stops = false
         var split: MissionSplit?
     }
 
@@ -303,6 +306,9 @@ package final class MissionNamer {
             if work.waits {
                 waitUntil = now().addingTimeInterval(Self.retryAfter)
                 Log.app.info("A mission's split waits: Apple Intelligence is busy, getting ready or off")
+            } else if work.stops {
+                // Its mission left the screen meanwhile: what it found is kept, and it's asked the rest once it's back and
+                // settled.
             } else {
                 splitsTold[question.key] = question.basis
                 if let split = work.split {
@@ -326,6 +332,10 @@ package final class MissionNamer {
             let instructions = MissionSplitting.instructions(for: question)
             var answers: [[[Int]]?] = []
             for reversed in [false, true] {
+                guard stillAsks(question) else {
+                    work.stops = true
+                    return work
+                }
                 switch await respondSplit(MissionSplitting.prompt(question, reversed: reversed), instructions, count) {
                 case .success(let json):
                     answers.append(MissionSplitting.grouping(fromJSON: json, parts: count, reversed: reversed))
@@ -356,6 +366,10 @@ package final class MissionNamer {
                 names.append(known)
                 continue
             }
+            guard stillAsks(question) else {
+                work.stops = true
+                return work
+            }
             switch await respond(MissionNaming.prompt(inputs), MissionNaming.instructions) {
             case .success(let text):
                 let name = MissionNaming.clean(text, titles: inputs.titles)
@@ -371,6 +385,13 @@ package final class MissionNamer {
         }
         work.split = MissionSplit(key: question.key, basis: question.basis, grouping: grouping, plan: plan, names: names)
         return work
+    }
+
+    /// Whether the question it's working on is still wanted, between one answer and the next: its mission is on screen,
+    /// made of what it was, and neither Pull Request Order nor its source went off meanwhile. Else Apple Intelligence is
+    /// asked nothing more of it, so that what's off isn't asked about, and what's on again doesn't wait for it.
+    private func stillAsks(_ question: MissionSplitQuestion) -> Bool {
+        !dropsAnswer && splitRequests.contains { $0.key == question.key && $0.question.basis == question.basis }
     }
 
     private func wake(at date: Date) {

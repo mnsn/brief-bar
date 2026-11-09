@@ -1426,20 +1426,22 @@ five seconds, once the sources have read what they show, and again only when tha
 way, as with Show Links off: its pull requests, their work items and stories, and the sessions that opened them, never a
 title alone. It's asked twice, with the likeliest words: its parts in order after the story or session it's for, then in
 reverse order without it, and only what both answers separate counts; the first answer that sees one piece of work
-settles it. On made-up missions, before this shipped, that suggested splitting none of 40 that were one piece of work,
-also with stacked parts and with their tasks' titles to hand, and caught 6 of 18 that had drifted, each grouped right:
-it's often quiet rather than often wrong. Each title is quoted as data, never a name you gave. The answer comes in a set
-shape, by guided generation (`OnDeviceModel.Shape.split`): whether it's one piece of work, then two or three groups of
-the parts' numbers; one that doesn't place each part once gives no suggestion. Which group keeps the mission, its key,
-its Focus and the name you gave it, BriefBar chooses the same way each time, never the model: the one with what stays,
-else the one with the most open pull requests, then the one opened earliest. Each other group goes into the mission
-split off it before that's in it, else to a new mission of your own when it has two pull requests or more, else out of
-missions. There's no suggestion where what stays is in two groups, a group has two missions split off before, or the one
-that keeps the mission has one: a split never joins missions. Nor is there one that would leave a story's mission, or
-the pull requests opened under a session, with one pull request, merged ones counted, as that's no mission. The groups'
-names, the kept one's unless you named it and each new mission's, are asked as a mission's are, and are the names those
-missions get, Apple Intelligence's, in memory. A suggestion is kept in memory only, and none of it goes to the log, but
-how many groups it has, nor to agents.
+settles it. Between one answer and the next, its own or a group's name's, it stops once the mission has left the screen,
+keeping what it found for when it's back and settled, or once what it finds can't count: the mission changed, or Pull
+Request Order or the source it's from went off. On made-up missions, before this shipped, that suggested splitting none
+of 40 that were one piece of work, also with stacked parts and with their tasks' titles to hand, and caught 6 of 18 that
+had drifted, each grouped right: it's often quiet rather than often wrong. Each title is quoted as data, never a name
+you gave. The answer comes in a set shape, by guided generation (`OnDeviceModel.Shape.split`): whether it's one piece of
+work, then two or three groups of the parts' numbers; one that doesn't place each part once gives no suggestion. Which
+group keeps the mission, its key, its Focus and the name you gave it, BriefBar chooses the same way each time, never the
+model: the one with what stays, else the one with the most open pull requests, then the one opened earliest. Each other
+group goes into the mission split off it before that's in it, else to a new mission of your own when it has two pull
+requests or more, else out of missions. There's no suggestion where what stays is in two groups, a group has two
+missions split off before, or the one that keeps the mission has one: a split never joins missions. Nor is there one
+that would leave a story's mission, or the pull requests opened under a session, with one pull request, merged ones
+counted, as that's no mission. The groups' names, the kept one's unless you named it and each new mission's, are asked
+as a mission's are, and are the names those missions get, Apple Intelligence's, in memory. A suggestion is kept in
+memory only, and none of it goes to the log, but how many groups it has, nor to agents.
 
 **Split** is one change of yours (`OrderEdit.split`), with one **Undo**: each pull request it moves keeps the mission it
 came from (`OrderChange.splitFrom`), and what each waits for doesn't change. It goes by the orders as agents last told
