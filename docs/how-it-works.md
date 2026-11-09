@@ -1462,13 +1462,14 @@ three hours, is kept with it, so a change from then on counts. A change within t
 before isn't seen. Nothing counts while a source still reads what it shows, however long that takes: till Azure DevOps
 has read an organization's lists since BriefBar started, Show Links has read what each pull request is for, and Copilot
 has read which pull requests its sessions opened, from the app's database where there is one (`OrderFacts.isReading`);
-nor while Azure DevOps is off, or its latest refresh read nothing, as offline, signed out, or with every organization in
-a directory the Azure CLI isn't signed in to. A suggestion on screen holds the same way: told another way, by its parts
-alone. Each follows its mission as Focus does (`OrderBoard.successor`); at most 200, the one seen longest ago going
-first, which only brings back a suggestion you can keep together again. Turning a source off forgets those of its
-missions, turning Pull Request Order off keeps them, their days waiting, and **Forget All Orders…** forgets them.
-**Suggested Split…**, in the mission's **⋯**, shows one you kept together again, asking Apple Intelligence again if
-BriefBar restarted since. A split applies whole: to take part of one, Keep Together, then Move to Mission.
+nor while Azure DevOps is off, or the latest refresh that tried to read anything read nothing, neither an organization's
+lists nor a pull request sent to you, as offline, signed out, or with every organization in a directory the Azure CLI
+isn't signed in to. A suggestion on screen holds the same way: told another way, by its parts alone. Each follows its
+mission as Focus does (`OrderBoard.successor`); at most 200, the one seen longest ago going first, which only brings
+back a suggestion you can keep together again. Turning a source off forgets those of its missions, turning Pull Request
+Order off keeps them, their days waiting, and **Forget All Orders…** forgets them. **Suggested Split…**, in the
+mission's **⋯**, shows one you kept together again, asking Apple Intelligence again if BriefBar restarted since. A split
+applies whole: to take part of one, Keep Together, then Move to Mission.
 
 ### A pull request's stage
 
