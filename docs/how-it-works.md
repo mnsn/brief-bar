@@ -1568,8 +1568,9 @@ turning Copilot off what they all set. None of it goes to Azure DevOps. The demo
 Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
 works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
 lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`), so Up Next's pull
-request is always the first in its column's order, which wears **Next** on the Board. The mission you focus on comes first
-in each stage, but in In progress, what needs you comes before it, so that Fix next is always its column's first:
+request is always the first in its column's order, which wears **Next** on the Board. The pull request you chose for a
+slot comes first in its column (below); then the mission you focus on comes first in each stage, but in In progress, what
+needs you comes before it, so that Fix next is always its column's first:
 
 | Stage | Which comes first |
 |---|---|
@@ -1588,6 +1589,35 @@ against (`BoardCard.waitingForIt`, `OrderMission.stackedBases(of:)`), not those 
 wait for each other. It's only between open pull requests: nothing waits through one that merged or closed, as its order
 then lets what comes after it merge, or holds it until you check the order. A mission's lane counts how long those in
 other missions have waited, as Up Next does.
+
+**The one you choose.** A slot's title in Up Next is a menu, **Fix next ⌄**, of its pull requests in its column's order,
+each with why it's there, the one it shows checked; a Board card's menu has **Make Next**, a toggle, and VoiceOver's
+actions **Make Next** and **Let BriefBar Choose Next**. Only one the slot has now can be chosen (`UpNextSlot.has`). The
+one you chose (`UpNextPicks`) comes first in its column, ahead of all of the above, in every lane that has it
+(`BoardOrder.sorted`'s `first`), and first of its kind in its mission's next steps, but in In progress only while it
+needs you, so that what needs you still comes first;
+the slot shows it with ✎, and its card wears **✎ Next**. It stands while its pull request is on your board in that stage
+(`UpNextSlot.keeps`). Once it moves on to another stage, leaves your board, merges or closes, it's away, and once it's
+been away for half an hour (`UpNextPicks.awayFor`), BriefBar forgets it as it works stages out again, back by then or not,
+as when the Mac wakes (`UpNextPicks.moved`); back sooner, it's still yours. Half an hour is long enough for what BriefBar
+reads to catch up: as Pull Request Order turns on, which pull requests the Copilot app's sessions are on can come after
+Azure DevOps' lists, so for a moment a pull request a session asks you about reads as waiting on a teammate; and while
+Azure DevOps throttles BriefBar, a failed build shows only once it lets BriefBar read the pull request's details again. When it
+went away is kept in memory only, while Pull Request Order is on, as what the sources tell is: once it's on again, or
+BriefBar starts again, each choice has its half hour again. One whose source reads nothing of it now, such as while its
+organization can't be read, since another account signed in, before Azure DevOps' lists are read, or while it's off, is
+neither away nor back, and waits. In progress without needing you, as while its build runs again or a session writes
+it, Fix next's waits too, and comes first again once it needs you. Undo of a stage you changed chooses its pull request
+again where you'd chosen it, gone by then or not, but not for a slot you've decided for since, choosing another or with
+Let BriefBar Choose, whatever became of that (`StageChange.picked`). **Let BriefBar Choose**, in the slot's menu, or
+unchecking Make Next forgets it at once, whether the slot shows it then or waits for it to come back; there's no Undo
+line, as for Focus. It's kept in the preferences as each slot's name and its pull request's reference
+(`order.upNextPicks`), but for a pull request listed only because someone sent it in a chat, which stays in memory while
+BriefBar runs, Pull Request Order off or on, as your changes to its mission do, until BriefBar lists it otherwise, and
+goes when another account signs in.
+**Forget Stages…** forgets them all, and turning Azure DevOps off forgets its own. `needs_me` reads those kept in the
+preferences, and lists each first in its stage, as the Board does.
+
 A pull request in two missions has a card in each lane, and counts once. On the Board (`OrderBoardView`), a card drags
 with SwiftUI's `draggable`, carrying its reference and a token made for that drag alone (`BoardDrag`), so a column takes
 only a card dragged from its own board, never text from another app that names a pull request. A drop, and the columns
@@ -3954,7 +3984,8 @@ Azure DevOps starts. The demo keeps them in memory.
 #### Stages for agents
 
 While Pull Request Order is on, as the app has it, `needs_me` ends Azure DevOps' part with the Board in words: each
-stage but Merged, what's next first, each pull request with its number, title and repository and why it's there, in
+stage but Merged, what's next first, the pull request you chose for its Up Next slot first of all, as the app keeps it in
+the preferences, each pull request with its number, title and repository and why it's there, in
 BriefBar's words, with who set it; and `pull_request` says its stage, and, where a session's replaced yours, that you
 can put yours back. `--mcp` works them out itself (`AzureDevOpsAgent.stages`, `AgentStages`), as the app does, from what
 the lists read, the sessions the Copilot app lists, with the tasks BriefBar sent, as the app lists them, unnamed: those

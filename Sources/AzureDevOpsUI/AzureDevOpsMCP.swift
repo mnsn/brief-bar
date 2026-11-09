@@ -132,7 +132,7 @@ actor AzureDevOpsReader {
         return OrderKept(
             orders: DeclaredOrders.load(from: defaults), evidence: OrderEvidence.load(from: defaults),
             focus: OrderFocus.load(from: defaults), changes: OrderChanges.load(from: defaults), marks: StageMarks.load(from: defaults),
-            sessionStages: SessionStages.load(from: defaults, now: now)
+            sessionStages: SessionStages.load(from: defaults, now: now), picks: UpNextPicks.load(from: defaults)
         )
     }
 
