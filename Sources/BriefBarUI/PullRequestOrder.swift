@@ -834,16 +834,21 @@ package final class PullRequestOrder: ObservableObject {
             }
         }
         // The names first, so that the missions show with them, the line that says what it did names them, and Apple
-        // Intelligence isn't asked them again.
+        // Intelligence isn't asked them again; and those they replace, with what it asked them with, for Undo.
         let before = modelNames
+        let replaced = Dictionary(uniqueKeysWithValues: named.keys.map { key in
+            (key, OrderLastChange.ReplacedName(name: modelNames[key], asked: namer?.askedWith(key)))
+        })
         for (key, name) in named { modelNames[key] = name }
         cachedNames = nil
-        guard let done = change(.split(mission.key, moves), in: mission.key), done.canUndo else {
+        guard var done = change(.split(mission.key, moves), in: mission.key), done.canUndo else {
             modelNames = before
             cachedNames = nil
             return refusal?.said
         }
         namer?.adopt(Array(named.keys))
+        done.names = replaced
+        lastChange = .order(done)
         splitsShownAgain.remove(mission.key)
         let undo = missions.contains { $0.key == mission.key }
             ? "on the card of ‘\(title(of: missions.first { $0.key == mission.key } ?? mission))’" : "at the top of the list"
@@ -1479,7 +1484,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Puts back exactly what your last change to a mission touched. Undoing a split keeps the mission together as it's made
-    /// again, as Keep Together does.
+    /// again, as Keep Together does, and puts back the names Apple Intelligence had given the missions it named, with what
+    /// it had asked them with, so that they aren't asked again.
     private func undo(_ last: OrderLastChange) -> Bool {
         guard isOn, last.canUndo else { return false }
         var changed = changes
@@ -1492,6 +1498,8 @@ package final class PullRequestOrder: ObservableObject {
         lastChange = nil
         refusal = nil
         evidence = evidence.merging(last.evidence)
+        for (key, replaced) in last.names { modelNames[key] = replaced.name }
+        namer?.restore(last.names.mapValues(\.asked))
         keep(changed)
         rebuild()
         keepTogether(splitBack: splitBack)
@@ -1789,13 +1797,22 @@ package struct OrderLastChange: Equatable {
     package let touched: [ItemRef: OrderChange?]
     /// What BriefBar saw become of the pull requests those were about, as it was, for Undo to put back with them.
     package let evidence: OrderEvidence
+    /// The names Apple Intelligence had given the missions a split you confirmed named, by their keys, as they were, with
+    /// what it had asked them with, for Undo to put back with them; empty for any other change.
+    package var names: [MissionKey: ReplacedName] = [:]
+
+    /// A mission's name from Apple Intelligence, nil for none, and what it was asked with, nil for not asked.
+    package struct ReplacedName: Equatable {
+        package var name: String?
+        package var asked: MissionNameInputs?
+    }
 
     /// Whether it was made, and Undo can put back what it touched.
     package var canUndo: Bool { !touched.isEmpty }
 
     /// The same, with what BriefBar saw become of its pull requests since.
     func seeing(_ evidence: OrderEvidence) -> OrderLastChange {
-        OrderLastChange(said: said, refs: refs, mission: mission, touched: touched, evidence: evidence)
+        OrderLastChange(said: said, refs: refs, mission: mission, touched: touched, evidence: evidence, names: names)
     }
 
     /// The same, with the chains it names named as `OrderChanges.moveAnchors` renamed them.
@@ -1806,7 +1823,7 @@ package struct OrderLastChange: Equatable {
         if case .chain(let anchor)? = mission, let new = renamed[anchor] { mission = .chain(new) }
         return OrderLastChange(
             said: said, refs: refs, mission: mission, touched: touched.mapValues { change in change.map { undo[$0.ref] ?? $0 } },
-            evidence: evidence
+            evidence: evidence, names: names
         )
     }
 
@@ -1823,7 +1840,7 @@ package struct OrderLastChange: Equatable {
         guard !renamed.isEmpty || card != mission else { return self }
         return OrderLastChange(
             said: said, refs: refs, mission: card, touched: touched.mapValues { change in change.map { undo[$0.ref] ?? $0 } },
-            evidence: evidence
+            evidence: evidence, names: names
         )
     }
 }

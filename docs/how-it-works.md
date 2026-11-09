@@ -1481,7 +1481,10 @@ screen holds the same way: told another way, by its parts alone. Each follows it
 keep together again. Turning a source off forgets those of its missions, turning Pull Request Order off keeps them,
 their days waiting, and **Forget All Orders…** forgets them. **Suggested Split…**, in the mission's **⋯**, shows one you
 kept together again, asking Apple Intelligence again if BriefBar restarted since, or its parts changed, as one merged. A
-split applies whole: to take part of one, Keep Together, then Move to Mission.
+split applies whole: to take part of one, Keep Together, then Move to Mission. A split's Undo puts back the names Apple
+Intelligence had given the missions it named, with what it had asked them with, so that they aren't asked again
+(`OrderLastChange.names`); Undo Your Changes to It or to This Mission doesn't, and the mission is asked its name again
+once it shows.
 
 ### A pull request's stage
 

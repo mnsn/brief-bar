@@ -1,6 +1,6 @@
 import AppKit
 import BriefBarCore
-import BriefBarUI
+@testable import BriefBarUI
 import Foundation
 import SwiftUI
 import Testing
@@ -259,11 +259,19 @@ fileprivate final class SplitViewer {}
         try await Task.sleep(for: .milliseconds(50))
         #expect(model.namePrompts.count == 3 && model.splitPrompts.count == 2)
 
-        // Undo puts all of it back at once, and counts as Keep Together.
+        // Undo puts all of it back at once, the names Apple Intelligence had given too, and counts as Keep Together.
         #expect(order.undo())
         mission = try #require(Self.mission(key, in: order))
         #expect(Self.refs(of: mission).count == 4)
         #expect(!order.missions.contains { $0.key == new.key })
+        #expect(order.title(of: mission) == "Checkout and build agents" && order.naming(of: mission) == .appleIntelligence)
+        #expect(order.modelNames[new.key] == nil)
+        // On screen, it isn't asked its name again, being named from what it was asked with before the split.
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(model.namePrompts.count == 3)
+        #expect(order.title(of: mission) == "Checkout and build agents")
         let question = try #require(order.splitQuestion(for: mission))
         #expect(Self.keptAsMade(question, by: order))
         #expect(defaults.data(forKey: KeptTogether.defaultsKey) != nil)
@@ -277,6 +285,24 @@ fileprivate final class SplitViewer {}
         try await Task.sleep(for: .milliseconds(50))
         #expect(model.splitPrompts.count == 2)
         order.stopShowing(in: viewer)
+    }
+
+    /// The names Undo of a split puts back go with it as BriefBar sees its pull requests change, and as the chains and
+    /// missions it names are renamed.
+    @Test func theNamesUndoOfASplitPutsBackGoWithIt() {
+        let key = MissionKey.story(Self.story)
+        let asked = MissionNameInputs(pullRequests: ["Add the coupon field"])
+        let names = [
+            key: OrderLastChange.ReplacedName(name: "Checkout and build agents", asked: asked),
+            MissionKey.mine(Self.planID): OrderLastChange.ReplacedName(name: nil, asked: nil),
+        ]
+        var last = OrderLastChange(
+            said: "Split", refs: [Self.pr(4120)], mission: .chain(Self.pr(4101)), touched: [Self.pr(4120): nil], evidence: OrderEvidence()
+        )
+        last.names = names
+        #expect(last.seeing(OrderEvidence()).names == names)
+        #expect(last.renamingChains([Self.pr(4101): Self.pr(4102)]).names == names)
+        #expect(last.renamingMissions { _ in key }.names == names)
     }
 
     @Test func itsAskedOnlyWithAppleIntelligenceOnScreenOnceSettledAndAgainOnlyWhenWhatTheMissionIsMadeOfChanges() async throws {

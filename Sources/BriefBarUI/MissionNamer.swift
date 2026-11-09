@@ -163,6 +163,20 @@ package final class MissionNamer {
         }
     }
 
+    /// What it asked a mission's name with last, without its current name; nil when it hasn't.
+    package func askedWith(_ key: MissionKey) -> MissionNameInputs? {
+        asked[key]
+    }
+
+    /// Undo of a split you confirmed put back the names these missions had: what it had asked each with, nil for not asked,
+    /// is what it asked with again, so that it isn't asked again unless what it's named from changed since.
+    package func restore(_ asked: [MissionKey: MissionNameInputs?]) {
+        for (key, inputs) in asked {
+            self.asked[key] = inputs
+            adopted.remove(key)
+        }
+    }
+
     /// Pull Request Order went off: it asks for nothing more, and forgets what it asked, and the answer under way. Once
     /// nothing's on screen, `update` with none, which keeps what it asked, so the same missions aren't asked again when they
     /// show again.
