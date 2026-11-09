@@ -480,9 +480,10 @@ title stays a heading, and BriefBar remembers it (`links.whereItStandsFolded`); 
 while one can't. Pages don't show it. Each row shows its state as the lists by state draw it, what it is, where it
 stands in a sentence, its opening words in its state's color, and since when; one that needs you or went wrong opens in
 a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
-`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize**
-and its summary under them, written as the page opens, as a work item's details do, unless one that's current is there;
-then what Copilot said after its last checkpoint, while it's at work or waits for you, or
+`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize**, and, for a
+Copilot session while Send Work to Copilot is on, **Ask…** ([Asking a session aside](#asking-a-session-aside)), with what
+it answered under them; then its summary, written as the page opens, as a work item's details do, unless one that's
+current is there; then what Copilot said after its last checkpoint, while it's at work or waits for you, or
 how it ended once it stopped; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked
 to what you opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Also
 Linked**, what else is linked to it, without the work item and the pages you came through (the `trail` of
@@ -2952,7 +2953,8 @@ more: a worktree of one you don't trust loads only your own configuration. Brief
 
 **Forking a session, and asking one a side question.** A pull request's comments do both
 ([below](#about-a-comment)): Fix in a fork of one of BriefBar's own sessions, and the Send to Copilot window's **Fork
-with the CLI** (`CopilotLauncher.Request.forking`); and Explain (`SessionQuestions`). Send to Copilot's **Send to a
+with the CLI** (`CopilotLauncher.Request.forking`); and Explain (`SessionQuestions`), as Ask… does of any of your
+sessions ([below](#asking-a-session-aside)). Send to Copilot's **Send to a
 Fork** forks one of the app's
 open sessions another way, through BriefBar's extension ([below](#its-extension-for-the-apps-sessions)). The Copilot
 CLI's `/fork` and `/ask` are commands of its terminal: with `-p`, tried with 1.0.105, they're words sent to the model,
@@ -3387,6 +3389,36 @@ what Copilot took on of them before then is over, for good, as a build's is once
 session, of a merge of the old target, isn't ready to push, nor where Resolve goes, once the pull request conflicts
 again; not while Copilot is at it (`CopilotTasksStore.endWorkThatsOver`). The demo makes its answer up
 (`DemoData.conflictsExplanation`), and runs nothing.
+
+#### Asking a session aside
+
+**Ask…** asks one of your Copilot sessions where it stands, or your own question, aside, as Explain asks about a thread,
+and shows the answer where you asked: under the session's row in
+Copilot's list (`SessionRowView`), and under the heading of its page in a work item's or a pull request's details
+(`ItemPageView`), whose heading has **Ask…** beside ✨ Summarize (`SessionAskButton`). The row's menus have it
+(`SessionAskMenuItems`), and so does **⌄** on a pull request's Copilot line, beside Show Details, which opens the
+field, then the session's page (`SessionAskPageItem`), only where that page can open. Copilot's list and the pages are
+shared views, which read nothing of Azure DevOps: what was asked and answered is kept by the session's `ItemRef` in
+`AppServices.sessionAsks` (`SessionAsks`), so it shows wherever the session does, and stays as a row moves to another
+group, which draws it anew; so is the one field that's open, with what you wrote in it, one at a time, as Explain's
+composer is. Its **✕** has Esc's shortcut, and while it's open the details it's in leave Esc to it
+(`InlineComposerOpen`). The widgets show none of it (`offersAsks`), as they show no summary.
+
+It asks only through what the app gives it (`SessionAsks.setAsker`): Azure DevOps' `CopilotQuestions` gives it a way while
+Send Work to Copilot is on, and takes it away as that's turned off or Azure DevOps stops, which stops what's being
+asked, deleting its fork, forgets every question, answer and what you wrote, and hides Ask…. It asks as Explain asks
+(`SessionQuestions`): in a fork with no tools, deleted after, with the session's own model, as one premium request. The
+question is written in BriefBarCore (`SessionAskPrompt`): your words, quoted as yours, or else where it stands, what's
+done, what's left, and what or whom it waits on, from what it knows of its work in its conversation, briefly; it reads
+nothing else. **Ask More** follows up on the answer that shows, quoting it, cut to 6,000 characters, in a fence nothing in
+it closes (`QuotedText.fenced`), since the next fork never saw it, and it may quote what the session read, such as a
+comment, which anyone who can comment can write; left empty, it asks where the session stands now, and what changed.
+Asking again, of the same session, stops what's still being asked of it. The answer is drawn from its Markdown by a
+small reader of BriefBarUI's own (`AnswerMarkdown`, `AnswerText`): paragraphs, headings, points, numbered points, code,
+quotes and tables, links as their words only, a long one's beginning until **Show More**. VoiceOver hears once that it
+answered, or why it couldn't, however many places show it (`SessionAsks.announcesOnce`). The log says only that a
+session was asked, never what, nor what it answered. The demo makes its answers up (`DemoData.sessionAnswer`), and runs
+nothing.
 
 ### Notifications
 
