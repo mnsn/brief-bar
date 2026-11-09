@@ -217,10 +217,11 @@ private final class Announcements: Sendable {
         #expect(announcements.total == 2)
     }
 
-    /// Where the user set the stage it sets, and theirs is the latest set and stands, it keeps nothing there, takes away
-    /// what this session set before, and says the user set it already, so a Your review they set doesn't end with a
-    /// session's. Where a listed session's stage came after theirs, it sets its own as anywhere.
-    @Test func whereTheUserSetTheSameStageLastItKeepsNothing() async throws {
+    /// A Your review where the latest stage set is a Your review the user set keeps no votes, saying so: it lasts as theirs
+    /// does, until it's changed, rather than end as someone else votes, and theirs with it as the latest set. Its own
+    /// that did so is no later stage. Where a listed session's other stage came after theirs, it keeps its votes, as
+    /// anywhere; so does another stage the user set too, which ends as theirs does anyway.
+    @Test func aYourReviewAfterTheUsersLastsAsTheirsDoes() async throws {
         let other = try #require(ItemRef.session(Self.otherSession))
         // You set Your review on both; this session had put !4093 in progress before, another set Teammate's review on
         // !4094 since.
@@ -241,31 +242,44 @@ private final class Announcements: Sendable {
         }
         let json = #"{"pull_requests": [4093, 4094], "organization": "contoso", "stage": "user_review"}"#
         let listed = defaults()
-        let answer = try await Self.set(Self.tools(listed, listedSessions: [Self.sessionRef, other]), json)
+        let tools = Self.tools(listed, listedSessions: [Self.sessionRef, other])
+        let answer = try await Self.set(tools, json)
         #expect(answer == """
-            BriefBar shows !4094 in contoso in Your review now, set by this session; the user sees who set it, and can \
-            change it.
-            The user set !4093 in contoso in Your review already, 2m ago: BriefBar shows theirs, and keeps no stage of \
-            this session's on it.
+            BriefBar shows !4093 and !4094 in contoso in Your review now, set by this session; the user sees who set it, \
+            and can change it.
+            The user had set Your review on !4093 in contoso 2m ago already; yours lasts as theirs does, until it's \
+            changed, rather than end once someone else votes.
             """)
-        #expect(Self.kept(listed)?.marks.keys.sorted() == [Self.ref(4094)])
+        #expect(Self.kept(listed)?.marks[Self.ref(4093)] == StageMark(stage: .yourReview, at: Self.now, by: Self.sessionRef))
+        #expect(Self.kept(listed)?.marks[Self.ref(4094)]?.votes == "10")
+        _ = try await Self.set(tools, json)
+        #expect(Self.kept(listed)?.marks[Self.ref(4093)]?.votes == nil)
 
-        // Only the sessions the app lists count, as in the app; with nothing to set, it answers all the same.
+        // Only the sessions the app lists count, as in the app.
         let unlisted = defaults()
-        let none = try await Self.set(Self.tools(unlisted, listedSessions: [Self.sessionRef]), json)
-        #expect(none == """
-            The user set !4093 in contoso in Your review already, 2m ago: BriefBar shows theirs, and keeps no stage of \
-            this session's on it.
-            The user set !4094 in contoso in Your review already, 2m ago: BriefBar shows theirs, and keeps no stage of \
-            this session's on it.
+        let both = try await Self.set(Self.tools(unlisted, listedSessions: [Self.sessionRef]), json)
+        #expect(both.hasSuffix("""
+            The user had set Your review on !4094 in contoso 2m ago already; yours lasts as theirs does, until it's \
+            changed, rather than end once someone else votes.
+            """))
+        #expect(Self.kept(unlisted)?.marks.values.map(\.votes) == [nil, nil])
+
+        let teammate = Self.settings()
+        var marks = StageMarks()
+        _ = marks.set(StageMark(stage: .teammateReview, at: Self.now - 120, votes: "10"), of: Self.ref(4094), for: "robin@contoso.com", at: Self.now)
+        marks.save(to: teammate)
+        let same = try await Self.set(Self.tools(teammate), #"{"pull_requests": [4094], "organization": "contoso", "stage": "teammate_review"}"#)
+        #expect(same == """
+            BriefBar shows !4094 in contoso in Teammate's review now, set by this session; the user sees who set it, and \
+            can change it.
             """)
-        #expect(Self.kept(unlisted) == nil)
+        #expect(Self.kept(teammate)?.marks[Self.ref(4094)]?.votes == "10")
     }
 
-    /// Whether the user set the same stage already is decided as the stage is kept, in one step, so it can't go stale: a
-    /// newer stage of this session's, from a call of its own that lands meanwhile, here as the last check before keeping
-    /// anything runs, isn't taken away to bring the user's older one back.
-    @Test func whetherTheUserSetItAlreadyIsDecidedAsItsKept() async throws {
+    /// Whether a Your review follows the user's is decided as it's kept, in one step, so it can't go stale: a newer stage
+    /// of this session's, from a call of its own that lands meanwhile, here as the last check before keeping anything
+    /// runs, came after theirs, so this one keeps its votes, as any does.
+    @Test func whetherItFollowsTheUsersIsDecidedAsItsKept() async throws {
         let defaults = Self.settings()
         var marks = StageMarks()
         _ = marks.set(StageMark(stage: .yourReview, at: Self.now - 120), of: Self.ref(4093), for: "robin@contoso.com", at: Self.now)
@@ -275,41 +289,43 @@ private final class Announcements: Sendable {
         let tools = Self.tools(defaults, refusal: {
             // The first check comes as it reads the pull request, the second just before it keeps anything.
             if checks.withLock({ $0 += 1; return $0 }) == 2 {
-                SessionStages.change(session, in: defaults, now: Self.now + 30) {
-                    $0.set(StageMark(stage: .teammateReview, at: Self.now + 30, by: session, votes: ""), of: Self.ref(4093))
+                SessionStages.change(session, in: defaults, now: Self.now - 30) {
+                    $0.set(StageMark(stage: .teammateReview, at: Self.now - 30, by: session, votes: ""), of: Self.ref(4093))
                 }
             }
             return nil
         })
         let answer = try await Self.set(tools, #"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#)
-        #expect(answer.hasPrefix("BriefBar shows !4093 in contoso in Your review now, set by this session"))
-        #expect(Self.kept(defaults)?.marks[Self.ref(4093)]?.stage == .yourReview)
+        #expect(answer == """
+            BriefBar shows !4093 in contoso in Your review now, set by this session; the user sees who set it, and can \
+            change it.
+            """)
+        #expect(Self.kept(defaults)?.marks[Self.ref(4093)] == StageMark(stage: .yourReview, at: Self.now, by: session, votes: ""))
         #expect(checks.withLock { $0 } == 2)
     }
 
-    /// Whether the stage the user set still stands is worked out as the app works it out, with the Copilot app's sessions
-    /// on the pull request: one that finished writing it since ends the user's In progress, so a session's new In
-    /// progress is kept rather than taken for theirs.
+    /// Whether the stage the user set still stands, for them to put it back, is worked out as the app works it out, with
+    /// the Copilot app's sessions on the pull request: one that finished writing it since ends the user's In progress.
     @Test func aLinkedSessionThatFinishedEndsTheUsersInProgressAsInTheApp() async throws {
         let defaults = Self.settings()
         var marks = StageMarks()
         let yours = StageMark(stage: .inProgress, at: Self.now - 120, commit: "a1b2c3d")
         _ = marks.set(yours, of: Self.ref(4093), for: "robin@contoso.com", at: Self.now)
         marks.save(to: defaults)
-        let json = #"{"pull_requests": [4093], "organization": "contoso", "stage": "in_progress"}"#
-        let inProgress = PullRequestStage.inProgress.title
+        let json = #"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#
 
-        // With nothing else on it, theirs stands: this session keeps nothing.
+        // With nothing else on it, theirs stands: they can put it back.
         let alone = try await Self.set(Self.tools(defaults), json)
-        #expect(alone.hasPrefix("The user set !4093 in contoso in \(inProgress) already, 2m ago"))
-        #expect(Self.kept(defaults) == nil)
+        #expect(alone.hasSuffix("The user had set In progress 2m ago; yours replaces it, and they can put theirs back."))
 
-        // A Copilot session on it finished writing it since: theirs ended, as in the app, and this session's counts.
+        // A Copilot session on it finished writing it since: theirs ended, as in the app, with nothing to put back.
         let other = try #require(ItemRef.session(Self.otherSession))
         let finished = [Self.ref(4093): [StageSession(ref: other, activity: .finished, since: Self.now - 30)]]
         let tools = Self.tools(defaults, listedSessions: [Self.sessionRef, other], sessionsOn: finished)
-        #expect(try await Self.set(tools, json).hasPrefix("BriefBar shows !4093 in contoso in \(inProgress) now, set by this session"))
-        #expect(Self.kept(defaults)?.marks[Self.ref(4093)]?.stage == .inProgress)
+        #expect(try await Self.set(tools, json) == """
+            BriefBar shows !4093 in contoso in Your review now, set by this session; the user sees who set it, and can \
+            change it.
+            """)
     }
 
     /// One BriefBar doesn't list, or that merged, is left as it is, with a line that says why; with none set, it's refused.

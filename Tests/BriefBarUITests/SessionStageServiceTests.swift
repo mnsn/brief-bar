@@ -267,10 +267,10 @@ private final class Clock {
     }
 
     /// A Your review you set lasts until you change it, also once a session that pushed says the same, as BriefBar's
-    /// prompts ask: while yours is the latest set, the session's `pull_request_stage` keeps nothing, saying so, and yours
-    /// stays as a teammate approves. Where the session's other stage replaced yours first, what it says later counts as
-    /// any stage does, and once that ends, none does: yours doesn't come back.
-    @Test func aSessionSayingTheSameKeepsNothingOverTheYourReviewYouSet() async throws {
+    /// prompts ask: what the session says shows at once, over its own work since yours, and lasts as yours does as a
+    /// teammate approves, with yours kept. Where the session's other stage replaced yours first, what it says later counts
+    /// as any stage does, and once that ends, none does: yours doesn't come back.
+    @Test func aSessionsYourReviewAfterYoursShowsAndLastsAsYoursDoes() async throws {
         let clock = Clock()
         let defaults = Self.defaults()
         let order = Self.service(defaults, clock: clock)
@@ -288,26 +288,35 @@ private final class Clock {
         order.agentChanged()
         #expect(order.stage(of: Self.ref(4094))?.replaced?.stage == .yourReview)
 
-        // ‘Cart’ pushed to both, and says each is ready for your review.
+        // You sent ‘Cart’ your comments, and it's writing both.
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .working], since: clock.now, on: [4093, 4094])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .inProgress)
+
+        // It pushed to both, and says each is ready for your review, before it ends its turn.
         clock.advance(seconds: 60)
         let answer = try await Self.setStage("user_review", of: [4093, 4094], in: defaults, facts: facts, at: clock.now)
         order.agentChanged()
         #expect(answer == """
-            BriefBar shows !4094 in contoso in Your review now, set by this session; the user sees who set it, and can \
-            change it.
-            The user set !4093 in contoso in Your review already, 2m ago: BriefBar shows theirs, and keeps no stage of \
-            this session's on it.
+            BriefBar shows !4093 and !4094 in contoso in Your review now, set by this session; the user sees who set it, \
+            and can change it.
+            The user had set Your review on !4093 in contoso 3m ago already; yours lasts as theirs does, until it's \
+            changed, rather than end once someone else votes.
             """)
-        #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
-        #expect(order.stage(of: Self.ref(4094))?.mark?.by == Self.cart)
-        #expect(SessionStages.load(Self.cart, from: defaults)?.marks[Self.ref(4093)] == nil)
+        for number in [4093, 4094] {
+            #expect(order.stage(of: Self.ref(number))?.stage == .yourReview)
+            #expect(order.stage(of: Self.ref(number))?.mark?.by == Self.cart)
+        }
 
-        // Priya approves.
+        // It finished, and Priya approves.
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .finished], since: clock.now, on: [4093, 4094])
         clock.advance(seconds: 60)
         let approved = StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: clock.now)
         Self.tell(order, [4093: approved, 4094: approved])
         #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
-        #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
+        #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.cart)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .yourReview)
         #expect(order.stage(of: Self.ref(4094))?.stage == .canMerge)
         #expect(order.stage(of: Self.ref(4094))?.mark == nil)
     }
