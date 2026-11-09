@@ -3,9 +3,10 @@ import SwiftUI
 
 /// Up Next, at the top of Azure DevOps' Pull Requests page while Pull Request Order is on, whatever the page's order: a slot
 /// for each kind of next that has something, side by side across the page, each in its stage's color, with its pull request,
-/// why, its mission and how many more. A click on one shows its details; "2 more ›" shows By Mission's Board at that column.
-/// Narrow, or with bigger text, the slots wrap, two or three to a line. It folds with its chevron, remembered. It changes no
-/// group or count: it only points.
+/// why, its mission and how many more. A click on one shows its details; its title's ⌄ chooses which of its pull requests it
+/// shows, remembered until that one moves on (`UpNextPicks`); "2 more ›" shows By Mission's Board at that column. Narrow, or
+/// with bigger text, the slots wrap, two or three to a line. It folds with its chevron, remembered. It changes no group or
+/// count: it only points.
 package struct UpNextView: View {
     let upNext: UpNext
     @ObservedObject var order: PullRequestOrder
@@ -83,10 +84,18 @@ package struct UpNextView: View {
         .accessibilityAddTraits(.isHeader)
     }
 
-    /// What VoiceOver hears after a slot's title: why, a second reason after a pause, then its mission: "Cart asks you,
-    /// build failed, Not in a mission", where its tooltip says "‘Cart’ asks you · build failed".
+    /// What VoiceOver hears after a slot's title: why, a second reason after a pause, then its mission, and that you chose it
+    /// where you did: "Cart asks you, build failed, Not in a mission", where its tooltip says "‘Cart’ asks you · build
+    /// failed".
     package static func spoken(_ slot: UpNext.Slot, mission: String, order: PullRequestOrder) -> String {
-        SpokenText.unquoted(StageText.why(slot.card.reading, name: order.name(of:), then: ", ") + ", " + mission)
+        let spoken = SpokenText.unquoted(StageText.why(slot.card.reading, name: order.name(of:), then: ", ") + ", " + mission)
+        return slot.isPicked ? spoken + ", you chose it" : spoken
+    }
+
+    /// A pull request as a slot's ⌄ lists it, with why it's there: "!4131 Fix the coupon rounding error — Build failed".
+    package static func choice(_ card: BoardCard, order: PullRequestOrder) -> String {
+        [card.ref.shortOrderLabel, order.name(of: card.ref)].compactMap { $0 }.joined(separator: " ") + " — "
+            + StageText.why(card.reading, name: order.name(of:))
     }
 }
 
@@ -99,8 +108,8 @@ extension UpNextView {
     }
 }
 
-/// One of Up Next's slots: its kind in its stage's color and how many it has; its pull request, why, and its mission; and
-/// "2 more ›", which shows the rest on the Board.
+/// One of Up Next's slots: its kind in its stage's color, whose ⌄ chooses its pull request, ✎ once you chose it, and how
+/// many it has; its pull request, why, and its mission; and "2 more ›", which shows the rest on the Board.
 private struct UpNextSlotView: View {
     let slot: UpNext.Slot
     @ObservedObject var order: PullRequestOrder
@@ -117,25 +126,32 @@ private struct UpNextSlotView: View {
         let title = order.name(of: ref)
         let why = StageText.why(slot.card.reading, name: order.name(of:))
         let mission = missionTitle
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(stage.color)
+                    .frame(width: 7 * textScale, height: 7 * textScale)
+                    .accessibilityHidden(true)
+                UpNextChooser(slot: slot, order: order)
+                if slot.isPicked {
+                    Image(systemName: "pencil")
+                        .font(size: 10, weight: .semibold)
+                        .foregroundStyle(.secondary)
+                        .help(UpNext.pickedHelp)
+                        .accessibilityHidden(true)
+                }
+                Spacer(minLength: 4)
+                Text("\(slot.count)")
+                    .font(size: 11.5, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .fixedSize()
+                    .accessibilityHidden(true)
+            }
             Button {
                 select(ref)
             } label: {
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(stage.color)
-                            .frame(width: 7 * textScale, height: 7 * textScale)
-                        Text(slot.kind.title)
-                            .font(size: 11.5, weight: .semibold)
-                            .foregroundStyle(stage.textColor)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text("\(slot.count)")
-                            .font(size: 11.5, weight: .medium)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
                     Text([ref.shortOrderLabel, title].compactMap { $0 }.joined(separator: " "))
                         .font(size: 13, weight: .semibold)
                         .lineLimit(1)
@@ -154,12 +170,15 @@ private struct UpNextSlotView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help([[ref.fullOrderLabel, title].compactMap { $0 }.joined(separator: " "), why, mission, slot.kind.help, "Click to see its details"]
-                .joined(separator: "\n"))
+            .help([
+                [ref.fullOrderLabel, title].compactMap { $0 }.joined(separator: " "), why, mission,
+                slot.isPicked ? UpNext.pickedHelp : slot.kind.help, "Click to see its details",
+            ].joined(separator: "\n"))
             .accessibilityLabel("\(slot.kind.title): \([ref.shortOrderLabel, title].compactMap { $0 }.joined(separator: " "))")
             .accessibilityValue(UpNextView.spoken(slot, mission: mission, order: order))
             .accessibilityHint("Shows its details")
             moreLine
+                .padding(.top, 1)
         }
         .padding(.horizontal, 11)
         .padding(.top, 10)
@@ -204,6 +223,53 @@ private struct UpNextSlotView: View {
     /// Its mission's name, as By Mission has it, or that it's in none.
     private var missionTitle: String {
         UpNextView.missionTitle(slot.card.mission, order: order)
+    }
+}
+
+/// An Up Next slot's title, with ⌄: its pull requests in its column's order, the one it shows checked, to choose which it
+/// shows, first in its column on the Board, until that one moves on; and Let BriefBar Choose, once you chose one, which
+/// gives it back to BriefBar's order.
+private struct UpNextChooser: View {
+    let slot: UpNext.Slot
+    @ObservedObject var order: PullRequestOrder
+
+    var body: some View {
+        let textColor = slot.kind.stage.textColor
+        Menu {
+            ForEach(slot.cards) { card in
+                Toggle(UpNextView.choice(card, order: order), isOn: Binding(get: { card.ref == slot.card.ref }, set: { _ in
+                    choose(card.ref)
+                }))
+            }
+            Divider()
+            Button("Let BriefBar Choose") { letBriefBarChoose() }
+                .disabled(!slot.isPicked)
+        } label: {
+            HStack(spacing: 3) {
+                Text(slot.kind.title)
+                    .font(size: 11.5, weight: .semibold)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                MenuChevron()
+            }
+            .foregroundStyle(textColor)
+            .contentShape(Rectangle())
+        }
+        .labelMenuStyle()
+        .help("Choose which pull request \(slot.kind.title) shows, first on the Board too, until it moves on")
+        .accessibilityLabel(slot.kind.title)
+        .accessibilityValue(slot.isPicked ? "You chose its pull request" : "")
+        .accessibilityHint("Chooses which of its \(slot.count) pull requests it shows")
+    }
+
+    private func choose(_ ref: ItemRef) {
+        guard order.pickNext(ref, in: slot.kind) else { return }
+        AccessibilityNotification.Announcement("\(slot.kind.title): \(ref.shortOrderLabel)").post()
+    }
+
+    private func letBriefBarChoose() {
+        order.letBriefBarChoose(slot.kind)
+        AccessibilityNotification.Announcement("BriefBar chooses \(slot.kind.title)").post()
     }
 }
 

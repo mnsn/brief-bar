@@ -351,14 +351,21 @@ how many it has. **Fix next** is what needs you to fix or answer: a session that
 failed, then changes someone wants. **Your next review** is the one that has waited longest, one that others
 build on counting as long as they've waited, as they can't merge before it; **Next for a teammate**, one of yours
 that needs a reviewer first; **Merge next**, what can merge next; **Waits next**, the one closest to merging. The
-mission you focus on comes first in each. Click one for its details; **2 more ›** shows the rest on the Board.
-Click **Up Next** to fold it, and BriefBar remembers. It changes no group or count.
+mission you focus on comes first in each. To choose which one a slot shows, such as a more urgent fix, click its title,
+**Fix next ⌄**, and pick it from its pull requests, each with why it's there: it shows with ✎, first in its column on the
+Board too, and BriefBar remembers it until that pull request moves on to another stage, merges or closes, and stays away
+for half an hour; then BriefBar chooses again. Back sooner, as when someone wants more changes, it's still yours, and
+**Undo**, after you move its card, chooses it again. While its build runs again, or a session writes it, Fix next shows
+the next one meanwhile, and yours once it needs you again. **Let BriefBar Choose**, in the same list, gives the slot back
+to BriefBar's order. Click one for its details; **2 more ›** shows the rest on the Board. Click **Up Next** to fold it,
+and BriefBar remembers. It changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
 review**, **Teammate's review**, **Can merge**, **Waits** and **Merged**, which shows only its count until you
 click it; and a lane for each mission, its header naming your next steps in it, such as **Review !4093** or
 **Find a reviewer: !4079**, then a lane for the pull requests in no mission. **Lanes: None** puts every card in
-one. Up Next's pull request wears **Next** in its column. Each column puts the mission you focus on first, but In
+one. Up Next's pull request wears **Next** in its column, **✎ Next** where you chose it: right-click a card and choose
+**Make Next** to choose it for its slot. Each column puts the mission you focus on first, but In
 progress puts what needs you before it, so that Fix next's is its first card. Click a card, or press **Return** or
 **Space** on it, for its details, or right-click it for its menu; drag it to another column of its lane, or click it, or
 Tab to it, and press **⌘→** or **⌘←**, to change its stage, which says so with **Undo** at the top of its lane, even
@@ -1252,7 +1259,7 @@ DevOps' gear menu has its own too: they're the same settings.
 
 | Works with | Setting | Options |
 |---|---|---|
-| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, and the names you gave missions; **Forget Stages…**, the stages you and sessions set |
+| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, and the names you gave missions; **Forget Stages…**, the stages you and sessions set, and what you chose in Up Next |
 | Azure DevOps only | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
