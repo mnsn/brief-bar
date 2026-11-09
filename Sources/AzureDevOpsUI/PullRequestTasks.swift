@@ -140,6 +140,16 @@ enum PullRequestTasks {
         return prompt(action, for: record, failures: failures, workplace: workplace)
     }
 
+    /// The prompt an agent gets for an action, as `pull_request_prompt` and `--wait` give it: written for wherever the
+    /// agent works, and ending, as BriefBar's own do, by asking for the pull request's stage once it pushed, while Pull
+    /// Request Order is on (`PromptTemplate.stageLine`), but for a review.
+    static func agentPrompt(
+        _ action: PullRequestAction, for record: PRRecord, client: ADOClient?, ordersPullRequests: Bool
+    ) async -> String {
+        let prompt = await prompt(action, for: record, client: client, workplace: .agent)
+        return PromptTemplate.ending(prompt, asksForStage: ordersPullRequests && action.asksForStage)
+    }
+
     /// The prompts for an action, for both places Copilot may work: a worktree of BriefBar's, for a new session or an
     /// earlier task's; and wherever a session that's there already works, such as one of the Copilot app's. A failed
     /// build's errors are read once, for both.

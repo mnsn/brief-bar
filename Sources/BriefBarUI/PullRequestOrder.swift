@@ -93,6 +93,10 @@ package final class PullRequestOrder: ObservableObject {
     /// kept do. They count with those toward the most an account keeps, and stay, unused, while Pull Request Order is off.
     /// One waits here too while its account has no room: one set before BriefBar knew the account, or put back by Undo.
     private var marksInMemory: [ItemRef: StageMarks.Entry] = [:]
+    /// The stages Copilot sessions set (`order.stage.<id>`), as their `--mcp` kept them: read as Pull Request Order turns
+    /// on and as an agent changes something, the demo's in memory. Each counts only while the Copilot source lists its
+    /// session (`listedSessionsDoing`).
+    private var sessionStages = SessionStages()
     /// The account each source last told while it knew one: the stages you set in memory, and Undo, are that account's.
     /// Turning Pull Request Order off keeps it, so that once it's on again, another account still forgets them.
     private var accounts: [SourceID: String] = [:]
@@ -157,6 +161,9 @@ package final class PullRequestOrder: ObservableObject {
         var account: String?
         /// What each of its sessions does, as the source can tell it: how one that ended ended, which how it looks can't.
         var activities: [ItemRef: StageSession.Activity] = [:]
+        /// Since when each does what it does, or ended, whether or not it has a row, as a task BriefBar sent hasn't until
+        /// you open it in the Copilot app.
+        var activitiesSince: [ItemRef: Date] = [:]
         var inMemory: Set<ItemRef> = []
         var readsStories = false
         var listed = true
@@ -264,6 +271,7 @@ package final class PullRequestOrder: ObservableObject {
             missions = []
             nextsHeldAgain = [:]
             marks = StageMarks()
+            sessionStages = SessionStages()
             stages = [:]
             stagedKinds = []
         }
@@ -280,9 +288,13 @@ package final class PullRequestOrder: ObservableObject {
         keptTogether = KeptTogether.load(from: defaults)
         keptCounted = nil
         splitsTakenBack = nil
-        // The demo's agents keep their orders in their own memory.
+        // The demo's agents keep what they tell in their own memory.
+        if !isDemo {
+            SessionStages.prune(in: defaults, now: now())
+            sessionStages = SessionStages.load(from: defaults, now: now())
+        }
         if !isDemo, agentChanges == nil {
-            agentChanges = AgentChanges.observe { [weak self] in self?.reloadOrders() }
+            agentChanges = AgentChanges.observe { [weak self] in self?.agentChanged() }
         }
         if clock == nil {
             let clock = Timer(timeInterval: Self.timeCheckInterval, repeats: true) { [weak self] _ in
@@ -296,13 +308,24 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Looks again at what time alone changes, as its clock does every hour: orders that went stale, those that finished
-    /// long enough ago to go, and the stages you set for pull requests no list has had for 30 days, kept or in memory.
+    /// long enough ago to go, the stages you set for pull requests no list has had for 30 days, kept or in memory, and
+    /// those sessions set 30 days ago.
     package func timePassed() {
         guard isOn else { return }
         let date = now()
         if marks.forgetUnlisted(now: date) { marks.save(to: defaults) }
         marksInMemory = marksInMemory.filter { !$0.value.isUnlisted(at: date) }
+        if !isDemo {
+            SessionStages.prune(in: defaults, now: date)
+            sessionStages = SessionStages.load(from: defaults, now: date)
+        }
         rebuild()
+    }
+
+    /// An agent told or changed something through `--mcp`: the orders, and the stages sessions set, read again.
+    package func agentChanged() {
+        reloadOrders()
+        reloadSessionStages()
     }
 
     /// Reads the orders again, as an agent told or forgot one through `--mcp`.
@@ -314,22 +337,33 @@ package final class PullRequestOrder: ObservableObject {
         rebuild()
     }
 
+    /// Reads the stages sessions set again, as one set or cleared one through `--mcp`.
+    package func reloadSessionStages() {
+        guard isOn, !isDemo else { return }
+        let loaded = SessionStages.load(from: defaults, now: now())
+        guard loaded != sessionStages else { return }
+        sessionStages = loaded
+        restage()
+    }
+
     // MARK: What the sources show
 
     /// What a source shows now, while it's on: the pull requests it lists, with what an order needs of each, the sessions
     /// it knows, how its things look, for what shows them, what each session told BriefBar it works on now
     /// (`SessionUpdates`), which changes no mission, what its pull requests' stages are worked out from, with the account
-    /// it read them with, whose stages you set apply, and how each of its sessions ended, when it can tell, the pull
-    /// requests it lists only because someone sent them in a chat, whose changes stay in memory, whether it reads the
-    /// stories its pull requests are for, and whether it has listed what it shows since it started, as it hasn't right
-    /// after BriefBar starts: till then, what a mission is made of isn't counted. It replaces what the source told before. Once it tells another account than the
-    /// one it told last, the stages you set that BriefBar kept in memory for its pull requests go, and so does Undo of one:
-    /// they were the other account's. Nothing's kept while Pull Request Order is off.
+    /// it read them with, whose stages you set apply, and how each of the sessions it lists does, or ended, when it can
+    /// tell, and since when, which are the sessions whose stages count (`SessionStages`), the pull requests it lists
+    /// only because someone sent them in a chat, whose changes stay in memory, whether it reads the stories its pull
+    /// requests are for, and whether it has listed what it shows since it started, as it hasn't right after BriefBar
+    /// starts: till then, what a mission is made of isn't counted. It replaces what the source told before. Once it
+    /// tells another account than the one it told last, the stages you set that BriefBar kept in memory for its pull
+    /// requests go, and so does Undo of one: they were the other account's. Nothing's kept while Pull Request Order is
+    /// off.
     package func publish(
         _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = [],
         working: [ItemRef: [ItemRef]] = [:], stages: [ItemRef: StageFacts] = [:], account: String? = nil,
-        sessionActivities: [ItemRef: StageSession.Activity] = [:], inMemory: Set<ItemRef> = [], readsStories: Bool = false,
-        listed: Bool = true
+        sessionActivities: [ItemRef: StageSession.Activity] = [:], activitiesSince: [ItemRef: Date] = [:],
+        inMemory: Set<ItemRef> = [], readsStories: Bool = false, listed: Bool = true
     ) {
         guard isOn else { return }
         var byRef: [ItemRef: LinkedItem] = [:]
@@ -338,13 +372,14 @@ package final class PullRequestOrder: ObservableObject {
         }
         let new = Told(
             pullRequests: pullRequests, sessions: sessions, items: byRef, working: working, stages: stages,
-            account: account?.lowercased(), activities: sessionActivities, inMemory: inMemory, readsStories: readsStories,
-            listed: listed
+            account: account?.lowercased(), activities: sessionActivities, activitiesSince: activitiesSince, inMemory: inMemory,
+            readsStories: readsStories, listed: listed
         )
         let old = told[source]
         let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions
             && old?.readsStories == new.readsStories && old?.listed == new.listed
         let sameStages = old?.stages == new.stages && old?.account == new.account && old?.activities == new.activities
+            && old?.activitiesSince == new.activitiesSince
         guard !sameFacts || !sameStages || old?.items != new.items || old?.working != new.working
             || old?.inMemory != new.inMemory else { return }
         objectWillChange.send()
@@ -406,6 +441,9 @@ package final class PullRequestOrder: ObservableObject {
         var marks = StageMarks.load(from: defaults)
         if marks.forget(kinds) { marks.save(to: defaults) }
         forgetInMemory(kinds)
+        // What sessions set: on its pull requests, or, with GitHub Copilot, everything, as its sessions told it.
+        if !isDemo { SessionStages.forget(kinds, in: defaults, now: now()) }
+        sessionStages.forget(kinds)
         accounts[source] = nil
         // What's left goes in before the source's pull requests leave the missions, so that rebuilding then, which can save
         // what it keeps, saves none of what was forgotten back, such as a name.
@@ -1339,9 +1377,10 @@ package final class PullRequestOrder: ObservableObject {
         return reading.stage != .merged
     }
 
-    /// Whether BriefBar keeps a stage you set, on or off: for Forget Stages… in Settings.
+    /// Whether BriefBar keeps a stage you or a session set, on or off: for Forget Stages… in Settings.
     package var keepsStages: Bool {
-        defaults.object(forKey: StageMarks.defaultsKey) != nil || !marksInMemory.isEmpty
+        defaults.object(forKey: StageMarks.defaultsKey) != nil || !marksInMemory.isEmpty || SessionStages.keepsAny(in: defaults)
+            || !sessionStages.isEmpty
     }
 
     /// The stages you set that BriefBar keeps, for each account, as many as there are, whatever lists have them now.
@@ -1388,11 +1427,14 @@ package final class PullRequestOrder: ObservableObject {
         return setStage(yours.stage, of: ref)
     }
 
-    /// Let BriefBar Decide: forgets the stage you set, and BriefBar works it out again. Unchanged when you set none.
+    /// Let BriefBar Decide: forgets the stage you set, and BriefBar works it out again: what sessions set before yours,
+    /// which yours replaced, goes too, rather than come back, also what a session the Copilot app doesn't list now set,
+    /// should it list it again. Unchanged when you set none.
     @discardableResult
     package func letBriefBarDecide(_ ref: ItemRef) -> StageChange.Outcome {
         guard isOn, let facts = stageFacts[ref], let before = yourMark(of: ref, facts: facts) else { return .unchanged }
         forgetMark(of: ref, facts: facts)
+        end(sessionStages.marks(on: ref, setBy: before.at), of: ref)
         lastChange = .stage(StageChange(ref: ref, before: before, after: nil))
         refusal = nil
         restage()
@@ -1452,12 +1494,14 @@ package final class PullRequestOrder: ObservableObject {
         lastChange = nil
     }
 
-    /// Forget Stages…: every stage you set, with every account, on or off. What sessions set is theirs (18d).
+    /// Forget Stages…: every stage you set, with every account, and every one sessions set, on or off.
     package func forgetStages() {
         objectWillChange.send()
         StageMarks.forgetAll(in: defaults)
+        SessionStages.forgetAll(in: defaults)
         marks = StageMarks()
         marksInMemory = [:]
+        sessionStages = SessionStages()
         if lastStageChange != nil { lastChange = nil }
         restage()
     }
@@ -1523,10 +1567,39 @@ package final class PullRequestOrder: ObservableObject {
         if let change = lastStageChange, kinds.contains(change.ref.kind) { lastChange = nil }
     }
 
-    /// Each pull request's stage again: from what its source tells, the sessions on it, the stage you set while it
-    /// stands, and its order. A stage you set that no longer stands, or whose pull request merged or closed, goes; one
-    /// kept in memory before BriefBar knew the account, or while it was only sent to you, is kept with the account once
-    /// it can be, and one kept with the account goes into memory once it's only sent to you, such as when you stop
+    /// Takes away what sessions set on a pull request, once none of it counts: in memory, and from what each session
+    /// keeps, unless it set something since; the demo's are in memory only.
+    private func end(_ sessionMarks: [StageMark], of ref: ItemRef) {
+        for mark in sessionMarks {
+            guard let session = mark.by else { continue }
+            sessionStages.remove(ref, of: session, setAt: mark.at)
+            if !isDemo { SessionStages.end(ref, of: session, setAt: mark.at, in: defaults) }
+        }
+    }
+
+    /// The demo's sessions' stages, as if they'd set them, in memory: only in the demo, while it's on, on those of its pull
+    /// requests whose source told their stages and that no session set yet. Each keeps what would end it as the pull
+    /// request is now, as a stage a session sets does (`StageRules.mark`).
+    package func tellDemo(sessionStages demo: [ItemRef: StageMark]) {
+        guard isDemo, isOn else { return }
+        var told = false
+        for (ref, set) in demo.sorted(by: { $0.key < $1.key }) {
+            guard let session = set.by, let facts = stageFacts[ref],
+                  !sessionStages.sessions.values.contains(where: { $0.marks[ref] != nil }) else { continue }
+            var stage = sessionStages[session] ?? SessionStage(session: session)
+            stage.set(StageRules.mark(set.stage, at: set.at, facts: facts, by: session), of: ref)
+            sessionStages.replace(stage)
+            told = true
+        }
+        if told { restage() }
+    }
+
+    /// Each pull request's stage again: from what its source tells, the sessions on it, the stage you set and those the
+    /// sessions it lists set, the latest of them while it stands, and its order. Once the latest no longer stands, or the
+    /// pull request merged or closed, none of them counts: yours goes, and so do the sessions', those it doesn't list now
+    /// too, from what they keep, so that an older one never comes back (`SessionStages.end`). A stage you set that no longer stands goes too. One you
+    /// set kept in memory before BriefBar knew the account, or while it was only sent to you, is kept with the account
+    /// once it can be, and one kept with the account goes into memory once it's only sent to you, such as when you stop
     /// watching it; and what lists have now is noted, for what no list has had for 30 days to go: in memory each time,
     /// and once a day for those kept. Only those a list has show a stage: what was set on one it still reads, but no
     /// list has, still ends as it moves on.
@@ -1538,7 +1611,9 @@ package final class PullRequestOrder: ObservableObject {
         }
         let all = stageFacts
         stagedKinds = Set(all.keys.map(\.kind))
+        let setters = listedSessionsDoing()
         let sessionsOn = sessionsOnPullRequests()
+        let sessionMarks = sessionStages.marks(listed: Set(setters.keys), now: now())
         // What names an order where two go round, as its mission's header does: only for what this Mac shows.
         let names = self.names
         var readings: [ItemRef: StageReading] = [:]
@@ -1554,7 +1629,16 @@ package final class PullRequestOrder: ObservableObject {
                 if marks.clear(ref, for: account) { changed = true }
             }
             var mine = yourMark(of: ref, facts: facts)
-            if let mark = mine, !facts.state.isOpen || !StageRules.stands(mark, facts: facts, sessions: sessions) {
+            let counted = StageRules.counted(
+                yours: mine, theirs: sessionMarks[ref] ?? [], facts: facts, sessions: sessions, setters: setters
+            )
+            if counted.latestEnded {
+                // What every session set on it, listed or not: all of it once it merged or closed, else what the latest set
+                // before it ended, so that what an archived session set doesn't come back once it's listed again.
+                let latest = ([mine].compactMap { $0 } + (sessionMarks[ref] ?? [])).map(\.at).max() ?? .distantPast
+                end(sessionStages.marks(on: ref, setBy: facts.state.isOpen ? latest : nil), of: ref)
+            }
+            if mine != nil, counted.yours == nil {
                 marksInMemory[ref] = nil
                 if let account = account(of: ref), marks.clear(ref, for: account) { changed = true }
                 mine = nil
@@ -1562,7 +1646,8 @@ package final class PullRequestOrder: ObservableObject {
             guard facts.isListed else { continue }
             marksInMemory[ref]?.listedAt = now()
             let order = StageOrder.of(ref, in: missions, names: names)
-            if var reading = StageRules.reading(facts: facts, sessions: sessions, marks: [mine].compactMap { $0 }, order: order) {
+            let set = [mine].compactMap { $0 } + counted.theirs
+            if var reading = StageRules.reading(facts: facts, sessions: sessions, marks: set, order: order, setters: setters) {
                 // Its words name the other order where two go round: what they say naming none, as agents read it, so that
                 // a rename, which restages it, changes only its words (`StageReading.readTheSame`).
                 if case .orderHolds = reading.why, case .holds(let words) = StageOrder.of(ref, in: missions),
@@ -1581,6 +1666,20 @@ package final class PullRequestOrder: ObservableObject {
         }
         if changed { marks.save(to: defaults) }
         if readings != stages { stages = readings }
+    }
+
+    /// What each session the sources list does now, or how it ended, and since when, on a pull request or not: what ends
+    /// an In progress it set (`StageRules.stands`). What a session set counts only while it's listed, so what an archived
+    /// session set goes with it.
+    private func listedSessionsDoing() -> [ItemRef: StageSession] {
+        var doing: [ItemRef: StageSession] = [:]
+        for source in SourceID.allCases {
+            for (session, activity) in told[source]?.activities ?? [:] where doing[session] == nil {
+                let since = told[source]?.activitiesSince[session] ?? describe(session)?.date
+                doing[session] = StageSession(ref: session, activity: activity, since: since)
+            }
+        }
+        return doing
     }
 
     /// The Copilot app's sessions on each pull request, as their source tells them: those that opened it or work on it, as
@@ -1624,7 +1723,7 @@ package final class PullRequestOrder: ObservableObject {
     /// The sessions a source knows of on a pull request, with the Copilot app's, each once. One both know, such as a task
     /// BriefBar sent that you went on with in the Copilot app, does what the app says once that's later, unless the app
     /// can't tell how it ended; the source's still names it and says whether it reviews.
-    static func merged(_ own: [StageSession], _ others: [StageSession]) -> [StageSession] {
+    nonisolated package static func merged(_ own: [StageSession], _ others: [StageSession]) -> [StageSession] {
         let theirs = Dictionary(others.map { ($0.ref, $0) }) { first, _ in first }
         let known = Set(own.map(\.ref))
         let reconciled = own.map { session in

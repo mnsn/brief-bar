@@ -404,7 +404,8 @@ import Testing
         #expect(script.reads == 1)
     }
 
-    /// The demo waits a second for its one change, Priya's comment on !4091, and nothing more.
+    /// The demo waits a second for its one change, Priya's comment on !4091, and nothing more. Its prompt is
+    /// `pull_request_prompt`'s, which, with Pull Request Order on, as in the demo, ends asking for the stage.
     @Test func theDemoWaitsForItsOneChange() async throws {
         func demo(_ number: Int) async -> WaitCLI.Ended {
             await WaitCLI.demo(WaitCLI.Request(key: PRKey(organization, number), minutes: 1))
@@ -414,6 +415,7 @@ import Testing
         #expect(comments.output.hasPrefix("A comment thread on !4091 waits on you.\n\(pageOf(4091, in: "payments-api"))\n\n"))
         #expect(comments.output.contains("Address these review comments:"))
         #expect(comments.output.contains("Could you add a test for a negative total before you merge?"))
+        #expect(comments.output.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("\n\n" + PromptTemplate.stageLine))
         #expect(await demo(4079).exit == .conflicts)
         #expect(await demo(4097).exit == .usage)
         #expect(await demo(1).exit == .couldntRead)

@@ -725,6 +725,56 @@ import BriefBarCore
         }
     }
 
+    /// When what's listed of a pull request was read is when the refresh that read its organization's lists started; one
+    /// whose lists can't be read keeps when they last were, as its pull requests stay as they were then, rather than take
+    /// the later refresh's time (`StageFacts.readAt`).
+    @Test func eachOrganizationKeepsWhenItsListsWereLastRead() async throws {
+        let clock = Locked(t(0))
+        let server = StubServer()
+        server.serveOrganization(mine: [Fixture.pullRequest(1)])
+        server.serveOrganization("fabrikam", mine: [Fixture.pullRequest(2)])
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: [Fixture.org, "fabrikam"]),
+            now: { clock.value }
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().readTimes == [PRKey(Fixture.org, 1): t(0), PRKey("fabrikam", 2): t(0)])
+
+        server.on("/fabrikam/_apis") { _ in .status(500) }
+        clock.set(t(minute))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.map(\.id.number) == [1, 2])
+        #expect(snapshot.readTimes == [PRKey(Fixture.org, 1): t(minute), PRKey("fabrikam", 2): t(0)])
+        #expect(snapshot.refreshedAt == t(minute))
+    }
+
+    /// One read by its link keeps when it was, while its organization's lists can't be read, though they never were: what
+    /// its lists had stays, but it's read by its link again, as in any refresh, or kept as it was, with when.
+    @Test func aPullRequestReadByItsLinkKeepsWhenItWasWhileItsListsCantBeRead() async throws {
+        let clock = Locked(t(0))
+        let server = StubServer()
+        server.serveOrganization(mine: [Fixture.pullRequest(1)])
+        server.on("/fabrikam/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/fabrikam/_apis/git/pullrequests", query: ["searchCriteria.status": "active"]) { _ in .status(500) }
+        server.on("/fabrikam/_apis/git/pullrequests/9", json: Fixture.pullRequest(9, author: People.sam))
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: [Fixture.org, "fabrikam"]),
+            now: { clock.value }
+        ) { _ in }
+        let key = PRKey("fabrikam", 9)
+        await engine.setLinkedPullRequests([key])
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().readTimes[key] == t(0))
+
+        server.on("/fabrikam/_apis/git/pullrequests/9") { _ in .status(500) }
+        clock.set(t(minute))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.contains { $0.id == key })
+        #expect(snapshot.readTimes[key] == t(0))
+    }
+
     /// Spelled another way, an organization was first read when it was first read under its old spelling: what came
     /// since is news, however a pull request read before spells it, and nothing's kept under the old spelling.
     @Test func anOrganizationSpelledAnotherWayWasFirstReadWhenItWasFirstRead() async throws {

@@ -92,11 +92,12 @@ final class PullRequestOrderFacts {
         return self
     }
 
-    /// The demo's stages, as if you'd set them, once its pull requests are listed, which they're set on.
+    /// The demo's stages, as if you and its sessions had set them, once its pull requests are listed, which they're set on.
     private func tellDemoStages() {
         guard store.mode == .demo, !toldDemoStages, !store.records.isEmpty else { return }
         toldDemoStages = true
         order.tellDemo(stages: DemoPullRequestOrder.stages(now: store.now))
+        order.tellDemo(sessionStages: DemoPullRequestOrder.sessionStages(now: store.now))
     }
 
     /// The demo's orders, as if its sessions had told them, your made-up changes to its missions, and the names Apple
@@ -123,7 +124,9 @@ final class PullRequestOrderFacts {
             .azureDevOps,
             pullRequests: Self.pullRequests(store.records, items: store.items, showToReview: showToReview, stories: stories),
             items: store.items.map { describe($0, showToReview: showToReview) } + stories.workItems.map(describe),
-            stages: Self.stages(store.records, items: store.items, tasks: tasks, watched: settings.watchedKeys),
+            stages: Self.stages(
+                store.records, items: store.items, tasks: tasks, watched: settings.watchedKeys, readAt: store.readTimes
+            ),
             account: settings.account, inMemory: Self.sentInChats(store.records, watched: settings.watchedKeys),
             readsStories: stories.areRead, listed: store.isListing
         )
@@ -185,10 +188,13 @@ final class PullRequestOrderFacts {
 
     /// Each pull request's stage's facts, from what the list read of it, its row, and the tasks sent to Copilot on it, or
     /// that opened it, newest first.
-    /// - Parameter watched: the pull requests you watch, which BriefBar keeps what you set on, as it keeps what you've seen
-    ///   of them, while it keeps that of those only sent to you in a chat in memory.
+    /// - Parameters:
+    ///   - watched: the pull requests you watch, which BriefBar keeps what you set on, as it keeps what you've seen of them,
+    ///     while it keeps that of those only sent to you in a chat in memory.
+    ///   - readAt: when what the list says of each was read (`PulseSnapshot.readTimes`, `StageFacts.readAt`): one kept as
+    ///     it was while it couldn't be read keeps when it last was.
     static func stages(
-        _ records: [PRRecord], items: [PRSnapshot], tasks: [CopilotTaskEntry], watched: Set<PRKey> = []
+        _ records: [PRRecord], items: [PRSnapshot], tasks: [CopilotTaskEntry], watched: Set<PRKey> = [], readAt: [PRKey: Date] = [:]
     ) -> [ItemRef: StageFacts] {
         let rows = Dictionary(items.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         // Newest first, as they come.
@@ -203,6 +209,7 @@ final class PullRequestOrderFacts {
             // One the lists still read but don't show, such as one sent to you in a chat once you answered it, has no stage
             // to show, but what you set on it still ends as it moves on.
             fact.isListed = rows[record.id] != nil
+            fact.readAt = readAt[record.id]
             facts[record.id.linkRef] = fact
         }
         return facts
@@ -313,7 +320,7 @@ final class PullRequestOrderFacts {
     /// A task sent to Copilot, as its pull request's stage needs it: at work while it gets ready or works, done once Copilot
     /// called it done, stopped otherwise; called "Copilot", as its row does. A review, Pre-review, writes nothing: it keeps
     /// someone else's yours to review while it runs.
-    static func session(_ entry: CopilotTaskEntry) -> StageSession? {
+    nonisolated static func session(_ entry: CopilotTaskEntry) -> StageSession? {
         guard let ref = ItemRef.session(entry.id) else { return nil }
         let activity: StageSession.Activity = switch entry.status.phase {
         case .preparing, .working: .working

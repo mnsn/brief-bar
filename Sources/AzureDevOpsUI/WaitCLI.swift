@@ -178,7 +178,11 @@ enum WaitCLI {
                     return .unreadable(AzureDevOpsCommandLine.describe(error))
                 }
             },
-            prompt: { action, record in await PullRequestTasks.prompt(action, for: record, client: client, workplace: .agent) },
+            prompt: { action, record in
+                // As the app has Pull Request Order as the prompt's written.
+                let ordersPullRequests = AzureDevOpsCommandLine.appDefaults.map { PullRequestOrderSetting.isOn(in: $0) } ?? false
+                return await PullRequestTasks.agentPrompt(action, for: record, client: client, ordersPullRequests: ordersPullRequests)
+            },
             refusal: { refusal(AzureDevOpsCommandLine.appDefaults) }
         )
     }
@@ -191,8 +195,9 @@ enum WaitCLI {
             return Ended(exit: .couldntRead, error: "!\(request.key.number) isn't among the demo's pull requests.")
         }
         guard baseline.role == .author else { return notYours(request.key) }
+        // Pull Request Order is on in the demo, as in `--demo --mcp`.
         let prompt: @Sendable (PullRequestAction, PRRecord) async -> String = { action, record in
-            await PullRequestTasks.prompt(action, for: record, client: nil, workplace: .agent)
+            await PullRequestTasks.agentPrompt(action, for: record, client: nil, ordersPullRequests: true)
         }
         let atOnce = WaitOutcome.since(baseline, in: baseline)
         if !atOnce.isEmpty { return await ended(atOnce, on: baseline, prompt: prompt) }

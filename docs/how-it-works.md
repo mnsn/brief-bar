@@ -1220,7 +1220,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
-| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
@@ -1477,14 +1477,14 @@ flow, which a row's colored label shows, in the window, the menu bar's list and 
 track. `StageRules` works it out from what the lists already read (`PullRequestOrderFacts.stageFacts`), the Copilot
 sessions on it (the tasks BriefBar sent to Copilot, and the Copilot app's sessions that opened it or say they work on
 it; a task you went on with in the Copilot app does what the app says since, unless the app can't tell how it ended),
-what you set, and its order. The first rule that applies decides:
+what you and sessions set, and its order. The first rule that applies decides:
 
 | When | Stage | Says |
 |---|---|---|
 | BriefBar saw it merge | Merged | **Merged** |
 | Yours: a session writes it, or waits for you, since what you set | In progress | **‘Cart’ is writing it**, **‘Cart’ asks you** |
 | Someone else's: Copilot's pre-review runs, since what you set | Your review | **Copilot is pre-reviewing it** |
-| You set one, and it still holds | What you set | **Find a reviewer**, **Waiting on Sam**, **You set it 2h ago** |
+| You or a session set one, the latest of them, and it still holds | What was set | **Find a reviewer**, **Waiting on Sam**, **You set it 2h ago**, **‘Cart’ says it's ready** |
 | Someone else's: you're asked, someone sent it to you, or new commits came since your vote | Your review | **Sam asked you**, **Priya sent it in Teams**, **New commits by Sam** |
 | Someone else's: you want changes | In progress | **Waiting for Sam's changes** |
 | Yours: a required item failed, or someone wants changes | In progress | **Build failed**, **Merge conflicts**, **Sam wants changes** |
@@ -1512,6 +1512,29 @@ until your own vote changes or new commits come; Your review until you change it
 DevOps, or something new needs you there. Sessions never put someone else's pull request in progress. BriefBar never
 votes or changes anything in Azure DevOps for a stage.
 
+**What sessions set.** With agents on too, Copilot sessions tell BriefBar the stages of the Azure DevOps pull requests
+they work on, with `--mcp`'s `pull_request_stage` ([below](#what-it-answers)), without you asking: In progress as they
+start fixing one, Your review once they've pushed their work, Teammate's review once you tell them you've reviewed it.
+The latest of what you and the sessions set counts (`StageRules.counted`), while it stands as yours would, whoever set
+it, and its words say who: **‘Cart’ says it's ready**, which also says when, and after you, where it replaced yours,
+whose menu then has **Put Yours Back**, which sets yours again, as a new change. A session's own In progress also ends
+as that session finishes, whether or not BriefBar sees it on the pull request otherwise, even one BriefBar sent work to
+that you haven't opened in the Copilot app (`activitiesSince`); working on afterwards, at something else, it doesn't put
+the pull request in progress. A Your review a session set ends as the votes change after it was set, as Teammate's
+review does, unlike one you set, which stands until you change it: the session said its work was ready for you, as
+**‘Cart’ finished** does, which gives way once someone else votes, so one a teammate approved moves on to Can merge or
+Waits. It keeps the votes as the session read them as it set it, after its push, so a reset of the votes that push
+caused ends nothing. Votes and commits end what a session set only as BriefBar read them after it set it, since the
+session read the pull request itself just then, and what it sets is timed as that read ended. BriefBar reads them as the
+refresh that read its organization's lists started, or as it was read by its link, a time a pull request kept as it was
+while those couldn't be read keeps (`StageFacts.readAt`, `PulseSnapshot.readAt(of:)`). What a session set counts only
+while the Copilot app lists the session (`MCPRelated.StageSessions`, `PullRequestOrder.listedSessionsDoing`), so an
+archived one's goes with it. Once the latest of them no longer stands, or the pull request merges or closes, none
+counts: yours goes, and BriefBar takes away from what each session keeps what it set before the latest, or all of it
+once the pull request merged or closed, listed or not (`SessionStages.end`), so an older one never comes back, also once
+an archived session is listed again; **Let BriefBar Decide** takes away, with yours, what sessions set before it, listed
+or not. Can merge, Waits and Merged come only from what BriefBar sees, whatever a session says.
+
 What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one entry
 for each pull request: its number, the stage, when, and only what would end it (`StageRules.mark`): the commit, for In
 progress and for Teammate's review on someone else's, and the votes, for Teammate's review alone, on yours their digest,
@@ -1521,6 +1544,15 @@ way, an account keeps up to 500, those in memory counted with the others, and on
 Undo puts back once there's no room waits in memory until there is. **Forget Stages…** forgets them all, and turning
 Azure DevOps off forgets its own; turning Pull Request Order off keeps them, unused, those in memory too. Stages change
 no group, count, notification or brief: they only label rows.
+
+What each session set is kept apart, under `order.stage.<session ID>` (`SessionStages`), as Updates from Copilot
+Sessions keeps what sessions report (`SessionReports`): only the session's own `--mcp` writes it, each pull request by
+its reference with its stage, when, and what would end it, never a title, so two sessions writing at once never lose
+each other's; BriefBar finds them by the prefix, as Pull Request Order turns on and whenever an agent changes something
+(`AgentChanges`), and only ever takes away what ended, with a check that nothing changed since it read it. A session
+keeps its latest 50 pull requests, each for 30 days; of 100 sessions at most, those that set one longest ago go first.
+**Forget Stages…** forgets them too, and turning Azure DevOps off forgets what sessions set on its pull requests, and
+turning Copilot off what they all set. None of it goes to Azure DevOps. The demo's sessions keep theirs in memory.
 
 ### What's next, and the Board
 
@@ -3773,7 +3805,8 @@ worktree: fetch the branch and check it out, or ask where to work if that isn't 
 repository or has changes of its own. Push & Reply, for one of yours, first checks that HEAD contains
 the pull request's branch and that everything it would push was made for it, and that each merge it would push merged
 in only what the branch it merges into has, stops and asks if not, and never rebases. For a failed build, it reads each run's timeline first, with a GET, rather than what the details read
-of it. The Copilot
+of it. While Pull Request Order is on, each but a review's ends as BriefBar's own do, asking the agent to tell BriefBar
+the pull request's stage once it pushed ([below](#stages-for-agents)). The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 
 `pull_request` quotes what others named or wrote in the pull request as the prompts do: its title, its people, its
@@ -3825,14 +3858,21 @@ of its own, one a task went on with, or a task's that you opened there, which it
 or not. Otherwise it's a task BriefBar runs with the Copilot CLI, which the app doesn't have. When no
 session goes with it and none may have opened it, it says nothing.
 
+`pull_request` also names the pull request's work items, each with the one it's under, such as a task's story, so that
+the orders sessions tell follow it: **Its work items: Task 5182 “Show delivery estimates”, under User Story 5180
+“Checkout redesign”** (`AgentText.work`), or that none is linked to it, or why they couldn't be read. It reads them as it
+answers, whether Show Links is on or not, as `work_item` reads a work item's (`PullRequestWork.read`): one GET for the
+pull request's work items, one for what they are, and one for what those they're under are, when they aren't among
+them, up to 200 each.
+
 `work_item` tells a work item, by its number or link, as its details and Where It Stands do (see [Where
 it stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a few
 lines: its state and why, who has it, its sprint, with the day it ends and the days left when it's the
 sprint going on, whose dates the sprint has, how many of its tasks are done, the hours left, who it
 waits on, and what you can do now: what waits on you, without "you, to", and your tasks that aren't
 started, unless Copilot works on one, such as "complete !4091 · start task 5104", or that nothing waits
-on you. Then its tasks in the sprint, or its children when it isn't there, each with the latest work
-sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the panel's rows
+on you. Then its tasks in the sprint, or its children when it isn't there, in backlog order, as a story's mission
+lists their pull requests, each with its pull requests and the latest work sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the panel's rows
 are: yours as your lists have them, with their checks and merge pipelines, and with `pull_request` to
 call for their threads while one is open, and the others as they say themselves, with what isn't read of
 them; what the other sources know of those pull requests, such as the Copilot sessions on them; the rest
@@ -3848,8 +3888,9 @@ relays its question, in the session where you answer it, which its lines link to
 with the same GETs as its details, whose `$expand=relations` already names its pull requests, so it
 works whether Show Links is on or not, then one GET for each of those pull requests your lists don't
 have, one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow down: one it
-didn't get to says so, rather than that it couldn't be read. Without a link, it looks in the sprint,
-then in each of your organizations.
+didn't get to says so, rather than that it couldn't be read; and one more for the pull requests linked to its tasks,
+up to 200 of them (`PullRequestWork.pullRequests`), whose failure it says under them, so that no task looks as if
+none is linked to it. Without a link, it looks in the sprint, then in each of your organizations.
 
 It asks the other sources about its pull requests (`MCPRelated.ask`), with what links each to a session
 by its branch: its branch, its target and its repository (`BranchHint`). Copilot (`CopilotAgent.related`)
@@ -3869,6 +3910,47 @@ it's closed or you can't read it, it isn't watched after all. They write the app
 post a distributed notification that says only that something changed (`AgentChanges`), since any
 program can see it go by, so a running BriefBar reads those two lists again at once, and again when
 Azure DevOps starts. The demo keeps them in memory.
+
+#### Stages for agents
+
+While Pull Request Order is on, as the app has it, `needs_me` ends Azure DevOps' part with the Board in words: each
+stage but Merged, what's next first, each pull request with its number, title and repository and why it's there, in
+BriefBar's words, with who set it; and `pull_request` says its stage, and, where a session's replaced yours, that you
+can put yours back. `--mcp` works them out itself (`AzureDevOpsAgent.stages`, `AgentStages`), as the app does, from what
+the lists read, the sessions the Copilot app lists, with the tasks BriefBar sent, as the app lists them, unnamed: those
+you haven't opened there, and, while its database can't be read, every one, by what BriefBar knows of it rather than its
+folder (`MCPRelated.StageSessions.listedByApp`); what you set with the account the lists read with, what sessions set,
+and the missions, but in memory, noting and ending nothing; and with no mission's name, which only the app has: two
+orders that go round say **Another order puts !4102 after it: check the order**.
+
+Pull Request Order's tools, listed only while it was on as `--mcp` started and each checking again as it runs, are
+`order_pull_requests`, `pull_request_order` and `forget_pull_request_order`, for the orders sessions tell, and
+`pull_request_stage` (`PullRequestOrderMCP`), for stages, while Copilot is on too. `pull_request_stage` takes
+`in_progress`, `user_review`, `teammate_review` or `clear`, for at most 20 Azure DevOps pull requests at once, by their
+links, or their numbers with `organization`, as `working_on` takes them. It's the calling session's, as `working_on`
+finds it (`SessionUpdatesMCP.session`): `session` names it only when BriefBar can't tell, and only one the Copilot app
+lists. It refuses a GitHub pull request ("Stages are for Azure DevOps' pull requests only, for now"), Can merge, Waits
+and Merged, which come only from what BriefBar sees, and everything while Azure DevOps, Copilot or Pull Request Order is
+off. Before it sets a stage, it reads each pull request again, one GET each, so that what would end it is kept as it is
+now (`AzureDevOpsAgent.stages(of:)`, `StageRules.mark`), and set as of when it's read them; clearing reads nothing. Just
+before it keeps anything, it checks again that agents, Azure DevOps, Copilot and Pull Request Order are still on, as
+reading takes a while (`OrderKeeper.changeStages`, `MCPStages.refusal`). It answers with what BriefBar shows now, set by
+that session, and, where it replaced a stage you set that still stood, that you can put yours back; and names those it
+didn't set, such as one no list has now, one that merged or one that was abandoned. The order tools' answers also tell
+the session what you changed in its orders that still holds (`OrderText.userChanges`), to keep, and that a later change
+of its that goes against one shows instead of yours, until you put yours back. Their answers name pull requests by
+number and organization, never by title; none of them makes or undoes your changes, or answers with missions. `--mcp`
+only reads what you set and changed; each session's stages are its own (see [A pull request's
+stage](#a-pull-requests-stage)), and the demo keeps them in memory, where its `needs_me` and `pull_request` read them
+(`CommandLineOptions.demoStages`).
+
+What tells sessions to call it, so nobody has to ask: `--mcp`'s instructions, while it's listed; the tools'
+descriptions; Pull Request Order's skill, `briefbar-pr-order`, which says the session that did the work tells its stage,
+`user_review` at the end of a turn that pushed it, `in_progress` as it starts fixing it again, and `teammate_review`
+once you say you've reviewed it, and keeps what you set unless you and the session decided otherwise; a line in
+`briefbar-updates`; and, while Pull Request Order is on, the last line of BriefBar's own prompts that change code, Send
+Work to Copilot's, and a pull request's Fix Comments, Fix the Build, Resolve Conflicts and Push & Reply, wherever they
+go, `pull_request_prompt`'s and `--wait`'s too (`PromptTemplate.stageLine`), which a review's never has.
 
 ### Waiting on a pull request
 
@@ -3895,7 +3977,8 @@ build runs until they're resolved; and so does a comment that waits on you, as N
 when it began: in an open thread, someone else's, not a bot's, such as a build service's or a code scanner's, after your
 last word there, matched by thread and comment, so an edit isn't news. It prints a line for each, a failed build first,
 then conflicts, comments and a build that passed, the pull request's link, and each one's prompt as
-`pull_request_prompt` writes it for an agent's checkout, and exits with the first one's code: 0 the build passed, 4 a
+`pull_request_prompt` writes it for an agent's checkout (`PullRequestTasks.agentPrompt`), its last line asking for the
+stage too while Pull Request Order is on in the app, and exits with the first one's code: 0 the build passed, 4 a
 build failed, 5 comments, 6 conflicts. It exits with 7 once the pull request is completed or abandoned, with 3 at its
 timeout, saying what still runs or what hasn't passed, with 2 on wrong usage, such as `--org` without a name, or for a
 pull request that isn't yours, even one closed as it began, and with 1 when it can't read it: five reads in a row that

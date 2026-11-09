@@ -326,17 +326,24 @@ commits come after your vote, also while Copilot's pre-review of it runs; **Team
 others, or **Find a reviewer** when nobody else is asked; **Can merge** once Azure DevOps says it's ready to complete
 and BriefBar saw what its order puts before it merge; **Waits for another PR** while its order puts it after one that
 hasn't merged, or until you retarget one still targeting the branch of one that merged; and **Merged**. BriefBar works
-it out from Azure DevOps and your Copilot sessions. Where a session or a stage you set decides it while your build
-failed, it says that too: **‘Cart’ asks you · build failed**. Click the label to pick another, or the one it's in to
-keep it there until you change it, or **Finished My Review** beside it to send it to your teammates; **Stage** in a
-row's Actions and right-click menus, and VoiceOver's actions, do the same. What you set holds until the pull request
-moves on: new commits, or a session that finishes writing it, end In progress; a vote ends Teammate's review, someone
-else's on yours, and yours on someone else's; merging or closing it ends any. **Let BriefBar Decide** forgets it, and
-**Undo** puts back your last change. Can merge and Waits come only from what Azure DevOps and its order show: nobody
-can set them. Its details show the whole track under its heading, with its next step, such as **Finished My Review**
-or **Add Reviewers in Azure DevOps**. Stages only label rows: groups, Needs You, counts, notifications and the brief
-stay as they were. On someone else's pull request, Finished My Review takes it off your board until you vote in Azure
-DevOps, which is still yours to do, or something new needs you there.
+it out from Azure DevOps and your Copilot sessions. With [agents](#agents) on too, the Copilot sessions that work on
+your pull requests tell BriefBar their stages themselves, without you asking, such as Your review once they've pushed
+their work, or Teammate's review once you tell them you've reviewed it: **‘Cart’ says it's ready**. The latest stage
+set wins, yours or a session's, and the label says who set it; where a session's replaced yours, **Put Yours Back** is
+in its menu. What a session set counts only while the Copilot app lists the session. Where a session or a stage you
+set decides it while your build failed, it says that too: **‘Cart’ asks you · build failed**. Click the label to pick
+another, or the one it's in to keep it there until you change it, or **Finished My Review** beside it to send it to
+your teammates; **Stage** in a row's Actions and right-click menus, and VoiceOver's actions, do the same. What you or
+a session set holds until the pull request moves on: new commits, or a session that finishes writing it, end In
+progress, and so does the session that set it finishing; a vote ends Teammate's review, and a Your review a session
+set, someone else's on yours, and yours on someone else's, while a Your review you set lasts until you change it;
+merging or closing it
+ends any. **Let BriefBar Decide** forgets it, and **Undo** puts back your last change. Can merge and Waits come only
+from what Azure DevOps and its order show: nobody, you or a session, can set them. Its details show the whole track
+under its heading, with its next step, such as **Finished My Review** or **Add Reviewers in Azure DevOps**. Stages
+only label rows: groups, Needs You, counts, notifications and the brief stay as they were. On someone else's pull
+request, Finished My Review takes it off your board until you vote in Azure DevOps, which is still yours to do, or
+something new needs you there.
 
 **Up Next**, at the top of the window's page while [Pull Request Order](#settings) is on, says what's next for you,
 whichever way you sort: a slot for each kind of next, in its stage's color, each with its first pull request and
@@ -1037,11 +1044,11 @@ to the Copilot CLI, as turning agents on does, and is checked once it's there. F
 |---|---|
 | `needs_me` | What the menu bar counts, in each source: pull requests that need you, fail or are ready to complete, pinned pipelines that failed, Copilot sessions waiting for you |
 | `pull_requests` | Your pull requests by group, each with why it's there and its link |
-| `pull_request` | One pull request: the branch it merges into, as Azure DevOps says when you ask, votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, as its details show it, and why, or the ones it asks you to choose from |
+| `pull_request` | One pull request: its work items and the story each is for, the branch it merges into, as Azure DevOps says when you ask, votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, as its details show it, and why, or the ones it asks you to choose from |
 | `pull_request_prompt` | The prompt of **Fix Comments**, **Fix the Build**, **Resolve Conflicts**, **Pre-review** or **Push & Reply**, for the agent to follow where it works |
 | `pipelines` | Your pinned pipelines, and the ones after your merges |
 | `sprint` | Your team's sprint, or only your part of it |
-| `work_item` | One work item and what goes with it: where it stands and who it waits on, its tasks, each pull request linked to it with its votes, comments and pipelines, the Copilot sessions on those pull requests with what Copilot recorded of their work, the work BriefBar sent to Copilot for it, and its description and latest comments |
+| `work_item` | One work item and what goes with it: where it stands and who it waits on, its tasks in backlog order with their pull requests, each pull request linked to it with its votes, comments and pipelines, the Copilot sessions on those pull requests with what Copilot recorded of their work, the work BriefBar sent to Copilot for it, and its description and latest comments |
 | `copilot_tasks` | The work BriefBar sent to the Copilot CLI, and how it's going |
 | `copilot_sessions` | Your Copilot app sessions, as BriefBar shows them |
 | `watch_pull_request`, `stop_watching_pull_request` | Watches a pull request by its link, or stops |
@@ -1263,7 +1270,7 @@ DevOps' gear menu has its own too: they're the same settings.
 
 | Works with | Setting | Options |
 |---|---|---|
-| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, and the suggested splits you kept together; **Forget Stages…**, the stages you set |
+| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, and the suggested splits you kept together; **Forget Stages…**, the stages you and sessions set |
 | Azure DevOps only | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
@@ -1406,7 +1413,7 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   marked as read there, by their numbers, with each account,
   your organizations, and the pull requests you watch; with Pull Request Order, the stages you set on them, for each
   account, by their numbers, with only the commit and the votes that would end them, but for those only sent to you in
-  a chat, which stay in memory; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
+  a chat, which stay in memory, and those Copilot sessions set, for each session, by their numbers, for 30 days at most; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
   sessions you've cleared; the links you added or hid, with Show Links; with Make Changes in Azure DevOps, the tags you
   added to pull requests, up to 20 for each project, to suggest them; with Pull Request Order, the names you give
   missions with **Rename…**, up to 200, each forgotten once its mission hasn't shown for 14 days, and the suggested
@@ -1414,13 +1421,16 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   once its mission has been made of something else for three hours or hasn't shown for 14 days; and its settings.
   Turning a source off deletes what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
-  are on: your Azure DevOps pull requests and their comments, pipelines, sprint, a work item's
-  description, comments and the pull requests linked to it, and Copilot tasks and sessions, never Teams
+  are on: your Azure DevOps pull requests, their comments and their work items with the story each is for,
+  pipelines, sprint, a work item's description, comments, its tasks' pull requests and the pull requests linked
+  to it, and Copilot tasks and sessions, never Teams
   or GitHub; and, for the Copilot sessions on a work item's pull requests, found by their branches and
   the pull requests the Copilot app records with them, what Copilot recorded of their work: the latest
   checkpoint's overview and next step, and the last thing a session said, whether Show Links is on or
-  not. That goes to the agent's model, which may run in the cloud. Their
-  only changes are to the pull requests BriefBar watches and the pipelines it pins. Turning them on
+  not; with Pull Request Order on, the orders sessions told BriefBar, with what you changed in them, and your Azure
+  DevOps pull requests' stages, with who set them. That goes to the agent's model, which may run in the cloud. Their
+  only changes are to the pull requests BriefBar watches and the pipelines it pins, and, with Pull Request Order on, to
+  the orders and stages it keeps, never to what you changed in a mission. Turning them on
   adds BriefBar to the Copilot CLI's MCP servers, with the CLI's own `copilot mcp add`, and installing
   its plugin uses `copilot plugin`: BriefBar never reads the CLI's configuration, where other servers'
   settings are. **Install** asks VS Code or Cursor
