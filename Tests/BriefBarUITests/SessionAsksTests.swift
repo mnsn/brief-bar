@@ -347,6 +347,18 @@ import Testing
         ])
     }
 
+    /// A fence indented by four spaces or more is the code's own: it doesn't close it, though one indented by three does.
+    @Test func aFenceIndentedFurtherIsTheCodesOwn() {
+        let text = """
+            ```
+                ```
+            still code
+               ```
+            After the code.
+            """
+        #expect(AnswerMarkdown.blocks(text) == [.code("    ```\nstill code"), .paragraph("After the code.")])
+    }
+
     /// Closing hashes go, after a space; a word's own stay.
     @Test func keepsAWordsOwnHashesInAHeading() {
         let text = """

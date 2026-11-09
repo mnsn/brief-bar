@@ -105,10 +105,13 @@ enum AnswerMarkdown {
         return (marker, length, indent)
     }
 
-    /// Whether a line closes a fence: as many of its marker or more, and nothing after but spaces.
+    /// Whether a line closes a fence: up to three spaces, as many of its marker or more, and nothing after but spaces. One
+    /// indented further is the code's own.
     private static func closes(_ line: String, marker: Character, length: Int) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        return trimmed.count >= length && trimmed.allSatisfy { $0 == marker }
+        let indent = line.prefix { $0 == " " }.count
+        guard indent <= 3 else { return false }
+        let fence = line.dropFirst(indent).prefix { $0 == marker }
+        return fence.count >= length && line.dropFirst(indent + fence.count).allSatisfy { $0 == " " || $0 == "\t" }
     }
 
     /// A code line, without as many of its leading spaces as its fence was indented by.
