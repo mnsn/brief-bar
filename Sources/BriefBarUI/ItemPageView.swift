@@ -4,7 +4,7 @@ import SwiftUI
 
 /// A pull request's or a Copilot session's page, where a work item's details show: what it is and where it stands, how
 /// it's linked to what you opened it from, its facts and pipelines, what else is linked to it, with Summarize for it,
-/// and Copilot's notes.
+/// and Copilot's notes; and, for a session, Ask…, with what it answered under its heading.
 package struct ItemPageView: View {
     private let ref: ItemRef
 
@@ -59,6 +59,13 @@ private struct PageContent: View {
         let story = stories.story(for: ref)
         VStack(alignment: .leading, spacing: 20) {
             heading(item, story: story)
+            // What you asked a Copilot session with Ask…, and its field, under its heading.
+            if ref.kind == .session {
+                SessionAskPart(
+                    ref: ref, name: item.label, isTask: item.sent != nil, place: .page,
+                    open: item.sent == nil ? item.open.map { ($0, "Opens the session in GitHub Copilot") } : nil
+                )
+            }
             // Its summary, of it and what's linked to it, under what it is.
             PageSummary(ref: ref)
             StoryDetails(
@@ -125,6 +132,7 @@ private struct PageContent: View {
                 StoryActions(item: item)
                     .glassButtonStyle()
                 PageSummarizeButton(ref: ref)
+                SessionAskButton(ref: ref)
             }
             .controlSize(.small)
         }

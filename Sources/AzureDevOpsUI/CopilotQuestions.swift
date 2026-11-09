@@ -1,5 +1,6 @@
 import AzureDevOpsCore
 import BriefBarCore
+import BriefBarUI
 import Combine
 import CopilotTasks
 import Foundation
@@ -10,7 +11,8 @@ import Foundation
 /// conversation, with what it's about, such as a thread and its code or a build's errors, failed tests and the end of its
 /// log, to GitHub Copilot, as one premium request. What's asked and answered stays in memory only, until you dismiss it,
 /// BriefBar quits, or Send Work to Copilot or Azure DevOps is turned off, which stops what's being asked. The demo makes its
-/// answers up, and never runs the Copilot CLI.
+/// answers up, and never runs the Copilot CLI. It asks for Ask… on any of your Copilot sessions too (`SessionAsks`), the
+/// same way, while Send Work to Copilot is on.
 @MainActor
 final class CopilotQuestions: ObservableObject {
     /// Something of a pull request: for a build, a run of it, since two of a pull request's policies can run the same
@@ -62,6 +64,8 @@ final class CopilotQuestions: ObservableObject {
     @Published private(set) var questions: [Key: Question] = [:]
 
     let copilot: CopilotTasksStore
+    /// Ask… on any of your Copilot sessions, which it gives a way to ask while Send Work to Copilot is on.
+    private weak var asks: SessionAsks?
     /// Stands in for the Copilot CLI, in tests.
     var askForTests: ((_ prompt: String, _ session: String) async -> Result<String, SessionQuestions.Failure>)?
     /// How long the demo takes to answer.
@@ -73,13 +77,18 @@ final class CopilotQuestions: ObservableObject {
     private var hasStopped = false
     private var subscriptions: Set<AnyCancellable> = []
 
-    init(copilot: CopilotTasksStore) {
+    /// - Parameter asks: Ask… on any of your Copilot sessions, which it asks for too, while Send Work to Copilot is on.
+    init(copilot: CopilotTasksStore, asks: SessionAsks? = nil) {
         self.copilot = copilot
-        // Turned off, what's being asked stops, and what was answered goes.
+        self.asks = asks
+        offerAsks(copilot.isOn)
+        // Turned off, what's being asked stops, and what was answered goes, and Ask… with it. Published before it's set.
         copilot.settings.$copilotEnabled.removeDuplicates().dropFirst()
             .sink { [weak self] isOn in
-                guard !isOn else { return }
-                MainActor.assumeIsolated { self?.forgetAll() }
+                MainActor.assumeIsolated {
+                    if !isOn { self?.forgetAll() }
+                    self?.offerAsks(isOn)
+                }
             }
             .store(in: &subscriptions)
     }
@@ -203,10 +212,55 @@ final class CopilotQuestions: ObservableObject {
         questions = [:]
     }
 
-    /// Stops for good, when Azure DevOps stops: what's being asked stops too.
+    /// Stops for good, when Azure DevOps stops: what's being asked stops too, and Ask… goes.
     func stopAll() {
         hasStopped = true
         subscriptions = []
         forgetAll()
+        asks?.setAsker(nil)
+    }
+
+    // MARK: Ask…
+
+    /// Gives Ask… a way to ask while Send Work to Copilot is on, outside the demo, or in it, with its made-up answers; takes
+    /// it away while it's off, which stops what Ask… asks and forgets what it was answered.
+    /// - Parameter isOn: whether Send Work to Copilot is on, as it is now, or is about to be.
+    private func offerAsks(_ isOn: Bool) {
+        guard let asks else { return }
+        guard isOn, !hasStopped, copilot.canSend || copilot.mode == .demo else {
+            asks.setAsker(nil)
+            return
+        }
+        asks.setAsker { [weak self] request in
+            guard let self else { return .failure(SessionAsks.Problem(SessionQuestions.Failure.cancelled.message(model: nil))) }
+            return await answer(request)
+        }
+    }
+
+    /// What a session answers Ask… (`SessionAsks`), asked as Explain asks: aside, of a throwaway fork of the session with no
+    /// tools, through the same Copilot CLI, with your shell's environment and the forks still to delete, with the session's
+    /// own model; or, in the demo, made up, running nothing. Why there's none, in `SessionQuestions.Failure`'s words.
+    /// Cancelled, it stops, and the fork is deleted.
+    func answer(_ request: SessionAsks.Request) async -> Result<String, SessionAsks.Problem> {
+        let result: Result<String, SessionQuestions.Failure>
+        if !canAsk {
+            result = .failure(.cancelled)
+        } else if let askForTests {
+            result = await askForTests(request.prompt, request.session)
+        } else if copilot.mode == .demo {
+            do {
+                try await Task.sleep(for: demoDelay)
+                result = .success(DemoData.sessionAnswer(session: request.session, question: request.question))
+            } catch {
+                result = .failure(.cancelled)
+            }
+        } else {
+            let sessions = sessions
+            let prompt = request.prompt, id = request.session
+            let work = Task.detached { await sessions.ask(prompt, session: id) }
+            // Stopping it stops Copilot, and deletes its fork.
+            result = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+        }
+        return result.mapError { SessionAsks.Problem($0.message(model: nil), detail: $0.detail) }
     }
 }
