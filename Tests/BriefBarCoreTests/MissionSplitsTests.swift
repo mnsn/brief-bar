@@ -631,7 +631,7 @@ import Testing
 
     /// What you kept together is compared only with what BriefBar told the same way: turning Show Links or Copilot off or on
     /// changes nothing, and what it tells another way is kept with it once told the same for three hours, then counts.
-    @Test func keepTogetherComparesOnlyWhatBriefBarToldTheSameWay() {
+    @Test func keepTogetherComparesOnlyWhatBriefBarToldTheSameWay() throws {
         var kept = KeptTogether()
         let key = MissionKey.plan(Self.planID)
         let hour = Self.hour
@@ -663,6 +663,15 @@ import Testing
         #expect(kept.entries[key]?.makeups == [Self.m("a").tells: "a"])
         Self.hourly(&kept, [key: Self.m("b")], from: 7 * hour, to: 10 * hour)
         #expect(!kept.keeps(key))
+        // A way told the same for three hours is kept with it, though the look that ends them tells it's made of
+        // something else that way: that counts from then.
+        kept.keep(key, makeup: Self.m("a"), at: t(0))
+        Self.hourly(&kept, [key: off], from: 0, to: 2 * hour)
+        let other = Self.m("y", stories: false)
+        let learned = kept.account(seen: [key], makeups: [key: other], canSee: { _ in true }, elapsed: 0, at: t(3 * hour))
+        #expect(learned && kept.entries[key]?.makeups == [Self.m("a").tells: "a", off.tells: "x"])
+        let since = try #require(kept.differences[key])
+        #expect(since.makeup == other && since.counted == 0 && since.lookedAt == t(3 * hour) && !since.paused)
     }
 
     @Test func atTheCapTheOneSeenLongestAgoGoesNotTheOldestKept() {
