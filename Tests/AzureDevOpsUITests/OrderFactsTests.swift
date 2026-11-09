@@ -375,6 +375,21 @@ import Testing
         #expect(facts[PRKey("contoso", 4114).linkRef]?.role == .sentToYou)
     }
 
+    /// Each pull request's facts say when what's listed of it was read, as the engine says for each (`PulseSnapshot.readTimes`):
+    /// one kept as it was while its organization's lists couldn't be read keeps when they last were, so that a stage a
+    /// session set since, from what it read itself, isn't ended by it (`StageRules.stands`).
+    @Test func eachSaysWhenWhatsListedOfItWasRead() {
+        let read = Date(timeIntervalSince1970: 1_792_000_000)
+        let records = [4113, 4114].map { number in
+            PRRecord(pullRequest: Self.pullRequest(number, from: "robin/\(number)", author: Self.me), role: .author, me: Self.me.id)
+        }
+        let facts = PullRequestOrderFacts.stages(records, items: [], tasks: [], readAt: [PRKey("contoso", 4113): read])
+        #expect(facts[PRKey("contoso", 4113).linkRef]?.readAt == read)
+        #expect(facts[PRKey("contoso", 4114).linkRef]?.readAt == nil)
+        let kept = StageMark(stage: .inProgress, at: read + 30, commit: "e4f5a6b")
+        #expect(facts[PRKey("contoso", 4113).linkRef].map { StageRules.stands(kept, facts: $0, sessions: []) } == true)
+    }
+
     /// A task BriefBar sent to Copilot is a session on its pull request: at work while it gets ready or works, then done or
     /// stopped, since its status changed, called "Copilot" as its row is.
     @Test func aTaskSentToCopilotIsASessionOnIt() throws {

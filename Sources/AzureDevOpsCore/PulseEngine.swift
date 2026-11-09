@@ -151,11 +151,14 @@ public struct PulseSnapshot: Sendable, Equatable {
     /// When each pull request asked for by its link that's listed was last read by it: one that couldn't be read since
     /// stays listed as it was then, though its details may be read again. `--wait` takes a read only once it read both.
     public var linkedReadAt: [PRKey: Date]
+    /// When each organization's lists were last read, by its name in lowercase: as the refresh that read them started, so
+    /// no earlier than what they say. Its pull requests stay as they were then while its lists can't be read again.
+    public var listsReadAt: [String: Date]
 
     public init(
         records: [PRRecord] = [], organizations: [String] = [], account: String? = nil, userName: String? = nil,
         firstLoaded: [String: Date] = [:], problem: PulseProblem? = nil, refreshedAt: Date? = nil, isRefreshing: Bool = false,
-        hasLoaded: Bool = false, closedLinks: Set<PRKey> = [], linkedReadAt: [PRKey: Date] = [:]
+        hasLoaded: Bool = false, closedLinks: Set<PRKey> = [], linkedReadAt: [PRKey: Date] = [:], listsReadAt: [String: Date] = [:]
     ) {
         self.records = records
         self.organizations = organizations
@@ -168,6 +171,20 @@ public struct PulseSnapshot: Sendable, Equatable {
         self.hasLoaded = hasLoaded
         self.closedLinks = closedLinks
         self.linkedReadAt = linkedReadAt
+        self.listsReadAt = listsReadAt
+    }
+
+    /// When what's listed of a pull request, such as its votes and its latest commit, was read: by its link, or with its
+    /// organization's lists, as the refresh that read them started; nil when unknown. One kept as it was while its lists or
+    /// its link couldn't be read keeps when they last were, rather than take a later refresh's time
+    /// (`StageFacts.readAt`).
+    public func readAt(of key: PRKey) -> Date? {
+        linkedReadAt[key] ?? listsReadAt[key.organization.lowercased()]
+    }
+
+    /// The same for each of its pull requests, for those it's known.
+    public var readTimes: [PRKey: Date] {
+        Dictionary(records.compactMap { record in readAt(of: record.id).map { (record.id, $0) } }, uniquingKeysWith: { first, _ in first })
     }
 
     /// When an organization's lists were first read, however its name is spelled: a pull request read under another
@@ -338,6 +355,8 @@ public actor PulseEngine {
     private var account: String?
     private var userName: String?
     private var firstLoaded: [String: Date] = [:]
+    /// When each organization's lists were last read, by its name in lowercase (`PulseSnapshot.listsReadAt`).
+    private var listsReadAt: [String: Date] = [:]
     /// Pull requests people sent you, to list even when you're not on them.
     private var linkedKeys: Set<PRKey> = []
     /// Linked pull requests that couldn't be read or are closed, and when, to try again only an hour later.
@@ -640,6 +659,7 @@ public actor PulseEngine {
                     if let earlier { firstLoaded[earlier.key] = nil }
                     firstLoaded[organization] = earlier?.value ?? startedAt
                 }
+                listsReadAt[organization.lowercased()] = startedAt
                 for pr in lists.mine where pr.status == .active {
                     listed[pr.key] = Listed(pullRequest: pr, role: .author)
                 }
@@ -655,9 +675,11 @@ public actor PulseEngine {
                 tagsCarried.formUnion(lists.tags.keys)
             case .failure(let error):
                 errors.append((organization: organization, error: error))
-                // Keep what we had until it can be read again, however its name was spelled then.
+                // Keep what its lists had until they can be read again, however its name was spelled then. One read by its
+                // link is read by it again, or kept as it was, with when it was (`addLinked`): carried here, it would lose
+                // that, and look as fresh as anything read since.
                 let name = organization.lowercased()
-                for (key, item) in active where key.organization.lowercased() == name { listed[key] = item }
+                for (key, item) in active where key.organization.lowercased() == name && linked[key] == nil { listed[key] = item }
                 for (key, pr) in done where key.organization.lowercased() == name { completed[key] = pr }
                 tagsCarried.formUnion(tagsListed.filter { $0.organization.lowercased() == name })
             case nil:
@@ -724,6 +746,7 @@ public actor PulseEngine {
         completed = completed.filter { watched.contains($0.key.organization.lowercased()) }
         vanished = vanished.filter { watched.contains($0.key.organization.lowercased()) }
         firstLoaded = firstLoaded.filter { watched.contains($0.key.lowercased()) }
+        listsReadAt = listsReadAt.filter { watched.contains($0.key) }
         let (linkedElsewhere, linkedRead, linkedThrottled) = await addLinked(to: &listed, at: startedAt, reached: succeeded)
         active = listed
         done = completed.filter { listed[$0.key] == nil && ($0.value.closedAt ?? .distantPast) > closedSince }
@@ -893,6 +916,7 @@ public actor PulseEngine {
         identities = [:]
         userName = nil
         firstLoaded = [:]
+        listsReadAt = [:]
         active = [:]
         done = [:]
         details = [:]
@@ -1288,7 +1312,7 @@ public actor PulseEngine {
         return PulseSnapshot(
             records: records, organizations: configuration.organizations, account: account, userName: userName, firstLoaded: firstLoaded,
             problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, closedLinks: closedLinks,
-            linkedReadAt: linked.mapValues(\.readAt)
+            linkedReadAt: linked.mapValues(\.readAt), listsReadAt: listsReadAt
         )
     }
 

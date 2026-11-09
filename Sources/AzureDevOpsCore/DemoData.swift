@@ -40,7 +40,8 @@ public enum DemoData {
         PulseSnapshot(
             records: records(now: now), organizations: [organization], userName: me.name,
             firstLoaded: [organization: now.addingTimeInterval(-20)], problem: nil,
-            refreshedAt: now.addingTimeInterval(-20), isRefreshing: false, hasLoaded: true
+            refreshedAt: now.addingTimeInterval(-20), isRefreshing: false, hasLoaded: true,
+            listsReadAt: [organization.lowercased(): now.addingTimeInterval(-20)]
         )
     }
 
@@ -77,6 +78,7 @@ public enum DemoData {
         details.lastActivity = date
         updated.records[index].details = details
         updated.refreshedAt = date
+        updated.listsReadAt = updated.listsReadAt.mapValues { _ in date }
         return updated
     }
 

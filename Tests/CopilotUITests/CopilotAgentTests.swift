@@ -18,6 +18,24 @@ import Testing
         )
     }
 
+    /// Pull requests' stages read the sessions as the app lists them, saying whether its database did; where nothing could
+    /// be read, it lists none rather than fail, as the app's list still has the tasks BriefBar sent, whose stages count.
+    @Test func stageSessionsSayWhetherTheAppsDatabaseListedThem() throws {
+        let now = Date()
+        let id = "0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01"
+        let record = SessionRecord(meta: SessionMeta(id: id, name: "Add dark mode", updatedAt: now - 60, workspaceId: id), log: nil)
+        let read = CopilotAgent.stageSessions(EngineSnapshot(records: [record]), told: SessionReports(), now: now, defaults: MemoryDefaults())
+        #expect(read.listed.keys.sorted() == [try #require(ItemRef.session(id))])
+        #expect(read.listedByApp)
+        let folders = EngineSnapshot(records: [record], listedByApp: false)
+        #expect(!CopilotAgent.stageSessions(folders, told: SessionReports(), now: now, defaults: MemoryDefaults()).listedByApp)
+
+        let failed = EngineSnapshot(problem: "BriefBar can't read the Copilot app's sessions.", listedByApp: false)
+        let none = CopilotAgent.stageSessions(failed, told: SessionReports(), now: now, defaults: MemoryDefaults())
+        #expect(none.listed.isEmpty)
+        #expect(!none.listedByApp)
+    }
+
     /// A session whose question its coordinator relays waits on you there, and says where you answer it.
     @Test func aRelayedQuestionWaitsOnYouWhereItsAsked() throws {
         let worker = "0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01"

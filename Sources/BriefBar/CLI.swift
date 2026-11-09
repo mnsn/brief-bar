@@ -198,16 +198,31 @@ enum CLI {
         let consent: @Sendable () -> String? = {
             demo ? nil : AgentAccess.refusal(AppIdentity.installedAppDefaults.map { AgentAccess.state(in: $0) } ?? .off)
         }
-        let orderTools = orderTools(options)
+        let orderTools = orderTools(options, stages: sources.lazy.compactMap(\.stages).first?.guarded(by: consent))
         let updateTools = updateTools(options)
         let tools = MCPSource.tools(sources, refusal: consent) + (orderTools + updateTools).map { $0.guarded(by: consent) }
+        let tellsStages = orderTools.contains { $0.name == "pull_request_stage" }
         var changes = ["the pull requests it watches", "the pipelines it pins"]
-        if !orderTools.isEmpty { changes.append("the orders sessions tell it their pull requests merge in") }
+        if !orderTools.isEmpty {
+            changes.append(
+                tellsStages ? "the orders and stages sessions tell it of their pull requests" : "the orders sessions tell it their pull requests merge in"
+            )
+        }
         if !updateTools.isEmpty { changes.append("what sessions tell it they work on and opened") }
-        var ordering = orderTools.isEmpty ? "" : """
-             When you open pull requests that must merge in an order, tell BriefBar with order_pull_requests, and again \
-            whenever that order changes.
-            """
+        var ordering = ""
+        if tellsStages {
+            ordering = """
+                 Keep BriefBar current on your pull requests without being asked: when you open pull requests that go \
+                together, tell their order with order_pull_requests as each opens; after you push a pull request's work, \
+                tell its stage with pull_request_stage, user_review; when the user says they've reviewed it, \
+                teammate_review. What you tell shows as yours; the user can change it. \(Self.stories)
+                """
+        } else if !orderTools.isEmpty {
+            ordering = """
+                 When you open pull requests that must merge in an order, tell BriefBar with order_pull_requests, and again \
+                whenever that order changes. \(Self.stories)
+                """
+        }
         if !updateTools.isEmpty {
             ordering += """
                  Tell BriefBar what you work on with working_on, and what you just changed in Azure DevOps with \
@@ -227,10 +242,20 @@ enum CLI {
         MCPStandardIO.serve(identity: identity, tools: tools)
     }
 
+    /// What `--mcp`'s instructions tell sessions of stories, with Pull Request Order's tools (plan §7.4.6).
+    static let stories = """
+        With Show Links on, BriefBar puts the Azure DevOps pull requests of one story's tasks together by itself, in the \
+        tasks' backlog order: link each to its task as you open it, and tell an order only where they must merge in another \
+        order, or wait for one another.
+        """
+
     /// Pull Request Order's tools, while it's on in the app, as it's off until you turn it on; the demo's always are, and
-    /// keep their orders in memory. An order says which Copilot session told it: the one that started `--mcp`, as the
-    /// Copilot CLI says, unless the agent names another.
-    private static func orderTools(_ options: CommandLineOptions) -> [MCPTool] {
+    /// keep their orders, and the stages they're told, in memory, the stages where Azure DevOps' tools read them
+    /// (`CommandLineOptions.demoStages`). An order says which Copilot session told it: the one
+    /// that started `--mcp`, as the Copilot CLI says, unless the agent names another; a stage, only that one.
+    /// - Parameter stages: what Azure DevOps tells of its pull requests' stages, with it among the sources, for
+    ///   `pull_request_stage`, which is there only with it.
+    private static func orderTools(_ options: CommandLineOptions, stages: MCPStages?) -> [MCPTool] {
         let demo = options.demo
         guard let defaults = demo ? MemoryDefaults() : AppIdentity.installedAppDefaults else { return [] }
         let versions = Dictionary(
@@ -245,8 +270,12 @@ enum CLI {
             if isOn(.github) { kinds.insert(.gitHubPullRequest) }
             return kinds
         }
+        let copilotOn: @Sendable () -> Bool = {
+            demo || versions[.copilot].map { isOnInTheApp(.copilot, version: $0) } == true
+        }
         return PullRequestOrderMCP.tools(
-            defaults: defaults, demo: demo, sourcesOn: sourcesOn, session: Attribution.environment["COPILOT_AGENT_SESSION_ID"]
+            defaults: defaults, demo: demo, sourcesOn: sourcesOn, session: Attribution.environment["COPILOT_AGENT_SESSION_ID"],
+            stages: stages, copilotOn: copilotOn, demoStages: options.demoStages
         )
     }
 

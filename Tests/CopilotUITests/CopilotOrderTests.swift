@@ -2,6 +2,7 @@ import BriefBarCore
 import BriefBarUI
 import CopilotCore
 import Foundation
+import SwiftUI
 import Testing
 @testable import CopilotUI
 
@@ -12,6 +13,7 @@ import Testing
     private static let coordinator = "3c1d7e52-9a40-4b6f-8e21-5f0b2c7d9a10"
     private static let cart = "a7e4c901-2b5d-4f38-9c16-0d8e3f7b2a11"
     private static let rounding = "b2f9d613-4c7a-4e05-8b3d-1a6c9e0f4b12"
+    private static let task = "c5a8e2d4-6f1b-4c97-a3e0-8b2d7f9c1e13"
 
     private static func link(_ number: Int) -> RecordedPullRequest {
         RecordedPullRequest(
@@ -89,6 +91,45 @@ import Testing
 
         #expect(order.missions.isEmpty)
         #expect(order.describe(Self.ref(Self.coordinator)) == nil)
+    }
+
+    /// A task BriefBar sent shows with the sessions before you open it in the Copilot app, with no row of the app's: what it
+    /// does, and since when, still go to Pull Request Order, so that the In progress it set ends as it finishes, though
+    /// nothing puts it on that pull request.
+    @Test func aSentTasksInProgressEndsAsItFinishes() throws {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        let services = AppServices(defaults: defaults, isDemo: false)
+        services.links.setOn(false)
+        let source = CopilotSource(services: services, paths: nil)
+        let order = services.pullRequestOrder
+        let pr = ItemRef.pullRequest(organization: "contoso", number: 4101)
+        order.publish(
+            .azureDevOps, pullRequests: [Self.pullRequest(4101)],
+            stages: [pr: StageFacts(role: .author, waitingFor: "Waiting on Priya")], account: "robin@contoso.com"
+        )
+        source.start()
+        let started = Date().addingTimeInterval(-600)
+        func send(_ stage: SentTask.Stage, since: Date) {
+            services.sentTasks.publish(.azureDevOps, tasks: [SentTask(
+                id: Self.task, name: "Fix Comments: !4100 Show the cart's total", place: nil, stage: stage, detail: nil,
+                since: since, opens: "Pull Request", open: {}, menu: { AnyView(EmptyView()) }
+            )])
+            source.store.receive(EngineSnapshot())
+        }
+
+        send(.working, since: started)
+        SessionStages.change(Self.ref(Self.task), in: defaults, now: started + 60) {
+            $0.set(StageMark(stage: .inProgress, at: started + 60), of: pr)
+        }
+        order.agentChanged()
+        #expect(order.stage(of: pr)?.stage == .inProgress)
+        #expect(order.stage(of: pr)?.mark?.by == Self.ref(Self.task))
+
+        send(.finished, since: started + 120)
+        #expect(order.stage(of: pr)?.stage == .teammateReview)
+        #expect(order.stage(of: pr)?.mark == nil)
+        source.stop()
     }
 
     /// Off, it tells nothing.

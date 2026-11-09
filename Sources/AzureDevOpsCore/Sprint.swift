@@ -222,7 +222,7 @@ public struct WorkItem: Sendable, Codable, Equatable, Identifiable {
     }
 
     /// Backlog order, then ID.
-    static func ordered(_ lhs: WorkItem, _ rhs: WorkItem) -> Bool {
+    public static func ordered(_ lhs: WorkItem, _ rhs: WorkItem) -> Bool {
         let left = lhs.rank ?? .greatestFiniteMagnitude
         let right = rhs.rank ?? .greatestFiniteMagnitude
         return left != right ? left < right : lhs.id < rhs.id

@@ -205,7 +205,8 @@ package final class CopilotSource: BriefBarSource {
 
     /// Tells Pull Request Order about the sessions, while it's on: the pull requests each opened, as the app recorded them,
     /// the sessions that started and coordinate it, what each session is, for a mission to name them, and what each does or
-    /// how it ended, which its pull requests' stages follow.
+    /// how it ended, and since when, which its pull requests' stages follow: a task BriefBar sent's too, which has no row
+    /// of its own until you open it in the Copilot app.
     private func publishOrder(_ sessions: [SessionSnapshot]? = nil, orderSessions: [OrderSession]? = nil) {
         let order = services.pullRequestOrder
         guard order.isOn else {
@@ -216,12 +217,15 @@ package final class CopilotSource: BriefBarSource {
         let working = updates.isOn ? updates.reports.workingOn(Self.listing(sessions ?? store.sessions), now: store.now) : [:]
         let shown = sessions ?? store.sessions
         var activities: [ItemRef: StageSession.Activity] = [:]
+        var since: [ItemRef: Date] = [:]
         for session in shown {
-            if let ref = ItemRef.session(session.id) { activities[ref] = session.stageActivity }
+            guard let ref = ItemRef.session(session.id) else { continue }
+            activities[ref] = session.stageActivity
+            since[ref] = session.since
         }
         order.publish(
             .copilot, sessions: orderSessions ?? store.orderSessions, items: items(shown), working: working,
-            sessionActivities: activities
+            sessionActivities: activities, activitiesSince: since
         )
     }
 

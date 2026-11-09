@@ -16,7 +16,8 @@ import Foundation
 /// it no longer waits for the retry, which waits for it; and you made a mission of your own of the build agents' upgrade
 /// (!4110) and the slow query log (!4099), which you put after it.
 /// And the stage you set on the one-click checkout's prototype, a draft nobody reviews yet: Teammate's review, two
-/// hours ago, so it says to find a reviewer.
+/// hours ago, so it says to find a reviewer; and the one "Retry backoff" set on the retry (!4102) as it finished: Your
+/// review.
 enum DemoPullRequestOrder {
     static let paymentsID = UUID(uuidString: "b81f4e27-6a3c-4d95-8e10-3c7a9d2f4b66")!
     static let id = UUID(uuidString: "d4a7c2e9-5b1f-4c83-9e60-2f8b7d1a3c55")!
@@ -94,6 +95,15 @@ enum DemoPullRequestOrder {
     /// The stages you set: the one-click checkout's prototype, for a teammate's review, two hours ago.
     static func stages(now: Date) -> [ItemRef: StageMark] {
         [oneClickCheckout: StageMark(stage: .teammateReview, at: now.addingTimeInterval(-2 * 3_600))]
+    }
+
+    /// The Copilot demo's "Retry backoff", which opened the retry (!4102).
+    static let retryBackoff = ItemRef.session("2f8a4c6e-1b3d-4e5f-8a7b-9c0d1e2f3a14")!
+
+    /// The stages sessions set (`pull_request_stage`): "Retry backoff" said the retry was ready for your review as it
+    /// pushed its work and finished.
+    static func sessionStages(now: Date) -> [ItemRef: StageMark] {
+        [retry: StageMark(stage: .yourReview, at: now.addingTimeInterval(-26 * 3_600), by: retryBackoff)]
     }
 
     /// Your changes: the order status rename set as next to merge, and a mission of your own.

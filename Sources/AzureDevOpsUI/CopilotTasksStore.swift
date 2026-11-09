@@ -119,7 +119,7 @@ final class CopilotTasksStore: ObservableObject {
 
     let settings: AppSettings
     let mode: PRStore.Mode
-    /// The app's, for the composer's window to look as Settings › Appearance says.
+    /// The app's, for the composer's window to look as Settings › Appearance says, and whether Pull Request Order is on.
     weak var services: AppServices?
     /// A work item's title, when the sprint shows it, for notifications.
     var title: (WorkItemReference) -> String? = { _ in nil }
@@ -302,6 +302,9 @@ final class CopilotTasksStore: ObservableObject {
     var isOn: Bool { settings.copilotEnabled }
     /// The demo sends nothing.
     var canSend: Bool { mode == .live }
+    /// BriefBar's prompts that change code end asking the session to tell BriefBar the pull request's stage once it pushed
+    /// (`PromptTemplate.stageLine`): while Pull Request Order is on.
+    var asksForStage: Bool { services?.pullRequestOrder.isOn == true }
 
     /// Every send, newest first.
     var entries: [CopilotTaskEntry] {
@@ -476,7 +479,8 @@ final class CopilotTasksStore: ObservableObject {
             compose(item, options: options)
             return
         }
-        send(task, prompt: PromptTemplate.render(settings.copilotPromptTemplate, item: task), options: options, repository: repository)
+        let prompt = PromptTemplate.ending(PromptTemplate.render(settings.copilotPromptTemplate, item: task), asksForStage: asksForStage)
+        send(task, prompt: prompt, options: options, repository: repository)
     }
 
     func send(_ item: TaskWorkItem, prompt: String, options: CopilotRunOptions, repository: URL) {

@@ -273,6 +273,36 @@ import Testing
         #expect(Self.why(finished) == "‘Cart’ finished")
     }
 
+    /// A session's own In progress ends as it finishes, though BriefBar doesn't see it on the pull request otherwise; as
+    /// it works on, or on something else, it isn't on the pull request: it doesn't put it in progress.
+    @Test func aSessionsOwnInProgressEndsAsItFinishesOnItOrNot() {
+        let mark = StageMark(stage: .inProgress, at: t(100), by: Self.cart, commit: "a1b2c3d")
+        let facts = StageFacts(role: .author, waitingFor: "Waiting on Priya", commit: "a1b2c3d")
+        func stands(_ setter: StageSession, _ mark: StageMark = mark) -> Bool {
+            StageRules.stands(mark, facts: facts, sessions: [], setters: [setter.ref: setter])
+        }
+        #expect(stands(Self.session(.working, at: 150)))
+        #expect(stands(Self.session(.finished, at: 50)))
+        #expect(stands(Self.session(.stopped, at: 150)))
+        #expect(!stands(Self.session(.finished, at: 150)))
+        // Another session's end ends only what it set.
+        #expect(stands(Self.session(.finished, at: 150, Self.backoff)))
+        #expect(stands(Self.session(.finished, at: 150), StageMark(stage: .yourReview, at: t(100), by: Self.cart)))
+
+        let finished = Self.session(.finished, at: 150)
+        let ended = StageRules.reading(facts: facts, sessions: [], marks: [mark], order: .free, setters: [Self.cart: finished])
+        #expect(ended?.stage == .teammateReview)
+        #expect(ended?.mark == nil)
+        let counted = StageRules.counted(yours: nil, theirs: [mark], facts: facts, sessions: [], setters: [Self.cart: finished])
+        #expect(counted.latestEnded)
+
+        let ready = StageMark(stage: .yourReview, at: t(100), by: Self.cart)
+        let working = Self.session(.working, at: 150)
+        let reading = StageRules.reading(facts: facts, sessions: [], marks: [ready], order: .free, setters: [Self.cart: working])
+        #expect(reading?.stage == .yourReview)
+        #expect(Self.why(reading) == "‘Cart’ says it's ready")
+    }
+
     @Test func aSetTeammatesReviewEndsAsOthersVotesChange() {
         let mark = StageMark(stage: .teammateReview, at: t(100), votes: "0", commit: "a1b2c3d")
         #expect(StageRules.stands(mark, facts: StageFacts(role: .author, votes: "0", commit: "e4f5a6b"), sessions: []))
@@ -307,6 +337,60 @@ import Testing
         let mark = StageMark(stage: .yourReview, at: t(100), votes: "0", commit: "a1b2c3d")
         let moved = StageFacts(role: .author, othersVoted: true, votes: "10", commit: "e4f5a6b")
         #expect(StageRules.stands(mark, facts: moved, sessions: [Self.session(.finished, at: 500)]))
+    }
+
+    /// A Your review a session set ends as its votes change, as read since it was set, as Teammate's review does: it said
+    /// its work was ready for you, as ‘Cart’ finished does, which gives way once someone else votes. Approved and ready to
+    /// complete, it moves on to Can merge, or Waits where its order puts it after one not seen merged. On someone else's,
+    /// your own vote ends it. One you set keeps no votes, and stands.
+    @Test func aSessionsYourReviewEndsAsItsVotesChange() {
+        let set = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: t(90))
+        let ready = StageRules.mark(.yourReview, at: t(100), facts: set, by: Self.cart)
+        #expect(ready == StageMark(stage: .yourReview, at: t(100), by: Self.cart, votes: ""))
+        let yours = StageRules.mark(.yourReview, at: t(100), facts: set)
+        #expect(yours == StageMark(stage: .yourReview, at: t(100)))
+        #expect(StageRules.stands(ready, facts: StageFacts(role: .author, votes: "", readAt: t(120)), sessions: []))
+
+        // Priya's approval ends it once it's read since.
+        var approved = StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: t(99))
+        #expect(StageRules.stands(ready, facts: approved, sessions: []))
+        approved.readAt = t(120)
+        #expect(!StageRules.stands(ready, facts: approved, sessions: []))
+        #expect(Self.reading(approved, marks: [ready])?.stage == .canMerge)
+        let waits = Self.reading(approved, marks: [ready], order: .waits([Self.pr(4102)], words: "After !4102"))
+        #expect(waits?.stage == .waits)
+        #expect(waits?.why == .waitsFor([Self.pr(4102)], words: "After !4102"))
+        #expect(Self.reading(approved, marks: [yours])?.stage == .yourReview)
+        #expect(Self.reading(approved, marks: [yours])?.mark == yours)
+
+        let theirs = StageFacts(role: .reviewer, asksYou: "Priya asked you", votes: "0", readAt: t(90))
+        let review = StageRules.mark(.yourReview, at: t(100), facts: theirs, by: Self.cart)
+        #expect(review.votes == "0")
+        var voted = theirs
+        voted.votes = "10"
+        voted.readAt = t(120)
+        #expect(!StageRules.stands(review, facts: voted, sessions: []))
+    }
+
+    /// A session that read the pull request itself, just now, set its stage with what it saw: what the source read before,
+    /// its votes and commit, ends nothing until it reads them again.
+    @Test func votesAndCommitsCountOnlyAsReadSinceItWasSet() {
+        let onIt = StageMark(stage: .inProgress, at: t(100), by: Self.cart, commit: "e4f5a6b")
+        var before = StageFacts(role: .author, commit: "a1b2c3d", readAt: t(90))
+        #expect(StageRules.stands(onIt, facts: before, sessions: []))
+        before.readAt = t(100)
+        #expect(!StageRules.stands(onIt, facts: before, sessions: []))
+        // A session that finishes since ends it, however long ago the source read the pull request.
+        before.readAt = t(90)
+        #expect(!StageRules.stands(onIt, facts: before, sessions: [Self.session(.finished, at: 150)]))
+
+        let reviewed = StageMark(stage: .teammateReview, at: t(100), by: Self.cart, votes: "10")
+        let unread = StageFacts(role: .author, votes: "", readAt: t(99))
+        #expect(StageRules.stands(reviewed, facts: unread, sessions: []))
+        #expect(Self.reading(unread, marks: [reviewed])?.mark == reviewed)
+        let read = StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10,10", readAt: t(120))
+        #expect(!StageRules.stands(reviewed, facts: read, sessions: []))
+        #expect(Self.reading(read, marks: [reviewed])?.stage == .canMerge)
     }
 
     @Test func onceTheLatestEndsAnOlderOneDoesntComeBack() {
