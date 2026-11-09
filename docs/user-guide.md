@@ -1450,7 +1450,7 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   added to pull requests, up to 20 for each project, to suggest them; with Pull Request Order, the names you give
   missions with **Rename…**, up to 200, each forgotten once its mission hasn't shown for 14 days, and the suggested
   splits you kept together, as digests of what their missions are made of, never a title, up to 200, each forgotten
-  once its mission has been made of something else for three hours or hasn't shown for 14 days; and its settings.
+  once its mission has had something new in it for three hours or hasn't shown for 14 days; and its settings.
   Turning a source off deletes what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
   are on: your Azure DevOps pull requests, their comments and their work items with the story each is for,

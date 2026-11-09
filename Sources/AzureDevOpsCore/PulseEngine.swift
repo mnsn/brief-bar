@@ -768,7 +768,7 @@ public actor PulseEngine {
         firstLoaded = firstLoaded.filter { watched.contains($0.key.lowercased()) }
         listsReadAt = listsReadAt.filter { watched.contains($0.key) }
         let (linkedElsewhere, linkedRead, linkedAnswered, linkedTried, linkedThrottled, linkedUnreached) = await addLinked(
-            to: &listed, at: startedAt, reached: succeeded
+            to: &listed, at: startedAt, reached: succeeded, listsRead: readLists
         )
         if organizations.isEmpty {
             // With no organization to watch, when Azure DevOps couldn't be reached for any pull request sent to you, as
@@ -844,17 +844,18 @@ public actor PulseEngine {
     /// Reads the pull requests people sent you that aren't in your lists, ten a refresh: the ones never read first,
     /// then the ones read, or tried, longest ago. Each stays listed as it was last read in between. One that's closed
     /// or couldn't be read is tried again once `retryLinkedAfter` has gone by, an hour for the app. Once Azure DevOps
-    /// asks to slow down, the rest wait for the next refresh; so they do once it can't be reached, as offline, before
-    /// any answered, which isn't the pull request's failure: that one is tried again at the next refresh, behind the
-    /// others. A link that spells an organization in other letters is to the pull request in your lists: `PRKey`
-    /// ignores their case, as Azure DevOps does. One in an organization in a directory the Azure CLI isn't signed in to
-    /// waits with the others there, and its turn comes round again behind the rest, rather than an hour later, since
-    /// signing in there is what reads it. Such organizations are remembered and returned at each refresh, tried then or
-    /// not, to say so, with how many pull requests were read, how many Azure DevOps answered about, those it says are
-    /// gone or closed to you too, of how many it tried, the error if Azure DevOps asked to slow down, and the error if
-    /// it couldn't be reached; one is forgotten once it answers otherwise, or its lists, among `reached`, were read.
+    /// asks to slow down, the rest wait for the next refresh; so they do once it can't be reached, as offline, or
+    /// doesn't answer in time while nothing else did, an organization's lists (`listsRead`) or another pull request,
+    /// which isn't the pull request's failure: that one is tried again at the next refresh, behind the others. A link
+    /// that spells an organization in other letters is to the pull request in your lists: `PRKey` ignores their case,
+    /// as Azure DevOps does. One in an organization in a directory the Azure CLI isn't signed in to waits with the
+    /// others there, and its turn comes round again behind the rest, rather than an hour later, since signing in there
+    /// is what reads it. Such organizations are remembered and returned at each refresh, tried then or not, to say so,
+    /// with how many pull requests were read, how many Azure DevOps answered about, those it says are gone or closed to
+    /// you too, of how many it tried, the error if Azure DevOps asked to slow down, and the error if it couldn't be
+    /// reached; one is forgotten once it answers otherwise, or its lists, among `reached`, were read.
     private func addLinked(
-        to listed: inout [PRKey: Listed], at date: Date, reached: Set<String> = []
+        to listed: inout [PRKey: Listed], at date: Date, reached: Set<String> = [], listsRead: Bool = false
     ) async -> (
         elsewhere: [(organization: String, error: ADOError)], read: Int, answered: Int, tried: Int, throttled: ADOError?,
         unreached: ADOError?
@@ -920,10 +921,10 @@ public actor PulseEngine {
                 // Not a failure of this pull request's: nothing more goes out until then, so the rest wait too.
                 throttled = .throttled(retryAfter: seconds)
                 break
-            } catch let error as ADOError where Self.isUnreached(error) && answered == 0 {
-                // Nor is Azure DevOps not being reached, as offline, while nothing else answered: the rest wait for the
-                // next refresh, and this one, tried again then, goes behind them. Once another answered, it's this one's
-                // failure, as any other.
+            } catch let error as ADOError where Self.isUnreached(error, answeredElse: listsRead || answered > 0) {
+                // Nor is Azure DevOps not being reached, as offline: the rest wait for the next refresh, and this one, tried
+                // again then, goes behind them. Not answering in time once something else answered, its lists or another
+                // pull request, is this one's failure, as any other.
                 unreached = error
                 linkedUnreachedAt[key] = date
                 break
@@ -961,10 +962,12 @@ public actor PulseEngine {
         return (elsewhere, fetched, answered, reads, throttled, unreached)
     }
 
-    /// Azure DevOps couldn't be reached, as offline, or didn't answer in time: nothing about what was asked.
-    private static func isUnreached(_ error: ADOError) -> Bool {
+    /// Azure DevOps couldn't be reached: offline, or it didn't answer in time, nor could its host be found, when nothing
+    /// else it was asked in the refresh answered: nothing about what was asked.
+    private static func isUnreached(_ error: ADOError, answeredElse: Bool) -> Bool {
         switch error {
-        case .offline, .network: true
+        case .offline: true
+        case .network: !answeredElse
         default: false
         }
     }
