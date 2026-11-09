@@ -783,6 +783,14 @@ import Testing
         let ready = Self.reading(.yourReview, .set, mark: StageMark(stage: .yourReview, at: t(0), by: Self.cart))
         #expect(BoardText.setter(ready, now: t(300), name: Self.name) == "set 5m ago")
         #expect(BoardText.setter(Self.reading(.yourReview, .asked("Priya asked you")), now: t(0), name: Self.name) == nil)
+        // Where a session's replaced yours, as its row, details, tooltip and VoiceOver say too.
+        let yours = StageMark(stage: .teammateReview, at: t(-60))
+        var replacing = ready
+        replacing.replaced = yours
+        #expect(BoardText.setter(replacing, now: t(300), name: Self.name) == "set 5m ago, after you")
+        var replacingTitled = bySession
+        replacingTitled.replaced = StageMark(stage: .yourReview, at: t(-60))
+        #expect(BoardText.setter(replacingTitled, now: t(300), name: Self.name) == "‘Cart’ · 5m, after you")
     }
 
     @Test func itRemembersTheLanesAndWhetherUpNextIsFolded() {
