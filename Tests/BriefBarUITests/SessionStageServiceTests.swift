@@ -266,6 +266,33 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4094))?.isSetByYou == true)
     }
 
+    /// A Your review you set lasts until you change it, also once a session that pushed says the same, as BriefBar's
+    /// prompts ask: it shows the session's while it stands, with nothing to put back, and yours again once a teammate's
+    /// approval ends it, kept in the preferences.
+    @Test func aSessionSayingTheSameLeavesYourYourReviewOnceItEnds() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        Self.tell(order, [4093: StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)])
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600)
+        clock.advance(seconds: 60)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+
+        clock.advance(seconds: 60)
+        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, votes: "", in: defaults, order)
+        #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.cart)
+        #expect(order.stage(of: Self.ref(4093))?.replaced == nil)
+
+        clock.advance(seconds: 60)
+        Self.tell(order, [
+            4093: StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: clock.now),
+        ])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
+        #expect(SessionStages.load(Self.cart, from: defaults) == nil)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .yourReview)
+    }
+
     @Test func mergedOrClosedEndsWhatSessionsSet() {
         let clock = Clock()
         let defaults = Self.defaults()

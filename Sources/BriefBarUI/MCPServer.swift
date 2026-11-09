@@ -195,12 +195,18 @@ package struct MCPStages: Sendable {
     /// Why what it read can't be kept now, such as its source turned off in BriefBar while it read: asked again just
     /// before it's kept; nil when it can be.
     package var refusal: @Sendable () -> String?
+    /// The sessions whose stages BriefBar shows now, as agents' stages count them: those the Copilot app lists, with
+    /// the tasks BriefBar sent; nil when `--mcp` can't tell, such as without Copilot among its sources.
+    package var listedSessions: @Sendable () async -> Set<ItemRef>?
 
     package init(
-        read: @escaping @Sendable ([ItemRef]) async throws -> Read, refusal: @escaping @Sendable () -> String? = { nil }
+        read: @escaping @Sendable ([ItemRef]) async throws -> Read,
+        refusal: @escaping @Sendable () -> String? = { nil },
+        listedSessions: @escaping @Sendable () async -> Set<ItemRef>? = { nil }
     ) {
         self.read = read
         self.refusal = refusal
+        self.listedSessions = listedSessions
     }
 
     /// The same, refused whenever `refusal` gives an answer instead: asked as it reads, and again as what it read is
@@ -213,7 +219,8 @@ package struct MCPStages: Sendable {
                 if let refusal = refusal() { throw MCPToolError(refusal) }
                 return try await read(refs)
             },
-            refusal: { refusal() ?? inner() }
+            refusal: { refusal() ?? inner() },
+            listedSessions: listedSessions
         )
     }
 }

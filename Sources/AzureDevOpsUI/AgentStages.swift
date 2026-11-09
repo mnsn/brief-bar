@@ -58,6 +58,31 @@ extension AzureDevOpsAgent {
         )
     }
 
+    /// The sessions whose stages count now, as `stages` counts them: those the Copilot app lists, with the tasks
+    /// BriefBar sent, as the app lists them; nil when `--mcp` can't tell, such as without Copilot among its sources.
+    /// What `pull_request_stage` answers from, so it says BriefBar shows a stage only where it does.
+    func listedSessions(now: Date = Date()) async -> Set<ItemRef>? {
+        guard var copilot = await MCPRelated.stageSessions() else { return nil }
+        let tasks = await reader.sendsToCopilot ? await reader.copilotTasks(now: now) : []
+        return Set(Self.setters(&copilot, sentTasks: tasks.compactMap(PullRequestOrderFacts.session)).keys)
+    }
+
+    /// What each session whose stages count does now, or how it ended, and since when: those the Copilot app lists,
+    /// and the tasks BriefBar sent, which the app lists with them, unnamed, until you open one there, or, while it
+    /// can't read the app's database, in place of their folders, which `copilot` then loses (`SessionStore`).
+    static func setters(
+        _ copilot: inout MCPRelated.StageSessions, sentTasks: [StageSession]
+    ) -> [ItemRef: StageSession] {
+        if !copilot.listedByApp {
+            for task in sentTasks { copilot.listed[task.ref] = nil }
+        }
+        var setters = copilot.doing
+        for task in sentTasks where setters[task.ref] == nil {
+            setters[task.ref] = StageSession(ref: task.ref, activity: task.activity, since: task.since)
+        }
+        return setters
+    }
+
     /// The same, from what was read: as `PullRequestOrder` rebuilds its missions and works its stages out, but noting and
     /// ending nothing, only in memory.
     /// - Parameter sentTasks: the tasks BriefBar sent to Copilot, which the app lists with the Copilot app's sessions,
@@ -68,9 +93,7 @@ extension AzureDevOpsAgent {
         sentTasks: [StageSession] = [], kept: OrderKept, account: String?, now: Date
     ) -> AgentStages {
         var copilot = copilot
-        if !copilot.listedByApp {
-            for task in sentTasks { copilot.listed[task.ref] = nil }
-        }
+        let setters = Self.setters(&copilot, sentTasks: sentTasks)
         let orderFacts = OrderFacts(pullRequests: pullRequests, sessions: copilot.sessions, sourcesOn: [.pullRequest])
         var changes = kept.changes
         changes.noteOverrides(in: kept.orders, now: now)
@@ -89,10 +112,6 @@ extension AzureDevOpsAgent {
             var stage = sessionStages[session] ?? SessionStage(session: session)
             stage.set(StageRules.mark(set.stage, at: set.at, facts: fact, by: session), of: ref)
             sessionStages.replace(stage)
-        }
-        var setters = copilot.doing
-        for task in sentTasks where setters[task.ref] == nil {
-            setters[task.ref] = StageSession(ref: task.ref, activity: task.activity, since: task.since)
         }
         let theirs = sessionStages.marks(listed: Set(setters.keys), now: now)
         let sessionsOn = copilot.onPullRequests

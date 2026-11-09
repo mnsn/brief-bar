@@ -330,13 +330,15 @@ it out from Azure DevOps and your Copilot sessions. With [agents](#agents) on to
 your pull requests tell BriefBar their stages themselves, without you asking, such as Your review once they've pushed
 their work, or Teammate's review once you tell them you've reviewed it: **‘Cart’ says it's ready**. The latest stage
 set wins, yours or a session's, and the label says who set it; where a session's replaced yours, **Put Yours Back** is
-in its menu. What a session set counts only while the Copilot app lists the session. Where a session or a stage you
+in its menu. What a session set counts only while the Copilot app lists the session, so a session you run in a
+terminal sets none. Where a session or a stage you
 set decides it while your build failed, it says that too: **‘Cart’ asks you · build failed**. Click the label to pick
 another, or the one it's in to keep it there until you change it, or **Finished My Review** beside it to send it to
 your teammates; **Stage** in a row's Actions and right-click menus, and VoiceOver's actions, do the same. What you or
 a session set holds until the pull request moves on: new commits, or a session that finishes writing it, end In
 progress, and so does the session that set it finishing; a vote ends Teammate's review, and a Your review a session
-set, someone else's on yours, and yours on someone else's, while a Your review you set lasts until you change it;
+set, someone else's on yours, and yours on someone else's, while a Your review you set lasts until you change it, also
+once a session that said the same is done;
 merging or closing it
 ends any. **Let BriefBar Decide** forgets it, and **Undo** puts back your last change. Can merge and Waits come only
 from what Azure DevOps and its order show: nobody, you or a session, can set them. Its details show the whole track

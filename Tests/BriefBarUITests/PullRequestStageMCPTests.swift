@@ -19,6 +19,8 @@ private final class Announcements: Sendable {
 /// under its key, and is told what the user set that it replaces.
 @Suite struct PullRequestStageMCPTests {
     private static let session = "6f9619ff-8b86-d011-b42d-00c04fc964ff"
+    private static let sessionRef = ItemRef.session(session)!
+    private static let otherSession = "2b8d4f60-9a1c-4e3b-b7d5-6f8e9a0b1c2d"
     private static let account = "Robin@contoso.com"
     private static let now = Date(timeIntervalSince1970: 1_791_979_200)
 
@@ -37,30 +39,35 @@ private final class Announcements: Sendable {
         return defaults
     }
 
-    /// What Azure DevOps reads of its pull requests now: those it lists, with their facts.
+    /// What Azure DevOps reads of its pull requests now: those it lists, with their facts. !4100 is Priya's, which she
+    /// asked you to review.
     private static let listed: [ItemRef: StageFacts] = [
         ref(4093): StageFacts(role: .author, votes: "", commit: "a1b2c3d"),
         ref(4094): StageFacts(role: .author, votes: "10", commit: "e4f5a6b"),
         ref(4095): StageFacts(role: .author, state: .merged),
         ref(4096): StageFacts(role: .author, isListed: false),
+        ref(4100): StageFacts(role: .reviewer, asksYou: "Priya asked you", votes: "0", commit: "c0ffee1", author: "Priya"),
     ]
 
     private static func read(_ refs: [ItemRef]) -> MCPStages.Read {
         MCPStages.Read(account: account, facts: listed.filter { refs.contains($0.key) })
     }
 
-    /// - Parameter refusal: why what's read can't be kept, as agents or Azure DevOps being off in the app say.
+    /// - Parameters:
+    ///   - refusal: why what's read can't be kept, as agents or Azure DevOps being off in the app say.
+    ///   - listedSessions: the sessions whose stages BriefBar shows, this one unless a test says otherwise; nil when it
+    ///     can't tell.
     private static func tools(
         _ defaults: MemoryDefaults, demo: Bool = false, session: String? = session,
         copilotOn: @escaping @Sendable () -> Bool = { true },
         read: @escaping @Sendable ([ItemRef]) async throws -> MCPStages.Read = { refs in read(refs) },
-        refusal: @escaping @Sendable () -> String? = { nil },
+        refusal: @escaping @Sendable () -> String? = { nil }, listedSessions: Set<ItemRef>? = [sessionRef],
         announcements: Announcements = Announcements(), now: @escaping @Sendable () -> Date = { now }
     ) -> [String: MCPTool] {
         let tools = PullRequestOrderMCP.tools(
             defaults: defaults, demo: demo, sourcesOn: { [.pullRequest] }, session: session,
-            stages: MCPStages(read: read).guarded(by: refusal), copilotOn: copilotOn, announce: { announcements.add() },
-            now: now
+            stages: MCPStages(read: read, listedSessions: { listedSessions }).guarded(by: refusal), copilotOn: copilotOn,
+            announce: { announcements.add() }, now: now
         )
         return Dictionary(tools.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
     }
@@ -86,16 +93,48 @@ private final class Announcements: Sendable {
         SessionStages.load(ItemRef.session(session)!, from: defaults)
     }
 
-    @Test func itsListedWithPullRequestOrdersToolsOnlyWithAzureDevOpsStages() {
+    /// It's listed with Pull Request Order's tools only with Azure DevOps' stages, and only for the Copilot session that
+    /// started `--mcp`, as the Copilot CLI says: never in VS Code or Cursor, whose agents aren't Copilot sessions, and
+    /// whose stages would show as another session's or never. It asks for no session.
+    @Test func itsListedOnlyWithAzureDevOpsStagesForTheSessionThatStartedIt() throws {
         #expect(Self.tools(Self.settings(on: false)).isEmpty)
-        let tools = PullRequestOrderMCP.tools(
-            defaults: Self.settings(), demo: false, sourcesOn: { [] }, session: nil,
-            stages: MCPStages { _ in MCPStages.Read(account: nil, facts: [:]) }
-        )
-        #expect(tools.map(\.name) == ["order_pull_requests", "pull_request_order", "forget_pull_request_order", "pull_request_stage"])
-        #expect(tools.last?.readOnly == false)
-        let none = PullRequestOrderMCP.tools(defaults: Self.settings(), demo: false, sourcesOn: { [] }, session: nil)
-        #expect(!none.map(\.name).contains("pull_request_stage"))
+        func names(session: String?, stages: MCPStages?) -> [String] {
+            PullRequestOrderMCP.tools(defaults: Self.settings(), demo: false, sourcesOn: { [] }, session: session, stages: stages)
+                .map(\.name)
+        }
+        let stages = MCPStages { _ in MCPStages.Read(account: nil, facts: [:]) }
+        #expect(names(session: Self.session, stages: stages)
+            == ["order_pull_requests", "pull_request_order", "forget_pull_request_order", "pull_request_stage"])
+        #expect(!names(session: Self.session, stages: nil).contains("pull_request_stage"))
+        #expect(names(session: nil, stages: stages) == ["order_pull_requests", "pull_request_order", "forget_pull_request_order"])
+        #expect(!names(session: "nonsense", stages: stages).contains("pull_request_stage"))
+
+        let tool = try #require(Self.tools(Self.settings())["pull_request_stage"])
+        #expect(tool.readOnly == false)
+        #expect(tool.inputSchema["properties"]?["session"] == nil)
+        #expect(tool.inputSchema["properties"]?["stage"] != nil)
+    }
+
+    /// One session can't set or clear another's stages, by naming it in `session`, which it isn't asked for.
+    @Test func itSetsAndClearsOnlyItsOwnSessionsStages() async throws {
+        let defaults = Self.settings()
+        let other = try #require(ItemRef.session(Self.otherSession))
+        SessionStages.change(other, in: defaults, now: Self.now) {
+            $0.set(StageMark(stage: .yourReview, at: Self.now, by: other, votes: ""), of: Self.ref(4093))
+        }
+        let tools = Self.tools(defaults, listedSessions: [Self.sessionRef, other])
+        for stage in ["clear", "in_progress"] {
+            let json = #"{"pull_requests": [4093], "organization": "contoso", "stage": "\#(stage)", "session": "\#(Self.otherSession)"}"#
+            let refusal = await Self.failure { try await Self.set(tools, json) }
+            #expect(refusal?.hasPrefix("A session tells BriefBar only its own work, and you are session \(Self.session)") == true)
+        }
+        #expect(SessionStages.load(other, from: defaults)?.marks[Self.ref(4093)]?.stage == .yourReview)
+        #expect(Self.kept(defaults) == nil)
+
+        // Its own, repeated, is fine.
+        let json = #"{"pull_requests": [4093], "organization": "contoso", "stage": "in_progress", "session": "\#(Self.session)"}"#
+        _ = try await Self.set(tools, json)
+        #expect(Self.kept(defaults)?.marks[Self.ref(4093)]?.stage == .inProgress)
     }
 
     /// The stage it sets is this session's, kept under its key with what would end it as Azure DevOps reads the pull
@@ -197,6 +236,51 @@ private final class Announcements: Sendable {
         #expect(none == "Not !4095 in contoso: it merged.")
     }
 
+    /// It puts only the user's own pull requests in progress, as BriefBar's own rule does for a session it sees writing:
+    /// someone else's is left as it is, saying why. The other stages it sets on any.
+    @Test func itPutsOnlyTheUsersOwnPullRequestsInProgress() async throws {
+        let defaults = Self.settings()
+        let tools = Self.tools(defaults)
+        let someoneElses = "Not !4100 in contoso: it isn't the user's, and BriefBar puts only the user's own pull requests in progress."
+        let refused = await Self.failure {
+            try await Self.set(tools, #"{"pull_requests": [4100], "organization": "contoso", "stage": "in_progress"}"#)
+        }
+        #expect(refused == someoneElses)
+        #expect(Self.kept(defaults) == nil)
+
+        let both = try await Self.set(tools, #"{"pull_requests": [4093, 4100], "organization": "contoso", "stage": "in_progress"}"#)
+        #expect(both.hasSuffix("change it.\n" + someoneElses))
+        #expect(Self.kept(defaults)?.marks.keys.sorted() == [Self.ref(4093)])
+
+        _ = try await Self.set(tools, #"{"pull_requests": [4100], "organization": "contoso", "stage": "user_review"}"#)
+        #expect(Self.kept(defaults)?.marks[Self.ref(4100)]?.stage == .yourReview)
+    }
+
+    /// It says BriefBar shows a stage only where it does. A session the Copilot app doesn't list, such as one run in a
+    /// terminal, keeps none, since BriefBar wouldn't show it; where `--mcp` can't tell which sessions the app lists, it
+    /// keeps it, saying it shows it while the app lists this session.
+    @Test func itSaysBriefBarShowsAStageOnlyWhereItDoes() async throws {
+        let json = #"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#
+        let unlisted = Self.settings()
+        let other = try #require(ItemRef.session(Self.otherSession))
+        let announcements = Announcements()
+        let terminal = Self.tools(unlisted, listedSessions: [other], announcements: announcements)
+        #expect(await Self.failure { try await Self.set(terminal, json) } == """
+            The Copilot app doesn't list this session, as with one run in a terminal, and BriefBar shows only the stages \
+            of sessions it lists: it kept none.
+            """)
+        #expect(await Self.failure { try await Self.set(Self.tools(unlisted, listedSessions: []), json) } != nil)
+        #expect(Self.kept(unlisted) == nil)
+        #expect(announcements.total == 0)
+
+        let unknown = Self.settings()
+        #expect(try await Self.set(Self.tools(unknown, listedSessions: nil), json) == """
+            BriefBar keeps !4093 in contoso in Your review, set by this session, and shows it while the Copilot app lists \
+            this session; the user sees who set it, and can change it.
+            """)
+        #expect(Self.kept(unknown)?.marks[Self.ref(4093)]?.stage == .yourReview)
+    }
+
     @Test func itsRefusedSayingWhy() async throws {
         let defaults = Self.settings()
         let tools = Self.tools(defaults)
@@ -224,9 +308,6 @@ private final class Announcements: Sendable {
         // Only its own session's.
         let other = #"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review", "session": "2b8d4f60-9a1c-4e3b-b7d5-6f8e9a0b1c2d"}"#
         #expect(await refusal(other)?.hasPrefix("A session tells BriefBar only its own work") == true)
-        let unknown = Self.tools(defaults, session: nil)
-        #expect(await refusal(#"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#, tools: unknown) ==
-            "BriefBar can't tell which Copilot session you are: send session, your session's ID.")
         // What the source says when it can't read, such as being off.
         let off = Self.tools(defaults, read: { _ in throw MCPToolError(AgentAccess.refusal(source: "Azure DevOps")) })
         #expect(await refusal(#"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#, tools: off) ==

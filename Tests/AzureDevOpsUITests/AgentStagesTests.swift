@@ -239,6 +239,17 @@ import Testing
         #expect(stages(listedByApp: true).readings[pr]?.mark == nil)
     }
 
+    /// `pull_request_stage` answers from the sessions whose stages count, as agents' stages count them: those the Copilot
+    /// app lists, with the tasks BriefBar sent, also one you haven't opened there; it can't tell without Copilot.
+    @Test func theSessionsWhoseStagesCountAreTheAppsWithTheTasksBriefBarSent() async throws {
+        #expect(await agent.listedSessions() == nil)
+        let listed = try #require(await MCPRelated.$tellers.withValue([Self.copilot]) { await agent.listedSessions() })
+        #expect(listed.contains(DemoPullRequestOrder.retryBackoff))
+        let sent = await agent.reader.copilotTasks().compactMap(PullRequestOrderFacts.session).map(\.ref)
+        #expect(!sent.isEmpty)
+        #expect(listed == Set(sent).union([DemoPullRequestOrder.retryBackoff]))
+    }
+
     /// Agents' words for a stage say what fails too, as the Board does, also where they put Find a reviewer more plainly; and
     /// what a session is called stays on its line, its line breaks written out, as other tools quote what others named.
     @Test func stageWordsSayWhatFailsAndQuoteWhatSessionsAreCalled() throws {

@@ -23,8 +23,9 @@ package enum PullRequestOrderMCP {
     /// - Parameters:
     ///   - defaults: the app's settings, or the demo's.
     ///   - sourcesOn: the kinds of pull request whose source is on in the app, asked with each order told.
-    ///   - session: the Copilot session that started `--mcp`, whose order it is when the agent doesn't say, and the only
-    ///     one whose stages it sets.
+    ///   - session: the Copilot session that started `--mcp`, as the Copilot CLI says, whose order it is when the agent
+    ///     doesn't say; `pull_request_stage` is there only with it, and sets only its stages, so never in VS Code or
+    ///     Cursor, whose agents aren't Copilot sessions.
     ///   - stages: what Azure DevOps tells of its pull requests' stages, for `pull_request_stage`, which is there only with
     ///     it.
     ///   - copilotOn: whether GitHub Copilot is on in the app, asked with each stage set: what a session sets shows only
@@ -119,17 +120,18 @@ package enum PullRequestOrderMCP {
                 try await forget(arguments, keeper: keeper)
             },
         ]
-        if let stages {
+        if let stages, let session {
             tools.append(MCPTool(
                 name: "pull_request_stage",
                 title: "Pull Request Stage",
                 description: """
                     Tells BriefBar what stage pull requests you work on are in, so that the user sees at a glance what's \
-                    next for them: in_progress as you start writing or fixing its code; user_review once you've pushed \
-                    your work and it's the user's turn to review it; teammate_review once the user has reviewed it, as \
-                    they told you or you reviewed it together, and it's their teammates' turn; clear to leave it to \
-                    BriefBar. The latest stage set wins, whether the user set it or a session did, and BriefBar shows who. \
-                    Azure DevOps pull requests only, for now. It changes nothing in Azure DevOps.
+                    next for them: in_progress as you start writing or fixing the code of one of the user's own; \
+                    user_review once you've pushed your work and it's the user's turn to review it; teammate_review \
+                    once the user has reviewed it, as they told you or you reviewed it together, and it's their \
+                    teammates' turn; clear to leave it to BriefBar. The latest stage set wins, whether the user set it \
+                    or a session did, and BriefBar shows who. Azure DevOps pull requests only, for now. It changes \
+                    nothing in Azure DevOps.
                     """,
                 inputSchema: MCPSchema.object([
                     "pull_requests": array(
@@ -138,11 +140,12 @@ package enum PullRequestOrderMCP {
                     ),
                     "stage": MCPSchema.string("Their stage", oneOf: stageNames.map(\.name)),
                     "organization": MCPSchema.string("The Azure DevOps organization of the numbers, such as contoso"),
-                    "session": MCPSchema.string("Your Copilot session's ID, only when BriefBar can't tell which session you are"),
                 ], required: ["pull_requests", "stage"]),
                 readOnly: false
             ) { arguments in
-                try await setStage(arguments, keeper: keeper, stages: stages, copilotOn: copilotOn, started: session, now: now)
+                try await setStage(
+                    arguments, keeper: keeper, stages: stages, copilotOn: copilotOn, session: session, now: now
+                )
             })
         }
         return tools.map { tool in
@@ -240,15 +243,18 @@ package enum PullRequestOrderMCP {
         return "BriefBar forgot order \(forgotten.value.id.uuidString.lowercased())."
     }
 
-    /// `pull_request_stage`: sets the stage of pull requests the session that started `--mcp` works on, as that session's,
-    /// or clears what it set, as Azure DevOps reads them now, at the time it's read them. Refused, saying why, while GitHub
-    /// Copilot is off, as what a session sets shows only while the Copilot app lists it; for GitHub's pull requests; for
-    /// more than `SessionStages.mostAtOnce`; and when BriefBar can't tell which session it is. Whether it may is asked
-    /// again just before it keeps anything, as reading Azure DevOps takes a while (`OrderKeeper.changeStages`). One
-    /// BriefBar doesn't list, or that merged or closed, is left as it is, with a line that says why.
+    /// `pull_request_stage`: sets the stage of pull requests the session that started `--mcp` works on, as that
+    /// session's, or clears what it set, as Azure DevOps reads them now, at the time it's read them. Refused, saying
+    /// why, while GitHub Copilot is off, as what a session sets shows only while the Copilot app lists it; for GitHub's
+    /// pull requests; for more than `SessionStages.mostAtOnce`; for another session; and for a session the Copilot app
+    /// doesn't list, such as one run in a terminal, whose stages BriefBar wouldn't show. Whether it may is asked again
+    /// just before it keeps anything, as reading Azure DevOps takes a while (`OrderKeeper.changeStages`). One BriefBar
+    /// doesn't list, one that merged or closed, and someone else's to put in progress, which BriefBar never does, are
+    /// left as they are, each with a line that says why. It says BriefBar shows what it set only where it can tell
+    /// (`MCPStages.listedSessions`).
     static func setStage(
         _ arguments: JSONValue, keeper: OrderKeeper, stages: MCPStages, copilotOn: @escaping @Sendable () -> Bool,
-        started: ItemRef?, now: @Sendable () -> Date
+        session: ItemRef, now: @Sendable () -> Date
     ) async throws -> String {
         let noCopilot = AgentAccess.refusal(source: "GitHub Copilot")
         guard copilotOn() else { throw MCPToolError(noCopilot) }
@@ -269,9 +275,8 @@ package enum PullRequestOrderMCP {
         guard refs.count <= SessionStages.mostAtOnce else {
             throw MCPToolError("Name at most \(SessionStages.mostAtOnce) pull requests at once.")
         }
-        guard let session = try SessionUpdatesMCP.session(arguments, started: started) else {
-            throw MCPToolError("BriefBar can't tell which Copilot session you are: send session, your session's ID.")
-        }
+        // Only its own: `session`, which it doesn't ask for, can only repeat it.
+        _ = try SessionUpdatesMCP.session(arguments, started: session)
         let demo = keeper.demo ? " (The demo keeps it in memory.)" : ""
         guard let stage else {
             let (before, _) = try await keeper.changeStages(session, now: now(), unless: refusal) { set in
@@ -293,6 +298,13 @@ package enum PullRequestOrderMCP {
         let read = try await stages.read(refs)
         // Set as it's read: what the app reads after this counts against it, and nothing it started reading before.
         let now = now()
+        let listed = await stages.listedSessions()
+        if let listed, !listed.contains(session) {
+            throw MCPToolError("""
+                The Copilot app doesn't list this session, as with one run in a terminal, and BriefBar shows only the \
+                stages of sessions it lists: it kept none.
+                """)
+        }
         var marks: [ItemRef: StageMark] = [:]
         var notSet: [String] = []
         for ref in refs {
@@ -302,6 +314,13 @@ package enum PullRequestOrderMCP {
             }
             guard facts.state.isOpen else {
                 notSet.append("Not \(labels([ref])): it \(facts.state == .merged ? "merged" : "was abandoned").")
+                continue
+            }
+            guard stage != .inProgress || facts.isYours else {
+                notSet.append(
+                    "Not \(labels([ref])): it isn't the user's, and BriefBar puts only the user's own pull requests in "
+                        + "progress."
+                )
                 continue
             }
             marks[ref] = StageRules.mark(stage, at: now, facts: facts, by: session)
@@ -314,10 +333,14 @@ package enum PullRequestOrderMCP {
             for (ref, mark) in set { kept.set(mark, of: ref) }
         }
         let told = refs.filter { marks[$0] != nil }
-        var lines = [
-            "BriefBar shows \(labels(told)) in \(stage.title) now, set by this session; the user sees who set it, and can "
-                + "change it.\(demo)",
-        ]
+        let them = told.count == 1 ? "it" : "them"
+        let shows = if listed == nil {
+            "BriefBar keeps \(labels(told)) in \(stage.title), set by this session, and shows \(them) while the "
+                + "Copilot app lists this session"
+        } else {
+            "BriefBar shows \(labels(told)) in \(stage.title) now, set by this session"
+        }
+        var lines = ["\(shows); the user sees who set it, and can change it.\(demo)"]
         for ref in told {
             guard let theirs = yours[ref], theirs.stage != stage, let facts = read.facts[ref],
                   StageRules.stands(theirs, facts: facts, sessions: facts.sessions) else { continue }

@@ -522,7 +522,9 @@ public enum StageRules {
     /// What you and the sessions set on a pull request that counts now (`reading`'s marks): yours while it stands, and
     /// the sessions', while the latest of them all stands and the pull request is open. Once the latest ends, or it merged
     /// or closed, none counts, and `latestEnded` says so, for what keeps them to end them all, so that an older one never
-    /// comes back.
+    /// comes back. But a session that set the stage yours has says the same, and replaces nothing: while every stage
+    /// set after yours is yours, their end leaves yours, while it stands, so that a Your review you set outlasts a
+    /// session's that ends as the votes change.
     /// - Parameters:
     ///   - theirs: what the sessions the sources list set on it (`SessionStages.marks`).
     ///   - setters: what those sessions do now, on it or not (`stands`).
@@ -531,7 +533,13 @@ public enum StageRules {
     ) -> (yours: StageMark?, theirs: [StageMark], latestEnded: Bool) {
         let latest = ([yours].compactMap { $0 } + theirs).max { $0.at < $1.at }
         let latestEnded = !facts.state.isOpen || latest.map { !stands($0, facts: facts, sessions: sessions, setters: setters) } == true
-        let mine = yours.flatMap { latestEnded || !stands($0, facts: facts, sessions: sessions, setters: setters) ? nil : $0 }
+        let mine = yours.flatMap { mark -> StageMark? in
+            guard facts.state.isOpen, stands(mark, facts: facts, sessions: sessions, setters: setters) else {
+                return nil
+            }
+            let replaced = theirs.contains { $0.at > mark.at && $0.stage != mark.stage }
+            return latestEnded && replaced ? nil : mark
+        }
         return (mine, latestEnded ? [] : theirs, latestEnded)
     }
 
