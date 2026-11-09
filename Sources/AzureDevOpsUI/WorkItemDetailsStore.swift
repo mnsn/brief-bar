@@ -114,6 +114,17 @@ final class WorkItemDetailsStore: ObservableObject {
         }
     }
 
+    /// Shows a work item from the sprint with the page of something linked to it over its details, as a link on its card
+    /// opens it: where you came from before is forgotten, and ‹ goes back to the work item. False for a work item, which
+    /// has no page.
+    @discardableResult
+    func show(page ref: ItemRef, over item: WorkItem) -> Bool {
+        guard ref.kind != .workItem else { return false }
+        show(item)
+        open(page: ref)
+        return true
+    }
+
     /// Back from a page, then to the work item you came from, with the pages that showed over it.
     func back() {
         if !pages.isEmpty {

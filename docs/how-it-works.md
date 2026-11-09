@@ -435,6 +435,11 @@ requests.
   item's task opened there, which says where it opens from its link (`whereItsPullRequestOpens`, with
   `ItemRef.Kind.whereItOpens`). They show it at what its row is
   about (`PullRequestDetailsStore.revealAtWhatItsAbout`). Where no window has that page, it opens in Azure DevOps.
+  On the Sprint page, a work item's links, on its card and in its details' **⋯**, give any pull request, a teammate's
+  or a GitHub one too, **Show Details** before those, which shows the work item's details with the pull request's
+  page over them, as its row under Where It Stands does (`LinksMenuContent.openings`, through the `itemNavigation`
+  that the board's cards and lines and the details set, `WorkItemDetailsStore.show(page:over:)`); where that can't,
+  it shows or opens it as those do.
 - Copilot: the pull request each app session started from or opened, as the app records it in its database
   (`workspaces`' `source_pr_*` and `created_pr_*` columns, and `workspace_pull_request_links`): GitHub's, and any
   other service's whose link it records.

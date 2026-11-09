@@ -203,7 +203,9 @@ A work item's sessions include its pull requests' sessions, and a session's work
 request's. Right-click a row, or click a capsule on a sprint card, to open what it's linked to, link
 more, or unlink: one of your pull requests there has **Show in BriefBar**, for its details on the
 window's Pull Requests page, and **Open in Azure DevOps**, and so does its own row under **Where It
-Stands** or **Also Linked**, when you right-click it. The window that links things suggests what's on the same branch, names the same
+Stands** or **Also Linked**, when you right-click it. On the Sprint page, any pull request in a work item's
+links, a teammate's too, has **Show Details** first, which shows it over that work item's details, as
+clicking its row under Where It Stands does. The window that links things suggests what's on the same branch, names the same
 number or shares words with the title, and takes a pasted link to a pull request, a work item or a
 session.
 
@@ -772,7 +774,9 @@ votes, its open comments and the ones waiting on you, conflicts, and each build 
 with where a failed one failed; a Copilot session's question or plan, and what Copilot recorded of its
 work as it went: the story so far, a line for each of its checkpoints, what it did, what's next, and
 what it said last, with what else is linked to it, such as a pull request's sessions. The header shows
-the way back, such as **Bug 5110 › !4091**, and **‹**, **⌘[** or **Esc** goes back. BriefBar doesn't
+the way back, such as **Bug 5110 › !4091**, and **‹**, **⌘[** or **Esc** goes back. A pull request in a
+card's links, its capsule or **Links** when you right-click it, or in the **⋯** of the details, opens the
+same way, with **Show Details**, a teammate's too, rather than only in Azure DevOps. BriefBar doesn't
 write or reword any of it: Copilot's notes show as Copilot wrote them, and nothing more is read from
 Azure DevOps for it.
 
