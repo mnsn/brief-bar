@@ -690,25 +690,38 @@ public enum StageText {
         }
     }
 
-    /// Who set it, and how long ago, when someone did: "You set it 2h ago", "‘Cart’ set it 5m ago, after you".
+    /// Who set it, and how long ago, when someone did: "You set it 2h ago", "‘Cart’ set it 5m ago, after you"; only when,
+    /// where why it's in its stage names the session already (`namesWhoSetIt`): "set 5m ago", after "‘Cart’ says it's
+    /// ready".
     public static func who(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String? {
         guard let mark = reading.mark else { return nil }
-        var words = setter(mark, name: name) + " set it " + agoWords(mark.at, now: now)
+        var words = (namesWhoSetIt(reading) ? "set " : setter(mark, name: name) + " set it ") + agoWords(mark.at, now: now)
         if reading.replaced != nil { words += ", after you" }
         return words
     }
 
-    /// The same, as VoiceOver says it: "set by you 2 hours ago", "set by BriefBar".
+    /// The same, as VoiceOver says it: "set by you 2 hours ago", "worked out by BriefBar"; "set 5 minutes ago" where why
+    /// it's in its stage names the session.
     public static func spokenWho(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String {
         guard let mark = reading.mark else { return "worked out by BriefBar" }
-        let who = mark.by.map { "set by \(quoted($0, name: name))" } ?? "set by you"
+        let who = namesWhoSetIt(reading) ? "set" : mark.by.map { "set by \(quoted($0, name: name))" } ?? "set by you"
         return who + " " + Elapsed.spoken(since: mark.at, now: now) + " ago" + (reading.replaced != nil ? ", after you" : "")
     }
 
-    /// For its tooltip, and its menu's first line: "Your review: ‘Cart’ finished. Worked out by BriefBar."
+    /// For its tooltip, and its menu's first line: "Your review: ‘Cart’ finished. Worked out by BriefBar.", "Your review:
+    /// ‘Cart’ says it's ready. Set 5m ago."
     public static func sentence(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String {
-        let who = reading.mark.map { setter($0, name: name) + " set it " + agoWords($0.at, now: now) } ?? "Worked out by BriefBar"
+        let who = reading.mark.map { mark in
+            (namesWhoSetIt(reading) ? "Set " : setter(mark, name: name) + " set it ") + agoWords(mark.at, now: now)
+        } ?? "Worked out by BriefBar"
         return "\(reading.stage.title): \(why(reading, name: name)). \(who)."
+    }
+
+    /// Whether why it's in its stage names the session that set it, as `reason` words a session's Your review and In
+    /// progress: "‘Cart’ says it's ready", "‘Cart’ is on it". Who set it then says only when, so the session isn't named
+    /// twice.
+    public static func namesWhoSetIt(_ reading: StageReading) -> Bool {
+        reading.why == .set && reading.mark?.by != nil && (reading.stage == .yourReview || reading.stage == .inProgress)
     }
 
     /// "You set it 2h ago" for Put Yours Back: "Put Yours Back: Teammate's review, 2h ago".

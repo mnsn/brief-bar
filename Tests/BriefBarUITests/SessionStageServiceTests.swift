@@ -108,7 +108,9 @@ private final class Clock {
         let reading = order.stage(of: Self.ref(4093))
         #expect(reading?.stage == .inProgress)
         #expect(reading?.replaced?.stage == .teammateReview)
-        #expect(reading.flatMap { StageText.who($0, now: clock.now, name: order.name(of:)) } == "‘Cart’ set it just now, after you")
+        // Its words name the session: who set it says only when, and after you.
+        #expect(Self.why(order, 4093) == "‘Cart’ is on it")
+        #expect(reading.flatMap { StageText.who($0, now: clock.now, name: order.name(of:)) } == "set just now, after you")
         clock.advance(seconds: 60)
         #expect(order.putYoursBack(Self.ref(4093)) == .done)
         #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)

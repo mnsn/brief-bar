@@ -527,6 +527,38 @@ import Testing
         #expect(StageText.moved(Self.pr(4093), to: nil) == "Let BriefBar decide !4093's stage")
     }
 
+    /// Where why it's in its stage names the session that set it, a session's Your review or In progress, who set it says
+    /// only when, on its row and in its details, in its tooltip and to VoiceOver: "‘Cart’ says it's ready · set 5m ago".
+    /// Elsewhere, who set it names the session: its words for a session's Teammate's review say who it waits on.
+    @Test func whoSetItDoesntNameTheSessionAgainWhereWhyItsInItsStageDoes() {
+        let facts = StageFacts(role: .author, votes: "0")
+        let yours = StageMark(stage: .teammateReview, at: t(100), votes: "0")
+        let ready = Self.reading(facts, marks: [yours, StageMark(stage: .yourReview, at: t(200), by: Self.cart)])!
+        #expect(Self.why(ready) == "‘Cart’ says it's ready" && StageText.namesWhoSetIt(ready))
+        #expect(StageText.who(ready, now: t(500), name: Self.name) == "set 5m ago, after you")
+        #expect(StageText.spokenWho(ready, now: t(500), name: Self.name) == "set 5 minutes ago, after you")
+        #expect(StageText.sentence(ready, now: t(500), name: Self.name) == "Your review: ‘Cart’ says it's ready. Set 5m ago.")
+
+        let onIt = Self.reading(facts, marks: [StageMark(stage: .inProgress, at: t(200), by: Self.cart)])!
+        #expect(Self.why(onIt) == "‘Cart’ is on it")
+        #expect(StageText.who(onIt, now: t(200), name: Self.name) == "set just now")
+        #expect(StageText.sentence(onIt, now: t(200), name: Self.name) == "In progress: ‘Cart’ is on it. Set just now.")
+
+        let teammates = Self.reading(facts, marks: [StageMark(stage: .teammateReview, at: t(200), by: Self.cart, votes: "0")])!
+        #expect(Self.why(teammates) == "Find a reviewer" && !StageText.namesWhoSetIt(teammates))
+        #expect(StageText.who(teammates, now: t(500), name: Self.name) == "‘Cart’ set it 5m ago")
+        #expect(StageText.spokenWho(teammates, now: t(500), name: Self.name) == "set by ‘Cart’ 5 minutes ago")
+        #expect(StageText.sentence(teammates, now: t(500), name: Self.name) == "Teammate's review: Find a reviewer. ‘Cart’ set it 5m ago.")
+        // Nor where its words are only its stage's title, as `reason` words a set stage it doesn't name a session for.
+        let titled = StageReading(stage: .teammateReview, why: .set, mark: StageMark(stage: .teammateReview, at: t(200), by: Self.cart))
+        #expect(Self.why(titled) == "Teammate's review")
+        #expect(StageText.who(titled, now: t(500), name: Self.name) == "‘Cart’ set it 5m ago")
+        // Yours names you: its words never name who set it.
+        let mine = Self.reading(facts, marks: [StageMark(stage: .yourReview, at: t(200))])!
+        #expect(Self.why(mine) == "Waiting for your review")
+        #expect(StageText.who(mine, now: t(500), name: Self.name) == "You set it 5m ago")
+    }
+
     @Test func votesAreKeptAsTheVotesAloneInOrder() {
         #expect(StageFacts.digest(votes: [10, -5, 0, 10]) == "-5,0,10,10")
         #expect(StageFacts.digest(votes: []) == "")
