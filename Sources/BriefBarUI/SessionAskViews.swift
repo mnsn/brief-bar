@@ -122,7 +122,8 @@ package struct SessionAskButton: View {
 
 /// Ask… in a session's row's menus, in a group of its own: to ask it; while it's asked, to stop; once it answered, to ask
 /// more, or dismiss the answer; when it couldn't, to try again, or to ask something else. Not to ask while its field is
-/// open already.
+/// open already. Each says it's Ask…'s, as Try Asking Again does beside a failed summary's Try Again, in the same menus
+/// and VoiceOver's actions, which have no lines between them.
 package struct SessionAskMenuItems: View {
     private let ref: ItemRef?
     private let divided: Bool
@@ -160,7 +161,7 @@ package struct SessionAskMenuItems: View {
                     if !isFieldOpen { Button("Ask More…") { asks.openField(for: ref) } }
                     Button("Dismiss Answer") { asks.dismiss(ref) }
                 case .failed:
-                    Button("Try Again") { asks.tryAgain(ref) }
+                    Button("Try Asking Again") { asks.tryAgain(ref) }
                     if !isFieldOpen { Button("Ask…") { asks.openField(for: ref) } }
                 }
                 if divided { Divider() }
@@ -170,7 +171,8 @@ package struct SessionAskMenuItems: View {
 }
 
 /// Ask…, where a session's page opens, such as a pull request's Copilot line ⌄: opens its field, then its page, where it
-/// shows under the heading; Ask More… once it answered. Only while it can ask.
+/// shows under the heading; Ask More… once it answered. While it's being asked, Stop Asking, as its row's menus have it:
+/// asking it again there would stop that question for another. Only while it can ask.
 package struct SessionAskPageItem: View {
     private let ref: ItemRef
     private let openPage: () -> Void
@@ -197,9 +199,13 @@ package struct SessionAskPageItem: View {
 
         var body: some View {
             if asks.offers(ref) {
-                Button(asks.question(for: ref)?.answer != nil ? "Ask More…" : "Ask…") {
-                    asks.openField(for: ref)
-                    openPage()
+                if asks.question(for: ref)?.isAsking == true {
+                    Button("Stop Asking") { asks.dismiss(ref) }
+                } else {
+                    Button(asks.question(for: ref)?.answer != nil ? "Ask More…" : "Ask…") {
+                        asks.openField(for: ref)
+                        openPage()
+                    }
                 }
             }
         }

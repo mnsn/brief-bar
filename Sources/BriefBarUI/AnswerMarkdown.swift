@@ -197,21 +197,6 @@ enum AnswerMarkdown {
     private static func isTableRule(_ cells: [String]) -> Bool {
         cells.allSatisfy { cell in !cell.isEmpty && cell.allSatisfy { $0 == "-" || $0 == ":" } }
     }
-
-    /// All of it as plain text, for VoiceOver and what the row's tooltip says: its words, a block a line.
-    static func plain(_ blocks: [Block]) -> String {
-        blocks.map { block -> String in
-            switch block {
-            case .paragraph(let text), .heading(let text), .quote(let text): String(SummaryMarkdown.inline(text).characters)
-            case .point(let marker, let text, _): marker + " " + String(SummaryMarkdown.inline(text).characters)
-            case .code(let code): code
-            case .table(let rows): rows.map { $0.joined(separator: ", ") }.joined(separator: "\n")
-            case .rule: ""
-            }
-        }
-        .filter { !$0.isEmpty }
-        .joined(separator: "\n")
-    }
 }
 
 /// An answer's blocks (`AnswerMarkdown`), drawn as BriefBar draws what a model wrote: its text can be selected, and code

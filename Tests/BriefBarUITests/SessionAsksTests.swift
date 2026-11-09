@@ -273,6 +273,60 @@ import Testing
         #expect(asks.field == nil)
     }
 
+    /// No field opens for a session while it's asked: asking it there would stop that question, a premium request already,
+    /// for another. Trying again closes its field, as asking does.
+    @Test func noFieldOpensWhileTheSessionIsAsked() async throws {
+        let (asks, asker) = asks()
+        asks.openField(for: session)
+        asks.ask(session, question: nil)
+        #expect(asks.field == nil)
+        asks.openField(for: session)
+        #expect(asks.field == nil)
+        // Another session's opens.
+        asks.openField(for: other)
+        #expect(asks.isFieldOpen(for: other))
+
+        asker.answer(.failure(SessionAsks.Problem("You're out of premium requests this month.")))
+        try await ended(asks, session)
+        asks.openField(for: session)
+        asks.setWords("Why?", for: session)
+        asks.tryAgain(session)
+        #expect(asks.question(for: session)?.isAsking == true)
+        #expect(asks.field == nil)
+        asker.answer(.success("Done."))
+        try await ended(asks, session)
+        asks.openField(for: session)
+        #expect(asks.isFieldOpen(for: session))
+    }
+
+    /// As GitHub Copilot is turned off: what's asked of the sessions it listed stops, and what they were asked and answered,
+    /// and their field, are forgotten; a task BriefBar sent keeps its own, as Azure DevOps lists it, and Ask… goes on.
+    @Test func forgetsTheSessionsASourceListed() async throws {
+        let (asks, asker) = asks()
+        let task = ItemRef.session("9a4f2b17-c3d8-4e61-b5a0-2e8d7c6b4a03")!
+        asks.ask(task, question: nil)
+        asker.answer(.success("Fixed the comments."))
+        try await ended(asks, task)
+        asks.ask(session, question: nil)
+        asker.answer(.success("Done."))
+        try await ended(asks, session)
+        asks.ask(other, question: "Why?")
+        try await until("the other session to be asked") { asker.asked.count == 3 }
+        asks.openField(for: session)
+
+        asks.forgetSessions { $0 != task }
+        try await until("what's asked to stop") { asker.cancelled == 1 }
+        #expect(asks.question(for: session) == nil)
+        #expect(asks.question(for: other) == nil)
+        #expect(asks.field == nil)
+        #expect(asks.question(for: task)?.state == .answered("Fixed the comments."))
+        #expect(asks.canAsk)
+        // A task's field stays open.
+        asks.openField(for: task)
+        asks.forgetSessions { $0 != task }
+        #expect(asks.isFieldOpen(for: task))
+    }
+
     /// VoiceOver hears that a question ended once, though its session shows in more than one place; and so for the next.
     @Test func announcesEachEndOnce() async throws {
         let (asks, asker) = asks()
@@ -393,11 +447,6 @@ import Testing
         #expect(AnswerMarkdown.blocks(text) == [
             .table([["Type", "Meaning"], ["A|B", "union"], ["`a | b`", "either, as code"], [#"`C:\\`"#, "a drive"]]),
         ])
-    }
-
-    @Test func saysItPlainlyForVoiceOver() {
-        let blocks = AnswerMarkdown.blocks("**Done:** the [backoff](https://example.com).\n\n- `capped`\n\n---\n\n| a | b |")
-        #expect(AnswerMarkdown.plain(blocks) == "Done: the backoff.\n• capped\na, b")
     }
 }
 

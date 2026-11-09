@@ -120,6 +120,11 @@ package final class CopilotSource: BriefBarSource {
 
     package func stop() {
         linkObservers.removeAll()
+        // Ask… of its sessions stops, and what they were asked and answered goes, as their summaries go with what it said:
+        // every session's, one that left its list since it was asked too, such as one archived meanwhile, but the tasks
+        // BriefBar sent, which Azure DevOps lists.
+        let tasks = Set(services.sentTasks.tasks.compactMap { ItemRef.session($0.id) })
+        services.sessionAsks.forgetSessions { !tasks.contains($0) }
         // And what it opens in Terminal: a session still being opened opens nothing now.
         store.stop()
         services.links.withdraw(.copilot)
@@ -202,7 +207,7 @@ package final class CopilotSource: BriefBarSource {
                     // As it is when you click it.
                     store.open(store.sessions.first { $0.id == session.id } ?? session)
                 },
-                openItself: { store.openItself(session) }
+                openItself: ({ store.openItself(session) }, store.opensItselfHelp)
             ))
         }
         return items
