@@ -90,10 +90,10 @@ fileprivate final class SplitModel {
 /// A page that shows By Mission, as the service knows it.
 fileprivate final class SplitViewer {}
 
-/// Suggested splits (§7.4.8), as the service and the namer give them: asked after names, twice, of what's on screen once
-/// settled, and again only when what the mission is made of changes; Split as one change of yours, with one Undo that
-/// counts as Keep Together; Keep Together kept by the mission's makeup, and forgotten with its source. One at a time, as
-/// the naming tests are.
+/// Suggested splits (§7.4.8), as the service and the namer give them: asked after names, twice, of what's on screen
+/// once settled, and again only when what the mission is made of changes; Split as one change of yours, with one Undo
+/// that counts as Keep Together; Keep Together kept by what the mission is made of, and forgotten with its source. One
+/// at a time, as the naming tests are.
 @MainActor
 @Suite(.serialized) struct SuggestedSplitsTests {
     static let story = ItemRef.workItem(organization: "contoso", id: 5100)
@@ -107,15 +107,17 @@ fileprivate final class SplitViewer {}
     ]
 
     /// Azure DevOps' pull requests for User Story 5100, each for a task of its own, in their numbers' order, with Show Links
-    /// reading their stories, but those `pending`'s; or, Show Links off, none.
+    /// reading their stories, but those `pending`'s; or, Show Links off, none. Open, but those `states` says otherwise.
     static func tell(
         _ order: PullRequestOrder, _ numbers: [Int] = [4101, 4102, 4120, 4121], retitled: [Int: String] = [:],
-        readsStories: Bool = true, pending: Set<Int> = []
+        readsStories: Bool = true, pending: Set<Int> = [], states: [Int: PullRequestState] = [:]
     ) {
         let pullRequests = numbers.enumerated().map { index, number in
-            MissionNamingTests.ado(number, readsStories && !pending.contains(number) ? [
+            var pullRequest = MissionNamingTests.ado(number, readsStories && !pending.contains(number) ? [
                 OrderStory(ref: story, type: "User Story", task: .workItem(organization: "contoso", id: number + 1_000), rank: Double(index + 1)),
             ] : nil)
+            if let state = states[number] { pullRequest.state = state }
+            return pullRequest
         }
         var items = [MissionNamingTests.item(story, "Checkout redesign")]
         for number in numbers {
@@ -156,8 +158,8 @@ fileprivate final class SplitViewer {}
 
     /// You kept the mission together as its question says it's made now.
     static func keptAsMade(_ question: MissionSplitQuestion, by order: PullRequestOrder) -> Bool {
-        guard let makeup = question.makeup else { return order.keptTogether.keeps(question.key) }
-        return order.keptTogether.entries[question.key]?.makeups[makeup.tells] == makeup.digest
+        guard let contents = question.contents else { return order.keptTogether.keeps(question.key) }
+        return order.keptTogether.entries[question.key]?.contents[contents.tells] == contents.digests
     }
 
     /// Three hours go by, as `KeptTogether.settleFor` counts them, the service looking again each hour, as its clock does.
@@ -614,7 +616,7 @@ fileprivate final class SplitViewer {}
         Self.tellCopilot(order)
         Self.tell(order)
         try await stillKept("Both on again")
-        #expect(KeptTogether.load(from: defaults).entries[key]?.makeups.count == 3)
+        #expect(KeptTogether.load(from: defaults).entries[key]?.contents.count == 3)
         #expect(model.splitPrompts.count == 2)
 
         // Kept together while Show Links was off: what it reads later is kept with it, and it isn't asked again.
@@ -634,10 +636,10 @@ fileprivate final class SplitViewer {}
         try #require(await MissionNamingTests.eventually { order.suggestedSplit(for: unread) != nil })
         let asked = model.splitPrompts.count
         _ = order.keepTogether(unread)
-        #expect(KeptTogether.load(from: defaults).entries[key]?.makeups.keys.map(\.stories) == [false])
+        #expect(KeptTogether.load(from: defaults).entries[key]?.contents.keys.map(\.stories) == [false])
         Self.tell(order)
         Self.hoursPass(order, clock: clock)
-        #expect(KeptTogether.load(from: defaults).entries[key]?.makeups.count == 2)
+        #expect(KeptTogether.load(from: defaults).entries[key]?.contents.count == 2)
         try await stillKept("Show Links on, once kept while off")
         #expect(model.splitPrompts.count == asked)
         order.stopShowing(in: viewer)
@@ -659,7 +661,7 @@ fileprivate final class SplitViewer {}
         order.namer = model.namer(clock: clock)
         // Before any source tells anything, for three hours: nothing told of it, nothing kept.
         Self.hoursPass(order, clock: clock)
-        #expect(order.keptTogether.entries[key]?.makeups.count == 1)
+        #expect(order.keptTogether.entries[key]?.contents.count == 1)
         order.publish(.azureDevOps, readsStories: true, listed: false)
         order.publish(.copilot, listed: false)
         #expect(order.missions.map(\.key) == [key])
@@ -860,6 +862,47 @@ fileprivate final class SplitViewer {}
         order.stopShowing(in: viewer)
     }
 
+    /// What you kept together stays kept as its pull requests merge or close, and once Done no longer lists them, and while
+    /// one waits for a next you set, then not, which change how its parts join but nothing the mission is made of: Apple
+    /// Intelligence isn't asked again. A pull request it wasn't made of brings the suggestion back three hours later.
+    @Test func keepTogetherHoldsAsItsPullRequestsMergeCloseOrWaitForANext() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        let all = [4101, 4102, 4103, 4120, 4121]
+        Self.tell(order, all)
+        let viewer = SplitViewer()
+        let shown = try await Self.suggested(order, model: model, clock: clock, viewer: viewer)
+        let key = shown.key
+        _ = order.keepTogether(shown)
+        func hoursLater(_ when: Comment) async throws {
+            Self.hoursPass(order, clock: clock)
+            try await Self.stillKept(key, in: order, model: model, clock: clock, viewer: viewer, when)
+        }
+
+        Self.tell(order, all, states: [4102: .merged])
+        #expect(Self.mission(key, in: order)?.steps.contains { $0.ref == Self.pr(4102) && $0.status == .merged } == true)
+        try await hoursLater("Merged")
+        Self.tell(order, all, states: [4102: .merged, 4103: .closed])
+        try await hoursLater("Closed")
+        Self.tell(order, [4101, 4120, 4121])
+        try await hoursLater("No longer in Done")
+        try #require(order.change(.setNext(Self.pr(4101), in: key, true), in: key)?.canUndo == true)
+        try await hoursLater("Waiting for a next")
+        try #require(order.change(.setNext(Self.pr(4101), in: key, false), in: key)?.canUndo == true)
+        try await hoursLater("No next")
+
+        Self.tell(order, [4101, 4120, 4121, 4122])
+        Self.hoursPass(order, clock: clock)
+        #expect(order.keptTogether.entries[key] == nil)
+        let mission = try #require(Self.mission(key, in: order))
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        #expect(await MissionNamingTests.eventually { order.suggestedSplit(for: mission) != nil })
+        order.stopShowing(in: viewer)
+    }
+
     /// While Show Links still reads what a story's open pull requests are for, its mission can seem finished, with only its
     /// merged ones read: what you kept together isn't counted till it has read them all.
     @Test func keepTogetherWaitsWhileAStorysMissionOnlySeemsFinished() async throws {
@@ -985,7 +1028,7 @@ fileprivate final class SplitViewer {}
         // BriefBar starts, offline, and quits before Azure DevOps has listed anything.
         let offline = Self.service(defaults, clock: clock)
         offline.publish(.azureDevOps, readsStories: true, listed: false)
-        #expect(offline.keptTogether.entries[key]?.makeups.isEmpty == true)
+        #expect(offline.keptTogether.entries[key]?.contents.isEmpty == true)
 
         // It starts again, online.
         let order = Self.service(defaults, clock: clock)
@@ -1025,7 +1068,8 @@ fileprivate final class SplitViewer {}
     }
 
     /// Undo that gives an order back what it took from a split, as Undo of Put Yours Back does, keeps the mission it's back
-    /// in together too, though what you kept together as the order took it went since.
+    /// in together too, though what you kept together as the order took it went since. Put Yours Back alone, which leaves
+    /// the order's mission made of less, isn't a change.
     @Test func undoThatGivesAnOrderBackWhatItTookFromASplitKeepsItsMissionTogether() async throws {
         let clock = SplitClock()
         let model = SplitModel()
@@ -1034,6 +1078,7 @@ fileprivate final class SplitViewer {}
         let order = Self.service(defaults, clock: clock)
         order.namer = model.namer(clock: clock)
         Self.tell(order)
+        Self.tellCopilot(order, opened: [])
         try #require(order.split(try await Self.suggested(order, model: model, clock: clock, viewer: viewer)) != nil)
         order.stopShowing(in: viewer)
         clock.advance(60)
@@ -1047,9 +1092,14 @@ fileprivate final class SplitViewer {}
         let key = MissionKey.plan(Self.planID)
         #expect(order.keptTogether.entries[key] != nil)
 
-        // You put yours back for the build agents' upgrade, and the order's mission, without it for three hours, goes.
+        // You put yours back for the build agents' upgrade: the order's mission, without it for three hours, is kept.
         try #require(order.change(.putBack(Self.pr(4120)))?.canUndo == true)
         #expect(!Self.refs(of: Self.mission(key, in: order)).contains(Self.pr(4120)))
+        Self.hoursPass(order, clock: clock)
+        #expect(order.keptTogether.entries[key] != nil)
+        // A session turns out to have opened the coupon field, which the order's mission wasn't made of: three hours later,
+        // what you kept together goes.
+        Self.tellCopilot(order, opened: [4101])
         Self.hoursPass(order, clock: clock)
         #expect(order.keptTogether.entries[key] == nil)
         #expect(order.undo())

@@ -383,18 +383,18 @@ in the List, on the Map and in its Board lane, suggests splitting it. It says wh
 its Focus and the name you gave it, and where the others go: to a new mission of your own, with the name it suggests,
 for two or more; out of missions for one; or into the mission you split off it before. Click a number for that pull
 request's details. The button says what it does, such as **Split in Two**, **Split in Three** or **Take Out !4120**, and
-does it as one change of yours, with **Undo**; **Keep Together** keeps the suggestion away until what the mission is
-made of has changed for three hours, its pull requests, their work items and story, or the sessions that opened them,
-not a title alone, nor Show Links or Copilot turned off or on, nor a read that fails for a while; time offline or asleep
-doesn't count. Undo counts as Keep Together, and so does a session's order that takes back what a split moved, even one
-told while BriefBar was closed, so the two don't undo each other. Meanwhile, **Suggested Split…** in the mission's **⋯**
-shows it again. Apple Intelligence never splits a mission itself, and nothing moves until you click. It looks at a
-story's mission, a session's order and the pull requests opened under a session, with three open Azure DevOps pull
-requests or more, never a chain, a stack or a mission of your own; pull requests that merged or closed, GitHub's, those
-you changed, there or in another mission, and those another session's order names too, stay where they are, and related
-ones, such as stacked ones, stay together, and a story's mission, or a session's pull requests, keeps two at least. It's
-often quiet, as it suggests a split only where it's clear, and a split applies whole: to take part of one, Keep
-Together, then **Move to Mission**.
+does it as one change of yours, with **Undo**; **Keep Together** keeps the suggestion away until something new has been
+in the mission for three hours: a pull request, a work item or story one is for, or a session that opened one; not one
+that merges, closes or leaves, a next you set, a title alone, Show Links or Copilot turned off or on, or a read that
+fails for a while; time offline or asleep doesn't count. Undo counts as Keep Together, and so does a session's order
+that takes back what a split moved, even one told while BriefBar was closed, so the two don't undo each other.
+Meanwhile, **Suggested Split…** in the mission's **⋯** shows it again. Apple Intelligence never splits a mission itself,
+and nothing moves until you click. It looks at a story's mission, a session's order and the pull requests opened under a
+session, with three open Azure DevOps pull requests or more, never a chain, a stack or a mission of your own; pull
+requests that merged or closed, GitHub's, those you changed, there or in another mission, and those another session's
+order names too, stay where they are, and related ones, such as stacked ones, stay together, and a story's mission, or a
+session's pull requests, keeps two at least. It's often quiet, as it suggests a split only where it's clear, and a split
+applies whole: to take part of one, Keep Together, then **Move to Mission**.
 
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote

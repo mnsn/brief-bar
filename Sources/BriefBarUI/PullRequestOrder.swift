@@ -850,14 +850,14 @@ package final class PullRequestOrder: ObservableObject {
         return OrderText.splitDone(box, undo: undo)
     }
 
-    /// Keep Together: the suggestion goes, and comes back only once the mission has been made of something else for
-    /// `KeptTogether.settleFor`, as BriefBar keeps (`order.splits`); Suggested Split… shows it again meanwhile. What
-    /// VoiceOver hears after it.
+    /// Keep Together: the suggestion goes, and comes back only once the mission has been made of something it wasn't for
+    /// `KeptTogether.settleFor` (`MissionSplitQuestion.Contents`), as BriefBar keeps (`order.splits`); Suggested Split…
+    /// shows it again meanwhile. What VoiceOver hears after it.
     @discardableResult
     package func keepTogether(_ mission: OrderMission) -> String {
         guard isOn, let question = splitQuestion(for: mission) else { return OrderText.keptTogether }
         objectWillChange.send()
-        keptTogether.keep(mission.key, makeup: question.makeup, at: now())
+        keptTogether.keep(mission.key, contents: question.contents, at: now())
         keptTogether.save(to: defaults)
         splitsShownAgain.remove(mission.key)
         askNames()
@@ -898,7 +898,7 @@ package final class PullRequestOrder: ObservableObject {
             guard (mission.steps + mission.attached).contains(where: { refs.contains($0.ref) }),
                   let question = splitQuestion(for: mission)
             else { continue }
-            keptTogether.keep(mission.key, makeup: question.makeup, at: now())
+            keptTogether.keep(mission.key, contents: question.contents, at: now())
             kept = true
         }
         guard kept else { return }
@@ -907,7 +907,7 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// What you kept together, as the missions change: each follows its mission as Focus does, by `successor`; those of
-    /// orders BriefBar no longer keeps go, and those whose missions have been made of something else for
+    /// orders BriefBar no longer keeps go, and those whose missions have been made of something they weren't for
     /// `KeptTogether.settleFor`; and the time since BriefBar last saw a mission counts against it while BriefBar could
     /// see it, at most two hours at a time. Then the missions that pull requests a split moved went back to, as an order
     /// took them, which BriefBar noted in this look (`splitsTakenBack`), keep together (`keepTogether(splitBack:)`): the
@@ -925,19 +925,19 @@ package final class PullRequestOrder: ObservableObject {
         if kept.forget([], keepingPlans: plans) { changed = true }
         let elapsed = keptCounted.map { min(max(date.timeIntervalSince($0), 0), 2 * Self.timeCheckInterval) } ?? 0
         keptCounted = date
-        var makeups: [MissionKey: MissionSplitQuestion.Makeup?] = [:]
+        var contents: [MissionKey: MissionSplitQuestion.Contents?] = [:]
         // Not while a source still reads what it shows, as right after BriefBar starts: until it has, a mission can still be
-        // without some of its own, which join it once read, or seem finished. Nor one whose makeup can't be told, as while
+        // without some of its own, which join it once read, or seem finished. Nor one whose contents can't be told, as while
         // Azure DevOps is off.
         for mission in missions where kept.entries[mission.key] != nil && !facts.isReading {
             guard let question = splitQuestion(for: mission) else {
-                makeups[mission.key] = .some(nil)
+                contents[mission.key] = .some(nil)
                 continue
             }
-            if let makeup = question.makeup { makeups[mission.key] = makeup }
+            if let made = question.contents { contents[mission.key] = made }
         }
         let kindsOn = kindsOn
-        if kept.account(seen: Set(missions.map(\.key)), makeups: makeups, canSee: { key in
+        if kept.account(seen: Set(missions.map(\.key)), contents: contents, canSee: { key in
             MissionNames.canSee(key, plans: plans, kindsOn: kindsOn, readsStories: facts.seesStories)
         }, elapsed: elapsed, at: date) {
             changed = true
