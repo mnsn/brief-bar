@@ -745,7 +745,8 @@ package final class PullRequestOrder: ObservableObject {
         let question = MissionSplitting.question(
             for: mission, in: missions, facts: facts, named: modelName(of: mission),
             isNamedByYou: yourNames.name(for: mission.key) != nil, splitFrom: { holding[$0]?.splitFrom },
-            namesMission: naming.contains, sessionsWorking: sessionsWorking(on:), seesSessions: kindsOn.contains(.session),
+            namesMission: naming.contains, isChanged: { changes[$0] != nil }, sessionsWorking: sessionsWorking(on:),
+            seesSessions: kindsOn.contains(.session),
             name: name(of:)
         )
         questions[mission.key] = .some(question)
@@ -773,8 +774,14 @@ package final class PullRequestOrder: ObservableObject {
     /// is, and the mission keeps its key, Focus and the name you gave it. What VoiceOver hears after it; nil when it has no
     /// suggestion that holds now.
     @discardableResult
-    package func split(_ mission: OrderMission) -> String? {
-        guard isOn, let split = suggestedSplit(for: mission) else { return nil }
+    package func split(_ shown: OrderMission) -> String? {
+        guard isOn else { return nil }
+        // Against the orders as agents last told them, as the change will be: a revision since may relate what the
+        // suggestion separates, and then it doesn't hold.
+        reloadOrders()
+        guard let mission = missions.first(where: { $0.key == shown.key }), let split = suggestedSplit(for: mission) else {
+            return nil
+        }
         let box = OrderText.splitBox(split, title: title(of: mission), yourName: yourNames.name(for: mission.key), names: names)
         var moves: [OrderSplitMove] = []
         var named: [MissionKey: String] = [:]

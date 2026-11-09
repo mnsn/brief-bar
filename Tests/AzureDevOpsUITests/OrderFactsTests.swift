@@ -120,7 +120,9 @@ import Testing
         let unread = try #require(order.splitQuestion(for: waiting))
         #expect(unread.makeup == nil)
         // A first refresh that could read no organization's lists, as before the network's up, listed nothing yet.
-        store.receive(PulseSnapshot(organizations: [DemoData.organization], problem: .offline, hasLoaded: true))
+        store.receive(
+            PulseSnapshot(organizations: [DemoData.organization], problem: .offline, hasLoaded: true, readNothing: true)
+        )
         facts.publish()
         let offline = try #require(order.missions.first)
         let none = try #require(order.splitQuestion(for: offline))
@@ -129,7 +131,7 @@ import Testing
         store.receive(PulseSnapshot(
             organizations: [DemoData.organization], problem: .someOrganizations("Couldn't read its lists."), hasLoaded: true
         ))
-        #expect(store.problem?.readNothing == false && !store.isListing)
+        #expect(!store.isListing)
 
         await store.loadOnce()
         facts.publish()
@@ -139,11 +141,22 @@ import Testing
         // Offline since: it shows what it read before, so what a mission is made of can't be told for now.
         var unreachable = DemoData.snapshot()
         unreachable.problem = PulseProblem.offline
+        unreachable.readNothing = true
         store.receive(unreachable)
         facts.publish()
         let shown = try #require(order.missions.first)
         let stale = try #require(order.splitQuestion(for: shown))
         #expect(!store.isListing && stale.makeup == nil)
+        // Nor while every organization is in a directory the Azure CLI isn't signed in to; but while only some are, it
+        // lists the others' as it reads them.
+        var elsewhere = DemoData.snapshot()
+        elsewhere.problem = .otherDirectory(organizations: [DemoData.organization], tenant: "directory", others: nil)
+        elsewhere.readNothing = true
+        store.receive(elsewhere)
+        #expect(!store.isListing)
+        elsewhere.readNothing = false
+        store.receive(elsewhere)
+        #expect(store.isListing)
     }
 
     /// Off, it tells nothing.

@@ -58,15 +58,6 @@ public enum PulseProblem: Sendable, Equatable {
     /// Signing in fixes it: to the Azure CLI, or to an organization's directory.
     public var offersSignIn: Bool { needsSignIn || signInTenant != nil }
 
-    /// Nothing more could be read: signed out, offline or nothing reachable, or Azure DevOps asked BriefBar to slow down.
-    /// What the list shows is what it read before.
-    public var readNothing: Bool {
-        switch self {
-        case .cliNotFound, .signedOut, .authFailed, .offline, .throttled, .unreachable: return true
-        case .noOrganizations, .someOrganizations, .otherDirectory: return false
-        }
-    }
-
     /// What goes to the log: the message, but naming no organization when some are in another directory, since a pull
     /// request sent to you comes from a link in a chat: how many are, and whether others couldn't be read, some of which
     /// may be in yet another directory.
@@ -160,11 +151,15 @@ public struct PulseSnapshot: Sendable, Equatable {
     /// When each pull request asked for by its link that's listed was last read by it: one that couldn't be read since
     /// stays listed as it was then, though its details may be read again. `--wait` takes a read only once it read both.
     public var linkedReadAt: [PRKey: Date]
+    /// The latest refresh read nothing, neither an organization's lists nor a pull request sent to you, as offline,
+    /// signed out, or with every organization in a directory the Azure CLI isn't signed in to: what's listed is what
+    /// was read before.
+    public var readNothing: Bool
 
     public init(
         records: [PRRecord] = [], organizations: [String] = [], account: String? = nil, userName: String? = nil,
         firstLoaded: [String: Date] = [:], problem: PulseProblem? = nil, refreshedAt: Date? = nil, isRefreshing: Bool = false,
-        hasLoaded: Bool = false, closedLinks: Set<PRKey> = [], linkedReadAt: [PRKey: Date] = [:]
+        hasLoaded: Bool = false, closedLinks: Set<PRKey> = [], linkedReadAt: [PRKey: Date] = [:], readNothing: Bool = false
     ) {
         self.records = records
         self.organizations = organizations
@@ -177,6 +172,7 @@ public struct PulseSnapshot: Sendable, Equatable {
         self.hasLoaded = hasLoaded
         self.closedLinks = closedLinks
         self.linkedReadAt = linkedReadAt
+        self.readNothing = readNothing
     }
 
     /// When an organization's lists were first read, however its name is spelled: a pull request read under another
@@ -1297,7 +1293,7 @@ public actor PulseEngine {
         return PulseSnapshot(
             records: records, organizations: configuration.organizations, account: account, userName: userName, firstLoaded: firstLoaded,
             problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, closedLinks: closedLinks,
-            linkedReadAt: linked.mapValues(\.readAt)
+            linkedReadAt: linked.mapValues(\.readAt), readNothing: failures > 0
         )
     }
 

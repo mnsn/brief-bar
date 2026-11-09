@@ -783,6 +783,80 @@ fileprivate final class SplitViewer {}
         order.stopShowing(in: viewer)
     }
 
+    /// A split goes by the orders as agents last told them: once a revision BriefBar hadn't heard of yet relates what the
+    /// suggestion separates, it doesn't hold, and nothing moves.
+    @Test func aRevisionThatRelatesWhatItSeparatesCallsTheSplitOff() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        let defaults = MemoryDefaults()
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        var orders = DeclaredOrders.load(from: defaults)
+        try orders.apply(
+            OrderRequest(entries: [4101, 4102, 4120, 4121].map { .init(link: link($0)) }), now: clock.now, newID: Self.planID
+        )
+        orders.save(to: defaults)
+        let order = Self.service(defaults, clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tellCopilot(order)
+        Self.tell(order)
+        let key = MissionKey.plan(Self.planID)
+        let viewer = SplitViewer()
+        Self.show([key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        let shown = try #require(Self.mission(key, in: order))
+        try #require(await MissionNamingTests.eventually { order.suggestedSplit(for: shown) != nil })
+        // The session puts the build agents' upgrade after the coupon field, which BriefBar hasn't heard yet.
+        var revised = DeclaredOrders.load(from: defaults)
+        try revised.apply(
+            OrderRequest(plan: Self.planID.uuidString, revision: 1, entries: [
+                .init(link: link(4101)), .init(link: link(4102)), .init(link: link(4120), after: [link(4101)]),
+                .init(link: link(4121)),
+            ]),
+            now: clock.now, newID: UUID()
+        )
+        revised.save(to: defaults)
+        #expect(order.split(shown) == nil)
+        #expect(order.changes.isEmpty)
+        #expect(Self.refs(of: Self.mission(key, in: order)) == [Self.pr(4101), Self.pr(4102), Self.pr(4120), Self.pr(4121)])
+        order.stopShowing(in: viewer)
+    }
+
+    /// One you set as next to merge in another mission it's in too stays where it is as a split goes, with what it's
+    /// grouped with: the split would take your next away.
+    @Test func oneYouSetAsNextInAnotherMissionStaysAsItsMissionSplits() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        let defaults = MemoryDefaults()
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        let otherID = UUID(uuidString: "51111111-2222-4333-8444-555555555555")!
+        var orders = DeclaredOrders.load(from: defaults)
+        try orders.apply(
+            OrderRequest(entries: [4101, 4102, 4120, 4121].map { .init(link: link($0)) }), now: clock.now, newID: Self.planID
+        )
+        // Another session's order names the build agents' upgrade too.
+        try orders.apply(OrderRequest(entries: [4120, 4130].map { .init(link: link($0)) }), now: clock.now, newID: otherID)
+        orders.save(to: defaults)
+        let order = Self.service(defaults, clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tellCopilot(order)
+        Self.tell(order, [4101, 4102, 4120, 4121, 4130])
+        let key = MissionKey.plan(Self.planID)
+        let other = MissionKey.plan(otherID)
+        try #require(order.change(.setNext(Self.pr(4120), in: other, true))?.canUndo == true)
+        let viewer = SplitViewer()
+        Self.show([key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        let shown = try #require(Self.mission(key, in: order))
+        try #require(await MissionNamingTests.eventually { order.suggestedSplit(for: shown) != nil })
+        try #require(order.split(shown) != nil)
+        #expect(order.changes[Self.pr(4120)]?.first == other)
+        #expect(Self.refs(of: Self.mission(key, in: order)) == [Self.pr(4120), Self.pr(4121)])
+        #expect(Self.refs(of: Self.mission(other, in: order)).contains(Self.pr(4120)))
+        order.stopShowing(in: viewer)
+    }
+
     @Test func theAnswerIsItsGroupsAloneByGuidedGeneration() throws {
         let shape = try OnDeviceModel.Shape.split(parts: 4)
         let json = try shape.text(ofJSON: #"{"oneWork": false, "groups": [{"parts": [1, 2]}, {"parts": [3, 4]}]}"#)

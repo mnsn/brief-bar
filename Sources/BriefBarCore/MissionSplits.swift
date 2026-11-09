@@ -307,13 +307,16 @@ public enum MissionSplitting {
     ///   - isNamedByYou: you gave it a name.
     ///   - splitFrom: the mission a split moved a pull request from, while it's where that put it (`OrderChange.splitFrom`).
     ///   - namesMission: a change of yours names a mission by that pull request, as a chain's is: it stays.
+    ///   - isChanged: a change of yours is about that pull request, in this mission or another, as one you set as
+    ///     next to merge in another mission it's in too: it stays.
     ///   - sessionsWorking: the sessions that told BriefBar they're working on a pull request now.
     ///   - seesSessions: Copilot is on, and tells which sessions opened its pull requests.
     ///   - name: what a source calls a session, a work item or a pull request, when it says.
     public static func question(
         for mission: OrderMission, in missions: [OrderMission], facts: OrderFacts, named: String? = nil,
         isNamedByYou: Bool = false, splitFrom: (ItemRef) -> MissionKey? = { _ in nil },
-        namesMission: (ItemRef) -> Bool = { _ in false }, sessionsWorking: (ItemRef) -> [ItemRef] = { _ in [] },
+        namesMission: (ItemRef) -> Bool = { _ in false }, isChanged: (ItemRef) -> Bool = { _ in false },
+        sessionsWorking: (ItemRef) -> [ItemRef] = { _ in [] },
         seesSessions: Bool = true, name: (ItemRef) -> String?
     ) -> MissionSplitQuestion? {
         guard looksAt(mission) else { return nil }
@@ -340,6 +343,10 @@ public enum MissionSplitting {
             if case .after(let earlier, _)? = step.review {
                 for ref in earlier where byRef[ref] != nil { join(step.ref, ref) }
             }
+            // And those its notes relate it to, as by an order's line BriefBar set aside.
+            for note in step.notes {
+                for ref in note.relates where byRef[ref] != nil { join(step.ref, ref) }
+            }
         }
         var roots: [ItemRef] = []
         var components: [ItemRef: [ItemRef]] = [:]
@@ -358,7 +365,7 @@ public enum MissionSplitting {
             let open = component.filter(isOpen)
             guard !open.isEmpty else { continue }
             let stays = component.contains { ref in
-                !isOpen(ref) || byRef[ref]?.isChangedByYou == true || namesMission(ref)
+                !isOpen(ref) || byRef[ref]?.isChangedByYou == true || namesMission(ref) || isChanged(ref)
             }
             parts.append(part(open, besides: story, stays: stays, facts: facts, sessionsWorking: sessionsWorking, name: name))
         }
@@ -881,5 +888,23 @@ private struct Lossy<Value: Decodable>: Decodable {
 
     init(from decoder: Decoder) throws {
         value = try? Value(from: decoder)
+    }
+}
+
+extension OrderNote {
+    /// The pull requests it relates this one to, which a split keeps together: stacked on it or with it, or after it by
+    /// an order's line or yours, whether BriefBar follows that line or set it aside; not one you took away.
+    var relates: [ItemRef] {
+        switch self {
+        case .showsAgainst(let ref), .orderDisagrees(let ref, _), .stackedWith(let ref, _, _), .afterYourNext(let ref),
+             .setAside(let ref, _, _), .goesRound(let ref, _), .yourNextGoesFirst(let ref, _, _, _),
+             .ordersGoRound(let ref, _, _), .yoursDoesntHold(let ref, _), .nextDoesntHold(let ref, _):
+            [ref]
+        case .yourAfter(let refs, _):
+            refs
+        case .alsoIn, .alsoFor, .yourNext, .tookAway, .moved, .placementGone, .placementUnseen, .notAfterYourNext,
+             .nextElsewhere, .nextUnseen, .nextSince, .orderChangedIt:
+            []
+        }
     }
 }

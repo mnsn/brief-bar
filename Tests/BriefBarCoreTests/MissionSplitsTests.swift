@@ -50,11 +50,11 @@ import Testing
     static func question(
         _ mission: OrderMission, in missions: [OrderMission] = [], facts: OrderFacts, named: String? = nil,
         isNamedByYou: Bool = false, splitFrom: (ItemRef) -> MissionKey? = { _ in nil }, namesMission: (ItemRef) -> Bool = { _ in false },
-        name: (ItemRef) -> String? = name
+        isChanged: (ItemRef) -> Bool = { _ in false }, name: (ItemRef) -> String? = name
     ) -> MissionSplitQuestion? {
         MissionSplitting.question(
             for: mission, in: missions, facts: facts, named: named, isNamedByYou: isNamedByYou, splitFrom: splitFrom,
-            namesMission: namesMission, name: name
+            namesMission: namesMission, isChanged: isChanged, name: name
         )
     }
 
@@ -159,6 +159,36 @@ import Testing
         // What it's for: the session that told its order.
         #expect(question.about == "Copilot session: “Coupon flow”")
         #expect(question.session == "Coupon flow")
+    }
+
+    /// What its notes say it relates to joins its parts too, as an order's line BriefBar set aside, since it goes round
+    /// through another mission; but not a line you took away.
+    @Test func whatItsNotesRelateJoinsItsPartsButNotALineYouTookAway() throws {
+        func step(_ number: Int, _ notes: [OrderNote] = []) -> OrderStep {
+            OrderStep(ref: Self.pr(number), status: .open, standing: .anyTime, notes: notes)
+        }
+        let mission = OrderMission(
+            key: .plan(Self.planID), kind: .declared(id: Self.planID, revision: 1, declaredBy: Self.session, updatedAt: t(0)),
+            steps: [
+                step(4101), step(4102, [.goesRound(Self.pr(4101), by: Self.session)]),
+                step(4105, [.tookAway(Self.pr(4107), by: nil)]), step(4107),
+            ],
+            attached: [], cycles: [], isFocused: false, isFinished: false, isStale: false, date: nil, sessions: []
+        )
+        let facts = OrderFacts(pullRequests: [Self.ado(4101), Self.ado(4102), Self.ado(4105), Self.ado(4107)])
+        let question = try #require(Self.question(mission, facts: facts))
+        #expect(question.parts.map(\.refs) == [[Self.pr(4101), Self.pr(4102)], [Self.pr(4105)], [Self.pr(4107)]])
+    }
+
+    /// One a change of yours is about stays, though it changes nothing here, as one you set as next to merge in another
+    /// mission it's in too, which a split would take away.
+    @Test func onlyAChangeOfYoursElsewhereKeepsItsPartWhereItIs() throws {
+        let facts = Self.storyFacts()
+        let missions = StoryMissionsTests.missions(facts)
+        let mission = try #require(missions.first { $0.key == .story(Self.story) })
+        let question = try #require(Self.question(mission, facts: facts, isChanged: { $0 == Self.pr(4105) }))
+        #expect(question.parts.map(\.stays) == [false, true, false])
+        #expect(question.isWorthAsking)
     }
 
     @Test func aPartWithWhatStaysStaysAndANonePartAsksNothing() throws {

@@ -623,6 +623,7 @@ import BriefBarCore
         )
         #expect(signedOut.problem == .signedOut("Run az login"))
         #expect(signedOut.problem?.needsSignIn == true)
+        #expect(signedOut.readNothing)
         #expect(server.requests.isEmpty)
 
         let missing = await PulseEngine.loadOnce(
@@ -633,6 +634,7 @@ import BriefBarCore
 
         let none = await PulseEngine.loadOnce(client: server.client(), configuration: PulseEngine.Configuration(organizations: []))
         #expect(none.problem == .noOrganizations)
+        #expect(!none.readNothing)
     }
 
     @Test func keepsTheLastListWhenAzureDevOpsCannotBeReached() async throws {
@@ -641,12 +643,15 @@ import BriefBarCore
         let engine = engine(server)
         await engine.refreshNow()
         #expect(await engine.currentSnapshot().records.count == 1)
+        #expect(await !engine.currentSnapshot().readNothing)
 
         server.on("/_apis/git/pullrequests") { _ in .failure(.notConnectedToInternet) }
         await engine.refreshNow()
         let offline = await engine.currentSnapshot()
         #expect(offline.problem == .offline)
         #expect(offline.records.count == 1)
+        // What's listed is what it read before.
+        #expect(offline.readNothing)
     }
 
     @Test func reportsAnOrganizationThatCannotBeRead() async {
@@ -658,6 +663,21 @@ import BriefBarCore
         )
         #expect(snapshot.records.count == 1)
         #expect(snapshot.problem == .someOrganizations("Couldn't read locked (No access to this organization.)."))
+        #expect(!snapshot.readNothing)
+    }
+
+    /// A refresh that could read no organization, each in a directory the Azure CLI isn't signed in to, read nothing,
+    /// though it goes on to the pull requests sent to you, as it does for those.
+    @Test func aRefreshWithEveryOrganizationInAnotherDirectoryReadsNothing() async {
+        let server = StubServer()
+        server.on("/_apis/connectionData", json: ["authenticatedUser": ["id": "ME"]])
+        server.put("fabrikam", in: Tenants.other)
+        let snapshot = await PulseEngine.loadOnce(
+            client: server.client(tokens: FakeTokens(server.id, tenant: Tenants.home)),
+            configuration: PulseEngine.Configuration(organizations: ["fabrikam"])
+        )
+        #expect(snapshot.problem?.signInTenant == Tenants.other)
+        #expect(snapshot.readNothing)
     }
 
     @Test func anOrganizationRemovedDuringARefreshStaysRemoved() async throws {
