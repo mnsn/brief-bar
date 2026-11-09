@@ -191,6 +191,32 @@ import Testing
         #expect(question.isWorthAsking)
     }
 
+    /// One another mission has too, as another order names it, stays: a split would take it out of that one as well, with
+    /// that order's lines, which this mission doesn't show. So a split moves only what this order alone names.
+    @Test func oneAnotherOrderNamesTooStaysWhereItIs() throws {
+        let otherID = UUID(uuidString: "31111111-2222-4333-8444-555555555555")!
+        let plan = OrderPlan(id: Self.planID, createdAt: t(0), updatedAt: t(0), entries: [
+            .init(ref: Self.pr(4101)), .init(ref: Self.pr(4102)), .init(ref: Self.pr(4120)),
+        ])
+        // Another session's order puts the build agents' upgrade after the coupon field.
+        let other = OrderPlan(id: otherID, createdAt: t(0), updatedAt: t(0), entries: [
+            .init(ref: Self.pr(4101)), .init(ref: Self.pr(4120), after: [Self.pr(4101)]),
+        ])
+        let facts = OrderFacts(pullRequests: [Self.ado(4101), Self.ado(4102), Self.ado(4120)])
+        let missions = StoryMissionsTests.missions(facts, DeclaredOrders(plans: [plan, other]))
+        let mission = try #require(missions.first { $0.key == .plan(Self.planID) })
+        let question = try #require(Self.question(mission, in: missions, facts: facts))
+        // Apart here, where this order names each alone.
+        #expect(question.parts.map(\.refs) == [[Self.pr(4101)], [Self.pr(4102)], [Self.pr(4120)]])
+        #expect(question.parts.map(\.stays) == [true, false, true])
+        #expect(question.isWorthAsking)
+        // Taking the build agents' upgrade out would move what stays.
+        #expect(MissionSplitting.plan(question, grouping: [[0, 1], [2]]) == nil)
+        let takingOut = try #require(MissionSplitting.plan(question, grouping: [[0, 2], [1]]))
+        #expect(takingOut.groups.map(\.refs) == [[Self.pr(4101), Self.pr(4120)], [Self.pr(4102)]])
+        #expect(takingOut.moving.map(\.goes) == [.outside])
+    }
+
     @Test func aPartWithWhatStaysStaysAndANonePartAsksNothing() throws {
         let gitHub = OrderBoardTests.gh(212)
         let plan = OrderPlan(id: Self.planID, createdAt: t(0), updatedAt: t(0), entries: [

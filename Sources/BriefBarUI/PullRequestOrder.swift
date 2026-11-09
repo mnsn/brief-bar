@@ -120,9 +120,10 @@ package final class PullRequestOrder: ObservableObject {
     /// Each mission's question for a suggested split, as worked out since the missions, what the sources show or its name
     /// last changed; nil for one it doesn't look at.
     private var questions: [MissionKey: MissionSplitQuestion?] = [:]
-    /// The pull requests a split moved that an order took since, as BriefBar last saw them: one more counts as Keep Together
-    /// for the mission it's in. Nil until it first looks, after Pull Request Order goes on.
-    private var splitsTakenBack: Set<ItemRef>?
+    /// The pull requests a split moved that an order took since, as BriefBar notes it (`OrderChanges.noteOverrides`), which
+    /// it does as it starts too, for an order told while it was closed: each counts as Keep Together for the mission it's in,
+    /// once that's shown and BriefBar can tell what it's made of (`keepTakenBackTogether`). In memory only.
+    private var splitsTakenBack: Set<ItemRef> = []
     /// When it last counted the time against what you kept together, while it's on.
     private var keptCounted: Date?
     /// The demo's made-up split: a mission, its groups of pull requests, and their names.
@@ -265,7 +266,7 @@ package final class PullRequestOrder: ObservableObject {
             splits = [:]
             keptTogether = KeptTogether()
             splitsShownAgain = []
-            splitsTakenBack = nil
+            splitsTakenBack = []
             keptCounted = nil
             namer?.stop()
             missions = []
@@ -287,7 +288,7 @@ package final class PullRequestOrder: ObservableObject {
         namesCounted = nil
         keptTogether = KeptTogether.load(from: defaults)
         keptCounted = nil
-        splitsTakenBack = nil
+        splitsTakenBack = []
         // The demo's agents keep what they tell in their own memory.
         if !isDemo {
             SessionStages.prune(in: defaults, now: now())
@@ -912,9 +913,9 @@ package final class PullRequestOrder: ObservableObject {
 
     /// What you kept together, as the missions change: each follows its mission as Focus does, by `successor`; those of
     /// orders BriefBar no longer keeps go, and those whose missions have been made of something else for
-    /// `KeptTogether.settleFor`; and the time since
-    /// BriefBar last saw a mission counts against it while BriefBar could see it, at most two hours at a time. Then a pull
-    /// request a split moved that an order took since counts as Keep Together for the mission it's in.
+    /// `KeptTogether.settleFor`; and the time since BriefBar last saw a mission counts against it while BriefBar could
+    /// see it, at most two hours at a time. Then the missions that pull requests a split moved went back to, as an
+    /// order took them since, keep together (`keepTakenBackTogether`).
     private func keepKeptTogether(following successor: (MissionKey) -> MissionKey?, facts: OrderFacts, at date: Date) {
         var kept = keptTogether
         var changed = false
@@ -946,9 +947,31 @@ package final class PullRequestOrder: ObservableObject {
         if kept.entries != keptTogether.entries { objectWillChange.send() }
         keptTogether = kept
         if changed { kept.save(to: defaults) }
-        let takenBack = Set(changes.all.filter { $0.bySplit && !$0.holds(in: orders) }.map(\.ref))
-        if let known = splitsTakenBack { keepTogether(splitBack: takenBack.subtracting(known)) }
-        splitsTakenBack = takenBack
+        keepTakenBackTogether(at: date)
+    }
+
+    /// The missions that pull requests a split moved went back to, as an order took them since (`splitsTakenBack`), keep
+    /// together as they're made now, once each is shown and BriefBar can tell what it's made of, as when it starts: so that
+    /// the split and the session don't undo each other over and over. One in a mission a split doesn't look at has nothing
+    /// to keep; one in no mission shown, or whose mission's makeup can't be told yet, waits; one whose split holds again,
+    /// as you put it back, or that's gone from your changes, goes.
+    private func keepTakenBackTogether(at date: Date) {
+        splitsTakenBack = splitsTakenBack.filter { changes[$0].map { $0.bySplit && !$0.holds(in: orders) } ?? false }
+        guard !splitsTakenBack.isEmpty else { return }
+        var kept = false
+        for mission in missions {
+            let refs = Set((mission.steps + mission.attached).map(\.ref)).intersection(splitsTakenBack)
+            guard !refs.isEmpty else { continue }
+            if MissionSplitting.looksAt(mission) {
+                guard let makeup = splitQuestion(for: mission)?.makeup else { continue }
+                keptTogether.keep(mission.key, makeup: makeup, at: date)
+                kept = true
+            }
+            splitsTakenBack.subtract(refs)
+        }
+        guard kept else { return }
+        objectWillChange.send()
+        keptTogether.save(to: defaults)
     }
 
     /// The demo's made-up split, for its mission's question as it is now: only in the demo.
@@ -1179,9 +1202,15 @@ package final class PullRequestOrder: ObservableObject {
         stacked = OrderBoard.stacked(facts)
         let focused = focus.flatMap(OrderFocus.ref(of:))
         // What an order changed since one of your changes, as BriefBar sees it: that change doesn't hold anymore, though the
-        // order changes back, until you put yours back.
+        // order changes back, until you put yours back. A split's that an order took, as one told while BriefBar was closed,
+        // keeps the mission it went back to together (`keepTakenBackTogether`).
         var noted = changes
-        if noted.noteOverrides(in: orders, now: date) { keep(noted) }
+        if noted.noteOverrides(in: orders, now: date) {
+            for change in noted.all where change.bySplit && change.overridden != nil && changes[change.ref]?.overridden == nil {
+                splitsTakenBack.insert(change.ref)
+            }
+            keep(noted)
+        }
         let subjects = changes.subjects
         var evidence = evidence
         for observation in facts.observations

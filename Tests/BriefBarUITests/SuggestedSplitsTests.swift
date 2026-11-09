@@ -783,6 +783,64 @@ fileprivate final class SplitViewer {}
         order.stopShowing(in: viewer)
     }
 
+    /// So does one a session told while BriefBar was closed: as BriefBar starts, it notes that the order took them, and the
+    /// mission they're in keeps together once the sources have read what they show, as it's made then. One it noted before,
+    /// as it last ran, isn't kept together again, however what you kept together went since.
+    @Test func anOrderTakingWhatASplitMovedWhileBriefBarWasClosedKeepsItsMissionTogether() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        let defaults = MemoryDefaults()
+        let viewer = SplitViewer()
+        let split = Self.service(defaults, clock: clock)
+        split.namer = model.namer(clock: clock)
+        Self.tell(split)
+        try #require(split.split(try await Self.suggested(split, model: model, clock: clock, viewer: viewer)) != nil)
+        split.stopShowing(in: viewer)
+
+        // BriefBar closed, a session tells an order of all four.
+        clock.advance(60)
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        var orders = DeclaredOrders.load(from: defaults)
+        try orders.apply(
+            OrderRequest(entries: [4101, 4102, 4120, 4121].map { .init(link: link($0)) }), now: clock.now, newID: Self.planID
+        )
+        orders.save(to: defaults)
+        let key = MissionKey.plan(Self.planID)
+        let order = Self.service(defaults, clock: clock)
+        order.namer = model.namer(clock: clock)
+        order.publish(.azureDevOps, readsStories: true, listed: false)
+        #expect(order.keptTogether.entries[key] == nil)
+        Self.tell(order)
+        let taken = try #require(Self.mission(key, in: order))
+        #expect(Self.refs(of: taken) == [Self.pr(4101), Self.pr(4102), Self.pr(4120), Self.pr(4121)])
+        let question = try #require(order.splitQuestion(for: taken))
+        #expect(question.isWorthAsking)
+        #expect(Self.keptAsMade(question, by: order))
+        try await Self.stillKept(key, in: order, model: model, clock: clock, viewer: viewer, "Taken back while closed")
+        try #require(order.change(.setNext(Self.pr(4101), in: key, true))?.canUndo == true)
+        order.stopShowing(in: viewer)
+
+        // What it kept together goes, as once the mission has been made of something else for three hours. BriefBar closed
+        // again, the session puts the coupon field after their rounding, against your next; as BriefBar starts, it notes
+        // that, and the order it noted taking them before is no news.
+        defaults.removeObject(forKey: KeptTogether.defaultsKey)
+        clock.advance(60)
+        var revised = DeclaredOrders.load(from: defaults)
+        try revised.apply(
+            OrderRequest(plan: Self.planID.uuidString, revision: 1, entries: [
+                .init(link: link(4102)), .init(link: link(4101), after: [link(4102)]), .init(link: link(4120)),
+                .init(link: link(4121)),
+            ]),
+            now: clock.now, newID: UUID()
+        )
+        revised.save(to: defaults)
+        let again = Self.service(defaults, clock: clock)
+        Self.tell(again)
+        #expect(again.changes[Self.pr(4101)]?.overridden != nil)
+        #expect(again.missions.contains { $0.key == key })
+        #expect(again.keptTogether.entries[key] == nil)
+    }
+
     /// A split goes by the orders as agents last told them: once a revision BriefBar hadn't heard of yet relates what the
     /// suggestion separates, it doesn't hold, and nothing moves.
     @Test func aRevisionThatRelatesWhatItSeparatesCallsTheSplitOff() async throws {
@@ -854,6 +912,49 @@ fileprivate final class SplitViewer {}
         #expect(order.changes[Self.pr(4120)]?.first == other)
         #expect(Self.refs(of: Self.mission(key, in: order)) == [Self.pr(4120), Self.pr(4121)])
         #expect(Self.refs(of: Self.mission(other, in: order)).contains(Self.pr(4120)))
+        order.stopShowing(in: viewer)
+    }
+
+    /// So does one whose change of yours a session's order went against since, with what it's grouped with, though no other
+    /// mission has it: the split would take away yours, which you can still put back.
+    @Test func oneWhoseChangeAnOrderWentAgainstStaysAsItsMissionSplits() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        let defaults = MemoryDefaults()
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        var orders = DeclaredOrders.load(from: defaults)
+        try orders.apply(
+            OrderRequest(entries: [4101, 4102, 4120, 4121].map { .init(link: link($0)) }), now: clock.now, newID: Self.planID
+        )
+        orders.save(to: defaults)
+        let order = Self.service(defaults, clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tellCopilot(order)
+        Self.tell(order)
+        let key = MissionKey.plan(Self.planID)
+        try #require(order.change(.setNext(Self.pr(4120), in: key, true))?.canUndo == true)
+        // The session puts the build agents' upgrade after their packages' cache since.
+        clock.advance(60)
+        var revised = DeclaredOrders.load(from: defaults)
+        try revised.apply(
+            OrderRequest(plan: Self.planID.uuidString, revision: 1, entries: [
+                .init(link: link(4101)), .init(link: link(4102)), .init(link: link(4120), after: [link(4121)]),
+                .init(link: link(4121)),
+            ]),
+            now: clock.now, newID: UUID()
+        )
+        revised.save(to: defaults)
+        order.reloadOrders()
+        #expect(order.changes[Self.pr(4120)]?.holds(in: revised) == false)
+        let viewer = SplitViewer()
+        Self.show([key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        let shown = try #require(Self.mission(key, in: order))
+        try #require(await MissionNamingTests.eventually { order.suggestedSplit(for: shown) != nil })
+        try #require(order.split(shown) != nil)
+        #expect(order.changes[Self.pr(4120)]?.first == key)
+        #expect(Self.refs(of: Self.mission(key, in: order)) == [Self.pr(4120), Self.pr(4121)])
         order.stopShowing(in: viewer)
     }
 

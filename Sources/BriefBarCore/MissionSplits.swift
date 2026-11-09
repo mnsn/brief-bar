@@ -302,7 +302,8 @@ public enum MissionSplitting {
     /// split moved pull requests into from it, as a part of its own, by its open Azure DevOps pull requests. Not those for its
     /// story that an order lists apart, which aren't in it.
     /// - Parameters:
-    ///   - missions: as By Mission shows them, for those split off it before.
+    ///   - missions: as By Mission shows them, for those split off it before, and for its pull requests another has too, as
+    ///     another order names them, which stay.
     ///   - named: the name Apple Intelligence gave it, which it shows now, when it has one.
     ///   - isNamedByYou: you gave it a name.
     ///   - splitFrom: the mission a split moved a pull request from, while it's where that put it (`OrderChange.splitFrom`).
@@ -359,6 +360,9 @@ public enum MissionSplitting {
             ref.kind == .pullRequest && byRef[ref]?.status.isOpen == true
         }
         let story = mission.story?.ref
+        // Those another mission has too, as another order names them: a split would take them out of that one as well,
+        // with that order's lines, which this mission doesn't show.
+        let elsewhere = Set(missions.filter { $0.key != mission.key }.flatMap { ($0.steps + $0.attached).map(\.ref) })
         var parts: [MissionSplitQuestion.Part] = []
         for top in roots {
             let component = components[top] ?? []
@@ -366,6 +370,7 @@ public enum MissionSplitting {
             guard !open.isEmpty else { continue }
             let stays = component.contains { ref in
                 !isOpen(ref) || byRef[ref]?.isChangedByYou == true || namesMission(ref) || isChanged(ref)
+                    || elsewhere.contains(ref)
             }
             parts.append(part(open, besides: story, stays: stays, facts: facts, sessionsWorking: sessionsWorking, name: name))
         }
