@@ -8,9 +8,9 @@ import Foundation
 /// it changed (`AgentChanges`), and of your changes to missions (`OrderChanges`), which only the app writes. It's off until
 /// you turn it on (`PullRequestOrderSetting`): until then it reads nothing, not even the orders it kept, and the sources tell
 /// it nothing. Turned off, it shows nothing again, and keeps the orders, what it saw become of their pull requests, the
-/// mission you focus on, your changes and the names you gave missions, unused, until you forget them. A mission is called
-/// by the name you gave it, else the one Apple Intelligence gave it on this Mac while By Mission showed it
-/// (`MissionNamer`), else the one BriefBar gives it from its sources.
+/// mission you focus on, your changes, the names you gave missions and the suggested splits you kept together, unused,
+/// until you forget them. A mission is called by the name you gave it, else the one Apple Intelligence gave it on this
+/// Mac while By Mission showed it (`MissionNamer`), else the one BriefBar gives it from its sources.
 @MainActor
 package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var isOn: Bool
