@@ -304,7 +304,7 @@ package enum PullRequestOrderMCP {
                 notSet.append("Not \(labels([ref])): it \(facts.state == .merged ? "merged" : "was abandoned").")
                 continue
             }
-            marks[ref] = StageRules.mark(stage, at: now, facts: facts)
+            marks[ref] = StageRules.mark(stage, at: now, facts: facts, by: session)
         }
         guard !marks.isEmpty else { throw MCPToolError(notSet.joined(separator: "\n")) }
         // What the user set that this replaces, while it stands: they can put it back.

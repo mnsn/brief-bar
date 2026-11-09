@@ -339,6 +339,39 @@ import Testing
         #expect(StageRules.stands(mark, facts: moved, sessions: [Self.session(.finished, at: 500)]))
     }
 
+    /// A Your review a session set ends as its votes change, as read since it was set, as Teammate's review does: it said
+    /// its work was ready for you, as ‘Cart’ finished does, which gives way once someone else votes. Approved and ready to
+    /// complete, it moves on to Can merge, or Waits where its order puts it after one not seen merged. On someone else's,
+    /// your own vote ends it. One you set keeps no votes, and stands.
+    @Test func aSessionsYourReviewEndsAsItsVotesChange() {
+        let set = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: t(90))
+        let ready = StageRules.mark(.yourReview, at: t(100), facts: set, by: Self.cart)
+        #expect(ready == StageMark(stage: .yourReview, at: t(100), by: Self.cart, votes: ""))
+        let yours = StageRules.mark(.yourReview, at: t(100), facts: set)
+        #expect(yours == StageMark(stage: .yourReview, at: t(100)))
+        #expect(StageRules.stands(ready, facts: StageFacts(role: .author, votes: "", readAt: t(120)), sessions: []))
+
+        // Priya's approval ends it once it's read since.
+        var approved = StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: t(99))
+        #expect(StageRules.stands(ready, facts: approved, sessions: []))
+        approved.readAt = t(120)
+        #expect(!StageRules.stands(ready, facts: approved, sessions: []))
+        #expect(Self.reading(approved, marks: [ready])?.stage == .canMerge)
+        let waits = Self.reading(approved, marks: [ready], order: .waits([Self.pr(4102)], words: "After !4102"))
+        #expect(waits?.stage == .waits)
+        #expect(waits?.why == .waitsFor([Self.pr(4102)], words: "After !4102"))
+        #expect(Self.reading(approved, marks: [yours])?.stage == .yourReview)
+        #expect(Self.reading(approved, marks: [yours])?.mark == yours)
+
+        let theirs = StageFacts(role: .reviewer, asksYou: "Priya asked you", votes: "0", readAt: t(90))
+        let review = StageRules.mark(.yourReview, at: t(100), facts: theirs, by: Self.cart)
+        #expect(review.votes == "0")
+        var voted = theirs
+        voted.votes = "10"
+        voted.readAt = t(120)
+        #expect(!StageRules.stands(review, facts: voted, sessions: []))
+    }
+
     /// A session that read the pull request itself, just now, set its stage with what it saw: what the source read before,
     /// its votes and commit, ends nothing until it reads them again.
     @Test func votesAndCommitsCountOnlyAsReadSinceItWasSet() {

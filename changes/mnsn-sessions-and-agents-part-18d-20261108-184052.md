@@ -1,10 +1,11 @@
 - **Copilot sessions keep your pull requests' stages current.** With Pull Request Order and agents on, the Copilot
   sessions that work on your Azure DevOps pull requests tell BriefBar their stages as they go, without you asking: In
   progress as they start fixing one, Your review once they've pushed their work, Teammate's review once you tell them
-  you've reviewed it. A session's In progress ends as it finishes. The latest stage set wins, yours or a session's,
-  and its label says who set it, such as **‘Cart’ says it's ready**; where a session's replaced yours, **Put Yours
-  Back** is in its menu. Can merge, Waits and Merged still come only from what BriefBar sees. What a session set
-  counts only while the Copilot app lists the session, and **Forget Stages…** forgets it too.
+  you've reviewed it. A session's In progress ends as it finishes, and its Your review as the votes change, so one a
+  teammate approved moves on to Can merge or Waits; a Your review you set lasts until you change it. The latest stage
+  set wins, yours or a session's, and its label says who set it, such as **‘Cart’ says it's ready**; where a session's
+  replaced yours, **Put Yours Back** is in its menu. Can merge, Waits and Merged still come only from what BriefBar
+  sees. What a session set counts only while the Copilot app lists the session, and **Forget Stages…** forgets it too.
 - **BriefBar's prompts ask for the stage.** While Pull Request Order is on, Send Work to Copilot's prompt, and a pull
   request's Fix Comments, Fix the Build, Resolve Conflicts and Push & Reply, end asking the session to tell BriefBar
   the pull request is ready for your review once it pushed, if it has the tool to. A review's doesn't.

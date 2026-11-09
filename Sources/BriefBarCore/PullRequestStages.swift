@@ -535,23 +535,32 @@ public enum StageRules {
         return (mine, latestEnded ? [] : theirs, latestEnded)
     }
 
-    /// A stage you set now, keeping of what it was set over only what `stands` reads to end it: the commit, for In
-    /// progress, and for Teammate's review on someone else's; the votes, for Teammate's review alone, on yours how many of
-    /// each others cast, on someone else's your own vote. Your review keeps neither.
-    public static func mark(_ stage: PullRequestStage, at date: Date, facts: StageFacts) -> StageMark {
+    /// A stage you or a session set now, keeping of what it was set over only what `stands` reads to end it: the
+    /// commit, for In progress, and for Teammate's review on someone else's; the votes, on yours how many of each
+    /// others cast, on someone else's your own vote, for Teammate's review, and for Your review a session set. Your
+    /// own Your review keeps neither.
+    /// - Parameter session: the session that set it, nil for you.
+    public static func mark(
+        _ stage: PullRequestStage, at date: Date, facts: StageFacts, by session: ItemRef? = nil
+    ) -> StageMark {
         let keepsCommit = stage == .inProgress || (stage == .teammateReview && !facts.isYours)
-        return StageMark(stage: stage, at: date, votes: stage == .teammateReview ? facts.votes : nil, commit: keepsCommit ? facts.commit : nil)
+        let keepsVotes = stage == .teammateReview || (stage == .yourReview && session != nil)
+        let votes = keepsVotes ? facts.votes : nil
+        return StageMark(stage: stage, at: date, by: session, votes: votes, commit: keepsCommit ? facts.commit : nil)
     }
 
-    /// Whether a stage set still stands, as the pull request moved on since (plan §2.4). A later change replaces it, which
-    /// `standingMark` sees to, and merging or closing it ends it, which comes first anyway. A set In progress ends when a
-    /// session writing it finishes, or new commits come, after it was set: a review's end ends nothing. A set Teammate's
-    /// review ends when its votes change (`StageFacts.votes`): on yours, the votes others cast; on someone else's that you
-    /// finished reviewing, your own vote, and new commits. A set Your review stands until it's changed: BriefBar can't tell
-    /// you reviewed it. Votes and commits count only as its source read them after it was set, when it says when it read
-    /// them (`StageFacts.readAt`): a session that read the pull request itself, just now, may have seen what its source
-    /// hasn't yet. A session's own In progress ends as that session finishes too, whether or not BriefBar sees it on the
-    /// pull request otherwise: it was writing it.
+    /// Whether a stage set still stands, as the pull request moved on since (plan §2.4). A later change replaces it,
+    /// which `standingMark` sees to, and merging or closing it ends it, which comes first anyway. A set In progress
+    /// ends when a session writing it finishes, or new commits come, after it was set: a review's end ends nothing. A
+    /// set Teammate's review ends when its votes change (`StageFacts.votes`): on yours, the votes others cast; on
+    /// someone else's that you finished reviewing, your own vote, and new commits. A Your review you set stands until
+    /// it's changed: BriefBar can't tell you reviewed it. One a session set ends as its votes change, as Teammate's
+    /// review does: it said its work was ready for you, as ‘Cart’ finished does, which gives way once someone else
+    /// votes, so that one approved and ready to complete moves on to Can merge or Waits. Votes and commits count only
+    /// as its source read them after it was set, when it says when it read them (`StageFacts.readAt`): a session that
+    /// read the pull request itself, just now, may have seen what its source hasn't yet. A session's own In progress
+    /// ends as that session finishes too, whether or not BriefBar sees it on the pull request otherwise: it was writing
+    /// it.
     /// - Parameter setters: what the sessions that set stages do now, as the sources list them, by their references.
     public static func stands(
         _ mark: StageMark, facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
@@ -567,6 +576,7 @@ public enum StageRules {
             if readSince, let votes = mark.votes, votes != facts.votes { return false }
             return facts.isYours || !newCommits
         case .yourReview:
+            if !mark.isYours, readSince, let votes = mark.votes, votes != facts.votes { return false }
             return true
         case .canMerge, .waits, .merged:
             return false

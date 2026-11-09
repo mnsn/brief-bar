@@ -1318,7 +1318,7 @@ package final class PullRequestOrder: ObservableObject {
             guard let session = set.by, let facts = stageFacts[ref],
                   !sessionStages.sessions.values.contains(where: { $0.marks[ref] != nil }) else { continue }
             var stage = sessionStages[session] ?? SessionStage(session: session)
-            stage.set(StageRules.mark(set.stage, at: set.at, facts: facts), of: ref)
+            stage.set(StageRules.mark(set.stage, at: set.at, facts: facts, by: session), of: ref)
             sessionStages.replace(stage)
             told = true
         }

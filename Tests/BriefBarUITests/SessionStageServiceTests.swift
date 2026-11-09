@@ -230,6 +230,40 @@ private final class Clock {
         #expect(Self.why(order, 4093) == "‘Cart’ says it's ready")
     }
 
+    /// A session's Your review moves on as a teammate approves, as read since it was set, to Can merge once Azure DevOps
+    /// says it's ready; it keeps the votes as the session read them as it set it, after its push reset Priya's, so the
+    /// list's read from before ends nothing. One you set yourself stays.
+    @Test func aSessionsYourReviewMovesOnAsATeammateApprovesAndYoursStays() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        Self.tell(order, [
+            4093: StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: clock.now),
+            4094: StageFacts(role: .author, waitingFor: "Waiting on Priya", readAt: clock.now),
+        ])
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600)
+        clock.advance(seconds: 60)
+        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, votes: "", in: defaults, order)
+        order.setStage(.yourReview, of: Self.ref(4094))
+        #expect(Self.why(order, 4093) == "‘Cart’ says it's ready")
+
+        clock.advance(seconds: 60)
+        Self.tell(order, [
+            4093: StageFacts(role: .author, waitingFor: "Waiting on Priya", readAt: clock.now),
+            4094: StageFacts(role: .author, waitingFor: "Waiting on Priya", readAt: clock.now),
+        ])
+        #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.cart)
+
+        clock.advance(seconds: 60)
+        let approved = StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: clock.now)
+        Self.tell(order, [4093: approved, 4094: approved])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .canMerge)
+        #expect(order.stage(of: Self.ref(4093))?.mark == nil)
+        #expect(SessionStages.load(Self.cart, from: defaults) == nil)
+        #expect(order.stage(of: Self.ref(4094))?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(4094))?.isSetByYou == true)
+    }
+
     @Test func mergedOrClosedEndsWhatSessionsSet() {
         let clock = Clock()
         let defaults = Self.defaults()

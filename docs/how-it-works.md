@@ -1449,11 +1449,15 @@ it, and its words say who: **‘Cart’ says it's ready**, which also says when,
 whose menu then has **Put Yours Back**, which sets yours again, as a new change. A session's own In progress also ends
 as that session finishes, whether or not BriefBar sees it on the pull request otherwise, even one BriefBar sent work to
 that you haven't opened in the Copilot app (`activitiesSince`); working on afterwards, at something else, it doesn't put
-the pull request in progress. Votes and commits end what a session set only as BriefBar read them after it set it, since
-the session read the pull request itself just then, and what it sets is timed as that read ended. BriefBar reads them as
-the refresh that read its organization's lists started, or as it was read by its link, a time a pull request kept as it
-was while those couldn't be read keeps (`StageFacts.readAt`, `PulseSnapshot.readAt(of:)`). What a session set counts
-only while the Copilot app lists the session (`MCPRelated.StageSessions`, `PullRequestOrder.listedSessionsDoing`), so an
+the pull request in progress. A Your review a session set ends as the votes change after it was set, as Teammate's
+review does, unlike one you set, which stands until you change it: the session said its work was ready for you, as
+**‘Cart’ finished** does, which gives way once someone else votes, so one a teammate approved moves on to Can merge or
+Waits. It keeps the votes as the session read them as it set it, after its push, so a reset of the votes that push
+caused ends nothing. Votes and commits end what a session set only as BriefBar read them after it set it, since the
+session read the pull request itself just then, and what it sets is timed as that read ended. BriefBar reads them as the
+refresh that read its organization's lists started, or as it was read by its link, a time a pull request kept as it was
+while those couldn't be read keeps (`StageFacts.readAt`, `PulseSnapshot.readAt(of:)`). What a session set counts only
+while the Copilot app lists the session (`MCPRelated.StageSessions`, `PullRequestOrder.listedSessionsDoing`), so an
 archived one's goes with it. Once the latest of them no longer stands, or the pull request merges or closes, none
 counts: yours goes, and BriefBar takes away from what each session keeps what it set before the latest, or all of it
 once the pull request merged or closed, listed or not (`SessionStages.end`), so an older one never comes back, also once

@@ -87,7 +87,7 @@ extension AzureDevOpsAgent {
         for (ref, set) in kept.demoSessionMarks.sorted(by: { $0.key < $1.key }) {
             guard let session = set.by, let fact = facts[ref] else { continue }
             var stage = sessionStages[session] ?? SessionStage(session: session)
-            stage.set(StageRules.mark(set.stage, at: set.at, facts: fact), of: ref)
+            stage.set(StageRules.mark(set.stage, at: set.at, facts: fact, by: session), of: ref)
             sessionStages.replace(stage)
         }
         var setters = copilot.doing

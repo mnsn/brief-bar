@@ -110,8 +110,9 @@ private final class Announcements: Sendable {
             BriefBar shows !4093 in contoso in Your review now, set by this session; the user sees who set it, and can \
             change it.
             """)
+        // With the votes as it read them, which end it as they change.
         let mark = try #require(Self.kept(defaults)?.marks[Self.ref(4093)])
-        #expect(mark == StageMark(stage: .yourReview, at: Self.now, by: ItemRef.session(Self.session)))
+        #expect(mark == StageMark(stage: .yourReview, at: Self.now, by: ItemRef.session(Self.session), votes: ""))
         #expect(announcements.total == 1)
 
         // By numbers with organization; In progress keeps the commit, Teammate's review the votes.
