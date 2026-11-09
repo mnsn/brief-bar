@@ -157,6 +157,47 @@ import Testing
         let description: String
     }
 
+    @MainActor private final class Installed {
+        var value = false
+    }
+
+    /// ↗ on a session's Ask… answer says where it opens the session, the Copilot app or Terminal, as the app is installed
+    /// or removed, though no session changed: looked at again as you open one.
+    @Test func answersOpenerSaysWhereItOpensAsTheAppComesAndGoes() async throws {
+        let id = "5e2a9c41-7d3b-4f86-b0e1-9c4d2a7f3e21"
+        let installed = Installed()
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: false)
+        services.links.setOn(true)
+        let source = CopilotSource(services: services, paths: nil, isAppInstalled: { installed.value })
+        source.start()
+        defer { source.stop() }
+        let at = Date().addingTimeInterval(-120)
+        var log = SessionLogState()
+        log.apply(LogEvent(timestamp: at, kind: .userMessage))
+        log.apply(LogEvent(timestamp: at.addingTimeInterval(1), kind: .turnEnd(isSubagent: false)))
+        source.store.receive(EngineSnapshot(records: [
+            SessionRecord(meta: SessionMeta(id: id, name: "Retry backoff", isRunning: false), log: log),
+        ]))
+        let session = try #require(ItemRef.session(id))
+        // What the source hears first, on the main queue, as it starts.
+        await Self.mainQueueRuns()
+        #expect(services.links.describe(session).openItself?.help == "Opens the session in Terminal")
+
+        installed.value = true
+        let notes = ThisMac.Notes()
+        ThisMac.$noting.withValue(notes) {
+            services.links.describe(session).openItself?.perform()
+        }
+        #expect(notes.refused.first?.hasPrefix("open ghapp://sessions/\(id)") == true)
+        await Self.mainQueueRuns()
+        #expect(services.links.describe(session).openItself?.help == "Opens the session in GitHub Copilot")
+    }
+
+    /// Lets what the main queue was given before run, such as what the source hears there.
+    private static func mainQueueRuns() async {
+        await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } }
+    }
+
     /// Lets the main queue deliver what the source hears until `condition` holds, for as long as a busy machine could
     /// need (`waitLimit`).
     private static func until(_ what: String, _ condition: () -> Bool) async throws {

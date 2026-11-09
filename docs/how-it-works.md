@@ -3427,7 +3427,8 @@ its Markdown by a small reader of BriefBarUI's own (`AnswerMarkdown`, `AnswerTex
 numbered points, code, quotes and tables, links as their words only, a long one's beginning until **Show More**. Its
 **↗** opens the session itself, as its row does, even where opening the session opens the one that asks you its
 question: in the Copilot app, or in Terminal without it, as its tooltip says (`LinkedItem.openItself`,
-`SessionStore.opensItselfHelp`). A task's answer has none, as its row and page open its pull request or work item.
+`SessionStore.opensItselfHelp`), told again as the app is installed or removed, though no session changed. A task's
+answer has none, as its row and page open its pull request or work item.
 VoiceOver hears once that it answered, or why it couldn't, however many places show it (`SessionAsks.announcesOnce`).
 The log says only that a session was asked, never what, nor what it answered. The demo makes its answers up
 (`DemoData.sessionAnswer`), and runs nothing.

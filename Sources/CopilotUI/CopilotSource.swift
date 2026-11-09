@@ -51,13 +51,13 @@ package final class CopilotSource: BriefBarSource {
         self.init(services: services, paths: services.isDemo ? CopilotPaths.overridden() : CopilotPaths.default())
     }
 
-    /// With the Copilot folder it reads, such as a test's.
-    init(services: AppServices, paths: CopilotPaths?) {
+    /// With the Copilot folder it reads, such as a test's, and, for a test, whether the Copilot app is on this Mac.
+    init(services: AppServices, paths: CopilotPaths?, isAppInstalled: (@MainActor () -> Bool)? = nil) {
         self.services = services
         settings = AppSettings(defaults: services.defaults)
         store = SessionStore(
             settings: settings, paths: paths, sentTasks: services.sentTasks,
-            isAppInstalled: { [isDemo = services.isDemo] in isDemo || CopilotApp.isInstalled }
+            isAppInstalled: isAppInstalled ?? { [isDemo = services.isDemo] in isDemo || CopilotApp.isInstalled }
         )
     }
 
@@ -106,6 +106,12 @@ package final class CopilotSource: BriefBarSource {
                     self?.publishOrder(sessions)
                 }
             }
+            .store(in: &linkObservers)
+        // Where ↗ on a session's Ask… answer opens it, the Copilot app or Terminal, for its tooltip, as the app is installed
+        // or removed, though no session changed: once that's set, which Published tells before it is.
+        store.$appInstalled.removeDuplicates().dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.publishLinks() } }
             .store(in: &linkObservers)
         store.$orderSessions.removeDuplicates()
             .sink { [weak self] sessions in MainActor.assumeIsolated { self?.publishOrder(orderSessions: sessions) } }
