@@ -337,8 +337,9 @@ public struct StageReading: Equatable, Sendable {
     public var mark: StageMark?
     /// Yours, which a session's later change replaced: Put Yours Back makes it the latest again.
     public var replaced: StageMark?
-    /// Yours, which a session's later Your review says the same as, as a session that pushed says its work is ready: it
-    /// shows the session's, and Let BriefBar Decide forgets both.
+    /// Yours, which a session's later Your review followed, as `--mcp` keeps one where yours was the latest stage set, as
+    /// a session that pushed says its work is ready: without votes, so it lasts as yours does. It shows the session's, and
+    /// Let BriefBar Decide forgets both.
     public var followed: StageMark?
     /// Whether it's on your board: not someone else's that you finished reviewing, until something new needs you there.
     public var isOnBoard: Bool
@@ -367,7 +368,7 @@ public struct StageReading: Equatable, Sendable {
     /// Whether you set what it shows.
     public var isSetByYou: Bool { mark?.isYours == true }
 
-    /// Whether Let BriefBar Decide applies: to what you set, while it shows, or a session's Your review that says the same
+    /// Whether Let BriefBar Decide applies: to what you set, while it shows, or a session's Your review that followed it
     /// shows in its place (`followed`).
     public var canLetBriefBarDecide: Bool { isSetByYou || followed != nil }
 
@@ -518,8 +519,10 @@ public enum StageRules {
     }
 
     /// The latest of what was set, while it stands; yours when a session's later change replaced it with another stage;
-    /// and yours when a session's later Your review says the same (`StageReading.followed`). Once the latest ends, none of
-    /// them counts: BriefBar works the stage out again.
+    /// and yours when a session's later Your review followed it (`StageReading.followed`): one that keeps no votes, as
+    /// `--mcp` keeps it only where yours was the latest stage set. A session's own report, with its votes, which came
+    /// after another stage replaced yours, follows nothing. Once the latest ends, none of them counts: BriefBar works the
+    /// stage out again.
     static func standingMark(
         _ marks: [StageMark], facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
     ) -> (mark: StageMark?, replaced: StageMark?, followed: StageMark?) {
@@ -527,7 +530,7 @@ public enum StageRules {
         else { return (nil, nil, nil) }
         guard !latest.isYours, let yours = marks.filter(\.isYours).max(by: { $0.at < $1.at }) else { return (latest, nil, nil) }
         if yours.stage != latest.stage { return (latest, yours, nil) }
-        return (latest, nil, latest.stage == .yourReview ? yours : nil)
+        return (latest, nil, latest.stage == .yourReview && latest.votes == nil ? yours : nil)
     }
 
     /// What you and the sessions set on a pull request that counts now (`reading`'s marks): yours while it stands, and
@@ -634,7 +637,7 @@ public enum StageAction: Hashable, Sendable {
     /// one it's in, where someone else's that you finished reviewing is in Teammate's review, and but Teammate's review on
     /// someone else's, whose author asks for its reviews: Finished My Review takes it off your board instead; Put Yours Back
     /// once a session's change replaced yours; Let BriefBar Decide for one you set, also where a session's Your review that
-    /// says the same shows in its place. Nothing once it merged.
+    /// followed it shows in its place. Nothing once it merged.
     /// - Parameter isYours: you opened it.
     public static func offered(for reading: StageReading, isYours: Bool = true) -> [StageAction] {
         guard reading.stage != .merged else { return [] }

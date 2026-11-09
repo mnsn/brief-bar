@@ -1499,8 +1499,8 @@ package final class PullRequestOrder: ObservableObject {
 
     /// Let BriefBar Decide: forgets the stage you set, and BriefBar works it out again: what sessions set before yours,
     /// which yours replaced, goes too, rather than come back, also what a session the Copilot app doesn't list now set,
-    /// should it list it again; and so does a session's later Your review that says the same as yours, which shows in its
-    /// place (`StageReading.followed`). Unchanged when you set none.
+    /// should it list it again; and so does a session's later Your review that followed yours, which shows in its place
+    /// (`StageReading.followed`). Unchanged when you set none.
     @discardableResult
     package func letBriefBarDecide(_ ref: ItemRef) -> StageChange.Outcome {
         guard isOn, let facts = stageFacts[ref], let before = yourMark(of: ref, facts: facts) else { return .unchanged }
@@ -1527,8 +1527,9 @@ package final class PullRequestOrder: ObservableObject {
     /// Puts back exactly the stage your last change replaced, or none, and the pull request you'd chosen it for in Up Next's
     /// slots, but for a slot you've decided for since (`StageChange.picked`). What it puts back is kept even once the account
     /// keeps the most, as when Let BriefBar Decide made room that one waiting in memory took: it waits there in turn, until
-    /// the account has room. A session's later Your review that says the same as the one it takes back, which shows in its
-    /// place (`StageReading.followed`), goes with it, rather than stay on its own.
+    /// the account has room. A session's later Your review that followed the one it takes back, which shows in its place
+    /// (`StageReading.followed`), goes with it, rather than stay on its own; a session's own report, which came after
+    /// another stage replaced yours, stays.
     private func undo(_ change: StageChange) -> Bool {
         guard isOn, let facts = stageFacts[change.ref] else {
             lastChange = nil

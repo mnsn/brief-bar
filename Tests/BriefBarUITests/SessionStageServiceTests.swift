@@ -390,6 +390,38 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4093))?.stage == .canMerge)
     }
 
+    /// A session's Your review after its own Teammate's review replaced yours is its own report, which keeps its votes:
+    /// it follows nothing, so Let BriefBar Decide isn't offered for it, and Undo of yours leaves it, to end as the votes
+    /// change.
+    @Test func aSessionsYourReviewAfterItReplacedYoursIsItsOwn() async throws {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)
+        Self.tell(order, [4093: waiting])
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600, on: [4093])
+        clock.advance(seconds: 60)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        let facts = [Self.ref(4093): waiting]
+        clock.advance(seconds: 60)
+        _ = try await Self.setStage("teammate_review", of: [4093], in: defaults, facts: facts, at: clock.now)
+        order.agentChanged()
+        #expect(order.stage(of: Self.ref(4093))?.replaced?.stage == .yourReview)
+        clock.advance(seconds: 60)
+        _ = try await Self.setStage("user_review", of: [4093], in: defaults, facts: facts, at: clock.now)
+        order.agentChanged()
+        let reading = order.stage(of: Self.ref(4093))
+        #expect(reading?.mark?.by == Self.cart && reading?.mark?.votes == "" && reading?.followed == nil)
+        #expect(!StageAction.offered(for: reading, canUndo: false).contains(.letBriefBarDecide))
+
+        #expect(order.undo())
+        #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.cart)
+
+        clock.advance(seconds: 60)
+        Self.tell(order, [4093: StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: clock.now)])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .canMerge)
+    }
+
     private static func link(_ number: Int) -> String {
         "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)"
     }

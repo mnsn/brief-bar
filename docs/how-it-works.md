@@ -1541,8 +1541,8 @@ over that session's own work since yours, which would put it in progress, and a 
 that pushed and says it's ready, as BriefBar's prompts ask, once a teammate approves, kept under it. Its menu has
 **Let BriefBar Decide**, as yours alone would, which forgets both, and Undo of yours takes it with yours, rather than
 leave it lasting on its own (`StageReading.followed`). Once a session's
-other stage replaced yours, what it says later counts as any stage does, and once the latest ends none does, yours
-neither.
+other stage replaced yours, what it says later counts as any stage does, Undo of yours leaves it, and once the latest
+ends none does, yours neither.
 Votes and commits end what a session set only as BriefBar read them after it set it, since the
 session read the pull request itself just then, and what it sets is timed as that read ended. BriefBar reads them as the
 refresh that read its organization's lists started, or as it was read by its link, a time a pull request kept as it was
@@ -1555,7 +1555,7 @@ never read that database, such as without the Copilot app, every session that wo
 counts: yours goes, and BriefBar takes away from what each session keeps what it set before the latest, or all of it
 once the pull request merged or closed, listed or not (`SessionStages.end`), so an older one never comes back, also once
 an archived session is listed again; **Let BriefBar Decide** takes away, with yours, what sessions set before it, listed
-or not, and a session's later Your review that says the same, which shows in its place. Can merge, Waits and Merged
+or not, and a session's later Your review that followed it, which shows in its place. Can merge, Waits and Merged
 come only from what BriefBar sees, whatever a session says.
 
 What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one entry
