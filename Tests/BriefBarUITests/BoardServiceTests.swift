@@ -24,9 +24,11 @@ import Testing
         )
     }
 
-    private static func service(_ defaults: MemoryDefaults) -> PullRequestOrder {
+    private static func service(
+        _ defaults: MemoryDefaults, now: @escaping () -> Date = { Date(timeIntervalSince1970: 1_792_000_000) }
+    ) -> PullRequestOrder {
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
-        return PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
+        return PullRequestOrder(defaults: defaults, isDemo: false, now: now)
     }
 
     private static func tell(_ order: PullRequestOrder, _ facts: [Int: StageFacts], states: [Int: PullRequestState] = [:]) {
@@ -169,6 +171,314 @@ import Testing
         Self.tell(order, [4131: StageFacts(role: .author, failure: "Build failed")])
         #expect(order.board(kinds: [.pullRequest]).upNext.isEmpty)
         #expect(order.board(kinds: [.pullRequest]).lanes.isEmpty)
+    }
+
+    // MARK: The one you choose
+
+    /// Three to fix: two failed builds and changes Priya wants, which BriefBar's order puts last.
+    private static let fixes: [Int: StageFacts] = [
+        4131: StageFacts(role: .author, failure: "Build failed", since: Date(timeIntervalSince1970: 1_791_000_000)),
+        4132: StageFacts(role: .author, failure: "Merge conflicts", since: Date(timeIntervalSince1970: 1_791_100_000)),
+        4133: StageFacts(role: .author, changesWanted: "Priya wants changes", since: Date(timeIntervalSince1970: 1_790_000_000)),
+    ]
+
+    private static func fixNext(_ order: PullRequestOrder) -> UpNext.Slot? {
+        order.board(kinds: kinds).upNext.slots.first { $0.kind == .fix }
+    }
+
+    /// The one you choose is Fix next's, ahead of BriefBar's order, kept in the preferences by reference, and still so once
+    /// BriefBar starts again; but only one Fix next has. Back soon after it moved on, it's still yours; once it's been away
+    /// for half an hour, the choice goes, and BriefBar's order chooses again, as it does at once with Let BriefBar Choose.
+    @Test func whatYouChooseIsRememberedUntilItMovesOn() throws {
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults)
+        Self.tell(order, Self.fixes)
+        #expect(Self.fixNext(order)?.cards.map(\.ref) == [Self.ref(4131), Self.ref(4132), Self.ref(4133)])
+        #expect(Self.fixNext(order)?.isPicked == false)
+
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+        let slot = try #require(Self.fixNext(order))
+        #expect(slot.card.ref == Self.ref(4133))
+        #expect(slot.isPicked)
+        #expect(UpNextView.spoken(slot, mission: "Not in a mission", order: order) == "Priya wants changes, Not in a mission, you chose it")
+        #expect(UpNextView.choice(slot.card, order: order) == "!4133 — Priya wants changes")
+        #expect(order.board(kinds: Self.kinds).picked == [.inProgress: Self.ref(4133)])
+        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(order.keepsStages)
+        #expect(!order.pickNext(Self.ref(4999), in: .fix))
+        #expect(!order.pickNext(Self.ref(4131), in: .yourReview))
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4133)]))
+
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let again = Self.service(defaults, now: { now })
+        #expect(again.picks == UpNextPicks([.fix: Self.ref(4133)]))
+        Self.tell(again, Self.fixes)
+        #expect(Self.fixNext(again)?.card.ref == Self.ref(4133))
+
+        // Priya's changes are made: it moves on to Teammate's review, and BriefBar's order chooses while it's away.
+        var fixed = Self.fixes
+        fixed[4133] = StageFacts(role: .author, waitingFor: "Waiting on Priya")
+        Self.tell(again, fixed)
+        #expect(again.stage(of: Self.ref(4133))?.stage == .teammateReview)
+        #expect(Self.fixNext(again)?.card.ref == Self.ref(4131))
+        #expect(Self.fixNext(again)?.isPicked == false)
+        // She wants more within minutes: it's back, still yours.
+        now += 600
+        Self.tell(again, Self.fixes)
+        #expect(Self.fixNext(again)?.card.ref == Self.ref(4133))
+        #expect(Self.fixNext(again)?.isPicked == true)
+        // Made again, and still away half an hour later, as the clock finds: the choice goes.
+        Self.tell(again, fixed)
+        now += UpNextPicks.awayFor
+        again.timePassed()
+        #expect(again.picks.isEmpty)
+        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(Self.fixNext(again)?.card.ref == Self.ref(4131))
+        // Back in Fix next, it's BriefBar's order's again.
+        Self.tell(again, Self.fixes)
+        #expect(Self.fixNext(again)?.card.ref == Self.ref(4131))
+
+        #expect(again.pickNext(Self.ref(4132), in: .fix))
+        again.letBriefBarChoose(.fix)
+        #expect(again.picks.isEmpty)
+        #expect(Self.fixNext(again)?.card.ref == Self.ref(4131))
+        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+
+        // One that merged, which the lists still read but no longer show, goes half an hour later.
+        #expect(again.pickNext(Self.ref(4132), in: .fix))
+        var merged = Self.fixes
+        merged[4132] = StageFacts(role: .author, state: .merged, isListed: false)
+        Self.tell(again, merged, states: [4132: .merged])
+        #expect(again.picks == UpNextPicks([.fix: Self.ref(4132)]))
+        now += UpNextPicks.awayFor
+        again.timePassed()
+        #expect(again.picks.isEmpty)
+        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+    }
+
+    /// What BriefBar reads before it has read everything ends no choice. As Pull Request Order turns on, which pull requests
+    /// the Copilot app's sessions are on can come after Azure DevOps' lists, and a pull request a session asks you about
+    /// reads, meanwhile, as waiting on a teammate, as it does once the Copilot source stops. Turning Pull Request Order off
+    /// forgets since when one was away, as quitting does: once it's on again, each choice has its half hour again. One the
+    /// lists don't have, as while its organization can't be read, waits however long.
+    @Test func aChoiceOutlastsWhatBriefBarReadsBeforeItHasReadEverything() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let order = Self.service(defaults, now: { now })
+        var facts = Self.fixes
+        facts[4093] = StageFacts(role: .author, waitingFor: "Waiting on Priya", since: Date(timeIntervalSince1970: 1_791_200_000))
+        Self.tell(order, facts)
+        Self.tellSession(order, on: [4093], state: .needsYou, since: now)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .inProgress)
+        #expect(order.pickNext(Self.ref(4093), in: .fix))
+
+        order.withdraw(.copilot)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4093)]))
+        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.ref(4093)]))
+
+        // Off 20 minutes later, and on again, Azure DevOps' lists first: 40 minutes after it went away, it's still yours.
+        now += 1_200
+        order.setOn(false)
+        order.setOn(true)
+        Self.tell(order, facts)
+        now += 1_200
+        order.timePassed()
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4093)]))
+        Self.tellSession(order, on: [4093], state: .needsYou, since: now)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4093))
+        #expect(Self.fixNext(order)?.isPicked == true)
+
+        // BriefBar starts again a day later: its lists don't have !4093 for an hour, then have it before the sessions.
+        now += 86_400
+        let again = Self.service(defaults, now: { now })
+        Self.tell(again, Self.fixes)
+        now += 3_600
+        again.timePassed()
+        #expect(again.picks == UpNextPicks([.fix: Self.ref(4093)]))
+
+        Self.tell(again, facts)
+        #expect(Self.fixNext(again)?.card.ref == Self.ref(4131))
+        Self.tellSession(again, on: [4093], state: .needsYou, since: now)
+        #expect(Self.fixNext(again)?.card.ref == Self.ref(4093))
+        #expect(Self.fixNext(again)?.isPicked == true)
+        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.ref(4093)]))
+    }
+
+    /// Undo of a stage you changed chooses its pull request again where you'd chosen it, however long after, gone by then or
+    /// not, but not for a slot you've decided for since, choosing another or letting BriefBar choose, whatever became of that.
+    @Test func undoingAStageChangeChoosesItsPullRequestAgain() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, Self.fixes)
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+        now += UpNextPicks.awayFor
+        order.timePassed()
+        #expect(order.picks.isEmpty)
+
+        #expect(order.undo())
+        #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4133))
+        #expect(Self.fixNext(order)?.isPicked == true)
+        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.ref(4133)]))
+
+        // Undone half an hour later, before BriefBar looked again.
+        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
+        now += UpNextPicks.awayFor
+        #expect(order.undo())
+        #expect(Self.fixNext(order)?.isPicked == true)
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4133)]))
+
+        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
+        #expect(order.pickNext(Self.ref(4132), in: .fix))
+        #expect(order.undo())
+        #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4132)]))
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4132))
+
+        // You let BriefBar choose since: Undo puts the stage back, but chooses nothing.
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
+        order.letBriefBarChoose(.fix)
+        #expect(order.undo())
+        #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
+        #expect(order.picks.isEmpty)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+
+        // Nor once the one you chose since moved on, and its choice went.
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
+        #expect(order.pickNext(Self.ref(4132), in: .fix))
+        var resolved = Self.fixes
+        resolved[4132] = StageFacts(role: .author, waitingFor: "Waiting on Priya")
+        Self.tell(order, resolved)
+        now += UpNextPicks.awayFor
+        order.timePassed()
+        #expect(order.picks.isEmpty)
+        #expect(order.undo())
+        #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
+        #expect(order.picks.isEmpty)
+        #expect(UpNextPicks.load(from: defaults).isEmpty)
+    }
+
+    /// While the one you chose waits, as while its build runs again, the slot shows the next one, and its menu still offers
+    /// Let BriefBar Choose, which forgets yours: it doesn't come back once its build fails again.
+    @Test func letBriefBarChooseForgetsAChoiceThatWaits() throws {
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults)
+        Self.tell(order, Self.fixes)
+        let unpicked = try #require(Self.fixNext(order))
+        #expect(!UpNextView.offersLetBriefBarChoose(unpicked, order: order))
+        #expect(order.pickNext(Self.ref(4132), in: .fix))
+        let picked = try #require(Self.fixNext(order))
+        #expect(picked.isPicked && UpNextView.offersLetBriefBarChoose(picked, order: order))
+
+        var running = Self.fixes
+        running[4132] = StageFacts(role: .author, leftAfterReviews: "Build running")
+        Self.tell(order, running)
+        let waiting = try #require(Self.fixNext(order))
+        #expect(waiting.card.ref == Self.ref(4131) && !waiting.isPicked)
+        #expect(UpNextView.offersLetBriefBarChoose(waiting, order: order))
+
+        order.letBriefBarChoose(.fix)
+        #expect(order.picks.isEmpty)
+        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        let chosenByBriefBar = try #require(Self.fixNext(order))
+        #expect(!UpNextView.offersLetBriefBarChoose(chosenByBriefBar, order: order))
+        Self.tell(order, Self.fixes)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+        #expect(Self.fixNext(order)?.isPicked == false)
+    }
+
+    /// Fix next's choice waits while its build runs again, in progress without needing you, and comes first once it fails
+    /// again. It waits too until Azure DevOps' lists are read, and while Pull Request Order is off, unused.
+    @Test func aChoiceWaitsWhileItsPullRequestCantSayWhereItIs() {
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults)
+        Self.tell(order, Self.fixes)
+        #expect(order.pickNext(Self.ref(4132), in: .fix))
+
+        var running = Self.fixes
+        running[4132] = StageFacts(role: .author, leftAfterReviews: "Build running")
+        Self.tell(order, running)
+        #expect(order.stage(of: Self.ref(4132))?.stage == .inProgress)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+        #expect(Self.fixNext(order)?.isPicked == false)
+        Self.tell(order, Self.fixes)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4132))
+
+        order.withdraw(.azureDevOps)
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4132)]))
+        order.setOn(false)
+        #expect(order.picks.isEmpty)
+        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.ref(4132)]))
+        #expect(!order.pickNext(Self.ref(4131), in: .fix))
+        order.setOn(true)
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4132)]))
+        Self.tell(order, Self.fixes)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4132))
+    }
+
+    /// What you choose of a pull request listed only because someone sent it in a chat stays in memory, Pull Request Order
+    /// off or on, until you watch it, as what you change of its mission does; another account forgets it.
+    @Test func aChoiceOfOneSentInAChatStaysInMemory() {
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults)
+        let sent = Self.ref(4150)
+        func tell(_ role: StageFacts.Role, account: String = Self.account) {
+            order.publish(
+                .azureDevOps, pullRequests: [Self.ado(4150), Self.ado(4088)],
+                stages: [
+                    sent: StageFacts(role: role, asksYou: "Priya sent it in Teams", since: Date(timeIntervalSince1970: 1_791_500_000)),
+                    Self.ref(4088): StageFacts(role: .reviewer, asksYou: "Sam asked you", since: Date(timeIntervalSince1970: 1_791_000_000)),
+                ],
+                account: account, inMemory: role == .sentToYou ? [sent] : []
+            )
+        }
+        tell(.sentToYou)
+        #expect(order.board(kinds: Self.kinds).upNext.slots.first?.card.ref == Self.ref(4088))
+        #expect(order.pickNext(sent, in: .yourReview))
+        #expect(order.board(kinds: Self.kinds).upNext.slots.first?.card.ref == sent)
+        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(order.keepsStages)
+
+        order.setOn(false)
+        order.setOn(true)
+        #expect(order.picks == UpNextPicks([.yourReview: sent]))
+        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+
+        // You watch it: it's kept in the preferences.
+        tell(.watching)
+        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.yourReview: sent]))
+
+        tell(.sentToYou)
+        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(order.picks == UpNextPicks([.yourReview: sent]))
+        tell(.sentToYou, account: "sam@contoso.com")
+        #expect(order.picks.isEmpty)
+    }
+
+    /// Forget Stages… forgets what you chose too, and so does turning Azure DevOps off.
+    @Test func forgettingStagesOrAzureDevOpsForgetsWhatYouChose() {
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults)
+        Self.tell(order, Self.fixes)
+        #expect(!order.keepsStages)
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+        #expect(order.keepsStages)
+        order.forgetStages()
+        #expect(order.picks.isEmpty)
+        #expect(!order.keepsStages)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+        order.forget(.azureDevOps)
+        #expect(order.picks.isEmpty)
+        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
     }
 
     // MARK: Moving a card, as it is now

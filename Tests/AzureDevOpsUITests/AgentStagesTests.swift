@@ -147,6 +147,36 @@ import Testing
         #expect(stages.columns[.inProgress] == [ref(4093)])
     }
 
+    /// `needs_me` lists what you chose for an Up Next slot first in its stage, as the Board does, from what the app keeps
+    /// in the preferences; one its slot doesn't have, as one in another stage, changes nothing.
+    @Test func whatYouChoseForUpNextComesFirstAsOnTheBoard() async throws {
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        func ref(_ number: Int) -> ItemRef { .pullRequest(organization: "contoso", number: number) }
+        let facts: [ItemRef: StageFacts] = [
+            ref(4131): StageFacts(role: .author, failure: "Build failed", since: now - 7_200),
+            ref(4133): StageFacts(role: .author, changesWanted: "Priya wants changes", since: now - 9_000),
+            ref(4099): StageFacts(role: .author, waitingFor: "Waiting on Priya", since: now),
+        ]
+        func columns(_ picks: UpNextPicks) -> [PullRequestStage: [ItemRef]] {
+            let kept = OrderKept(
+                orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: StageMarks(),
+                sessionStages: SessionStages(), picks: picks
+            )
+            return AzureDevOpsAgent.stages(
+                facts: facts, pullRequests: [], copilot: MCPRelated.StageSessions(), kept: kept, account: "robin@contoso.com", now: now
+            ).columns
+        }
+        #expect(columns(UpNextPicks())[.inProgress] == [ref(4131), ref(4133)])
+        #expect(columns(UpNextPicks([.fix: ref(4133)]))[.inProgress] == [ref(4133), ref(4131)])
+        #expect(columns(UpNextPicks([.fix: ref(4099)]))[.inProgress] == [ref(4131), ref(4133)])
+
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        UpNextPicks([.fix: ref(4133)]).save(to: defaults)
+        let reader = AzureDevOpsReader(demo: false, organizations: [], defaults: defaults)
+        #expect(await reader.orderKept(now: now)?.picks == UpNextPicks([.fix: ref(4133)]))
+    }
+
     /// A session's In progress ends for agents too as that session finishes, though the Copilot app doesn't record it on the
     /// pull request.
     @Test func aSessionsInProgressEndsAsItFinishesThoughItIsntOnThePullRequest() throws {
