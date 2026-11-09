@@ -1542,8 +1542,9 @@ over that session's own work since yours, which would put it in progress, and a 
 that pushed and says it's ready, as BriefBar's prompts ask, once a teammate approves, kept under it. Its menu has
 **Let BriefBar Decide**, as yours alone would, which forgets both, and Undo of yours takes it with yours, rather than
 leave it lasting on its own, also while the Copilot app doesn't list the session, so that it doesn't come back alone
-once it's listed again (`StageReading.followed`). Once yours is gone any other way, as when you undo it while
-`--mcp` keeps the session's, before the app reads that, it counts no more (`StageRules.counted`). Once a session's
+once it's listed again, and also one `--mcp` kept since the app last read what sessions keep, as both read that again
+first (`StageReading.followed`). Once yours is gone any other way, as when `--mcp` keeps the session's just as you undo
+yours, it counts no more (`StageRules.counted`). Once a session's
 other stage replaced yours, what it says later counts as any stage does, Undo of yours leaves it, and once the latest
 ends none does, yours neither.
 Votes and commits end what a session set only as BriefBar read them after it set it, since the
