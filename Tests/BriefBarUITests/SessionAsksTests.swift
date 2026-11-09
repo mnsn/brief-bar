@@ -359,6 +359,17 @@ import Testing
         #expect(AnswerMarkdown.blocks(text) == [.code("    ```\nstill code"), .paragraph("After the code.")])
     }
 
+    /// Only the line right under a table's header is its rule: a row of dashes after it is one of its rows.
+    @Test func keepsATablesRowsOfDashes() {
+        let text = """
+            | Done | Waiting |
+            | --- | --- |
+            | - | - |
+            | backoff | - |
+            """
+        #expect(AnswerMarkdown.blocks(text) == [.table([["Done", "Waiting"], ["-", "-"], ["backoff", "-"]])])
+    }
+
     /// Closing hashes go, after a space; a word's own stay.
     @Test func keepsAWordsOwnHashesInAHeading() {
         let text = """

@@ -27,6 +27,8 @@ enum AnswerMarkdown {
         var blocks: [Block] = []
         var fence: (marker: Character, length: Int, indent: Int, lines: [String])?
         var isAfterBlank = true
+        // Whether the table being read has had the line under its header: after it, a row of dashes is one of its own.
+        var isPastTableRule = false
         let lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             .components(separatedBy: "\n")
         for line in lines {
@@ -63,9 +65,14 @@ enum AnswerMarkdown {
                 }
             } else if let row = tableRow(trimmed) {
                 if continues, case .table(let rows)? = blocks.last {
-                    if !isTableRule(row) { blocks[blocks.count - 1] = .table(rows + [row]) }
+                    if !isPastTableRule, rows.count == 1, isTableRule(row) {
+                        isPastTableRule = true
+                    } else {
+                        blocks[blocks.count - 1] = .table(rows + [row])
+                    }
                 } else {
                     blocks.append(.table([row]))
+                    isPastTableRule = false
                 }
             } else if continues, let last = blocks.last, let goesOn = goingOn(last, with: trimmed) {
                 blocks[blocks.count - 1] = goesOn
