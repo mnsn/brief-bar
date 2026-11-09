@@ -1517,7 +1517,8 @@ votes or changes anything in Azure DevOps for a stage.
 they work on, with `--mcp`'s `pull_request_stage` ([below](#what-it-answers)), without you asking: In progress as they
 start fixing one, Your review once they've pushed their work, Teammate's review once you tell them you've reviewed it.
 The latest of what you and the sessions set counts (`StageRules.counted`), while it stands as yours would, whoever set
-it, and its words say who: **‘Cart’ says it's ready**, which also says when, and after you, where it replaced yours,
+it, and its words say who, naming the session once (`StageText.namesWhoSetIt`): **‘Cart’ says it's ready · set 5m ago**,
+on its row and card, in its details and tooltips, and to VoiceOver, and they say after you where it replaced yours,
 whose menu then has **Put Yours Back**, which sets yours again, as a new change. A session's own In progress also ends
 as that session finishes, whether or not BriefBar sees it on the pull request otherwise, even one BriefBar sent work to
 that you haven't opened in the Copilot app (`activitiesSince`); working on afterwards, at something else, it doesn't put

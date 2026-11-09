@@ -777,8 +777,11 @@ import Testing
     @Test func aCardSaysWhoSetItsStageShortly() {
         let set = Self.reading(.teammateReview, .findReviewer, mark: StageMark(stage: .teammateReview, at: t(0)))
         #expect(BoardText.setter(set, now: t(7_200), name: Self.name) == "You · 2h")
-        let bySession = Self.reading(.yourReview, .set, mark: StageMark(stage: .yourReview, at: t(0), by: Self.cart))
+        let bySession = Self.reading(.teammateReview, .findReviewer, mark: StageMark(stage: .teammateReview, at: t(0), by: Self.cart))
         #expect(BoardText.setter(bySession, now: t(300), name: Self.name) == "‘Cart’ · 5m")
+        // Where why it's in its stage, on the card above, names the session, only when: "‘Cart’ says it's ready".
+        let ready = Self.reading(.yourReview, .set, mark: StageMark(stage: .yourReview, at: t(0), by: Self.cart))
+        #expect(BoardText.setter(ready, now: t(300), name: Self.name) == "set 5m ago")
         #expect(BoardText.setter(Self.reading(.yourReview, .asked("Priya asked you")), now: t(0), name: Self.name) == nil)
     }
 
