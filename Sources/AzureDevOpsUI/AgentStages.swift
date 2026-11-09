@@ -146,7 +146,7 @@ extension AgentText {
         return "Stages, as BriefBar's Board shows them, what's next first:\n" + lines.joined(separator: "\n")
     }
 
-    /// `pull_request`'s stage: "Its stage: Your review: ‘Cart’ says it's ready (‘Cart’ set it 5m ago, after you). You'd set
+    /// `pull_request`'s stage: "Its stage: Your review: ‘Cart’ says it's ready (set 5m ago, after you). You'd set
     /// Teammate's review 2h ago, which a session's later change replaced: you can put yours back."
     static func stage(_ reading: StageReading, stages: AgentStages) -> String {
         var line = "Its stage: \(reading.stage.title): \(words(reading, stages: stages))."

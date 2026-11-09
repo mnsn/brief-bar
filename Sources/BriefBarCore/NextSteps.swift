@@ -823,11 +823,14 @@ public enum BoardRules {
 /// What the Board and Up Next say, in BriefBar's words: pull requests by their numbers, sessions by their names.
 public enum BoardText {
     /// Who set a card's stage, and how long ago, when someone did: "You · 2h", "‘Cart’ · 5m"; only when, where why it's in
-    /// its stage, which the card says too, names the session already (`StageText.namesWhoSetIt`): "set 5m ago".
+    /// its stage, which the card says too, names the session already (`StageText.namesWhoSetIt`): "set 5m ago". Where a
+    /// session's replaced yours, "after you" too: "‘Cart’ · 5m, after you".
     public static func setter(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String? {
         guard let mark = reading.mark else { return nil }
-        if StageText.namesWhoSetIt(reading) { return "set " + StageText.agoWords(mark.at, now: now) }
-        return StageText.setter(mark, name: name) + " · " + Elapsed.short(since: mark.at, now: now)
+        let words = StageText.namesWhoSetIt(reading)
+            ? "set " + StageText.agoWords(mark.at, now: now)
+            : StageText.setter(mark, name: name) + " · " + Elapsed.short(since: mark.at, now: now)
+        return reading.replaced != nil ? words + ", after you" : words
     }
 
     /// The line under the Board: "3 more in your lists aren't on the board"; nil for none.

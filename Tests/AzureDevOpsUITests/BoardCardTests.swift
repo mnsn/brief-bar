@@ -1,6 +1,7 @@
 import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
+import CopilotTasks
 import Foundation
 import SwiftUI
 import Testing
@@ -128,7 +129,7 @@ import Testing
     }
 
     /// VoiceOver hears, after its stage, its flags, where it stands in its order unless its stage says so, the session
-    /// that told BriefBar it works on it unless its stage names it, and where it is.
+    /// that told BriefBar it works on it unless its stage names it, as the session that set it too, and where it is.
     @Test func voiceOverHearsItsFlagsWhereItStandsWhoWorksOnItAndWhereItIs() throws {
         let ordering = try Self.ordering(orders: [[4085, 4093]])
         let order = try #require(OrderRowContext.of(Self.ref(4093), in: ordering.missions, isReady: false))
@@ -160,5 +161,50 @@ import Testing
         #expect(PullRequestBoardCard.worker(
             on: Self.ref(4093), besides: StageReading(stage: .yourReview, why: .preReviewing(reviewing)), ordering: ordering
         ) == nil)
+
+        // Nor the session that set it, where its words name it: "‘Cart’ is on it", "‘Cart’ says it's ready".
+        let at = Date(timeIntervalSince1970: 1_791_999_700)
+        for stage in [PullRequestStage.inProgress, .yourReview] {
+            let set = StageReading(stage: stage, why: .set, mark: StageMark(stage: stage, at: at, by: Self.cart))
+            #expect(StageText.namesWhoSetIt(set))
+            #expect(PullRequestBoardCard.worker(on: Self.ref(4093), besides: set, ordering: ordering) == nil)
+            #expect(details(set) == ["Sam wants changes", sentence, "shop-web"])
+        }
+        // Where they don't, as for a session's Teammate's review, or one you or another session set, it's said.
+        let teammates = StageReading(stage: .teammateReview, why: .set, mark: StageMark(stage: .teammateReview, at: at, by: Self.cart))
+        let yours = StageReading(stage: .inProgress, why: .set, mark: StageMark(stage: .inProgress, at: at))
+        let another = try #require(ItemRef.session("0d9b8c7a-6e5f-4a3b-9c2d-1e0f9a8b7c6d"))
+        let others = StageReading(stage: .inProgress, why: .set, mark: StageMark(stage: .inProgress, at: at, by: another))
+        for reading in [teammates, yours, others] {
+            #expect(PullRequestBoardCard.worker(on: Self.ref(4093), besides: reading, ordering: ordering)?.ref == Self.cart)
+        }
+    }
+
+    /// Who set its stage wraps on a narrow card rather than cutting off ", after you", which says a session's replaced yours.
+    @Test func whoSetItsStageWrapsOnANarrowCard() throws {
+        let ordering = try Self.ordering(orders: [[4085, 4093]])
+        let retry = try #require(ItemRef.session("0d9b8c7a-6e5f-4a3b-9c2d-1e0f9a8b7c6d"))
+        let name = "Retry backoff for uploads"
+        ordering.publish(
+            .copilot,
+            items: [LinkedItem(ref: retry, label: name, title: name, symbol: "bolt.fill", color: .blue, state: nil, date: nil)],
+            working: [:]
+        )
+        let item = try Self.item(4093, group: .waiting, headline: "Waiting for reviewers")
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        let mark = StageMark(stage: .teammateReview, at: now.addingTimeInterval(-300), by: retry)
+        let plain = StageReading(stage: .teammateReview, why: .set, mark: mark)
+        var replaced = plain
+        replaced.replaced = StageMark(stage: .yourReview, at: now.addingTimeInterval(-7200))
+        #expect(BoardText.setter(replaced, now: now, name: { ordering.name(of: $0) }) == "‘\(name)’ · 5m, after you")
+
+        let copilot = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo, notifier: nil)
+        func height(_ reading: StageReading) -> CGFloat {
+            let card = PullRequestBoardCard(
+                item: item, card: BoardCard(ref: Self.ref(4093), reading: reading), order: nil, ordering: ordering, now: now
+            )
+            return NSHostingView(rootView: card.frame(width: 200).environmentObject(copilot)).fittingSize.height
+        }
+        #expect(height(replaced) > height(plain) + 8)
     }
 }
