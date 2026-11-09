@@ -390,15 +390,6 @@ extension CopilotAskComposer where Options == EmptyView {
     }
 }
 
-/// Whether a composer in place is open, which takes Esc from the details it's in: they close once it's closed.
-struct InlineComposerOpen: PreferenceKey {
-    static let defaultValue = false
-
-    static func reduce(value: inout Bool, nextValue: () -> Bool) {
-        value = value || nextValue()
-    }
-}
-
 /// The details' scrolling, for what opens in them to scroll itself into view.
 private struct DetailsScrollKey: EnvironmentKey {
     static var defaultValue: ScrollViewProxy? { nil }

@@ -8,7 +8,8 @@ import Testing
 @testable import AzureDevOpsUI
 
 /// Explain asks a session about a thread aside, through the Copilot CLI, and shows its answer under the thread: in memory
-/// only, until you dismiss it or Send Work to Copilot is turned off. The demo makes its answers up.
+/// only, until you dismiss it or Send Work to Copilot is turned off. Ask… asks any of your sessions the same way, while
+/// that's on. The demo makes its answers up.
 @MainActor
 @Suite(.opensNothing) struct CopilotQuestionsTests {
     private let key = PRKey("contoso", 4102)
@@ -200,6 +201,120 @@ import Testing
         }
         #expect(answer == DemoData.explanation(ofThread: 11, pullRequest: 4102))
         #expect(answer.contains("Sam wants a ceiling"))
+    }
+
+    // MARK: Ask…
+
+    /// The questions, giving Ask… (`SessionAsks`) its way to ask while Send Work to Copilot is on.
+    private func asking(mode: PRStore.Mode = .live, on: Bool = true) -> (CopilotQuestions, SessionAsks, AppSettings) {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = on
+        let copilot = CopilotTasksStore(settings: settings, mode: mode, notifier: nil)
+        copilot.useEnvironment(["COPILOT_HOME": "/nonexistent"])
+        copilot.appHomeForTests = URL(fileURLWithPath: "/nonexistent/copilot-app", isDirectory: true)
+        let asks = SessionAsks()
+        return (CopilotQuestions(copilot: copilot, asks: asks), asks, settings)
+    }
+
+    /// Ask… asks only while Send Work to Copilot is on: turned off, it doesn't show, and what it asked stops and goes; turned
+    /// on again, it's back. Stopped for good, as Azure DevOps stops, it goes, whatever the setting.
+    @Test func offersAskOnlyWithSendWorkToCopilot() async throws {
+        let (questions, asks, settings) = asking(on: false)
+        #expect(!asks.canAsk)
+        settings.copilotEnabled = true
+        #expect(asks.canAsk)
+        let started = Mutex(0)
+        questions.askForTests = { _, _ in
+            started.withLock { $0 += 1 }
+            do {
+                try await Task.sleep(for: .seconds(60))
+            } catch {
+                return .failure(.cancelled)
+            }
+            return .success("Too late")
+        }
+        let ref = try #require(ItemRef.session(session))
+        asks.ask(ref, question: nil)
+        #expect(asks.question(for: ref)?.isAsking == true)
+        try await settle { started.withLock { $0 } == 1 }
+        settings.copilotEnabled = false
+        #expect(!asks.canAsk)
+        #expect(asks.questions.isEmpty)
+        settings.copilotEnabled = true
+        #expect(asks.canAsk)
+        #expect(asks.questions.isEmpty)
+        questions.stopAll()
+        #expect(!asks.canAsk)
+        settings.copilotEnabled = false
+        settings.copilotEnabled = true
+        #expect(!asks.canAsk)
+    }
+
+    /// Ask… asks as Explain does, through the same Copilot CLI: the question in full, of the session; and why it couldn't,
+    /// in `SessionQuestions.Failure`'s words, with what the Copilot CLI said.
+    @Test func asksForAskThroughTheCopilotCLI() async throws {
+        let (questions, asks, _) = asking()
+        let asked = Mutex<[(prompt: String, session: String)]>([])
+        questions.askForTests = { prompt, session in
+            let count = asked.withLock {
+                $0.append((prompt, session))
+                return $0.count
+            }
+            return count == 1 ? .success("Done: the backoff.") : .failure(.outOfRequests("402: quota exceeded"))
+        }
+        let ref = try #require(ItemRef.session(session))
+        asks.ask(ref, question: "Is Sam's comment done?")
+        try await settle { asks.question(for: ref)?.isAsking == false }
+        #expect(asks.question(for: ref)?.state == .answered("Done: the backoff."))
+        #expect(asked.withLock { $0.first?.prompt } == SessionAskPrompt.prompt(question: "Is Sam's comment done?"))
+        #expect(asked.withLock { $0.first?.session } == session)
+
+        asks.ask(ref, question: nil)
+        try await settle { asks.question(for: ref)?.isAsking == false }
+        #expect(asks.question(for: ref)?.state == .failed(
+            SessionAsks.Problem("You're out of premium requests this month.", detail: "402: quota exceeded")
+        ))
+        #expect(asked.withLock { $0.last?.prompt } == SessionAskPrompt.prompt(
+            question: nil, earlier: SessionAnswer(question: "Is Sam's comment done?", answer: "Done: the backoff.")
+        ))
+        // Explain's questions are its own.
+        #expect(questions.questions.isEmpty)
+    }
+
+    /// The demo makes Ask…'s answers up too, and never runs the Copilot CLI: where its sessions stand, or why they did
+    /// what they did; any other session's in general.
+    @Test func theDemoMakesAskAnswersUp() async throws {
+        let (questions, asks, _) = asking(mode: .demo)
+        questions.demoDelay = .milliseconds(10)
+        #expect(asks.canAsk)
+        let ref = try #require(ItemRef.session(session))
+        asks.ask(ref, question: nil)
+        try await settle { asks.question(for: ref)?.isAsking == false }
+        let stands = DemoData.sessionAnswer(session: session, question: nil)
+        #expect(asks.question(for: ref)?.state == .answered(stands))
+        #expect(stands.contains("Sam's comment"))
+
+        asks.ask(ref, question: "Why no cap?")
+        try await settle { asks.question(for: ref)?.isAsking == false }
+        let why = DemoData.sessionAnswer(session: session, question: "Why no cap?")
+        #expect(asks.question(for: ref)?.state == .answered(why))
+        #expect(why != stands)
+        #expect(DemoData.sessionAnswer(session: session.uppercased(), question: nil) == stands)
+        let unknown = UUID().uuidString
+        #expect(!DemoData.sessionAnswer(session: unknown, question: nil).isEmpty)
+        #expect(DemoData.sessionAnswer(session: unknown, question: nil) != stands)
+    }
+
+    /// Azure DevOps gives Ask… its way to ask as it starts, in the demo with its made-up answers, and takes it away as it
+    /// stops.
+    @Test func azureDevOpsOffersAskWhileItRuns() {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
+        #expect(!services.sessionAsks.canAsk)
+        source.start()
+        #expect(services.sessionAsks.canAsk)
+        source.stop()
+        #expect(!services.sessionAsks.canAsk)
     }
 
     /// Waits for the store's work, which runs on the main actor between this test's awaits, for as long as a busy machine

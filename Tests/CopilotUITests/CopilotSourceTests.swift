@@ -40,4 +40,42 @@ import Testing
         services.links.setOn(false)
         #expect(await services.stories.context(for: [session]).isEmpty)
     }
+
+    /// A session whose question the session coordinating it asks you: opening it opens that one, where you answer it, and
+    /// opening it itself, as ↗ on its Ask… answer does on its page, opens it.
+    @Test func opensARelayedSessionItselfForWhatItSaid() throws {
+        let child = "5e2a9c41-7d3b-4f86-b0e1-9c4d2a7f3e21", coordinator = "8b1f4d72-3c9e-4a05-a6d8-2e7c1b9f0d32"
+        let at = Date().addingTimeInterval(-60)
+        var asking = SessionLogState()
+        asking.apply(LogEvent(timestamp: at, kind: .userMessage))
+        asking.apply(LogEvent(timestamp: at.addingTimeInterval(1), kind: .toolStart(.init(
+            callId: "q", name: "ask_user", question: "Which color?"
+        ))))
+        var relaying = SessionLogState()
+        relaying.apply(LogEvent(timestamp: at, kind: .userMessage))
+        relaying.apply(LogEvent(timestamp: at.addingTimeInterval(2), kind: .toolStart(.init(
+            callId: "r", name: "relay_session_input", relayedSession: "w-child"
+        ))))
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: "copilot.showRelayedQuestionsOnce")
+        let services = AppServices(defaults: defaults, isDemo: true)
+        let source = CopilotSource(services: services, paths: nil)
+        source.start()
+        defer { source.stop() }
+        source.store.receive(EngineSnapshot(records: [
+            SessionRecord(meta: SessionMeta(id: child, name: "Pick colors", isRunning: true, workspaceId: "w-child"), log: asking),
+            SessionRecord(meta: SessionMeta(id: coordinator, name: "Release 2.5", isRunning: true), log: relaying),
+        ]))
+        #expect(source.store.sessions.first { $0.id == child }?.answerIn?.id == coordinator)
+
+        let item = services.links.describe(try #require(ItemRef.session(child)))
+        let notes = ThisMac.Notes()
+        ThisMac.$noting.withValue(notes) {
+            item.open?()
+            item.openItself?()
+        }
+        #expect(notes.refused.count == 2)
+        #expect(notes.refused.first?.hasPrefix("open ghapp://sessions/\(coordinator)") == true)
+        #expect(notes.refused.last?.hasPrefix("open ghapp://sessions/\(child)") == true)
+    }
 }

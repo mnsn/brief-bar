@@ -14,8 +14,8 @@ For a quick tour and download, see the [README](../README.md).
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads, their statuses, your own comments, edited or deleted, and pull requests' tags, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply or comment you're writing |
-| **GitHub Copilot** | Which Copilot sessions are running, need you, or have finished or stopped; local CLI sessions when the app isn't installed; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's and CLI's own files under `~/.copilot` | Local Copilot session files | None for tracking; optional Copilot summaries send the selected work's details through the CLI, as described in [Privacy](#privacy) |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads, their statuses, your own comments, edited or deleted, and pull requests' tags, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too, and, when you ask one with **Ask…**, its conversation and your question; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply or comment you're writing |
+| **GitHub Copilot** | Which Copilot sessions are running, need you, or have finished or stopped; local CLI sessions when the app isn't installed; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's and CLI's own files under `~/.copilot` | Local Copilot session files | None for tracking; optional Copilot summaries send the selected work's details through the CLI, and **Ask…**, with Send Work to Copilot on, a session's conversation and your question, as described in [Privacy](#privacy) |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in, as each account it's signed in to: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query for each account each refresh |
 
 Only the Azure DevOps and GitHub sources talk to the network for what you see, each only to its own
@@ -447,7 +447,8 @@ nothing more goes there until that's done. **⌄** says first how work would get
 window would send it: with the Copilot CLI, for a task BriefBar runs; or in the Copilot app, where BriefBar
 sends the prompt itself with [Send Prompts to Copilot Sessions](#agents) on, or copies it for you to paste.
 It opens the session in Copilot, or **Continue in Terminal** for a task BriefBar runs with the Copilot CLI;
-and, under **Use for This Pull Request**, lists the sessions that go with it, each with why and how it
+with Show Links on, **Show Details** shows its page, and **Ask…** opens it with a field to ask the session where it
+stands, or anything else, aside ([Asking a session where it stands](#asking-a-session-where-it-stands)); and, under **Use for This Pull Request**, lists the sessions that go with it, each with why and how it
 stands, the app's other sessions, and **New Session**: the one you check is where the pull request's work
 goes from then on, in the Send to Copilot window too, until a task starts on it in another session, or, with
 Updates from Copilot Sessions and Show Links on, another session starts telling BriefBar it's working on it. **Let
@@ -1001,6 +1002,27 @@ says too. Right-click it for the other way to its pull request, where there's on
 or **Open Pull Request in Azure DevOps**, then the task's own menu. The same **Move Viewed
 Sessions to Idle** setting controls whether opening a finished task dismisses it.
 
+#### Asking a session where it stands
+
+With **Send Work to Copilot** on, in [Azure DevOps](#azure-devops)' settings, you can ask any of your
+sessions, a task BriefBar sent too, where it stands, or why it changed something, without opening it. Right-click
+it, or use its **⋯**, and choose **Ask…**: a field opens under its row. Write your question and click **Ask**, or
+press Return; left empty, it asks **Where do you stand?**, which has it say what's done, what's left, and what or whom
+it waits on. While it's asked, a line under the row says so, with **Stop**; then its answer shows there, as
+Explain's does under a comment, its first few lines until **Show More**, with **Copy**, **↗** to open the session,
+and **✕** to dismiss it. **Ask More** follows up on what it said; left empty, it asks where the session stands now.
+When it can't answer, the line says why, such as that you're out of premium requests, with **Try Again**. A
+session's page, from a work item's or a pull request's details with Show Links on, has **Ask…** in its heading,
+and its answer shows under it; and **⌄** on a pull request's Copilot line has **Ask…**, which opens that page
+with the field ready. One field is open at a time, and **Esc** or its **✕** closes it.
+
+It's asked aside, as Explain asks about a comment: in a copy of the session's conversation that the Copilot CLI
+makes with no tools and deletes after, with the session's own model, so it changes no file and the session's
+history stays as it was. It sends the conversation, with your question, to GitHub Copilot, as one premium
+request, and needs the Copilot CLI 1.0.95 or later. What you asked and what it answered stay in memory only,
+wherever the session shows, until you dismiss them, BriefBar quits, or Send Work to Copilot is turned off. The
+widgets show neither, and the demo makes its answers up.
+
 ### GitHub
 
 The item shows a symbol and count for each group you can act on: orange 👁 to review, orange ✋ changes
@@ -1329,7 +1351,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   holds your chats' messages too: BriefBar reads only the part about your conversations, and keeps
   nothing else of it.
 - **Send Work to Copilot** starts the Copilot CLI only if you turn it on, and only when you send a work
-  item, or a pull request's comments, build, conflicts or review. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
+  item, or a pull request's comments, build, conflicts or review, or ask a session something, with Explain or
+  **Ask…**. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
   servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
   choose, with git, and Copilot's log of that session; and, as the window that sends one opens, and while
   a pull request's details show in a window you can see, every ten seconds, the Copilot app's sessions its work could go to,
@@ -1345,12 +1368,13 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   sends a session's conversation, which the Copilot CLI copies into a fork it deletes after, with the comment
   and its code, with what BriefBar read of a failed build (its errors, the tests that failed with what each
   said, and the last lines of its log), or with which files conflict and how, to GitHub Copilot, and keeps the
-  answer in memory only; a build's **Fix** quotes the same in its prompt, and **Resolve** lists the same files. For
+  answer in memory only; **Ask…** sends a session's conversation, copied the same way, with your question, and keeps
+  its answer in memory only too; a build's **Fix** quotes the same in its prompt, and **Resolve** lists the same files. For
   a prompt about a pull request's comments, builds or conflicts sent to one of the Copilot app's sessions, BriefBar
   reads that session's log, from then until Copilot is done with it. In its preferences, it keeps which work items you sent, where, with which model, and the link to
   the pull request, not their titles; the session you choose for a pull request's work, by its ID only; the comment
   threads, builds and conflicts each task or prompt took on, and which session a prompt about them went to and when, by
-  their IDs only; the IDs of the forks it made to ask a session about a comment, a build or merge conflicts, until they're deleted;
+  their IDs only; the IDs of the forks it made to ask a session about a comment, a build or merge conflicts, or with Ask…, until they're deleted;
   and, in a file only you can read, what Copilot printed when it ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same
