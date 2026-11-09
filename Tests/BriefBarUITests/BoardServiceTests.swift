@@ -307,7 +307,7 @@ import Testing
     }
 
     /// Undo of a stage you changed chooses its pull request again where you'd chosen it, however long after, gone by then or
-    /// not, but not over one you chose since.
+    /// not, but not for a slot you've decided for since, choosing another or letting BriefBar choose, whatever became of that.
     @Test func undoingAStageChangeChoosesItsPullRequestAgain() {
         let defaults = MemoryDefaults()
         var now = Date(timeIntervalSince1970: 1_792_000_000)
@@ -339,6 +339,59 @@ import Testing
         #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
         #expect(order.picks == UpNextPicks([.fix: Self.ref(4132)]))
         #expect(Self.fixNext(order)?.card.ref == Self.ref(4132))
+
+        // You let BriefBar choose since: Undo puts the stage back, but chooses nothing.
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
+        order.letBriefBarChoose(.fix)
+        #expect(order.undo())
+        #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
+        #expect(order.picks.isEmpty)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+
+        // Nor once the one you chose since moved on, and its choice went.
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
+        #expect(order.pickNext(Self.ref(4132), in: .fix))
+        var resolved = Self.fixes
+        resolved[4132] = StageFacts(role: .author, waitingFor: "Waiting on Priya")
+        Self.tell(order, resolved)
+        now += UpNextPicks.awayFor
+        order.timePassed()
+        #expect(order.picks.isEmpty)
+        #expect(order.undo())
+        #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
+        #expect(order.picks.isEmpty)
+        #expect(UpNextPicks.load(from: defaults).isEmpty)
+    }
+
+    /// While the one you chose waits, as while its build runs again, the slot shows the next one, and its menu still offers
+    /// Let BriefBar Choose, which forgets yours: it doesn't come back once its build fails again.
+    @Test func letBriefBarChooseForgetsAChoiceThatWaits() throws {
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults)
+        Self.tell(order, Self.fixes)
+        let unpicked = try #require(Self.fixNext(order))
+        #expect(!UpNextView.offersLetBriefBarChoose(unpicked, order: order))
+        #expect(order.pickNext(Self.ref(4132), in: .fix))
+        let picked = try #require(Self.fixNext(order))
+        #expect(picked.isPicked && UpNextView.offersLetBriefBarChoose(picked, order: order))
+
+        var running = Self.fixes
+        running[4132] = StageFacts(role: .author, leftAfterReviews: "Build running")
+        Self.tell(order, running)
+        let waiting = try #require(Self.fixNext(order))
+        #expect(waiting.card.ref == Self.ref(4131) && !waiting.isPicked)
+        #expect(UpNextView.offersLetBriefBarChoose(waiting, order: order))
+
+        order.letBriefBarChoose(.fix)
+        #expect(order.picks.isEmpty)
+        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        let chosenByBriefBar = try #require(Self.fixNext(order))
+        #expect(!UpNextView.offersLetBriefBarChoose(chosenByBriefBar, order: order))
+        Self.tell(order, Self.fixes)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+        #expect(Self.fixNext(order)?.isPicked == false)
     }
 
     /// Fix next's choice waits while its build runs again, in progress without needing you, and comes first once it fails

@@ -357,8 +357,8 @@ Board too, and BriefBar remembers it until that pull request moves on to another
 for half an hour; then BriefBar chooses again. Back sooner, as when someone wants more changes, it's still yours, and
 **Undo**, after you move its card, chooses it again. While its build runs again, or a session writes it, Fix next shows
 the next one meanwhile, and yours once it needs you again. **Let BriefBar Choose**, in the same list, gives the slot back
-to BriefBar's order. Click one for its details; **2 more ›** shows the rest on the Board. Click **Up Next** to fold it,
-and BriefBar remembers. It changes no group or count.
+to BriefBar's order, meanwhile too. Click one for its details; **2 more ›** shows the rest on the Board. Click **Up Next**
+to fold it, and BriefBar remembers. It changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
 review**, **Teammate's review**, **Can merge**, **Waits** and **Merged**, which shows only its count until you

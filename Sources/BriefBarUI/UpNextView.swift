@@ -97,6 +97,12 @@ package struct UpNextView: View {
         [card.ref.shortOrderLabel, order.name(of: card.ref)].compactMap { $0 }.joined(separator: " ") + " — "
             + StageText.why(card.reading, name: order.name(of:))
     }
+
+    /// Whether a slot's menu offers Let BriefBar Choose: once you chose a pull request for it, whether the slot shows it now
+    /// or waits for it to come back.
+    package static func offersLetBriefBarChoose(_ slot: UpNext.Slot, order: PullRequestOrder) -> Bool {
+        order.picks[slot.kind] != nil
+    }
 }
 
 extension UpNextView {
@@ -227,8 +233,9 @@ private struct UpNextSlotView: View {
 }
 
 /// An Up Next slot's title, with ⌄: its pull requests in its column's order, the one it shows checked, to choose which it
-/// shows, first in its column on the Board, until that one moves on; and Let BriefBar Choose, once you chose one, which
-/// gives it back to BriefBar's order.
+/// shows, first in its column on the Board, until that one moves on; and Let BriefBar Choose, once you chose one, whether
+/// the slot shows it now or waits for it to come back, as while its build runs again, which gives it back to BriefBar's
+/// order.
 private struct UpNextChooser: View {
     let slot: UpNext.Slot
     @ObservedObject var order: PullRequestOrder
@@ -243,7 +250,7 @@ private struct UpNextChooser: View {
             }
             Divider()
             Button("Let BriefBar Choose") { letBriefBarChoose() }
-                .disabled(!slot.isPicked)
+                .disabled(!UpNextView.offersLetBriefBarChoose(slot, order: order))
         } label: {
             HStack(spacing: 3) {
                 Text(slot.kind.title)

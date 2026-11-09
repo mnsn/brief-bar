@@ -529,22 +529,32 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Chooses the pull request an Up Next slot shows, first in its column on the Board, in place of the one you chose
-    /// before, until it moves on (`UpNextPicks`): only one the slot has now. False for any other, or while Pull Request
-    /// Order is off.
+    /// before, until it moves on (`UpNextPicks`): only one the slot has now. Undo of your last stage change then chooses
+    /// nothing for that slot. False for any other, or while Pull Request Order is off.
     @discardableResult
     package func pickNext(_ ref: ItemRef, in slot: UpNextSlot) -> Bool {
         guard isOn, slot.has(stages[ref]) else { return false }
         guard picks[slot] != ref else { return true }
         picks[slot] = ref
+        undoChoosesNothing(for: slot)
         keepPicks()
         return true
     }
 
-    /// Let BriefBar Choose: forgets the pull request you chose for a slot, and BriefBar's order chooses again.
+    /// Let BriefBar Choose: forgets the pull request you chose for a slot, whether it shows it now or waits for it to come
+    /// back, and BriefBar's order chooses again; Undo of your last stage change then chooses nothing for that slot.
     package func letBriefBarChoose(_ slot: UpNextSlot) {
         guard isOn, picks[slot] != nil else { return }
         picks[slot] = nil
+        undoChoosesNothing(for: slot)
         keepPicks()
+    }
+
+    /// You decided what a slot shows since your last stage change: its Undo no longer chooses the pull request it changed for
+    /// that slot, whatever becomes of what you decided.
+    private func undoChoosesNothing(for slot: UpNextSlot) {
+        guard case .stage(var change)? = lastChange, change.picked.remove(slot) != nil else { return }
+        lastChange = .stage(change)
     }
 
     /// The slots of Up Next you chose a pull request for.
@@ -1513,8 +1523,9 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Puts back exactly the stage your last change replaced, or none, and the pull request you'd chosen it for in Up Next's
-    /// slots, unless you chose another since. What it puts back is kept even once the account keeps the most, as when Let
-    /// BriefBar Decide made room that one waiting in memory took: it waits there in turn, until the account has room.
+    /// slots, but for a slot you've decided for since (`StageChange.picked`). What it puts back is kept even once the account
+    /// keeps the most, as when Let BriefBar Decide made room that one waiting in memory took: it waits there in turn, until
+    /// the account has room.
     private func undo(_ change: StageChange) -> Bool {
         guard isOn, let facts = stageFacts[change.ref] else {
             lastChange = nil
@@ -1841,8 +1852,8 @@ package struct StageChange: Equatable, Sendable {
     package var before: StageMark?
     /// What you set; nil for Let BriefBar Decide.
     package var after: PullRequestStage?
-    /// The slots of Up Next you'd chosen it for, as you changed it: Undo chooses it for them again, but for one you chose
-    /// another for since.
+    /// The slots of Up Next you'd chosen it for, as you changed it: Undo chooses it for them again, but not for one you've
+    /// decided for since, choosing another or letting BriefBar choose, whatever became of that.
     package var picked: Set<UpNextSlot> = []
 
     /// "Moved !4093 to Teammate's review".

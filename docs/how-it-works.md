@@ -1607,11 +1607,13 @@ BriefBar starts again, each choice has its half hour again. One whose source rea
 organization can't be read, since another account signed in, before Azure DevOps' lists are read, or while it's off, is
 neither away nor back, and waits. In progress without needing you, as while its build runs again or a session writes
 it, Fix next's waits too, and comes first again once it needs you. Undo of a stage you changed chooses its pull request
-again where you'd chosen it, gone by then or not, unless you chose another since (`StageChange.picked`). **Let BriefBar
-Choose**, in the slot's menu, or unchecking Make Next forgets it at once; there's no Undo line, as for Focus. It's kept
-in the preferences as each slot's name and its pull request's reference (`order.upNextPicks`), but for a
-pull request listed only because someone sent it in a chat, which stays in memory while BriefBar runs, Pull Request Order
-off or on, as your changes to its mission do, until BriefBar lists it otherwise, and goes when another account signs in.
+again where you'd chosen it, gone by then or not, but not for a slot you've decided for since, choosing another or with
+Let BriefBar Choose, whatever became of that (`StageChange.picked`). **Let BriefBar Choose**, in the slot's menu, or
+unchecking Make Next forgets it at once, whether the slot shows it then or waits for it to come back; there's no Undo
+line, as for Focus. It's kept in the preferences as each slot's name and its pull request's reference
+(`order.upNextPicks`), but for a pull request listed only because someone sent it in a chat, which stays in memory while
+BriefBar runs, Pull Request Order off or on, as your changes to its mission do, until BriefBar lists it otherwise, and
+goes when another account signs in.
 **Forget Stages…** forgets them all, and turning Azure DevOps off forgets its own. `needs_me` reads those kept in the
 preferences, and lists each first in its stage, as the Board does.
 
