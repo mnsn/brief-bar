@@ -188,7 +188,7 @@ package struct MissionsBody: View {
     private func missionCard(_ mission: OrderMission, lane: BoardLane?) -> MissionCard {
         MissionCard(
             mission: mission, kinds: kinds, place: place(of: mission), elsewhere: elsewhere, openElsewhere: openElsewhere,
-            order: ordering, lane: lane, select: { ref in _ = select(ref) }
+            order: ordering, lane: lane, select: open
         ) { step in
             row(step, mission.key)
         }
@@ -212,7 +212,8 @@ package struct MissionsBody: View {
         return counts.max { ($0.value, $1.key) < ($1.value, $0.key) }?.key
     }
 
-    /// A node's click: what its row's does, for one the page lists; otherwise where it lives.
+    /// A node's click, or a pull request's in a mission card's next steps or suggested split: what its row's does, for one
+    /// the page lists; otherwise where it lives.
     private func open(_ ref: ItemRef) {
         guard !select(ref) else { return }
         if let described = ordering.describe(ref) {
