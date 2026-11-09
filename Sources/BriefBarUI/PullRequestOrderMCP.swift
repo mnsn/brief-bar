@@ -307,10 +307,10 @@ package enum PullRequestOrderMCP {
                 """)
         }
         // Whether what the user set stands, as the app works it out, with the Copilot app's sessions on it too.
-        func stands(_ theirs: StageMark, on ref: ItemRef) -> Bool {
-            guard let facts = read.facts[ref] else { return false }
-            let on = PullRequestOrder.merged(facts.sessions, sessions?.on[ref] ?? [])
-            return StageRules.stands(theirs, facts: facts, sessions: on)
+        let (facts, on) = (read.facts, sessions?.on ?? [:])
+        let standing: @Sendable (StageMark, ItemRef) -> Bool = { theirs, ref in
+            guard let fact = facts[ref] else { return false }
+            return StageRules.stands(theirs, facts: fact, sessions: PullRequestOrder.merged(fact.sessions, on[ref] ?? []))
         }
         var marks: [ItemRef: StageMark] = [:]
         var notSet: [String] = []
@@ -336,20 +336,10 @@ package enum PullRequestOrderMCP {
         // What the user set that this replaces, while it stands: they can put it back. Where theirs is the stage this sets
         // and the latest set, it stands as it would: the session keeps nothing there, rather than hide theirs under a
         // stage of its own that ends sooner, and ends theirs with it.
-        let yours = await keeper.userMarks(of: Array(marks.keys), account: read.account)
-        let latest = await keeper.latestSessionMarks(on: Array(marks.keys), listed: sessions?.listed, now: now)
-        let already = Set(marks.keys.filter { ref in
-            guard let theirs = yours[ref], theirs.stage == stage, theirs.at > (latest[ref] ?? .distantPast) else {
-                return false
-            }
-            return stands(theirs, on: ref)
-        })
-        let set = marks.filter { !already.contains($0.key) }
-        try await keeper.changeStages(session, now: now, unless: refusal) { kept in
-            for (ref, mark) in set { kept.set(mark, of: ref) }
-            for ref in already { kept.clear(ref) }
-        }
-        let told = refs.filter { set[$0] != nil }
+        let (yours, already) = try await keeper.setStages(
+            marks, of: session, account: read.account, listed: sessions?.listed, now: now, standing: standing, unless: refusal
+        )
+        let told = refs.filter { marks[$0] != nil && !already.contains($0) }
         var lines: [String] = []
         if !told.isEmpty {
             let them = told.count == 1 ? "it" : "them"
@@ -362,7 +352,7 @@ package enum PullRequestOrderMCP {
             lines.append("\(shows); the user sees who set it, and can change it.\(demo)")
         }
         for ref in told {
-            guard let theirs = yours[ref], theirs.stage != stage, stands(theirs, on: ref) else { continue }
+            guard let theirs = yours[ref], theirs.stage != stage, standing(theirs, ref) else { continue }
             let on = told.count > 1 ? " on \(labels([ref]))" : ""
             lines.append(
                 "The user had set \(theirs.stage.title)\(on) \(StageText.agoWords(theirs.at, now: now)); yours replaces it, "
@@ -597,7 +587,7 @@ actor OrderKeeper {
 
     /// When a session last set a stage on each of these pull requests, of those the Copilot app lists, or of all of them
     /// where `--mcp` can't tell, as their keys have them now; none where none did.
-    func latestSessionMarks(on refs: [ItemRef], listed: Set<ItemRef>?, now: Date) -> [ItemRef: Date] {
+    private func latestSessionMarks(on refs: [ItemRef], listed: Set<ItemRef>?, now: Date) -> [ItemRef: Date] {
         let stages = SessionStages.load(from: defaults, now: now)
         let marks = stages.marks(listed: listed ?? Set(stages.sessions.keys), now: now)
         var latest: [ItemRef: Date] = [:]
@@ -617,6 +607,42 @@ actor OrderKeeper {
     ) throws -> (before: SessionStage?, after: SessionStage) {
         if let refusal = refusal() { throw MCPToolError(refusal) }
         guard isOn else { throw MCPToolError(PullRequestOrderMCP.refusal) }
+        return keep(session, now: now, body)
+    }
+
+    /// Sets these stages as this session's, but not where the user set the same: where theirs is the stage it sets, is
+    /// later than what every listed session set on the pull request, and stands (`standing`), it keeps nothing, and takes
+    /// away what this session set there before. It decides as it keeps them, in one step, so that a call of this
+    /// session's in between can't make it take away a newer stage. Refused, changing nothing, while Pull Request Order
+    /// is off, or `refusal` gives an answer, asked just before.
+    /// - Returns: the stages the user set on them, as it read them, and those where it kept nothing, as theirs is the same.
+    func setStages(
+        _ marks: [ItemRef: StageMark], of session: ItemRef, account: String?, listed: Set<ItemRef>?, now: Date,
+        standing: @Sendable (StageMark, ItemRef) -> Bool, unless refusal: @Sendable () -> String? = { nil }
+    ) throws -> (yours: [ItemRef: StageMark], already: Set<ItemRef>) {
+        if let refusal = refusal() { throw MCPToolError(refusal) }
+        guard isOn else { throw MCPToolError(PullRequestOrderMCP.refusal) }
+        let refs = Array(marks.keys)
+        let yours = userMarks(of: refs, account: account)
+        let latest = latestSessionMarks(on: refs, listed: listed, now: now)
+        let already = Set(refs.filter { ref in
+            guard let theirs = yours[ref], theirs.stage == marks[ref]?.stage, theirs.at > (latest[ref] ?? .distantPast) else {
+                return false
+            }
+            return standing(theirs, ref)
+        })
+        keep(session, now: now) { kept in
+            for (ref, mark) in marks where !already.contains(ref) { kept.set(mark, of: ref) }
+            for ref in already { kept.clear(ref) }
+        }
+        return (yours, already)
+    }
+
+    /// Saves what a session set under its own key, and tells the app when that changed it.
+    @discardableResult
+    private func keep(
+        _ session: ItemRef, now: Date, _ body: (inout SessionStage) -> Void
+    ) -> (before: SessionStage?, after: SessionStage) {
         var before = SessionStages.load(session, from: defaults)
         before?.expire(now: now)
         let after = SessionStages.change(session, in: defaults, now: now, body)

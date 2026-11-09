@@ -4023,9 +4023,10 @@ that the app lists, as agents' stages count them (`MCPStages.sessions`), or, whe
 `--source ado`, that BriefBar shows it while the app lists the session; and, where it replaced a stage you set that
 still stood, that you can put yours back; where you set that stage already, as the latest and still standing, as the
 app works it out, with the Copilot app's sessions on it, that it keeps none there, taking away what the session set
-there before; and names those it didn't set, such as one no list has
-now, one that merged, one that was abandoned, or someone else's to put in progress, which BriefBar never does. The
-order tools' answers also tell
+there before; and names those it didn't set, such as one no list has now, one that merged, one that was abandoned, or
+someone else's to put in progress, which BriefBar never does. It works out where you set that stage already as it keeps
+the stages, in one step (`OrderKeeper.setStages`), as each call runs on its own, so another call of the session's that
+lands in between can't make it take away a newer stage. The order tools' answers also tell
 the session what you changed in its orders that still holds (`OrderText.userChanges`), to keep, and that a later change
 of its that goes against one shows instead of yours, until you put yours back. Their answers name pull requests by
 number and organization, never by title; none of them makes or undoes your changes, or answers with missions. `--mcp`

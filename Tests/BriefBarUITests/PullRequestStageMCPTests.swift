@@ -262,6 +262,31 @@ private final class Announcements: Sendable {
         #expect(Self.kept(unlisted) == nil)
     }
 
+    /// Whether the user set the same stage already is decided as the stage is kept, in one step, so it can't go stale: a
+    /// newer stage of this session's, from a call of its own that lands meanwhile, here as the last check before keeping
+    /// anything runs, isn't taken away to bring the user's older one back.
+    @Test func whetherTheUserSetItAlreadyIsDecidedAsItsKept() async throws {
+        let defaults = Self.settings()
+        var marks = StageMarks()
+        _ = marks.set(StageMark(stage: .yourReview, at: Self.now - 120), of: Self.ref(4093), for: "robin@contoso.com", at: Self.now)
+        marks.save(to: defaults)
+        let session = Self.sessionRef
+        let checks = Mutex(0)
+        let tools = Self.tools(defaults, refusal: {
+            // The first check comes as it reads the pull request, the second just before it keeps anything.
+            if checks.withLock({ $0 += 1; return $0 }) == 2 {
+                SessionStages.change(session, in: defaults, now: Self.now + 30) {
+                    $0.set(StageMark(stage: .teammateReview, at: Self.now + 30, by: session, votes: ""), of: Self.ref(4093))
+                }
+            }
+            return nil
+        })
+        let answer = try await Self.set(tools, #"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#)
+        #expect(answer.hasPrefix("BriefBar shows !4093 in contoso in Your review now, set by this session"))
+        #expect(Self.kept(defaults)?.marks[Self.ref(4093)]?.stage == .yourReview)
+        #expect(checks.withLock { $0 } == 2)
+    }
+
     /// Whether the stage the user set still stands is worked out as the app works it out, with the Copilot app's sessions
     /// on the pull request: one that finished writing it since ends the user's In progress, so a session's new In
     /// progress is kept rather than taken for theirs.
