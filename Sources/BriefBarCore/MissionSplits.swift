@@ -410,11 +410,13 @@ public enum MissionSplitting {
         // What it's made of, as Keep Together counts it: its pull requests and those of the missions split off it, whatever
         // became of them.
         var members = steps.map(\.ref)
-        // The missions split off it before, each as one part, by its open Azure DevOps pull requests.
-        for other in missions where other.key != mission.key && other.isMine && !other.isFinished {
+        // The missions split off it before: what they're made of, finished or not, so that one whose pull request reopens
+        // brings nothing new; and, unfinished, each as one part, by its open Azure DevOps pull requests.
+        for other in missions where other.key != mission.key && other.isMine {
             let own = other.steps + other.attached
             guard own.contains(where: { splitFrom($0.ref) == mission.key }) else { continue }
             members += own.map(\.ref)
+            guard !other.isFinished else { continue }
             let open = own.filter { $0.ref.kind == .pullRequest && $0.status.isOpen }.map(\.ref)
             guard !open.isEmpty else { continue }
             var split = part(open, besides: story, stays: true, facts: facts, sessionsWorking: sessionsWorking, name: name)

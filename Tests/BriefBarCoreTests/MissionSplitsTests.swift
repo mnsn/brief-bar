@@ -319,6 +319,16 @@ import Testing
         // It's made of what was split off it too, as Keep Together counts it.
         let splitOff = MissionSplitting.digest(["pr \(Self.pr(4120))"])
         #expect(question.contents?.digests.contains(splitOff) == true)
+        // And still once that mission finished, as its pull request closed: one that reopens isn't new.
+        let closed = StoryMissionsTests.facts(
+            Self.storyFacts().pullRequests.values.sorted { $0.ref < $1.ref } + [Self.ado(4120, state: .closed)]
+        )
+        let missionsClosed = StoryMissionsTests.missions(closed, changes: changes)
+        #expect(missionsClosed.first { $0.key == mine }?.isFinished == true)
+        let storyClosed = try #require(missionsClosed.first { $0.key == .story(Self.story) })
+        let askedClosed = try #require(Self.question(storyClosed, in: missionsClosed, facts: closed, splitFrom: { holding[$0]?.splitFrom }))
+        #expect(askedClosed.parts.allSatisfy { $0.splitOff == nil })
+        #expect(askedClosed.contents?.digests.contains(splitOff) == true)
         // One Move to Mission put there isn't split off it.
         var moved = changes
         moved.remove(Self.pr(4120))
