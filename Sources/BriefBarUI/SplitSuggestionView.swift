@@ -70,13 +70,8 @@ package struct SplitSuggestionView: View {
     /// Apple Intelligence's color, as the box's mark, border and button have it.
     static let tint = Color.purple
 
-    @ViewBuilder
     private func buttons(_ box: SplitBox) -> some View {
-        Button(box.button) { split() }
-            .buttonStyle(.borderedProminent)
-            .tint(Self.tint)
-        Button(OrderText.keepTogether) { keepTogether() }
-            .buttonStyle(.bordered)
+        SplitButtons(title: box.button, split: split, keepTogether: keepTogether)
     }
 
     private var credit: some View {
@@ -157,5 +152,28 @@ package struct SplitSuggestionView: View {
 
     private func keepTogether() {
         SpokenText.announce(order.keepTogether(mission))
+    }
+}
+
+/// A suggested split's Split and Keep Together, their titles as big as the text on windows' pages (`ControlLabel`), which
+/// AppKit would otherwise draw at their control's size.
+package struct SplitButtons: View {
+    /// What Split does, such as "Split in Two" or "Take Out !4120".
+    let title: String
+    let split: () -> Void
+    let keepTogether: () -> Void
+
+    package init(title: String, split: @escaping () -> Void, keepTogether: @escaping () -> Void) {
+        self.title = title
+        self.split = split
+        self.keepTogether = keepTogether
+    }
+
+    package var body: some View {
+        Button(action: split) { ControlLabel(title) }
+            .buttonStyle(.borderedProminent)
+            .tint(SplitSuggestionView.tint)
+        Button(action: keepTogether) { ControlLabel(OrderText.keepTogether) }
+            .buttonStyle(.bordered)
     }
 }

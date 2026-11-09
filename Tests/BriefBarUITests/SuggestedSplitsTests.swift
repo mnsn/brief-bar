@@ -814,6 +814,21 @@ fileprivate final class SplitViewer {}
         #expect(height(900, of: mission) == 0)
     }
 
+    /// Split and Keep Together are as big as the text, bezel and all, where AppKit would keep a button's own title at its
+    /// control's size.
+    @Test func theBoxsButtonsAreAsBigAsTheText() {
+        func size(_ scale: CGFloat) -> CGSize {
+            let buttons = HStack(spacing: 8) { SplitButtons(title: "Take Out !4120", split: {}, keepTogether: {}) }
+                .controlSize(.small)
+                .environment(\.textScale, scale)
+                .fixedSize()
+            return NSHostingView(rootView: buttons).fittingSize
+        }
+        let usual = size(1)
+        let bigger = size(1.5)
+        #expect(bigger.width > usual.width * 1.2 && bigger.height > usual.height)
+    }
+
     @Test func theDemosSplitIsMadeUpAndItNeverAsksTheModel() throws {
         let clock = SplitClock()
         let order = Self.service(clock: clock, isDemo: true)
