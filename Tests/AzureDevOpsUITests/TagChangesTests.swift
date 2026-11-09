@@ -37,7 +37,10 @@ import Testing
     /// The demo's pull request whose details the pictures show, tagged deploy-eu and needs-qa.
     private let key = PRKey(DemoData.organization, 4102)
 
-    /// A list that reads Azure DevOps, with the demo's pull requests read, and what changes their tags.
+    /// A list that reads Azure DevOps, with the demo's pull requests read, and what changes their tags. Details that
+    /// stay on screen look again only as often as a test sets (`checkEvery`): every 30 s, as in the app, a look could
+    /// come while a busy runner keeps a test waiting its turn, and read again the tags a stand-in read without keeping
+    /// them.
     private func live(makesChanges: Bool = true) -> (store: PRStore, changes: TagChanges, azure: AzureDevOps) {
         let settings = AppSettings(defaults: MemoryDefaults())
         settings.makesChanges = makesChanges
@@ -48,6 +51,7 @@ import Testing
         let azure = AzureDevOps()
         changes.send = { write, _ in try azure.send(write) }
         changes.readTags = { _ in nil }
+        changes.checkEvery = .seconds(3_600)
         return (store, changes, azure)
     }
 

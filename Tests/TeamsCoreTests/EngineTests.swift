@@ -164,7 +164,9 @@ import BriefBarCore
         try db.add(Record.message(Chat.avery, title: "Avery Quinn", body: "First", at: t(0)), delivered: t(0))
 
         let collector = SnapshotCollector()
-        let engine = NotificationEngine(paths: paths, reloadDelay: 0.05, onChange: collector.add)
+        // No safety rescan within the test, however long a busy runner makes it wait: the engine has to see each write
+        // by itself.
+        let engine = NotificationEngine(paths: paths, reloadDelay: 0.05, safetyInterval: 3_600, onChange: collector.add)
         engine.start()
         defer { engine.stop() }
 

@@ -27,6 +27,10 @@ package struct LinkedItem {
     package var date: Date?
     /// Opens it; nil when it can't be opened.
     package var open: (() -> Void)?
+    /// Opens it itself, for what it said, such as its Ask… answer, where `open` opens another one for it: a Copilot
+    /// session whose question the session coordinating it asks you opens that one, where you answer it. Nil when `open`
+    /// always opens it itself.
+    package var openItself: (() -> Void)?
     /// Its own menu instead of opening it, such as a task's that you sent to Copilot.
     package var menu: (() -> AnyView)?
     /// A task you sent to Copilot: what for, and where from.
@@ -43,7 +47,8 @@ package struct LinkedItem {
     package init(
         ref: ItemRef, label: String, title: String, symbol: String, color: Color, state: ItemState? = nil, status: String? = nil,
         sharedStatus: String? = nil, place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil,
-        menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil, url: URL? = nil, parts: Int = 0, show: (() -> Bool)? = nil
+        openItself: (() -> Void)? = nil, menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil, url: URL? = nil, parts: Int = 0,
+        show: (() -> Bool)? = nil
     ) {
         self.ref = ref
         self.label = label
@@ -57,6 +62,7 @@ package struct LinkedItem {
         self.hint = hint
         self.date = date
         self.open = open
+        self.openItself = openItself
         self.menu = menu
         self.sent = sent
         self.url = url

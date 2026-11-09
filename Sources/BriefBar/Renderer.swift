@@ -42,6 +42,8 @@ enum Renderer {
         // one of each pull request and session linked to the sprint, for their pages' pictures only.
         var rowSummaries: [(ItemRef, StorySummaries.State)] = []
         var pageSummaries: [(ItemRef, StorySummaries.State)] = []
+        // In the demo, what the session adding dark mode answers Ask…, as the demo makes it up, kept aside for its pictures.
+        var askedForPictures: (session: ItemRef, question: SessionAsks.Question)?
         Task {
             for source in sources { await source.loadForRendering() }
             // What's known of everything linked, for the details' pictures; and, in the demo, a made-up summary of each work
@@ -68,6 +70,16 @@ enum Renderer {
                     await summaries.summarizeAndWait(ref)
                     if let state = summaries.state(for: ref) { pageSummaries.append((ref, state)) }
                     summaries.useForRendering(ref, state: nil)
+                }
+                // Asked as Ask… asks, of the demo, which makes its answer up and runs nothing.
+                let asks = model.services.sessionAsks
+                if let darkMode = ItemRef.session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01"), asks.offers(darkMode) {
+                    asks.ask(darkMode, question: nil)
+                    while asks.question(for: darkMode)?.isAsking == true {
+                        try? await Task.sleep(for: .milliseconds(20))
+                    }
+                    if let question = asks.question(for: darkMode) { askedForPictures = (darkMode, question) }
+                    asks.dismiss(darkMode)
                 }
             }
             loaded = true
@@ -294,6 +306,51 @@ enum Renderer {
                 }
                 rows([(.azureDevOpsPullRequests, "updating-pull-requests"), (.copilotSessions, "not-updated-sessions")])
                 for (ref, _) in rowSummaries { summaries.useForRendering(ref, state: nil) }
+            }
+            // Ask… under sessions' rows: where the session adding dark mode stands, with the field to ask it more open under
+            // its answer; what the session moving sign-in to OAuth 2.1 is being asked; and why the one releasing 2.4.0
+            // couldn't answer. Then the first session's page, with its answer under its heading.
+            if let asked = askedForPictures {
+                let asks = model.services.sessionAsks
+                let session = asked.session, answered = asked.question
+                let now = Date()
+                let oauth = ItemRef.session("5d2e8a90-1f3b-4e7c-8a26-7b9c0d4e5f02")
+                let release = ItemRef.session("9a4f2b17-c3d8-4e61-b5a0-2e8d7c6b4a03")
+                asks.useForRendering(session, question: answered, field: "")
+                if let oauth {
+                    asks.useForRendering(oauth, question: SessionAsks.Question(
+                        asked: "Why PKCE, when the web app keeps its secret on the server?", askedAt: now.addingTimeInterval(-25), state: .asking
+                    ))
+                }
+                if let release {
+                    asks.useForRendering(release, question: SessionAsks.Question(
+                        asked: nil, askedAt: now.addingTimeInterval(-200),
+                        state: .failed(SessionAsks.Problem("You're out of premium requests this month.")), endedAt: now.addingTimeInterval(-180)
+                    ))
+                }
+                if windowSections.contains(.copilotSessions) {
+                    let content = WindowContent(id: "render-asks", model: model)
+                    content.update(sections: windowSections)
+                    content.select(.copilotSessions, notify: false)
+                    let view = WindowView(content: content)
+                        .environment(\.isRendering, true)
+                        .environmentObject(model.services)
+                        .environmentObject(model.services.loginItem)
+                        .frame(width: 980, height: 680)
+                    write(Snapshot.render(view, appearance: appearance), "rows-ask-sessions-\(suffix)")
+                }
+                asks.useForRendering(session, question: answered)
+                let page = ItemPageView(ref: session)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .frame(width: 560, height: 720, alignment: .top)
+                    .environment(\.panelStyle, .page)
+                    .textSize(from: model.services)
+                    .background(WindowBackdrop())
+                    .environment(\.isRendering, true)
+                    .environmentObject(model.services)
+                write(Snapshot.render(page, appearance: appearance), "session-page-ask-\(suffix)")
+                for ref in [session, oauth, release].compactMap({ $0 }) { asks.useForRendering(ref, question: nil) }
             }
             // The Notifications page, in the window that has it, while it lists something, as the demo's does.
             if let window = model.overviewLink.window, model.hasNotificationsPage(window: window.id) {

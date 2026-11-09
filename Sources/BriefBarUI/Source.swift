@@ -416,6 +416,9 @@ package final class AppServices: ObservableObject {
     /// Updates from Copilot Sessions: what sessions told BriefBar they work on and opened, and what they changed in Azure
     /// DevOps, once you turn it on.
     package let sessionUpdates: SessionUpdates
+    /// Ask…: what you ask your Copilot sessions aside, and what they answer, in memory, while a source gives it a way to
+    /// ask: Azure DevOps, with Send Work to Copilot on.
+    package let sessionAsks = SessionAsks()
 
     package var openSettings: (SettingsDestination) -> Void = { _ in }
     /// Opens the list that shows a section: false when it's hidden from the menu bar.

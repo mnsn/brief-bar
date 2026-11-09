@@ -201,7 +201,8 @@ package final class CopilotSource: BriefBarSource {
                 open: {
                     // As it is when you click it.
                     store.open(store.sessions.first { $0.id == session.id } ?? session)
-                }
+                },
+                openItself: { store.openItself(session) }
             ))
         }
         return items
