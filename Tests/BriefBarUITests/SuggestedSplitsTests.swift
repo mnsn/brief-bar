@@ -784,8 +784,9 @@ fileprivate final class SplitViewer {}
     }
 
     /// So does one a session told while BriefBar was closed: as BriefBar starts, it notes that the order took them, and the
-    /// mission they're in keeps together once the sources have read what they show, as it's made then. One it noted before,
-    /// as it last ran, isn't kept together again, however what you kept together went since.
+    /// mission they're in keeps together then, though BriefBar quits before the sources have read what they show; what it's
+    /// made of is told once BriefBar can tell. One it noted before, as it last ran, isn't kept together again, however what
+    /// you kept together went since.
     @Test func anOrderTakingWhatASplitMovedWhileBriefBarWasClosedKeepsItsMissionTogether() async throws {
         let clock = SplitClock()
         let model = SplitModel()
@@ -806,17 +807,24 @@ fileprivate final class SplitViewer {}
         )
         orders.save(to: defaults)
         let key = MissionKey.plan(Self.planID)
+        // BriefBar starts, offline, and quits before Azure DevOps has listed anything.
+        let offline = Self.service(defaults, clock: clock)
+        offline.publish(.azureDevOps, readsStories: true, listed: false)
+        #expect(offline.keptTogether.entries[key]?.makeups.isEmpty == true)
+
+        // It starts again, online.
         let order = Self.service(defaults, clock: clock)
         order.namer = model.namer(clock: clock)
-        order.publish(.azureDevOps, readsStories: true, listed: false)
-        #expect(order.keptTogether.entries[key] == nil)
         Self.tell(order)
         let taken = try #require(Self.mission(key, in: order))
         #expect(Self.refs(of: taken) == [Self.pr(4101), Self.pr(4102), Self.pr(4120), Self.pr(4121)])
-        let question = try #require(order.splitQuestion(for: taken))
-        #expect(question.isWorthAsking)
-        #expect(Self.keptAsMade(question, by: order))
+        #expect(order.splitQuestion(for: taken)?.isWorthAsking == true)
         try await Self.stillKept(key, in: order, model: model, clock: clock, viewer: viewer, "Taken back while closed")
+        // What it's made of, the same for three hours, is told.
+        Self.hoursPass(order, clock: clock)
+        let told = try #require(Self.mission(key, in: order))
+        let question = try #require(order.splitQuestion(for: told))
+        #expect(Self.keptAsMade(question, by: order))
         try #require(order.change(.setNext(Self.pr(4101), in: key, true))?.canUndo == true)
         order.stopShowing(in: viewer)
 
@@ -839,6 +847,41 @@ fileprivate final class SplitViewer {}
         #expect(again.changes[Self.pr(4101)]?.overridden != nil)
         #expect(again.missions.contains { $0.key == key })
         #expect(again.keptTogether.entries[key] == nil)
+    }
+
+    /// Undo that gives an order back what it took from a split, as Undo of Put Yours Back does, keeps the mission it's back
+    /// in together too, though what you kept together as the order took it went since.
+    @Test func undoThatGivesAnOrderBackWhatItTookFromASplitKeepsItsMissionTogether() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        let defaults = MemoryDefaults()
+        let viewer = SplitViewer()
+        let order = Self.service(defaults, clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        try #require(order.split(try await Self.suggested(order, model: model, clock: clock, viewer: viewer)) != nil)
+        order.stopShowing(in: viewer)
+        clock.advance(60)
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        var orders = DeclaredOrders.load(from: defaults)
+        try orders.apply(
+            OrderRequest(entries: [4101, 4102, 4120, 4121].map { .init(link: link($0)) }), now: clock.now, newID: Self.planID
+        )
+        orders.save(to: defaults)
+        order.reloadOrders()
+        let key = MissionKey.plan(Self.planID)
+        #expect(order.keptTogether.entries[key] != nil)
+
+        // You put yours back for the build agents' upgrade, and the order's mission, without it for three hours, goes.
+        try #require(order.change(.putBack(Self.pr(4120)))?.canUndo == true)
+        #expect(!Self.refs(of: Self.mission(key, in: order)).contains(Self.pr(4120)))
+        Self.hoursPass(order, clock: clock)
+        #expect(order.keptTogether.entries[key] == nil)
+        #expect(order.undo())
+        let back = try #require(Self.mission(key, in: order))
+        #expect(Self.refs(of: back).contains(Self.pr(4120)))
+        let question = try #require(order.splitQuestion(for: back))
+        #expect(Self.keptAsMade(question, by: order))
     }
 
     /// A split goes by the orders as agents last told them: once a revision BriefBar hadn't heard of yet relates what the

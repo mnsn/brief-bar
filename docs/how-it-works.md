@@ -1448,8 +1448,8 @@ it doesn't hold, and nothing moves. A mission split off a session's order keeps 
 requests, at the order's latest revision, and Any time only where the whole of that order's pull requests went there;
 from a story's mission or a session's pull requests, it has no order known. **Keep Together**, Undo, Undo Your Changes
 to It or to This Mission, and an order that takes back what a split moved, as a session's later change does one you
-moved, each keep the mission it's in together as it's made now, an order told while BriefBar was closed too, which
-BriefBar notes as it starts (`OrderChanges.noteOverrides`), once the sources have read what they show: in the
+moved, one told while BriefBar was closed too, which BriefBar notes as it starts (`OrderChanges.noteOverrides`), each
+keep the mission it's in together as it's made now, or, while BriefBar can't tell yet, as it's made once it can: in the
 preferences (`KeptTogether`, as `order.splits`), by its key, as digests (SHA-256) of what it's made of, never a title,
 until it has been made of something else for three hours (`KeptTogether.settleFor`), or two weeks after BriefBar last
 saw the mission, counted as names' are. Those three hours count only while BriefBar can tell what the mission is made
