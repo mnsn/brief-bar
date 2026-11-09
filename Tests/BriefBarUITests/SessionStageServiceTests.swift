@@ -268,8 +268,9 @@ private final class Clock {
 
     /// A Your review you set lasts until you change it, also once a session that pushed says the same, as BriefBar's
     /// prompts ask: what the session says shows at once, over its own work since yours, and lasts as yours does as a
-    /// teammate approves, with yours kept. Where the session's other stage replaced yours first, what it says later counts
-    /// as any stage does, and once that ends, none does: yours doesn't come back.
+    /// teammate approves, with yours kept, and Let BriefBar Decide forgets both, as it would yours alone. Where the
+    /// session's other stage replaced yours first, what it says later counts as any stage does, and once that ends, none
+    /// does: yours doesn't come back.
     @Test func aSessionsYourReviewAfterYoursShowsAndLastsAsYoursDoes() async throws {
         let clock = Clock()
         let defaults = Self.defaults()
@@ -319,6 +320,78 @@ private final class Clock {
         #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .yourReview)
         #expect(order.stage(of: Self.ref(4094))?.stage == .canMerge)
         #expect(order.stage(of: Self.ref(4094))?.mark == nil)
+
+        // Let BriefBar Decide is one click away, as with yours alone, and forgets both: Azure DevOps says it's ready.
+        let offered = StageAction.offered(for: order.stage(of: Self.ref(4093)), canUndo: false)
+        #expect(offered.contains(.letBriefBarDecide) && !offered.contains(.putYoursBack))
+        #expect(order.letBriefBarDecide(Self.ref(4093)) == .done)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .canMerge)
+        #expect(!SessionStages.keepsAny(in: defaults))
+    }
+
+    /// Let BriefBar Decide, where a session's Your review followed yours, forgets both, so BriefBar works the stage out
+    /// again: Waits, while its order puts it after one not yet merged. Undo puts yours back.
+    @Test func letBriefBarDecideForgetsTheSessionsYourReviewThatFollowedYours() async throws {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        var orders = DeclaredOrders()
+        try orders.apply(OrderRequest(entries: [.init(link: Self.link(4102)), .init(link: Self.link(4093), after: ["4102"])]), now: clock.now)
+        orders.save(to: defaults)
+        let order = Self.service(defaults, clock: clock)
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)
+        Self.tell(order, [4093: waiting, 4102: waiting])
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600)
+        clock.advance(seconds: 60)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        clock.advance(seconds: 60)
+        _ = try await Self.setStage("user_review", of: [4093], in: defaults, facts: [Self.ref(4093): waiting], at: clock.now)
+        order.agentChanged()
+        #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.cart)
+
+        clock.advance(seconds: 60)
+        let approved = StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: clock.now)
+        Self.tell(order, [4093: approved, 4102: waiting])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(order.letBriefBarDecide(Self.ref(4093)) == .done)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .waits)
+        #expect(Self.why(order, 4093) == "After !4102")
+        #expect(!SessionStages.keepsAny(in: defaults))
+
+        #expect(order.undo())
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
+    }
+
+    /// Undo of the Your review you set takes a session's that followed it with it, rather than leave it lasting on its own;
+    /// what another session set before yours, which yours replaced, is the latest again, as Undo puts it back anywhere, and
+    /// it moves on as a teammate approves.
+    @Test func undoTakesASessionsYourReviewThatFollowedYoursWithIt() async throws {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)
+        Self.tell(order, [4093: waiting])
+        Self.list(order, [Self.cart: .finished, Self.backoff: .finished], since: clock.now - 3_600, on: [4093])
+        Self.set(.teammateReview, of: 4093, by: Self.backoff, at: clock.now, votes: "", in: defaults, order)
+        clock.advance(seconds: 60)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        clock.advance(seconds: 60)
+        _ = try await Self.setStage("user_review", of: [4093], in: defaults, facts: [Self.ref(4093): waiting], at: clock.now)
+        order.agentChanged()
+        #expect(Self.why(order, 4093) == "‘Cart’ says it's ready")
+
+        #expect(order.undo())
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.backoff)
+        #expect(SessionStages.load(Self.cart, from: defaults) == nil)
+
+        clock.advance(seconds: 60)
+        Self.tell(order, [4093: StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: clock.now)])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .canMerge)
+    }
+
+    private static func link(_ number: Int) -> String {
+        "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)"
     }
 
     /// ‘Cart’ sets these pull requests' stage with `pull_request_stage`, as its `--mcp` does, with the Copilot app listing

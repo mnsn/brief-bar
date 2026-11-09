@@ -340,7 +340,8 @@ progress, and so does the session that set it finishing; a vote ends Teammate's 
 set, someone else's on yours, and yours on someone else's, while a Your review you set lasts until you change it, as
 does a session's that says the same after yours, once it pushed;
 merging or closing it
-ends any. **Let BriefBar Decide** forgets it, and **Undo** puts back your last change. Can merge and Waits come only
+ends any. **Let BriefBar Decide** forgets it, with a session's Your review that says the same after yours, and **Undo**
+puts back your last change. Can merge and Waits come only
 from what Azure DevOps and its order show: nobody, you or a session, can set them. Its details show the whole track
 under its heading, with its next step, such as **Finished My Review** or **Add Reviewers in Azure DevOps**. Stages
 only label rows: groups, Needs You, counts, notifications and the brief stay as they were. On someone else's pull

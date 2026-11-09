@@ -192,7 +192,7 @@ package struct StageMenuItems: View {
             }
             .disabled(true)
         }
-        if reading.stage == .yourReview || reading.replaced != nil || reading.isSetByYou {
+        if reading.stage == .yourReview || reading.replaced != nil || reading.canLetBriefBarDecide {
             Divider()
         }
         if reading.stage == .yourReview {
@@ -210,7 +210,7 @@ package struct StageMenuItems: View {
         if let yours = reading.replaced {
             Button(StageText.putBack(yours, now: now)) { StageCommand.putYoursBack(ref, order: order, undo: undoPlace) }
         }
-        if reading.isSetByYou {
+        if reading.canLetBriefBarDecide {
             Button("Let BriefBar Decide") { StageCommand.letBriefBarDecide(ref, order: order, undo: undoPlace) }
         }
     }

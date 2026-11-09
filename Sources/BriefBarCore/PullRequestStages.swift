@@ -337,6 +337,9 @@ public struct StageReading: Equatable, Sendable {
     public var mark: StageMark?
     /// Yours, which a session's later change replaced: Put Yours Back makes it the latest again.
     public var replaced: StageMark?
+    /// Yours, which a session's later Your review says the same as, as a session that pushed says its work is ready: it
+    /// shows the session's, and Let BriefBar Decide forgets both.
+    public var followed: StageMark?
     /// Whether it's on your board: not someone else's that you finished reviewing, until something new needs you there.
     public var isOnBoard: Bool
     /// On yours, a failed build or merge, where a session or a stage you set decides its stage rather than the failure: its
@@ -349,19 +352,24 @@ public struct StageReading: Equatable, Sendable {
 
     public init(
         stage: PullRequestStage, why: StageWhy, since: Date? = nil, mark: StageMark? = nil, replaced: StageMark? = nil,
-        isOnBoard: Bool = true, alsoFailing: String? = nil
+        followed: StageMark? = nil, isOnBoard: Bool = true, alsoFailing: String? = nil
     ) {
         self.stage = stage
         self.why = why
         self.since = since
         self.mark = mark
         self.replaced = replaced
+        self.followed = followed
         self.isOnBoard = isOnBoard
         self.alsoFailing = alsoFailing
     }
 
     /// Whether you set what it shows.
     public var isSetByYou: Bool { mark?.isYours == true }
+
+    /// Whether Let BriefBar Decide applies: to what you set, while it shows, or a session's Your review that says the same
+    /// shows in its place (`followed`).
+    public var canLetBriefBarDecide: Bool { isSetByYou || followed != nil }
 
     /// Whether two readings of a pull request, or none, say the same, whatever names the missions they name: a rename, or
     /// Apple Intelligence's name, changes only their words, not its stage.
@@ -449,7 +457,7 @@ public enum StageRules {
     ) -> StageReading? {
         if facts.state == .merged { return StageReading(stage: .merged, why: .merged, since: facts.since) }
         guard facts.state.isOpen else { return nil }
-        let (mark, replaced) = standingMark(marks, facts: facts, sessions: sessions, setters: setters)
+        let (mark, replaced, followed) = standingMark(marks, facts: facts, sessions: sessions, setters: setters)
 
         // A session at work on it now, since after what was set. On yours, one writing it puts it in progress: one that
         // waits for you first, else the latest to start. Never on someone else's: there, only a review, such as Copilot's
@@ -476,7 +484,9 @@ public enum StageRules {
                 let why: StageWhy = facts.waitingFor.map(StageWhy.waitingFor) ?? .findReviewer
                 return StageReading(stage: .teammateReview, why: why, since: mark.at, mark: mark, replaced: replaced)
             default:
-                return StageReading(stage: mark.stage, why: .set, since: mark.at, mark: mark, replaced: replaced)
+                return StageReading(
+                    stage: mark.stage, why: .set, since: mark.at, mark: mark, replaced: replaced, followed: followed
+                )
             }
         }
 
@@ -507,16 +517,17 @@ public enum StageRules {
         return StageReading(stage: .teammateReview, why: facts.waitingFor.map(StageWhy.waitingFor) ?? .findReviewer, since: since)
     }
 
-    /// The latest of what was set, while it stands, and yours when a session's later change replaced it with another stage.
-    /// Once the latest ends, none of them counts: BriefBar works the stage out again.
+    /// The latest of what was set, while it stands; yours when a session's later change replaced it with another stage;
+    /// and yours when a session's later Your review says the same (`StageReading.followed`). Once the latest ends, none of
+    /// them counts: BriefBar works the stage out again.
     static func standingMark(
         _ marks: [StageMark], facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
-    ) -> (StageMark?, StageMark?) {
+    ) -> (mark: StageMark?, replaced: StageMark?, followed: StageMark?) {
         guard let latest = marks.max(by: { $0.at < $1.at }), stands(latest, facts: facts, sessions: sessions, setters: setters)
-        else { return (nil, nil) }
-        guard !latest.isYours, let yours = marks.filter(\.isYours).max(by: { $0.at < $1.at }), yours.stage != latest.stage
-        else { return (latest, nil) }
-        return (latest, yours)
+        else { return (nil, nil, nil) }
+        guard !latest.isYours, let yours = marks.filter(\.isYours).max(by: { $0.at < $1.at }) else { return (latest, nil, nil) }
+        if yours.stage != latest.stage { return (latest, yours, nil) }
+        return (latest, nil, latest.stage == .yourReview ? yours : nil)
     }
 
     /// What you and the sessions set on a pull request that counts now (`reading`'s marks): yours while it stands, and
@@ -622,7 +633,8 @@ public enum StageAction: Hashable, Sendable {
     /// What's offered for a pull request in this stage: Finished My Review in Your review; each stage you can set but the
     /// one it's in, where someone else's that you finished reviewing is in Teammate's review, and but Teammate's review on
     /// someone else's, whose author asks for its reviews: Finished My Review takes it off your board instead; Put Yours Back
-    /// once a session's change replaced yours; Let BriefBar Decide for one you set. Nothing once it merged.
+    /// once a session's change replaced yours; Let BriefBar Decide for one you set, also where a session's Your review that
+    /// says the same shows in its place. Nothing once it merged.
     /// - Parameter isYours: you opened it.
     public static func offered(for reading: StageReading, isYours: Bool = true) -> [StageAction] {
         guard reading.stage != .merged else { return [] }
@@ -631,7 +643,7 @@ public enum StageAction: Hashable, Sendable {
         actions += PullRequestStage.settable.filter { $0 != reading.stage && (isYours || $0 != .teammateReview) }
             .map(StageAction.move)
         if reading.replaced != nil { actions.append(.putYoursBack) }
-        if reading.isSetByYou { actions.append(.letBriefBarDecide) }
+        if reading.canLetBriefBarDecide { actions.append(.letBriefBarDecide) }
         return actions
     }
 }
