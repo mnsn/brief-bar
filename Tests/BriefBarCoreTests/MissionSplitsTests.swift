@@ -789,6 +789,18 @@ import Testing
         #expect(kept.keeps(key) && kept.differences[key]?.contents == Self.c("a", "d"))
         Self.account(&kept, [key: Self.c("a", "d")], at: 11 * hour)
         #expect(!kept.keeps(key))
+        // Its time counts from when that came, though some of what it was made of left it meanwhile; it starts again only
+        // as what it wasn't made of changes.
+        kept.keep(key, contents: Self.c("a", "b", "c"), at: t(0))
+        Self.hourly(&kept, [key: Self.c("a", "b", "c", "d")], from: 0, to: hour)
+        Self.account(&kept, [key: Self.c("a", "b", "d")], at: 2 * hour)
+        #expect(kept.keeps(key) && kept.differences[key]?.counted == 2 * hour)
+        Self.account(&kept, [key: Self.c("a", "b", "d")], at: 3 * hour)
+        #expect(!kept.keeps(key))
+        kept.keep(key, contents: Self.c("a", "b", "c"), at: t(0))
+        Self.hourly(&kept, [key: Self.c("a", "b", "c", "d")], from: 0, to: hour)
+        Self.account(&kept, [key: Self.c("a", "b", "e")], at: 2 * hour)
+        #expect(kept.keeps(key) && kept.differences[key]?.counted == 0)
         // A way told for three hours is kept with it, as it was then: made of less of that, it's the same.
         let off = Self.c("x", "y", stories: false)
         kept.keep(key, contents: Self.c("a"), at: t(0))

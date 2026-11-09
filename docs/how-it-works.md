@@ -1467,26 +1467,26 @@ BriefBar can tell what the mission is made of: it looks again whenever what it r
 told at one look holds till the next, of which at most an hour counts (`KeptTogether.mostAtOnce`), as while the Mac
 sleeps: so a read that fails, tried again each hour, or a source that tells less for a while, as when BriefBar starts
 before the network's up, doesn't bring a suggestion back. How long one has differed is kept in memory, and starts again
-as it's made of something else again, as it isn't shown, or as you keep it together again. What it's made of is what
-BriefBar can tell: with Show Links off, not which story each pull request is for, so those for a story are among the
-pull requests opened under a session; with Copilot off, not who opened them. So it keeps digests for each way it has
-told the mission, Show Links and Copilot each on or off, and compares each only with what it told the same way: turning
-either off or on isn't a change, and a way it tells the mission, the same for three hours, is kept with it, so a change
-from then on counts. A change within three hours of a way it hadn't told before isn't seen. Nothing counts while a
-source still reads what it shows, however long that takes: till Azure DevOps has read an organization's lists since
-BriefBar started, Show Links has read what each pull request is for, and Copilot has read which pull requests its
-sessions opened, from the app's database where there is one (`OrderFacts.isReading`); nor while Azure DevOps is off, or
-the latest refresh that tried to read anything read nothing, neither an organization's lists nor a pull request sent to
-you, as offline, signed out, or with every organization in a directory the Azure CLI isn't signed in to. A suggestion on
-screen holds the same way: told another way, by its parts alone. Each follows its mission as Focus does
-(`OrderBoard.successor`); at most 200, the one seen longest ago going first, which only brings back a suggestion you can
-keep together again. Turning a source off forgets those of its missions, turning Pull Request Order off keeps them,
-their days waiting, and **Forget All Orders…** forgets them. **Suggested Split…**, in the mission's **⋯**, shows one you
-kept together again, asking Apple Intelligence again if BriefBar restarted since, or its parts changed, as one merged. A
-split applies whole: to take part of one, Keep Together, then Move to Mission. A split's Undo puts back the names Apple
-Intelligence had given the missions it named, with what it had asked them with, so that they aren't asked again
-(`OrderLastChange.names`); Undo Your Changes to It or to This Mission doesn't, and the mission is asked its name again
-once it shows.
+as it's made of something else it wasn't, but not as something it was made of leaves it, as it isn't shown, or as you
+keep it together again. What it's made of is what BriefBar can tell: with Show Links off, not which story each pull
+request is for, so those for a story are among the pull requests opened under a session; with Copilot off, not who
+opened them. So it keeps digests for each way it has told the mission, Show Links and Copilot each on or off, and
+compares each only with what it told the same way: turning either off or on isn't a change, and a way it tells the
+mission, the same for three hours, is kept with it, so a change from then on counts. A change within three hours of a
+way it hadn't told before isn't seen. Nothing counts while a source still reads what it shows, however long that takes:
+till Azure DevOps has read an organization's lists since BriefBar started, Show Links has read what each pull request is
+for, and Copilot has read which pull requests its sessions opened, from the app's database where there is one
+(`OrderFacts.isReading`); nor while Azure DevOps is off, or the latest refresh that tried to read anything read nothing,
+neither an organization's lists nor a pull request sent to you, as offline, signed out, or with every organization in a
+directory the Azure CLI isn't signed in to. A suggestion on screen holds the same way: told another way, by its parts
+alone. Each follows its mission as Focus does (`OrderBoard.successor`); at most 200, the one seen longest ago going
+first, which only brings back a suggestion you can keep together again. Turning a source off forgets those of its
+missions, turning Pull Request Order off keeps them, their days waiting, and **Forget All Orders…** forgets them.
+**Suggested Split…**, in the mission's **⋯**, shows one you kept together again, asking Apple Intelligence again if
+BriefBar restarted since, or its parts changed, as one merged. A split applies whole: to take part of one, Keep
+Together, then Move to Mission. A split's Undo puts back the names Apple Intelligence had given the missions it named,
+with what it had asked them with, so that they aren't asked again (`OrderLastChange.names`); Undo Your Changes to It or
+to This Mission doesn't, and the mission is asked its name again once it shows.
 
 ### A pull request's stage
 

@@ -817,7 +817,8 @@ public struct KeptTogether: Equatable, Sendable {
     /// BriefBar told them the same way before, keeping a way it hadn't told one before once told that way, the same, for
     /// as long. BriefBar looks again as anything that makes a mission, or tells what it's made of, changes, so what it
     /// told at one look held till the next: that time counts, only if BriefBar could tell then, and at most `mostAtOnce`
-    /// of it, as when the Mac slept. It starts again once it's made of something else again, and once it isn't shown.
+    /// of it, as when the Mac slept. It starts again once it's made of something else it wasn't, but not as something it
+    /// was made of leaves it, and once it isn't shown.
     /// - Parameters:
     ///   - seen: the missions shown now.
     ///   - contents: what those BriefBar can tell are made of now: none while a source still reads what it shows; nil for
@@ -849,9 +850,11 @@ public struct KeptTogether: Equatable, Sendable {
                     }
                 }
                 if let now = contents[key] {
-                    if let now, let kept = entries[key]?.contents[now.tells], now.isMadeOf(kept) {
+                    let kept = now.flatMap { entries[key]?.contents[$0.tells] }
+                    if let now, let kept, now.isMadeOf(kept) {
                         differences[key] = nil
-                    } else if differences[key]?.contents == now, differences[key] != nil {
+                    } else if let was = differences[key], Self.differsAlike(was.contents, now, besides: kept) {
+                        differences[key]?.contents = now
                         differences[key]?.lookedAt = date
                         differences[key]?.paused = false
                     } else {
@@ -879,6 +882,17 @@ public struct KeptTogether: Equatable, Sendable {
             }
         }
         return changed
+    }
+
+    /// Whether a mission differs from what you kept together as it did at the last look, told the same way: by the same
+    /// things it wasn't made of, as what it was made of leaving it changes nothing. Told a way BriefBar hasn't kept, all of
+    /// it is what it wasn't made of.
+    private static func differsAlike(
+        _ was: MissionSplitQuestion.Contents?, _ now: MissionSplitQuestion.Contents?, besides kept: Set<String>?
+    ) -> Bool {
+        guard let was, let now, was.tells == now.tells else { return was == now }
+        let kept = kept ?? []
+        return was.digests.subtracting(kept) == now.digests.subtracting(kept)
     }
 
     /// A mission's key changed, as the pull requests opened under a session go to their story's mission: what you kept
