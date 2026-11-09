@@ -169,12 +169,14 @@ package final class MissionNamer {
     }
 
     /// Undo of a split you confirmed put back the names these missions had: what it had asked each with, nil for not asked,
-    /// is what it asked with again, so that it isn't asked again unless what it's named from changed since.
-    package func restore(_ asked: [MissionKey: MissionNameInputs?]) {
-        for (key, inputs) in asked {
-            self.asked[key] = inputs
+    /// is what it asked with again, so that it isn't asked again unless what it's named from changed since. An answer under
+    /// way for one of them doesn't count, as it was asked of what Undo took back.
+    package func restore(_ restored: [MissionKey: MissionNameInputs?]) {
+        for (key, inputs) in restored {
+            asked[key] = inputs
             adopted.remove(key)
         }
+        if let asking, restored.keys.contains(asking) { dropsAnswer = true }
     }
 
     /// Pull Request Order went off: it asks for nothing more, and forgets what it asked, and the answer under way. Once

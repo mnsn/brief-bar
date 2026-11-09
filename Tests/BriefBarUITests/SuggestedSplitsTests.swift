@@ -305,6 +305,33 @@ fileprivate final class SplitViewer {}
         #expect(last.renamingMissions { _ in key }.names == names)
     }
 
+    /// A name Apple Intelligence was asked for a mission a split named, answered off screen once Undo put back the name it
+    /// had, doesn't count: it was asked of what Undo took back.
+    @Test func aNameAnsweredAfterUndoOfTheSplitThatNamedItsMissionDoesntCount() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let viewer = SplitViewer()
+        let mission = try await Self.suggested(order, model: model, clock: clock, viewer: viewer)
+        let key = mission.key
+        try #require(order.split(mission) != nil)
+        #expect(model.namePrompts.count == 3)
+        // Retitled on screen, the mission that kept its key is asked its name again, and the answer waits.
+        model.holdsNames = true
+        Self.tell(order, retitled: [4101: "Add the coupon field and its hint"])
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try #require(await MissionNamingTests.eventually { model.namePrompts.count == 4 })
+        order.stopShowing(in: viewer)
+        #expect(order.undo())
+        #expect(order.title(of: try #require(Self.mission(key, in: order))) == "Checkout and build agents")
+        model.release()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(order.title(of: try #require(Self.mission(key, in: order))) == "Checkout and build agents")
+    }
+
     @Test func itsAskedOnlyWithAppleIntelligenceOnScreenOnceSettledAndAgainOnlyWhenWhatTheMissionIsMadeOfChanges() async throws {
         let clock = SplitClock()
         let model = SplitModel()
