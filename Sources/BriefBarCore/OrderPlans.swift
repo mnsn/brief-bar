@@ -517,13 +517,14 @@ public struct DeclaredOrders: Equatable, Sendable {
     }
 
     /// Forget All Orders: every order, what BriefBar saw become of their pull requests, the mission you focus on, your
-    /// changes to missions, and the names you gave missions.
+    /// changes to missions, the names you gave missions, and the suggested splits you kept together.
     public static func forgetAll(in defaults: some SettingsStorage) {
         defaults.removeObject(forKey: defaultsKey)
         defaults.removeObject(forKey: OrderEvidence.defaultsKey)
         defaults.removeObject(forKey: OrderFocus.defaultsKey)
         defaults.removeObject(forKey: OrderChanges.defaultsKey)
         defaults.removeObject(forKey: MissionNames.defaultsKey)
+        defaults.removeObject(forKey: KeptTogether.defaultsKey)
     }
 }
 

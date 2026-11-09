@@ -623,6 +623,7 @@ import BriefBarCore
         )
         #expect(signedOut.problem == .signedOut("Run az login"))
         #expect(signedOut.problem?.needsSignIn == true)
+        #expect(signedOut.readNothing)
         #expect(server.requests.isEmpty)
 
         let missing = await PulseEngine.loadOnce(
@@ -633,6 +634,7 @@ import BriefBarCore
 
         let none = await PulseEngine.loadOnce(client: server.client(), configuration: PulseEngine.Configuration(organizations: []))
         #expect(none.problem == .noOrganizations)
+        #expect(!none.readNothing)
     }
 
     @Test func keepsTheLastListWhenAzureDevOpsCannotBeReached() async throws {
@@ -641,12 +643,15 @@ import BriefBarCore
         let engine = engine(server)
         await engine.refreshNow()
         #expect(await engine.currentSnapshot().records.count == 1)
+        #expect(await !engine.currentSnapshot().readNothing)
 
         server.on("/_apis/git/pullrequests") { _ in .failure(.notConnectedToInternet) }
         await engine.refreshNow()
         let offline = await engine.currentSnapshot()
         #expect(offline.problem == .offline)
         #expect(offline.records.count == 1)
+        // What's listed is what it read before.
+        #expect(offline.readNothing)
     }
 
     @Test func reportsAnOrganizationThatCannotBeRead() async {
@@ -658,6 +663,104 @@ import BriefBarCore
         )
         #expect(snapshot.records.count == 1)
         #expect(snapshot.problem == .someOrganizations("Couldn't read locked (No access to this organization.)."))
+        #expect(!snapshot.readNothing)
+    }
+
+    /// A refresh that could read no organization, each in a directory the Azure CLI isn't signed in to, read nothing,
+    /// though it goes on to the pull requests sent to you, as it does for those.
+    @Test func aRefreshWithEveryOrganizationInAnotherDirectoryReadsNothing() async {
+        let server = StubServer()
+        server.on("/_apis/connectionData", json: ["authenticatedUser": ["id": "ME"]])
+        server.put("fabrikam", in: Tenants.other)
+        let snapshot = await PulseEngine.loadOnce(
+            client: server.client(tokens: FakeTokens(server.id, tenant: Tenants.home)),
+            configuration: PulseEngine.Configuration(organizations: ["fabrikam"])
+        )
+        #expect(snapshot.problem?.signInTenant == Tenants.other)
+        #expect(snapshot.readNothing)
+    }
+
+    /// With no organization to watch, a refresh that could read none of the pull requests sent to you read nothing, though
+    /// it never backs off for it: one read before stays listed as it was. So do the refreshes after it that try none, as
+    /// each waits an hour after a read that failed, till one is read again; and once nothing's sent to you, there's
+    /// nothing to read.
+    @Test func aRefreshThatCouldReadNoPullRequestSentToYouReadsNothing() async throws {
+        let clock = Locked(t(0))
+        let server = StubServer()
+        server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        let offline = Locked(false)
+        server.on("/contoso/_apis/git/pullrequests/8") { _ in
+            offline.value ? .failure(.notConnectedToInternet) : .json(Fixture.pullRequest(8, author: People.alex))
+        }
+        server.on("/_apis/policy/evaluations", json: Fixture.list([]))
+        server.on("/threads", json: Fixture.list([]))
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: []), now: { clock.value }
+        ) { _ in }
+        let key = PRKey(Fixture.org, 8)
+        await engine.setLinkedPullRequests([key])
+        await engine.refreshNow()
+        #expect(await !engine.currentSnapshot().readNothing)
+
+        offline.set(true)
+        clock.set(t(minute))
+        await engine.refreshNow()
+        let unread = await engine.currentSnapshot()
+        #expect(unread.records.map(\.id) == [key])
+        #expect(unread.readNothing)
+
+        // Back online, it isn't tried again till an hour after it failed.
+        offline.set(false)
+        clock.set(t(2 * minute))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().readNothing)
+        clock.set(t(minute + hour))
+        await engine.refreshNow()
+        #expect(await !engine.currentSnapshot().readNothing)
+
+        offline.set(true)
+        clock.set(t(2 * minute + hour))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().readNothing)
+        await engine.setLinkedPullRequests([])
+        #expect(await !engine.currentSnapshot().readNothing)
+    }
+
+    /// So does one that Azure DevOps asked to slow down before it read any.
+    @Test func aRefreshAskedToSlowDownBeforeItReadAPullRequestSentToYouReadsNothing() async throws {
+        let server = StubServer()
+        server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        let throttled = Locked(false)
+        server.on("/contoso/_apis/git/pullrequests/8") { _ in
+            throttled.value ? .status(429, headers: ["Retry-After": "30"]) : .json(Fixture.pullRequest(8, author: People.alex))
+        }
+        server.on("/_apis/policy/evaluations", json: Fixture.list([]))
+        server.on("/threads", json: Fixture.list([]))
+        let engine = PulseEngine(client: server.client(), configuration: PulseEngine.Configuration(organizations: [])) { _ in }
+        await engine.setLinkedPullRequests([PRKey(Fixture.org, 8)])
+        await engine.refreshNow()
+        #expect(await !engine.currentSnapshot().readNothing)
+
+        throttled.set(true)
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.map(\.id.number) == [8])
+        #expect(snapshot.readNothing)
+    }
+
+    /// One that Azure DevOps answers is gone, or closed to you, was read: there's nothing to list, as there is.
+    @Test(arguments: [404, 403])
+    func aPullRequestSentToYouThatsGoneWasRead(_ status: Int) async throws {
+        let server = StubServer()
+        server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/contoso/_apis/git/pullrequests/8") { _ in .status(status) }
+        let key = PRKey(Fixture.org, 8)
+        let snapshot = await PulseEngine.loadOnce(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: []), linked: [key]
+        )
+        #expect(snapshot.records.isEmpty)
+        #expect(snapshot.closedLinks == [key])
+        #expect(!snapshot.readNothing)
     }
 
     @Test func anOrganizationRemovedDuringARefreshStaysRemoved() async throws {

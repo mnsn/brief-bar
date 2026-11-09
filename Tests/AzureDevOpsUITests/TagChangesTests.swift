@@ -291,8 +291,8 @@ import Testing
     @Test func aChangeOnItsWayIsCalledOffAsItGoesOff() async throws {
         let (store, changes, azure) = live()
         changes.send = { write, _ in
-            // Waits, as for a token, until it's called off.
-            try await Task.sleep(for: .seconds(30))
+            // Waits, as for a token, until it's called off: longer than a test can wait, on however busy a machine.
+            try await Task.sleep(for: .seconds(600))
             return try azure.send(write)
         }
         var reads: [PRKey] = []
@@ -818,9 +818,9 @@ import Testing
         var calledOff = false
         changes.readTags = { _ in
             started += 1
-            // Waits, as for a token, until it's called off.
+            // Waits, as for a token, until it's called off: longer than a test can wait, on however busy a machine.
             do {
-                try await Task.sleep(for: .seconds(30))
+                try await Task.sleep(for: .seconds(600))
             } catch {
                 calledOff = true
             }
@@ -852,9 +852,9 @@ import Testing
         var calledOff = false
         changes.readAfterChange = { _, tags in
             started.append(tags.map(\.name))
-            // Waits, as for a token, until it's called off.
+            // Waits, as for a token, until it's called off: longer than a test can wait, on however busy a machine.
             do {
-                try await Task.sleep(for: .seconds(30))
+                try await Task.sleep(for: .seconds(600))
             } catch {
                 calledOff = true
             }

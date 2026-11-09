@@ -377,13 +377,15 @@ extension OrderEdit {
         switch self {
         case .setNext(let ref, _, _), .mergeAfter(let ref, _, _, _), .undo(let ref), .putBack(let ref): return [ref]
         case .move(let refs, _, _): return refs
+        case .split(_, let moves): return moves.flatMap(\.refs)
         case .undoMission: return []
         }
     }
 }
 
 extension OrderText {
-    /// What you did, for the Undo line after it: "You set !4079 as next to merge", "You moved !4079 to ‘Coupon cleanup’".
+    /// What you did, for the Undo line after it: "You set !4079 as next to merge", "You moved !4079 to ‘Coupon cleanup’",
+    /// "Split ‘Checkout coupons’: !4105 and !4107 are in ‘Checkout tests’ now".
     /// - Parameter newMission: it moved them to a mission of your own it made.
     public static func did(_ edit: OrderEdit, names: OrderNames = .none, newMission: Bool = false) -> String {
         func title(_ key: MissionKey) -> String? {
@@ -401,6 +403,15 @@ extension OrderText {
             return "You moved \(moved) to \(title(key) ?? "another mission")"
         case .move(let refs, .outside, _):
             return "You took \(list(refs)) out of missions"
+        case .split(let key, let moves):
+            let went = moves.filter { !$0.refs.isEmpty }.map { move in
+                let verb = move.refs.count == 1 ? "is" : "are"
+                switch move.to {
+                case .into(let mission): return "\(list(move.refs)) \(verb) in \(title(mission) ?? "a mission of your own")"
+                case .outside: return "\(list(move.refs)) \(verb) out of missions"
+                }
+            }
+            return "Split \(title(key) ?? "the mission"): \(went.joined(separator: ", and ")) now"
         case .undo(let ref):
             return "You undid your changes to \(ref.shortOrderLabel)"
         case .undoMission(let key):
@@ -417,4 +428,118 @@ extension OrderText {
         let sentence = said.replacingOccurrences(of: "!", with: "")
         return undo.map { "\(sentence). Undo is \($0)." } ?? sentence
     }
+}
+
+// MARK: - Suggested splits
+
+/// A split Apple Intelligence suggests, as the box under its mission's header shows it, and VoiceOver reads it.
+public struct SplitBox: Equatable, Sendable {
+    public struct Line: Equatable, Sendable {
+        /// What it's called: the mission's name for the group that keeps it, a new mission's, the mission split off before
+        /// it goes into; nil for those taken out of By Mission.
+        public var title: String?
+        public var goes: MissionSplitPlan.Goes
+        public var refs: [ItemRef]
+
+        /// Where it goes, after its name: "keeps this mission", "new mission", "split off before"; "Not in a mission" alone.
+        public var says: String {
+            switch goes {
+            case .keeps: "keeps this mission"
+            case .newMission: "new mission"
+            case .into: "split off before"
+            case .outside: "Not in a mission"
+            }
+        }
+    }
+
+    /// "These look like two pieces of work".
+    public var heading: String
+    /// The group that keeps the mission first.
+    public var lines: [Line]
+    /// What its button does: "Split in Two", "Split in Three", "Take Out !4120", "Move !4110 to ‘Checkout tests’".
+    public var button: String
+    /// What VoiceOver reads of it, as a group.
+    public var spoken: String
+}
+
+extension OrderText {
+    /// The box of a split Apple Intelligence suggests for a mission: each group, with what it's called and where it goes, and
+    /// the button that does it.
+    /// - Parameters:
+    ///   - title: what the mission is called now.
+    ///   - yourName: the name you gave it, which the group that keeps it keeps.
+    ///   - names: what names pull requests and missions.
+    public static func splitBox(_ split: MissionSplit, title: String, yourName: String? = nil, names: OrderNames) -> SplitBox {
+        var lines: [SplitBox.Line] = []
+        for (index, group) in split.plan.groups.enumerated() {
+            let given = split.names.indices.contains(index) ? split.names[index] : nil
+            let called: String? = switch group.goes {
+            case .keeps: yourName ?? given ?? title
+            case .newMission: given ?? group.refs.first.map { names.name($0) ?? $0.fullOrderLabel }
+            case .into(let key): names.title(key) ?? "Your mission"
+            case .outside: nil
+            }
+            lines.append(SplitBox.Line(title: called, goes: group.goes, refs: group.refs))
+        }
+        let pieces = lines.count >= 3 ? "three" : "two"
+        let spoken = lines.map { line -> String in
+            let refs = line.refs.map { ref in
+                let label = ref.shortOrderLabel.replacingOccurrences(of: "!", with: "")
+                return names.name(ref).map { "\(label) \($0)" } ?? label
+            }.joined(separator: ", ")
+            switch line.goes {
+            case .keeps: return "\(line.title ?? title) keeps this mission: \(refs)."
+            case .newMission: return "\(line.title ?? "Your mission"), a new mission: \(refs)."
+            case .into: return "\(line.title ?? "Your mission"), split off before: \(refs)."
+            case .outside: return "Not in a mission: \(refs)."
+            }
+        }
+        return SplitBox(
+            heading: "These look like \(pieces) pieces of work", lines: lines, button: splitButton(lines),
+            spoken: (["Apple Intelligence suggests splitting ‘\(title)’ in \(pieces)."] + spoken).joined(separator: " ")
+        )
+    }
+
+    /// What the button says it does: "Split in Two" or "Split in Three"; "Take Out !4120" when the rest goes out of By
+    /// Mission; "Move !4110 to ‘Checkout tests’" when it goes into a mission split off before.
+    static func splitButton(_ lines: [SplitBox.Line]) -> String {
+        let moving = lines.filter { $0.goes != .keeps }
+        if moving.allSatisfy({ $0.goes == .outside }) {
+            return "Take Out \(list(moving.flatMap(\.refs)))"
+        }
+        if moving.count == 1, let line = moving.first, case .into = line.goes {
+            return "Move \(list(line.refs)) to ‘\(line.title ?? "Your mission")’"
+        }
+        return moving.count >= 2 ? "Split in Three" : "Split in Two"
+    }
+
+    /// What VoiceOver hears once a split's done, with where its Undo is: "‘Checkout tests’ is a new mission with 4105 and
+    /// 4107. Undo is on the card of ‘Checkout coupons’."
+    /// - Parameter undo: where Undo is, "on the card of ‘Checkout coupons’".
+    public static func splitDone(_ box: SplitBox, undo: String) -> String {
+        let said = box.lines.compactMap { line -> String? in
+            let refs = join(line.refs.map { $0.shortOrderLabel.replacingOccurrences(of: "!", with: "") })
+            let verb = line.refs.count == 1 ? "is" : "are"
+            switch line.goes {
+            case .keeps: return nil
+            case .newMission: return "‘\(line.title ?? "Your mission")’ is a new mission with \(refs)."
+            case .into: return "\(refs) \(verb) in ‘\(line.title ?? "Your mission")’ now."
+            case .outside: return "\(refs) \(verb) out of missions."
+            }
+        }
+        return (said + ["Undo is \(undo)."]).joined(separator: " ")
+    }
+
+    /// ⓘ in the box.
+    public static let splitHelp = """
+        Apple Intelligence suggested this on your Mac, from the titles of its pull requests, work items, story and sessions. \
+        Nothing moves until you click.
+        """
+    public static let keepTogether = "Keep Together"
+    /// What VoiceOver hears after Keep Together.
+    public static let keptTogether = "Kept together."
+    /// In a mission's ⋯, once you kept its suggestion together.
+    public static let suggestedSplit = "Suggested Split…"
+    /// The value of a mission's header while it shows a suggestion.
+    public static let splitSuggested = "Split suggested"
 }

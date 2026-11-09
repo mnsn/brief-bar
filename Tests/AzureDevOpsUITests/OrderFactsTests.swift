@@ -108,6 +108,57 @@ import Testing
         #expect(order.missions.first?.steps.map(\.status) == [.merged, .unknown(.sourceOff)])
     }
 
+    /// Till the list was read the first time, Pull Request Order can't tell what a mission is made of: none of its pull
+    /// requests are listed yet.
+    @Test func whatAMissionIsMadeOfWaitsTillTheListWasRead() async throws {
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        let (order, _) = try Self.order()
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+
+        facts.publish()
+        let waiting = try #require(order.missions.first)
+        let unread = try #require(order.splitQuestion(for: waiting))
+        #expect(unread.makeup == nil)
+        // A first refresh that could read no organization's lists, as before the network's up, listed nothing yet.
+        store.receive(
+            PulseSnapshot(organizations: [DemoData.organization], problem: .offline, hasLoaded: true, readNothing: true)
+        )
+        facts.publish()
+        let offline = try #require(order.missions.first)
+        let none = try #require(order.splitQuestion(for: offline))
+        #expect(store.hasLoaded && !store.isListing && none.makeup == nil)
+        // Nor one that read something, but not its organization's lists.
+        store.receive(PulseSnapshot(
+            organizations: [DemoData.organization], problem: .someOrganizations("Couldn't read its lists."), hasLoaded: true
+        ))
+        #expect(!store.isListing)
+
+        await store.loadOnce()
+        facts.publish()
+        let listed = try #require(order.missions.first)
+        let read = try #require(order.splitQuestion(for: listed))
+        #expect(read.makeup != nil)
+        // Offline since: it shows what it read before, so what a mission is made of can't be told for now.
+        var unreachable = DemoData.snapshot()
+        unreachable.problem = PulseProblem.offline
+        unreachable.readNothing = true
+        store.receive(unreachable)
+        facts.publish()
+        let shown = try #require(order.missions.first)
+        let stale = try #require(order.splitQuestion(for: shown))
+        #expect(!store.isListing && stale.makeup == nil)
+        // Nor while every organization is in a directory the Azure CLI isn't signed in to; but while only some are, it
+        // lists the others' as it reads them.
+        var elsewhere = DemoData.snapshot()
+        elsewhere.problem = .otherDirectory(organizations: [DemoData.organization], tenant: "directory", others: nil)
+        elsewhere.readNothing = true
+        store.receive(elsewhere)
+        #expect(!store.isListing)
+        elsewhere.readNothing = false
+        store.receive(elsewhere)
+        #expect(store.isListing)
+    }
+
     /// Off, it tells nothing.
     @Test func whileOffItTellsNothing() async throws {
         let store = await Self.demoStore()
