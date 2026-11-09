@@ -122,9 +122,11 @@ enum AnswerMarkdown {
         let hashes = line.prefix { $0 == "#" }.count
         guard (1...6).contains(hashes), line.dropFirst(hashes).first == " " else { return nil }
         var words = line.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
-        // Closing hashes, after a space.
-        while words.hasSuffix("#") { words.removeLast() }
-        words = words.trimmingCharacters(in: .whitespaces)
+        // Closing hashes, after a space, as in "## Done ##"; a word's own stay, as in "## C#".
+        let closing = words.reversed().prefix { $0 == "#" }.count
+        if closing == words.count || words.dropLast(closing).last?.isWhitespace == true {
+            words = words.dropLast(closing).trimmingCharacters(in: .whitespaces)
+        }
         return words.isEmpty ? nil : words
     }
 
@@ -160,11 +162,25 @@ enum AnswerMarkdown {
         return line.dropFirst().trimmingCharacters(in: .whitespaces)
     }
 
-    /// "| a | b |": its cells.
+    /// "| a | b |": its cells. A pipe after a backslash is a cell's own, in its words or its code, as in "| `a \| b` |",
+    /// and shows without the backslash, as GitHub reads a table.
     private static func tableRow(_ line: String) -> [String]? {
         guard line.count >= 2, line.hasPrefix("|"), line.hasSuffix("|") else { return nil }
-        return line.dropFirst().dropLast().split(separator: "|", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+        var cells: [String] = []
+        var cell = ""
+        var isEscaped = false
+        for character in line.dropFirst() {
+            if character == "|", !isEscaped {
+                cells.append(cell)
+                cell = ""
+            } else {
+                cell.append(character)
+            }
+            isEscaped = character == "\\" && !isEscaped
+        }
+        // After the last pipe, when it's a cell's own: "| a | b \|".
+        if !cell.trimmingCharacters(in: .whitespaces).isEmpty { cells.append(cell) }
+        return cells.map { $0.replacingOccurrences(of: "\\|", with: "|").trimmingCharacters(in: .whitespaces) }
     }
 
     /// The line under a table's header: "|---|:--:|".

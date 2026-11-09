@@ -59,11 +59,13 @@ private struct PageContent: View {
         let story = stories.story(for: ref)
         VStack(alignment: .leading, spacing: 20) {
             heading(item, story: story)
-            // What you asked a Copilot session with Ask…, and its field, under its heading.
+            // What you asked a Copilot session with Ask…, and its field, under its heading. ↗ on its answer opens the session
+            // itself, as on its row, even where opening it opens the session that asks you its question.
             if ref.kind == .session {
                 SessionAskPart(
                     ref: ref, name: item.label, isTask: item.sent != nil, place: .page,
-                    open: item.sent == nil ? item.open.map { ($0, "Opens the session in GitHub Copilot") } : nil
+                    open: item.sent == nil
+                        ? (item.openItself ?? item.open).map { ($0, "Opens the session in GitHub Copilot") } : nil
                 )
             }
             // Its summary, of it and what's linked to it, under what it is.

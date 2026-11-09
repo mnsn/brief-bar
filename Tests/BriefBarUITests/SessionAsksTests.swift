@@ -347,6 +347,31 @@ import Testing
         ])
     }
 
+    /// Closing hashes go, after a space; a word's own stay.
+    @Test func keepsAWordsOwnHashesInAHeading() {
+        let text = """
+            ## C#
+            ### F# and C# ##
+            # Done #
+            """
+        #expect(AnswerMarkdown.blocks(text) == [.heading("C#"), .heading("F# and C#"), .heading("Done")])
+    }
+
+    /// A pipe after a backslash is a cell's own, in its words or its code, and shows without the backslash, as on GitHub;
+    /// one after a backslash that's itself escaped ends the cell.
+    @Test func keepsEscapedPipesInATablesCells() {
+        let text = #"""
+            | Type | Meaning |
+            |------|---------|
+            | A\|B | union |
+            | `a \| b` | either, as code |
+            | `C:\\` | a drive |
+            """#
+        #expect(AnswerMarkdown.blocks(text) == [
+            .table([["Type", "Meaning"], ["A|B", "union"], ["`a | b`", "either, as code"], [#"`C:\\`"#, "a drive"]]),
+        ])
+    }
+
     @Test func saysItPlainlyForVoiceOver() {
         let blocks = AnswerMarkdown.blocks("**Done:** the [backoff](https://example.com).\n\n- `capped`\n\n---\n\n| a | b |")
         #expect(AnswerMarkdown.plain(blocks) == "Done: the backoff.\n• capped\na, b")
