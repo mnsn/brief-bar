@@ -377,6 +377,25 @@ scrolls sideways; a line under it counts the pull requests in your lists that ar
 approved, and **Show By Status** lists them. GitHub's page, whose pull requests have no stages, offers List and Map, and
 shows List where you chose the Board.
 
+**Suggested splits**, with Apple Intelligence on: when a mission's pull requests look like they've become different
+pieces of work, such as an unrelated fix or a tooling change among a story's feature, a box under the mission's header,
+in the List, on the Map and in its Board lane, suggests splitting it. It says which pull requests keep the mission, with
+its Focus and the name you gave it, and where the others go: to a new mission of your own, with the name it suggests,
+for two or more; out of missions for one; or into the mission you split off it before. Click a number for that pull
+request's details. The button says what it does, such as **Split in Two**, **Split in Three** or **Take Out !4120**, and
+does it as one change of yours, with **Undo**; **Keep Together** keeps the suggestion away until what the mission is
+made of has changed for three hours, its pull requests, their work items and story, or the sessions that opened them,
+not a title alone, nor Show Links or Copilot turned off or on, nor a read that fails for a while; time offline or asleep
+doesn't count. Undo counts as Keep Together, and so does a session's order that takes back what a split moved, even one
+told while BriefBar was closed, so the two don't undo each other. Meanwhile, **Suggested Split…** in the mission's **⋯**
+shows it again. Apple Intelligence never splits a mission itself, and nothing moves until you click. It looks at a
+story's mission, a session's order and the pull requests opened under a session, with three open Azure DevOps pull
+requests or more, never a chain, a stack or a mission of your own; pull requests that merged or closed, GitHub's, those
+you changed, there or in another mission, and those another session's order names too, stay where they are, and related
+ones, such as stacked ones, stay together, and a story's mission, or a session's pull requests, keeps two at least. It's
+often quiet, as it suggests a split only where it's clear, and a split applies whole: to take part of one, Keep
+Together, then **Move to Mission**.
+
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote
 it, and **✨ Summarize**; **What's Left**, as its row's line says it, each item saying when it's **Your
@@ -1252,7 +1271,7 @@ DevOps' gear menu has its own too: they're the same settings.
 
 | Works with | Setting | Options |
 |---|---|---|
-| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, and the names you gave missions; **Forget Stages…**, the stages you and sessions set |
+| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, and the suggested splits you kept together; **Forget Stages…**, the stages you and sessions set |
 | Azure DevOps only | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
@@ -1367,12 +1386,12 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   app's database, read-only, which pull request each session started from or opened. The links you add
   or hide stay in BriefBar, in its preferences, as references only, never titles: nothing goes back to
   Azure DevOps, GitHub or Copilot.
-- **Apple Intelligence summaries, the brief and missions' names are made on your Mac**, by Apple's on-device model,
-  never Private Cloud Compute or any other model, and are kept in memory only: the brief's, for ten minutes
-  after its line was last on screen. With **Show Message Previews** off, no message text goes into the
-  brief. With **Pull Request Order** on, a mission's name comes from the titles of its Azure DevOps pull requests,
-  their work items and stories, and the Copilot sessions on them, only while By Mission shows it on screen, never
-  from GitHub's titles or the names you give missions.
+- **Apple Intelligence summaries, the brief, missions' names and suggested splits are made on your Mac**, by Apple's
+  on-device model, never Private Cloud Compute or any other model, and are kept in memory only: the brief's, for ten
+  minutes after its line was last on screen. With **Show Message Previews** off, no message text goes into the
+  brief. With **Pull Request Order** on, a mission's name, and whether it has become different pieces of work, come from
+  the titles of its Azure DevOps pull requests, their work items and stories, and the Copilot sessions on them, only
+  while By Mission shows it on screen, never from GitHub's titles or the names you give missions.
 - **Summaries**, off until you turn them on, are written by Claude Haiku 5.5 through GitHub Copilot
   when the Copilot CLI is installed, and by Apple Intelligence on your Mac when it isn't, unless you
   choose a model. Only with a model through Copilot, chosen or the default, do a work item's, pull
@@ -1398,7 +1417,9 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   a chat, which stay in memory, and those Copilot sessions set, for each session, by their numbers, for 30 days at most; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
   sessions you've cleared; the links you added or hid, with Show Links; with Make Changes in Azure DevOps, the tags you
   added to pull requests, up to 20 for each project, to suggest them; with Pull Request Order, the names you give
-  missions with **Rename…**, up to 200, each forgotten once its mission hasn't shown for 14 days; and its settings.
+  missions with **Rename…**, up to 200, each forgotten once its mission hasn't shown for 14 days, and the suggested
+  splits you kept together, as digests of what their missions are made of, never a title, up to 200, each forgotten
+  once its mission has been made of something else for three hours or hasn't shown for 14 days; and its settings.
   Turning a source off deletes what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
   are on: your Azure DevOps pull requests, their comments and their work items with the story each is for,

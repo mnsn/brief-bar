@@ -28,6 +28,14 @@ final class PRStore: ObservableObject {
     @Published private(set) var now = Date()
     @Published private(set) var problem: PulseProblem?
     @Published private(set) var hasLoaded = false
+    /// The list shows what it reads now: it read what it lists since BriefBar started, an organization's lists at least
+    /// once, or, with none to watch, whatever its first refresh read; and the latest refresh that tried to read
+    /// anything read something (`PulseSnapshot.readNothing`). Not before, as before the network's up or `az login`, nor
+    /// while it shows only what it read before, as offline, signed out, or with every organization in a directory the
+    /// Azure CLI isn't signed in to, or, with none to watch, while no pull request sent to you could be read.
+    var isListing: Bool {
+        hasLoaded && (state.organizations.isEmpty || !state.firstLoaded.isEmpty) && !state.readNothing
+    }
     @Published private(set) var isRefreshing = false
     @Published private(set) var refreshedAt: Date?
     /// Each refresh, once its pull requests are listed: what was read of one can change without its row, such as an

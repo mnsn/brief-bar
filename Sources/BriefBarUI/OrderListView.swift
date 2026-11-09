@@ -53,6 +53,7 @@ package struct MissionCard: View {
         let width = gutter.map { OrderGutterRowView.width(lanes: $0.laneCount, scale: textScale) } ?? 0
         VStack(alignment: .leading, spacing: 6) {
             MissionHeader(mission: mission, order: order, place: place)
+            SplitSuggestionView(mission: mission, order: order, select: select)
             if let lane {
                 MissionNextStepsLine(lane: lane, order: order, select: select)
                     .padding(.horizontal, 4)

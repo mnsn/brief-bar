@@ -43,6 +43,7 @@ package struct MissionBand: View {
                 // A mission's story shows in its header already.
                 let badge = mission.story == nil ? OrderBadge.workItem(of: mission, links: links) : nil
                 MissionHeader(mission: mission, order: order, place: [place, badge].compactMap { $0 }.joined(separator: " · "))
+                SplitSuggestionView(mission: mission, order: order, select: select)
                 if let lane {
                     MissionNextStepsLine(lane: lane, order: order, select: select)
                         .padding(.horizontal, 4)

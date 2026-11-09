@@ -240,11 +240,12 @@ struct PullRequestBoardCard: View {
 }
 
 extension PullRequestsByMission {
-    /// For `--render`, with Pull Request Order on and a mission to show: the page By Mission, in List, on the Map and on the
-    /// Board, Up Next above each, also with text at 150%, and in a narrow window, its header's controls their symbols alone,
-    /// also all the way down to a mission of your own; every mission, a story's among them, wide, narrow and at 150%; the
-    /// Board with Lanes: None; and By Status, Up Next above it, with the order's capsules on the rows, also narrow and with
-    /// text at 150%, where Up Next's slots wrap. And the line at By Mission's foot while Show Links is off.
+    /// For `--render`, with Pull Request Order on and a mission to show: the page By Mission, in List, on the Map and
+    /// on the Board, Up Next above each, also with text at 150%, and in a narrow window, its header's controls their
+    /// symbols alone, also all the way down to a mission of your own; every mission, a story's among them, with the
+    /// split Apple Intelligence suggests for it, wide, narrow and at 150%, in the List and on the Board; the Board with
+    /// Lanes: None; and By Status, Up Next above it, with the order's capsules on the rows, also narrow and with text
+    /// at 150%, where Up Next's slots wrap. And the line at By Mission's foot while Show Links is off.
     @MainActor
     static func renderings(
         store: PRStore, services: AppServices, environment: (AnyView) -> AnyView
@@ -265,6 +266,9 @@ extension PullRequestsByMission {
             ("pull-requests-board", .byMission, .board, .missions, nil, CGSize(width: 1_200, height: 1_250)),
             ("pull-requests-board-150", .byMission, .board, .missions, 1.5, CGSize(width: 1_200, height: 1_400)),
             ("pull-requests-board-narrow", .byMission, .board, .missions, nil, CGSize(width: 560, height: 1_100)),
+            ("pull-requests-board-all", .byMission, .board, .missions, nil, CGSize(width: 1_200, height: 1_800)),
+            ("pull-requests-board-all-narrow", .byMission, .board, .missions, nil, CGSize(width: 560, height: 2_100)),
+            ("pull-requests-board-all-150", .byMission, .board, .missions, 1.5, CGSize(width: 1_200, height: 2_600)),
             ("pull-requests-board-lanes-none", .byMission, .board, BoardLanes.none, nil, CGSize(width: 1_200, height: 900)),
             ("pull-requests-by-status-order", .status, .list, nil, nil, CGSize(width: 1_000, height: 2_400)),
             ("pull-requests-up-next-narrow", .status, .list, nil, nil, CGSize(width: 560, height: 900)),

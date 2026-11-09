@@ -1,3 +1,4 @@
+import BriefBarCore
 import Foundation
 import FoundationModels
 import Synchronization
@@ -96,12 +97,13 @@ package enum OnDeviceModel {
         }
     }
 
-    /// An answer that's one string alone, as guided generation makes it: the string property of a schema of its own.
-    /// Built from a schema made as the app runs (`DynamicGenerationSchema`), since `@Generable`'s macro comes only with
-    /// Xcode.
+    /// An answer in a set shape, as guided generation makes it: the string property of a schema of its own, or, for a
+    /// suggested split, the groups of parts (`MissionSplitting.Answer`), as JSON. Built from a schema made as the app runs
+    /// (`DynamicGenerationSchema`), since `@Generable`'s macro comes only with Xcode.
     package struct Shape: Sendable {
         fileprivate let schema: GenerationSchema
-        fileprivate let property: String
+        /// The string property that's the answer; nil for the whole answer, as JSON.
+        fileprivate let property: String?
 
         /// One string, `property`, that `description` says what it is, of a schema called `name`.
         package init(_ name: String, property: String, description: String) throws {
@@ -116,9 +118,42 @@ package enum OnDeviceModel {
             self.property = property
         }
 
-        /// The string an answer of this shape holds, from the content the model generated, as JSON.
+        /// Whether a mission's parts are all one piece of work, and its groups, two or three, each with the numbers of its
+        /// parts, from 1 to `parts`: an answer that can hold nothing else.
+        package static func split(parts count: Int) throws -> Shape {
+            typealias Answer = MissionSplitting.Answer
+            let number = DynamicGenerationSchema(type: Int.self, guides: [.range(1...max(count, 1))])
+            let group = DynamicGenerationSchema(name: Answer.group, properties: [
+                DynamicGenerationSchema.Property(
+                    name: Answer.parts, description: Answer.partsDescription,
+                    schema: DynamicGenerationSchema(arrayOf: number, minimumElements: 1, maximumElements: max(count, 1))
+                ),
+            ])
+            let root = DynamicGenerationSchema(name: Answer.name, properties: [
+                DynamicGenerationSchema.Property(
+                    name: Answer.oneWork, description: Answer.oneWorkDescription, schema: DynamicGenerationSchema(type: Bool.self)
+                ),
+                DynamicGenerationSchema.Property(
+                    name: Answer.groups, description: Answer.groupsDescription,
+                    schema: DynamicGenerationSchema(
+                        arrayOf: DynamicGenerationSchema(referenceTo: Answer.group), minimumElements: 1,
+                        maximumElements: MissionSplitting.mostGroups
+                    )
+                ),
+            ])
+            return Shape(schema: try GenerationSchema(root: root, dependencies: [group]), property: nil)
+        }
+
+        private init(schema: GenerationSchema, property: String?) {
+            self.schema = schema
+            self.property = property
+        }
+
+        /// The string an answer of this shape holds, from the content the model generated, as JSON; the JSON itself for the
+        /// whole answer.
         package func text(ofJSON json: String) throws -> String {
-            try GeneratedContent(json: json).value(String.self, forProperty: property)
+            guard let property else { return try GeneratedContent(json: json).jsonString }
+            return try GeneratedContent(json: json).value(String.self, forProperty: property)
         }
     }
 
@@ -135,7 +170,11 @@ package enum OnDeviceModel {
             let text: String
             if let shape {
                 let response = try await session.respond(to: prompt, schema: shape.schema, options: options)
-                text = try response.content.value(String.self, forProperty: shape.property)
+                if let property = shape.property {
+                    text = try response.content.value(String.self, forProperty: property)
+                } else {
+                    text = response.content.jsonString
+                }
             } else {
                 text = try await session.respond(to: prompt, options: options).content
             }
