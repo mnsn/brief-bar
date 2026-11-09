@@ -322,7 +322,7 @@ private final class Clock {
             defaults: defaults, demo: false, sourcesOn: { [.pullRequest] }, session: cart.id,
             stages: MCPStages(
                 read: { refs in MCPStages.Read(account: account, facts: facts.filter { refs.contains($0.key) }) },
-                listedSessions: { [cart] }
+                sessions: { MCPStages.Sessions(listed: [cart]) }
             ),
             announce: {}, now: { date }
         )

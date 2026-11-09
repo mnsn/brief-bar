@@ -59,12 +59,14 @@ extension AzureDevOpsAgent {
     }
 
     /// The sessions whose stages count now, as `stages` counts them: those the Copilot app lists, with the tasks
-    /// BriefBar sent, as the app lists them; nil when `--mcp` can't tell, such as without Copilot among its sources.
-    /// What `pull_request_stage` answers from, so it says BriefBar shows a stage only where it does.
-    func listedSessions(now: Date = Date()) async -> Set<ItemRef>? {
+    /// BriefBar sent, as the app lists them, and those on each pull request; nil when `--mcp` can't tell, such as without
+    /// Copilot among its sources. What `pull_request_stage` answers from, so it says BriefBar shows a stage only where
+    /// it does, and works out whether a stage you set still stands as `stages` would.
+    func stageSessions(now: Date = Date()) async -> MCPStages.Sessions? {
         guard var copilot = await MCPRelated.stageSessions() else { return nil }
         let tasks = await reader.sendsToCopilot ? await reader.copilotTasks(now: now) : []
-        return Set(Self.setters(&copilot, sentTasks: tasks.compactMap(PullRequestOrderFacts.session)).keys)
+        let setters = Self.setters(&copilot, sentTasks: tasks.compactMap(PullRequestOrderFacts.session))
+        return MCPStages.Sessions(listed: Set(setters.keys), on: copilot.onPullRequests)
     }
 
     /// What each session whose stages count does now, or how it ended, and since when: those the Copilot app lists,

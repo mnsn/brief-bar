@@ -242,8 +242,8 @@ import Testing
     /// `pull_request_stage` answers from the sessions whose stages count, as agents' stages count them: those the Copilot
     /// app lists, with the tasks BriefBar sent, also one you haven't opened there; it can't tell without Copilot.
     @Test func theSessionsWhoseStagesCountAreTheAppsWithTheTasksBriefBarSent() async throws {
-        #expect(await agent.listedSessions() == nil)
-        let listed = try #require(await MCPRelated.$tellers.withValue([Self.copilot]) { await agent.listedSessions() })
+        #expect(await agent.stageSessions() == nil)
+        let listed = try #require(await MCPRelated.$tellers.withValue([Self.copilot]) { await agent.stageSessions() }).listed
         #expect(listed.contains(DemoPullRequestOrder.retryBackoff))
         let sent = await agent.reader.copilotTasks().compactMap(PullRequestOrderFacts.session).map(\.ref)
         #expect(!sent.isEmpty)

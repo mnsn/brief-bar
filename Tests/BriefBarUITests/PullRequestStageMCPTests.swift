@@ -57,16 +57,19 @@ private final class Announcements: Sendable {
     ///   - refusal: why what's read can't be kept, as agents or Azure DevOps being off in the app say.
     ///   - listedSessions: the sessions whose stages BriefBar shows, this one unless a test says otherwise; nil when it
     ///     can't tell.
+    ///   - sessionsOn: the Copilot app's listed sessions on each pull request.
     private static func tools(
         _ defaults: MemoryDefaults, demo: Bool = false, session: String? = session,
         copilotOn: @escaping @Sendable () -> Bool = { true },
         read: @escaping @Sendable ([ItemRef]) async throws -> MCPStages.Read = { refs in read(refs) },
         refusal: @escaping @Sendable () -> String? = { nil }, listedSessions: Set<ItemRef>? = [sessionRef],
+        sessionsOn: [ItemRef: [StageSession]] = [:],
         announcements: Announcements = Announcements(), now: @escaping @Sendable () -> Date = { now }
     ) -> [String: MCPTool] {
         let tools = PullRequestOrderMCP.tools(
             defaults: defaults, demo: demo, sourcesOn: { [.pullRequest] }, session: session,
-            stages: MCPStages(read: read, listedSessions: { listedSessions }).guarded(by: refusal), copilotOn: copilotOn,
+            stages: MCPStages(read: read, sessions: { listedSessions.map { MCPStages.Sessions(listed: $0, on: sessionsOn) } })
+                .guarded(by: refusal), copilotOn: copilotOn,
             announce: { announcements.add() }, now: now
         )
         return Dictionary(tools.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
@@ -257,6 +260,31 @@ private final class Announcements: Sendable {
             this session's on it.
             """)
         #expect(Self.kept(unlisted) == nil)
+    }
+
+    /// Whether the stage the user set still stands is worked out as the app works it out, with the Copilot app's sessions
+    /// on the pull request: one that finished writing it since ends the user's In progress, so a session's new In
+    /// progress is kept rather than taken for theirs.
+    @Test func aLinkedSessionThatFinishedEndsTheUsersInProgressAsInTheApp() async throws {
+        let defaults = Self.settings()
+        var marks = StageMarks()
+        let yours = StageMark(stage: .inProgress, at: Self.now - 120, commit: "a1b2c3d")
+        _ = marks.set(yours, of: Self.ref(4093), for: "robin@contoso.com", at: Self.now)
+        marks.save(to: defaults)
+        let json = #"{"pull_requests": [4093], "organization": "contoso", "stage": "in_progress"}"#
+        let inProgress = PullRequestStage.inProgress.title
+
+        // With nothing else on it, theirs stands: this session keeps nothing.
+        let alone = try await Self.set(Self.tools(defaults), json)
+        #expect(alone.hasPrefix("The user set !4093 in contoso in \(inProgress) already, 2m ago"))
+        #expect(Self.kept(defaults) == nil)
+
+        // A Copilot session on it finished writing it since: theirs ended, as in the app, and this session's counts.
+        let other = try #require(ItemRef.session(Self.otherSession))
+        let finished = [Self.ref(4093): [StageSession(ref: other, activity: .finished, since: Self.now - 30)]]
+        let tools = Self.tools(defaults, listedSessions: [Self.sessionRef, other], sessionsOn: finished)
+        #expect(try await Self.set(tools, json).hasPrefix("BriefBar shows !4093 in contoso in \(inProgress) now, set by this session"))
+        #expect(Self.kept(defaults)?.marks[Self.ref(4093)]?.stage == .inProgress)
     }
 
     /// One BriefBar doesn't list, or that merged, is left as it is, with a line that says why; with none set, it's refused.

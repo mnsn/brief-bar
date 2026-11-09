@@ -195,18 +195,32 @@ package struct MCPStages: Sendable {
     /// Why what it read can't be kept now, such as its source turned off in BriefBar while it read: asked again just
     /// before it's kept; nil when it can be.
     package var refusal: @Sendable () -> String?
-    /// The sessions whose stages BriefBar shows now, as agents' stages count them: those the Copilot app lists, with
-    /// the tasks BriefBar sent; nil when `--mcp` can't tell, such as without Copilot among its sources.
-    package var listedSessions: @Sendable () async -> Set<ItemRef>?
+    /// The sessions whose stages BriefBar shows now, and those on each pull request, as agents' stages count them; nil
+    /// when `--mcp` can't tell, such as without Copilot among its sources.
+    package var sessions: @Sendable () async -> Sessions?
+
+    /// The sessions whose stages BriefBar shows now, as agents' stages count them (`AzureDevOpsAgent.stages`).
+    package struct Sessions: Sendable, Equatable {
+        /// Those the Copilot app lists, with the tasks BriefBar sent: only what these set counts.
+        package var listed: Set<ItemRef>
+        /// The Copilot app's listed sessions on each pull request, which its source's own go with
+        /// (`MCPRelated.StageSessions.onPullRequests`): what ends an In progress set on it, as they finish.
+        package var on: [ItemRef: [StageSession]]
+
+        package init(listed: Set<ItemRef>, on: [ItemRef: [StageSession]] = [:]) {
+            self.listed = listed
+            self.on = on
+        }
+    }
 
     package init(
         read: @escaping @Sendable ([ItemRef]) async throws -> Read,
         refusal: @escaping @Sendable () -> String? = { nil },
-        listedSessions: @escaping @Sendable () async -> Set<ItemRef>? = { nil }
+        sessions: @escaping @Sendable () async -> Sessions? = { nil }
     ) {
         self.read = read
         self.refusal = refusal
-        self.listedSessions = listedSessions
+        self.sessions = sessions
     }
 
     /// The same, refused whenever `refusal` gives an answer instead: asked as it reads, and again as what it read is
@@ -220,7 +234,7 @@ package struct MCPStages: Sendable {
                 return try await read(refs)
             },
             refusal: { refusal() ?? inner() },
-            listedSessions: listedSessions
+            sessions: sessions
         )
     }
 }

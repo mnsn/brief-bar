@@ -718,7 +718,7 @@ struct AzureDevOpsAgent: Sendable {
     var source: MCPSource {
         MCPSource(
             name: "Azure DevOps", tools: tools,
-            stages: MCPStages(read: { refs in try await stages(of: refs) }, listedSessions: { await listedSessions() })
+            stages: MCPStages(read: { refs in try await stages(of: refs) }, sessions: { await stageSessions() })
         ) { try await needsYou() }
     }
 
