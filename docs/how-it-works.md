@@ -3405,32 +3405,42 @@ again; not while Copilot is at it (`CopilotTasksStore.endWorkThatsOver`). The de
 #### Asking a session aside
 
 **Ask…** asks one of your Copilot sessions where it stands, or your own question, aside, as Explain asks about a thread,
-and shows the answer where you asked: under the session's row in
-Copilot's list (`SessionRowView`), and under the heading of its page in a work item's or a pull request's details
-(`ItemPageView`), whose heading has **Ask…** beside ✨ Summarize (`SessionAskButton`). The row's menus have it
-(`SessionAskMenuItems`), and so does **⌄** on a pull request's Copilot line, beside Show Details, which opens the
-field, then the session's page (`SessionAskPageItem`), only where that page can open. Copilot's list and the pages are
-shared views, which read nothing of Azure DevOps: what was asked and answered is kept by the session's `ItemRef` in
-`AppServices.sessionAsks` (`SessionAsks`), so it shows wherever the session does, and stays as a row moves to another
-group, which draws it anew; so is the one field that's open, with what you wrote in it, one at a time, as Explain's
-composer is. Its **✕** has Esc's shortcut, and while it's open the details it's in leave Esc to it
+and shows the answer where you asked: under the session's row in Copilot's list (`SessionRowView`), and under the
+heading of its page in a work item's or a pull request's details (`ItemPageView`), whose heading has **Ask…** beside ✨
+Summarize (`SessionAskButton`), while a source says what the session is (`Links.isDescribed`): not once only its
+reference is left, as with GitHub Copilot turned off while an app session's page is open. The row's menus have it
+(`SessionAskMenuItems`), and so does **⌄** on a pull request's Copilot line, beside Show Details, which opens the field,
+then the session's page (`SessionAskPageItem`), only where that page can open; while the session is asked, **⌄** has
+**Stop Asking** instead, as the row's menus do, since asking it there would throw that question away for another premium
+request. In menus, and VoiceOver's actions, trying a failed question again is **Try Asking Again**, not to be taken for
+a failed summary's **Try Again** beside it. Copilot's list and the pages are shared views, which read nothing of Azure
+DevOps: what was asked and answered is kept by the session's `ItemRef` in `AppServices.sessionAsks` (`SessionAsks`), so
+it shows wherever the session does, and stays as a row moves to another group, which draws it anew; so is the one field
+that's open, with what you wrote in it, one at a time, as Explain's composer is, and never for a session that's being
+asked (`SessionAsks.openField`). Its **✕** has Esc's shortcut, and while it's open the details it's in leave Esc to it
 (`InlineComposerOpen`). The widgets show none of it (`offersAsks`), as they show no summary.
 
-It asks only through what the app gives it (`SessionAsks.setAsker`): Azure DevOps' `CopilotQuestions` gives it a way while
-Send Work to Copilot is on, and takes it away as that's turned off or Azure DevOps stops, which stops what's being
-asked, deleting its fork, forgets every question, answer and what you wrote, and hides Ask…. It asks as Explain asks
-(`SessionQuestions`): in a fork with no tools, deleted after, with the session's own model, as one premium request. The
-question is written in BriefBarCore (`SessionAskPrompt`): your words, quoted as yours, or else where it stands, what's
-done, what's left, and what or whom it waits on, from what it knows of its work in its conversation, briefly; it reads
-nothing else. **Ask More** follows up on the answer that shows, quoting it, cut to 6,000 characters, in a fence nothing in
-it closes (`QuotedText.fenced`), since the next fork never saw it, and it may quote what the session read, such as a
-comment, which anyone who can comment can write; left empty, it asks where the session stands now, and what changed.
-Asking again, of the same session, stops what's still being asked of it. The answer is drawn from its Markdown by a
-small reader of BriefBarUI's own (`AnswerMarkdown`, `AnswerText`): paragraphs, headings, points, numbered points, code,
-quotes and tables, links as their words only, a long one's beginning until **Show More**. VoiceOver hears once that it
-answered, or why it couldn't, however many places show it (`SessionAsks.announcesOnce`). The log says only that a
-session was asked, never what, nor what it answered. The demo makes its answers up (`DemoData.sessionAnswer`), and runs
-nothing.
+It asks only through what the app gives it (`SessionAsks.setAsker`): Azure DevOps' `CopilotQuestions` gives it a way
+while Send Work to Copilot is on, and takes it away as that's turned off or Azure DevOps stops, which stops what's being
+asked, deleting its fork, forgets every question, answer and what you wrote, and hides Ask…. Turning GitHub Copilot off
+does the same for its sessions, as their summaries go with what it said, and for those that left its list since they
+were asked (`SessionAsks.forgetSessions`), but not for the tasks BriefBar sent, which Azure DevOps lists. It asks as
+Explain asks (`SessionQuestions`): in a fork with no tools, deleted after, with the session's own model, as one premium
+request. The question is written in BriefBarCore (`SessionAskPrompt`): your words, quoted as yours, or else where it
+stands, what's done, what's left, and what or whom it waits on, from what it knows of its work in its conversation,
+briefly; it reads nothing else. **Ask More** follows up on the answer that shows, quoting it, cut to 6,000 characters,
+in a fence nothing in it closes (`QuotedText.fenced`), since the next fork never saw it, and it may quote what the
+session read, such as a comment, which anyone who can comment can write; left empty, it asks where the session stands
+now, and what changed. Asking again, of the same session, stops what's still being asked of it. The answer is drawn from
+its Markdown by a small reader of BriefBarUI's own (`AnswerMarkdown`, `AnswerText`): paragraphs, headings, points,
+numbered points, code, quotes and tables, links as their words only, a long one's beginning until **Show More**. Its
+**↗** opens the session itself, as its row does, even where opening the session opens the one that asks you its
+question: in the Copilot app, or in Terminal without it, as its tooltip says (`LinkedItem.openItself`,
+`SessionStore.opensItselfHelp`), told again as the app is installed or removed, though no session changed. A task's
+answer has none, as its row and page open its pull request or work item.
+VoiceOver hears once that it answered, or why it couldn't, however many places show it (`SessionAsks.announcesOnce`).
+The log says only that a session was asked, never what, nor what it answered. The demo makes its answers up
+(`DemoData.sessionAnswer`), and runs nothing.
 
 ### Notifications
 

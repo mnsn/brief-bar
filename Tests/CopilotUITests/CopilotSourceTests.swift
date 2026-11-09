@@ -2,6 +2,8 @@ import BriefBarCore
 import BriefBarUI
 import CopilotCore
 import Foundation
+import SwiftUI
+import Synchronization
 import Testing
 @testable import CopilotUI
 
@@ -69,13 +71,140 @@ import Testing
         #expect(source.store.sessions.first { $0.id == child }?.answerIn?.id == coordinator)
 
         let item = services.links.describe(try #require(ItemRef.session(child)))
+        // Where it opens it: the demo has the Copilot app.
+        #expect(item.openItself?.help == "Opens the session in GitHub Copilot")
         let notes = ThisMac.Notes()
         ThisMac.$noting.withValue(notes) {
             item.open?()
-            item.openItself?()
+            item.openItself?.perform()
         }
         #expect(notes.refused.count == 2)
         #expect(notes.refused.first?.hasPrefix("open ghapp://sessions/\(coordinator)") == true)
         #expect(notes.refused.last?.hasPrefix("open ghapp://sessions/\(child)") == true)
+    }
+
+    /// How many questions Ask… asked, and how many of them stopped.
+    private final class Asked: Sendable {
+        private let counts = Mutex((asked: 0, stopped: 0))
+        var asked: Int { counts.withLock { $0.asked } }
+        var stopped: Int { counts.withLock { $0.stopped } }
+        func ask() { counts.withLock { $0.asked += 1 } }
+        func stop() { counts.withLock { $0.stopped += 1 } }
+    }
+
+    /// Turning GitHub Copilot off, as `AppModel.turnOff` does: Ask… of the app's sessions stops, and what they were asked
+    /// and answered goes, with an open field, as their summaries do; a task BriefBar sent keeps its own, as Azure DevOps
+    /// lists it. And no source says what the app's session is anymore, so a page of it left open offers no Ask….
+    @Test func turningCopilotOffForgetsWhatItsSessionsWereAsked() async throws {
+        let id = "5e2a9c41-7d3b-4f86-b0e1-9c4d2a7f3e21", idle = "c3e8f1a2-6b4d-4e97-a1c5-2f7d9b0e8a11"
+        let taskID = "9a4f2b17-c3d8-4e61-b5a0-2e8d7c6b4a03"
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: false)
+        services.links.setOn(true)
+        let source = CopilotSource(services: services, paths: nil)
+        source.start()
+        let at = Date().addingTimeInterval(-120)
+        var log = SessionLogState()
+        log.apply(LogEvent(timestamp: at, kind: .userMessage))
+        log.apply(LogEvent(timestamp: at.addingTimeInterval(1), kind: .turnEnd(isSubagent: false)))
+        source.store.receive(EngineSnapshot(records: [
+            SessionRecord(meta: SessionMeta(id: id, name: "Retry backoff", isRunning: false), log: log),
+            SessionRecord(meta: SessionMeta(id: idle, name: "Save items for later", isRunning: false), log: log),
+        ]))
+        services.sentTasks.publish(.azureDevOps, tasks: [
+            SentTask(
+                id: taskID, name: "Fix Comments: !4071 Fix the checkout total", place: nil, stage: .finished, detail: nil,
+                since: at, opens: "!4071", open: {}, menu: { AnyView(EmptyView()) }
+            ),
+        ])
+        let asked = Asked()
+        let asks = services.sessionAsks
+        asks.setAsker { _ in
+            asked.ask()
+            do {
+                try await Task.sleep(for: .seconds(600))
+            } catch {
+                asked.stop()
+                return .failure(SessionAsks.Problem("Stopped"))
+            }
+            return .success("Too late")
+        }
+        defer { asks.setAsker(nil) }
+        let session = try #require(ItemRef.session(id)), other = try #require(ItemRef.session(idle))
+        let task = try #require(ItemRef.session(taskID))
+        try await Self.until("the session to be described") { services.links.isDescribed(session) }
+        asks.ask(session, question: nil)
+        try await Self.until("the session to be asked") { asked.asked == 1 }
+        asks.useForRendering(task, question: SessionAsks.Question(
+            asked: nil, askedAt: at, state: .answered("Fixed the comments."), endedAt: at
+        ))
+        asks.openField(for: other)
+        #expect(asks.isFieldOpen(for: other))
+
+        // As AppModel.turnOff(.copilot).
+        source.stop()
+        source.deleteSavedData()
+        services.sessionUpdates.forget(.copilot)
+
+        try await Self.until("what's asked to stop") { asked.stopped == 1 }
+        #expect(asks.question(for: session) == nil)
+        #expect(asks.field == nil)
+        #expect(asks.question(for: task)?.state == .answered("Fixed the comments."))
+        #expect(asks.canAsk)
+        #expect(!services.links.isDescribed(session))
+    }
+
+    private struct Timeout: Error, CustomStringConvertible {
+        let description: String
+    }
+
+    @MainActor private final class Installed {
+        var value = false
+    }
+
+    /// ↗ on a session's Ask… answer says where it opens the session, the Copilot app or Terminal, as the app is installed
+    /// or removed, though no session changed: looked at again as you open one.
+    @Test func answersOpenerSaysWhereItOpensAsTheAppComesAndGoes() async throws {
+        let id = "5e2a9c41-7d3b-4f86-b0e1-9c4d2a7f3e21"
+        let installed = Installed()
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: false)
+        services.links.setOn(true)
+        let source = CopilotSource(services: services, paths: nil, isAppInstalled: { installed.value })
+        source.start()
+        defer { source.stop() }
+        let at = Date().addingTimeInterval(-120)
+        var log = SessionLogState()
+        log.apply(LogEvent(timestamp: at, kind: .userMessage))
+        log.apply(LogEvent(timestamp: at.addingTimeInterval(1), kind: .turnEnd(isSubagent: false)))
+        source.store.receive(EngineSnapshot(records: [
+            SessionRecord(meta: SessionMeta(id: id, name: "Retry backoff", isRunning: false), log: log),
+        ]))
+        let session = try #require(ItemRef.session(id))
+        // What the source hears first, on the main queue, as it starts.
+        await Self.mainQueueRuns()
+        #expect(services.links.describe(session).openItself?.help == "Opens the session in Terminal")
+
+        installed.value = true
+        let notes = ThisMac.Notes()
+        ThisMac.$noting.withValue(notes) {
+            services.links.describe(session).openItself?.perform()
+        }
+        #expect(notes.refused.first?.hasPrefix("open ghapp://sessions/\(id)") == true)
+        await Self.mainQueueRuns()
+        #expect(services.links.describe(session).openItself?.help == "Opens the session in GitHub Copilot")
+    }
+
+    /// Lets what the main queue was given before run, such as what the source hears there.
+    private static func mainQueueRuns() async {
+        await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } }
+    }
+
+    /// Lets the main queue deliver what the source hears until `condition` holds, for as long as a busy machine could
+    /// need (`waitLimit`).
+    private static func until(_ what: String, _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !condition() {
+            guard ContinuousClock.now < deadline else { throw Timeout(description: "Timed out waiting for \(what)") }
+            try await Task.sleep(for: .milliseconds(5))
+        }
     }
 }

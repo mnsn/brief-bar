@@ -28,9 +28,10 @@ package struct LinkedItem {
     /// Opens it; nil when it can't be opened.
     package var open: (() -> Void)?
     /// Opens it itself, for what it said, such as its Ask… answer, where `open` opens another one for it: a Copilot
-    /// session whose question the session coordinating it asks you opens that one, where you answer it. Nil when `open`
+    /// session whose question the session coordinating it asks you opens that one, where you answer it. With where it
+    /// opens, for its tooltip: "Opens the session in GitHub Copilot", or in Terminal without the app. Nil when `open`
     /// always opens it itself.
-    package var openItself: (() -> Void)?
+    package var openItself: (perform: () -> Void, help: String)?
     /// Its own menu instead of opening it, such as a task's that you sent to Copilot.
     package var menu: (() -> AnyView)?
     /// A task you sent to Copilot: what for, and where from.
@@ -47,8 +48,8 @@ package struct LinkedItem {
     package init(
         ref: ItemRef, label: String, title: String, symbol: String, color: Color, state: ItemState? = nil, status: String? = nil,
         sharedStatus: String? = nil, place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil,
-        openItself: (() -> Void)? = nil, menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil, url: URL? = nil, parts: Int = 0,
-        show: (() -> Bool)? = nil
+        openItself: (perform: () -> Void, help: String)? = nil, menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil,
+        url: URL? = nil, parts: Int = 0, show: (() -> Bool)? = nil
     ) {
         self.ref = ref
         self.label = label
@@ -127,8 +128,8 @@ extension LinkedItem: Equatable {
         lhs.ref == rhs.ref && lhs.label == rhs.label && lhs.title == rhs.title && lhs.symbol == rhs.symbol
             && lhs.color == rhs.color && lhs.state == rhs.state && lhs.status == rhs.status && lhs.sharedStatus == rhs.sharedStatus
             && lhs.place == rhs.place && lhs.hint == rhs.hint && lhs.date == rhs.date && (lhs.menu == nil) == (rhs.menu == nil)
-            && (lhs.open == nil) == (rhs.open == nil) && lhs.sent == rhs.sent && lhs.url == rhs.url && lhs.parts == rhs.parts
-            && (lhs.show == nil) == (rhs.show == nil)
+            && (lhs.open == nil) == (rhs.open == nil) && lhs.openItself?.help == rhs.openItself?.help && lhs.sent == rhs.sent
+            && lhs.url == rhs.url && lhs.parts == rhs.parts && (lhs.show == nil) == (rhs.show == nil)
     }
 }
 

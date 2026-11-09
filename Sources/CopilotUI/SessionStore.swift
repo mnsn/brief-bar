@@ -205,6 +205,12 @@ final class SessionStore: ObservableObject {
         open(sessionId: session.id)
     }
 
+    /// Where opening a session itself opens it, for its tooltip or VoiceOver's hint: in the Copilot app, or, without it,
+    /// in Terminal.
+    var opensItselfHelp: String {
+        appInstalled ? "Opens the session in GitHub Copilot" : "Opens the session in Terminal"
+    }
+
     /// Opens a session in the Copilot app, or without it, in a terminal: looked at again on each click.
     private func open(sessionId id: String) {
         refreshAppInstalled()

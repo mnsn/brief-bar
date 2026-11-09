@@ -1019,17 +1019,20 @@ it, or use its **⋯**, and choose **Ask…**: a field opens under its row. Writ
 press Return; left empty, it asks **Where do you stand?**, which has it say what's done, what's left, and what or whom
 it waits on. While it's asked, a line under the row says so, with **Stop**; then its answer shows there, as
 Explain's does under a comment, its first few lines until **Show More**, with **Copy**, **↗** to open the session,
-and **✕** to dismiss it. **Ask More** follows up on what it said; left empty, it asks where the session stands now.
-When it can't answer, the line says why, such as that you're out of premium requests, with **Try Again**. A
+and **✕** to dismiss it; a task's has no **↗**, as its row opens its pull request or work item instead. **Ask More**
+follows up on what it said; left empty, it asks where the session stands now. When it can't answer, the line says
+why, such as that you're out of premium requests, with **Try Again**, which its menus call **Try Asking Again**. A
 session's page, from a work item's or a pull request's details with Show Links on, has **Ask…** in its heading,
 and its answer shows under it; and **⌄** on a pull request's Copilot line has **Ask…**, which opens that page
-with the field ready. One field is open at a time, and **Esc** or its **✕** closes it.
+with the field ready, or **Stop Asking** while the session is asked. One field is open at a time, and **Esc** or
+its **✕** closes it.
 
 It's asked aside, as Explain asks about a comment: in a copy of the session's conversation that the Copilot CLI
 makes with no tools and deletes after, with the session's own model, so it changes no file and the session's
 history stays as it was. It sends the conversation, with your question, to GitHub Copilot, as one premium
 request, and needs the Copilot CLI 1.0.95 or later. What you asked and what it answered stay in memory only,
-wherever the session shows, until you dismiss them, BriefBar quits, or Send Work to Copilot is turned off. The
+wherever the session shows, until you dismiss them, BriefBar quits, or Send Work to Copilot is turned off;
+turning GitHub Copilot off stops and forgets them too, but for the tasks BriefBar sent. The
 widgets show neither, and the demo makes its answers up.
 
 ### GitHub
@@ -1360,10 +1363,10 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   holds your chats' messages too: BriefBar reads only the part about your conversations, and keeps
   nothing else of it.
 - **Send Work to Copilot** starts the Copilot CLI only if you turn it on, and only when you send a work
-  item, or a pull request's comments, build, conflicts or review, or ask a session something, with Explain or
-  **Ask…**. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
-  servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
-  choose, with git, and Copilot's log of that session; and, as the window that sends one opens, and while
+  item, or a pull request's comments, build, conflicts or review. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
+  servers, pushes a branch and opens a pull request. **Explain** and **Ask…** start it too, when you ask a
+  session something: aside, in a fork with no tools, which changes nothing. BriefBar itself reads only the
+  repository you choose, with git, and Copilot's log of the session it works in; and, as the window that sends one opens, and while
   a pull request's details show in a window you can see, every ten seconds, the Copilot app's sessions its work could go to,
   read-only: their names, projects, branches, the pull requests the app records with them and which run a
   turn now, from its database; the folder each works in, from its session state; which ones the app has
