@@ -44,6 +44,7 @@ import Testing
     @Test func isOffUntilYouTurnItOn() {
         let settings = AppSettings(defaults: MemoryDefaults())
         #expect(!settings.copilotEnabled)
+        #expect(!settings.copilotFixesPushAndReply)
         #expect(settings.copilotOptions == CopilotModel.standard)
         #expect(settings.copilotQuickOptions == CopilotModel.quick)
         #expect(settings.copilotPromptTemplate == PromptTemplate.standard)
@@ -59,6 +60,7 @@ import Testing
         settings.copilotPrompt = "Fix {id}"
         settings.copilotRepositories = ["contoso/storefront": "/Users/robin/dev/Storefront"]
         settings.copilotWorktreesFolder = "/Users/robin/worktrees"
+        settings.copilotFixesPushAndReply = true
         settings.copilotRuns = [run(first, startedAt: now)]
 
         let reloaded = AppSettings(defaults: defaults)
@@ -68,6 +70,7 @@ import Testing
         #expect(reloaded.copilotPromptTemplate == "Fix {id}")
         #expect(reloaded.copilotRepositories == ["contoso/storefront": "/Users/robin/dev/Storefront"])
         #expect(reloaded.copilotWorktreesFolder == "/Users/robin/worktrees")
+        #expect(reloaded.copilotFixesPushAndReply)
         #expect(reloaded.copilotRuns == [run(first, startedAt: now)])
 
         // Back to the standard prompt, which then follows updates.
@@ -94,11 +97,13 @@ import Testing
         settings.copilotEnabled = true
         settings.copilotOptions = CopilotModel.quick
         settings.copilotRepositories = ["contoso/storefront": "/Users/robin/dev/Storefront"]
+        settings.copilotFixesPushAndReply = true
         settings.copilotRuns = [run(first, startedAt: now)]
         settings.forgetCopilotRuns()
         #expect(settings.copilotRuns.isEmpty)
         #expect(settings.copilotRepositories.isEmpty)
         #expect(settings.copilotEnabled)
+        #expect(settings.copilotFixesPushAndReply)
         #expect(settings.copilotOptions == CopilotModel.quick)
     }
 
@@ -386,6 +391,18 @@ import Testing
             #expect(note.title == title)
             #expect(note.body.hasSuffix("\(ending) You'll hear when it's done."))
         }
+        // Fix, or Fix All, sent with Push and Reply on: it fixes them, then pushes and replies.
+        var shipping = entry
+        shipping.action = .pushAndReply
+        shipping.taken = [TakenPart(.thread(11), since: now.addingTimeInterval(-600), ended: .finished), TakenPart(.thread(12), since: now, ships: true, fixes: true)]
+        let fixFirst = CopilotTasksStore.startedNotification(shipping, subject: "!4071 Fix totals")
+        #expect(fixFirst.title == "Copilot is fixing a comment")
+        #expect(fixFirst.body == "It works on its own, then commits, pushes the branch and replies on the threads it fixed, as you. You'll hear when it's done.")
+        shipping.taken?.append(TakenPart(.thread(13), since: now, ships: true, fixes: true))
+        #expect(CopilotTasksStore.startedNotification(shipping, subject: "!4071 Fix totals").title == "Copilot is fixing the comments")
+        // A Push & Reply of what an earlier task fixed, in the same session, only pushes and replies.
+        shipping.taken = [TakenPart(.thread(11), since: now.addingTimeInterval(-600), ended: .finished, ships: true, fixes: true), TakenPart(.thread(12), since: now, ships: true)]
+        #expect(CopilotTasksStore.startedNotification(shipping, subject: "!4071 Fix totals").title == "Copilot is pushing and replying")
 
         let workItem = CopilotTaskEntry(
             id: second, workItem: item.copilotTask.reference, options: CopilotModel.quick, startedAt: now,

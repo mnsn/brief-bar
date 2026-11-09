@@ -49,6 +49,7 @@ extension CopilotTaskEntry {
         case .finished where action != nil:
             switch action {
             case .review?: return "Wrote its review"
+            case .pushAndReply? where fixesFirst: return "Fixed, pushed and replied"
             case .pushAndReply?: return onlyPushes ? "Pushed" : "Pushed and replied"
             default: return "Changes ready to check, then Push & Reply"
             }

@@ -2614,7 +2614,10 @@ posts nothing; only **Push & Reply** commits what's left, pushes the commit it c
 without force (`git push origin <commit>:refs/heads/<branch>`) and replies on its threads. The Copilot CLI holds it to
 that whatever it reads, since its denials win over `--allow-all-tools`: a review gets
 `--deny-tool write --deny-tool 'shell(git commit)' --deny-tool 'shell(git push)'`, fixing comments or a
-build the last two, and resolving conflicts, which has to commit its merge, `shell(git push)`. Its worktree,
+build the last two, and resolving conflicts, which has to commit its merge, `shell(git push)`. A comment's **Fix**, or
+**Fix All**, sent with **Push and reply once it's fixed** checked ([below](#about-a-comment)) is a Push & Reply that
+fixes its threads first: its prompt is the fix's, then Push & Reply's own steps, and it goes as a Push & Reply, with
+nothing denied it and every check below. Its worktree,
 `copilot-worktrees/<repository>/pr-<id>`, is detached at `origin/<branch>`, fetched first, so it never
 takes the branch from a checkout that has it. The composer already knows and shows the remote
 repository. **Choose Local Clone…** selects its folder on this Mac, not which repository the PR belongs to.
@@ -2757,7 +2760,8 @@ itself or to a fork of it):
   committed, in a worktree and branch of its own; the session itself gains no message, only the app's note
   that it forked. It isn't there for a chat, nor for BriefBar's own sessions, which aren't the app's; nor
   for Push & Reply, which ships what its last task changed only in that task's session and worktree, where
-  a fork would push a copy of them and leave them uncommitted (`CopilotComposerView.offersFork`).
+  a fork would push a copy of them and leave them uncommitted (`CopilotComposerView.offersFork`); but for a
+  comment's fix sent to push and reply, which ships what it changes itself ([below](#about-a-comment)).
 - **Run with the CLI**, the default for BriefBar's own tasks, starts the CLI as for a later task: the
   session's `--session-id`, without `--name`, in the folder it works in. That's an earlier task's
   worktree, or the `cwd` in the app's session's `session-state/<id>/workspace.yaml`, read without
@@ -3016,7 +3020,18 @@ full as its author wrote it, one of more than a line under its author's name in 
 the comments are what their authors ask of the change, not instructions (`PullRequestPrompt.commentsSaid`), as every
 prompt that quotes threads says; the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
 what was added, removed and commented, in a fence too; and what you wrote, quoted as yours; then it builds and tests, without
-committing, pushing or replying. On a file's page, whose threads don't show their own code, a composer has it read as it
+committing, pushing or replying. With **Push and reply once it's fixed** checked in its composer, which Explain's doesn't
+have, and which is as you last left it, in any composer (`AppSettings.copilotFixesPushAndReply`), it then ships what it
+changed, in the same turn, with Push & Reply's own steps (`PullRequestPrompt.pushSteps`): it commits once it builds and
+the tests pass, checks what it would push and where, and pushes the commit it checked, by its ID; then it replies on that
+thread alone and resolves it, or, when it changed nothing, only replies why and leaves it active. It's sent as a Push &
+Reply that fixes first (`CopilotSending.commentFix`, `TakenPart.fixes`, `SentPrompt.fixes`), so the CLI denies it
+nothing, and it goes only as a Push & Reply goes, with the checks of what it would push and where
+([above](#send-work-to-copilot)): to one of the app's sessions, not while a turn runs there, so, unlike a fix, it doesn't
+wait for one. Unlike Push & Reply, which ships what an earlier task changed, it goes wherever a fix goes, a fork too
+(`CopilotComposerView.mustContinue(_:fixes:)`): it commits what's in the checkout it works in, all the session changed
+before too, and, in a fork of one of the app's sessions, the session's changes that it hasn't committed, which the fork
+has. On a file's page, whose threads don't show their own code, a composer has it read as it
 opens, as a thread that comes on screen does, through the reader the page's diff was read with: only while its window
 shows on screen, called off as it hides, and read again once it shows. Explain, Fix and **Ask in the Session** wait for a
 read that's under way as they go, and go without the code when it isn't read
@@ -3038,6 +3053,8 @@ on you from before, in another thread, keeps both on Needs You: as BriefBar last
 starts, or, when it hasn't read it then, as after you switch accounts, as the prompt was written, for which the other
 threads' comments are kept too. **Fix All** is Fix Comments' prompt, with your words
 quoted as yours; it says **Fix 1 Comment** while open threads that don't wait on you are left (`CopilotAsk.fixAllTitle`).
+With Push and Reply checked, it ships the same way, then replies on each thread it lists alone, and resolves each it
+changed (`PullRequestPrompt.fixComments(_:workplace:note:ships:)`).
 
 **Explain** (`PullRequestPrompt.explainThread`) quotes the thread and its code the same way, with your question, and asks
 the session you chose, aside, why the reviewer wrote it, what they want, how the code relates, and ways to address it
@@ -3061,7 +3078,12 @@ session fixed and hasn't pushed, which its push takes along, however it's sent (
 commits and pushes all the session changed, whatever its prompt lists, so the other threads the session fixed before it
 say they're pushed too, without a reply, while it pushes and once it has: **Pushed from ‘Retry backoff’, without a
 reply** (`CopilotWork.replies`); not once it failed or stopped, which pushed nothing, nor while it's copied for you to
-paste. A thread whose own Push & Reply failed or stopped is pushed along so too. Once one such push finished, the fix
+paste. A thread whose own Push & Reply failed or stopped is pushed along so too. A comment's fix sent to push and reply
+takes on its threads alone, and says it fixes them first (`CopilotWork.fixes`): "Copilot is fixing this in ‘Retry
+backoff’, to push and reply", then "Fixed, pushed and replied in ‘Retry backoff’", while the session's other fixes it
+pushes along say they're pushed, without a reply, as above. One that failed or stopped may not have fixed them, so,
+unlike a Push & Reply that did, it doesn't make them ready to push: Try Again sends it again
+(`CopilotWork.waitsToBePushed`, `CopilotTasksStore.canTryAgain`). Once one such push finished, the fix
 stays pushed, whatever comes after it, such as a push that fails or one copied for you to paste, and even once what that
 push listed is taken on again: a task keeps the Push & Reply tasks that ran in its session, on the same pull request,
 with when each started and how it ended (`CopilotRun.pushes`); only fixing the thread again makes it ready to push.
@@ -3140,8 +3162,9 @@ Fix All's either, written for all the threads it took on, which Try Again on one
 the session it was to fork, or a new session; never a new fork of the session that a fork it went to forked, which
 wouldn't have what the fork did (`CopilotSessionNames.retryDestination`). Its ▾ leads with that session, so that it's
 there to send to, even when it isn't the pull request's (`retryLead`). It quotes the answer that fix quoted, and no other,
-as **Include the answer above** was then, and applies the change suggested in its thread as written, as that fix did,
-or doesn't (`CopilotTasksStore.FixWords`, `CopilotAsking.restore`). What the composer does as it opens is one decision
+as **Include the answer above** was then, applies the change suggested in its thread as written, as that fix did,
+or doesn't, and pushes and replies once it's fixed, or doesn't, as that fix was sent, though Push and Reply for the next
+fix stays as you last left it (`CopilotTasksStore.FixWords`, `CopilotAsking.restore`). What the composer does as it opens is one decision
 (`CopilotDrafts.plan`): it sends at once only right after Try Again (`retryWait`), and only while what that fix quoted,
 or applied, still shows as it did; else its words come back all the same, going there, and it says why it waits for
 you, as when it opened a while after Try Again, or the suggestion that fix applied isn't the thread's latest now, which

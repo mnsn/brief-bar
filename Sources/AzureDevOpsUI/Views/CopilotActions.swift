@@ -150,7 +150,7 @@ extension CopilotWork {
         switch state {
         case .waiting(copied: true): ("doc.on.clipboard", .needsYou)
         case .waiting(copied: false): ("paperplane", .running)
-        case .working: (purpose == .explain ? "sparkles" : purpose == .pushAndReply ? "arrow.up.circle" : "arrow.triangle.2.circlepath", .running)
+        case .working: (purpose == .explain ? "sparkles" : purpose == .pushAndReply && !fixes ? "arrow.up.circle" : "arrow.triangle.2.circlepath", .running)
         case .needsYou: ("questionmark.circle.fill", .needsYou)
         case .done: ("checkmark.circle.fill", .done)
         case .failed: ("exclamationmark.triangle.fill", .failing)
@@ -725,6 +725,15 @@ struct CopilotAsking {
     /// the change suggested in its thread as written: nil once it can go as that fix did, else why not, which its composer
     /// says, for you to check it before it goes (`CopilotPartComposer`). Nil for one that chooses nothing else.
     var restore: (@MainActor (_ words: CopilotTasksStore.FixWords) -> String?)?
+    /// A fix of comments goes with Push and Reply on: it commits, pushes and replies once it's done, which its note says.
+    var ships = false
+
+    /// What a fix it sends doesn't do, or does besides, for its composer's note: "no commit, push or reply"; with Push and
+    /// Reply on, that it then commits, pushes and replies.
+    var leavesOut: String { ships ? Self.shipsOnceDone : action.leavesOut }
+
+    /// What a comment's fix sent with Push and Reply on does once it's done, for its composer's note.
+    static let shipsOnceDone = "once its tests pass, it commits, pushes and replies, as you"
 
     /// The words a composer says what it does in.
     struct Words {
@@ -757,7 +766,7 @@ struct CopilotAsking {
         ask: CopilotAsk, part: PullRequestPart?, action: PullRequestAction, title: String? = nil, sendTitle: String? = nil,
         prepare: (@MainActor () async -> Void)? = nil, run: Int? = nil, attempt: Date? = nil, row: String? = nil,
         head: (@MainActor () -> PullRequestFilesStore.Head?)? = nil, answeredAbout: PullRequestFilesStore.Head? = nil,
-        restore: (@MainActor (_ words: CopilotTasksStore.FixWords) -> String?)? = nil,
+        restore: (@MainActor (_ words: CopilotTasksStore.FixWords) -> String?)? = nil, ships: Bool = false,
         fix: @escaping @MainActor (_ how: String, _ answer: CopilotAnswer?) -> CopilotSending.Fix,
         question: @escaping @MainActor (_ asked: String, _ earlier: CopilotAnswer?) -> String
     ) {
@@ -774,6 +783,7 @@ struct CopilotAsking {
         self.head = head
         self.answeredAbout = answeredAbout
         self.restore = restore
+        self.ships = ships
         self.fix = fix
         self.question = question
     }
@@ -1011,7 +1021,7 @@ struct CopilotPartComposer<Options: View>: View {
             return ("Asks a copy of \(name) that's deleted after, so nothing changes, and sends its conversation to GitHub Copilot: one premium request.", false)
         }
         guard isLive else { return ("The demo doesn't send anything.", false) }
-        let leavesOut = asking.action.leavesOut
+        let leavesOut = asking.leavesOut
         switch target {
         case nil:
             return ("The sessions that go with this pull request go with it as well as each other: choose where it goes.", false)
@@ -1170,7 +1180,9 @@ struct CopilotPartComposer<Options: View>: View {
             let outcome = await kept.send(words, in: key, of: item.key) {
                 let sent = await sending.fix(fix, to: target, choice: choice)
                 if let takenAt = sent.takenAt {
-                    let attempt = CopilotTasksStore.FixWords(text: words, takenAt: takenAt, answer: answer, suggestion: fix.suggestion)
+                    let attempt = CopilotTasksStore.FixWords(
+                        text: words, takenAt: takenAt, answer: answer, suggestion: fix.suggestion, ships: fix.fixes
+                    )
                     copilot.remember(attempt, for: fix.parts, of: item.key, from: asking.ask)
                 }
                 return sent.outcome
@@ -1546,6 +1558,8 @@ struct CopilotActionsPreview {
         var text: String
         var destination: CopilotDestination?
         var appliesSuggestion = false
+        /// Push and Reply, for a comment's fix.
+        var pushesAndReplies = false
     }
 
     var composers: [Composer] = []

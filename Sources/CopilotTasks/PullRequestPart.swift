@@ -65,15 +65,22 @@ public struct TakenPart: Sendable, Codable, Equatable, Hashable {
     public var ended: RunPhase?
     /// A Push & Reply took it on, to push its fix, and, for a thread its prompt listed, to reply on it; nil for a fix.
     public var ships: Bool?
+    /// The Push & Reply that took it on fixed it first: a comment's Fix, or Fix All, sent with Push and Reply on, which
+    /// fixes the threads it takes on, then commits, pushes and replies on them. Nil otherwise, as for what BriefBar kept
+    /// before it had this, which a build that doesn't know it takes for what a Push & Reply took on.
+    public var fixes: Bool?
     /// For the conflicts, the pull request's target branch as it took them on: with another, they're other conflicts. Nil
     /// for the rest, and for conflicts BriefBar kept before it had this.
     public var target: String?
 
-    public init(_ part: PullRequestPart, since: Date, ended: RunPhase? = nil, ships: Bool? = nil, target: String? = nil) {
+    public init(
+        _ part: PullRequestPart, since: Date, ended: RunPhase? = nil, ships: Bool? = nil, fixes: Bool? = nil, target: String? = nil
+    ) {
         self.part = part
         self.since = since
         self.ended = ended
         self.ships = ships
+        self.fixes = fixes
         self.target = target
     }
 }

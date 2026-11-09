@@ -1226,6 +1226,11 @@ private final class TakenAt: Sendable {
         #expect(!CopilotComposerView.offersFork(choice(session), mustContinue: true))
         #expect(!CopilotComposerView.offersFork(choice(session, isChat: true), mustContinue: false))
         #expect(!CopilotComposerView.offersFork(nil, mustContinue: false))
+        // A comment's fix sent with Push and Reply on ships what it changes itself: it goes wherever a fix goes, a fork too.
+        #expect(CopilotComposerView.mustContinue(.pushAndReply, fixes: false))
+        #expect(!CopilotComposerView.mustContinue(.pushAndReply, fixes: true))
+        #expect(!CopilotComposerView.mustContinue(.fixComments, fixes: false))
+        #expect(!CopilotComposerView.mustContinue(nil, fixes: false))
     }
 
     /// While a prompt is on its way to a session, where it works stays as it is: git removes no task's worktree there, and

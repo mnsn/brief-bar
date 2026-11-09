@@ -157,6 +157,78 @@ import Testing
         #expect(sending.commentFix(nil, how: nil, suggestion: nil, excerpt: nil).suggestion == nil)
     }
 
+    /// A comment's fix sent with Push and Reply on is a Push & Reply that fixes what it takes on first: its prompts ship what
+    /// it changes, and it goes as Push & Reply goes, with no tool denied it, the branch the pull request merges into read
+    /// again before it starts, and what it takes on saying it fixes it first; to one of the Copilot app's sessions, only once
+    /// what it would push is checked. Without it, it's a fix, which doesn't commit, push or reply.
+    @Test func aFixSentToPushAndReplyGoesAsPushAndReply() async throws {
+        let prs = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        await prs.loadOnce()
+        let item = try #require(prs.items.first { prs.record(for: $0.key)?.role == .author && prs.record(for: $0.key)?.details?.threads.isEmpty == false })
+        let record = try #require(prs.record(for: item.key))
+        let thread = try #require(record.details?.threads.first)
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        copilot.useEnvironment(["COPILOT_HOME": "/nonexistent"])
+        copilot.appHomeForTests = URL(fileURLWithPath: "/nonexistent/copilot-app", isDirectory: true)
+        copilot.openForTests = { _, _ in false }
+        final class Sent { var requests: [CopilotLauncher.Request] = [] }
+        let sent = Sent()
+        copilot.launchForTests = { request, _, _ in
+            sent.requests.append(request)
+            throw CancellationError()
+        }
+        let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
+        let plain = sending.commentFix(thread, how: nil, suggestion: nil, excerpt: nil)
+        #expect(plain.action == .fixComments)
+        #expect(!plain.fixes)
+        #expect(!plain.pushes)
+        #expect(plain.prompts.worktree.contains("Don't commit, push or reply on the pull request"))
+        let ships = sending.commentFix(thread, how: "Cap it.", suggestion: nil, excerpt: nil, ships: true)
+        #expect(ships.action == .pushAndReply)
+        #expect(ships.fixes)
+        #expect(ships.pushes)
+        #expect(ships.parts == [.thread(thread.id)])
+        #expect(ships.handOff != nil)
+        #expect(ships.prompts.worktree.contains("Then ship it, in this worktree:"))
+        #expect(ships.prompts.session.contains("Then ship it, in your checkout:"))
+        #expect(!ships.prompts.session.contains("Don't commit, push or reply"))
+        let all = sending.commentFix(nil, how: nil, suggestion: nil, excerpt: nil, ships: true)
+        #expect(all.action == .pushAndReply)
+        #expect(all.fixes)
+        #expect(all.parts == PullRequestTasks.parts(.fixComments, for: record))
+        #expect(all.prompts.worktree.contains("Then ship them, in this worktree:"))
+
+        // To a fork of one of BriefBar's tasks, with the Copilot CLI.
+        #expect(await sending.fix(ships, to: .fork(task), choice: taskChoice()).outcome == .sent)
+        for _ in 0..<200 where sent.requests.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        let request = try #require(sent.requests.first)
+        guard case .pullRequest(_, let action) = request.subject else {
+            Issue.record("Not sent for the pull request")
+            return
+        }
+        // A Push & Reply, whose tools the Copilot CLI doesn't deny (`PullRequestAction.deniedTools`).
+        #expect(action == .pushAndReply)
+        #expect(request.targetNow != nil)
+        #expect(request.prompt == ships.prompts.session)
+        let taken = try #require(copilot.pending.first?.taken)
+        #expect(taken.map(\.part) == [.thread(thread.id)])
+        #expect(taken.map(\.ships) == [true])
+        #expect(taken.map(\.fixes) == [true])
+
+        // To one of the Copilot app's sessions: not while the branch the pull request merges into can't be read.
+        var appSession = PullRequestSession(
+            pick: .session(appChoice(app), .onItsBranch), candidates: [appChoice(app)], others: [], guess: nil, canChoose: true
+        )
+        appSession.delivery = .app(reach: nil, reason: nil)
+        let toApp = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: appSession)
+        #expect(await toApp.fix(ships, to: .session(app), choice: appChoice(app)).outcome == .notSent(
+            "BriefBar couldn't read which branch the pull request merges into, so nothing went: Azure DevOps isn't on."
+        ))
+        #expect(settings.copilotSentPrompts.isEmpty)
+    }
+
     /// Sent while the pull request's branches move, as its conflicts are read again, a fix or a question doesn't build on
     /// what a session answered about them as they were: it stops, saying so, and goes without it once sent again. Builds'
     /// and comments' answers go as they are.

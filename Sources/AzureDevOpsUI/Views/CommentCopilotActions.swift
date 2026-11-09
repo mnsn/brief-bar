@@ -198,10 +198,11 @@ struct ThreadCopilotActions: View {
     }
 
     private func fixHelp(hasAnswer: Bool) -> String {
+        let pushing = CommentComposer.pushing(ships: copilot.settings.copilotFixesPushAndReply)
         if hasAnswer {
-            return "Have Copilot address this comment, as you say, with what the session answered: it doesn't commit, push or reply"
+            return "Have Copilot address this comment, as you say, with what the session answered: \(pushing)"
         }
-        return "Have Copilot address this comment, as you say: it doesn't commit, push or reply"
+        return "Have Copilot address this comment, as you say: \(pushing)"
     }
 
     /// Whether Copilot fixes it now, or pushes its fix: by a fix or Push & Reply, whatever its line says, as a question sent
@@ -415,6 +416,9 @@ struct CommentComposer: View {
     @LocalState private var appliesSuggestion = false
     /// Try Again set whether it applies the suggestion, as the fix it tries again did: its default doesn't change that.
     @LocalState private var restoredByRetry = false
+    /// Push and Reply, once you set it here, or Try Again set it as the fix it tries again had it; nil for as you last left
+    /// it (`AppSettings.copilotFixesPushAndReply`).
+    @LocalState private var shipsChoice: Bool?
     @LocalState private var hasAppeared = false
     /// What it tells the code store it is, as a view that shows its thread's code does, for the code to be read for it.
     @LocalState private var viewer = UUID()
@@ -445,6 +449,14 @@ struct CommentComposer: View {
         return CommentSuggestion.latest(in: thread, me: record?.me)
     }
 
+    /// Whether a fix it sends commits, pushes and replies once it's done, as Push & Reply does: Push and Reply, as you set
+    /// it here, or as Try Again set it, else as you last left it, which BriefBar keeps for the next fix.
+    private var ships: Bool {
+        guard ask != .explain else { return false }
+        if let preview { return preview.pushesAndReplies }
+        return shipsChoice ?? copilot.settings.copilotFixesPushAndReply
+    }
+
     /// Fix All's title, which says what it takes on (`CopilotAsk.fixAllTitle`).
     private var fixAllTitle: String {
         guard let record else { return CopilotAsk.fixAll.title(about: nil) }
@@ -458,7 +470,7 @@ struct CommentComposer: View {
     }
 
     /// What it asks, and the prompts it sends: the thread's, or Fix Comments' for Fix All. Whether a fix applies the
-    /// suggestion is as it is when the fix is written, which Try Again may have set as it opened.
+    /// suggestion, and pushes and replies, is as it is when the fix is written, which Try Again may have set as it opened.
     private var asking: CopilotAsking {
         let item = item
         let record = record
@@ -484,14 +496,15 @@ struct CommentComposer: View {
         return CopilotAsking(
             ask: ask, part: thread.map { .thread($0.id) }, action: .fixComments,
             title: ask == .fixAll ? fixAllTitle : nil, sendTitle: ask == .fixAll ? fixAllTitle : nil, prepare: prepare,
-            restore: { words in composer.restore(words, suggestion: suggestion) },
+            restore: { words in composer.restore(words, suggestion: suggestion) }, ships: ships,
             fix: { how, answer in
                 guard let record else {
                     return CopilotSending.Fix(prompts: ("", ""), action: .fixComments, parts: [], handOff: nil)
                 }
                 return CopilotSending(item: item, record: record, store: store, copilot: copilot, session: session)
                     .commentFix(
-                        thread, how: how, suggestion: composer.appliesSuggestion ? suggestion : nil, answer: answer, excerpt: readExcerpt()
+                        thread, how: how, suggestion: composer.appliesSuggestion ? suggestion : nil, answer: answer, excerpt: readExcerpt(),
+                        ships: composer.ships
                     )
             },
             question: { asked, earlier in
@@ -514,6 +527,17 @@ struct CommentComposer: View {
                 }
                 .toggleStyle(.checkbox)
                 .help("Copilot replaces the lines the thread is on with the change \(suggestion.author.name) suggested, as it's written, then builds and tests")
+            }
+            if ask != .explain {
+                Toggle(isOn: Binding(get: { ships }, set: { on in
+                    shipsChoice = on
+                    copilot.settings.copilotFixesPushAndReply = on
+                })) {
+                    Text(Self.shipsTitle)
+                        .font(size: 11.5)
+                }
+                .toggleStyle(.checkbox)
+                .help(Self.shipsHelp(fixAll: ask == .fixAll))
             }
         } done: { outcome in
             done(outcome)
@@ -540,18 +564,34 @@ struct CommentComposer: View {
         }
     }
 
-    /// Try Again: applies the suggestion as the fix it tries again did, the same one, or none (`CopilotAsking.restore`).
-    /// Nil once it can go as that fix did; else why not, as when the suggestion it applied isn't the thread's latest now,
-    /// which it doesn't apply in its place.
+    /// Try Again: applies the suggestion as the fix it tries again did, the same one, or none, and pushes and replies as it
+    /// was to (`CopilotAsking.restore`), without changing what Push and Reply is for the next fix. Nil once it can go as that
+    /// fix did; else why not, as when the suggestion it applied isn't the thread's latest now, which it doesn't apply in its
+    /// place.
     private func restore(_ words: CopilotTasksStore.FixWords, suggestion: CommentSuggestion?) -> String? {
         restoredByRetry = true
         appliesSuggestion = words.suggestion != nil && words.suggestion == suggestion
+        shipsChoice = words.ships
         guard words.suggestion == nil || words.suggestion == suggestion else { return Self.suggestionGone }
         return nil
     }
 
     /// What Try Again's composer says when the suggestion the fix it tries again applied isn't the thread's latest now.
     static let suggestionGone = "The suggestion that fix applied isn't the thread's latest now, so nothing went yet: check it, then send it."
+
+    /// Push and Reply, which BriefBar keeps as you last left it, for the next fix.
+    static let shipsTitle = "Push and reply once it's fixed"
+
+    /// What Push and Reply does: on a thread's Fix, or on Fix All.
+    static func shipsHelp(fixAll: Bool) -> String {
+        let threads = fixAll ? "on the threads it fixed, and resolves them" : "on the thread, and resolves it"
+        return "Once it builds and its tests pass, Copilot commits, pushes the branch and replies \(threads), as you, as Push & Reply does. BriefBar keeps your choice for the next fix."
+    }
+
+    /// What a comment's fix does about pushing, for Fix's and Fix All's tooltips, as Push and Reply was last left.
+    static func pushing(ships: Bool) -> String {
+        ships ? "then it commits, pushes and replies, as you" : "it doesn't commit, push or reply"
+    }
 }
 
 // MARK: - The comments' header
@@ -618,7 +658,7 @@ struct CommentsHeader: View {
                     .controlSize(.small)
                     .font(size: 11.5, weight: .medium)
                     .focused($isFocused)
-                    .help("Have Copilot address every comment that waits on you, as Fix Comments does: it doesn't commit, push or reply")
+                    .help("Have Copilot address every comment that waits on you, as Fix Comments does: \(CommentComposer.pushing(ships: copilot.settings.copilotFixesPushAndReply))")
                 }
             }
             if canFixAll, isFixing {

@@ -495,6 +495,20 @@ import Testing
         #expect(taken(fixed, [], for: .pushAndReply, at: second) == [
             TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: first, ended: .finished),
         ])
+        // A comment's Fix sent with Push and Reply on is a Push & Reply that fixes what it takes on first: they say so, and
+        // still do once a later task goes on with its session. Only a Push & Reply fixes and ships so.
+        let fixing = try #require(CopilotRun.taken(
+            goingOnWith: fixed, on: pullRequest.reference, taking: [.thread(12)], for: .pushAndReply, at: second, fixing: true
+        ))
+        #expect(fixing == [
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ships: true, fixes: true),
+        ])
+        #expect(taken(run(.pushAndReply, ended: .failed, taken: fixing), [.thread(13)], for: .fixComments, at: second) == [
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ended: .failed, ships: true, fixes: true),
+            TakenPart(.thread(13), since: second),
+        ])
+        #expect(CopilotRun.taken(goingOnWith: nil, on: pullRequest.reference, taking: [.thread(11)], for: .fixComments, at: first, fixing: true)
+            == [TakenPart(.thread(11), since: first)])
         // Once it's done, a later task keeps what it had and didn't ship, still not pushed, and what it shipped, pushed, for
         // an older fix of it, elsewhere, not to be its latest again.
         #expect(taken(run(.pushAndReply, ended: .finished, taken: shipping), [.thread(13)], for: .fixComments, at: second) == [
@@ -520,12 +534,15 @@ import Testing
         // Kept as kinds, IDs and dates, never what they say.
         let kept = run(.pushAndReply, ended: .failed, taken: [
             TakenPart(.thread(11), since: first, ended: .failed), TakenPart(.build(31), since: first, ships: true),
-            TakenPart(.conflicts, since: first),
+            TakenPart(.thread(12), since: first, ships: true, fixes: true), TakenPart(.conflicts, since: first),
         ])
         let text = String(decoding: try JSONEncoder().encode(kept), as: UTF8.self)
         #expect(text.contains(#""taken":[{"#))
         #expect(text.contains(#"{"id":11,"kind":"thread"}"#) || text.contains(#"{"kind":"thread","id":11}"#))
         #expect(try JSONDecoder().decode(CopilotRun.self, from: Data(text.utf8)) == kept)
+        // Kept before a fix could ship, without it: nil, a Push & Reply that didn't fix it.
+        let older = try JSONDecoder().decode(TakenPart.self, from: Data(#"{"part":{"kind":"thread","id":12},"since":0,"ships":true}"#.utf8))
+        #expect(older == TakenPart(.thread(12), since: Date(timeIntervalSinceReferenceDate: 0), ships: true))
         // What isn't one, as another program may write there, isn't read.
         #expect((try? JSONDecoder().decode(PullRequestPart.self, from: Data(#"{"kind":"thread"}"#.utf8))) == nil)
         #expect((try? JSONDecoder().decode(PullRequestPart.self, from: Data(#"{"kind":"review","id":3}"#.utf8))) == nil)
