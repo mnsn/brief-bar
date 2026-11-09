@@ -586,12 +586,13 @@ struct PullRequestSessionMenu: View {
         return false
     }
 
-    /// Its page, while Show Links is on; and opening it in the Copilot app, or, for a task BriefBar runs with the Copilot
-    /// CLI, going on with it in Terminal, not while Copilot works in it.
+    /// Its page, while Show Links is on, and Ask… there, while Send Work to Copilot is on; and opening it in the Copilot app,
+    /// or, for a task BriefBar runs with the Copilot CLI, going on with it in Terminal, not while Copilot works in it.
     @ViewBuilder
     private func actions(for choice: SessionChoice) -> some View {
         if links.isOn, let ref = ItemRef.session(choice.id), links.isDescribed(ref), let navigation {
             Button("Show Details") { _ = navigation.open(ref) }
+            SessionAskPageItem(ref) { _ = navigation.open(ref) }
         }
         if let run = choice.run, run.isAppSession != true {
             let entry = copilot.entries.first { $0.id == run.id }

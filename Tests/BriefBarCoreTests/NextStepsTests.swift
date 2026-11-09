@@ -47,14 +47,16 @@ import Testing
     }
 
     static func board(
-        _ stages: [Int: StageReading], missions: [OrderMission] = [], lanes: BoardLanes = .missions
+        _ stages: [Int: StageReading], missions: [OrderMission] = [], lanes: BoardLanes = .missions, picks: UpNextPicks = UpNextPicks()
     ) -> PullRequestBoard {
-        PullRequestBoard.make(stages: refs(stages), missions: missions, kinds: kinds, lanes: lanes)
+        PullRequestBoard.make(stages: refs(stages), missions: missions, kinds: kinds, lanes: lanes, picks: picks)
     }
 
     /// The numbers of a column's cards, in their order, across the board as Lanes: None has them.
-    static func column(_ stage: PullRequestStage, _ stages: [Int: StageReading], missions: [OrderMission] = []) -> [String] {
-        board(stages, missions: missions, lanes: .none).lanes.first?.cards(in: stage).map(\.ref.shortOrderLabel) ?? []
+    static func column(
+        _ stage: PullRequestStage, _ stages: [Int: StageReading], missions: [OrderMission] = [], picks: UpNextPicks = UpNextPicks()
+    ) -> [String] {
+        board(stages, missions: missions, lanes: .none, picks: picks).lanes.first?.cards(in: stage).map(\.ref.shortOrderLabel) ?? []
     }
 
     // MARK: Up Next
@@ -472,6 +474,175 @@ import Testing
         }
     }
 
+    // MARK: The one you choose
+
+    /// What needs you to fix: a session that asks you, a failed build and changes wanted, which come in that order; and a
+    /// draft, which isn't Fix next's.
+    static let fixes: [Int: StageReading] = [
+        4101: reading(.inProgress, .failing("Build failed"), at: 5),
+        4102: reading(.inProgress, .changesWanted("Priya wants changes"), at: 1),
+        4103: reading(.inProgress, .asksYou(StageSession(ref: cart, activity: .waitsForYou, since: t(9))), at: 9),
+        4104: reading(.inProgress, .draft, at: 0),
+    ]
+
+    /// The user's own example, smaller: of those to fix, the one they know is most urgent, which BriefBar's order puts last.
+    /// It's Fix next's, with every other one to choose from in their order after it, and first in In progress, wearing Next
+    /// as yours; and in Your review, ahead of the mission you focus on, first in its own mission's lane.
+    @Test func theOneYouChooseIsItsSlotsPullRequestFirstInItsColumnInEveryLane() {
+        #expect(Self.column(.inProgress, Self.fixes) == ["!4103", "!4101", "!4102", "!4104"])
+        let unpicked = Self.board(Self.fixes)
+        #expect(unpicked.upNext.slots.first?.isPicked == false)
+        #expect(unpicked.picked.isEmpty)
+
+        let picks = UpNextPicks([.fix: Self.pr(4102)])
+        let board = Self.board(Self.fixes, picks: picks)
+        let fix = board.upNext.slots.first
+        #expect(fix?.kind == .fix)
+        #expect(fix?.card.ref == Self.pr(4102))
+        #expect(fix?.isPicked == true)
+        #expect(fix?.cards.map(\.ref.shortOrderLabel) == ["!4102", "!4103", "!4101"])
+        #expect(fix?.count == 3 && fix?.more == "2 more")
+        #expect(board.next[.inProgress] == Self.pr(4102))
+        #expect(board.picked == [.inProgress: Self.pr(4102)])
+        #expect(Self.column(.inProgress, Self.fixes, picks: picks) == ["!4102", "!4103", "!4101", "!4104"])
+
+        let focused = Self.mission([Self.step(4202)], focused: true)
+        let other = Self.mission([Self.step(4302)])
+        let reviews: [Int: StageReading] = [
+            4202: Self.reading(.yourReview, .asked("Sam asked you"), at: 1),
+            4302: Self.reading(.yourReview, .asked("Priya asked you"), at: 9),
+        ]
+        let review = UpNextPicks([.yourReview: Self.pr(4302)])
+        let lanes = Self.board(reviews, missions: [focused, other], picks: review)
+        #expect(Self.column(.yourReview, reviews, missions: [focused, other]) == ["!4202", "!4302"])
+        #expect(Self.column(.yourReview, reviews, missions: [focused, other], picks: review) == ["!4302", "!4202"])
+        #expect(lanes.upNext.slots.map(\.card.ref) == [Self.pr(4302)])
+        #expect(lanes.next[.yourReview] == Self.pr(4302))
+        #expect(lanes.lane(for: other.key)?.cards(in: .yourReview).first?.ref == Self.pr(4302))
+        #expect(lanes.lane(for: focused.key)?.cards(in: .yourReview).first?.ref == Self.pr(4202))
+    }
+
+    /// One its slot doesn't have, as In progress without needing you, in another stage or not on the board, changes
+    /// nothing: what needs you still comes first, and BriefBar's order chooses.
+    @Test func aChoiceItsSlotDoesntHaveChangesNothing() {
+        var stages = Self.fixes
+        stages[4201] = Self.reading(.teammateReview, .findReviewer, at: 1)
+        let plain = Self.board(stages)
+        for pick in [Self.pr(4104), Self.pr(4201), Self.pr(4999)] {
+            let board = Self.board(stages, picks: UpNextPicks([.fix: pick, .yourReview: pick]))
+            #expect(board == plain, "\(pick)")
+        }
+        // Each pull request is in one slot at most: Make Next chooses it there.
+        let cards = Self.board(stages, lanes: .none).lanes.first?.cards ?? []
+        let slots = Dictionary(uniqueKeysWithValues: cards.map { ($0.ref.shortOrderLabel, UpNextSlot.of($0)) })
+        #expect(slots == ["!4101": .fix, "!4102": .fix, "!4103": .fix, "!4104": nil, "!4201": .teammateReview])
+    }
+
+    /// A choice stands while its pull request does, where you chose it; Fix next's waits while it's in progress without
+    /// needing you, as while its build runs. Once its pull request has been away for half an hour, in another stage, off
+    /// your board, merged or closed, the choice goes, whether it's back by then or not, as when the Mac wakes; back sooner,
+    /// as when Sam pushes again just after you finished reviewing it, it's still yours.
+    @Test func aChoiceStandsUntilItsPullRequestMovesOn() {
+        var picks = UpNextPicks([
+            .fix: Self.pr(4101), .yourReview: Self.pr(4202), .teammateReview: Self.pr(4301), .canMerge: Self.pr(4120),
+            .waits: Self.pr(4091),
+        ])
+        // Its source reads each, though no list has !4120, which closed.
+        let known = Set(picks.refs.values)
+        var readings: [ItemRef: StageReading] = [
+            Self.pr(4101): Self.reading(.inProgress, .left("Build running")),
+            Self.pr(4202): Self.reading(.teammateReview, .finishedReview, isOnBoard: false),
+            Self.pr(4301): Self.reading(.canMerge, .ready(autoComplete: false)),
+            Self.pr(4091): Self.reading(.merged, .merged),
+        ]
+        var away: [UpNextSlot: UpNextPicks.Away] = [:]
+        func moved(at seconds: TimeInterval) -> Set<UpNextSlot> {
+            let moved = picks.moved(by: readings, known: known, away: &away, now: t(seconds))
+            for slot in moved { picks[slot] = nil }
+            return moved
+        }
+        #expect(moved(at: 0).isEmpty)
+        #expect(away.mapValues(\.since) == [.yourReview: t(0), .teammateReview: t(0), .canMerge: t(0), .waits: t(0)])
+        #expect(away[.yourReview]?.ref == Self.pr(4202))
+
+        readings[Self.pr(4202)] = Self.reading(.yourReview, .asked("New commits by Sam"))
+        #expect(moved(at: UpNextPicks.awayFor - 1).isEmpty)
+        #expect(away[.yourReview] == nil && away[.canMerge]?.since == t(0))
+        #expect(moved(at: UpNextPicks.awayFor) == [.teammateReview, .canMerge, .waits])
+        #expect(away.isEmpty)
+        #expect(picks == UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)]))
+
+        // You finish it again, and it's back only an hour later.
+        readings[Self.pr(4202)] = Self.reading(.teammateReview, .finishedReview, isOnBoard: false)
+        #expect(moved(at: 2_000).isEmpty)
+        readings[Self.pr(4202)] = Self.reading(.yourReview, .asked("New commits by Sam"))
+        #expect(moved(at: 5_600) == [.yourReview])
+        #expect(picks == UpNextPicks([.fix: Self.pr(4101)]))
+
+        #expect(UpNextSlot.fix.keeps(readings[Self.pr(4101)]))
+        #expect(!UpNextSlot.fix.has(readings[Self.pr(4101)]))
+        #expect(UpNextSlot.fix.has(Self.fixes[4101]))
+        #expect(!UpNextSlot.fix.has(nil))
+    }
+
+    /// One whose source reads nothing of it now, such as while its organization can't be read, since another account signed
+    /// in, or before Azure DevOps' lists are read, is neither away nor back, and waits, however long. One seen away before
+    /// is still away since then. What was noted of a slot you chose another for is forgotten.
+    @Test func aChoiceWaitsWhileItsSourceReadsNothingOfIt() {
+        let picks = UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)])
+        let both: Set<ItemRef> = [Self.pr(4101), Self.pr(4202)]
+        let readings: [ItemRef: StageReading] = [
+            Self.pr(4101): Self.reading(.inProgress, .failing("Build failed")),
+            Self.pr(4202): Self.reading(.teammateReview, .finishedReview, isOnBoard: false),
+        ]
+        var away: [UpNextSlot: UpNextPicks.Away] = [.fix: UpNextPicks.Away(ref: Self.pr(4999), since: t(0))]
+        #expect(picks.moved(by: [:], known: [], away: &away, now: t(0)).isEmpty)
+        #expect(away.isEmpty)
+
+        #expect(picks.moved(by: readings, known: both, away: &away, now: t(0)).isEmpty)
+        #expect(away.mapValues(\.since) == [.yourReview: t(0)])
+        #expect(picks.moved(by: [:], known: [], away: &away, now: t(3_600)).isEmpty)
+        #expect(away.mapValues(\.since) == [.yourReview: t(0)])
+        #expect(picks.moved(by: readings, known: both, away: &away, now: t(3_601)) == [.yourReview])
+        #expect(away.isEmpty)
+    }
+
+    @Test func itRemembersWhatYouChoseAndReadsOnlyWhatItCan() throws {
+        let defaults = MemorySettings()
+        #expect(UpNextPicks.load(from: defaults).isEmpty)
+        let picks = UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)])
+        picks.save(to: defaults)
+        let data = try #require(defaults.data(forKey: "order.upNextPicks"))
+        #expect(String(decoding: data, as: UTF8.self) == #"{"fix":"pullRequest/contoso/4101","yourReview":"pullRequest/contoso/4202"}"#)
+        #expect(UpNextPicks.load(from: defaults) == picks)
+
+        // What another program wrote: only the slots and pull requests it can read.
+        defaults.set(Data(#"{"fix":"pullRequest/contoso/4101","later":"pullRequest/contoso/1","yourReview":42,"waits":"workItem/contoso/5"}"#.utf8), forKey: UpNextPicks.defaultsKey)
+        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.pr(4101)]))
+        defaults.set(Data("[".utf8), forKey: UpNextPicks.defaultsKey)
+        #expect(UpNextPicks.load(from: defaults).isEmpty)
+
+        UpNextPicks().save(to: defaults)
+        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+    }
+
+    @Test func choicesSplitMergeAndForgetASourcesOwn() {
+        var picks = UpNextPicks([.fix: Self.pr(4101), .canMerge: Self.gh(12)])
+        picks[.waits] = .workItem(organization: "contoso", id: 5)
+        #expect(picks[.waits] == nil)
+        #expect(picks.first(in: .inProgress) == Self.pr(4101))
+        #expect(picks.first(in: .merged) == nil)
+        let (sent, kept) = picks.split { $0 == Self.pr(4101) }
+        #expect(sent == UpNextPicks([.fix: Self.pr(4101)]))
+        #expect(kept == UpNextPicks([.canMerge: Self.gh(12)]))
+        #expect(kept.merging(sent) == picks)
+        #expect(UpNextPicks([.fix: Self.pr(4102)]).merging(sent)[.fix] == Self.pr(4102))
+        let forgot = picks.forget([.gitHubPullRequest])
+        let again = picks.forget([.gitHubPullRequest])
+        #expect(forgot && !again)
+        #expect(picks == UpNextPicks([.fix: Self.pr(4101)]))
+    }
+
     // MARK: A mission's next steps
 
     @Test func aMissionsNextStepsAreYoursAndWithNoneWhatItWaitsFor() {
@@ -506,6 +677,17 @@ import Testing
         let quiet = Self.board(theirs, missions: [waiting]).lane(for: waiting.key)
         #expect(quiet?.nextSteps.isEmpty == true)
         #expect(quiet?.waiting(name: Self.name) == "Waiting for Priya (!4091)")
+    }
+
+    /// Of its next steps of one kind, the one you chose for Up Next's slot comes first, as it does in its column; a session
+    /// that asks you is still Answer, before what to fix.
+    @Test func aMissionsNextStepsPutTheOneYouChoseFirst() {
+        let payments = Self.mission([Self.step(4101), Self.step(4102), Self.step(4103), Self.step(4104)])
+        func titles(_ picks: UpNextPicks) -> [String] {
+            Self.board(Self.fixes, missions: [payments], picks: picks).lane(for: payments.key)?.nextSteps.map(\.title) ?? []
+        }
+        #expect(titles(UpNextPicks()) == ["Answer !4103", "Fix !4101", "Fix !4102"])
+        #expect(titles(UpNextPicks([.fix: Self.pr(4102)])) == ["Answer !4103", "Fix !4102", "Fix !4101"])
     }
 
     // MARK: Moving a card
@@ -783,6 +965,14 @@ import Testing
         let ready = Self.reading(.yourReview, .set, mark: StageMark(stage: .yourReview, at: t(0), by: Self.cart))
         #expect(BoardText.setter(ready, now: t(300), name: Self.name) == "set 5m ago")
         #expect(BoardText.setter(Self.reading(.yourReview, .asked("Priya asked you")), now: t(0), name: Self.name) == nil)
+        // Where a session's replaced yours, as its row, details, tooltip and VoiceOver say too.
+        let yours = StageMark(stage: .teammateReview, at: t(-60))
+        var replacing = ready
+        replacing.replaced = yours
+        #expect(BoardText.setter(replacing, now: t(300), name: Self.name) == "set 5m ago, after you")
+        var replacingTitled = bySession
+        replacingTitled.replaced = StageMark(stage: .yourReview, at: t(-60))
+        #expect(BoardText.setter(replacingTitled, now: t(300), name: Self.name) == "‘Cart’ · 5m, after you")
     }
 
     @Test func itRemembersTheLanesAndWhetherUpNextIsFolded() {
