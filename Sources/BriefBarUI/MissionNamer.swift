@@ -68,6 +68,9 @@ package final class MissionNamer {
     /// What both questions grouped each mission's parts into, by what it was made of then; nil where they didn't agree on a
     /// split: asked again only once that changes.
     private var groupings: [MissionKey: (makeup: MissionSplitQuestion.Makeup?, grouping: [Set<ItemRef>]?)] = [:]
+    /// The first question's answer, for a mission whose second has none yet, as it left the screen or Apple Intelligence
+    /// was busy: only the second is asked of the same question.
+    private var firstAnswers: [MissionKey: FirstAnswer] = [:]
     /// The names it gave each mission's groups, by what each was named from; nil where it gave none.
     private var groupNames: [MissionKey: [MissionNameInputs: String?]] = [:]
     /// What each mission's suggestion was told for last: not worked out again until that changes.
@@ -170,6 +173,7 @@ package final class MissionNamer {
         splitRequests = []
         splitSince = [:]
         groupings = [:]
+        firstAnswers = [:]
         groupNames = [:]
         splitsTold = [:]
         adopted = []
@@ -184,6 +188,7 @@ package final class MissionNamer {
         since = since.filter { !matches($0.key) }
         splitSince = splitSince.filter { !matches($0.key) }
         groupings = groupings.filter { !matches($0.key) }
+        firstAnswers = firstAnswers.filter { !matches($0.key) }
         groupNames = groupNames.filter { !matches($0.key) }
         splitsTold = splitsTold.filter { !matches($0.key) }
         adopted = adopted.filter { !matches($0) }
@@ -279,11 +284,31 @@ package final class MissionNamer {
     /// getting ready or off, when it waits.
     private struct SplitWork {
         var grouping: (makeup: MissionSplitQuestion.Makeup?, grouping: [Set<ItemRef>]?)?
+        /// The first question's answer, where it asked it and the second has none.
+        var firstAnswer: FirstAnswer?
         var names: [MissionNameInputs: String?]
         var waits = false
         /// It stopped asking, as the question is no longer wanted (`stillAsks`): it tells nothing.
         var stops = false
         var split: MissionSplit?
+    }
+
+    /// The first question's answer, as its parts' numbers, by what the mission was made of and its parts' order then, which
+    /// what it's made of doesn't tell.
+    private struct FirstAnswer {
+        var makeup: MissionSplitQuestion.Makeup?
+        var parts: [[ItemRef]]
+        var answer: [[Int]]
+
+        init(_ answer: [[Int]], of question: MissionSplitQuestion) {
+            makeup = question.makeup
+            parts = question.parts.map(\.refs)
+            self.answer = answer
+        }
+
+        func isOf(_ question: MissionSplitQuestion) -> Bool {
+            makeup == question.makeup && parts == question.parts.map(\.refs)
+        }
     }
 
     private func ask(_ request: SplitRequest) {
@@ -301,7 +326,12 @@ package final class MissionNamer {
                 next()
                 return
             }
-            if let grouping = work.grouping { groupings[question.key] = grouping }
+            if let grouping = work.grouping {
+                groupings[question.key] = grouping
+                firstAnswers[question.key] = nil
+            } else if let first = work.firstAnswer {
+                firstAnswers[question.key] = first
+            }
             groupNames[question.key] = work.names
             if work.waits {
                 waitUntil = now().addingTimeInterval(Self.retryAfter)
@@ -320,8 +350,9 @@ package final class MissionNamer {
         }
     }
 
-    /// Asks both questions, unless it asked them of what the mission is made of now, and joins their answers; then, for the
-    /// split that makes, names the groups that need a name, as it names missions, unless it did for what each is named from.
+    /// Asks both questions, unless it asked them of what the mission is made of now, or only the second, where it has the
+    /// first's answer of the same question, and joins their answers; then, for the split that makes, names the groups that
+    /// need a name, as it names missions, unless it did for what each is named from.
     private func work(on question: MissionSplitQuestion) async -> SplitWork {
         var work = SplitWork(names: groupNames[question.key] ?? [:])
         let grouping: [Set<ItemRef>]?
@@ -331,7 +362,9 @@ package final class MissionNamer {
             let count = question.parts.count
             let instructions = MissionSplitting.instructions(for: question)
             var answers: [[[Int]]?] = []
-            for reversed in [false, true] {
+            if let first = firstAnswers[question.key], first.isOf(question) { answers.append(first.answer) }
+            while answers.count < 2 {
+                let reversed = !answers.isEmpty
                 guard stillAsks(question) else {
                     work.stops = true
                     return work
@@ -346,7 +379,8 @@ package final class MissionNamer {
                     answers.append(nil)
                 }
                 // One that sees one piece of work settles it: only what both separate counts.
-                if answers.last.map({ $0 == nil }) ?? true { break }
+                guard let answer = answers.last ?? nil else { break }
+                if !reversed { work.firstAnswer = FirstAnswer(answer, of: question) }
             }
             let joined = answers.count == 2 ? MissionSplitting.join(answers[0], answers[1], parts: count) : nil
             grouping = joined.map { MissionSplitting.refs(of: $0, in: question) }

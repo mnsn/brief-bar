@@ -1427,11 +1427,12 @@ way, as with Show Links off: its pull requests, their work items and stories, an
 title alone. It's asked twice, with the likeliest words: its parts in order after the story or session it's for, then in
 reverse order without it, and only what both answers separate counts; the first answer that sees one piece of work
 settles it. Between one answer and the next, its own or a group's name's, it stops once the mission has left the screen,
-keeping what it found for when it's back and settled, or once what it finds can't count: the mission changed, or Pull
-Request Order or the source it's from went off. On made-up missions, before this shipped, that suggested splitting none
-of 40 that were one piece of work, also with stacked parts and with their tasks' titles to hand, and caught 6 of 18 that
-had drifted, each grouped right: it's often quiet rather than often wrong. Each title is quoted as data, never a name
-you gave. The answer comes in a set shape, by guided generation (`OnDeviceModel.Shape.split`): whether it's one piece of
+keeping what it found for when it's back and settled, the first question's answer too, so that only the second is asked
+then, as when Apple Intelligence was busy; or once what it finds can't count: the mission changed, or Pull Request Order
+or the source it's from went off. On made-up missions, before this shipped, that suggested splitting none of 40 that
+were one piece of work, also with stacked parts and with their tasks' titles to hand, and caught 6 of 18 that had
+drifted, each grouped right: it's often quiet rather than often wrong. Each title is quoted as data, never a name you
+gave. The answer comes in a set shape, by guided generation (`OnDeviceModel.Shape.split`): whether it's one piece of
 work, then two or three groups of the parts' numbers; one that doesn't place each part once gives no suggestion. Which
 group keeps the mission, its key, its Focus and the name you gave it, BriefBar chooses the same way each time, never the
 model: the one with what stays, else the one with the most open pull requests, then the one opened earliest. Each other

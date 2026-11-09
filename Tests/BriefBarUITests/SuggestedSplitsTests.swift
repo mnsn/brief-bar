@@ -27,6 +27,8 @@ fileprivate final class SplitModel {
     /// Whether it holds its answers to splits' questions, or to names, until `release()`.
     var holdsSplits = false
     var holdsNames = false
+    /// How it fails the split question it's asked the nth time, where a test says.
+    var splitFailures: [Int: OnDeviceModel.Failure] = [:]
     private var held: [CheckedContinuation<Void, Never>] = []
 
     func release() {
@@ -49,9 +51,11 @@ fileprivate final class SplitModel {
             },
             respondSplit: { [self] prompt, _, _ in
                 splitPrompts.append(prompt)
+                let asked = splitPrompts.count
                 if holdsSplits {
                     await withCheckedContinuation { held.append($0) }
                 }
+                if let failure = splitFailures[asked] { return .failure(failure) }
                 return .success(splitAnswer?(prompt) ?? Self.split(prompt))
             },
             now: { clock.now }
@@ -389,6 +393,87 @@ fileprivate final class SplitViewer {}
         #expect(await MissionNamingTests.eventually { order.suggestedSplit(for: mission) != nil })
         #expect(model.splitPrompts.count == 2)
         #expect(model.namePrompts.count == 3)
+        order.stopShowing(in: viewer)
+    }
+
+    /// The first question's answer is kept as the mission leaves the screen before the second is asked, for that question
+    /// alone: once what the mission is made of changed, its parts come in another order, which that doesn't tell, or
+    /// Pull Request Order or Azure DevOps went off and on, it's asked the first again; back on screen as it was, only the
+    /// second.
+    @Test func aSplitsFirstAnswerIsKeptForTheSameQuestionAsItsMissionLeavesTheScreen() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        model.holdsSplits = true
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let viewer = SplitViewer()
+        // Shows the mission till it's asked one more question, which it's answering as the mission leaves the screen.
+        func askedOneAsItLeaves() async throws -> String {
+            let asked = model.splitPrompts.count
+            Self.show([key], in: viewer, by: order)
+            clock.advance(MissionNamer.settleFor)
+            order.namer?.next()
+            try #require(await MissionNamingTests.eventually { model.splitPrompts.count == asked + 1 })
+            order.stopShowing(in: viewer)
+            model.release()
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(model.splitPrompts.count == asked + 1)
+            return model.splitPrompts[asked]
+        }
+
+        #expect(try await askedOneAsItLeaves().hasPrefix("Story: “Checkout redesign”\nPart 1:\n- “Add the coupon field”\n"))
+        Self.tellCopilot(order)
+        #expect(try await askedOneAsItLeaves().hasPrefix("Story: “Checkout redesign”\n"))
+        Self.tell(order, [4101, 4120, 4102, 4121])
+        let reordered = try await askedOneAsItLeaves()
+        #expect(reordered.hasPrefix("Story: “Checkout redesign”\n"))
+        #expect(reordered.contains("Part 2:\n- “Upgrade the build agents”\n"))
+        order.setOn(false)
+        order.setOn(true)
+        Self.tell(order, [4101, 4120, 4102, 4121])
+        Self.tellCopilot(order)
+        #expect(try await askedOneAsItLeaves() == reordered)
+        order.forget(.azureDevOps)
+        Self.tell(order, [4101, 4120, 4102, 4121])
+        #expect(try await askedOneAsItLeaves() == reordered)
+
+        model.holdsSplits = false
+        Self.show([key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        let mission = try #require(Self.mission(key, in: order))
+        #expect(await MissionNamingTests.eventually { order.suggestedSplit(for: mission) != nil })
+        #expect(model.splitPrompts.count == 6)
+        #expect(model.splitPrompts.last?.hasPrefix("Part 1:\n- “Cache the build agents' packages”\n") == true)
+        order.stopShowing(in: viewer)
+    }
+
+    /// The first question's answer is kept while Apple Intelligence is too busy for the second: only the second is asked
+    /// again.
+    @Test func aSplitsFirstAnswerIsKeptWhileAppleIntelligenceIsTooBusyForTheSecond() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        model.splitFailures = [2: .busy]
+        let order = Self.service(clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tell(order)
+        let key = try #require(order.missions.first?.key)
+        let viewer = SplitViewer()
+        Self.show([key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        try #require(await MissionNamingTests.eventually {
+            order.namer?.wakesAt == clock.now.addingTimeInterval(MissionNamer.retryAfter)
+        })
+        #expect(model.splitPrompts.count == 2)
+        clock.advance(MissionNamer.retryAfter)
+        order.namer?.next()
+        let mission = try #require(Self.mission(key, in: order))
+        #expect(await MissionNamingTests.eventually { order.suggestedSplit(for: mission) != nil })
+        #expect(model.splitPrompts.count == 3)
+        #expect(model.splitPrompts[2] == model.splitPrompts[1])
         order.stopShowing(in: viewer)
     }
 
