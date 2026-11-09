@@ -158,6 +158,9 @@ public struct OrderFacts: Equatable, Sendable {
     /// Whether a source reads the stories its pull requests are for: Azure DevOps, with Show Links on. Without it, there
     /// are no stories' missions, and their names wait.
     public var readsStories: Bool
+    /// The kinds of thing whose source is on but hasn't listed them since it started, as right after BriefBar starts, or
+    /// what it lists them with, as the pull requests Copilot's sessions opened.
+    public var pending: Set<ItemRef.Kind>
 
     /// Whether a source reads stories but hasn't read yet what some of its pull requests' work items are for, as right after
     /// BriefBar starts or Show Links is turned on: until it has, which stories' missions there are can't be told.
@@ -171,12 +174,19 @@ public struct OrderFacts: Equatable, Sendable {
         readsStories && !storiesArePending
     }
 
+    /// Whether a source that's on still reads what it shows (`pending`, `storiesArePending`): until it has, what each
+    /// mission is made of can't be told, as some of its pull requests may yet join it or leave.
+    public var isReading: Bool {
+        !pending.isEmpty || storiesArePending
+    }
+
     /// - Parameters:
     ///   - pullRequests: the first of each wins.
     ///   - sessions: the first of each wins.
     public init(
         pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [],
-        sourcesOn: Set<ItemRef.Kind> = [.pullRequest, .gitHubPullRequest], readsStories: Bool = false
+        sourcesOn: Set<ItemRef.Kind> = [.pullRequest, .gitHubPullRequest], readsStories: Bool = false,
+        pending: Set<ItemRef.Kind> = []
     ) {
         var byRef: [ItemRef: OrderPullRequest] = [:]
         for pullRequest in pullRequests where pullRequest.ref.kind.isPullRequest && byRef[pullRequest.ref] == nil {
@@ -190,6 +200,7 @@ public struct OrderFacts: Equatable, Sendable {
         self.sessions = sessionsByRef
         self.sourcesOn = sourcesOn
         self.readsStories = readsStories
+        self.pending = pending
     }
 
     /// Where each pull request of a GitHub stack stands, as the stack shows it, though no list has it, such as one that
@@ -1524,6 +1535,11 @@ extension Board {
         /// An order's: the pull requests for one of its own's story it doesn't name, nor stacks with its own, by that story,
         /// stacked together or alone.
         var sameStory: [(story: ItemRef, component: [ItemRef])] = []
+        /// A mission of your own's that a split made from a session's order's mission: that order, whose lines hold among the
+        /// pull requests split off it (`splitOff`), at its latest revision.
+        var splitFrom: OrderPlan?
+        /// Those it has that a split moved from `splitFrom`'s mission, and that order still names.
+        var splitOff: [ItemRef] = []
 
         var refs: [ItemRef] { members + placed }
 
@@ -1531,6 +1547,12 @@ extension Board {
             if case .plan(let plan) = kind { return plan }
             return nil
         }
+
+        /// The order whose lines hold among its pull requests: its own, or the one it was split off.
+        var lineOrder: OrderPlan? { plan ?? splitFrom }
+
+        /// The pull requests its order's lines are of: an order's own, or those split off it.
+        var lineRefs: [ItemRef] { plan != nil ? members : splitOff }
 
         var isStack: Bool {
             if case .stack = kind { return true }
@@ -1736,6 +1758,13 @@ extension Board {
                 own.append(Group(key: target, kind: .mine, members: [], placed: [ref]))
             }
         }
+        // One a split made from a session's order's mission keeps that order's lines among those split off it.
+        for index in own.indices {
+            let froms = Set(own[index].placed.compactMap { layer.holding[$0]?.splitFrom })
+            guard froms.count == 1, case .plan(let id)? = froms.first, let plan = orders.plan(id) else { continue }
+            own[index].splitFrom = plan
+            own[index].splitOff = own[index].placed.filter { layer.holding[$0]?.splitFrom == .plan(id) && plan.contains($0) }
+        }
         return groups + families.filter { $0.refs.count > 1 } + own
     }
 
@@ -1788,7 +1817,9 @@ extension Board {
     /// goes first, and what waits for nothing that hasn't merged waits for it, but what goes before it that way. An order's
     /// line that goes round with another order's between two of its own pull requests stays, as each order says what it
     /// says of its own, and both say so. An order's pull request with nothing before or after it merges any time, as its
-    /// order says; one BriefBar or you put with others has no order known, while it's open.
+    /// order says; one BriefBar or you put with others has no order known, while it's open. A mission of your own a split
+    /// made from a session's order keeps that order's lines among those split off it, as its latest revision says them, and
+    /// Any time only while it's carved wholly from that order.
     /// - Parameter lines: the lines the missions made before it kept; it adds its own, and notes for theirs.
     func mission(
         of group: Group, orders: DeclaredOrders, layer: Layer, now: Date, lines: inout Lines
@@ -1798,6 +1829,9 @@ extension Board {
         let members = Set(refs)
         let own = Set(group.members)
         let plan = group.plan
+        // The order whose lines hold here, and the pull requests they're of.
+        let lineOrder = group.lineOrder
+        let lineOwn = Set(group.lineRefs)
         var prerequisites: [ItemRef: [ItemRef]] = [:]
         var why: [OrderEdge: [OrderOrigin]] = [:]
         var added: [ItemRef: [OrderNote]] = [:]
@@ -1829,11 +1863,11 @@ extension Board {
         // requests, which its own order says for itself.
         let otherOrders = lines.orders(besides: members)
         let elsewhere = otherOrders.merging(lines.next()) { $0.union($1) }
-        if let plan {
+        if let plan = lineOrder {
             // What goes before each by stacked branches and the order's lines kept so far, without yours: for what a line that
             // goes round is set aside by.
             var withoutYours = self.before
-            for ref in group.members where blocked != nil || ref != next {
+            for ref in group.lineRefs where blocked != nil || ref != next {
                 guard let entry = plan.entry(for: ref) else { continue }
                 let tookAway = layer.holding[ref]?.notAfter ?? []
                 for earlier in entry.after where members.contains(earlier) && !tookAway.contains(earlier) {
@@ -1888,7 +1922,7 @@ extension Board {
                 // What you took away from waiting for yours says so, as your change to it: but its order's line, which says so
                 // itself (`tookAway`).
                 for ref in refs where ref != next && layer.holding[ref]?.notAfter.contains(next) == true
-                    && !(own.contains(ref) && plan?.entry(for: ref)?.after.contains(next) == true) {
+                    && !(lineOwn.contains(ref) && lineOrder?.entry(for: ref)?.after.contains(next) == true) {
                     added[ref, default: []].append(.notAfterYourNext(next))
                 }
                 // Every line the missions made before kept, other orders' between this one's pull requests too: what waits for
@@ -1913,11 +1947,11 @@ extension Board {
                 lines.nexts.append((group.key, next, waiting))
             }
         }
-        if let plan {
+        if let plan = lineOrder {
             // Its order's lines that go round with another order's between two of its own pull requests: each mission keeps
             // its own order's, and both say so.
             let graph = before.merging(lines.orders()) { $0.union($1) }.merging(lines.next()) { $0.union($1) }
-            for ref in group.members {
+            for ref in group.lineRefs {
                 for earlier in prerequisites[ref, default: []] where why[OrderEdge(earlier, ref)]?.contains(where: \.isDeclared) == true {
                     guard let route = Self.route(from: ref, to: earlier, in: graph),
                           let line = route.first(where: { lines.declared[$0.after]?[$0.before] != nil }),
@@ -1943,7 +1977,14 @@ extension Board {
         let dependents = Set(within.values.flatMap { $0 })
         // The one you set as next is next, though nothing else waits for it.
         let loose = refs.filter { prerequisites[$0, default: []].isEmpty && !dependents.contains($0) && $0 != chosen }
-        let anyTime = plan == nil ? [] : Set(loose.filter(own.contains))
+        // Any time is a session's word: its order's own, also in a mission carved wholly from it by a split.
+        let anyTime: Set<ItemRef> = if plan != nil {
+            Set(loose.filter(own.contains))
+        } else if lineOrder != nil, lineOwn.count == refs.count {
+            Set(loose)
+        } else {
+            []
+        }
         let unordered = Set(loose.filter { !anyTime.contains($0) && !(group.isStack && own.contains($0)) })
         let place = Dictionary(refs.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         let goesFirst: (ItemRef, ItemRef) -> Bool = switch group.kind {
@@ -1959,12 +2000,12 @@ extension Board {
         func changesHere(_ ref: ItemRef) -> Bool {
             guard let change = layer.holding[ref] else { return false }
             if !change.after.isEmpty || change.placement != nil || change.first.map(group.names) == true { return true }
-            let entry = own.contains(ref) ? plan?.entry(for: ref) : nil
+            let entry = lineOwn.contains(ref) ? lineOrder?.entry(for: ref) : nil
             return change.notAfter.contains { entry?.after.contains($0) == true || $0 == chosen }
         }
         func step(_ ref: ItemRef, number: Int?) -> OrderStep {
             let earlier = prerequisites[ref, default: []]
-            let entry = own.contains(ref) ? plan?.entry(for: ref) : nil
+            let entry = lineOwn.contains(ref) ? lineOrder?.entry(for: ref) : nil
             // One whose order nobody knows says so while it's open; one that merged, closed or can't be seen says that.
             let stands: OrderStanding = unordered.contains(ref) && status(ref).isOpen ? .unordered : standing(
                 of: ref, prerequisites: earlier, hasDependents: dependents.contains(ref) || ref == chosen,
@@ -2065,11 +2106,11 @@ extension Board {
     }
 
     /// What a pull request says of itself in its mission, as facts: its changes show against an open pull request's branch;
-    /// it's stacked on one its order doesn't put before it; it's in other orders too.
+    /// it's stacked on one its order doesn't put before it, also in a mission split off that order; it's in other orders too.
     func notes(of ref: ItemRef, in group: Group, entry: OrderPlan.Entry?, orders: DeclaredOrders, layer: Layer) -> [OrderNote] {
         if case .family = group.kind { return [] }
         var notes = showsAgainst(ref)
-        guard let plan = group.plan, entry != nil else { return notes }
+        guard let plan = group.lineOrder, entry != nil else { return notes }
         for earlier in before[ref, default: []].sorted() where plan.contains(earlier) && !plan.puts(earlier, before: ref) {
             if let origin = origins(earlier, ref).first { notes.append(.orderDisagrees(earlier, origin)) }
         }
@@ -2089,7 +2130,7 @@ extension Board {
         for dropped in layer.dropped[ref] ?? [] {
             notes.append(.yoursDoesntHold(dropped.ref, stacked: dropped.stacked))
         }
-        if let entry, let plan = group.plan {
+        if let entry, let plan = group.lineOrder {
             for earlier in change.notAfter where entry.after.contains(earlier) {
                 notes.append(.tookAway(earlier, by: plan.declaredBy))
             }

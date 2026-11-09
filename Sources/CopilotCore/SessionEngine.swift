@@ -26,16 +26,21 @@ public struct EngineSnapshot: Sendable, Equatable {
     /// There's a Copilot folder, but nothing at all where the app's database goes, as on a Mac with only the Copilot CLI,
     /// which keeps none; not a database that's there but can't be reached. Looked at on every read that fails.
     public var databaseMissing: Bool
+    /// Its sessions were read with where each session's work goes (`SessionEngine.setReadsLinks`), from the app's
+    /// database, or from session folders where there's no database at all, as with only the Copilot CLI, which records
+    /// none: not from session folders while the database can't be read.
+    public var readsLinks: Bool
 
     public init(
         records: [SessionRecord] = [], view: AppViewState = AppViewState(), problem: String? = nil, listedByApp: Bool = true,
-        databaseMissing: Bool = false
+        databaseMissing: Bool = false, readsLinks: Bool = false
     ) {
         self.records = records
         self.view = view
         self.problem = problem
         self.listedByApp = listedByApp
         self.databaseMissing = databaseMissing
+        self.readsLinks = readsLinks
     }
 }
 
@@ -69,6 +74,8 @@ public final class SessionEngine: @unchecked Sendable {
     private var isActive = false
     /// Reads where each session's work goes too, for Show Links.
     private var readsLinks = false
+    /// The sessions it lists were read with where each session's work goes, as far as that's anywhere to read.
+    private var linksRead = false
 
     public init(
         paths: CopilotPaths = .default(),
@@ -239,6 +246,7 @@ public final class SessionEngine: @unchecked Sendable {
             metas = snapshot.sessions
             view = snapshot.view
             metadataFromDatabase = true
+            linksRead = readsLinks
             databaseMissing = false
             problem = nil
         } catch {
@@ -253,6 +261,8 @@ public final class SessionEngine: @unchecked Sendable {
                 problem = "\(error). The list may be out of date."
             } else {
                 metas = SessionStateScanner.recentSessions(paths: paths)
+                // Nothing at all where the database goes, its folder or not: the folders are all there is.
+                linksRead = readsLinks && Self.isMissing(paths.database)
                 problem = hasFolder
                     ? String(describing: error)
                     : "No Copilot data found at \(paths.root.path)"
@@ -284,7 +294,8 @@ public final class SessionEngine: @unchecked Sendable {
             return SessionRecord(meta: meta, log: reader?.isLoaded == true ? reader?.state : nil)
         }
         return EngineSnapshot(
-            records: records, view: view, problem: problem, listedByApp: metadataFromDatabase, databaseMissing: databaseMissing
+            records: records, view: view, problem: problem, listedByApp: metadataFromDatabase, databaseMissing: databaseMissing,
+            readsLinks: readsLinks && linksRead
         )
     }
 

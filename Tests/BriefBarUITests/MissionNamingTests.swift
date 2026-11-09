@@ -32,10 +32,12 @@ fileprivate final class Model {
         for answer in waiting { answer.resume() }
     }
 
+    /// Held strongly, as nothing it holds holds the namer: a question the namer asked can be answered after its test
+    /// ends, on a busy machine, and finds it there.
     func namer(clock: Clock) -> MissionNamer {
         MissionNamer(
-            unavailability: { [unowned self] in unavailability },
-            respond: { [unowned self] prompt, _ in
+            unavailability: { [self] in unavailability },
+            respond: { [self] prompt, _ in
                 prompts.append(prompt)
                 if holds {
                     await withCheckedContinuation { held.append($0) }

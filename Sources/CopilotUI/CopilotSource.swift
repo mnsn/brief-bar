@@ -22,7 +22,7 @@ package final class CopilotSource: BriefBarSource {
     package let description = SourceDescription(
         version: CopilotSource.descriptionVersion,
         summary: "What each GitHub Copilot app session is doing, and which ones need you",
-        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log; BriefBar never changes them. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database; and, when you open the details of a work item a session is linked to, or ask for a summary of the session or of something it's linked to, what Copilot recorded of that session's work: its checkpoints, the notes Copilot writes as a session goes on, and the last thing it said, which BriefBar keeps in memory only. New: only if you turn on Pull Request Order: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database, to tell which pull requests sessions opened under the session that coordinates them. New: only if you turn on Pull Request Order: while Apple Intelligence is on, the titles of the sessions on a mission's pull requests help Apple's on-device model name it, on this Mac. New: only when a summary is written of a session, or of something linked to it, or, for one ten minutes old or more, again as you open it, to tell whether it's still current: what was asked in that session, by you or by another session, and Copilot's answers, from its event log. With Apple Intelligence, what a summary is written from stays on this Mac; with a Copilot model, BriefBar sends it to GitHub Copilot through the Copilot CLI, which keeps a copy in its session history. BriefBar keeps none of it. New: only if you turn on Updates from Copilot Sessions, in Settings › Agents: what each session tells BriefBar through its tools for agents, the work items and pull requests it's working on and the pull requests it opened, which BriefBar shows with Show Links and Pull Request Order: what it works on until it says it stopped, it's archived or it's been idle for a day, and what it opened for 30 days. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, with Show Links, the links you add to sessions or hide, and, with Updates from Copilot Sessions, what sessions told it, as references only, never titles.",
+        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log; BriefBar never changes them. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database; and, when you open the details of a work item a session is linked to, or ask for a summary of the session or of something it's linked to, what Copilot recorded of that session's work: its checkpoints, the notes Copilot writes as a session goes on, and the last thing it said, which BriefBar keeps in memory only. New: only if you turn on Pull Request Order: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database, to tell which pull requests sessions opened under the session that coordinates them. New: only if you turn on Pull Request Order: while Apple Intelligence is on, the titles of the sessions on a mission's pull requests help Apple's on-device model name it, and tell whether its pull requests look like different pieces of work, to suggest splitting it, on this Mac. New: only when a summary is written of a session, or of something linked to it, or, for one ten minutes old or more, again as you open it, to tell whether it's still current: what was asked in that session, by you or by another session, and Copilot's answers, from its event log. With Apple Intelligence, what a summary is written from stays on this Mac; with a Copilot model, BriefBar sends it to GitHub Copilot through the Copilot CLI, which keeps a copy in its session history. BriefBar keeps none of it. New: only if you turn on Updates from Copilot Sessions, in Settings › Agents: what each session tells BriefBar through its tools for agents, the work items and pull requests it's working on and the pull requests it opened, which BriefBar shows with Show Links and Pull Request Order: what it works on until it says it stopped, it's archived or it's been idle for a day, and what it opened for 30 days. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, with Show Links, the links you add to sessions or hide, and, with Updates from Copilot Sessions, what sessions told it, as references only, never titles.",
         network: "None from BriefBar: Copilot's list makes no network requests. When a summary is written with a Copilot model, the Copilot CLI sends what it covers to GitHub Copilot.",
         needs: "Nothing: macOS doesn't protect these files.",
         requirements: []
@@ -109,6 +109,12 @@ package final class CopilotSource: BriefBarSource {
             .store(in: &linkObservers)
         store.$orderSessions.removeDuplicates()
             .sink { [weak self] sessions in MainActor.assumeIsolated { self?.publishOrder(orderSessions: sessions) } }
+            .store(in: &linkObservers)
+        // Once what it lists was read with where each session's work goes, though no session changed: till then, what a
+        // mission is made of isn't counted. After the change, with the sessions read with it.
+        store.$hasReadLinks.removeDuplicates().dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.publishOrder() } }
             .store(in: &linkObservers)
     }
 
@@ -205,9 +211,10 @@ package final class CopilotSource: BriefBarSource {
     // MARK: Pull Request Order
 
     /// Tells Pull Request Order about the sessions, while it's on: the pull requests each opened, as the app recorded them,
-    /// the sessions that started and coordinate it, what each session is, for a mission to name them, and what each does or
-    /// how it ended, and since when, which its pull requests' stages follow: a task BriefBar sent's too, which has no row
-    /// of its own until you open it in the Copilot app.
+    /// the sessions that started and coordinate it, what each session is, for a mission to name them, and what each
+    /// does or how it ended, and since when, which its pull requests' stages follow: a task BriefBar sent's too, which
+    /// has no row of its own until you open it in the Copilot app; and whether the sessions were read with where each
+    /// one's work goes.
     private func publishOrder(_ sessions: [SessionSnapshot]? = nil, orderSessions: [OrderSession]? = nil) {
         let order = services.pullRequestOrder
         guard order.isOn else {
@@ -226,7 +233,7 @@ package final class CopilotSource: BriefBarSource {
         }
         order.publish(
             .copilot, sessions: orderSessions ?? store.orderSessions, items: items(shown), working: working,
-            sessionActivities: activities, activitiesSince: since
+            sessionActivities: activities, activitiesSince: since, listed: store.hasReadLinks
         )
     }
 
