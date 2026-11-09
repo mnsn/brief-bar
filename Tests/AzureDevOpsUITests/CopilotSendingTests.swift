@@ -245,7 +245,7 @@ import Testing
         ) -> CopilotAsking {
             CopilotAsking(
                 ask: ask, part: part, action: .resolveConflicts, head: { now }, answeredAbout: about,
-                fix: { _, _ in CopilotSending.Fix(prompts: ("", ""), action: .resolveConflicts, parts: [part], handOff: nil) },
+                fix: { _, _, _ in CopilotSending.Fix(prompts: ("", ""), action: .resolveConflicts, parts: [part], handOff: nil) },
                 question: { _, _ in "" }
             )
         }
@@ -265,6 +265,34 @@ import Testing
         let build = asking(part: .build(31), now: moved, about: nil).quoting(answer)
         #expect(build.answer == answer)
         #expect(!build.isLeftOut)
+    }
+
+    /// A comment's fix goes with Push and Reply as it is as you send it, Try Again's included, which puts back what the fix
+    /// it tries again went with right before it sends that again: not as it's set by the time the fix is written, once what
+    /// its prompt quotes is read, as when you change it in another composer meanwhile, for the next fix.
+    @Test func aFixPushesAndRepliesAsYouSentIt() {
+        let choice = PushAndReplyChoice()
+        func asking(readsChoice: Bool, ships: Bool = false) -> CopilotAsking {
+            var shipsNow: (@MainActor () -> Bool)?
+            if readsChoice { shipsNow = { choice.ships } }
+            return CopilotAsking(
+                ask: .fix, part: .thread(11), action: .fixComments, ships: ships, shipsNow: shipsNow,
+                fix: { _, _, ships in
+                    CopilotSending.Fix(prompts: ("", ""), action: ships ? .pushAndReply : .fixComments, parts: [.thread(11)], handOff: nil, fixes: ships)
+                },
+                question: { _, _ in "" }
+            )
+        }
+        choice.ships = true
+        let pushes = asking(readsChoice: true).fixAsSent()
+        choice.ships = false
+        #expect(pushes("Keep it short", nil).fixes)
+        let leaves = asking(readsChoice: true, ships: true).fixAsSent()
+        choice.ships = true
+        #expect(!leaves("Keep it short", nil).fixes)
+        // Without a choice to read now, as the composer had it when it was made.
+        #expect(asking(readsChoice: false, ships: true).fixAsSent()("", nil).fixes)
+        #expect(!asking(readsChoice: false).fixAsSent()("", nil).fixes)
     }
 
     @Test func theSessionThatWorkedOnItLeadsThenItsForkAndANewSession() {
@@ -356,4 +384,10 @@ import Testing
         #expect(SpokenText.unquoted("Fixing this in a fork of ‘Sam’s fix’") == "Fixing this in a fork of Sam’s fix")
         #expect(SpokenText.unquoted("Couldn’t fix it") == "Couldn’t fix it")
     }
+}
+
+/// Push and Reply as a composer has it, which may change after a fix is sent.
+@MainActor
+private final class PushAndReplyChoice {
+    var ships = false
 }

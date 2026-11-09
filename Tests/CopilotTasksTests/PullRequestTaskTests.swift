@@ -169,6 +169,51 @@ import Testing
         #expect(try String(contentsOf: argumentsFile, encoding: .utf8).contains("Push and reply"))
     }
 
+    /// A comment's fix that pushes and replies, sent to a new session, goes as Push & Reply does: only while Azure DevOps
+    /// says, right before git checks and right before Copilot starts, that the pull request merges into the branch its
+    /// prompt names. When it says another, or can't be read, nothing starts, and the worktree made for it goes.
+    @Test(.timeLimit(.minutes(5)))
+    func aNewSessionThatPushesGoesOnlyWhileThePullRequestMergesIntoItsTarget() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let (launcher, argumentsFile) = try launcher(fixture)
+        let id = "0c5e4f6a-7d8b-4c9d-8e1f-6a7b8c9d0e1f"
+        let worktree = fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071")
+        var reads = TargetReads([])
+        func request(_ targets: [String]) -> CopilotLauncher.Request {
+            let answers = TargetReads(targets)
+            reads = answers
+            return CopilotLauncher.Request(
+                subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Fix the comment, then push and reply",
+                options: CopilotModel.standard, repository: fixture.checkout, worktreesFolder: nil, targetNow: { try answers.next() }
+            )
+        }
+        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(request(["release/x"]), id: id) { _ in } }
+        #expect(reads.read == ["release/x"])
+        await #expect(throws: LaunchError.cantReadTarget("Azure DevOps didn't answer in time.")) {
+            try await launcher.launch(request([]), id: id) { _ in }
+        }
+        #expect(reads.read == ["unread"])
+        // Once git checked the new worktree, which it finds no merge in.
+        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(request(["main", "release/x"]), id: id) { _ in } }
+        #expect(reads.read == ["main", "release/x"])
+        await #expect(throws: LaunchError.cantReadTarget("Azure DevOps didn't answer in time.")) {
+            try await launcher.launch(request(["main"]), id: id) { _ in }
+        }
+        #expect(reads.read == ["main", "unread"])
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+        #expect(!FileManager.default.fileExists(atPath: worktree.path))
+
+        let ship = try await launch(launcher, request(["main", "main"]), id: id)
+        #expect(reads.read == ["main", "main"])
+        #expect(ship.worktree.path == worktree.path)
+        #expect(ship.action == .pushAndReply)
+        let arguments = try String(contentsOf: argumentsFile, encoding: .utf8).split(separator: "\n").map(String.init)
+        #expect(arguments.contains("Fix the comment, then push and reply"))
+        // It commits and pushes: the CLI denies it nothing.
+        #expect(!arguments.contains("--deny-tool"))
+    }
+
     /// A pull request's prompt has no placeholders, but quotes what others wrote, such as a change suggested in a comment,
     /// which Copilot applies as it's written: it goes as it is, `{baseBranch}` and all, where a work item's prompt has its
     /// base branch filled in (`CopilotLauncherTests`).

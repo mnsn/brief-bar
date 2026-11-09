@@ -41,8 +41,9 @@ import BriefBarCore
         #expect(prompt.hasSuffix("Don't commit, push or reply on the pull request: end with a short summary for each thread, so I can check your changes before they go out."))
     }
 
-    /// With Push and Reply on, Fix All ships what it changed, as Push & Reply would, with its very steps, then replies on
-    /// the threads it lists alone, the same as without it.
+    /// With Push and Reply on, Fix All ships what it changed, as Push & Reply would, with its very steps, even when it
+    /// changed nothing, as a Push & Reply pushes all the session changed, then replies on the threads it lists alone, the
+    /// same as without it.
     @Test func fixCommentsThatShipsRepliesOnTheThreadsItLists() {
         let prompt = PullRequestPrompt.fixComments(record(), note: "Keep the API.", ships: true)
         #expect(!prompt.contains("Don't commit, push or reply"))
@@ -50,7 +51,8 @@ import BriefBarCore
         let steps = PullRequestPrompt.numbered(PullRequestPrompt.pushSteps(record().pullRequest, workplace: .worktree))
         #expect(prompt.contains("Build, and run the tests that cover what you changed. Then ship them, in this worktree:\n\n" + steps))
         #expect(prompt.contains(steps + "\n4. On the pull request, with your Azure DevOps tools, reply to each of the comment threads above, saying what you changed, and resolve it. For one you didn't change, reply why, and leave it active. Don't reply on the pull request's other threads."))
-        #expect(prompt.contains("If you didn't change anything, don't commit or push: only reply."))
+        #expect(prompt.contains("If you didn't change anything, still take the steps above, which push what else you changed here, if anything."))
+        #expect(!prompt.contains("don't commit or push"))
         #expect(prompt.hasSuffix("End with a short summary for each thread, the commit you pushed and the threads you replied to."))
         #expect(PullRequestPrompt.threadsListed(in: prompt, among: [7, 9, 11, 12]) == [7, 9])
         // Elsewhere: it checks what it would push first, and never rebases.

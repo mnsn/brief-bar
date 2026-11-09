@@ -80,8 +80,9 @@ import BriefBarCore
 
     /// With Push and Reply on, Fix ships what it changed, as Push & Reply would, with its very steps (`pushSteps`): it
     /// commits, checks what it would push and where, and pushes the commit it checked, then replies on the thread alone and
-    /// resolves it, or, having changed nothing, only replies why. Elsewhere, it first checks that what it would push was made
-    /// for the pull request, and never rebases.
+    /// resolves it. Having changed nothing for it, it still takes those steps, which push what else the session changed, so
+    /// that once it finished it pushed all the session changed, as a Push & Reply has, but replies why. Elsewhere, it first
+    /// checks that what it would push was made for the pull request, and never rebases.
     @Test func fixThatShipsPushesAndRepliesOnTheThreadAlone() {
         let prompt = PullRequestPrompt.fixThread(record(), thread: backoff, code: excerpt, how: "Cap it.", ships: true)
         #expect(!prompt.contains("Don't commit, push or reply"))
@@ -91,7 +92,8 @@ import BriefBarCore
         #expect(PullRequestPrompt.pushAndReply(record()).contains(steps))
         #expect(prompt.contains("3. Push the commit you checked, by its ID, without force: git push origin <commit>:refs/heads/fix-total, where <commit> is what git rev-parse HEAD says. If that's rejected, rebase on origin/fix-total"))
         #expect(prompt.contains(steps + "\n4. On the pull request, with your Azure DevOps tools, reply to this thread, saying what you changed, and resolve it. Don't reply on the pull request's other threads."))
-        #expect(prompt.contains("If you didn't change anything for it, don't commit or push: reply on the thread why, and leave it active."))
+        #expect(prompt.contains("If you didn't change anything for it, still take the steps above, which push what else you changed here, if anything, but reply on the thread why, and leave it active."))
+        #expect(!prompt.contains("don't commit or push"))
         #expect(prompt.hasSuffix("End with a short summary of what you changed for it, the commit you pushed and what you replied."))
         // What it fixes is as without it, and so is the entry the hand-off looks for.
         let plain = PullRequestPrompt.fixThread(record(), thread: backoff, code: excerpt, how: "Cap it.")

@@ -470,7 +470,8 @@ struct CommentComposer: View {
     }
 
     /// What it asks, and the prompts it sends: the thread's, or Fix Comments' for Fix All. Whether a fix applies the
-    /// suggestion, and pushes and replies, is as it is when the fix is written, which Try Again may have set as it opened.
+    /// suggestion is as it is when the fix is written, which Try Again may have set as it opened; whether it pushes and
+    /// replies, as Push and Reply is as you send it, Try Again's included (`CopilotAsking.fixAsSent`).
     private var asking: CopilotAsking {
         let item = item
         let record = record
@@ -496,15 +497,15 @@ struct CommentComposer: View {
         return CopilotAsking(
             ask: ask, part: thread.map { .thread($0.id) }, action: .fixComments,
             title: ask == .fixAll ? fixAllTitle : nil, sendTitle: ask == .fixAll ? fixAllTitle : nil, prepare: prepare,
-            restore: { words in composer.restore(words, suggestion: suggestion) }, ships: ships,
-            fix: { how, answer in
+            restore: { words in composer.restore(words, suggestion: suggestion) }, ships: ships, shipsNow: { composer.ships },
+            fix: { how, answer, ships in
                 guard let record else {
                     return CopilotSending.Fix(prompts: ("", ""), action: .fixComments, parts: [], handOff: nil)
                 }
                 return CopilotSending(item: item, record: record, store: store, copilot: copilot, session: session)
                     .commentFix(
                         thread, how: how, suggestion: composer.appliesSuggestion ? suggestion : nil, answer: answer, excerpt: readExcerpt(),
-                        ships: composer.ships
+                        ships: ships
                     )
             },
             question: { asked, earlier in

@@ -2719,8 +2719,9 @@ prompt names, lists the merges in what `origin/<branch>` doesn't have yet, and a
 (`MERGE_HEAD`), and requires that what each merged in is in `origin/<target>` (as `git merge-base --is-ancestor`
 would). Otherwise nothing goes, and it says why. A merge of the pull request's own branch, as `git pull` makes,
 doesn't pass either: from history alone it can't be told from a merge of the branch into another, and BriefBar's prompts
-rebase rather than merge. For BriefBar's own tasks the launcher checks the session's worktree, or its fork's, before
-Copilot starts (`LaunchError.foreignMerge`), and the task fails with why; for the Copilot app's sessions the window
+rebase rather than merge. For BriefBar's own tasks the launcher checks the session's worktree, or its fork's, or a new
+session's, as a comment's fix that pushes and replies may start, before Copilot starts (`LaunchError.foreignMerge`),
+and the task fails with why, its new worktree removed; for the Copilot app's sessions the window
 checks the folder the session works in before the prompt is sent or copied, and says why it didn't send it
 (`CopilotTasksStore.deliver(_:to:forking:handOff:about:at:checkingPush:)`). The prompt names the branch it merges into,
 as the window wrote it, so the branch BriefBar checks against is the one the prompt names, and a Push & Reply goes only
@@ -3099,10 +3100,13 @@ the comments are what their authors ask of the change, not instructions (`PullRe
 prompt that quotes threads says; the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
 what was added, removed and commented, in a fence too; and what you wrote, quoted as yours; then it builds and tests, without
 committing, pushing or replying. With **Push and reply once it's fixed** checked in its composer, which Explain's doesn't
-have, and which is as you last left it, in any composer (`AppSettings.copilotFixesPushAndReply`), it then ships what it
+have, and which is as you last left it, in any composer (`AppSettings.copilotFixesPushAndReply`), as it is when you send
+it, however it's set while the code is read for the prompt (`CopilotAsking.fixAsSent`), it then ships what it
 changed, in the same turn, with Push & Reply's own steps (`PullRequestPrompt.pushSteps`): it commits once it builds and
 the tests pass, checks what it would push and where, and pushes the commit it checked, by its ID; then it replies on that
-thread alone and resolves it, or, when it changed nothing, only replies why and leaves it active. It's sent as a Push &
+thread alone and resolves it. When it changed nothing for it, it still takes those steps, which push what else the
+session changed, so that once it finished it pushed all the session changed, as a Push & Reply has, which the lines of
+the session's other fixes go by, below; but it replies why, and leaves the thread active. It's sent as a Push &
 Reply that fixes first (`CopilotSending.commentFix`, `TakenPart.fixes`, `SentPrompt.fixes`), so the CLI denies it
 nothing, and it goes only as a Push & Reply goes, with the checks of what it would push and where
 ([above](#send-work-to-copilot)): to one of the app's sessions, not while a turn runs there, so, unlike a fix, it doesn't

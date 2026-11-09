@@ -89,9 +89,9 @@ public enum PullRequestPrompt {
 
     /// - Parameters:
     ///   - note: what you want, in your words, quoted as yours; nothing for nil or blank.
-    ///   - ships: once it's done, it commits and pushes, as Push & Reply would (`pushSteps`), then replies on each thread it
-    ///     lists and resolves it, as a fix sent with Push and Reply on asks; else it doesn't commit, push or reply, for you to
-    ///     check its changes first.
+    ///   - ships: once it's done, it commits and pushes, as Push & Reply would (`pushSteps`), even when it changed nothing,
+    ///     then replies on each thread it lists and resolves each it changed, as a fix sent with Push and Reply on asks; else
+    ///     it doesn't commit, push or reply, for you to check its changes first.
     public static func fixComments(_ record: PRRecord, workplace: Workplace = .worktree, note: String? = nil, ships: Bool = false) -> String {
         let threads = waitingThreads(record)
         let how = yours(note).map { "\n\nHow I want them fixed, in my own words:\n\n\($0)" } ?? ""
@@ -126,9 +126,9 @@ public enum PullRequestPrompt {
 
             \(steps)
 
-            If you didn't change anything, don't commit or push: only reply. Don't complete, approve or abandon the pull \
-            request, and don't change pipelines. End with a short summary for each thread, the commit you pushed and the \
-            threads you replied to.
+            If you didn't change anything, still take the steps above, which push what else you changed here, if anything. \
+            Don't complete, approve or abandon the pull request, and don't change pipelines. End with a short summary for \
+            each thread, the commit you pushed and the threads you replied to.
             """
     }
 

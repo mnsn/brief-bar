@@ -379,7 +379,7 @@ import Testing
         let drafts = CopilotDrafts()
         let asking = CopilotAsking(
             ask: .fix, part: .build(31), action: .fixBuild, row: "build-2",
-            fix: { _, _ in CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }, question: { _, _ in "" }
+            fix: { _, _, _ in CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }, question: { _, _ in "" }
         )
         #expect(asking.draftKey == second)
         // And so does Ask in the Session's prompt on its way: one row's doesn't call off the other's.

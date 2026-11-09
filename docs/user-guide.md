@@ -511,8 +511,9 @@ session as a prompt instead, the way Fix sends its own, where it stays in the se
 pull request, has Copilot address that thread alone, as you say in **Tell Copilot how (optional)**, which it quotes as
 yours, then build and test; it doesn't commit, push or reply, and the thread leaves Needs You as with Fix Comments,
 below. Check **Push and reply once it's fixed** to have it then do what **Push & Reply** does, in the same turn: commit,
-push the branch (never with force), and reply on the thread and resolve it, as you; or, when it changed nothing, reply
-why and leave the thread active. It goes as a Push & Reply goes, with the same checks, below, so it doesn't wait in a
+push the branch (never with force), and reply on the thread and resolve it, as you; when it changed nothing for it, it
+still pushes what else the session changed, but replies why, and leaves the thread active. It goes as a Push & Reply
+goes, with the same checks, below, so it doesn't wait in a
 session of the Copilot app that's running a turn: BriefBar says to send it once that's done. The box stays as you last
 left it, for the next Fix or Fix All. A comment can suggest a change, which shows as **Suggested change**: **Apply ‹name›'s suggestion as written** has
 Copilot make it as it's written, and is checked when the suggestion is the thread's last word. Where it goes is one
