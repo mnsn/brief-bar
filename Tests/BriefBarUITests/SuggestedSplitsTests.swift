@@ -762,15 +762,21 @@ fileprivate final class SplitViewer {}
         order.stopShowing(in: viewer)
     }
 
-    /// A split that would leave a story's mission one pull request, which is no mission, isn't suggested, though both
-    /// answers separate all three.
-    @Test func aSplitThatWouldLeaveAStorysMissionOnePullRequestIsntSuggested() async throws {
+    /// A split that would leave a story's mission one open pull request, which is no mission, isn't suggested, though both
+    /// answers separate all three; nor with one that merged too, as Done lists that only for a while.
+    @Test(arguments: [false, true])
+    func aSplitThatWouldLeaveAStorysMissionOneOpenPullRequestIsntSuggested(withOneThatMerged: Bool) async throws {
         let clock = SplitClock()
         let model = SplitModel()
         model.splitAnswer = { _ in #"{"oneWork":false,"groups":[{"parts":[1]},{"parts":[2]},{"parts":[3]}]}"# }
         let order = Self.service(clock: clock)
         order.namer = model.namer(clock: clock)
-        Self.tell(order, [4101, 4120, 4121])
+        if withOneThatMerged {
+            Self.tell(order, [4099, 4101, 4120, 4121], states: [4099: .merged])
+            #expect(Self.refs(of: order.missions.first).contains(Self.pr(4099)))
+        } else {
+            Self.tell(order, [4101, 4120, 4121])
+        }
         let key = try #require(order.missions.first?.key)
         let viewer = SplitViewer()
         Self.show([key], in: viewer, by: order)

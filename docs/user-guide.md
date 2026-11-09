@@ -393,8 +393,8 @@ and nothing moves until you click. It looks at a story's mission, a session's or
 session, with three open Azure DevOps pull requests or more, never a chain, a stack or a mission of your own; pull
 requests that merged or closed, GitHub's, those you changed, there or in another mission, and those another session's
 order names too, stay where they are, and related ones, such as stacked ones, stay together, and a story's mission, or a
-session's pull requests, keeps two at least. It's often quiet, as it suggests a split only where it's clear, and a split
-applies whole: to take part of one, Keep Together, then **Move to Mission**.
+session's pull requests, keeps two open ones at least. It's often quiet, as it suggests a split only where it's clear,
+and a split applies whole: to take part of one, Keep Together, then **Move to Mission**.
 
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote

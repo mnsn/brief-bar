@@ -126,11 +126,12 @@ public struct MissionSplitQuestion: Hashable, Sendable {
     public var makeup: Makeup?
     /// What it's made of, as Keep Together counts it (`Contents`); nil whenever `makeup` is.
     public var contents: Contents?
-    /// How many of its pull requests no split moves, besides its parts', such as those that merged or GitHub's: they stay in
-    /// it.
+    /// How many of its open pull requests no split moves, besides its parts', such as GitHub's: they stay in it. Not those
+    /// that merged or closed, which Done lists only for a while.
     public var othersStaying: Int
-    /// How many pull requests it needs to stay a mission: two for a story's or the pull requests opened under a session, as
-    /// one alone is none; one for an order's. A split that would leave it fewer isn't suggested.
+    /// How many open pull requests it needs to stay a mission: two for a story's or the pull requests opened under a
+    /// session, as one alone is none once Done no longer lists those that merged or closed; one for an order's. A split that
+    /// would leave it fewer isn't suggested.
     public var leastToStay: Int
 
     public init(
@@ -403,7 +404,9 @@ public enum MissionSplitting {
             }
             parts.append(part(open, besides: story, stays: stays, facts: facts, sessionsWorking: sessionsWorking, name: name))
         }
-        let othersStaying = steps.count - parts.reduce(0) { $0 + $1.refs.count }
+        // Its open pull requests in no part, as GitHub's: they stay, and keep it a mission. Not those that merged or closed,
+        // which Done lists only for a while.
+        let othersStaying = steps.filter { $0.status.isOpen && !isOpen($0.ref) }.count
         // What it's made of, as Keep Together counts it: its pull requests and those of the missions split off it, whatever
         // became of them.
         var members = steps.map(\.ref)
@@ -640,7 +643,7 @@ public enum MissionSplitting {
     /// of missions split off before alone moves nothing. Nil when nothing would move, or when it would move what stays, join
     /// two missions, or join one split off before into this one: what stays is in two groups, a group has two missions
     /// split off before, or the one that keeps the mission has one; or when what keeps the mission would leave it too few
-    /// pull requests to stay one (`MissionSplitQuestion.leastToStay`).
+    /// open pull requests to stay one (`MissionSplitQuestion.leastToStay`).
     public static func plan(_ question: MissionSplitQuestion, grouping: [[Int]]) -> MissionSplitPlan? {
         let parts = question.parts
         guard isGrouping(grouping, parts: parts.count) else { return nil }
@@ -672,7 +675,8 @@ public enum MissionSplitting {
             }), groups[best].splitOff.isEmpty else { return nil }
             kept = best
         }
-        // It has to stay a mission: a story's or the pull requests opened under a session, with one left, would be none.
+        // It has to stay a mission: a story's or the pull requests opened under a session, with one open pull request left,
+        // would be none once Done no longer lists those that merged.
         guard count(kept) + question.othersStaying >= question.leastToStay else { return nil }
         func refs(_ own: [Int]) -> [ItemRef] {
             own.flatMap { parts[$0].refs }

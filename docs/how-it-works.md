@@ -1440,10 +1440,10 @@ open pull requests, then the one opened earliest. Each other group goes into the
 it, else to a new mission of your own when it has two pull requests or more, else out of missions. There's no suggestion
 where what stays is in two groups, a group has two missions split off before, or the one that keeps the mission has one:
 a split never joins missions. Nor is there one that would leave a story's mission, or the pull requests opened under a
-session, with one pull request, merged ones counted, as that's no mission. The groups' names, the kept one's unless you
-named it and each new mission's, are asked as a mission's are, and are the names those missions get, Apple
-Intelligence's, in memory. A suggestion is kept in memory only, and none of it goes to the log, but how many groups it
-has, nor to agents.
+session, with one open pull request, as that's no mission once Done no longer lists those that merged or closed. The
+groups' names, the kept one's unless you named it and each new mission's, are asked as a mission's are, and are the
+names those missions get, Apple Intelligence's, in memory. A suggestion is kept in memory only, and none of it goes to
+the log, but how many groups it has, nor to agents.
 
 **Split** is one change of yours (`OrderEdit.split`), with one **Undo**: each pull request it moves keeps the mission it
 came from (`OrderChange.splitFrom`), and what each waits for doesn't change. It goes by the orders as agents last told

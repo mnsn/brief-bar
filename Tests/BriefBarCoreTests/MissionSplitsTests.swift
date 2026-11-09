@@ -253,6 +253,8 @@ import Testing
         #expect(byFirst[Self.pr(4304)]?.refs == [Self.pr(4304), Self.pr(4305)])
         #expect(byFirst[Self.pr(4304)]?.stays == true)
         #expect(byFirst[Self.pr(4306)]?.stays == true)
+        // Of those in no part, GitHub's open one keeps it a mission; the one that merged doesn't.
+        #expect(question.othersStaying == 1)
         // Nothing can move: it isn't asked.
         #expect(!question.isWorthAsking)
     }
@@ -391,26 +393,27 @@ import Testing
         #expect(MissionSplitting.plan(Self.question([[4105], [4101], [4107]], stays: [0, 1]), grouping: [[0, 1], [2]]) != nil)
     }
 
-    /// A story's mission, or the pull requests opened under a session, left with one pull request would be no mission: a
-    /// split that would leave the one that keeps it so isn't suggested. What no split moves, as one that merged, counts;
-    /// an order's mission stays one with one.
+    /// A story's mission, or the pull requests opened under a session, left with one open pull request would be no mission:
+    /// a split that would leave the one that keeps it so isn't suggested. An open one no split moves, as GitHub's, counts;
+    /// not one that merged, which Done lists only for a while. An order's mission stays one with one.
     @Test func aSplitLeavesWhatKeepsTheMissionAMission() throws {
         #expect(MissionSplitting.plan(Self.question([[4101], [4105], [4107]], leastToStay: 2), grouping: [[0], [1], [2]]) == nil)
-        let merged = try #require(MissionSplitting.plan(
+        let gitHubs = try #require(MissionSplitting.plan(
             Self.question([[4101], [4105], [4107]], othersStaying: 1, leastToStay: 2), grouping: [[0], [1], [2]]
         ))
-        #expect(merged.groups.map(\.goes) == [.keeps, .outside, .outside])
+        #expect(gitHubs.groups.map(\.goes) == [.keeps, .outside, .outside])
         let two = try #require(MissionSplitting.plan(Self.question([[4101], [4105], [4107]], leastToStay: 2), grouping: [[0], [1, 2]]))
         #expect(two.groups[0].refs == [Self.pr(4105), Self.pr(4107)])
         #expect(MissionSplitting.plan(Self.question([[4101], [4105], [4107]]), grouping: [[0], [1], [2]]) != nil)
         // What stays, alone in the group that keeps it: no split either.
         #expect(MissionSplitting.plan(Self.question([[4105, 4107], [4101]], stays: [1], leastToStay: 2), grouping: [[0], [1]]) == nil)
 
-        // As the missions have it: a story's needs two, and one that merged stays in it.
+        // As the missions have it: a story's needs two open ones; the one that merged stays in it, but doesn't count.
         let facts = Self.storyFacts()
         let story = try #require(StoryMissionsTests.missions(facts).first { $0.key == .story(Self.story) })
+        #expect((story.steps + story.attached).contains { $0.ref == Self.pr(4099) })
         let storyQuestion = try #require(Self.question(story, facts: facts))
-        #expect(storyQuestion.leastToStay == 2 && storyQuestion.othersStaying == 1)
+        #expect(storyQuestion.leastToStay == 2 && storyQuestion.othersStaying == 0)
         // The pull requests opened under a session need two; an order's one.
         let open = facts.pullRequests.values.filter { $0.state.isOpen }.map { pullRequest in
             var pullRequest = pullRequest
