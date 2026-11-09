@@ -1540,7 +1540,8 @@ votes, and lasts as yours does, until it's changed (`OrderKeeper.setStages`): it
 over that session's own work since yours, which would put it in progress, and a Your review you set outlasts the session
 that pushed and says it's ready, as BriefBar's prompts ask, once a teammate approves, kept under it. Its menu has
 **Let BriefBar Decide**, as yours alone would, which forgets both, and Undo of yours takes it with yours, rather than
-leave it lasting on its own (`StageReading.followed`). Once a session's
+leave it lasting on its own, also while the Copilot app doesn't list the session, so that it doesn't come back alone
+once it's listed again (`StageReading.followed`, `StageMark.follows`). Once a session's
 other stage replaced yours, what it says later counts as any stage does, Undo of yours leaves it, and once the latest
 ends none does, yours neither.
 Votes and commits end what a session set only as BriefBar read them after it set it, since the
@@ -1554,9 +1555,9 @@ never read that database, such as without the Copilot app, every session that wo
 (`SessionStateScanner`). Once the latest of them no longer stands, or the pull request merges or closes, none
 counts: yours goes, and BriefBar takes away from what each session keeps what it set before the latest, or all of it
 once the pull request merged or closed, listed or not (`SessionStages.end`), so an older one never comes back, also once
-an archived session is listed again; **Let BriefBar Decide** takes away, with yours, what sessions set before it, listed
-or not, and a session's later Your review that followed it, which shows in its place. Can merge, Waits and Merged
-come only from what BriefBar sees, whatever a session says.
+an archived session is listed again; **Let BriefBar Decide** takes away, with yours, what sessions set before it, and
+the Your reviews that followed it, listed or not. Can merge, Waits and Merged come only from what BriefBar sees,
+whatever a session says.
 
 What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one entry
 for each pull request: its number, the stage, when, and only what would end it (`StageRules.mark`): the commit, for In

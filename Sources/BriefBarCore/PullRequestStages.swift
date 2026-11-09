@@ -230,6 +230,12 @@ public struct StageMark: Equatable, Sendable {
     }
 
     public var isYours: Bool { by == nil }
+
+    /// Whether this is a session's Your review that followed yours, as `--mcp` keeps one where yours was the latest stage
+    /// set: without votes, so it lasts as yours does, and set after it.
+    public func follows(_ yours: StageMark) -> Bool {
+        !isYours && stage == .yourReview && votes == nil && yours.isYours && yours.stage == .yourReview && at > yours.at
+    }
 }
 
 /// What a pull request's order says of merging it, for Can merge and Waits.
@@ -519,10 +525,10 @@ public enum StageRules {
     }
 
     /// The latest of what was set, while it stands; yours when a session's later change replaced it with another stage;
-    /// and yours when a session's later Your review followed it (`StageReading.followed`): one that keeps no votes, as
-    /// `--mcp` keeps it only where yours was the latest stage set. A session's own report, with its votes, which came
-    /// after another stage replaced yours, follows nothing. Once the latest ends, none of them counts: BriefBar works the
-    /// stage out again.
+    /// and yours when a session's later Your review followed it (`StageReading.followed`, `StageMark.follows`): one that
+    /// keeps no votes, as `--mcp` keeps it only where yours was the latest stage set. A session's own report, with its
+    /// votes, which came after another stage replaced yours, follows nothing. Once the latest ends, none of them counts:
+    /// BriefBar works the stage out again.
     static func standingMark(
         _ marks: [StageMark], facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
     ) -> (mark: StageMark?, replaced: StageMark?, followed: StageMark?) {
@@ -530,7 +536,7 @@ public enum StageRules {
         else { return (nil, nil, nil) }
         guard !latest.isYours, let yours = marks.filter(\.isYours).max(by: { $0.at < $1.at }) else { return (latest, nil, nil) }
         if yours.stage != latest.stage { return (latest, yours, nil) }
-        return (latest, nil, latest.stage == .yourReview && latest.votes == nil ? yours : nil)
+        return (latest, nil, latest.follows(yours) ? yours : nil)
     }
 
     /// What you and the sessions set on a pull request that counts now (`reading`'s marks): yours while it stands, and

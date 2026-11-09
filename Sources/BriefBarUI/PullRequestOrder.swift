@@ -1499,14 +1499,14 @@ package final class PullRequestOrder: ObservableObject {
 
     /// Let BriefBar Decide: forgets the stage you set, and BriefBar works it out again: what sessions set before yours,
     /// which yours replaced, goes too, rather than come back, also what a session the Copilot app doesn't list now set,
-    /// should it list it again; and so does a session's later Your review that followed yours, which shows in its place
-    /// (`StageReading.followed`). Unchanged when you set none.
+    /// should it list it again; and so do sessions' Your reviews that followed yours (`StageMark.follows`), the one that
+    /// shows in its place (`StageReading.followed`) and those of sessions the Copilot app doesn't list now, so that none
+    /// comes back alone. Unchanged when you set none.
     @discardableResult
     package func letBriefBarDecide(_ ref: ItemRef) -> StageChange.Outcome {
         guard isOn, let facts = stageFacts[ref], let before = yourMark(of: ref, facts: facts) else { return .unchanged }
-        let shown = stages[ref].flatMap { $0.followed != nil ? $0.mark : nil }
         forgetMark(of: ref, facts: facts)
-        end(sessionStages.marks(on: ref, setBy: shown?.at ?? before.at), of: ref)
+        end(sessionStages.marks(on: ref).filter { $0.at <= before.at || $0.follows(before) }, of: ref)
         lastChange = .stage(StageChange(ref: ref, before: before, after: nil, picked: slots(picking: ref)))
         refusal = nil
         restage()
@@ -1527,9 +1527,9 @@ package final class PullRequestOrder: ObservableObject {
     /// Puts back exactly the stage your last change replaced, or none, and the pull request you'd chosen it for in Up Next's
     /// slots, but for a slot you've decided for since (`StageChange.picked`). What it puts back is kept even once the account
     /// keeps the most, as when Let BriefBar Decide made room that one waiting in memory took: it waits there in turn, until
-    /// the account has room. A session's later Your review that followed the one it takes back, which shows in its place
-    /// (`StageReading.followed`), goes with it, rather than stay on its own; a session's own report, which came after
-    /// another stage replaced yours, stays.
+    /// the account has room. Sessions' Your reviews that followed the one it takes back (`StageMark.follows`) go with it,
+    /// those of sessions the Copilot app doesn't list now too, rather than stay, or come back, on their own; a session's
+    /// own report, which came after another stage replaced yours, stays.
     private func undo(_ change: StageChange) -> Bool {
         guard isOn, let facts = stageFacts[change.ref] else {
             lastChange = nil
@@ -1537,8 +1537,8 @@ package final class PullRequestOrder: ObservableObject {
         }
         lastChange = nil
         refusal = nil
-        if let shown = stages[change.ref], let yours = shown.followed, let mark = shown.mark {
-            end(sessionStages.marks(on: change.ref, setBy: mark.at).filter { $0.at > yours.at }, of: change.ref)
+        if let yours = yourMark(of: change.ref, facts: facts) {
+            end(sessionStages.marks(on: change.ref).filter { $0.follows(yours) }, of: change.ref)
         }
         if let before = change.before {
             if !keep(before, of: change.ref, facts: facts) {

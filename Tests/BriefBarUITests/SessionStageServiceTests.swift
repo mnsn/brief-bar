@@ -422,6 +422,36 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4093))?.stage == .canMerge)
     }
 
+    /// Sessions' Your reviews that followed yours go with it also while the Copilot app doesn't list their session, as
+    /// once it's archived, so that none comes back alone, lasting, once it's listed again: with Undo, and with Let BriefBar
+    /// Decide.
+    @Test func whatFollowedYoursGoesWithItWhileItsSessionIsntListed() async throws {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)
+        Self.tell(order, [4093: waiting, 4094: waiting])
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600, on: [4093, 4094])
+        clock.advance(seconds: 60)
+        #expect(order.setStage(.yourReview, of: Self.ref(4094)) == .done)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        clock.advance(seconds: 60)
+        let facts = [Self.ref(4093): waiting, Self.ref(4094): waiting]
+        _ = try await Self.setStage("user_review", of: [4093, 4094], in: defaults, facts: facts, at: clock.now)
+        order.agentChanged()
+        #expect(order.stage(of: Self.ref(4093))?.followed != nil)
+
+        Self.list(order, [:], since: clock.now)
+        #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
+        #expect(order.undo())
+        #expect(order.letBriefBarDecide(Self.ref(4094)) == .done)
+        #expect(!SessionStages.keepsAny(in: defaults))
+
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600, on: [4093, 4094])
+        #expect(order.stage(of: Self.ref(4093))?.mark == nil)
+        #expect(order.stage(of: Self.ref(4094))?.mark == nil)
+    }
+
     private static func link(_ number: Int) -> String {
         "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)"
     }
