@@ -251,9 +251,10 @@ package enum PullRequestOrderMCP {
     /// just before it keeps anything, as reading Azure DevOps takes a while (`OrderKeeper.changeStages`). One BriefBar
     /// doesn't list, one that merged or closed, and someone else's to put in progress, which BriefBar never does, are
     /// left as they are, each with a line that says why. It says BriefBar shows what it set only where it can tell
-    /// (`MCPStages.sessions`). A Your review it sets where the latest stage set is a Your review the user set keeps no
-    /// votes, saying so: it lasts as theirs does, until it's changed, rather than end theirs as someone else votes
-    /// (`OrderKeeper.setStages`).
+    /// (`MCPStages.sessions`), and not where the user set a stage after it read the pull request, which shows as the
+    /// later. A Your review it sets where the latest stage set is a Your review the user set before it
+    /// read the pull request keeps no votes, saying so: it lasts as theirs does, while theirs is there, rather than end
+    /// theirs as someone else votes (`OrderKeeper.setStages`).
     static func setStage(
         _ arguments: JSONValue, keeper: OrderKeeper, stages: MCPStages, copilotOn: @escaping @Sendable () -> Bool,
         session: ItemRef, now: @Sendable () -> Date
@@ -338,25 +339,35 @@ package enum PullRequestOrderMCP {
             marks, of: session, account: read.account, listed: sessions?.listed, now: now, unless: refusal
         )
         let told = refs.filter { marks[$0] != nil }
+        // What the user set after this session read them, the later, which shows rather than what it says.
+        let later = Set(told.filter { yours[$0].map { $0.at > now } == true })
+        let shown = told.filter { !later.contains($0) }
         var lines: [String] = []
-        let them = told.count == 1 ? "it" : "them"
-        let shows = if sessions == nil {
-            "BriefBar keeps \(labels(told)) in \(stage.title), set by this session, and shows \(them) while the "
-                + "Copilot app lists this session"
-        } else {
-            "BriefBar shows \(labels(told)) in \(stage.title) now, set by this session"
+        if !shown.isEmpty {
+            let them = shown.count == 1 ? "it" : "them"
+            let shows = if sessions == nil {
+                "BriefBar keeps \(labels(shown)) in \(stage.title), set by this session, and shows \(them) while the "
+                    + "Copilot app lists this session"
+            } else {
+                "BriefBar shows \(labels(shown)) in \(stage.title) now, set by this session"
+            }
+            lines.append("\(shows); the user sees who set it, and can change it.\(demo)")
         }
-        lines.append("\(shows); the user sees who set it, and can change it.\(demo)")
-        // What the user set that this replaces, while it stands, which they can put back; or their Your review that this
-        // follows, which it lasts as.
+        // What the user set that this replaces, while it stands, which they can put back; their Your review that this
+        // follows, which it lasts as; or what they set since it read it, which shows.
         for ref in told {
             guard let theirs = yours[ref] else { continue }
             let on = told.count > 1 ? " on \(labels([ref]))" : ""
             let ago = StageText.agoWords(theirs.at, now: now)
-            if following.contains(ref) {
+            if later.contains(ref) {
                 lines.append(
-                    "The user had set \(theirs.stage.title)\(on) \(ago) already; yours lasts as theirs does, until it's "
-                        + "changed, rather than end once someone else votes."
+                    "The user set \(theirs.stage.title) on \(labels([ref])) \(ago), after this session read it: BriefBar "
+                        + "shows theirs, the later."
+                )
+            } else if following.contains(ref) {
+                lines.append(
+                    "The user had set \(theirs.stage.title)\(on) \(ago) already; yours lasts as theirs does, and goes with "
+                        + "it, rather than end once someone else votes."
                 )
             } else if theirs.stage != stage, standing(theirs, ref) {
                 lines.append(
@@ -584,14 +595,14 @@ actor OrderKeeper {
     }
 
     /// When a session last set a stage on each of these pull requests, of those the Copilot app lists, or of all of them
-    /// where `--mcp` can't tell, as their keys have them now, but for a Your review that keeps no votes, which followed the
-    /// user's (`setStages`); none where none did.
+    /// where `--mcp` can't tell, as their keys have them now, but for a Your review that followed the user's
+    /// (`StageMark.followsYours`); none where none did.
     private func latestSessionMarks(on refs: [ItemRef], listed: Set<ItemRef>?, now: Date) -> [ItemRef: Date] {
         let stages = SessionStages.load(from: defaults, now: now)
         let marks = stages.marks(listed: listed ?? Set(stages.sessions.keys), now: now)
         var latest: [ItemRef: Date] = [:]
         for ref in refs {
-            latest[ref] = marks[ref]?.filter { $0.stage != .yourReview || $0.votes != nil }.map(\.at).max()
+            latest[ref] = marks[ref]?.filter { !$0.followsYours }.map(\.at).max()
         }
         return latest
     }
@@ -610,11 +621,12 @@ actor OrderKeeper {
     }
 
     /// Sets these stages as this session's. A Your review where the latest stage set on the pull request is a Your review
-    /// the user set, later than what every listed session set there but a Your review that followed theirs this way, keeps
-    /// no votes: it lasts as theirs does, until it's changed, rather than end as someone else votes, and theirs with it,
-    /// as the latest set. It decides as it keeps them, in one step, so that a call of this session's in between can't make
-    /// it go stale. Refused, changing nothing, while Pull Request Order is off, or `refusal` gives an answer, asked just
-    /// before.
+    /// the user set before the session read it, later than what every listed session set there but a Your review that
+    /// followed theirs this way, keeps no votes (`StageMark.follows`): it lasts as theirs does, while theirs is there,
+    /// rather than end as someone else votes, and theirs with it, as the latest set. One the user set as the session read
+    /// the pull request came after what it says, so it keeps its votes, as anywhere. It decides as it keeps them, in one
+    /// step, so that a call of this session's in between can't make it go stale. Refused, changing nothing, while Pull
+    /// Request Order is off, or `refusal` gives an answer, asked just before.
     /// - Returns: the stages the user set on them, as it read them, and those whose Your review follows theirs.
     func setStages(
         _ marks: [ItemRef: StageMark], of session: ItemRef, account: String?, listed: Set<ItemRef>?, now: Date,
@@ -626,10 +638,9 @@ actor OrderKeeper {
         let yours = userMarks(of: refs, account: account)
         let latest = latestSessionMarks(on: refs, listed: listed, now: now)
         let following = Set(refs.filter { ref in
-            guard marks[ref]?.stage == .yourReview, let theirs = yours[ref], theirs.stage == .yourReview else {
-                return false
-            }
-            return theirs.at > (latest[ref] ?? .distantPast)
+            guard var mark = marks[ref], let theirs = yours[ref] else { return false }
+            mark.votes = nil
+            return mark.follows(theirs) && theirs.at > (latest[ref] ?? .distantPast)
         })
         keep(session, now: now) { kept in
             for (ref, mark) in marks {

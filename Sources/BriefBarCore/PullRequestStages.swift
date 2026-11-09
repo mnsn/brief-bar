@@ -231,10 +231,13 @@ public struct StageMark: Equatable, Sendable {
 
     public var isYours: Bool { by == nil }
 
-    /// Whether this is a session's Your review that followed yours, as `--mcp` keeps one where yours was the latest stage
-    /// set: without votes, so it lasts as yours does, and set after it.
+    /// Whether this is a session's Your review that followed one of yours, as `--mcp` keeps one where yours was the latest
+    /// stage set: without votes, so it lasts as yours does, while yours is there (`follows`, `StageRules.counted`).
+    public var followsYours: Bool { !isYours && stage == .yourReview && votes == nil }
+
+    /// Whether this is a session's Your review that followed this one of yours: set after it, keeping no votes.
     public func follows(_ yours: StageMark) -> Bool {
-        !isYours && stage == .yourReview && votes == nil && yours.isYours && yours.stage == .yourReview && at > yours.at
+        followsYours && yours.isYours && yours.stage == .yourReview && at > yours.at
     }
 }
 
@@ -542,13 +545,16 @@ public enum StageRules {
     /// What you and the sessions set on a pull request that counts now (`reading`'s marks): yours while it stands, and
     /// the sessions', while the latest of them all stands and the pull request is open. Once the latest ends, or it merged
     /// or closed, none counts, and `latestEnded` says so, for what keeps them to end them all, so that an older one never
-    /// comes back.
+    /// comes back. A session's Your review that followed one of yours counts only while that one of yours is there
+    /// (`StageMark.follows`): once yours is gone, as with Undo, also as you took it away while `--mcp` kept it, it lasts
+    /// no more on its own.
     /// - Parameters:
     ///   - theirs: what the sessions the sources list set on it (`SessionStages.marks`).
     ///   - setters: what those sessions do now, on it or not (`stands`).
     public static func counted(
         yours: StageMark?, theirs: [StageMark], facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
     ) -> (yours: StageMark?, theirs: [StageMark], latestEnded: Bool) {
+        let theirs = theirs.filter { !$0.followsYours || yours.map($0.follows) == true }
         let latest = ([yours].compactMap { $0 } + theirs).max { $0.at < $1.at }
         let latestEnded = !facts.state.isOpen || latest.map { !stands($0, facts: facts, sessions: sessions, setters: setters) } == true
         let mine = yours.flatMap { latestEnded || !stands($0, facts: facts, sessions: sessions, setters: setters) ? nil : $0 }

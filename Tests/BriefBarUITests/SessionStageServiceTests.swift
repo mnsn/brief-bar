@@ -91,7 +91,7 @@ private final class Clock {
         Self.list(order, [Self.cart: .finished], since: clock.now - 3_600)
 
         clock.advance(seconds: 60)
-        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, in: defaults, order)
+        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, votes: "", in: defaults, order)
         #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
         #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.cart)
         #expect(Self.why(order, 4093) == "‘Cart’ says it's ready")
@@ -119,7 +119,7 @@ private final class Clock {
 
         // Archived, it's no longer listed: what it set doesn't count, though it's kept.
         clock.advance(seconds: 60)
-        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, in: defaults, order)
+        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, votes: "", in: defaults, order)
         #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.cart)
         Self.list(order, [:], since: clock.now)
         #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
@@ -133,7 +133,7 @@ private final class Clock {
         let order = Self.service(defaults, clock: clock)
         Self.tell(order, [4102: StageFacts(role: .author, readAt: clock.now)])
         Self.list(order, [Self.cart: .finished, Self.backoff: .finished], since: clock.now - 3_600)
-        Self.set(.yourReview, of: 4102, by: Self.backoff, at: clock.now + 120, in: defaults, order)
+        Self.set(.yourReview, of: 4102, by: Self.backoff, at: clock.now + 120, votes: "", in: defaults, order)
         Self.set(.teammateReview, of: 4102, by: Self.cart, at: clock.now + 60, in: defaults, order)
         #expect(order.stage(of: Self.ref(4102))?.mark?.by == Self.backoff)
         #expect(Self.why(order, 4102) == "‘Retry backoff’ says it's ready")
@@ -226,7 +226,7 @@ private final class Clock {
         #expect(!SessionStages.keepsAny(in: defaults))
 
         clock.advance(seconds: 60)
-        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, in: defaults, order)
+        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, votes: "", in: defaults, order)
         clock.advance(seconds: 60)
         Self.list(order, [Self.cart: .working], since: clock.now)
         #expect(Self.why(order, 4093) == "‘Cart’ says it's ready")
@@ -301,8 +301,8 @@ private final class Clock {
         #expect(answer == """
             BriefBar shows !4093 and !4094 in contoso in Your review now, set by this session; the user sees who set it, \
             and can change it.
-            The user had set Your review on !4093 in contoso 3m ago already; yours lasts as theirs does, until it's \
-            changed, rather than end once someone else votes.
+            The user had set Your review on !4093 in contoso 3m ago already; yours lasts as theirs does, and goes \
+            with it, rather than end once someone else votes.
             """)
         for number in [4093, 4094] {
             #expect(order.stage(of: Self.ref(number))?.stage == .yourReview)
@@ -450,6 +450,25 @@ private final class Clock {
         Self.list(order, [Self.cart: .finished], since: clock.now - 3_600, on: [4093, 4094])
         #expect(order.stage(of: Self.ref(4093))?.mark == nil)
         #expect(order.stage(of: Self.ref(4094))?.mark == nil)
+    }
+
+    /// A session's Your review that followed yours counts only while yours is there: kept as you took yours away, as
+    /// `--mcp` can keep it before the app reads what it kept, it doesn't last on its own once the app does.
+    @Test func aSessionsYourReviewThatFollowedYoursCountsOnlyWhileYoursIsThere() async throws {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)
+        Self.tell(order, [4093: waiting])
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600, on: [4093])
+        clock.advance(seconds: 60)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        clock.advance(seconds: 60)
+        _ = try await Self.setStage("user_review", of: [4093], in: defaults, facts: [Self.ref(4093): waiting], at: clock.now)
+        #expect(order.undo())
+        order.agentChanged()
+        #expect(order.stage(of: Self.ref(4093))?.mark == nil)
+        #expect(Self.why(order, 4093) == "‘Cart’ finished")
     }
 
     private static func link(_ number: Int) -> String {

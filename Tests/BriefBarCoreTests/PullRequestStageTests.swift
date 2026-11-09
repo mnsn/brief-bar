@@ -304,6 +304,26 @@ import Testing
         #expect(Self.why(reading) == "‘Cart’ says it's ready")
     }
 
+    /// A session's Your review that followed one of yours, keeping no votes, counts only while that one of yours is there:
+    /// not on its own, as once you took yours away, nor under another of yours, which it didn't follow. A session's own,
+    /// with its votes, counts as any does.
+    @Test func aSessionsYourReviewThatFollowedYoursCountsOnlyWhileYoursIsThere() {
+        let facts = StageFacts(role: .author, votes: "")
+        let yours = StageMark(stage: .yourReview, at: t(10))
+        let followed = StageMark(stage: .yourReview, at: t(20), by: Self.cart)
+        #expect(followed.follows(yours))
+        #expect(StageRules.counted(yours: yours, theirs: [followed], facts: facts, sessions: []).theirs == [followed])
+        #expect(StageRules.counted(yours: nil, theirs: [followed], facts: facts, sessions: []).theirs.isEmpty)
+        let later = StageMark(stage: .yourReview, at: t(30))
+        #expect(!followed.follows(later))
+        #expect(StageRules.counted(yours: later, theirs: [followed], facts: facts, sessions: []).theirs.isEmpty)
+        let teammate = StageMark(stage: .teammateReview, at: t(5), votes: "")
+        #expect(StageRules.counted(yours: teammate, theirs: [followed], facts: facts, sessions: []).theirs.isEmpty)
+        let own = StageMark(stage: .yourReview, at: t(20), by: Self.cart, votes: "")
+        #expect(!own.follows(yours))
+        #expect(StageRules.counted(yours: nil, theirs: [own], facts: facts, sessions: []).theirs == [own])
+    }
+
     @Test func aSetTeammatesReviewEndsAsOthersVotesChange() {
         let mark = StageMark(stage: .teammateReview, at: t(100), votes: "0", commit: "a1b2c3d")
         #expect(StageRules.stands(mark, facts: StageFacts(role: .author, votes: "0", commit: "e4f5a6b"), sessions: []))

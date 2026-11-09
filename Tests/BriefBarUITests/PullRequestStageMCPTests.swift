@@ -218,7 +218,7 @@ private final class Announcements: Sendable {
     }
 
     /// A Your review where the latest stage set is a Your review the user set keeps no votes, saying so: it lasts as theirs
-    /// does, until it's changed, rather than end as someone else votes, and theirs with it as the latest set. Its own
+    /// does, while theirs is there, rather than end as someone else votes, and theirs with it as the latest set. Its own
     /// that did so is no later stage. Where a listed session's other stage came after theirs, it keeps its votes, as
     /// anywhere; so does another stage the user set too, which ends as theirs does anyway.
     @Test func aYourReviewAfterTheUsersLastsAsTheirsDoes() async throws {
@@ -247,8 +247,8 @@ private final class Announcements: Sendable {
         #expect(answer == """
             BriefBar shows !4093 and !4094 in contoso in Your review now, set by this session; the user sees who set it, \
             and can change it.
-            The user had set Your review on !4093 in contoso 2m ago already; yours lasts as theirs does, until it's \
-            changed, rather than end once someone else votes.
+            The user had set Your review on !4093 in contoso 2m ago already; yours lasts as theirs does, and goes \
+            with it, rather than end once someone else votes.
             """)
         #expect(Self.kept(listed)?.marks[Self.ref(4093)] == StageMark(stage: .yourReview, at: Self.now, by: Self.sessionRef))
         #expect(Self.kept(listed)?.marks[Self.ref(4094)]?.votes == "10")
@@ -259,8 +259,8 @@ private final class Announcements: Sendable {
         let unlisted = defaults()
         let both = try await Self.set(Self.tools(unlisted, listedSessions: [Self.sessionRef]), json)
         #expect(both.hasSuffix("""
-            The user had set Your review on !4094 in contoso 2m ago already; yours lasts as theirs does, until it's \
-            changed, rather than end once someone else votes.
+            The user had set Your review on !4094 in contoso 2m ago already; yours lasts as theirs does, and goes \
+            with it, rather than end once someone else votes.
             """))
         #expect(Self.kept(unlisted)?.marks.values.map(\.votes) == [nil, nil])
 
@@ -302,6 +302,35 @@ private final class Announcements: Sendable {
             """)
         #expect(Self.kept(defaults)?.marks[Self.ref(4093)] == StageMark(stage: .yourReview, at: Self.now, by: session, votes: ""))
         #expect(checks.withLock { $0 } == 2)
+    }
+
+    /// What the user set as the session read the pull request came after what the session says, and shows: the answer says
+    /// so, rather than that BriefBar shows the session's, or that it replaces theirs. A Your review the session sets there
+    /// keeps its votes, as anywhere, rather than follow theirs, so that it ends as someone else votes once theirs goes.
+    @Test func whatTheUserSetAsItReadThePullRequestShowsAsTheLater() async throws {
+        let defaults = Self.settings()
+        var marks = StageMarks()
+        _ = marks.set(StageMark(stage: .yourReview, at: Self.now + 30), of: Self.ref(4093), for: "robin@contoso.com", at: Self.now + 30)
+        _ = marks.set(
+            StageMark(stage: .teammateReview, at: Self.now + 30, votes: "10"), of: Self.ref(4094), for: "robin@contoso.com",
+            at: Self.now + 30
+        )
+        marks.save(to: defaults)
+        let tools = Self.tools(defaults)
+        let one = try await Self.set(tools, #"{"pull_requests": [4093], "organization": "contoso", "stage": "user_review"}"#)
+        #expect(one == """
+            The user set Your review on !4093 in contoso just now, after this session read it: BriefBar shows theirs, the \
+            later.
+            """)
+        #expect(Self.kept(defaults)?.marks[Self.ref(4093)] == StageMark(stage: .yourReview, at: Self.now, by: Self.sessionRef, votes: ""))
+
+        let two = try await Self.set(tools, #"{"pull_requests": [4094, 4100], "organization": "contoso", "stage": "user_review"}"#)
+        #expect(two == """
+            BriefBar shows !4100 in contoso in Your review now, set by this session; the user sees who set it, and can \
+            change it.
+            The user set Teammate's review on !4094 in contoso just now, after this session read it: BriefBar shows theirs, \
+            the later.
+            """)
     }
 
     /// Whether the stage the user set still stands, for them to put it back, is worked out as the app works it out, with

@@ -118,7 +118,7 @@ import Testing
         cartStage.set(StageMark(stage: .inProgress, at: now - 60), of: ref(4093))
         sessionStages.replace(cartStage)
         var archivedStage = SessionStage(session: archived)
-        archivedStage.set(StageMark(stage: .yourReview, at: now - 30), of: ref(4094))
+        archivedStage.set(StageMark(stage: .yourReview, at: now - 30, votes: ""), of: ref(4094))
         sessionStages.replace(archivedStage)
         let kept = OrderKept(
             orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: marks,
@@ -289,7 +289,7 @@ import Testing
         var marks = StageMarks()
         _ = marks.set(StageMark(stage: .teammateReview, at: now - 7_200, votes: ""), of: ref(4093), for: "robin@contoso.com", at: now)
         var cartStage = SessionStage(session: cart)
-        cartStage.set(StageMark(stage: .yourReview, at: now - 60), of: ref(4094))
+        cartStage.set(StageMark(stage: .yourReview, at: now - 60, votes: ""), of: ref(4094))
         let kept = OrderKept(
             orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: marks,
             sessionStages: SessionStages([cartStage])
