@@ -1,15 +1,36 @@
 import BriefBarCore
 import Foundation
+import Synchronization
 
 /// What every source's command-line modes are given.
 package struct CommandLineOptions: Sendable {
     package var arguments: [String]
     /// Made-up data instead of yours.
     package var demo: Bool
+    /// What sessions set in the demo's `--mcp`, which Pull Request Order's tools keep and Azure DevOps' read; nil without
+    /// the demo.
+    package let demoStages: DemoSessionStages?
 
     package init(arguments: [String], demo: Bool) {
         self.arguments = arguments
         self.demo = demo
+        demoStages = demo ? DemoSessionStages() : nil
+    }
+}
+
+/// The stages sessions set through the demo's `pull_request_stage`, which it keeps in memory: Azure DevOps' tools read
+/// them, as they read what the app keeps, so that `needs_me` and `pull_request` show them. Any thread reads and keeps them.
+package final class DemoSessionStages: Sendable {
+    private let kept = Mutex(SessionStages())
+
+    package init() {}
+
+    package var stages: SessionStages {
+        kept.withLock { $0 }
+    }
+
+    package func keep(_ stages: SessionStages) {
+        kept.withLock { $0 = stages }
     }
 }
 

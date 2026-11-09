@@ -34,7 +34,9 @@ import Testing
 
     /// Pull Request Order's tools, which `--demo --mcp` lists, as Pull Request Order is on there. Its own skill tells
     /// agents about them, not `/briefbar`, which leaves them out.
-    static let orderTools: Set<String> = ["order_pull_requests", "pull_request_order", "forget_pull_request_order"]
+    static let orderTools: Set<String> = [
+        "order_pull_requests", "pull_request_order", "forget_pull_request_order", "pull_request_stage",
+    ]
 
     /// What Pull Request Order's skill may name besides its tools, their arguments and values: the todos with dependencies
     /// that a session keeps.
@@ -45,8 +47,8 @@ import Testing
     static let updateTools: Set<String> = ["working_on", "changed_in_azure_devops"]
 
     /// What Updates from Copilot Sessions' skill may name besides its tools, their arguments and values: Pull Request
-    /// Order's tool, which it doesn't replace.
-    static let updatesVocabulary: Set<String> = ["briefbar", "order_pull_requests"]
+    /// Order's tools, which it doesn't replace.
+    static let updatesVocabulary: Set<String> = ["briefbar", "order_pull_requests", "pull_request_stage"]
 
     static func object(_ url: URL) throws -> [String: Any] {
         try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any], "\(url.path) isn't a JSON object")
@@ -153,6 +155,30 @@ import Testing
         #expect(refused.contains("stop there"))
         let told = try #require(points.first { $0.contains("best effort") })
         #expect(told.contains("only once `order_pull_requests` answered"))
+    }
+
+    /// The skill tells sessions to keep BriefBar current without being asked: the session that did the work tells its pull
+    /// requests' stages, as it pushes and as the user says they reviewed one, never Can merge, Waits or Merged; only the
+    /// session that owns the plan tells an order; what the user set is kept, unless they decided otherwise together; and a
+    /// story's pull requests go together by themselves, so sessions link each to its task and tell only a real order.
+    @Test func orderSkillTellsStagesAndKeepsWhatTheUserSet() throws {
+        let text = try String(contentsOf: Self.orderSkill, encoding: .utf8)
+        let description = try #require(text.components(separatedBy: "\n").first { $0.hasPrefix("description: ") })
+        #expect(description.contains("without being asked") && description.contains("each one's stage"))
+        let points = Self.points(in: text).map { $0.lowercased() }
+        #expect(points.contains { $0.hasPrefix("`user_review` at the end of a turn that pushed the work") })
+        #expect(points.contains { $0.hasPrefix("`in_progress` as you start fixing it again") })
+        #expect(points.contains { $0.hasPrefix("`teammate_review` once the user tells you they've reviewed it") })
+        #expect(points.contains { $0.hasPrefix("only the session that did the work") && $0.contains("azure devops' pull requests only") })
+        #expect(points.contains { $0.hasPrefix("never claim a pull request can merge, waits or merged") })
+        let owner = try #require(points.first { $0.hasPrefix("only the session that owns the plan tells it") })
+        #expect(owner.contains("never tells an order"))
+        let kept = try #require(points.first { $0.contains("what the user changed") })
+        #expect(kept.contains("keep it") && kept.contains("unless you and the user decided otherwise"))
+        // A story's pull requests go together by themselves: sessions link each to its task, and tell only a real order.
+        let stories = try #require(points.first { $0.contains("one story's tasks together") })
+        #expect(stories.contains("link each pull request to its task"))
+        #expect(points.contains { $0.hasPrefix("tell an order for them only where they must merge in another order") })
     }
 
     /// Updates from Copilot Sessions' plugin holds only its skill, which BriefBar installs only once you turn it on: until
@@ -305,6 +331,12 @@ import Testing
 
     /// The tools that the built `BriefBar --demo --mcp` lists to an agent, started plainly, as an agent starts it.
     static func listedTools() async throws -> [[String: Any]] {
+        try await demoServer().tools
+    }
+
+    /// What the built `BriefBar --demo --mcp` tells an agent as it starts, started plainly, as an agent starts it: its
+    /// instructions, and the tools it lists.
+    static func demoServer() async throws -> (instructions: String, tools: [[String: Any]]) {
         let binary = Bundle(for: Marker.self).bundleURL.deletingLastPathComponent().appendingPathComponent("BriefBar")
         try #require(FileManager.default.isExecutableFile(atPath: binary.path), "Build BriefBar first (swift build): \(binary.path)")
         let copilot = try makeTemporaryDirectory()
@@ -319,14 +351,23 @@ import Testing
             environment: ["PATH": "/usr/bin:/bin", "HOME": copilot.path, "BRIEFBAR_COPILOT_DIR": copilot.path],
             input: Data((messages.joined(separator: "\n") + "\n").utf8)
         )
+        var instructions: String?
+        var tools: [[String: Any]]?
         for line in answer.split(separator: 0x0A) {
             guard let message = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
-                  message["id"] as? Int == 2, let result = message["result"] as? [String: Any]
+                  let result = message["result"] as? [String: Any]
             else { continue }
-            return try #require(result["tools"] as? [[String: Any]])
+            switch message["id"] as? Int {
+            case 1: instructions = result["instructions"] as? String
+            case 2: tools = result["tools"] as? [[String: Any]]
+            default: break
+            }
         }
-        Issue.record("BriefBar --demo --mcp didn't list its tools: \(String(decoding: answer, as: UTF8.self))")
-        return []
+        guard let instructions, let tools else {
+            Issue.record("BriefBar --demo --mcp didn't start and list its tools: \(String(decoding: answer, as: UTF8.self))")
+            return ("", [])
+        }
+        return (instructions, tools)
     }
 
     /// Runs a program the usual way, attributed to this process, gives it `input`, and returns what it printed once it
@@ -378,16 +419,34 @@ import Testing
         #expect(missing.isEmpty, "The skill doesn't mention \(missing.sorted())")
     }
 
-    /// Pull Request Order's skill names only its tools, what they take, and a session's todos, and tells agents about
-    /// every one of its tools.
+    /// `--mcp`'s instructions, while Pull Request Order's tools are listed, as in the demo, tell sessions to keep BriefBar
+    /// current without being asked, a pull request's stage once they've pushed its work included; and that a story's pull
+    /// requests go together by themselves, so they link each to its task and tell only a real order.
+    @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    func instructionsAskForStagesAndTellOfStories() async throws {
+        let instructions = try await Self.demoServer().instructions
+        #expect(instructions.contains("Keep BriefBar current on your pull requests without being asked"))
+        #expect(instructions.contains("after you push a pull request's work, tell its stage with pull_request_stage, user_review"))
+        #expect(instructions.contains(
+            "one story's tasks together by itself, in the tasks' backlog order: link each to its task as you open it, and tell "
+                + "an order only where they must merge in another order, or wait for one another."
+        ))
+    }
+
+    /// Pull Request Order's skill names only its tools, what they take, a session's todos and the tools that tell a story,
+    /// which BriefBar lists too, and tells agents about every one of its tools.
     @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
     func orderSkillNamesOnlyItsTools() async throws {
-        let tools = try await Self.listedTools().filter { Self.orderTools.contains($0["name"] as? String ?? "") }
+        let listed = try await Self.listedTools()
+        let tools = listed.filter { Self.orderTools.contains($0["name"] as? String ?? "") }
         #expect(Set(tools.compactMap { $0["name"] as? String }) == Self.orderTools)
         let arguments = tools.reduce(into: Set<String>()) { $0.formUnion(Self.vocabulary(of: $1["inputSchema"])) }
         let text = try String(contentsOf: Self.orderSkill, encoding: .utf8)
         let named = Set(text.matches(of: /`([a-z][a-z0-9_]*)`/).map { String($0.output.1) })
+        let storyTools: Set<String> = ["pull_request", "work_item"]
+        #expect(storyTools.isSubset(of: Set(listed.compactMap { $0["name"] as? String })))
         let unknown = named.subtracting(Self.orderTools).subtracting(arguments).subtracting(Self.orderVocabulary)
+            .subtracting(storyTools)
         #expect(unknown.isEmpty, "Pull Request Order's skill names what its tools don't have: \(unknown.sorted())")
         let missing = Self.orderTools.filter { !text.contains("`\($0)`") }
         #expect(missing.isEmpty, "Pull Request Order's skill doesn't mention \(missing.sorted())")

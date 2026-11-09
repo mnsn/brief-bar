@@ -173,12 +173,15 @@ public struct StageFacts: Equatable, Sendable {
     public var isListed: Bool
     /// Someone else's: who opened it, by their first name, such as "Priya", as its row names them: they ask for its reviews.
     public var author: String?
+    /// When its source read what it says of it, when it says: a stage set since, such as by a session that read it again
+    /// itself, isn't ended by its votes or its commit until its source reads it again (`StageRules.stands`).
+    public var readAt: Date?
 
     public init(
         role: Role, state: PullRequestState = .open, failure: String? = nil, changesWanted: String? = nil, asksYou: String? = nil,
         isReady: Bool = false, autoComplete: Bool = false, leftAfterReviews: String? = nil, waitingFor: String? = nil,
         othersVoted: Bool = false, youWantChanges: String? = nil, votes: String = "", commit: String? = nil,
-        sessions: [StageSession] = [], since: Date? = nil, isListed: Bool = true, author: String? = nil
+        sessions: [StageSession] = [], since: Date? = nil, isListed: Bool = true, author: String? = nil, readAt: Date? = nil
     ) {
         self.role = role
         self.state = state
@@ -197,6 +200,7 @@ public struct StageFacts: Equatable, Sendable {
         self.since = since
         self.isListed = isListed
         self.author = author
+        self.readAt = readAt
     }
 
     public var isYours: Bool { role == .author }
@@ -426,10 +430,13 @@ public enum StageRules {
     /// - Parameters:
     ///   - sessions: every Copilot session on it, its source's and the Copilot app's, each once.
     ///   - marks: what you and sessions set, in any order: the latest decides, while it stands (`stands`).
+    ///   - setters: what the sessions that set them do now, as the sources list them, on it or not (`stands`).
     /// - Returns: nil for one that isn't on your board, such as someone else's you approved, or one closed without merging.
     ///   On yours, a failed build or merge is said too, after the reason of a session or a stage you set that decides it.
-    public static func reading(facts: StageFacts, sessions: [StageSession], marks: [StageMark], order: StageOrder) -> StageReading? {
-        guard var reading = decided(facts: facts, sessions: sessions, marks: marks, order: order) else { return nil }
+    public static func reading(
+        facts: StageFacts, sessions: [StageSession], marks: [StageMark], order: StageOrder, setters: [ItemRef: StageSession] = [:]
+    ) -> StageReading? {
+        guard var reading = decided(facts: facts, sessions: sessions, marks: marks, order: order, setters: setters) else { return nil }
         if facts.isYours, facts.state.isOpen, let failure = facts.failure, reading.why != .failing(failure) {
             reading.alsoFailing = failure
         }
@@ -437,10 +444,12 @@ public enum StageRules {
     }
 
     /// The first rule that applies.
-    private static func decided(facts: StageFacts, sessions: [StageSession], marks: [StageMark], order: StageOrder) -> StageReading? {
+    private static func decided(
+        facts: StageFacts, sessions: [StageSession], marks: [StageMark], order: StageOrder, setters: [ItemRef: StageSession]
+    ) -> StageReading? {
         if facts.state == .merged { return StageReading(stage: .merged, why: .merged, since: facts.since) }
         guard facts.state.isOpen else { return nil }
-        let (mark, replaced) = standingMark(marks, facts: facts, sessions: sessions)
+        let (mark, replaced) = standingMark(marks, facts: facts, sessions: sessions, setters: setters)
 
         // A session at work on it now, since after what was set. On yours, one writing it puts it in progress: one that
         // waits for you first, else the latest to start. Never on someone else's: there, only a review, such as Copilot's
@@ -500,37 +509,74 @@ public enum StageRules {
 
     /// The latest of what was set, while it stands, and yours when a session's later change replaced it with another stage.
     /// Once the latest ends, none of them counts: BriefBar works the stage out again.
-    static func standingMark(_ marks: [StageMark], facts: StageFacts, sessions: [StageSession]) -> (StageMark?, StageMark?) {
-        guard let latest = marks.max(by: { $0.at < $1.at }), stands(latest, facts: facts, sessions: sessions) else { return (nil, nil) }
+    static func standingMark(
+        _ marks: [StageMark], facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
+    ) -> (StageMark?, StageMark?) {
+        guard let latest = marks.max(by: { $0.at < $1.at }), stands(latest, facts: facts, sessions: sessions, setters: setters)
+        else { return (nil, nil) }
         guard !latest.isYours, let yours = marks.filter(\.isYours).max(by: { $0.at < $1.at }), yours.stage != latest.stage
         else { return (latest, nil) }
         return (latest, yours)
     }
 
-    /// A stage you set now, keeping of what it was set over only what `stands` reads to end it: the commit, for In
-    /// progress, and for Teammate's review on someone else's; the votes, for Teammate's review alone, on yours how many of
-    /// each others cast, on someone else's your own vote. Your review keeps neither.
-    public static func mark(_ stage: PullRequestStage, at date: Date, facts: StageFacts) -> StageMark {
-        let keepsCommit = stage == .inProgress || (stage == .teammateReview && !facts.isYours)
-        return StageMark(stage: stage, at: date, votes: stage == .teammateReview ? facts.votes : nil, commit: keepsCommit ? facts.commit : nil)
+    /// What you and the sessions set on a pull request that counts now (`reading`'s marks): yours while it stands, and
+    /// the sessions', while the latest of them all stands and the pull request is open. Once the latest ends, or it merged
+    /// or closed, none counts, and `latestEnded` says so, for what keeps them to end them all, so that an older one never
+    /// comes back.
+    /// - Parameters:
+    ///   - theirs: what the sessions the sources list set on it (`SessionStages.marks`).
+    ///   - setters: what those sessions do now, on it or not (`stands`).
+    public static func counted(
+        yours: StageMark?, theirs: [StageMark], facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
+    ) -> (yours: StageMark?, theirs: [StageMark], latestEnded: Bool) {
+        let latest = ([yours].compactMap { $0 } + theirs).max { $0.at < $1.at }
+        let latestEnded = !facts.state.isOpen || latest.map { !stands($0, facts: facts, sessions: sessions, setters: setters) } == true
+        let mine = yours.flatMap { latestEnded || !stands($0, facts: facts, sessions: sessions, setters: setters) ? nil : $0 }
+        return (mine, latestEnded ? [] : theirs, latestEnded)
     }
 
-    /// Whether a stage set still stands, as the pull request moved on since (plan §2.4). A later change replaces it, which
-    /// `standingMark` sees to, and merging or closing it ends it, which comes first anyway. A set In progress ends when a
-    /// session writing it finishes, or new commits come, after it was set: a review's end ends nothing. A set Teammate's
-    /// review ends when its votes change (`StageFacts.votes`): on yours, the votes others cast; on someone else's that you
-    /// finished reviewing, your own vote, and new commits. A set Your review stands until it's changed: BriefBar can't tell
-    /// you reviewed it.
-    public static func stands(_ mark: StageMark, facts: StageFacts, sessions: [StageSession]) -> Bool {
-        let newCommits = mark.commit != nil && facts.commit != nil && mark.commit != facts.commit
+    /// A stage you or a session set now, keeping of what it was set over only what `stands` reads to end it: the
+    /// commit, for In progress, and for Teammate's review on someone else's; the votes, on yours how many of each
+    /// others cast, on someone else's your own vote, for Teammate's review, and for Your review a session set. Your
+    /// own Your review keeps neither.
+    /// - Parameter session: the session that set it, nil for you.
+    public static func mark(
+        _ stage: PullRequestStage, at date: Date, facts: StageFacts, by session: ItemRef? = nil
+    ) -> StageMark {
+        let keepsCommit = stage == .inProgress || (stage == .teammateReview && !facts.isYours)
+        let keepsVotes = stage == .teammateReview || (stage == .yourReview && session != nil)
+        let votes = keepsVotes ? facts.votes : nil
+        return StageMark(stage: stage, at: date, by: session, votes: votes, commit: keepsCommit ? facts.commit : nil)
+    }
+
+    /// Whether a stage set still stands, as the pull request moved on since (plan §2.4). A later change replaces it,
+    /// which `standingMark` sees to, and merging or closing it ends it, which comes first anyway. A set In progress
+    /// ends when a session writing it finishes, or new commits come, after it was set: a review's end ends nothing. A
+    /// set Teammate's review ends when its votes change (`StageFacts.votes`): on yours, the votes others cast; on
+    /// someone else's that you finished reviewing, your own vote, and new commits. A Your review you set stands until
+    /// it's changed: BriefBar can't tell you reviewed it. One a session set ends as its votes change, as Teammate's
+    /// review does: it said its work was ready for you, as ‘Cart’ finished does, which gives way once someone else
+    /// votes, so that one approved and ready to complete moves on to Can merge or Waits. Votes and commits count only
+    /// as its source read them after it was set, when it says when it read them (`StageFacts.readAt`): a session that
+    /// read the pull request itself, just now, may have seen what its source hasn't yet. A session's own In progress
+    /// ends as that session finishes too, whether or not BriefBar sees it on the pull request otherwise: it was writing
+    /// it.
+    /// - Parameter setters: what the sessions that set stages do now, as the sources list them, by their references.
+    public static func stands(
+        _ mark: StageMark, facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
+    ) -> Bool {
+        let readSince = facts.readAt.map { $0 >= mark.at } ?? true
+        let newCommits = readSince && mark.commit != nil && facts.commit != nil && mark.commit != facts.commit
         switch mark.stage {
         case .inProgress:
+            let writing = sessions + [mark.by.flatMap { setters[$0] }].compactMap { $0 }
             return !newCommits
-                && !sessions.contains { !$0.isReview && $0.activity == .finished && ($0.since ?? .distantPast) > mark.at }
+                && !writing.contains { !$0.isReview && $0.activity == .finished && ($0.since ?? .distantPast) > mark.at }
         case .teammateReview:
-            if let votes = mark.votes, votes != facts.votes { return false }
+            if readSince, let votes = mark.votes, votes != facts.votes { return false }
             return facts.isYours || !newCommits
         case .yourReview:
+            if !mark.isYours, readSince, let votes = mark.votes, votes != facts.votes { return false }
             return true
         case .canMerge, .waits, .merged:
             return false
@@ -609,9 +655,14 @@ public enum StageText {
     ///   - name: what the sources call a session, when they say.
     ///   - separator: before the failure: ", " for VoiceOver, which reads it as a pause.
     public static func why(_ reading: StageReading, name: (ItemRef) -> String?, then separator: String = " · ") -> String {
-        let words = reason(reading, name: name)
-        guard let failing = reading.alsoFailing, let first = failing.first else { return words }
-        return words + separator + first.lowercased() + failing.dropFirst()
+        reason(reading, name: name) + alsoFailing(reading, then: separator)
+    }
+
+    /// What fails too, after why it's in its stage, where something else decides its stage: " · build failed"; nothing
+    /// when nothing does.
+    public static func alsoFailing(_ reading: StageReading, then separator: String = " · ") -> String {
+        guard let failing = reading.alsoFailing, let first = failing.first else { return "" }
+        return separator + first.lowercased() + failing.dropFirst()
     }
 
     private static func reason(_ reading: StageReading, name: (ItemRef) -> String?) -> String {
@@ -639,25 +690,38 @@ public enum StageText {
         }
     }
 
-    /// Who set it, and how long ago, when someone did: "You set it 2h ago", "‘Cart’ set it 5m ago, after you".
+    /// Who set it, and how long ago, when someone did: "You set it 2h ago", "‘Cart’ set it 5m ago, after you"; only when,
+    /// where why it's in its stage names the session already (`namesWhoSetIt`): "set 5m ago", after "‘Cart’ says it's
+    /// ready".
     public static func who(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String? {
         guard let mark = reading.mark else { return nil }
-        var words = setter(mark, name: name) + " set it " + agoWords(mark.at, now: now)
+        var words = (namesWhoSetIt(reading) ? "set " : setter(mark, name: name) + " set it ") + agoWords(mark.at, now: now)
         if reading.replaced != nil { words += ", after you" }
         return words
     }
 
-    /// The same, as VoiceOver says it: "set by you 2 hours ago", "set by BriefBar".
+    /// The same, as VoiceOver says it: "set by you 2 hours ago", "worked out by BriefBar"; "set 5 minutes ago" where why
+    /// it's in its stage names the session.
     public static func spokenWho(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String {
         guard let mark = reading.mark else { return "worked out by BriefBar" }
-        let who = mark.by.map { "set by \(quoted($0, name: name))" } ?? "set by you"
+        let who = namesWhoSetIt(reading) ? "set" : mark.by.map { "set by \(quoted($0, name: name))" } ?? "set by you"
         return who + " " + Elapsed.spoken(since: mark.at, now: now) + " ago" + (reading.replaced != nil ? ", after you" : "")
     }
 
-    /// For its tooltip, and its menu's first line: "Your review: ‘Cart’ finished. Worked out by BriefBar."
+    /// For its tooltip, and its menu's first line: "Your review: ‘Cart’ finished. Worked out by BriefBar.", "Your review:
+    /// ‘Cart’ says it's ready. Set 5m ago."
     public static func sentence(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String {
-        let who = reading.mark.map { setter($0, name: name) + " set it " + agoWords($0.at, now: now) } ?? "Worked out by BriefBar"
+        let who = reading.mark.map { mark in
+            (namesWhoSetIt(reading) ? "Set " : setter(mark, name: name) + " set it ") + agoWords(mark.at, now: now)
+        } ?? "Worked out by BriefBar"
         return "\(reading.stage.title): \(why(reading, name: name)). \(who)."
+    }
+
+    /// Whether why it's in its stage names the session that set it, as `reason` words a session's Your review and In
+    /// progress: "‘Cart’ says it's ready", "‘Cart’ is on it". Who set it then says only when, so the session isn't named
+    /// twice.
+    public static func namesWhoSetIt(_ reading: StageReading) -> Bool {
+        reading.why == .set && reading.mark?.by != nil && (reading.stage == .yourReview || reading.stage == .inProgress)
     }
 
     /// "You set it 2h ago" for Put Yours Back: "Put Yours Back: Teammate's review, 2h ago".
@@ -742,7 +806,8 @@ public enum StageText {
         name(session).map { "‘\($0)’" } ?? "A Copilot session"
     }
 
-    static func agoWords(_ date: Date, now: Date) -> String {
+    /// "just now", "5m ago".
+    public static func agoWords(_ date: Date, now: Date) -> String {
         let short = Elapsed.short(since: date, now: now)
         return short == "now" ? "just now" : short + " ago"
     }

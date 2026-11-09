@@ -253,7 +253,10 @@ final class AgentsModel: ObservableObject {
     // MARK: Skills that come with a setting
 
     /// Pull Request Order is on, in Settings › Pull Requests.
-    var isOrderOn: Bool { PullRequestOrderSetting.isOn(in: defaults) }
+    var isOrderOn: Bool { renderedOrder ?? PullRequestOrderSetting.isOn(in: defaults) }
+
+    /// For `--render`: Pull Request Order as the picture shows it, without turning it on or off.
+    private var renderedOrder: Bool?
 
     /// Updates from Copilot Sessions is on, on this page.
     var areSessionUpdatesOn: Bool {
@@ -265,7 +268,10 @@ final class AgentsModel: ObservableObject {
 
     /// Whether a setting with a skill is on.
     func isOn(_ skill: SettingSkill) -> Bool {
-        skill == .updates ? areSessionUpdatesOn : skill.isOn(in: defaults)
+        switch skill {
+        case .order: isOrderOn
+        case .updates: areSessionUpdatesOn
+        }
     }
 
     /// BriefBar asked the Copilot CLI to add Pull Request Order's skill, and the CLI hasn't said since that it's gone: kept
@@ -586,9 +592,9 @@ final class AgentsModel: ObservableObject {
     }
 
     /// For `--render`: agents on, BriefBar added to the Copilot CLI and its plugins not installed yet, or the extension
-    /// for the app's sessions installed, or as they were, without saving any of it: `--render` keeps the preferences
-    /// in memory.
-    func useForRendering(on: Bool, sessionPrompts: Bool = false, sessionUpdates: Bool = false) {
+    /// for the app's sessions installed, and the skills of Updates from Copilot Sessions and Pull Request Order, or as
+    /// they were, without saving any of it: `--render` keeps the preferences in memory.
+    func useForRendering(on: Bool, sessionPrompts: Bool = false, sessionUpdates: Bool = false, order: Bool = false) {
         state = on ? .on : AgentAccess.state(in: defaults)
         serverProgress = CopilotCLIProgress(status: on ? .added(enabled: true) : nil)
         pluginProgress = CopilotCLIProgress(status: on ? .absent : nil)
@@ -596,6 +602,8 @@ final class AgentsModel: ObservableObject {
         if on { CopilotSessionPrompts.set(sessionPrompts, in: defaults) }
         renderedSessionUpdates = on ? sessionUpdates : nil
         skillProgress[.updates] = CopilotCLIProgress(status: on && sessionUpdates ? .installed(enabled: true) : nil)
+        renderedOrder = on && order ? true : nil
+        if on && order { skillProgress[.order] = CopilotCLIProgress(status: .installed(enabled: true)) }
     }
 
     /// For `--render`: agents just turned off, and the Copilot CLI couldn't remove the plugin, without saving either.
@@ -787,14 +795,14 @@ struct AgentsDescriptionBox: View {
     var body: some View {
         DescriptionBox(entries: [
             .init(title: "What agents get", symbol: "text.bubble", text: """
-                What needs you, from the sources that are on: your pull requests, one at a time with its comment threads \
-                word for word and, with Send Work to Copilot on, the Copilot session BriefBar sends its work to, your \
-                pipelines and sprint, a work item with its description, latest comments, the pull requests linked to it and \
-                the Copilot sessions on those, with what Copilot recorded of their work, the work BriefBar sent to Copilot, \
-                and your Copilot sessions. They can wait on one of your pull requests, for up to two hours, until its next \
+                What needs you, from the sources that are on: your pull requests, one at a time with its work items and \
+                their story, its comment threads word for word and, with Send Work to Copilot on, the Copilot session \
+                BriefBar sends its work to, your pipelines and sprint, a work item with its description, latest comments, \
+                its tasks with their pull requests, the pull requests linked to it and the Copilot sessions on those, with \
+                what Copilot recorded of their work, the work BriefBar sent to Copilot, and your Copilot sessions. They can wait on one of your pull requests, for up to two hours, until its next \
                 build passes or fails, comments wait on you, or it has merge conflicts. With Pull Request Order on, the \
-                orders sessions told BriefBar their pull requests merge in. Never your Teams chats or your pull requests on \
-                GitHub.
+                orders sessions told BriefBar their pull requests merge in, with what you changed in them, and your Azure \
+                DevOps pull requests' stages, with who set them. Never your Teams chats or your pull requests on GitHub.
                 """),
             .init(title: "Where it goes", symbol: "network", text: """
                 To the agent that asks, and its model, which may run in the cloud. Titles, comments and Copilot's notes \
@@ -802,9 +810,10 @@ struct AgentsDescriptionBox: View {
                 """),
             .init(title: "What agents can change", symbol: "slider.horizontal.3", text: """
                 Only which pull requests BriefBar watches and which pipelines it pins; with Pull Request Order on, the \
-                orders it keeps; and, with \(SessionUpdatesText.title) on, what each session works on and the pull \
-                requests it opened, as BriefBar shows them, and how soon BriefBar reads Azure DevOps again. Nothing in \
-                Azure DevOps or on GitHub: BriefBar gives agents no way to change them.
+                orders and stages it keeps, never what you changed in a mission; and, with \(SessionUpdatesText.title) \
+                on, what each session works on and the pull requests it opened, as BriefBar shows them, and how soon \
+                BriefBar reads Azure DevOps again. Nothing in Azure DevOps or on GitHub: BriefBar gives agents no way to \
+                change them.
                 """),
         ])
     }
@@ -1256,7 +1265,7 @@ enum SettingSkill: CaseIterable {
     /// What it tells sessions, in a sentence's end.
     var purpose: String {
         switch self {
-        case .order: return "it tells the ones that open pull requests together when to tell BriefBar their order."
+        case .order: return "it tells the ones that open pull requests when to tell BriefBar their order and each one's stage."
         case .updates: return "it tells them when to tell BriefBar what they work on and what they changed in Azure DevOps."
         }
     }

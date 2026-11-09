@@ -97,6 +97,48 @@ import Testing
         #expect(CopilotSending(item: listed, record: try #require(prs.record(for: listed.key)), store: prs, copilot: copilot, session: nil).isOpen)
     }
 
+    /// While Pull Request Order is on, what BriefBar sends to change code ends asking the session to tell BriefBar the pull
+    /// request's stage once it pushed: a fix sent in place, and a work item sent with Send With, as it is; while it's off,
+    /// neither does.
+    @Test func whatChangesCodeAsksForTheStageWhilePullRequestOrderIsOn() async throws {
+        let prs = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
+        await prs.loadOnce()
+        let item = try #require(prs.items.first { prs.record(for: $0.key)?.role == .author })
+        let record = try #require(prs.record(for: item.key))
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        let workItem = WorkItem(id: 7, organization: "contoso", project: "Storefront", type: "Bug", title: "Totals", state: "New", category: .proposed)
+        settings.copilotRepositories[workItem.copilotTask.reference.projectKey] = "/tmp/storefront"
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        copilot.useEnvironment(["COPILOT_HOME": "/nonexistent"])
+        copilot.appHomeForTests = URL(fileURLWithPath: "/nonexistent/copilot-app", isDirectory: true)
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: false)
+        copilot.services = services
+        final class Sent { var prompts: [String] = [] }
+        let sent = Sent()
+        copilot.launchForTests = { request, _, _ in
+            sent.prompts.append(request.prompt)
+            throw CancellationError()
+        }
+        let sending = CopilotSending(item: item, record: record, store: prs, copilot: copilot, session: nil)
+        let fix = CopilotSending.Fix(prompts: ("Resolve them.", "Resolve them."), action: .resolveConflicts, parts: [.conflicts], handOff: nil)
+        let line = "\n\n" + PromptTemplate.stageLine
+        let rendered = PromptTemplate.render(settings.copilotPromptTemplate, item: workItem.copilotTask)
+
+        for on in [true, false] {
+            services.pullRequestOrder.setOn(on)
+            sent.prompts = []
+            #expect(await sending.fix(fix, to: .fork(task), choice: taskChoice()).outcome == .sent)
+            copilot.quickSend(workItem, options: CopilotModel.standard)
+            for _ in 0..<200 where sent.prompts.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(Set(sent.prompts) == (on ? ["Resolve them." + line, rendered + line] : ["Resolve them.", rendered]))
+        }
+        // Nor does a review, which changes nothing.
+        services.pullRequestOrder.setOn(true)
+        let review = CopilotSending.Fix(prompts: ("Review it.", "Review it."), action: .review, parts: [], handOff: nil)
+        #expect(review.sent(asksForStage: true) == ("Review it.", "Review it."))
+    }
+
     /// A thread's fix keeps the change suggested in it that it applies as written, for Try Again to apply it again, and
     /// none when it doesn't apply one.
     @Test func aThreadsFixKeepsTheSuggestionItApplies() async throws {

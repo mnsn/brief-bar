@@ -45,7 +45,7 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
         let view = CopilotComposerView(
             subject: subject, options: options, template: store.settings.copilotPromptTemplate, prompt: prompt,
             sessionPrompt: sessionPrompt, createdAt: createdAt, continuing: continuing, handOff: handOff, start: start, parts: parts,
-            sending: { [weak self] sending in
+            asksForStage: store.asksForStage, sending: { [weak self] sending in
                 guard self?.shown == task else { return sending.cancel() }
                 self?.sending = sending
             }
@@ -137,6 +137,9 @@ struct CopilotComposerView: View {
     let parts: [PullRequestPart]
     /// A work item's prompt for a new session, with placeholders, from Settings.
     let template: String
+    /// Its prompt ends asking the session to tell BriefBar the pull request's stage once it pushed, as Pull Request Order
+    /// does while it's on (`PromptTemplate.stageLine`), unless it's a review.
+    let asksForStage: Bool
     /// A pull request's prompts: for a worktree of BriefBar's, and for a session that works wherever it is.
     let worktreePrompt: String?
     let sessionPrompt: String?
@@ -198,13 +201,15 @@ struct CopilotComposerView: View {
     ///     `--render`, which finds nothing.
     ///   - start: where it goes to begin with, as a composer in place chose it, which BriefBar's suggestions don't change.
     ///   - parts: what of the pull request it takes on, its threads, builds or conflicts.
+    ///   - asksForStage: Pull Request Order is on: its prompt ends asking for the stage, unless it's a review's.
     init(
         subject: TaskSubject, options: CopilotRunOptions, template: String, prompt: String? = nil, sessionPrompt: String? = nil,
         createdAt: Date? = nil, continuing: CopilotRun? = nil, handOff: CommentHandOff? = nil,
         session: (choice: SessionChoice, reach: SessionReach?)? = nil, start: ComposerStart? = nil, parts: [PullRequestPart] = [],
-        sending: @escaping (Task<Void, Never>) -> Void = { _ in }, close: @escaping () -> Void
+        asksForStage: Bool = false, sending: @escaping (Task<Void, Never>) -> Void = { _ in }, close: @escaping () -> Void
     ) {
         self.subject = subject
+        self.asksForStage = asksForStage
         self.continuing = continuing
         self.handOff = handOff
         self.parts = parts
@@ -244,7 +249,7 @@ struct CopilotComposerView: View {
         }
         let filledIn = CopilotComposerView.writtenPrompt(
             for: initial, subject: subject, template: template, worktreePrompt: prompts.worktree, sessionPrompt: prompts.session,
-            baseBranch: nil, forks: delivery.forks
+            baseBranch: nil, forks: delivery.forks, asksForStage: asksForStage
         )
         _target = LocalState(wrappedValue: initial)
         _choseTarget = LocalState(wrappedValue: start != nil)
@@ -260,26 +265,32 @@ struct CopilotComposerView: View {
     /// worktree, with its base branch once known; or BriefBar's own for a session that's there already, which checks where
     /// it works first. A pull request's: for a worktree of BriefBar's, detached at its latest commit, for a new session or
     /// an earlier task's in such a worktree; or for wherever the session works otherwise, as the Copilot app's sessions
-    /// and the work item's task that opened it do.
-    /// - Parameter forks: it goes to a fork of the session, which works in a checkout of its own, wherever that is.
+    /// and the work item's task that opened it do. Each but a review's ends asking the session to tell BriefBar the pull
+    /// request's stage once it pushed, while Pull Request Order is on.
+    /// - Parameters:
+    ///   - forks: it goes to a fork of the session, which works in a checkout of its own, wherever that is.
+    ///   - asksForStage: Pull Request Order is on.
     static func writtenPrompt(
         for choice: SessionChoice?, subject: TaskSubject, template: String, worktreePrompt: String?, sessionPrompt: String?,
-        baseBranch: String?, forks: Bool = false
+        baseBranch: String?, forks: Bool = false, asksForStage: Bool = false
     ) -> String {
-        switch subject {
-        case .workItem(let item):
-            guard choice != nil else { return PromptTemplate.render(template, item: item, baseBranch: baseBranch) }
-            return PromptTemplate.render(PromptTemplate.existingSession, item: item)
-        case .pullRequest:
-            let worktree = worktreePrompt ?? ""
-            guard let choice, let sessionPrompt else { return worktree }
-            if let run = choice.run, run.worksInPullRequestWorktree, !forks { return worktree }
-            return sessionPrompt
+        func written() -> String {
+            switch subject {
+            case .workItem(let item):
+                guard choice != nil else { return PromptTemplate.render(template, item: item, baseBranch: baseBranch) }
+                return PromptTemplate.render(PromptTemplate.existingSession, item: item)
+            case .pullRequest:
+                let worktree = worktreePrompt ?? ""
+                guard let choice, let sessionPrompt else { return worktree }
+                if let run = choice.run, run.worksInPullRequestWorktree, !forks { return worktree }
+                return sessionPrompt
+            }
         }
+        return PromptTemplate.ending(written(), asksForStage: asksForStage && subject.asksForStage)
     }
 
-    init(item: TaskWorkItem, options: CopilotRunOptions, template: String, close: @escaping () -> Void) {
-        self.init(subject: .workItem(item), options: options, template: template, close: close)
+    init(item: TaskWorkItem, options: CopilotRunOptions, template: String, asksForStage: Bool = false, close: @escaping () -> Void) {
+        self.init(subject: .workItem(item), options: options, template: template, asksForStage: asksForStage, close: close)
     }
 
     private var workItem: TaskWorkItem? {
@@ -1010,7 +1021,7 @@ struct CopilotComposerView: View {
     private func refreshPrompt() {
         let written = Self.writtenPrompt(
             for: target, subject: subject, template: template, worktreePrompt: worktreePrompt, sessionPrompt: sessionPrompt,
-            baseBranch: repository?.baseBranch, forks: delivery.forks
+            baseBranch: repository?.baseBranch, forks: delivery.forks, asksForStage: asksForStage
         )
         (prompt, filledIn) = Self.rewritten(prompt: prompt, filledIn: filledIn, written: written)
     }

@@ -19,7 +19,7 @@
     },
     {
       "name": "briefbar-pr-order",
-      "description": "Lets the sessions that open pull requests together tell BriefBar the order those must merge in: Pull Request Order, in BriefBar's Settings.",
+      "description": "Lets the sessions that open pull requests tell BriefBar the order those that go together must merge in, and each one's stage: Pull Request Order, in BriefBar's Settings.",
       "source": "./briefbar-pr-order"
     },
     {

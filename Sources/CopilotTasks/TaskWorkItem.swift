@@ -198,6 +198,10 @@ public enum PullRequestAction: String, Sendable, Codable, CaseIterable {
         case .review, .pushAndReply: return false
         }
     }
+
+    /// Whether its prompt ends asking the session to tell BriefBar the pull request's stage once it pushed, while Pull
+    /// Request Order is on (`PromptTemplate.stageLine`): all but a review, which changes nothing.
+    public var asksForStage: Bool { self != .review }
 }
 
 /// What a task is about.
@@ -209,6 +213,13 @@ public enum TaskSubject: Sendable, Equatable {
     var deniedTools: [String] {
         if case .pullRequest(_, let action) = self { return action.deniedTools }
         return []
+    }
+
+    /// Whether its prompt ends asking the session to tell BriefBar the pull request's stage once it pushed, while Pull
+    /// Request Order is on: a work item's, whose task opens one, and a pull request's but a review's.
+    public var asksForStage: Bool {
+        if case .pullRequest(_, let action) = self { return action.asksForStage }
+        return true
     }
 
     /// The worktree's folder name: `wi-<id>` or `pr-<id>`.

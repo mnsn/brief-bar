@@ -80,14 +80,95 @@ package enum MCPRelated {
         /// BriefBar counts only while they're listed, as Show Links shows it (`SessionReports.links`). Nil for a source
         /// with no sessions.
         package var sessions: (@Sendable () async throws -> SessionReports.Listing)?
+        /// Its sessions, as pull requests' stages and missions need them, as it tells Pull Request Order in the app; nil
+        /// for a source with no sessions.
+        package var stageSessions: (@Sendable () async throws -> StageSessions)?
 
         package init(
             title: String, tell: @escaping @Sendable (Query) async throws -> [Item],
-            sessions: (@Sendable () async throws -> SessionReports.Listing)? = nil
+            sessions: (@Sendable () async throws -> SessionReports.Listing)? = nil,
+            stageSessions: (@Sendable () async throws -> StageSessions)? = nil
         ) {
             self.title = title
             self.tell = tell
             self.sessions = sessions
+            self.stageSessions = stageSessions
+        }
+    }
+
+    /// A source's sessions, as pull requests' stages and missions need them, as the Copilot app's source tells Pull Request
+    /// Order (`CopilotSource.publishOrder`): the sessions it lists, each with what it does now, or how it ended, since
+    /// when, and its name; the pull requests each opened or works on, as the app records them; and those each told
+    /// BriefBar it works on.
+    package struct StageSessions: Sendable, Equatable {
+        package struct Session: Sendable, Equatable {
+            package var activity: StageSession.Activity
+            /// When it started what it does now, or when it ended.
+            package var since: Date?
+            package var name: String
+
+            package init(activity: StageSession.Activity, since: Date?, name: String) {
+                self.activity = activity
+                self.since = since
+                self.name = name
+            }
+        }
+
+        /// The pull requests each session opened, with the sessions that started and coordinate it (`OrderSessions`).
+        package var sessions: [OrderSession]
+        /// What each session told BriefBar it works on now, with Updates from Copilot Sessions on.
+        package var working: [ItemRef: [ItemRef]]
+        /// The sessions it lists now: only what these set counts (`SessionStages`).
+        package var listed: [ItemRef: Session]
+        /// Whether the Copilot app's database lists them, rather than every recent session's folder, as when it can't be
+        /// read: then a task BriefBar sent goes by what BriefBar knows of it, as the app's list has it, not its folder
+        /// (`SessionStore`).
+        package var listedByApp: Bool
+
+        package init(
+            sessions: [OrderSession] = [], working: [ItemRef: [ItemRef]] = [:], listed: [ItemRef: Session] = [:],
+            listedByApp: Bool = true
+        ) {
+            self.sessions = sessions
+            self.working = working
+            self.listed = listed
+            self.listedByApp = listedByApp
+        }
+
+        /// The listed sessions on each pull request, those that opened it or work on it, and those that told BriefBar they
+        /// work on it, each with what it does now, or how it ended, and since when, as Pull Request Order has them.
+        package var onPullRequests: [ItemRef: [StageSession]] {
+            var on: [ItemRef: Set<ItemRef>] = [:]
+            for session in sessions {
+                for ref in session.pullRequests { on[ref, default: []].insert(session.ref) }
+            }
+            for (session, refs) in working {
+                for ref in refs { on[ref, default: []].insert(session) }
+            }
+            return on.mapValues { sessions in
+                sessions.sorted().compactMap { session in
+                    listed[session].map { StageSession(ref: session, activity: $0.activity, since: $0.since) }
+                }
+            }
+        }
+
+        /// What each session it lists does now, or how it ended, and since when, on a pull request or not: what ends an In
+        /// progress it set (`StageRules.stands`).
+        package var doing: [ItemRef: StageSession] {
+            var doing: [ItemRef: StageSession] = [:]
+            for (ref, session) in listed {
+                doing[ref] = StageSession(ref: ref, activity: session.activity, since: session.since)
+            }
+            return doing
+        }
+
+        /// Both, the first's wherever both have a session.
+        func merging(_ other: StageSessions) -> StageSessions {
+            StageSessions(
+                sessions: sessions + other.sessions.filter { session in !sessions.contains { $0.ref == session.ref } },
+                working: working.merging(other.working) { first, _ in first },
+                listed: listed.merging(other.listed) { first, _ in first }, listedByApp: listedByApp && other.listedByApp
+            )
         }
     }
 
@@ -116,6 +197,17 @@ package enum MCPRelated {
     /// none of them lists sessions or can say now, as when it's off in BriefBar.
     package static func sessionListing() async -> SessionReports.Listing? {
         await sessionListing(tellers)
+    }
+
+    /// The sessions the sources whose tool runs list, as pull requests' stages need them (`Teller.stageSessions`): nil when
+    /// none of them lists sessions or can say now, as when it's off in BriefBar.
+    package static func stageSessions() async -> StageSessions? {
+        var all: StageSessions?
+        for teller in tellers {
+            guard let sessions = teller.stageSessions, let told = try? await sessions() else { continue }
+            all = all.map { $0.merging(told) } ?? told
+        }
+        return all
     }
 
     /// The sessions these sources list now, together.

@@ -4,7 +4,7 @@ import SwiftUI
 /// Pull Request Order, on the Pull Requests page in Settings, as rows of its form: off until you turn it on, what it does and
 /// reads; Forget All Orders…, which forgets, on or off, every order sessions told BriefBar, what it saw become of their
 /// pull requests, the mission you focus on, your changes to missions, and the names you gave missions; and Forget
-/// Stages…, which forgets the stages you set.
+/// Stages…, which forgets the stages you and sessions set.
 package struct PullRequestOrderSettingView: View {
     @ObservedObject private var order: PullRequestOrder
     /// Tells the rest of the app, such as Agents, which adds Pull Request Order's skill to Copilot while both are on.
@@ -35,14 +35,16 @@ package struct PullRequestOrderSettingView: View {
         its repository's default branch and its place in a stack, in its usual refresh; and, from the Copilot app, which \
         pull request each session opened. On Azure DevOps' pull requests, in the window and the menu bar, it also shows \
         each one's stage, In progress, Your review, Teammate's review, Can merge or Waits for another PR, as BriefBar \
-        works it out from Azure DevOps and Copilot, or as you set it; what's next, at the top of the Pull Requests page; \
-        and a Board beside List and Map. With agents on, sessions get the tools to tell BriefBar an order as they start, \
-        and Copilot gets a skill that says when to. It keeps the orders and your changes to missions, by reference, and \
-        the names you give missions; and the stages you set, for each Azure DevOps account you sign in with, with only \
-        what would end each: for In progress, its commit; for Teammate's review, the votes it was set over, never who \
-        cast them (on someone else's, your own vote and its commit); until they end or you forget them. What you change \
-        or set of a pull request sent to you in a chat stays in memory only. None of it goes to Azure DevOps or GitHub. \
-        Turning it off keeps them, unused, until you forget them.
+        works it out from Azure DevOps and Copilot, or as you or a session set it, the latest winning; what's next, at \
+        the top of the Pull Requests page; and a Board beside List and Map. With agents on, sessions get the tools to \
+        tell BriefBar an order, and each pull request's stage, as they work, and Copilot gets a skill that says when to. \
+        It keeps the orders and your changes to missions, by reference, and the names you give missions; and the stages \
+        you set, for each Azure DevOps account you sign in with, and those each session set, as references only, with \
+        only what would end each: for In progress, its commit; for Teammate's review, the votes it was set over, never \
+        who cast them (on someone else's, your own vote and its commit); until they end or you forget them; what a \
+        session set shows only while the Copilot app lists it. What you change or set of a pull request sent to you in a \
+        chat stays in memory only. None of it goes to Azure DevOps or GitHub. Turning it off keeps them, unused, until \
+        you forget them.
         """
 
     package var body: some View {
@@ -66,12 +68,12 @@ package struct PullRequestOrderSettingView: View {
             }
         Button("Forget Stages…") { confirmsForgetStages = true }
             .disabled(!order.keepsStages)
-            .confirmationDialog("Forget the stages you set?", isPresented: $confirmsForgetStages) {
+            .confirmationDialog("Forget the stages you and sessions set?", isPresented: $confirmsForgetStages) {
                 Button("Forget Stages", role: .destructive) { order.forgetStages() }
             } message: {
                 Text("""
-                    BriefBar forgets the stages you set on pull requests, for every account, and works each one's stage out \
-                    again from Azure DevOps and Copilot.
+                    BriefBar forgets the stages you set on pull requests, for every account, and those Copilot sessions set, \
+                    and works each one's stage out again from Azure DevOps and Copilot.
                     """)
             }
     }

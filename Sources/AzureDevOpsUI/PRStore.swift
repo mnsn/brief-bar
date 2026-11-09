@@ -76,6 +76,9 @@ final class PRStore: ObservableObject {
     let client: ADOClient
     private var engine: PulseEngine?
     private var state = PulseSnapshot()
+
+    /// When what's listed of each pull request was read (`PulseSnapshot.readTimes`), for its stage (`StageFacts.readAt`).
+    var readTimes: [PRKey: Date] { state.readTimes }
     private let startedAt = Date()
     /// The list as of the last refresh, to compare the next one with.
     private var announced: [PRSnapshot]?

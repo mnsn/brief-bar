@@ -47,4 +47,4 @@ tools with its name first, as briefbar-working_on.
 ## With the order of pull requests
 
 If you also tell BriefBar the order pull requests merge in, with `order_pull_requests`, go on doing that: neither
-replaces the other.
+replaces the other. After you push, also tell BriefBar the pull request's stage with `pull_request_stage`, if it's there.

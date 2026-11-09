@@ -34,6 +34,23 @@ import Testing
         #expect(PullRequestAction.named("FIX_BUILD") == .fixBuild)
     }
 
+    /// What `pull_request_stage` reads of the pull requests a session names: each the lists have, as the app works its
+    /// stage out, and none for one they don't, or that isn't Azure DevOps'.
+    @Test func readsWhatAStageIsWorkedOutFromForPullRequestStage() async throws {
+        let stages = try #require(agent.source.stages)
+        func ref(_ number: Int) -> ItemRef { .pullRequest(organization: DemoData.organization, number: number) }
+        let gitHub = try #require(ItemRef.from(link: "https://github.com/octo/app/pull/12"))
+        let read = try await stages.read([ref(4093), ref(4085), ref(4097), ref(9999), gitHub])
+        #expect(read.account == nil)
+        #expect(read.facts.keys.sorted() == [ref(4085), ref(4093), ref(4097)].sorted())
+        #expect(read.facts[ref(4093)]?.role == .author)
+        #expect(read.facts[ref(4093)]?.state == .open)
+        #expect(read.facts[ref(4093)]?.isListed == true)
+        #expect(read.facts[ref(4085)]?.state == .merged)
+        #expect(read.facts[ref(4097)]?.role == .reviewer)
+        #expect(try await stages.read([]).facts.isEmpty)
+    }
+
     @Test func needsYouHasWhatTheMenuBarCounts() async throws {
         let text = try #require(try await agent.needsYou())
         #expect(text.contains("Needs You (4):"))
@@ -43,9 +60,10 @@ import Testing
         // What you've seen and haven't answered says so.
         #expect(text.contains("(yours): Sam Rivera replied, 12m ago (seen, still waiting on you). Could we cap"))
         #expect(text.contains("Alex Kim mentioned you, 25m ago. @Robin Diaz"))
-        // Not what waits on others, or what's idle.
-        #expect(!text.contains("Waiting"))
-        #expect(!text.contains("!3990"))
+        // Not what waits on others, or what's idle, but on the Board, with Pull Request Order on, as the demo has it.
+        let groups = try #require(text.components(separatedBy: "\n\nStages, as BriefBar's Board shows them").first)
+        #expect(!groups.contains("Waiting"))
+        #expect(!groups.contains("!3990"))
         #expect(text.contains("""
             - !4088 “Show delivery estimates on the product page” in shop-web (yours): Build failed, 1h 5m ago. shop-web CI · \
             Run unit tests: 2 tests failed in DeliveryEstimateTests.
@@ -75,6 +93,22 @@ import Testing
         #expect(text.contains("- Fix the Build on !4088 in shop-web: working"))
         // The demo's window reads no sessions, so neither does the demo's pull_request.
         #expect(!text.contains("Its session"))
+        // Its work items, each with the story it's for, as Azure DevOps links them.
+        #expect(text.contains("\n- Its work items: Task 5182 “Show delivery estimates”, under User Story 5180 “Checkout redesign”.\n"))
+        let coupons = try await call("pull_request", ["pull_request": .int(4091)])
+        #expect(coupons.contains("""
+            - Its work items: Bug 5110 “Coupon totals round down instead of to the nearest cent”; Task 5112 “Round half up in the \
+            coupon service”, under Bug 5110 “Coupon totals round down instead of to the nearest cent”.
+
+            """))
+        let unlinked = try await call("pull_request", ["pull_request": .int(4099)])
+        #expect(unlinked.contains("\n- No work item is linked to it in Azure DevOps.\n"))
+        // One whose story couldn't be read names it by its number; titles stay on their line.
+        let task = WorkItem(
+            id: 5103, organization: "contoso", project: "Storefront", type: "Task", title: "Show saved\nitems", state: "Active",
+            category: .inProgress, parentId: 5101
+        )
+        #expect(AgentText.work([LinkedWork(item: task)]) == "Task 5103 “Show saved\\nitems”, under work item 5101")
 
         // By its link, and with its comment threads, word for word. You've opened it since Sam replied: his reply still
         // waits on you, but isn't new.
@@ -140,6 +174,11 @@ import Testing
         let ship = try await call("pull_request_prompt", ["pull_request": .int(4091), "action": .string("push_and_reply")])
         #expect(ship.contains("git merge-base --is-ancestor origin/"))
         #expect(ship.contains("don't rebase, merge or force"))
+        // Each ends as BriefBar's own do while Pull Request Order is on, as the demo's is: asking for the stage once it
+        // pushed, but a review's.
+        #expect(prompt.hasSuffix("\n\n" + PromptTemplate.stageLine))
+        #expect(ship.hasSuffix("\n\n" + PromptTemplate.stageLine))
+        #expect(!review.contains("pull_request_stage"))
         await #expect(throws: MCPToolError.self) {
             try await call("pull_request_prompt", ["pull_request": .int(4071), "action": .string("push_and_reply")])
         }
@@ -188,13 +227,15 @@ import Testing
         #expect(lines[4] == "- Waiting on: reviewers of Sam Rivera's !4120 · Copilot, on task 5103")
         // Your task that isn't started; not 5103, which Copilot works on.
         #expect(lines[5] == "- You can: start task 5104")
-        // Its tasks in work order, each with its state, who has it and its hours, and the work sent to Copilot for one.
+        // Its tasks in backlog order, as its story's mission lists their pull requests, each with its state, who has it and
+        // its hours, and the work sent to Copilot for one.
         #expect(story.contains("""
             ## Tasks
+            - 5102 Add a saved items table to the cart service: Closed · you
             - 5103 Show saved items under the cart: Active · you · 3 h left · Copilot working (started 6m ago): Run the cart tests
             - 5104 Move a saved item back to the cart: New · you · 2 h left
+            - 5105 Test saving with an empty cart: New · Sam Rivera · 1 h left
             """))
-        #expect(story.contains("- 5102 Add a saved items table to the cart service: Closed · you\n"))
         #expect(!story.contains("◐") && !story.contains("Type:") && !story.contains("## Sent to Copilot"))
         // A teammate's pull request, as it says itself, and what BriefBar doesn't read of it.
         #expect(story.contains("""
@@ -246,19 +287,37 @@ import Testing
             """))
         #expect(!task.contains("Claude") && !task.contains("BriefBar's Ready to Complete"))
 
-        // Its bug: the work sent for the task goes on the task's line, and its repro steps are under their name.
+        // Its bug: each task with its pull requests, in backlog order; the work sent for the task goes on the task's line,
+        // and its repro steps are under their name.
         let bug = try await call("work_item", ["work_item": .int(5110)])
         #expect(bug.contains("- State: Active (work started), changed 1h ago · assigned to Priya Shah\n"))
         #expect(bug.contains("- Waiting on: you, to complete !4091\n- You can: complete !4091\n"))
         #expect(bug.contains("""
-            - 5112 Round half up in the coupon service: Active · you · 2 h left · Copilot finished 12m ago. Coupon totals now round \
-            half up, with tests for every currency. Opened pull request 4091.
+            ## Tasks
+            - 5111 Reproduce with a negative total: Closed · Priya Shah
+            - 5112 Round half up in the coupon service: Active · you · 2 h left · pull request !4091 · Copilot finished 12m ago. \
+            Coupon totals now round half up, with tests for every currency. Opened pull request 4091.
+            - 5113 Add rounding tests for every currency: New · Priya Shah · 3 h left
             """))
         #expect(!bug.contains("## Sent to Copilot"))
         #expect(bug.contains("## Description\n\n### Repro Steps\n> 1. Add a $19.99 item to the cart"))
         #expect(bug.contains("### System Info\n> Storefront web 3.42.0 · Safari 26 · macOS 26.1"))
 
         await #expect(throws: MCPToolError("The demo's sprint has no work item 1.")) { try await call("work_item", ["work_item": .int(1)]) }
+    }
+
+    /// When its tasks' pull requests couldn't be read, it says so under them, so that no task looks as if none is linked.
+    @Test func saysWhenItsTasksPullRequestsCouldntBeRead() async throws {
+        var bug = try await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).workItem(5110, organization: nil)
+        #expect(bug.tasksPullRequests[5112] != nil && bug.tasksPullRequestsProblem == nil)
+        bug.tasksPullRequests = [:]
+        bug.tasksPullRequestsProblem = "Azure DevOps didn't answer."
+        #expect(AgentText.workItem(bug, tasks: [], now: Date()).contains("""
+            - 5113 Add rounding tests for every currency: New · Priya Shah · 3 h left
+            BriefBar couldn't read which pull requests are linked to them: Azure DevOps didn't answer.
+
+            ## Pull requests
+            """))
     }
 
     /// What the other sources know of its pull requests, such as the Copilot sessions on them: asked about with the pull
@@ -458,7 +517,7 @@ import Testing
         let opening = text.split(separator: "\n").filter(QuotedText.mayOpenFence)
         #expect(opening.isEmpty, "\(opening)")
         for written in [
-            "- \\u{7E}~~ Sprint 42 ends ", "- 5103 \\u{60}``Task: ", "- \\u{60}``Sam wants changes · ", "- \\u{60}``Sam, ", "  > \\u{60}``\n",
+            "- \\u{7E}~~ Sprint 42 ends ", "- 5102 \\u{60}``Task: ", "- \\u{60}``Sam wants changes · ", "- \\u{60}``Sam, ", "  > \\u{60}``\n",
             "  > \\u{7E}~~", "- \\u{60}``\n", "- > \\u{7E}~~ Did: pushed",
         ] {
             #expect(text.contains(written), "\(written)")
