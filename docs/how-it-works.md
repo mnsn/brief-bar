@@ -1220,7 +1220,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
-| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, or can't be reached, offline say, the rest are read at a later refresh, and none of them counts as one that can't be read: the one it couldn't be reached for is tried again at the next refresh, behind the others | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
@@ -1249,8 +1249,9 @@ so a pull request's details (policies and threads, two requests) are fetched on 
 
 Requests honor `Retry-After`, in seconds or as the date to wait until (`RetryAfter`): when Azure DevOps asks to
 slow down, nothing is sent until the time it gave, or for a minute when it doesn't say (`ADOClient.retryAfterUnsaid`).
-When nothing can be read (offline, for example), refreshes back off up to ten minutes, and waking the Mac or getting
-back online refreshes right away.
+When nothing can be read (offline, for example), your organizations' lists or, with none to watch, the pull requests you
+watch or were sent, refreshes say so and back off up to ten minutes, and waking the Mac or getting back online refreshes
+right away.
 
 Each request goes only where it's sent, with the Azure CLI's token: no redirect is followed (`RedirectGuard`). One to
 another host fails with an error that says so (`ADOError.redirected`), and one on the same host is an HTTP error like

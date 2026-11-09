@@ -157,8 +157,8 @@ public struct PulseSnapshot: Sendable, Equatable {
     /// The latest refresh that tried to read anything read nothing, neither an organization's lists nor a pull request
     /// sent to you, as offline, signed out, asked to slow down, or with every organization in a directory the Azure CLI
     /// isn't signed in to: what's listed is what was read before. One that tried nothing leaves it as it was, as when,
-    /// with no organization to watch, each pull request sent to you waits to be tried again after a read that failed. One
-    /// Azure DevOps says is gone, or closed to you, was read.
+    /// with no organization to watch, each pull request sent to you waits an hour after a read that failed, unless Azure
+    /// DevOps couldn't be reached at all, as offline. One Azure DevOps says is gone, or closed to you, was read.
     public var readNothing: Bool
 
     public init(
@@ -369,6 +369,9 @@ public actor PulseEngine {
     private var linkedKeys: Set<PRKey> = []
     /// Linked pull requests that couldn't be read or are closed, and when, to try again only an hour later.
     private var linkedFailures: [PRKey: Date] = [:]
+    /// Linked pull requests Azure DevOps couldn't be reached for, as offline, and when: each is tried again at the next
+    /// refresh, behind the others, so that one that keeps failing doesn't hold them up.
+    private var linkedUnreachedAt: [PRKey: Date] = [:]
     /// Linked pull requests as last read, and when: kept between refreshes, which read only a few each.
     private var linked: [PRKey: (listed: Listed, readAt: Date)] = [:]
     /// Linked pull requests read as closed, or gone or forbidden.
@@ -416,7 +419,8 @@ public actor PulseEngine {
     /// Refreshes in a row that read nothing, for backing off.
     private var failures = 0
     /// What the snapshot says of the latest refresh that tried to read anything (`PulseSnapshot.readNothing`): apart from
-    /// `failures`, which a refresh of only pull requests sent to you leaves at 0, however they went.
+    /// `failures`, which a refresh of only pull requests sent to you leaves at 0, unless Azure DevOps couldn't be reached
+    /// for any of them, as offline.
     private var readNothing = false
     private var lastPublished: PulseSnapshot?
 
@@ -500,6 +504,7 @@ public actor PulseEngine {
         let added = !keys.subtracting(linkedKeys).isEmpty
         linkedKeys = keys
         linkedFailures = linkedFailures.filter { keys.contains($0.key) }
+        linkedUnreachedAt = linkedUnreachedAt.filter { keys.contains($0.key) }
         closedLinks = closedLinks.intersection(keys)
         // The ones listed only because someone sent them go with their links, now rather than on the next refresh.
         let gone = Set(linked.keys).subtracting(keys)
@@ -713,7 +718,7 @@ public actor PulseEngine {
             readNothing = true
             return
         }
-        if !readNone { failures = 0 }
+        if !readNone, !organizations.isEmpty { failures = 0 }
 
         // Your pull requests that left the active list without completing were abandoned (or completed
         // just now): look each up by its ID, a few per refresh, and again next time if that fails.
@@ -762,9 +767,21 @@ public actor PulseEngine {
         vanished = vanished.filter { watched.contains($0.key.organization.lowercased()) }
         firstLoaded = firstLoaded.filter { watched.contains($0.key.lowercased()) }
         listsReadAt = listsReadAt.filter { watched.contains($0.key) }
-        let (linkedElsewhere, linkedRead, linkedAnswered, linkedTried, linkedThrottled) = await addLinked(
+        let (linkedElsewhere, linkedRead, linkedAnswered, linkedTried, linkedThrottled, linkedUnreached) = await addLinked(
             to: &listed, at: startedAt, reached: succeeded
         )
+        if organizations.isEmpty {
+            // With no organization to watch, when Azure DevOps couldn't be reached for any pull request sent to you, as
+            // offline, that's what's said: nothing more goes out, and it backs off, as when no organization's lists could be
+            // read.
+            if linkedAnswered == 0, let linkedUnreached {
+                problem = PulseProblem.from(linkedUnreached)
+                failures += 1
+                readNothing = true
+                return
+            }
+            failures = 0
+        }
         // Whether it read anything: an organization's lists, or a pull request sent to you that Azure DevOps answered about.
         // With no organization to watch, a refresh that tried none of those leaves it as it was.
         if readLists || linkedAnswered > 0 {
@@ -824,30 +841,37 @@ public actor PulseEngine {
         }
     }
 
-    /// Reads the pull requests people sent you that aren't in your lists, ten a refresh: the ones never read
-    /// first, then the ones read, or tried, longest ago. Each stays listed as it was last read in between. One that's
-    /// closed or couldn't be read is tried again once `retryLinkedAfter` has gone by, an hour for the app. Once Azure
-    /// DevOps asks to slow down, the rest wait for the
-    /// next refresh. A link that spells an organization in other letters is to the pull request in your lists: `PRKey`
+    /// Reads the pull requests people sent you that aren't in your lists, ten a refresh: the ones never read first,
+    /// then the ones read, or tried, longest ago. Each stays listed as it was last read in between. One that's closed
+    /// or couldn't be read is tried again once `retryLinkedAfter` has gone by, an hour for the app. Once Azure DevOps
+    /// asks to slow down, the rest wait for the next refresh; so they do once it can't be reached, as offline, before
+    /// any answered, which isn't the pull request's failure: that one is tried again at the next refresh, behind the
+    /// others. A link that spells an organization in other letters is to the pull request in your lists: `PRKey`
     /// ignores their case, as Azure DevOps does. One in an organization in a directory the Azure CLI isn't signed in to
     /// waits with the others there, and its turn comes round again behind the rest, rather than an hour later, since
     /// signing in there is what reads it. Such organizations are remembered and returned at each refresh, tried then or
-    /// not, to say so, with how many pull requests were read, how many Azure DevOps answered about, those it says are gone
-    /// or closed to you too, of how many it tried, and the error if Azure DevOps asked to slow down; one is forgotten once
-    /// it answers otherwise, or its lists, among `reached`, were read.
+    /// not, to say so, with how many pull requests were read, how many Azure DevOps answered about, those it says are
+    /// gone or closed to you too, of how many it tried, the error if Azure DevOps asked to slow down, and the error if
+    /// it couldn't be reached; one is forgotten once it answers otherwise, or its lists, among `reached`, were read.
     private func addLinked(
         to listed: inout [PRKey: Listed], at date: Date, reached: Set<String> = []
     ) async -> (
-        elsewhere: [(organization: String, error: ADOError)], read: Int, answered: Int, tried: Int, throttled: ADOError?
+        elsewhere: [(organization: String, error: ADOError)], read: Int, answered: Int, tried: Int, throttled: ADOError?,
+        unreached: ADOError?
     ) {
         let wanted = linkedKeys.filter { listed[$0] == nil }
         linked = linked.filter { wanted.contains($0.key) }
+        linkedUnreachedAt = linkedUnreachedAt.filter { wanted.contains($0.key) }
         // Only organizations that a pull request sent to you is still in wait on a sign-in, and not those just read.
         let wantedOrganizations = Self.folded(wanted.map(\.organization))
         linkedWaiting = linkedWaiting.filter { wantedOrganizations.contains($0.key) && !reached.contains($0.key) }
-        // Each one's turn: when it was last read, or its organization last found waiting, whichever came later.
+        // Each one's turn: when it was last read, or tried as Azure DevOps couldn't be reached, or its organization last
+        // found waiting, whichever came later.
         func turn(_ key: PRKey) -> Date {
-            max(linked[key]?.readAt ?? .distantPast, linkedWaiting[key.organization.lowercased()]?.triedAt ?? .distantPast)
+            max(
+                linked[key]?.readAt ?? .distantPast, linkedUnreachedAt[key] ?? .distantPast,
+                linkedWaiting[key.organization.lowercased()]?.triedAt ?? .distantPast
+            )
         }
         let retryAfter = configuration.retryLinkedAfter
         let due = wanted
@@ -857,6 +881,7 @@ public actor PulseEngine {
         var fetched = 0
         var answered = 0
         var throttled: ADOError?
+        var unreached: ADOError?
         // Ten reads a refresh, the ones waiting on a directory's sign-in among them: each such organization is tried once,
         // and the rest of its pull requests wait with it.
         var reads = 0
@@ -877,6 +902,7 @@ public actor PulseEngine {
                 let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
                 // Read there: its organization doesn't wait on a sign-in.
                 linkedWaiting[organization] = nil
+                linkedUnreachedAt[key] = nil
                 let pr = PullRequest(organization: key.organization, dto)
                 fetched += 1
                 answered += 1
@@ -894,15 +920,24 @@ public actor PulseEngine {
                 // Not a failure of this pull request's: nothing more goes out until then, so the rest wait too.
                 throttled = .throttled(retryAfter: seconds)
                 break
+            } catch let error as ADOError where Self.isUnreached(error) && answered == 0 {
+                // Nor is Azure DevOps not being reached, as offline, while nothing else answered: the rest wait for the
+                // next refresh, and this one, tried again then, goes behind them. Once another answered, it's this one's
+                // failure, as any other.
+                unreached = error
+                linkedUnreachedAt[key] = date
+                break
             } catch ADOError.otherDirectory(let name, let tenant) {
                 // Not this pull request's failure either: it stays as it was last read, until you sign in there, and its
                 // organization's turn comes round again behind the others'.
                 tried.insert(organization)
+                linkedUnreachedAt[key] = nil
                 linkedWaiting[organization] = (
                     organization: key.organization, error: .otherDirectory(organization: name, tenant: tenant), triedAt: date
                 )
             } catch {
                 linkedFailures[key] = date
+                linkedUnreachedAt[key] = nil
                 // It answered otherwise: its organization doesn't wait on a sign-in, whatever else is wrong.
                 linkedWaiting[organization] = nil
                 // Gone, or no access: nothing to list, as Azure DevOps answered. Otherwise it stays as last read.
@@ -923,7 +958,15 @@ public actor PulseEngine {
         let elsewhere = linkedWaiting.values
             .sorted { $0.organization.lowercased() < $1.organization.lowercased() }
             .map { (organization: $0.organization, error: $0.error) }
-        return (elsewhere, fetched, answered, reads, throttled)
+        return (elsewhere, fetched, answered, reads, throttled, unreached)
+    }
+
+    /// Azure DevOps couldn't be reached, as offline, or didn't answer in time: nothing about what was asked.
+    private static func isUnreached(_ error: ADOError) -> Bool {
+        switch error {
+        case .offline, .network: true
+        default: false
+        }
     }
 
     /// Without organizations to watch or pull requests sent to you, there's nothing to read, or to list.
@@ -936,6 +979,7 @@ public actor PulseEngine {
         entries = [:]
         vanished = [:]
         linked = [:]
+        linkedUnreachedAt = [:]
         closedLinks = []
         linkedWaiting = [:]
         forgetRuns()
@@ -958,6 +1002,7 @@ public actor PulseEngine {
         entries = [:]
         vanished = [:]
         linkedFailures = [:]
+        linkedUnreachedAt = [:]
         linked = [:]
         closedLinks = []
         linkedWaiting = [:]
