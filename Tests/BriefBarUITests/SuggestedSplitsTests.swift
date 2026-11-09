@@ -25,14 +25,16 @@ fileprivate final class SplitModel {
     /// Its answer to a split's question, where a test gives one; else it tells coupons from build agents.
     var splitAnswer: ((String) -> String)?
 
+    /// Held strongly, as nothing it holds holds the namer: a question the namer asked can be answered after its test
+    /// ends, on a busy machine, and finds it there.
     func namer(clock: SplitClock) -> MissionNamer {
         MissionNamer(
-            unavailability: { [unowned self] in unavailability },
-            respond: { [unowned self] prompt, _ in
+            unavailability: { [self] in unavailability },
+            respond: { [self] prompt, _ in
                 namePrompts.append(prompt)
                 return .success(Self.name(prompt))
             },
-            respondSplit: { [unowned self] prompt, _, _ in
+            respondSplit: { [self] prompt, _, _ in
                 splitPrompts.append(prompt)
                 return .success(splitAnswer?(prompt) ?? Self.split(prompt))
             },
