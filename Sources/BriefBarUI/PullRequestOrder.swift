@@ -8,9 +8,10 @@ import Foundation
 /// it changed (`AgentChanges`), and of your changes to missions (`OrderChanges`), which only the app writes. It's off until
 /// you turn it on (`PullRequestOrderSetting`): until then it reads nothing, not even the orders it kept, and the sources tell
 /// it nothing. Turned off, it shows nothing again, and keeps the orders, what it saw become of their pull requests, the
-/// mission you focus on, your changes, the names you gave missions and the pull requests you chose for Up Next's slots,
-/// unused, until you forget them. A mission is called by the name you gave it, else the one Apple Intelligence gave it on
-/// this Mac while By Mission showed it (`MissionNamer`), else the one BriefBar gives it from its sources.
+/// mission you focus on, your changes, the names you gave missions, the suggested splits you kept together and the pull
+/// requests you chose for Up Next's slots, unused, until you forget them. A mission is called by the name you gave it, else
+/// the one Apple Intelligence gave it on this Mac while By Mission showed it (`MissionNamer`), else the one BriefBar gives
+/// it from its sources.
 @MainActor
 package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var isOn: Bool
@@ -49,12 +50,22 @@ package final class PullRequestOrder: ObservableObject {
     package private(set) var yourNames = MissionNames()
     /// The names Apple Intelligence gave missions, in memory only; in the demo, made-up ones.
     @Published package private(set) var modelNames: [MissionKey: String] = [:]
-    /// Asks Apple Intelligence for missions' names: only the app's, never the demo's or `--render`'s.
+    /// Asks Apple Intelligence for missions' names, and whether to split them: only the app's, never the demo's or
+    /// `--render`'s.
     package var namer: MissionNamer? {
         didSet {
             namer?.named = { [weak self] key, name in self?.modelNamed(key, name) }
+            namer?.suggested = { [weak self] key, _, split in self?.splitSuggested(key, split) }
         }
     }
+    /// The splits Apple Intelligence suggests, by mission, in memory only; in the demo, a made-up one. One shows while it
+    /// holds for what its mission is now (`suggestedSplit(for:)`).
+    @Published package private(set) var splits: [MissionKey: MissionSplit] = [:]
+    /// The suggestions you kept together (`order.splits`): none while it's off.
+    package private(set) var keptTogether = KeptTogether()
+    /// The missions whose suggestion you asked to see again with Suggested Split…, though you kept it together, while
+    /// BriefBar runs.
+    @Published package private(set) var splitsShownAgain: Set<MissionKey> = []
     /// The Board's lanes: one for each mission, or one for every card.
     @Published package private(set) var lanes: BoardLanes
     /// Whether you folded Up Next.
@@ -111,10 +122,20 @@ package final class PullRequestOrder: ObservableObject {
     private var sentInChats: Set<ItemRef> = []
     /// What each source told it last.
     private var told: [SourceID: Told] = [:] {
-        didSet { cachedNames = nil }
+        didSet {
+            cachedNames = nil
+            questions = [:]
+        }
     }
     /// `names`, but the time, until the sources or the missions change.
     private var cachedNames: OrderNames?
+    /// Each mission's question for a suggested split, as worked out since the missions, what the sources show or its name
+    /// last changed; nil for one it doesn't look at.
+    private var questions: [MissionKey: MissionSplitQuestion?] = [:]
+    /// When it last counted the time against what you kept together, while it's on.
+    private var keptCounted: Date?
+    /// The demo's made-up split: a mission, its groups of pull requests, and their names.
+    private var demoSplit: (key: MissionKey, grouping: [Set<ItemRef>], names: [String?])?
     /// What the change you're making touched, as it was, while the missions are made again for it, before it's your last
     /// change: what its Undo would put back.
     private var making: [ItemRef: OrderChange?]?
@@ -138,8 +159,8 @@ package final class PullRequestOrder: ObservableObject {
 
     /// What a source told: its pull requests and sessions, how its things look, for what shows them, what each of its
     /// sessions told BriefBar it works on, which the Map shows, what its pull requests' stages are worked out from, with
-    /// the account it read them with, which of its pull requests it lists only because someone sent them in a chat, and
-    /// whether it reads the stories its pull requests are for.
+    /// the account it read them with, which of its pull requests it lists only because someone sent them in a chat,
+    /// whether it reads the stories its pull requests are for, and whether it has listed what it shows since it started.
     private struct Told {
         var pullRequests: [OrderPullRequest]
         var sessions: [OrderSession]
@@ -154,6 +175,7 @@ package final class PullRequestOrder: ObservableObject {
         var activitiesSince: [ItemRef: Date] = [:]
         var inMemory: Set<ItemRef> = []
         var readsStories = false
+        var listed = true
     }
 
     private struct WeakViewer {
@@ -216,10 +238,11 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Whether BriefBar keeps anything for Pull Request Order, on or off: an order, what it saw become of their pull
-    /// requests, the mission you focus on, a change of yours, or a name you gave a mission.
+    /// requests, the mission you focus on, a change of yours, a name you gave a mission, or a suggestion you kept together.
     package var keepsAnything: Bool {
         let keys = [
             DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, OrderChanges.defaultsKey, MissionNames.defaultsKey,
+            KeptTogether.defaultsKey,
         ]
         return !changesInMemory.isEmpty || !evidenceInMemory.records.isEmpty || keys.contains { defaults.object(forKey: $0) != nil }
     }
@@ -248,6 +271,10 @@ package final class PullRequestOrder: ObservableObject {
             yourNames = MissionNames()
             namesCounted = nil
             modelNames = [:]
+            splits = [:]
+            keptTogether = KeptTogether()
+            splitsShownAgain = []
+            keptCounted = nil
             namer?.stop()
             missions = []
             nextsHeldAgain = [:]
@@ -269,6 +296,8 @@ package final class PullRequestOrder: ObservableObject {
         yourNames = MissionNames.load(from: defaults)
         picks = UpNextPicks.load(from: defaults).merging(picksInMemory)
         namesCounted = nil
+        keptTogether = KeptTogether.load(from: defaults)
+        keptCounted = nil
         // The demo's agents keep what they tell in their own memory.
         if !isDemo {
             SessionStages.prune(in: defaults, now: now())
@@ -333,16 +362,18 @@ package final class PullRequestOrder: ObservableObject {
     /// it knows, how its things look, for what shows them, what each session told BriefBar it works on now
     /// (`SessionUpdates`), which changes no mission, what its pull requests' stages are worked out from, with the account
     /// it read them with, whose stages you set apply, and how each of the sessions it lists does, or ended, when it can
-    /// tell, and since when, which are the sessions whose stages count (`SessionStages`), the pull requests it lists only
-    /// because someone sent them in a chat, whose changes stay in memory, and whether it reads the stories its pull
-    /// requests are for. It replaces what the source told before. Once it tells another account than the one it told last,
-    /// the stages you set that BriefBar kept in memory for its pull requests go, and so does Undo of one: they were the
-    /// other account's. Nothing's kept while Pull Request Order is off.
+    /// tell, and since when, which are the sessions whose stages count (`SessionStages`), the pull requests it lists
+    /// only because someone sent them in a chat, whose changes stay in memory, whether it reads the stories its pull
+    /// requests are for, and whether it has listed what it shows since it started, as it hasn't right after BriefBar
+    /// starts: till then, what a mission is made of isn't counted. It replaces what the source told before. Once it
+    /// tells another account than the one it told last, the stages you set that BriefBar kept in memory for its pull
+    /// requests go, and so does Undo of one: they were the other account's. Nothing's kept while Pull Request Order is
+    /// off.
     package func publish(
         _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = [],
         working: [ItemRef: [ItemRef]] = [:], stages: [ItemRef: StageFacts] = [:], account: String? = nil,
         sessionActivities: [ItemRef: StageSession.Activity] = [:], activitiesSince: [ItemRef: Date] = [:],
-        inMemory: Set<ItemRef> = [], readsStories: Bool = false
+        inMemory: Set<ItemRef> = [], readsStories: Bool = false, listed: Bool = true
     ) {
         guard isOn else { return }
         var byRef: [ItemRef: LinkedItem] = [:]
@@ -352,10 +383,11 @@ package final class PullRequestOrder: ObservableObject {
         let new = Told(
             pullRequests: pullRequests, sessions: sessions, items: byRef, working: working, stages: stages,
             account: account?.lowercased(), activities: sessionActivities, activitiesSince: activitiesSince, inMemory: inMemory,
-            readsStories: readsStories
+            readsStories: readsStories, listed: listed
         )
         let old = told[source]
-        let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions && old?.readsStories == new.readsStories
+        let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions
+            && old?.readsStories == new.readsStories && old?.listed == new.listed
         let sameStages = old?.stages == new.stages && old?.account == new.account && old?.activities == new.activities
             && old?.activitiesSince == new.activitiesSince
         guard !sameFacts || !sameStages || old?.items != new.items || old?.working != new.working
@@ -392,9 +424,9 @@ package final class PullRequestOrder: ObservableObject {
 
     /// Forgets a source's things when you turn it off, as each source forgets what it kept, whether Pull Request Order is on
     /// or not: its pull requests' places in every order, which goes up a revision, the orders left with none, what BriefBar
-    /// saw become of them, your changes to them and those that put pull requests in its missions, the mission you focus on
-    /// and the names you gave missions, when they're theirs, and the stages you set for its pull requests, and those you
-    /// chose for Up Next's slots.
+    /// saw become of them, your changes to them and those that put pull requests in its missions, the mission you focus on,
+    /// the names you gave missions and the suggestions you kept together, when they're theirs, and the stages you set for its
+    /// pull requests, and those you chose for Up Next's slots.
     package func forget(_ source: SourceID) {
         let kinds = ItemRef.Kind.of(source)
         guard !kinds.isEmpty else { return }
@@ -417,6 +449,8 @@ package final class PullRequestOrder: ObservableObject {
         let plans = Set(orders.plans.map(\.id))
         var names = MissionNames.load(from: defaults)
         if names.forget(kinds, keepingPlans: plans, keepingMine: changes.ownMissions) { names.save(to: defaults) }
+        var together = KeptTogether.load(from: defaults)
+        if together.forget(kinds, keepingPlans: plans) { together.save(to: defaults) }
         var marks = StageMarks.load(from: defaults)
         if marks.forget(kinds) { marks.save(to: defaults) }
         var picks = UpNextPicks.load(from: defaults)
@@ -439,13 +473,17 @@ package final class PullRequestOrder: ObservableObject {
             if lastOrderChange != nil { lastChange = nil }
             refusal = nil
             yourNames = names
+            keptTogether = together
             // Apple Intelligence names only missions with an Azure DevOps pull request, from their titles: as Azure DevOps
-            // goes, all its names go, and the answer under way, a session's mission's too, whose key names none.
+            // goes, all its names go, and the answer under way, a session's mission's too, whose key names none. So do the
+            // splits it suggests, which only move Azure DevOps' pull requests.
             let forgets = { (key: MissionKey) in
                 kinds.contains(.pullRequest)
                     || MissionNames.forgets(key, kinds: kinds, keepingPlans: plans, keepingMine: changes.ownMissions)
             }
             modelNames = modelNames.filter { !forgets($0.key) }
+            splits = splits.filter { !forgets($0.key) }
+            splitsShownAgain = splitsShownAgain.filter { !forgets($0) }
             namer?.forget(where: forgets)
         }
         withdraw(source)
@@ -541,7 +579,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Forget All Orders: every order, what BriefBar saw become of their pull requests, the mission you focus on, your changes
-    /// to missions and the names you gave missions, whether Pull Request Order is on or not.
+    /// to missions, the names you gave missions and the suggestions you kept together, whether Pull Request Order is on or
+    /// not.
     package func forgetAll() {
         objectWillChange.send()
         DeclaredOrders.forgetAll(in: defaults)
@@ -554,6 +593,8 @@ package final class PullRequestOrder: ObservableObject {
         if lastOrderChange != nil { lastChange = nil }
         refusal = nil
         yourNames = MissionNames()
+        keptTogether = KeptTogether()
+        splitsShownAgain = []
         rebuild()
     }
 
@@ -573,15 +614,18 @@ package final class PullRequestOrder: ObservableObject {
 
     /// The demo's orders, as if its sessions had told them, unless it has them, with what BriefBar saw become of their pull
     /// requests before, the mission you focus on, your made-up changes to its missions, and the names Apple Intelligence
-    /// would give missions, made up: only in the demo, while it's on.
+    /// would give missions and the split it would suggest, made up: only in the demo, while it's on.
+    /// - Parameter split: a mission, its groups of pull requests, the one that keeps it first, and their names.
     package func tellDemo(
         _ demo: DeclaredOrders, evidence seen: OrderEvidence = OrderEvidence(), focus key: MissionKey? = nil,
-        changes made: OrderChanges = OrderChanges(), names madeUp: [MissionKey: String] = [:]
+        changes made: OrderChanges = OrderChanges(), names madeUp: [MissionKey: String] = [:],
+        split: (key: MissionKey, grouping: [Set<ItemRef>], names: [String?])? = nil
     ) {
         guard isDemo, isOn else { return }
         for (key, name) in madeUp where modelNames[key] == nil {
             modelNames[key] = name
         }
+        if let split { demoSplit = split }
         let orders = DeclaredOrders.load(from: defaults)
         let missing = demo.plans.filter { orders.plan($0.id) == nil }
         guard !missing.isEmpty else { return }
@@ -661,7 +705,7 @@ package final class PullRequestOrder: ObservableObject {
         guard names != yourNames else { return outcome }
         objectWillChange.send()
         yourNames = names
-        namesChanged()
+        namesChanged(mission.key)
         names.save(to: defaults)
         askNames()
         return outcome
@@ -672,7 +716,7 @@ package final class PullRequestOrder: ObservableObject {
         guard isOn, yourNames.name(for: key) != nil else { return }
         objectWillChange.send()
         yourNames.clear(key)
-        namesChanged()
+        namesChanged(key)
         yourNames.save(to: defaults)
         askNames()
     }
@@ -725,7 +769,9 @@ package final class PullRequestOrder: ObservableObject {
         return keys
     }
 
-    /// Asks Apple Intelligence to name the missions on screen that you didn't name, from what they're made of now.
+    /// Asks Apple Intelligence to name the missions on screen that you didn't name, from what they're made of now; then,
+    /// once their names are asked, whether those it looks at have become different pieces of work, but those you kept
+    /// together as they're made now, unless you asked to see their suggestion again.
     private func askNames() {
         guard let namer else { return }
         shown.removeAll { $0.viewer.object == nil }
@@ -744,19 +790,227 @@ package final class PullRequestOrder: ObservableObject {
             else { return nil }
             return MissionNamer.Request(key: key, inputs: inputs, isSettled: MissionNaming.isSettled(mission, facts: facts))
         }
-        namer.update(requests)
+        let splits = onScreen.compactMap { key -> MissionNamer.SplitRequest? in
+            guard let mission = missions.first(where: { $0.key == key }), let question = splitQuestion(for: mission),
+                  question.isWorthAsking, splitsShownAgain.contains(key) || !keptTogether.keeps(key)
+            else { return nil }
+            return MissionNamer.SplitRequest(question: question)
+        }
+        namer.update(requests, splits: splits)
     }
 
     private func modelNamed(_ key: MissionKey, _ name: String) {
         guard isOn, modelNames[key] != name else { return }
         modelNames[key] = name
-        namesChanged()
+        namesChanged(key)
+        // A split asked next asks the group that keeps the mission with the name it shows now.
+        askNames()
     }
 
-    /// A mission's name changed: what names it, and the stages that name it, as where two orders go round.
-    private func namesChanged() {
+    /// A mission's name changed: what names it, the stages that name it, as where two orders go round, and its question
+    /// for a suggested split, which asks with the name it shows.
+    private func namesChanged(_ key: MissionKey) {
         cachedNames = nil
+        questions[key] = nil
         restage()
+    }
+
+    // MARK: Suggested splits
+
+    /// A mission's question for a suggested split now (`MissionSplitting.question`), or nil for one it doesn't look at.
+    package func splitQuestion(for mission: OrderMission) -> MissionSplitQuestion? {
+        if let known = questions[mission.key] { return known }
+        let facts = facts
+        let holding = changes.holding(in: orders)
+        // What your changes name a mission by, a chain's: a split leaves those where they are.
+        var naming: Set<ItemRef> = []
+        for change in holding.values {
+            for key in [change.placement?.mission, change.first].compactMap({ $0 }) {
+                if case .chain(let anchor) = key { naming.insert(anchor) }
+            }
+        }
+        let question = MissionSplitting.question(
+            for: mission, in: missions, facts: facts, named: modelName(of: mission),
+            isNamedByYou: yourNames.name(for: mission.key) != nil, splitFrom: { holding[$0]?.splitFrom },
+            namesMission: naming.contains, isChanged: { changes[$0] != nil }, sessionsWorking: sessionsWorking(on:),
+            seesSessions: kindsOn.contains(.session),
+            name: name(of:)
+        )
+        questions[mission.key] = .some(question)
+        return question
+    }
+
+    /// The split Apple Intelligence suggests for a mission, while it holds for what the mission is made of now: none while
+    /// you keep it together, unless you asked to see it again with Suggested Split….
+    package func suggestedSplit(for mission: OrderMission) -> MissionSplit? {
+        guard isOn, let split = splits[mission.key], let question = splitQuestion(for: mission), split.holds(for: question),
+              splitsShownAgain.contains(mission.key) || !keptTogether.keeps(mission.key)
+        else { return nil }
+        return split
+    }
+
+    /// The box a mission's suggested split shows, while it has one.
+    package func splitBox(for mission: OrderMission) -> SplitBox? {
+        suggestedSplit(for: mission).map { split in
+            OrderText.splitBox(split, title: title(of: mission), yourName: yourNames.name(for: mission.key), names: names)
+        }
+    }
+
+    /// Split: the split Apple Intelligence suggests for a mission, as one change of yours, with one Undo: each group's pull
+    /// requests go where it says, each new mission with the name Apple Intelligence gave it, in memory, as any mission's
+    /// is, and the mission keeps its key, Focus and the name you gave it. What VoiceOver hears after it; nil when it has no
+    /// suggestion that holds now.
+    @discardableResult
+    package func split(_ shown: OrderMission) -> String? {
+        guard isOn else { return nil }
+        // Against the orders as agents last told them, as the change will be: a revision since may relate what the
+        // suggestion separates, and then it doesn't hold.
+        reloadOrders()
+        guard let mission = missions.first(where: { $0.key == shown.key }), let split = suggestedSplit(for: mission) else {
+            return nil
+        }
+        let box = OrderText.splitBox(split, title: title(of: mission), yourName: yourNames.name(for: mission.key), names: names)
+        var moves: [OrderSplitMove] = []
+        var named: [MissionKey: String] = [:]
+        for (index, group) in split.plan.groups.enumerated() {
+            let name = split.names.indices.contains(index) ? split.names[index] : nil
+            switch group.goes {
+            case .keeps:
+                if let name { named[mission.key] = name }
+            case .newMission:
+                let key = MissionKey.mine(UUID())
+                moves.append(OrderSplitMove(group.refs, to: .into(key)))
+                if let name { named[key] = name }
+            case .outside:
+                moves.append(OrderSplitMove(group.refs, to: .outside))
+            case .into(let key):
+                moves.append(OrderSplitMove(group.refs, to: .into(key)))
+            }
+        }
+        // The names first, so that the missions show with them, the line that says what it did names them, and Apple
+        // Intelligence isn't asked them again.
+        let before = modelNames
+        for (key, name) in named { modelNames[key] = name }
+        cachedNames = nil
+        guard let done = change(.split(mission.key, moves), in: mission.key), done.canUndo else {
+            modelNames = before
+            cachedNames = nil
+            return refusal?.said
+        }
+        namer?.adopt(Array(named.keys))
+        splitsShownAgain.remove(mission.key)
+        let undo = missions.contains { $0.key == mission.key }
+            ? "on the card of ‘\(title(of: missions.first { $0.key == mission.key } ?? mission))’" : "at the top of the list"
+        return OrderText.splitDone(box, undo: undo)
+    }
+
+    /// Keep Together: the suggestion goes, and comes back only once the mission has been made of something else for
+    /// `KeptTogether.settleFor`, as BriefBar keeps (`order.splits`); Suggested Split… shows it again meanwhile. What
+    /// VoiceOver hears after it.
+    @discardableResult
+    package func keepTogether(_ mission: OrderMission) -> String {
+        guard isOn, let question = splitQuestion(for: mission) else { return OrderText.keptTogether }
+        objectWillChange.send()
+        keptTogether.keep(mission.key, makeup: question.makeup, at: now())
+        keptTogether.save(to: defaults)
+        splitsShownAgain.remove(mission.key)
+        askNames()
+        return OrderText.keptTogether
+    }
+
+    /// Whether a mission's ⋯ offers Suggested Split…: you kept its suggestion together, and BriefBar still has it for what
+    /// the mission is made of now, or Apple Intelligence can be asked it again, as after BriefBar restarted.
+    package func offersSuggestedSplit(_ mission: OrderMission) -> Bool {
+        guard isOn, !splitsShownAgain.contains(mission.key), let question = splitQuestion(for: mission),
+              keptTogether.keeps(mission.key)
+        else { return false }
+        if let split = splits[mission.key], split.holds(for: question) { return true }
+        return question.isWorthAsking && namer?.canAsk == true
+    }
+
+    /// Suggested Split…: shows the suggestion you kept together again, asking Apple Intelligence again if BriefBar restarted
+    /// since, until you split the mission or keep it together again.
+    package func showSuggestedSplit(_ mission: OrderMission) {
+        guard offersSuggestedSplit(mission) else { return }
+        splitsShownAgain.insert(mission.key)
+        askNames()
+    }
+
+    private func splitSuggested(_ key: MissionKey, _ split: MissionSplit?) {
+        guard isOn, splits[key] != split else { return }
+        splits[key] = split
+    }
+
+    /// Pull requests a split moved are back where BriefBar or an order puts them, by Undo, or as an order took them since:
+    /// the missions they're in now keep together as they're made now, so that the split and the session don't undo each
+    /// other over and over; what one is made of, while BriefBar can't tell yet, as right after it starts, is told once it
+    /// can (`KeptTogether.keep`).
+    private func keepTogether(splitBack refs: Set<ItemRef>) {
+        guard !refs.isEmpty else { return }
+        var kept = false
+        for mission in missions where MissionSplitting.looksAt(mission) {
+            guard (mission.steps + mission.attached).contains(where: { refs.contains($0.ref) }),
+                  let question = splitQuestion(for: mission)
+            else { continue }
+            keptTogether.keep(mission.key, makeup: question.makeup, at: now())
+            kept = true
+        }
+        guard kept else { return }
+        objectWillChange.send()
+        keptTogether.save(to: defaults)
+    }
+
+    /// What you kept together, as the missions change: each follows its mission as Focus does, by `successor`; those of
+    /// orders BriefBar no longer keeps go, and those whose missions have been made of something else for
+    /// `KeptTogether.settleFor`; and the time since BriefBar last saw a mission counts against it while BriefBar could
+    /// see it, at most two hours at a time. Then the missions that pull requests a split moved went back to, as an order
+    /// took them, which BriefBar noted in this look (`splitsTakenBack`), keep together (`keepTogether(splitBack:)`): the
+    /// order's mission is there from the order alone, so it's there in the look that notes it, and BriefBar quitting
+    /// can't lose it.
+    private func keepKeptTogether(
+        following successor: (MissionKey) -> MissionKey?, facts: OrderFacts, splitsTakenBack: Set<ItemRef>, at date: Date
+    ) {
+        var kept = keptTogether
+        var changed = false
+        for key in kept.entries.keys.sorted(by: { $0.description < $1.description }) {
+            if let next = successor(key), kept.follow(key, to: next) { changed = true }
+        }
+        let plans = Set(orders.plans.map(\.id))
+        if kept.forget([], keepingPlans: plans) { changed = true }
+        let elapsed = keptCounted.map { min(max(date.timeIntervalSince($0), 0), 2 * Self.timeCheckInterval) } ?? 0
+        keptCounted = date
+        var makeups: [MissionKey: MissionSplitQuestion.Makeup?] = [:]
+        // Not while a source still reads what it shows, as right after BriefBar starts: until it has, a mission can still be
+        // without some of its own, which join it once read, or seem finished. Nor one whose makeup can't be told, as while
+        // Azure DevOps is off.
+        for mission in missions where kept.entries[mission.key] != nil && !facts.isReading {
+            guard let question = splitQuestion(for: mission) else {
+                makeups[mission.key] = .some(nil)
+                continue
+            }
+            if let makeup = question.makeup { makeups[mission.key] = makeup }
+        }
+        let kindsOn = kindsOn
+        if kept.account(seen: Set(missions.map(\.key)), makeups: makeups, canSee: { key in
+            MissionNames.canSee(key, plans: plans, kindsOn: kindsOn, readsStories: facts.seesStories)
+        }, elapsed: elapsed, at: date) {
+            changed = true
+        }
+        // Nothing shows how long one has differed.
+        if kept.entries != keptTogether.entries { objectWillChange.send() }
+        keptTogether = kept
+        if changed { kept.save(to: defaults) }
+        keepTogether(splitBack: splitsTakenBack)
+    }
+
+    /// The demo's made-up split, for its mission's question as it is now: only in the demo.
+    private func tellDemoSplit() {
+        guard isDemo, let demo = demoSplit, let mission = missions.first(where: { $0.key == demo.key }),
+              let question = splitQuestion(for: mission), splits[demo.key]?.holds(for: question) != true,
+              let indices = MissionSplitting.indices(of: demo.grouping, in: question),
+              let plan = MissionSplitting.plan(question, grouping: indices)
+        else { return }
+        splits[demo.key] = MissionSplit(key: demo.key, basis: question.basis, grouping: demo.grouping, plan: plan, names: demo.names)
     }
 
     // MARK: Your changes to missions
@@ -840,6 +1094,9 @@ package final class PullRequestOrder: ObservableObject {
             return refused
         }
         guard !touched.isEmpty else { return nil }
+        // Those a split moved that are back where BriefBar or an order puts them, as Undo Your Changes to It or to This
+        // Mission took the split's change back.
+        let splitBack = Set(touched.keys.filter { changes[$0]?.bySplit == true && changed[$0] == nil })
         // What BriefBar saw become of the pull requests the changes it touched were about, which can go with them, for Undo
         // to put back.
         var seen = evidence
@@ -848,6 +1105,7 @@ package final class PullRequestOrder: ObservableObject {
         making = touched
         rebuild()
         making = nil
+        keepTogether(splitBack: splitBack)
         var made = false
         if case .move(_, .into(let key), _) = edit, case .mine = key { made = !before.contains(key) }
         let last = OrderLastChange(
@@ -891,6 +1149,8 @@ package final class PullRequestOrder: ObservableObject {
         }
         switch edit {
         case .undoMission(let key):
+            return missions.contains { $0.key == key } ? key : nil
+        case .split(let key, _):
             return missions.contains { $0.key == key } ? key : nil
         case .move(let refs, _, let from):
             return from.flatMap { shown($0, besides: refs) }
@@ -944,7 +1204,8 @@ package final class PullRequestOrder: ObservableObject {
             pullRequests: sources.flatMap { told[$0]?.pullRequests ?? [] },
             sessions: sources.flatMap { told[$0]?.sessions ?? [] },
             sourcesOn: Set(sources.flatMap(ItemRef.Kind.of).filter(\.isPullRequest)),
-            readsStories: sources.contains { told[$0]?.readsStories == true }
+            readsStories: sources.contains { told[$0]?.readsStories == true },
+            pending: Set(sources.filter { told[$0]?.listed == false }.flatMap(ItemRef.Kind.of))
         )
     }
 
@@ -970,9 +1231,16 @@ package final class PullRequestOrder: ObservableObject {
         stacked = OrderBoard.stacked(facts)
         let focused = focus.flatMap(OrderFocus.ref(of:))
         // What an order changed since one of your changes, as BriefBar sees it: that change doesn't hold anymore, though the
-        // order changes back, until you put yours back.
+        // order changes back, until you put yours back. A split's that an order took, as one told while BriefBar was closed,
+        // which it notes as it starts, keeps the mission it went back to together, in this look (`keepKeptTogether`).
         var noted = changes
-        if noted.noteOverrides(in: orders, now: date) { keep(noted) }
+        var splitsTakenBack: Set<ItemRef> = []
+        if noted.noteOverrides(in: orders, now: date) {
+            for change in noted.all where change.bySplit && change.overridden != nil && changes[change.ref]?.overridden == nil {
+                splitsTakenBack.insert(change.ref)
+            }
+            keep(noted)
+        }
         let subjects = changes.subjects
         var evidence = evidence
         for observation in facts.observations
@@ -1076,6 +1344,9 @@ package final class PullRequestOrder: ObservableObject {
         )
         if heldAgain != nextsHeldAgain { nextsHeldAgain = heldAgain }
         if missions != self.missions { self.missions = missions }
+        questions = [:]
+        keepKeptTogether(following: successor, facts: facts, splitsTakenBack: splitsTakenBack, at: date)
+        tellDemoSplit()
         restage()
         askNames()
     }
@@ -1267,16 +1538,23 @@ package final class PullRequestOrder: ObservableObject {
         return true
     }
 
-    /// Puts back exactly what your last change to a mission touched.
+    /// Puts back exactly what your last change to a mission touched. Undoing a split keeps the mission together as it's made
+    /// again, as Keep Together does.
     private func undo(_ last: OrderLastChange) -> Bool {
         guard isOn, last.canUndo else { return false }
         var changed = changes
         changed.restore(last.touched)
+        // Those a split moved that are back where BriefBar or an order puts them: their split's change gone, or one an order
+        // took them from since, as Undo of Put Yours Back, or of a second split, brings back.
+        let splitBack = Set(last.touched.keys.filter { ref in
+            changes[ref]?.bySplit == true && (changed[ref].map { !$0.bySplit || !$0.holds(in: orders) } ?? true)
+        })
         lastChange = nil
         refusal = nil
         evidence = evidence.merging(last.evidence)
         keep(changed)
         rebuild()
+        keepTogether(splitBack: splitBack)
         return true
     }
 

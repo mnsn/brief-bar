@@ -29,6 +29,8 @@ import Testing
             #expect(snapshot.problem == nil)
             #expect(snapshot.listedByApp)
             #expect(!snapshot.databaseMissing)
+            // It says whether it read where each session's work goes.
+            #expect(!snapshot.readsLinks && SessionEngine.loadOnce(paths: paths, links: true).readsLinks)
             let records = Dictionary(uniqueKeysWithValues: snapshot.records.map { ($0.id, $0) })
             #expect(records.keys.sorted() == ["asking", "finished", "fresh"])
             #expect(try #require(records["fresh"]).log == nil)
@@ -45,6 +47,8 @@ import Testing
             #expect(snapshot.records.isEmpty)
             #expect(snapshot.problem == "No Copilot data found at \(paths.root.path)")
             #expect(!snapshot.databaseMissing)
+            // Nothing at all to read where each session's work goes: read, as far as it's anywhere.
+            #expect(SessionEngine.loadOnce(paths: paths, links: true).readsLinks)
         }
     }
 
@@ -72,6 +76,8 @@ import Testing
             #expect(!snapshot.listedByApp)
             // As on a Mac with only the Copilot CLI, which keeps no database.
             #expect(snapshot.databaseMissing)
+            // Where each session's work goes is read as far as it's anywhere: the folders are all there is.
+            #expect(SessionEngine.loadOnce(paths: paths, links: true).readsLinks)
         }
     }
 
@@ -84,6 +90,8 @@ import Testing
             #expect(snapshot.problem != nil)
             #expect(!snapshot.listedByApp)
             #expect(!snapshot.databaseMissing)
+            // Nor is where each session's work goes read till it can be.
+            #expect(!SessionEngine.loadOnce(paths: paths, links: true).readsLinks)
         }
     }
 

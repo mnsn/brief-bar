@@ -290,11 +290,19 @@ package struct MissionHeader: View {
         .help(help(title))
         .accessibilityElement(children: isRenaming ? .contain : .combine)
         .accessibilityAddTraits(.isHeader)
+        .accessibilityValue(order.splitBox(for: mission) == nil ? "" : OrderText.splitSuggested)
         .accessibilityAction(named: "Rename") { rename() }
         .accessibilityActions {
             // Only where the story can show, as its button is.
             if let story, let open = storyItem?.open {
                 Button("Show \(story)", action: open)
+            }
+            // The suggested split's buttons, as its box has them.
+            if let box = order.splitBox(for: mission) {
+                Button(box.button) {
+                    if let said = order.split(mission) { SpokenText.announce(SpokenText.unquoted(said)) }
+                }
+                Button(OrderText.keepTogether) { SpokenText.announce(order.keepTogether(mission)) }
             }
         }
     }
@@ -374,6 +382,9 @@ package struct MissionHeader: View {
             Button("Rename…") { rename() }
             if order.naming(of: mission) == .you {
                 Button("Use BriefBar's Name") { order.useBriefBarsName(mission.key) }
+            }
+            if order.offersSuggestedSplit(mission) {
+                Button(OrderText.suggestedSplit) { order.showSuggestedSplit(mission) }
             }
             if yours > 0 || mission.kind.isDeclared {
                 Divider()

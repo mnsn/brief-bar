@@ -562,6 +562,7 @@ package struct OrderBoardView: View {
             case .mission:
                 if let mission {
                     MissionHeader(mission: mission, order: order, place: place(mission))
+                    SplitSuggestionView(mission: mission, order: order, select: select)
                     let outside = mission.count(outside: board.kinds)
                     if outside > 0 {
                         OrderElsewhereLine(count: outside, elsewhere: elsewhere, open: openElsewhere)
