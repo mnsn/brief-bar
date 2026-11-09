@@ -716,8 +716,10 @@ struct AzureDevOpsAgent: Sendable {
     static let freshForStages: TimeInterval = 10
 
     var source: MCPSource {
-        let stages = MCPStages(read: { refs in try await stages(of: refs) }, listedSessions: { await listedSessions() })
-        return MCPSource(name: "Azure DevOps", tools: tools, stages: stages) { try await needsYou() }
+        MCPSource(
+            name: "Azure DevOps", tools: tools,
+            stages: MCPStages(read: { refs in try await stages(of: refs) }, listedSessions: { await listedSessions() })
+        ) { try await needsYou() }
     }
 
     /// What `pull_request_stage` reads of these pull requests: what each one's stage is worked out from, as the app's

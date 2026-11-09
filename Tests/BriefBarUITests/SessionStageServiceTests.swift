@@ -267,30 +267,68 @@ private final class Clock {
     }
 
     /// A Your review you set lasts until you change it, also once a session that pushed says the same, as BriefBar's
-    /// prompts ask: it shows the session's while it stands, with nothing to put back, and yours again once a teammate's
-    /// approval ends it, kept in the preferences.
-    @Test func aSessionSayingTheSameLeavesYourYourReviewOnceItEnds() {
+    /// prompts ask: while yours is the latest set, the session's `pull_request_stage` keeps nothing, saying so, and yours
+    /// stays as a teammate approves. Where the session's other stage replaced yours first, what it says later counts as
+    /// any stage does, and once that ends, none does: yours doesn't come back.
+    @Test func aSessionSayingTheSameKeepsNothingOverTheYourReviewYouSet() async throws {
         let clock = Clock()
         let defaults = Self.defaults()
         let order = Self.service(defaults, clock: clock)
-        Self.tell(order, [4093: StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)])
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)
+        Self.tell(order, [4093: waiting, 4094: waiting])
         Self.list(order, [Self.cart: .finished], since: clock.now - 3_600)
         clock.advance(seconds: 60)
         #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        #expect(order.setStage(.yourReview, of: Self.ref(4094)) == .done)
 
+        // You and ‘Cart’ reviewed !4094 together: it's your teammates' turn there.
         clock.advance(seconds: 60)
-        Self.set(.yourReview, of: 4093, by: Self.cart, at: clock.now, votes: "", in: defaults, order)
-        #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.cart)
-        #expect(order.stage(of: Self.ref(4093))?.replaced == nil)
+        let facts = [Self.ref(4093): waiting, Self.ref(4094): waiting]
+        _ = try await Self.setStage("teammate_review", of: [4094], in: defaults, facts: facts, at: clock.now)
+        order.agentChanged()
+        #expect(order.stage(of: Self.ref(4094))?.replaced?.stage == .yourReview)
 
+        // ‘Cart’ pushed to both, and says each is ready for your review.
         clock.advance(seconds: 60)
-        Self.tell(order, [
-            4093: StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: clock.now),
-        ])
+        let answer = try await Self.setStage("user_review", of: [4093, 4094], in: defaults, facts: facts, at: clock.now)
+        order.agentChanged()
+        #expect(answer == """
+            BriefBar shows !4094 in contoso in Your review now, set by this session; the user sees who set it, and can \
+            change it.
+            The user set !4093 in contoso in Your review already, 2m ago: BriefBar shows theirs, and keeps no stage of \
+            this session's on it.
+            """)
+        #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
+        #expect(order.stage(of: Self.ref(4094))?.mark?.by == Self.cart)
+        #expect(SessionStages.load(Self.cart, from: defaults)?.marks[Self.ref(4093)] == nil)
+
+        // Priya approves.
+        clock.advance(seconds: 60)
+        let approved = StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: clock.now)
+        Self.tell(order, [4093: approved, 4094: approved])
         #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
         #expect(order.stage(of: Self.ref(4093))?.isSetByYou == true)
-        #expect(SessionStages.load(Self.cart, from: defaults) == nil)
-        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(4094))?.stage == .canMerge)
+        #expect(order.stage(of: Self.ref(4094))?.mark == nil)
+    }
+
+    /// ‘Cart’ sets these pull requests' stage with `pull_request_stage`, as its `--mcp` does, with the Copilot app listing
+    /// it, as Azure DevOps reads them at `date`.
+    private static func setStage(
+        _ stage: String, of numbers: [Int], in defaults: MemoryDefaults, facts: [ItemRef: StageFacts], at date: Date
+    ) async throws -> String {
+        let (cart, account) = (Self.cart, Self.account)
+        let tools = PullRequestOrderMCP.tools(
+            defaults: defaults, demo: false, sourcesOn: { [.pullRequest] }, session: cart.id,
+            stages: MCPStages(
+                read: { refs in MCPStages.Read(account: account, facts: facts.filter { refs.contains($0.key) }) },
+                listedSessions: { [cart] }
+            ),
+            announce: {}, now: { date }
+        )
+        let tool = try #require(tools.first { $0.name == "pull_request_stage" })
+        let json = #"{"pull_requests": \#(numbers), "organization": "contoso", "stage": "\#(stage)"}"#
+        return try await tool.run(try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8)))
     }
 
     @Test func mergedOrClosedEndsWhatSessionsSet() {

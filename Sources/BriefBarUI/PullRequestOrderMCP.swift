@@ -251,7 +251,8 @@ package enum PullRequestOrderMCP {
     /// just before it keeps anything, as reading Azure DevOps takes a while (`OrderKeeper.changeStages`). One BriefBar
     /// doesn't list, one that merged or closed, and someone else's to put in progress, which BriefBar never does, are
     /// left as they are, each with a line that says why. It says BriefBar shows what it set only where it can tell
-    /// (`MCPStages.listedSessions`).
+    /// (`MCPStages.listedSessions`). Where the user set the same stage, and theirs is the latest set and stands, it keeps
+    /// nothing, saying so: a Your review they set lasts until they change it, rather than end with a session's.
     static func setStage(
         _ arguments: JSONValue, keeper: OrderKeeper, stages: MCPStages, copilotOn: @escaping @Sendable () -> Bool,
         session: ItemRef, now: @Sendable () -> Date
@@ -326,21 +327,33 @@ package enum PullRequestOrderMCP {
             marks[ref] = StageRules.mark(stage, at: now, facts: facts, by: session)
         }
         guard !marks.isEmpty else { throw MCPToolError(notSet.joined(separator: "\n")) }
-        // What the user set that this replaces, while it stands: they can put it back.
+        // What the user set that this replaces, while it stands: they can put it back. Where theirs is the stage this sets
+        // and the latest set, it stands as it would: the session keeps nothing there, rather than hide theirs under a
+        // stage of its own that ends sooner, and ends theirs with it.
         let yours = await keeper.userMarks(of: Array(marks.keys), account: read.account)
-        let set = marks
+        let latest = await keeper.latestSessionMarks(on: Array(marks.keys), listed: listed, now: now)
+        let already = Set(marks.keys.filter { ref in
+            guard let theirs = yours[ref], theirs.stage == stage, let facts = read.facts[ref],
+                  theirs.at > (latest[ref] ?? .distantPast) else { return false }
+            return StageRules.stands(theirs, facts: facts, sessions: facts.sessions)
+        })
+        let set = marks.filter { !already.contains($0.key) }
         try await keeper.changeStages(session, now: now, unless: refusal) { kept in
             for (ref, mark) in set { kept.set(mark, of: ref) }
+            for ref in already { kept.clear(ref) }
         }
-        let told = refs.filter { marks[$0] != nil }
-        let them = told.count == 1 ? "it" : "them"
-        let shows = if listed == nil {
-            "BriefBar keeps \(labels(told)) in \(stage.title), set by this session, and shows \(them) while the "
-                + "Copilot app lists this session"
-        } else {
-            "BriefBar shows \(labels(told)) in \(stage.title) now, set by this session"
+        let told = refs.filter { set[$0] != nil }
+        var lines: [String] = []
+        if !told.isEmpty {
+            let them = told.count == 1 ? "it" : "them"
+            let shows = if listed == nil {
+                "BriefBar keeps \(labels(told)) in \(stage.title), set by this session, and shows \(them) while the "
+                    + "Copilot app lists this session"
+            } else {
+                "BriefBar shows \(labels(told)) in \(stage.title) now, set by this session"
+            }
+            lines.append("\(shows); the user sees who set it, and can change it.\(demo)")
         }
-        var lines = ["\(shows); the user sees who set it, and can change it.\(demo)"]
         for ref in told {
             guard let theirs = yours[ref], theirs.stage != stage, let facts = read.facts[ref],
                   StageRules.stands(theirs, facts: facts, sessions: facts.sessions) else { continue }
@@ -348,6 +361,13 @@ package enum PullRequestOrderMCP {
             lines.append(
                 "The user had set \(theirs.stage.title)\(on) \(StageText.agoWords(theirs.at, now: now)); yours replaces it, "
                     + "and they can put theirs back."
+            )
+        }
+        for ref in refs where already.contains(ref) {
+            guard let theirs = yours[ref] else { continue }
+            lines.append(
+                "The user set \(labels([ref])) in \(stage.title) already, \(StageText.agoWords(theirs.at, now: now)): "
+                    + "BriefBar shows theirs, and keeps no stage of this session's on it."
             )
         }
         return (lines + notSet).joined(separator: "\n")
@@ -567,6 +587,18 @@ actor OrderKeeper {
             found[ref] = marks.mark(of: ref, for: account)
         }
         return found
+    }
+
+    /// When a session last set a stage on each of these pull requests, of those the Copilot app lists, or of all of them
+    /// where `--mcp` can't tell, as their keys have them now; none where none did.
+    func latestSessionMarks(on refs: [ItemRef], listed: Set<ItemRef>?, now: Date) -> [ItemRef: Date] {
+        let stages = SessionStages.load(from: defaults, now: now)
+        let marks = stages.marks(listed: listed ?? Set(stages.sessions.keys), now: now)
+        var latest: [ItemRef: Date] = [:]
+        for ref in refs {
+            latest[ref] = marks[ref]?.map(\.at).max()
+        }
+        return latest
     }
 
     /// Changes what a session set on its pull requests' stages, saving it under its own key, and tells the app when that

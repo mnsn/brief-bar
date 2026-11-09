@@ -1535,10 +1535,11 @@ the pull request in progress. A Your review a session set ends as the votes chan
 review does, unlike one you set, which stands until you change it: the session said its work was ready for you, as
 **‘Cart’ finished** does, which gives way once someone else votes, so one a teammate approved moves on to Can merge or
 Waits. It keeps the votes as the session read them as it set it, after its push, so a reset of the votes that push
-caused ends nothing. A session that sets the stage yours has says the same, and replaces nothing, so it offers nothing
-to put back: while every stage set after yours is yours, their end leaves yours, while it stands (`StageRules.counted`),
-so a Your review you set outlasts the one a session that pushed sets, as BriefBar's prompts ask, once a teammate
-approves. Votes and commits end what a session set only as BriefBar read them after it set it, since the
+caused ends nothing. A session that sets the stage you set, while yours is the latest set and stands, keeps nothing, and
+`pull_request_stage` tells it you set it already, so yours shows and lasts as it would: a Your review you set outlasts
+the session that pushed and says it's ready, as BriefBar's prompts ask, once a teammate approves. Once a session's other
+stage replaced yours, what it says later counts as any stage does, and once the latest ends none does, yours neither.
+Votes and commits end what a session set only as BriefBar read them after it set it, since the
 session read the pull request itself just then, and what it sets is timed as that read ended. BriefBar reads them as the
 refresh that read its organization's lists started, or as it was read by its link, a time a pull request kept as it was
 while those couldn't be read keeps (`StageFacts.readAt`, `PulseSnapshot.readAt(of:)`). What a session set counts only
@@ -3989,8 +3990,10 @@ DevOps, Copilot and Pull Request Order are still on, as reading takes a while (`
 `MCPStages.refusal`). It answers with what BriefBar shows now, set by that session, from the sessions `--mcp` reads
 that the app lists, as agents' stages count them (`MCPStages.listedSessions`), or, where it can't tell, as with
 `--source ado`, that BriefBar shows it while the app lists the session; and, where it replaced a stage you set that
-still stood, that you can put yours back; and names those it didn't set, such as one no list has now, one that merged,
-one that was abandoned, or someone else's to put in progress, which BriefBar never does. The order tools' answers also tell
+still stood, that you can put yours back; where you set that stage already, as the latest and still standing, that it
+keeps none there, taking away what the session set there before; and names those it didn't set, such as one no list has
+now, one that merged, one that was abandoned, or someone else's to put in progress, which BriefBar never does. The
+order tools' answers also tell
 the session what you changed in its orders that still holds (`OrderText.userChanges`), to keep, and that a later change
 of its that goes against one shows instead of yours, until you put yours back. Their answers name pull requests by
 number and organization, never by title; none of them makes or undoes your changes, or answers with missions. `--mcp`

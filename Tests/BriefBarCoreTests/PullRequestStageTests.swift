@@ -402,35 +402,6 @@ import Testing
         #expect(reading?.stage == .teammateReview)
     }
 
-    /// A session that sets the stage you set says the same, and replaces nothing: once it ends, yours counts again while
-    /// it stands, so a Your review you set lasts until you change it, also after a session said it's ready and a teammate
-    /// approved. Yours goes with the latest where a session's other stage replaced it in between, and once it merged.
-    @Test func aSessionSayingTheSameLeavesYoursOnceItEnds() {
-        let yours = StageMark(stage: .yourReview, at: t(100))
-        let ready = StageMark(stage: .yourReview, at: t(200), by: Self.cart, votes: "")
-
-        // While the session's stands, it decides, with nothing to put back.
-        let unread = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: t(250))
-        let standing = StageRules.counted(yours: yours, theirs: [ready], facts: unread, sessions: [])
-        #expect(!standing.latestEnded)
-        let shown = Self.reading(unread, marks: [standing.yours].compactMap { $0 } + standing.theirs)
-        #expect(shown?.mark == ready)
-        #expect(shown?.replaced == nil)
-
-        // Priya approves: the session's ends, and yours is what counts.
-        let approved = StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: t(300))
-        let counted = StageRules.counted(yours: yours, theirs: [ready], facts: approved, sessions: [])
-        #expect(counted.latestEnded)
-        #expect(counted.yours == yours)
-        #expect(counted.theirs.isEmpty)
-        #expect(Self.reading(approved, marks: [counted.yours].compactMap { $0 })?.stage == .yourReview)
-
-        let reviewed = StageMark(stage: .teammateReview, at: t(150), by: Self.backoff, votes: "")
-        #expect(StageRules.counted(yours: yours, theirs: [reviewed, ready], facts: approved, sessions: []).yours == nil)
-        let merged = StageFacts(role: .author, state: .merged, votes: "10", readAt: t(300))
-        #expect(StageRules.counted(yours: yours, theirs: [ready], facts: merged, sessions: []).yours == nil)
-    }
-
     // MARK: The order
 
     static let planID = UUID(uuidString: "11111111-2222-4333-8444-555555555555")!

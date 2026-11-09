@@ -214,6 +214,51 @@ private final class Announcements: Sendable {
         #expect(announcements.total == 2)
     }
 
+    /// Where the user set the stage it sets, and theirs is the latest set and stands, it keeps nothing there, takes away
+    /// what this session set before, and says the user set it already, so a Your review they set doesn't end with a
+    /// session's. Where a listed session's stage came after theirs, it sets its own as anywhere.
+    @Test func whereTheUserSetTheSameStageLastItKeepsNothing() async throws {
+        let other = try #require(ItemRef.session(Self.otherSession))
+        // You set Your review on both; this session had put !4093 in progress before, another set Teammate's review on
+        // !4094 since.
+        func defaults() -> MemoryDefaults {
+            let defaults = Self.settings()
+            var marks = StageMarks()
+            for number in [4093, 4094] {
+                _ = marks.set(StageMark(stage: .yourReview, at: Self.now - 120), of: Self.ref(number), for: "robin@contoso.com", at: Self.now)
+            }
+            marks.save(to: defaults)
+            SessionStages.change(Self.sessionRef, in: defaults, now: Self.now - 300) {
+                $0.set(StageMark(stage: .inProgress, at: Self.now - 300, by: Self.sessionRef, commit: "a1b2c3d"), of: Self.ref(4093))
+            }
+            SessionStages.change(other, in: defaults, now: Self.now - 60) {
+                $0.set(StageMark(stage: .teammateReview, at: Self.now - 60, by: other, votes: "10"), of: Self.ref(4094))
+            }
+            return defaults
+        }
+        let json = #"{"pull_requests": [4093, 4094], "organization": "contoso", "stage": "user_review"}"#
+        let listed = defaults()
+        let answer = try await Self.set(Self.tools(listed, listedSessions: [Self.sessionRef, other]), json)
+        #expect(answer == """
+            BriefBar shows !4094 in contoso in Your review now, set by this session; the user sees who set it, and can \
+            change it.
+            The user set !4093 in contoso in Your review already, 2m ago: BriefBar shows theirs, and keeps no stage of \
+            this session's on it.
+            """)
+        #expect(Self.kept(listed)?.marks.keys.sorted() == [Self.ref(4094)])
+
+        // Only the sessions the app lists count, as in the app; with nothing to set, it answers all the same.
+        let unlisted = defaults()
+        let none = try await Self.set(Self.tools(unlisted, listedSessions: [Self.sessionRef]), json)
+        #expect(none == """
+            The user set !4093 in contoso in Your review already, 2m ago: BriefBar shows theirs, and keeps no stage of \
+            this session's on it.
+            The user set !4094 in contoso in Your review already, 2m ago: BriefBar shows theirs, and keeps no stage of \
+            this session's on it.
+            """)
+        #expect(Self.kept(unlisted) == nil)
+    }
+
     /// One BriefBar doesn't list, or that merged, is left as it is, with a line that says why; with none set, it's refused.
     @Test func itSaysWhichItDidntSet() async throws {
         let defaults = Self.settings()
