@@ -168,12 +168,8 @@ extension AgentText {
         default: StageText.why(reading, name: stages.name)
         }
         if reading.why.saysWhen, let since = reading.since { words += ", \(ago(since, now: stages.now))" }
-        if let mark = reading.mark, mark.by != nil, reading.why == .set {
-            // Its words name the session already.
-            words += " (set \(StageText.agoWords(mark.at, now: stages.now))\(reading.replaced != nil ? ", after you" : ""))"
-        } else if let who = StageText.who(reading, now: stages.now, name: stages.name) {
-            words += " (\(who))"
-        }
+        // Where its words name the session that set it, only when: "(set 5m ago)", as the app says it.
+        if let who = StageText.who(reading, now: stages.now, name: stages.name) { words += " (\(who))" }
         return QuotedText.inLine(words)
     }
 }
