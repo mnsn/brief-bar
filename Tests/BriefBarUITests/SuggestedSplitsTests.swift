@@ -1271,6 +1271,72 @@ fileprivate final class SplitViewer {}
         #expect(order.keptTogether.entries[key] != nil)
     }
 
+    /// A line among what a split moved, told since, is one BriefBar knows from then on, kept with your changes: once one of
+    /// them goes back to the order's mission, by Undo Your Changes to It, the order told again takes nothing back.
+    @Test func aLineAmongWhatASplitMovedToldSinceTakesNothingBackOnceOneOfThemGoesBack() async throws {
+        let clock = SplitClock()
+        let model = SplitModel()
+        let defaults = MemoryDefaults()
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        var orders = DeclaredOrders.load(from: defaults)
+        try orders.apply(
+            OrderRequest(entries: [4101, 4102, 4120, 4121].map { .init(link: link($0)) }), now: clock.now, newID: Self.planID
+        )
+        orders.save(to: defaults)
+        let order = Self.service(defaults, clock: clock)
+        order.namer = model.namer(clock: clock)
+        Self.tellCopilot(order)
+        Self.tell(order)
+        let key = MissionKey.plan(Self.planID)
+        let viewer = SplitViewer()
+        Self.show([key], in: viewer, by: order)
+        clock.advance(MissionNamer.settleFor)
+        order.namer?.next()
+        let shown = try #require(Self.mission(key, in: order))
+        try #require(await MissionNamingTests.eventually { order.suggestedSplit(for: shown) != nil })
+        try #require(order.split(shown) != nil)
+        try #require(Set(order.changes.all.map(\.ref)) == [Self.pr(4120), Self.pr(4121)])
+        let mine = try #require(order.changes[Self.pr(4120)]?.placement)
+        order.stopShowing(in: viewer)
+
+        // The session puts the build agents' upgrade after the coupon field's tests since, both in your mission now.
+        func tell(_ revision: Int, _ entries: [OrderRequest.Entry]) throws {
+            var revised = DeclaredOrders.load(from: defaults)
+            try revised.apply(OrderRequest(plan: Self.planID.uuidString, revision: revision, entries: entries), now: clock.now, newID: UUID())
+            revised.save(to: defaults)
+            order.reloadOrders()
+        }
+        let among: [OrderRequest.Entry] = [
+            .init(link: link(4101)), .init(link: link(4102)), .init(link: link(4120)), .init(link: link(4121), after: [link(4120)]),
+        ]
+        clock.advance(60)
+        try tell(1, among)
+        #expect(order.changes.all.allSatisfy { $0.overridden == nil })
+        #expect(OrderChanges.load(from: defaults)[Self.pr(4121)]?.linedWith == [Self.pr(4120)])
+        #expect(Self.refs(of: order.missions.first { .into($0.key) == mine }) == [Self.pr(4120), Self.pr(4121)])
+
+        // Undo Your Changes to It on the coupon field's tests: back in the order's mission, and the order told again takes
+        // nothing back.
+        try #require(order.change(.undo(Self.pr(4120))) != nil)
+        #expect(Set(Self.refs(of: Self.mission(key, in: order))) == [Self.pr(4101), Self.pr(4102), Self.pr(4120)])
+        clock.advance(60)
+        try tell(2, among)
+        #expect(order.changes.all.allSatisfy { $0.overridden == nil })
+        #expect(Self.refs(of: order.missions.first { .into($0.key) == mine }) == [Self.pr(4121)])
+
+        // The coupon field's tests after the coupon field, told while they're in the order's mission: Undo brings them back
+        // where the split put them, knowing that, so it takes nothing back.
+        clock.advance(60)
+        try tell(3, [
+            .init(link: link(4101)), .init(link: link(4102)), .init(link: link(4120), after: [link(4101)]),
+            .init(link: link(4121), after: [link(4120)]),
+        ])
+        #expect(order.undo())
+        #expect(order.changes.all.allSatisfy { $0.overridden == nil })
+        #expect(Self.refs(of: order.missions.first { .into($0.key) == mine }) == [Self.pr(4120), Self.pr(4121)])
+        #expect(OrderChanges.load(from: defaults)[Self.pr(4120)]?.linedWith == [Self.pr(4101), Self.pr(4121)])
+    }
+
     /// A line to one that closed holds nothing up, so it takes nothing back until that one's open again. Undo of Put Yours
     /// Back keeps the order's mission together again, though what you kept together as the order took them went since.
     @Test func aLineToAClosedOneTakesNothingBackAndUndoOfPutYoursBackKeepsTheOrdersMissionTogether() async throws {

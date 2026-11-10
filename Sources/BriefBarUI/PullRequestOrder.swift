@@ -1578,7 +1578,7 @@ package final class PullRequestOrder: ObservableObject {
     private func undo(_ last: OrderLastChange) -> Bool {
         guard isOn, last.canUndo else { return false }
         var changed = changes
-        changed.restore(last.touched)
+        changed.restore(last.touched, orders: orders)
         // Those a split moved that are back where BriefBar or an order puts them: their split's change gone, or one an order
         // took them from since, as Undo of Put Yours Back, or of a second split, brings back.
         let splitBack = Set(last.touched.keys.filter { ref in

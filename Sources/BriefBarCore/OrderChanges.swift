@@ -80,6 +80,14 @@ public struct OrderChange: Equatable, Sendable {
             self.before = before
             self.with = with
         }
+
+        /// Without the pull requests it names that BriefBar forgets.
+        func without(_ isForgotten: (ItemRef) -> Bool) -> Overridden {
+            var kept = self
+            kept.before.removeAll(where: isForgotten)
+            if kept.with.map(isForgotten) == true { kept.with = nil }
+            return kept
+        }
     }
 
     public var ref: ItemRef
@@ -112,15 +120,23 @@ public struct OrderChange: Equatable, Sendable {
     /// was split from asks it in as a mission split off before. Move to Mission moves it as yours alone again.
     public var bySplit: Bool
     /// For one a split moved from a session's order's mission: the pull requests that order put it after, or after it, when
-    /// you last changed it, or before, as BriefBar saw it since; empty for any other change. A line between it and one of
-    /// those never takes it back into that order's mission, however it comes to cross the split, as when that one leaves
-    /// it, or you put it back over that line: only a line told since does (`OrderChanges.splitsTakenBack`).
+    /// you last changed it, or before, as BriefBar saw it since; and those it put it after, or after it, since, where that
+    /// line didn't cross the split as BriefBar first saw it: to one the split moved with it, to one you moved elsewhere
+    /// yourself, or one you took away (`OrderChanges.noteOverrides`). Empty for any other change. A line between it and one
+    /// of those never takes it back into that order's mission, however it comes to cross the split, as when that one leaves
+    /// it, or you put it back over that line: only one that crosses as BriefBar first sees it does
+    /// (`OrderChanges.splitsTakenBack`). Back where the split put it, as Undo or an order BriefBar forgot brings it back, it
+    /// knows those it put it in meanwhile too (`OrderChanges.restore`, `OrderChanges.noteOverrides`).
     public var linedWith: Set<ItemRef>
+    /// For one a split moved from a session's order's mission that the order didn't name, as one stacked with its own: it
+    /// goes back with what the split moved with it however that order names it since, where one the order named and no
+    /// longer does stays (`OrderChanges.splitsTakenBack`).
+    public var splitAttached: Bool
 
     public init(
         ref: ItemRef, first: MissionKey? = nil, after: [ItemRef] = [], notAfter: [ItemRef] = [], placement: OrderPlacement? = nil,
         from: MissionKey? = nil, changedAt: Date, replaced: OrderPlace = OrderPlace(), found: OrderPlace? = nil,
-        overridden: Overridden? = nil, bySplit: Bool = false, linedWith: Set<ItemRef> = []
+        overridden: Overridden? = nil, bySplit: Bool = false, linedWith: Set<ItemRef> = [], splitAttached: Bool = false
     ) {
         self.ref = ref
         self.first = first
@@ -134,6 +150,7 @@ public struct OrderChange: Equatable, Sendable {
         self.overridden = overridden
         self.bySplit = bySplit
         self.linedWith = linedWith
+        self.splitAttached = splitAttached
     }
 
     /// The pull requests an order puts this one after, or after it.
@@ -470,9 +487,9 @@ public struct OrderChanges: Equatable, Sendable {
     // MARK: Forgetting
 
     /// Forgets the things of the sources you turned off, as each source forgets what it kept: changes to their pull
-    /// requests, what others merge after of theirs, and placements in their missions: a GitHub stack, a chain of their pull
-    /// requests, the pull requests opened under a Copilot session, or a story's, by its Azure DevOps work item. True when
-    /// that forgot something.
+    /// requests, what others merge after of theirs, the lines across a split and an order's notes that name them, and
+    /// placements in their missions: a GitHub stack, a chain of their pull requests, the pull requests opened under a
+    /// Copilot session, or a story's, by its Azure DevOps work item. True when that forgot something.
     @discardableResult
     public mutating func forget(_ kinds: Set<ItemRef.Kind>) -> Bool {
         guard !kinds.isEmpty else { return false }
@@ -496,6 +513,8 @@ public struct OrderChanges: Equatable, Sendable {
             if isForgotten(change.first) { change.first = nil }
             change.replaced.orders = change.replaced.orders.mapValues { $0.filter { !kinds.contains($0.kind) } }
             change.found.orders = change.found.orders.mapValues { $0.filter { !kinds.contains($0.kind) } }
+            change.linedWith = change.linedWith.filter { !kinds.contains($0.kind) }
+            change.overridden = change.overridden?.without { kinds.contains($0.kind) }
             if !change.isEmpty { kept[ref] = change }
         }
         changes = kept
@@ -524,6 +543,7 @@ public struct OrderChanges: Equatable, Sendable {
             // What a split moved keeps the lines of an order BriefBar still keeps.
             let order: UUID? = if case .plan(let id)? = change.splitFrom { id } else { nil }
             tidy.linedWith = order.map(kept.contains) == true ? change.linedWith.subtracting(gone) : []
+            tidy.overridden = change.overridden?.without(gone.contains)
             if tidy != change {
                 changes[ref] = tidy
                 forgot = true
@@ -676,8 +696,9 @@ public struct OrderChanges: Equatable, Sendable {
     /// there (`OrderChange.follow`), but your next while another of yours holds there, and gives your next back once it no
     /// longer names it (`OrderChange.unfollow`); a revision told before your change, which BriefBar sees only now, is what
     /// yours replaced; and an override by an order BriefBar forgot since is no more, so that yours holds again. Then what
-    /// an order takes back that a split moved, as it put a line across the split, goes back as one (`splitsTakenBack`).
-    /// Telling the same order again notes nothing. True when that noted something.
+    /// an order takes back that a split moved, as it put a line across the split, goes back as one (`splitsTakenBack`), and
+    /// what a split moved knows the lines it sees that don't cross the split, which never take it back
+    /// (`OrderChange.linedWith`). Telling the same order again notes nothing. True when that noted something.
     /// - Parameters:
     ///   - now: when BriefBar saw it, for an order whose last change it can't tell.
     ///   - status: where each pull request stands, as BriefBar sees it, for a line across a split that holds nothing up
@@ -702,6 +723,9 @@ public struct OrderChanges: Equatable, Sendable {
             if let overridden = change.overridden {
                 guard orders.plan(overridden.by) == nil else { continue }
                 change.overridden = nil
+                // Back where a split put it, it knows what its order put it in meanwhile: none of that crossed the split for
+                // it, as it wasn't there.
+                change.linedWith.formUnion(change.lined(in: orders))
             }
             change.unfollow(in: orders)
             change.rebase(on: orders)
@@ -716,9 +740,16 @@ public struct OrderChanges: Equatable, Sendable {
                 noted = true
             }
         }
-        for (ref, overridden) in splitsTakenBack(in: orders, now: now, status: status) {
+        let split = splitLines(in: orders, now: now, status: status)
+        for (ref, overridden) in split.taken {
             guard var change = changes[ref] else { continue }
             change.overridden = overridden
+            changes[ref] = change
+            noted = true
+        }
+        for (ref, seen) in split.seen {
+            guard var change = changes[ref], !seen.isSubset(of: change.linedWith) else { continue }
+            change.linedWith.formUnion(seen)
             changes[ref] = change
             noted = true
         }
@@ -729,75 +760,126 @@ public struct OrderChanges: Equatable, Sendable {
     /// split moved together, from a session's order's mission to the same mission, or one out of missions, go back into
     /// that order's mission as one, overridden by it, once a revision of it told after the split puts a line, either way,
     /// between one of them and one of the order's that the split didn't put with them, in its mission or split off it to
-    /// another: so that no split cuts the order's lines. Only a line it didn't have when you last changed it
-    /// (`OrderChange.linedWith`), so not one that comes to cross as a pull request leaves them or comes back to the order's
-    /// mission, nor one you put yours back over (`OrderEdit.putBack`), so telling the same again takes nothing back. Not a
-    /// line you took away, nor one to a pull request you moved elsewhere yourself, as Move to Mission did; nor one that
-    /// holds nothing up anymore, from one that merged or to one that merged or closed, as `status` tells.
+    /// another: so that no split cuts the order's lines. Only a line that crosses the split as BriefBar first sees it: not
+    /// one they had when you last changed them, nor one BriefBar saw since that didn't cross then (`OrderChange.linedWith`),
+    /// so not one that comes to cross as a pull request leaves them or comes back to the order's mission, nor one you put
+    /// yours back over (`OrderEdit.putBack`), so telling the same again takes nothing back. Not a line you took away, nor
+    /// one to a pull request you moved elsewhere yourself, as Move to Mission did; nor one that holds nothing up anymore,
+    /// from one that merged or to one that merged or closed, as `status` tells, until it does again. One the order named as
+    /// the split moved it, and doesn't anymore, stays: it has nowhere to go back to. And one back where the split put it
+    /// since its order took back what the split moved with it, as Undo, or an order BriefBar forgot that had taken it, brings
+    /// it back, goes back with them, so that the order's lines among them aren't cut either.
     /// - Parameter status: where each pull request stands, as BriefBar sees it; open by default.
     /// - Returns: each it takes back, with what its note says: the line its order put across, or the one it went back with.
     public func splitsTakenBack(
         in orders: DeclaredOrders, now: Date = Date(), status: (ItemRef) -> OrderStatus = { _ in .open }
     ) -> [ItemRef: OrderChange.Overridden] {
+        splitLines(in: orders, now: now, status: status).taken
+    }
+
+    /// What `splitsTakenBack` takes back, and the lines across a split BriefBar sees now that never take back what it
+    /// moved, by the pull request it moved, for `OrderChange.linedWith`.
+    private func splitLines(
+        in orders: DeclaredOrders, now: Date, status: (ItemRef) -> OrderStatus
+    ) -> (taken: [ItemRef: OrderChange.Overridden], seen: [ItemRef: Set<ItemRef>]) {
         let holding = holding(in: orders)
         var groups: [SplitGroup: [OrderChange]] = [:]
-        for change in holding.values {
-            guard let group = SplitGroup(change), orders.plan(group.order) != nil else { continue }
-            groups[group, default: []].append(change)
+        // What each group's order took back of it.
+        var tookBack: [SplitGroup: [OrderChange]] = [:]
+        for change in changes.values {
+            guard let group = SplitGroup(change), let plan = orders.plan(group.order) else { continue }
+            if holding[change.ref] == nil {
+                if change.overridden?.by == plan.id { tookBack[group, default: []].append(change) }
+            } else if change.splitAttached || plan.contains(change.ref) {
+                groups[group, default: []].append(change)
+            }
         }
         var taken: [ItemRef: OrderChange.Overridden] = [:]
+        var seen: [ItemRef: Set<ItemRef>] = [:]
         for (group, members) in groups {
             guard let plan = orders.plan(group.order) else { continue }
             let refs = Set(members.map(\.ref))
+            let found = Self.lines(across: refs, of: plan, changes: changes, holding: holding, status: status)
+            seen.merge(found.seen) { $0.union($1) }
             // Told after the split moved the one it's about: one told before is what the split moved them from.
-            let lines = Self.lines(across: refs, of: plan, holding: holding, status: status).filter { line in
+            let lines = found.across.filter { line in
                 let member = refs.contains(line.after) ? line.after : line.before
                 return holding[member].map { plan.updatedAt > $0.changedAt } ?? false
             }
-            guard let first = lines.map({ refs.contains($0.after) ? $0.after : $0.before }).min() else { continue }
-            let at = min(plan.updatedAt, now)
-            for ref in refs {
-                let later = lines.filter { $0.before == ref }.map(\.after)
-                let overridden: OrderChange.Overridden = if lines.contains(where: { $0.after == ref }) {
-                    // Its own place in the order says it.
-                    OrderChange.Overridden(by: plan.id, at: at)
-                } else if !later.isEmpty {
-                    OrderChange.Overridden(by: plan.id, at: at, before: later.sorted())
-                } else {
-                    OrderChange.Overridden(by: plan.id, at: at, with: first)
+            if let first = lines.map({ refs.contains($0.after) ? $0.after : $0.before }).min() {
+                let at = min(plan.updatedAt, now)
+                for ref in refs {
+                    let later = lines.filter { $0.before == ref }.map(\.after)
+                    let overridden: OrderChange.Overridden = if lines.contains(where: { $0.after == ref }) {
+                        // Its own place in the order says it.
+                        OrderChange.Overridden(by: plan.id, at: at)
+                    } else if !later.isEmpty {
+                        OrderChange.Overridden(by: plan.id, at: at, before: later.sorted())
+                    } else {
+                        OrderChange.Overridden(by: plan.id, at: at, with: first)
+                    }
+                    taken[ref] = overridden
                 }
-                taken[ref] = overridden
+                continue
+            }
+            // Back where the split put it since the order took back the others: it goes back with them, with the one whose line
+            // took them, or by its own place in the order where that's it.
+            let others = tookBack[group] ?? []
+            guard let at = others.compactMap(\.overridden?.at).max() else { continue }
+            let leads = Set(others.compactMap { $0.overridden?.with }).union(others.filter { $0.overridden?.with == nil }.map(\.ref))
+            for member in members {
+                taken[member.ref] = if leads.contains(member.ref) {
+                    OrderChange.Overridden(by: plan.id, at: at)
+                } else {
+                    OrderChange.Overridden(by: plan.id, at: at, with: leads.min())
+                }
             }
         }
-        return taken
+        return (taken, seen)
     }
 
-    /// The lines an order puts across a split, between these pull requests a split moved together and the order's own the
-    /// split didn't put with them, in its mission or split off it to another: not one the one of these had when you last
-    /// changed it (`OrderChange.linedWith`), as one you took away is, nor one to a pull request you moved elsewhere
-    /// yourself, nor one that holds nothing up anymore, as `status` tells.
-    /// - Parameter holding: your changes that hold.
+    /// An order's lines between these pull requests a split moved together and the rest of its own. `across`: those across
+    /// the split, to one of the order's the split didn't put with them, in its mission or split off it to another, but one
+    /// either end knows (`OrderChange.linedWith`), one you took away, one to a pull request you moved elsewhere yourself,
+    /// and one that holds nothing up anymore, as `status` tells. `seen`: by the one of these each is about, those it doesn't
+    /// know that never take them back, however they come to cross: among these, to a pull request you moved elsewhere
+    /// yourself, and one you took away; not one that holds nothing up, which does once it holds something up again.
+    /// - Parameters:
+    ///   - changes: all your changes, for what each end knows.
+    ///   - holding: your changes that hold.
     static func lines(
-        across refs: Set<ItemRef>, of plan: OrderPlan, holding: [ItemRef: OrderChange], status: (ItemRef) -> OrderStatus
-    ) -> [OrderEdge] {
+        across refs: Set<ItemRef>, of plan: OrderPlan, changes: [ItemRef: OrderChange], holding: [ItemRef: OrderChange],
+        status: (ItemRef) -> OrderStatus
+    ) -> (across: [OrderEdge], seen: [ItemRef: Set<ItemRef>]) {
         let key = MissionKey.plan(plan.id)
         func isOther(_ ref: ItemRef) -> Bool {
             guard !refs.contains(ref), plan.contains(ref) else { return false }
             guard let change = holding[ref], let placement = change.placement else { return true }
             return placement == .into(key) || change.splitFrom == key
         }
-        var lines: [OrderEdge] = []
+        func knows(_ ref: ItemRef, _ other: ItemRef) -> Bool {
+            changes[ref]?.linedWith.contains(other) == true
+        }
+        var across: [OrderEdge] = []
+        var seen: [ItemRef: Set<ItemRef>] = [:]
         for entry in plan.entries {
             let later = entry.ref
             for earlier in entry.after where earlier != later {
+                if refs.contains(later), refs.contains(earlier) {
+                    seen[later, default: []].insert(earlier)
+                    seen[earlier, default: []].insert(later)
+                    continue
+                }
                 let (own, other) = refs.contains(later) ? (later, earlier) : (earlier, later)
-                guard refs.contains(own), isOther(other), holding[own]?.linedWith.contains(other) != true,
-                      !status(later).hasEnded, status(earlier) != .merged
-                else { continue }
-                lines.append(OrderEdge(earlier, later))
+                guard refs.contains(own), !knows(own, other), !knows(other, own) else { continue }
+                if !isOther(other) || holding[later]?.notAfter.contains(earlier) == true {
+                    seen[own, default: []].insert(other)
+                } else if !status(later).hasEnded, status(earlier) != .merged {
+                    across.append(OrderEdge(earlier, later))
+                }
             }
         }
-        return lines
+        return (across, seen)
     }
 
     // MARK: Saving
@@ -865,12 +947,14 @@ private struct ChangeRecord: Codable {
     var overriddenWith: ItemRef?
     /// A split moved it; nil for any other change.
     var split: Bool?
-    /// What a split moved: the pull requests its order put it after, or after it, when you last changed it; nil for none.
+    /// What a split moved: the pull requests its order put it after, or after it, that it knows; nil for none.
     var linedWith: [ItemRef]?
+    /// A split moved it as one stacked with its order's own that the order didn't name; nil for any other change.
+    var splitAttached: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case pullRequest, first, after, notAfter, placed, from, changedAt, replaced, found, overriddenBy, overriddenAt,
-             overriddenBefore, overriddenWith, split, linedWith
+             overriddenBefore, overriddenWith, split, linedWith, splitAttached
     }
 
     init(_ change: OrderChange) {
@@ -889,6 +973,7 @@ private struct ChangeRecord: Codable {
         overriddenWith = change.overridden?.with
         split = change.bySplit ? true : nil
         linedWith = change.linedWith.isEmpty ? nil : change.linedWith.sorted()
+        splitAttached = change.splitAttached ? true : nil
     }
 
     init(from decoder: Decoder) throws {
@@ -908,6 +993,7 @@ private struct ChangeRecord: Codable {
         overriddenWith = try? container.decodeIfPresent(ItemRef.self, forKey: .overriddenWith)
         split = try? container.decodeIfPresent(Bool.self, forKey: .split)
         linedWith = Self.refs(container, .linedWith)
+        splitAttached = try? container.decodeIfPresent(Bool.self, forKey: .splitAttached)
     }
 
     private static func records(_ place: OrderPlace) -> [Replaced]? {
@@ -948,7 +1034,8 @@ private struct ChangeRecord: Codable {
             ref: pullRequest, first: first.flatMap(MissionKey.init), after: after,
             notAfter: refs(notAfter).filter { !after.contains($0) }, placement: placed.flatMap(OrderPlacement.init),
             from: from.flatMap(MissionKey.init), changedAt: changedAt, replaced: place(replaced ?? []), found: found.map(place),
-            overridden: overridden, bySplit: split == true, linedWith: Set(refs(linedWith))
+            overridden: overridden, bySplit: split == true, linedWith: Set(refs(linedWith)),
+            splitAttached: split == true && splitAttached == true
         )
         return change.isEmpty ? nil : change
     }
@@ -1145,6 +1232,7 @@ extension OrderChanges {
                 change.placement = placement
                 change.from = source
                 change.bySplit = false
+                change.splitAttached = false
                 try keep(change)
             }
             // A chain named by one of these goes on by another of its own pull requests, as when that one ends.
@@ -1165,6 +1253,7 @@ extension OrderChanges {
         case .split(let source, let moves):
             // Only the mission's own, which no change of yours puts anywhere (`MissionSplitting`): none of them names a chain
             // or another mission that would need to go on by another.
+            let order: OrderPlan? = if case .plan(let id) = source { orders.plan(id) } else { nil }
             for move in moves {
                 for ref in move.refs {
                     var change = current(ref)
@@ -1174,6 +1263,7 @@ extension OrderChanges {
                     change.placement = move.to
                     change.from = source
                     change.bySplit = true
+                    change.splitAttached = order.map { !$0.contains(ref) } ?? false
                     try keep(change)
                 }
             }
@@ -1253,10 +1343,25 @@ extension OrderChanges {
         }
     }
 
-    /// Puts back the changes an edit touched, as `apply` said they were.
-    public mutating func restore(_ touched: [ItemRef: OrderChange?]) {
-        for (ref, change) in touched {
-            changes[ref] = change.flatMap { $0.isEmpty ? nil : $0 }
+    /// Puts back the changes an edit touched, as `apply` said they were. One a split moved, back where the split put it,
+    /// knows the lines its order put it in since (`OrderChange.linedWith`): what it saw there, where it stayed, or all of
+    /// them, where it wasn't there, as none of those crossed the split for it; but not where its order took it back since,
+    /// which Undo doesn't give back: there it goes back with the rest again (`splitsTakenBack`).
+    /// - Parameter orders: the orders sessions told.
+    public mutating func restore(_ touched: [ItemRef: OrderChange?], orders: DeclaredOrders) {
+        for (ref, was) in touched {
+            guard var change = was, !change.isEmpty else {
+                changes[ref] = nil
+                continue
+            }
+            if let group = SplitGroup(change), change.holds(in: orders) {
+                if let now = changes[ref], SplitGroup(now) == group, now.holds(in: orders) {
+                    change.linedWith.formUnion(now.linedWith)
+                } else if changes[ref]?.overridden?.by != group.order {
+                    change.linedWith.formUnion(change.lined(in: orders))
+                }
+            }
+            changes[ref] = change
         }
     }
 
