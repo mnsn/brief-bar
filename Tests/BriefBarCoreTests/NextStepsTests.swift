@@ -687,9 +687,12 @@ import Testing
         let anotherAccount = kept.listed([Self.pr(4101)], for: "kai@contoso.com", at: t(2 * 86_400))
         #expect(!anotherAccount)
 
-        let notYet = kept.forgetUnlisted(now: t(UpNextPicks.Kept.unlistedFor))
-        let then = kept.forgetUnlisted(now: t(3_601 + UpNextPicks.Kept.unlistedFor))
-        #expect(!notYet && then)
+        let notYet = kept.forgetUnlisted(now: t(UpNextPicks.Kept.unlistedFor), of: [.pullRequest, .gitHubPullRequest])
+        // Only of the kinds whose sources have listed since: GitHub's waits till it has.
+        let azureDevOpsOnes = kept.forgetUnlisted(now: t(3_601 + UpNextPicks.Kept.unlistedFor), of: [.pullRequest])
+        #expect(kept.picks(for: "sam@contoso.com") == UpNextPicks([.canMerge: Self.gh(12)]))
+        let then = kept.forgetUnlisted(now: t(3_601 + UpNextPicks.Kept.unlistedFor), of: [.pullRequest, .gitHubPullRequest])
+        #expect(!notYet && azureDevOpsOnes && then)
         #expect(kept == UpNextPicks.Kept(accounts: ["robin@contoso.com": [.fix: .init(ref: Self.pr(4101), listedAt: t(86_400))]]))
 
         kept.set(UpNextPicks([.fix: Self.pr(4101), .canMerge: Self.gh(12)]), for: "robin@contoso.com", at: t(90_000))

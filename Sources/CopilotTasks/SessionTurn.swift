@@ -2,8 +2,9 @@ import CopilotCore
 import Foundation
 
 /// How a prompt stands that BriefBar sent to a session it doesn't run itself, such as one of the Copilot app's, through
-/// BriefBar's extension in it, or copied for you to paste there: from the session's log since the prompt was sent, and
-/// whether a turn runs in it now. Only what the log says from then on counts: before, it's the session's own history.
+/// BriefBar's extension in it, or copied for you to paste there: as the extension that sent it reports it, or else from
+/// the session's log since the prompt was sent, and whether a turn runs in it now. Only what the log says from then on
+/// counts: before, it's the session's own history.
 public struct SessionTurn: Sendable, Equatable {
     public enum Phase: Sendable, Equatable {
         /// Nothing in its log since it was sent: the session hasn't taken it up yet, or you haven't pasted it.
@@ -34,6 +35,20 @@ public struct SessionTurn: Sendable, Equatable {
         case .finished, .failed, .stopped: true
         case .waiting, .working, .needsYou: false
         }
+    }
+
+    /// How a prompt's turn stands, as the extension that sent it reports it (`OutboxReport`): what Copilot said as it
+    /// finished, or the error it failed with.
+    public init(_ report: OutboxReport) {
+        let phase: Phase = switch report.state {
+        case .waiting: .waiting
+        case .working: .working(step: report.step)
+        case .needsYou: .needsYou
+        case .finished: .finished(summary: report.said)
+        case .failed: .failed(report.said)
+        case .stopped: .stopped
+        }
+        self.init(phase: phase, since: report.since)
     }
 
     /// How a prompt sent at `sentAt` stands, as the session's log says, and the app or the CLI that has it open: only once

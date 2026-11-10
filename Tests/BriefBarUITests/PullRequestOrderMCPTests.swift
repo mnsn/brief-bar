@@ -282,4 +282,66 @@ private final class Announcements: Sendable {
         OrderChanges().save(to: defaults)
         #expect(!(try await #require(tools["pull_request_order"]).run(.object([:]))).contains("The user changed"))
     }
+
+    /// A revision that puts a line across a split the user confirmed takes what the split moved back into the order's
+    /// mission: the session is told it changed where those go, before the app notes it, and they're no longer the user's
+    /// changes that hold.
+    @Test func aSessionIsToldItsLineAcrossASplitTookWhatTheSplitMovedBack() async throws {
+        let defaults = Self.settings()
+        let tools = Self.tools(defaults)
+        let order = try #require(tools["order_pull_requests"])
+        func told(_ entries: String, plan: String? = nil, revision: Int? = nil) async throws -> String {
+            let replacing = plan.map { #", "order": "\#($0)", "revision": \#(revision ?? 1)"# } ?? ""
+            return try await order.run(try Self.arguments(#"{"pull_requests": [\#(entries)]\#(replacing)}"#))
+        }
+        let entries = """
+            "\(Self.link(4101))", {"link": "\(Self.link(4102))", "after": [4101]}, "\(Self.link(4103))", \
+            {"link": "\(Self.link(4104))", "after": [4103]}
+            """
+        _ = try await told(entries)
+        let orders = DeclaredOrders.load(from: defaults)
+        let plan = try #require(orders.plans.first)
+        let id = plan.id.uuidString.lowercased()
+        func ref(_ number: Int) -> ItemRef { .pullRequest(organization: "contoso", number: number) }
+        let mine = try #require(UUID(uuidString: "31111111-2222-4333-8444-555555555555"))
+        var split = OrderChanges()
+        try split.apply(
+            .split(.plan(plan.id), [OrderSplitMove([ref(4103), ref(4104)], to: .into(.mine(mine)))]), missions: [], orders: orders,
+            now: Self.now - 60
+        )
+        split.save(to: defaults)
+        let saved = defaults.data(forKey: OrderChanges.defaultsKey)
+        let moved = """
+            - !4103 in contoso is in another mission: the user moved it.
+            - !4104 in contoso is in another mission: the user moved it.
+            """
+        #expect(try await told(entries, plan: id).contains(moved))
+
+        let revised = try await told(
+            entries.replacingOccurrences(of: #""\#(Self.link(4103))""#, with: #"{"link": "\#(Self.link(4103))", "after": [4102]}"#),
+            plan: id, revision: 2
+        )
+        #expect(revised.hasSuffix("""
+            You changed where !4103 and !4104 in contoso go after the user had: BriefBar shows yours now, and says so to the \
+            user.
+            """))
+        #expect(!revised.contains("The user changed"))
+        let read = try await #require(tools["pull_request_order"]).run(.object([:]))
+        #expect(!read.contains("The user changed"))
+        #expect(defaults.data(forKey: OrderChanges.defaultsKey) == saved)
+
+        // Naming one the split moved that the order didn't name, stacked with its own, takes it back, and the rest with it.
+        var attached = OrderChanges()
+        try attached.apply(
+            .split(.plan(plan.id), [OrderSplitMove([ref(4103), ref(4104), ref(4105)], to: .into(.mine(mine)))]), missions: [],
+            orders: DeclaredOrders.load(from: defaults), now: Self.now - 30
+        )
+        attached.save(to: defaults)
+        let named = try await told(entries + #", "\#(Self.link(4105))""#, plan: id, revision: 3)
+        #expect(named.hasSuffix("""
+            You changed where !4103, !4104 and !4105 in contoso go after the user had: BriefBar shows yours now, and says so \
+            to the user.
+            """))
+        #expect(!named.contains("The user changed"))
+    }
 }

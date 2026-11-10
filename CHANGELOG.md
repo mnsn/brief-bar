@@ -1,5 +1,75 @@
 # Changelog
 
+## 0.19.0 - 2026-11-10
+
+- **Copilot sessions keep your pull requests' stages current.** With Pull Request Order and agents on, the Copilot
+  sessions that work on your Azure DevOps pull requests tell BriefBar their stages as they go, without you asking: In
+  progress as they start fixing one, Your review once they've pushed their work, Teammate's review once you tell them
+  you've reviewed it. A session's In progress ends as it finishes, and its Your review as the votes change, so one a
+  teammate approved moves on to Can merge or Waits; a Your review you set lasts until you change it. The latest stage
+  set wins, yours or a session's, and its label says who set it, such as **‘Cart’ says it's ready**; where a session's
+  replaced yours, **Put Yours Back** is in its menu. Can merge, Waits and Merged still come only from what BriefBar
+  sees. What a session set counts only while the Copilot app lists the session, and **Forget Stages…** forgets it too.
+- **BriefBar's prompts ask for the stage.** While Pull Request Order is on, Send Work to Copilot's prompt, and a pull
+  request's Fix Comments, Fix the Build, Resolve Conflicts and Push & Reply, end asking the session to tell BriefBar
+  the pull request is ready for your review once it pushed, if it has the tool to. A review's doesn't.
+- **Agents know what you set.** With Pull Request Order on, agents get each Azure DevOps pull request's stage, why,
+  and who set it: `needs_me` lists them as the Board does, and `pull_request` says its stage. When a session tells or
+  reads an order, BriefBar tells it what you changed in that order, to keep: a later change of its that goes against
+  yours shows instead, and you can put yours back.
+- **Agents know each pull request's story.** `pull_request` names an Azure DevOps pull request's work items and the
+  story each is for, and `work_item` lists a story's tasks in backlog order, each with its pull requests. With Pull
+  Request Order on, sessions are told to link each pull request to its task as they open it, since BriefBar puts a
+  story's pull requests together by itself with Show Links on, and to tell an order only where they must merge in
+  another.
+- **Split a mission that became two pieces of work, in one click.** When a mission's pull requests look like
+  different work, Apple Intelligence suggests splitting it, on your Mac, with each new mission's name and what goes
+  where. **Split** does it, and Undo puts it back; **Keep Together** keeps it from asking again until something new
+  joins the mission.
+- **Ask a Copilot session where it stands, or why it changed something.** With **Send Work to Copilot** on,
+  **Ask…** in a session's menu in Copilot's list, in the heading of its page in a work item's or a pull request's
+  details, or in **⌄** on a pull request's Copilot line opens a field to ask it. Leave it empty, and it asks **Where do
+  you stand?**: what's done, what's left, and what or whom it waits on; or write your own question. It's asked aside,
+  as Explain asks about a comment, in a copy of the session that the Copilot CLI deletes after, with the session's own
+  model, so nothing in it changes, as one premium request. The answer shows where you asked, under the session's row
+  or its page's heading, with **Copy**, **↗** and **Ask More**, which follows up on it, and stays in memory only. The
+  demo makes its answers up.
+- **Choose what's next yourself.** With Pull Request Order on, each of Up Next's slots lists its pull requests under its
+  title, such as **Fix next ⌄**, each with why it's there: choose the one that's most urgent, and Up Next shows it, with
+  ✎, first in its column on the Board, and first in its stage in what agents' `needs_me` lists. BriefBar remembers it
+  until that pull request moves on to another stage, merges or closes, and stays away for half an hour; then it chooses
+  again. **Let BriefBar Choose** does that at once, and **Undo**, after you move its card, chooses it again. On the Board,
+  a card's menu has **Make Next**. **Forget Stages…** forgets what you chose too.
+- **BriefBar says it's offline with no organization to watch, too.** When it reads only the pull requests you watch
+  or were sent, and can't reach Azure DevOps, as offline, it says so and tries less often, as it does with
+  organizations; back online, it reads them at once, rather than an hour later.
+- **Fix can push and reply.** A comment's **Fix**, and **Fix All**, have **Push and reply once it's fixed**: checked,
+  Copilot fixes the comments, then commits, pushes the branch (never with force), and replies on the threads it fixed
+  and resolves them, as you, in the same turn, as **Push & Reply** does, with the same checks; a thread it didn't
+  change gets a reply saying why, and stays active. The box stays as you last left it, for the next fix; **Try Again**
+  sends a fix as it went. Its line says **Copilot is fixing this in ‘Retry backoff’, to push and reply**, then
+  **Fixed, pushed and replied in ‘Retry backoff’**. Off, a fix still leaves its changes for you to check, then push
+  with Push & Reply.
+- **Open a sprint task's pull request in BriefBar.** With Show Links on, a pull request in a work item's links on the
+  Sprint page, a teammate's too, has **Show Details**: in its card's capsule, in **Links** when you right-click it, and
+  in the **⋯** of its details. It shows the pull request over the work item's details, as its row under **Where It
+  Stands** does, rather than only in Azure DevOps or on the Pull Requests page.
+- **What you set and chose waits for Azure DevOps after a month away.** BriefBar forgets a stage you set, or a pull
+  request you chose in Up Next, once no list has had its pull request for 30 days. It now counts that only once Azure
+  DevOps has read some of your lists, as the account you're signed in with, since BriefBar started or you turned Pull
+  Request Order on: so after a month away, it no longer forgets one whose pull request never moved while Azure DevOps
+  can't read any of your lists, as when the Azure CLI waits for you to sign in again.
+- **After this update, Azure DevOps, Copilot and agents ask you once to look at what they read and get, and wait until
+  you have.** With Pull Request Order and agents on, Copilot sessions tell Azure DevOps' pull requests' stages, which
+  BriefBar keeps for each session, never in Azure DevOps; and agents get each pull request's stage, and what you changed
+  in the orders sessions told; and, whatever the setting, each pull request's work items and their story. While Apple
+  Intelligence is on, the titles of Azure DevOps' pull requests, work items and stories, and of the Copilot sessions on
+  them, also suggest splitting a mission that became different pieces of work, on this Mac; nothing moves until you
+  click Split. BriefBar keeps only which suggestions you kept together, as digests of references. With Send Work to
+  Copilot on, Azure DevOps sends a Copilot session's conversation, with your question, to GitHub Copilot when you ask
+  the session something with Ask…. A comment's Fix or Fix All with Push and reply once it's fixed checked is checked
+  before it goes as a Push & Reply is: Azure DevOps reads which branch its pull request merges into, and git fetches it.
+
 ## 0.18.1 - 2026-11-09
 
 - **The Board sets a pull request as next in another mission only where the first wouldn't hold it again.** Where two

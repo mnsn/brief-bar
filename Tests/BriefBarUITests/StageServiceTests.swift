@@ -43,13 +43,15 @@ private final class Clock {
         PullRequestOrder(defaults: defaults, isDemo: false, now: { clock.now })
     }
 
-    /// What Azure DevOps tells: these pull requests, each with its facts.
+    /// What Azure DevOps tells: these pull requests, each with its facts, as it lists them, or, `listed` false, before it
+    /// has read its lists since BriefBar started, as offline.
     private static func tell(
-        _ order: PullRequestOrder, _ facts: [Int: StageFacts], states: [Int: PullRequestState] = [:], account: String? = account
+        _ order: PullRequestOrder, _ facts: [Int: StageFacts], states: [Int: PullRequestState] = [:], account: String? = account,
+        listed: Bool = true
     ) {
         order.publish(
             .azureDevOps, pullRequests: facts.keys.sorted().map { ado($0, state: states[$0] ?? .open) },
-            stages: Dictionary(uniqueKeysWithValues: facts.map { (ref($0.key), $0.value) }), account: account
+            stages: Dictionary(uniqueKeysWithValues: facts.map { (ref($0.key), $0.value) }), account: account, listed: listed
         )
     }
 
@@ -421,6 +423,54 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4113))?.isSetByYou != true)
         #expect(order.stage(of: Self.ref(4114))?.isSetByYou == true)
         #expect(order.keptStagesCount == 1)
+    }
+
+    /// Back after five weeks, the stages you set wait until Azure DevOps has listed what it shows, as when the Azure CLI
+    /// wants you to sign in again: the clock can look first, and no list could note yet that it has them. Once the lists are
+    /// read, one they have stays, and one they don't goes at the clock's next look.
+    @Test func aMonthAwayForgetsNoStageYouSetBeforeTheListsAreRead() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        Self.tell(order, [4093: StageFacts(role: .author), 4094: StageFacts(role: .author)])
+        order.setStage(.yourReview, of: Self.ref(4093))
+        order.setStage(.yourReview, of: Self.ref(4094))
+
+        clock.advance(days: 35)
+        let again = Self.service(defaults, clock: clock)
+        Self.tell(again, [:], listed: false)
+        clock.advance(days: 1)
+        again.timePassed()
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account) != nil)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4094), for: Self.account) != nil)
+
+        Self.tell(again, [4094: StageFacts(role: .author)])
+        again.timePassed()
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account) == nil)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4094), for: Self.account) != nil)
+        #expect(again.stage(of: Self.ref(4094))?.isSetByYou == true)
+    }
+
+    /// So does one kept in memory, sent to you in a chat, once Pull Request Order was off for a month, as it was till
+    /// Azure DevOps lists what it shows again.
+    @Test func aMonthOffForgetsNoStageInMemoryBeforeTheListsAreRead() {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        Self.tell(order, [4113: StageFacts(role: .sentToYou), 4114: StageFacts(role: .sentToYou)])
+        order.setStage(.yourReview, of: Self.ref(4113))
+        order.setStage(.yourReview, of: Self.ref(4114))
+
+        order.setOn(false)
+        clock.advance(days: 35)
+        order.setOn(true)
+        Self.tell(order, [:], listed: false)
+        order.timePassed()
+        #expect(order.keptStagesCount == 2)
+
+        Self.tell(order, [4114: StageFacts(role: .sentToYou)])
+        order.timePassed()
+        #expect(order.keptStagesCount == 1)
+        #expect(order.stage(of: Self.ref(4114))?.isSetByYou == true)
     }
 
     /// A stage you set keeps when a list last had its pull request as it moves between memory and the preferences,

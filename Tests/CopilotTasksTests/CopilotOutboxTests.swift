@@ -74,6 +74,26 @@ import Testing
         #expect(names(requests).allSatisfy { !$0.hasPrefix(".") })
     }
 
+    /// A send may ask its extension to report how its turn goes; a fork or a stop has no turn of its own to report.
+    @Test func asksForAReportOnlyForASend() throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let send = OutboxRequest.send("Fix the comments", to: session, report: true)
+        try outbox.write(send)
+        let file = outbox.url.appendingPathComponent("requests").appendingPathComponent(send.fileName)
+        let fields = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        #expect(Set(fields.keys) == ["version", "requestId", "sessionId", "kind", "prompt", "report", "createdAt", "expiresAt"])
+        let report = try #require(fields["report"] as? NSNumber)
+        #expect(CFGetTypeID(report) == CFBooleanGetTypeID() && report.boolValue)
+        #expect(FakeExtension.check(file, requestId: send.requestId, sessionId: session) == .init(kind: "send", prompt: "Fix the comments", report: true))
+        for kind in [OutboxRequest.Kind.fork, .stop] {
+            #expect(throws: OutboxError.invalidRequest) {
+                try outbox.write(OutboxRequest(sessionId: session, kind: kind, prompt: nil, report: true, now: Date()))
+            }
+        }
+        #expect(names(outbox.url.appendingPathComponent("requests")) == [send.fileName])
+    }
+
     @Test func writesOnlyWhatTheContractAllows() throws {
         let (outbox, folder) = try outbox()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -182,6 +202,132 @@ import Testing
             try write(forkBase.merging(["forkSessionId": bad]) { $1 }, to: results, named: "\(forking.requestId).json")
             #expect(outbox.takeResult(of: forking)?.failure == .unreadable)
         }
+
+        // It reports a send's turn only once BriefBar asked, and only when it says so with a boolean.
+        let reported = OutboxRequest.send("Fix it", to: session, report: true)
+        let reportedBase: [String: Any] = ["version": 1, "requestId": reported.requestId, "sessionId": session, "kind": "send", "ok": true]
+        for (reports, says) in [(true as Any, true), (false as Any, false), (1 as Any, false), ("yes" as Any, false)] {
+            try write(reportedBase.merging(["reports": reports]) { $1 }, to: results, named: "\(reported.requestId).json")
+            let result = try #require(outbox.takeResult(of: reported))
+            #expect(result.isDone)
+            #expect(result.reports == says)
+        }
+        try write(reportedBase, to: results, named: "\(reported.requestId).json")
+        #expect(outbox.takeResult(of: reported)?.reports == false)
+        try write(base.merging(["ok": true, "reports": true]) { $1 }, to: results, named: "\(send.requestId).json")
+        #expect(outbox.takeResult(of: send)?.reports == false)
+    }
+
+    // MARK: Reports
+
+    /// What an extension says of a turn it reports, read only as the contract has it, of the request it's named for, sent to
+    /// that session; and only what goes with the state it says: its step while it works, what waits on you while that
+    /// does, and what Copilot said, at most 4,000 characters, its lines kept.
+    @Test func readsReportsOnlyAsTheContractHasThem() throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let requestId = UUID().uuidString.lowercased()
+        let reports = outbox.url.appendingPathComponent("reports", isDirectory: true)
+        // Reading makes nothing.
+        #expect(outbox.report(of: requestId, sentTo: session) == nil)
+        #expect(!FileManager.default.fileExists(atPath: outbox.url.path))
+
+        let base: [String: Any] = [
+            "version": 1, "requestId": requestId, "sessionId": session, "messageId": "m-1", "pid": 4321,
+            "startedAt": "2026-11-10T07:00:00.250Z", "state": "working", "since": "2026-11-10T07:00:05Z",
+            "updatedAt": "2026-11-10T07:00:06Z",
+        ]
+        let read = { (fields: [String: Any]) throws -> OutboxReport? in
+            try self.write(base.merging(fields) { $1 }, to: reports, named: "\(requestId).json")
+            return outbox.report(of: requestId, sentTo: self.session)
+        }
+        let working = try #require(try read(["step": "Run the\n tests", "name": "Retry\tbackoff", "asks": "question", "said": "Not yet"]))
+        #expect(working == OutboxReport(
+            requestId: requestId, sessionId: session, messageId: "m-1", pid: 4321, startedAt: Date(timeIntervalSince1970: 1_794_294_000.25),
+            name: "Retry backoff", state: .working, since: Date(timeIntervalSince1970: 1_794_294_005), step: "Run the tests"
+        ))
+        #expect(!working.isOver)
+
+        let asking = try #require(try read(["state": "needsYou", "asks": "plan", "said": "Fix the backoff.\n\nThen test it.", "step": "Old"]))
+        #expect(asking.state == .needsYou)
+        #expect(asking.asks == .plan)
+        #expect(asking.said == "Fix the backoff.\n\nThen test it.")
+        #expect(asking.step == nil)
+        #expect(try read(["state": "needsYou", "asks": "a dance"])?.asks == nil)
+
+        let finished = try #require(try read(["state": "finished", "said": " Fixed it.\r\n\r\n- One\u{07}\u{200B}\n- Two ", "cause": "closed"]))
+        #expect(finished.isOver)
+        #expect(finished.said == "Fixed it.\n\n- One\n- Two")
+        #expect(finished.cause == nil)
+        let long = try #require(try read(["state": "finished", "said": String(repeating: "y", count: 5_000)]))
+        #expect(long.said?.count == OutboxReport.longestSaid)
+        #expect(long.said?.hasSuffix("…") == true)
+        #expect(try read(["state": "failed", "said": "Rate limited"])?.said == "Rate limited")
+        let stopped = try #require(try read(["state": "stopped", "cause": "creditLimit"]))
+        #expect(stopped.cause == .creditLimit)
+        #expect(try read(["state": "stopped", "cause": "a dance"])?.cause == nil)
+        #expect(try read(["state": "stopped", "cause": "closed"])?.cause == .closed)
+        // Nothing of what it said while it works or waits.
+        #expect(try read(["state": "waiting", "said": "Not yet", "step": "Not yet"]) == OutboxReport(
+            requestId: requestId, sessionId: session, messageId: "m-1", pid: 4321, startedAt: Date(timeIntervalSince1970: 1_794_294_000.25),
+            state: .waiting, since: Date(timeIntervalSince1970: 1_794_294_005)
+        ))
+
+        // Not as the contract has it: of another request, sent to another session, at another version, a boolean for a
+        // number, a state this BriefBar doesn't know, or no time it stands so since.
+        for fields in [
+            ["requestId": UUID().uuidString.lowercased()], ["sessionId": other], ["version": 2], ["pid": true], ["pid": 0],
+            ["state": "dancing"], ["since": "yesterday"], ["startedAt": NSNull()],
+        ] as [[String: Any]] {
+            #expect(try read(fields) == nil, "\(fields)")
+        }
+        // A file others may read, or a link.
+        try write(base, to: reports, named: "\(requestId).json", mode: 0o644)
+        #expect(outbox.report(of: requestId, sentTo: session) == nil)
+        let secret = folder.appendingPathComponent("secret.json")
+        try JSONSerialization.data(withJSONObject: base).write(to: secret)
+        try FileManager.default.removeItem(at: reports.appendingPathComponent("\(requestId).json"))
+        try FileManager.default.createSymbolicLink(at: reports.appendingPathComponent("\(requestId).json"), withDestinationURL: secret)
+        #expect(outbox.report(of: requestId, sentTo: session) == nil)
+        // Only for a request's ID.
+        #expect(outbox.report(of: "../\(requestId)", sentTo: session) == nil)
+    }
+
+    /// A report may still change while the extension that writes it runs, as one that listens does.
+    @Test func tellsWhetherAReportMayStillChange() {
+        let started = Date(timeIntervalSince1970: 1_793_000_000)
+        let report = OutboxReport(requestId: other, sessionId: session, pid: 4321, startedAt: started, state: .working, since: started)
+        #expect(CopilotOutbox.isLive(report, isRunning: { $0 == 4321 }, startTime: { _ in started.addingTimeInterval(1.5) }))
+        #expect(!CopilotOutbox.isLive(report, isRunning: { _ in true }, startTime: { _ in started.addingTimeInterval(2.5) }))
+        #expect(!CopilotOutbox.isLive(report, isRunning: { _ in false }, startTime: { _ in started }))
+    }
+
+    /// BriefBar removes a report once it took how the turn ended; and those an hour old that no prompt follows, but no
+    /// other. Forgetting, as when Azure DevOps is turned off, removes them all: they hold what Copilot said.
+    @Test func removesReportsOnceTheyreTakenOrNoPromptFollowsThem() throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let ext = FakeExtension(outbox: outbox.url, sessionId: session)
+        let (ended, followed, orphan, recent) = (
+            UUID().uuidString.lowercased(), UUID().uuidString.lowercased(), UUID().uuidString.lowercased(), UUID().uuidString.lowercased()
+        )
+        for requestId in [ended, followed, orphan, recent] { try ext.report(requestId, state: "working") }
+        let reports = outbox.url.appendingPathComponent("reports")
+        let left = reports.appendingPathComponent(".\(orphan).json.77.\(UUID().uuidString.lowercased()).tmp")
+        try Data().write(to: left)
+        #expect(outbox.report(of: ended, sentTo: session)?.state == .working)
+
+        outbox.removeReport(of: ended)
+        #expect(outbox.report(of: ended, sentTo: session) == nil)
+        let hourAndMore = Date().addingTimeInterval(-3_700)
+        for name in ["\(followed).json", "\(orphan).json", left.lastPathComponent] {
+            try FileManager.default.setAttributes([.modificationDate: hourAndMore], ofItemAtPath: reports.appendingPathComponent(name).path)
+        }
+        outbox.removeOldReports(keeping: [followed, ended])
+        #expect(names(reports) == ["\(followed).json", "\(recent).json"].sorted())
+
+        #expect(outbox.forget())
+        #expect(names(reports).isEmpty)
     }
 
     // MARK: Listeners
@@ -368,6 +514,31 @@ import Testing
         #expect(names(outbox.url.appendingPathComponent("results")).isEmpty)
     }
 
+    /// Asked to, the session's extension reports how the prompt's turn goes: the receipt names its report. One from before
+    /// BriefBar asked for reports takes no notice, and the receipt names none, as for a prompt that didn't ask.
+    @Test func hearsWhichReportSaysHowItsTurnGoes() async throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let ext = FakeExtension(outbox: outbox.url, sessionId: session)
+        try ext.listen()
+        ext.start(reports: true)
+        defer { ext.stop() }
+        let effects = Effects()
+        effects.held.withLock { $0 = [session] }
+
+        let receipt = await sender(outbox, effects).send("Fix the comments", to: session, report: true)
+        #expect(receipt.outcome == .sent)
+        let report = try #require(receipt.report)
+        #expect(outbox.report(of: report, sentTo: session)?.state == .working)
+        #expect(ext.received == [.init(kind: "send", prompt: "Fix the comments", report: true)])
+
+        #expect(await sender(outbox, effects).send("Fix it", to: session, report: false) == SendReceipt(.sent))
+        ext.start(reports: false)
+        #expect(await sender(outbox, effects).send("Fix it", to: session, report: true) == SendReceipt(.sent))
+        #expect(ext.received.map(\.report) == [true, false, true])
+        #expect(names(outbox.url.appendingPathComponent("reports")) == ["\(report).json"])
+    }
+
     /// A session that nothing holds loads as it opens in the app, with its extension, which takes the request then.
     @Test func loadsASessionThatNothingHolds() async throws {
         let (outbox, folder) = try outbox()
@@ -474,7 +645,8 @@ import Testing
         try original.listen()
         original.start { [fork] _ in
             try? forked.listen()
-            forked.start()
+            // It reports only the sends that ask.
+            forked.start(reports: true)
             return .after(.milliseconds(50), .done(fork: fork))
         }
         defer {
@@ -492,10 +664,18 @@ import Testing
         // The fork opens, once its request is written.
         #expect(effects.opened.withLock { $0 } == [fork])
 
+        // Asked to, the fork's extension reports how the prompt's turn goes there.
+        let receipt = await sender(outbox, effects).forkAndSend("Try it again", from: session, report: true)
+        #expect(receipt.outcome == .forkedAndSent(fork: fork))
+        let report = try #require(receipt.report)
+        #expect(outbox.report(of: report, sentTo: fork)?.state == .working)
+        #expect(outbox.report(of: report, sentTo: session) == nil)
+        #expect(forked.received.last == .init(kind: "send", prompt: "Try it again", report: true))
+
         // Another prompt on its way to the fork already: this one isn't written.
         effects.reservable.withLock { $0 = false }
         #expect(await sender(outbox, effects).forkAndSend("Try it", from: session) == .forkedNotSent(fork: fork, .busy))
-        #expect(forked.received.count == 1)
+        #expect(forked.received.count == 2)
     }
 
     /// BriefBar sends to the fork only once the app records it as a fork of the session made since the request, waiting

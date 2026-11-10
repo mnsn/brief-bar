@@ -148,7 +148,8 @@ PLUGIN="$APP/Contents/Resources/CopilotPlugin"
 json() { plutil -extract "$1" raw -o - "$2" 2>/dev/null; }
 for file in marketplace.json briefbar/plugin.json briefbar/skills/briefbar/SKILL.md briefbar-sessions/plugin.json \
     briefbar-sessions/com.github.copilot/extensions/briefbar-sessions/extension.mjs \
-    briefbar-sessions/com.github.copilot/extensions/briefbar-sessions/outbox.mjs briefbar-pr-order/plugin.json \
+    briefbar-sessions/com.github.copilot/extensions/briefbar-sessions/outbox.mjs \
+    briefbar-sessions/com.github.copilot/extensions/briefbar-sessions/turn.mjs briefbar-pr-order/plugin.json \
     briefbar-pr-order/skills/briefbar-pr-order/SKILL.md briefbar-updates/plugin.json \
     briefbar-updates/skills/briefbar-updates/SKILL.md; do
     [[ -f "$PLUGIN/$file" ]] || fail "has no CopilotPlugin/$file."

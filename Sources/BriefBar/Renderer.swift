@@ -220,10 +220,11 @@ enum Renderer {
                 }
             }
 
-            // The desktop the README's tour plays on: every section in one item, its list open by state, beside a widget
-            // with every section; then with the list closed; and bare, for the tour's window to open over.
-            if allItems.count == 1, allItems[0].sections.count > 1, shownWidgetSections.count > 1 {
-                let opened = openedList(of: allItems, pressed: 0, options: byState)
+            // The desktop the README's tour plays on: an item for each source's section, as BriefBar starts, beside a widget
+            // with every section; then with Copilot's sessions open, and Azure DevOps' pull requests; and bare, for the
+            // tour's window to open over.
+            if items.count > 1, shownWidgetSections.count > 1 {
+                let contents = items.map { model.menuBarContent(sections: $0.sections, options: model.options(forMenuBarItem: $0.id)) }
                 let widgetShown = widgetView(shownWidgetSections, size: .medium)
                 let size = NSSize(width: 1_020, height: 728)
                 // The widget, drawn once, for the first of these pictures that needs it.
@@ -234,12 +235,16 @@ enum Renderer {
                     drawnWidget = image
                     return image
                 }
-                write(Snapshot.render(opened.view, appearance: appearance).flatMap { panel in
-                    MenuBarPicture.desktop(size: size, items: opened.items, open: (0, panel), widget: widgetImage(), appearance: appearance)
-                }, "desktop-\(suffix)")
-                write(MenuBarPicture.desktop(size: size, items: opened.items, widget: widgetImage(), appearance: appearance),
+                write(MenuBarPicture.desktop(size: size, items: contents, widget: widgetImage(), appearance: appearance),
                       "desktop-closed-\(suffix)")
-                write(MenuBarPicture.desktop(size: size, items: opened.items, appearance: appearance), "desktop-bare-\(suffix)")
+                for (index, item) in items.enumerated()
+                where item.sections == [.copilotSessions] || item.sections == [.azureDevOpsPullRequests] {
+                    let opened = openedList(of: items, pressed: index)
+                    write(Snapshot.render(opened.view, appearance: appearance).flatMap { panel in
+                        MenuBarPicture.desktop(size: size, items: opened.items, open: (index, panel), widget: widgetImage(), appearance: appearance)
+                    }, "desktop-\(item.id)-\(suffix)")
+                }
+                write(MenuBarPicture.desktop(size: size, items: contents, appearance: appearance), "desktop-bare-\(suffix)")
             }
 
             // A window with one page: no sidebar.
@@ -281,10 +286,14 @@ enum Renderer {
                     write(Snapshot.render(view, appearance: appearance), "window-\(section.rawValue)-\(suffix)")
                 }
             }
-            // A pull request's and a session's summary under its row, on their pages.
+            // A pull request's and a session's summary under its row, on their pages, with Up Next folded so that the rows
+            // come first.
             if !rowSummaries.isEmpty {
                 let summaries = model.services.summaries
                 for (ref, state) in rowSummaries { summaries.useForRendering(ref, state: state) }
+                let order = model.services.pullRequestOrder
+                let upNextWasFolded = order.isUpNextFolded
+                order.setUpNextFolded(true)
                 let content = WindowContent(id: "render-rows", model: model)
                 content.update(sections: windowSections)
                 func rows(_ pictures: [(SectionID, String)]) {
@@ -308,6 +317,7 @@ enum Renderer {
                 }
                 rows([(.azureDevOpsPullRequests, "updating-pull-requests"), (.copilotSessions, "not-updated-sessions")])
                 for (ref, _) in rowSummaries { summaries.useForRendering(ref, state: nil) }
+                order.setUpNextFolded(upNextWasFolded)
             }
             // Ask… under sessions' rows: where the session adding dark mode stands, with the field to ask it more open under
             // its answer; what the session moving sign-in to OAuth 2.1 is being asked; and why the one releasing 2.4.0

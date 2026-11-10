@@ -761,6 +761,11 @@ public struct OrderOverride: Equatable, Sendable {
         case anyTime
         /// Its order doesn't name it anymore.
         case out
+        /// It put these after it, across a split that had moved it: it took it back, with what the split moved with it
+        /// (`OrderChanges.splitsTakenBack`).
+        case before([ItemRef])
+        /// It took it back with this one, which a line it put across the split goes to or from.
+        case with(ItemRef)
     }
 
     /// What you'd changed.
@@ -993,6 +998,13 @@ public enum OrderBoard {
         return before
     }
 
+    /// Where each pull request stands, as By Mission tells it, before BriefBar makes the missions: for the lines across a
+    /// split that hold nothing up anymore (`OrderChanges.noteOverrides`).
+    public static func statuses(_ facts: OrderFacts, evidence: OrderEvidence) -> (ItemRef) -> OrderStatus {
+        let stackStates = facts.stackStates
+        return { Board.status(of: $0, facts: facts, stackStates: stackStates, evidence: evidence) }
+    }
+
     /// - Parameter focus: the mission you keep on top.
     public static func missions(
         facts: OrderFacts, orders: DeclaredOrders, evidence: OrderEvidence, focus: MissionKey? = nil,
@@ -1205,6 +1217,12 @@ private struct Board {
     /// What BriefBar knows of a pull request: where its source, or its GitHub stack, shows it stands now; else what
     /// BriefBar saw become of it; else nothing. One that's gone from a list hasn't merged or closed for all that.
     func status(_ ref: ItemRef) -> OrderStatus {
+        Self.status(of: ref, facts: facts, stackStates: stackStates, evidence: evidence)
+    }
+
+    static func status(
+        of ref: ItemRef, facts: OrderFacts, stackStates: [ItemRef: PullRequestState], evidence: OrderEvidence
+    ) -> OrderStatus {
         if let pullRequest = facts.pullRequests[ref] { return OrderStatus(pullRequest.state) }
         if let state = stackStates[ref] { return OrderStatus(state) }
         if let record = evidence.records[ref] { return record.outcome == .merged ? .merged : .closed }
@@ -2403,13 +2421,16 @@ public enum OrderText {
     }
 
     /// An order that changed a pull request's place after you had: "‘Fix the payments bugs’ put it after !4102 · 5m, after
-    /// you'd set it as next".
+    /// you'd set it as next"; across a split, "‘Checkout flow’ put !4402 after it · 5m, after you'd moved it", and for what
+    /// the split moved with it, "‘Checkout flow’ took it back with !4405 · 5m, after you'd moved it".
     public static func overridden(_ override: OrderOverride, of ref: ItemRef, names: OrderNames = .none) -> String {
         let who = override.by.flatMap(names.name).map { "‘\($0)’" } ?? "Its order"
         let did = switch override.now {
         case .after(let refs): "put it after \(list(refs, near: ref))"
         case .anyTime: "said it can merge any time"
         case .out: "took it out of its order"
+        case .before(let refs): "put \(list(refs, near: ref)) after it"
+        case .with(let other): "took it back with \(other.orderLabel(near: ref))"
         }
         let yours = switch override.yours {
         case .next: "set it as next"

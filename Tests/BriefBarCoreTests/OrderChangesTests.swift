@@ -381,7 +381,7 @@ import Testing
         let before = changes
         let touched = try changes.apply(.setNext(Self.pr(4103), in: .plan(planID), true), missions: Self.missions(facts, orders, changes), orders: orders, now: t(70))
         #expect(touched == [Self.pr(4102): before[Self.pr(4102)], Self.pr(4103): OrderChange?.none])
-        changes.restore(touched)
+        changes.restore(touched, orders: orders)
         #expect(changes == before)
 
         // Undo Your Changes to This Mission: its pull requests', those you put in it, and those you moved out of it.
@@ -689,7 +689,7 @@ import Testing
         #expect(changes[Self.pr(4110)]?.placement == .into(.chain(Self.pr(4102))))
         missions = Self.missions(facts, DeclaredOrders(), changes)
         #expect(try Self.mission(.chain(Self.pr(4102)), in: missions).steps.map(\.ref) == [Self.pr(4102), Self.pr(4103), Self.pr(4110)])
-        changes.restore(touched)
+        changes.restore(touched, orders: DeclaredOrders())
         #expect(changes == before)
     }
 
@@ -1555,7 +1555,7 @@ import Testing
         )
         #expect(changes[Self.pr(4101)] == nil && changes[Self.pr(4100)]?.first == .plan(planID))
         #expect(try Self.mission(.plan(planID), in: Self.missions(facts, orders, changes)).attached.map(\.ref) == [Self.pr(4101)])
-        changes.restore(touched)
+        changes.restore(touched, orders: orders)
         #expect(changes[Self.pr(4101)]?.isAttached == true && changes[Self.pr(4100)] == nil)
     }
 
@@ -1769,7 +1769,7 @@ import Testing
         #expect(try Self.step(4110, in: mission).prerequisites.map(\.ref) == [Self.pr(4111)])
         #expect(MissionChoices.of(Self.pr(4110), missions: missions, changes: afterwards, orders: forgotten).next == .offered)
 
-        changes.restore(touched)
+        changes.restore(touched, orders: orders)
         #expect(changes[Self.pr(4110)] == overridden)
     }
 
