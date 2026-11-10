@@ -53,10 +53,12 @@ public struct MissionSplitQuestion: Hashable, Sendable {
         public var isNamedByYou: Bool
     }
 
-    /// What a mission is made of, as Keep Together counts it (`MissionSplitting.makeup`): a digest of references, never a
-    /// title, of what BriefBar tells of it now. That depends on whether Show Links has read what its pull requests are for,
-    /// which also decides who's in the pull requests opened under a session, and whether Copilot tells which sessions opened
-    /// them: Keep Together keeps a digest for each way BriefBar has told it, and compares only like with like.
+    /// What a mission's question is asked of (`MissionSplitting.makeup`): a digest of references, never a title, of its parts
+    /// as they join, their open pull requests, and what BriefBar tells of those now. Its suggestion is asked again, and holds,
+    /// only while that's the same, so a merge, or a next you set, which change its parts, asks it again; Keep Together counts
+    /// what the mission is made of instead (`Contents`). What BriefBar tells depends on whether Show Links has read what its
+    /// pull requests are for, which also decides who's in the pull requests opened under a session, and whether Copilot tells
+    /// which sessions opened them: a suggestion told another way holds by its parts alone.
     public struct Makeup: Hashable, Sendable {
         /// What BriefBar tells of a mission besides its pull requests.
         public struct Tells: Hashable, Sendable {
@@ -81,6 +83,29 @@ public struct MissionSplitQuestion: Hashable, Sendable {
         }
     }
 
+    /// What a mission is made of, as Keep Together counts it (`MissionSplitting.contents`): a digest (16 bytes of SHA-256, in
+    /// hex) of each reference BriefBar tells of it now, never a title: each of its Azure DevOps pull requests, and those of
+    /// the missions split off it, whatever became of them; each story, with its task, and each work item one is for, once
+    /// Show Links has read them; and each session that opened one, while Copilot tells. It's made of what you kept together
+    /// while each of those is one it was made of then (`isMadeOf`): one that merged, closed or left it, a link or a session
+    /// BriefBar no longer tells, or how its pull requests relate, as a next you set, which only joins its parts, isn't a
+    /// change. What BriefBar tells depends on Show Links and Copilot, as `Makeup`'s does, so Keep Together keeps one for
+    /// each way BriefBar has told it, and compares only like with like.
+    public struct Contents: Hashable, Sendable {
+        public var tells: Makeup.Tells
+        public var digests: Set<String>
+
+        public init(tells: Makeup.Tells, digests: Set<String>) {
+            self.tells = tells
+            self.digests = digests
+        }
+
+        /// Whether it's made of nothing but what these digests are of, told the same way.
+        public func isMadeOf(_ kept: Set<String>) -> Bool {
+            digests.isSubset(of: kept)
+        }
+    }
+
     public var key: MissionKey
     /// Its own parts, as the mission shows their pull requests, then the missions split off it before.
     public var parts: [Part]
@@ -96,18 +121,22 @@ public struct MissionSplitQuestion: Hashable, Sendable {
     /// its groups are named from besides their own.
     public var story: String?
     public var session: String?
-    /// What it's made of, as Keep Together counts it; nil while BriefBar can't tell, as a source still reads what it shows.
+    /// What its parts are made of, which its suggestion is asked and holds by (`Makeup`); nil while BriefBar can't tell, as a
+    /// source still reads what it shows.
     public var makeup: Makeup?
-    /// How many of its pull requests no split moves, besides its parts', such as those that merged or GitHub's: they stay in
-    /// it.
+    /// What it's made of, as Keep Together counts it (`Contents`); nil whenever `makeup` is.
+    public var contents: Contents?
+    /// How many of its open pull requests no split moves, besides its parts', such as GitHub's: they stay in it. Not those
+    /// that merged or closed, which Done lists only for a while.
     public var othersStaying: Int
-    /// How many pull requests it needs to stay a mission: two for a story's or the pull requests opened under a session, as
-    /// one alone is none; one for an order's. A split that would leave it fewer isn't suggested.
+    /// How many open pull requests it needs to stay a mission: two for a story's or the pull requests opened under a
+    /// session, as one alone is none once Done no longer lists those that merged or closed; one for an order's. A split that
+    /// would leave it fewer isn't suggested.
     public var leastToStay: Int
 
     public init(
         key: MissionKey, parts: [Part], about: String? = nil, current: String? = nil, isNamedByYou: Bool = false,
-        story: String? = nil, session: String? = nil, makeup: Makeup? = nil, othersStaying: Int = 0,
+        story: String? = nil, session: String? = nil, makeup: Makeup? = nil, contents: Contents? = nil, othersStaying: Int = 0,
         leastToStay: Int = 1
     ) {
         self.key = key
@@ -118,6 +147,7 @@ public struct MissionSplitQuestion: Hashable, Sendable {
         self.story = story
         self.session = session
         self.makeup = makeup
+        self.contents = contents
         self.othersStaying = othersStaying
         self.leastToStay = leastToStay
     }
@@ -374,11 +404,19 @@ public enum MissionSplitting {
             }
             parts.append(part(open, besides: story, stays: stays, facts: facts, sessionsWorking: sessionsWorking, name: name))
         }
-        let othersStaying = steps.count - parts.reduce(0) { $0 + $1.refs.count }
-        // The missions split off it before, each as one part, by its open Azure DevOps pull requests.
-        for other in missions where other.key != mission.key && other.isMine && !other.isFinished {
+        // Its open pull requests in no part, as GitHub's: they stay, and keep it a mission. Not those that merged or closed,
+        // which Done lists only for a while.
+        let othersStaying = steps.filter { $0.status.isOpen && !isOpen($0.ref) }.count
+        // What it's made of, as Keep Together counts it: its pull requests and those of the missions split off it, whatever
+        // became of them.
+        var members = steps.map(\.ref)
+        // The missions split off it before: what they're made of, finished or not, so that one whose pull request reopens
+        // brings nothing new; and, unfinished, each as one part, by its open Azure DevOps pull requests.
+        for other in missions where other.key != mission.key && other.isMine {
             let own = other.steps + other.attached
             guard own.contains(where: { splitFrom($0.ref) == mission.key }) else { continue }
+            members += own.map(\.ref)
+            guard !other.isFinished else { continue }
             let open = own.filter { $0.ref.kind == .pullRequest && $0.status.isOpen }.map(\.ref)
             guard !open.isEmpty else { continue }
             var split = part(open, besides: story, stays: true, facts: facts, sessionsWorking: sessionsWorking, name: name)
@@ -408,7 +446,8 @@ public enum MissionSplitting {
         return MissionSplitQuestion(
             key: mission.key, parts: parts, about: about, current: current, isNamedByYou: isNamedByYou, story: storyTitle,
             session: sessionTitle, makeup: makeup(of: parts, facts: facts, seesSessions: seesSessions),
-            othersStaying: othersStaying, leastToStay: leastToStay
+            contents: contents(of: members, facts: facts, seesSessions: seesSessions), othersStaying: othersStaying,
+            leastToStay: leastToStay
         )
     }
 
@@ -444,8 +483,8 @@ public enum MissionSplitting {
         facts.sessions.values.filter { $0.pullRequests.contains(ref) }.map(\.ref).sorted()
     }
 
-    /// What a mission is made of, as Keep Together counts it (`MissionSplitQuestion.Makeup`): its parts' and the missions
-    /// split off it's pull requests; their work items and stories, once Show Links has read them all; and the sessions that
+    /// What a mission's question is asked of (`MissionSplitQuestion.Makeup`): its parts' and the missions split off it's
+    /// pull requests, as they join; their work items and stories, once Show Links has read them all; and the sessions that
     /// opened them, while Copilot tells; whatever order they come in, and never a title, so that a title edit alone changes
     /// nothing. Not its own story or session, which its kind decides, so that it's made of the same as it goes on to its
     /// story's mission and back; nor the sessions that work on its pull requests now, which come and go. Nil while a source
@@ -475,6 +514,39 @@ public enum MissionSplitting {
             }
         }
         return MissionSplitQuestion.Makeup(tells: tells, digest: digest(lines))
+    }
+
+    /// What a mission is made of, as Keep Together counts it (`MissionSplitQuestion.Contents`), from its pull requests and
+    /// those of the missions split off it: a digest of each Azure DevOps one, whatever became of it; of each story, with its
+    /// task, and each work item one is for, once Show Links has read them all; and of each session that opened one, while
+    /// Copilot tells; never a title. Not how they join, which a merge or a next you set changes; nor its own story or
+    /// session, which its kind decides, nor the sessions that work on its pull requests now, as for `makeup`. Nil whenever
+    /// `makeup` is.
+    static func contents(
+        of refs: [ItemRef], facts: OrderFacts, seesSessions: Bool
+    ) -> MissionSplitQuestion.Contents? {
+        guard !facts.isReading, facts.sourcesOn.contains(.pullRequest) else { return nil }
+        let tells = MissionSplitQuestion.Makeup.Tells(stories: facts.readsStories, sessions: seesSessions)
+        var lines: Set<String> = []
+        for ref in refs where ref.kind == .pullRequest {
+            lines.insert("pr \(ref)")
+            let pullRequest = facts.pullRequests[ref]
+            if tells.stories {
+                for story in pullRequest?.stories ?? [] {
+                    let link = [story.ref.description, story.task?.description].compactMap { $0 }.joined(separator: ">")
+                    lines.insert("pr \(ref) story \(link)")
+                }
+                for item in pullRequest?.workItems ?? [] {
+                    lines.insert("pr \(ref) item \(item)")
+                }
+            }
+            if tells.sessions {
+                for session in openers(of: ref, in: facts) {
+                    lines.insert("pr \(ref) session \(session)")
+                }
+            }
+        }
+        return MissionSplitQuestion.Contents(tells: tells, digests: Set(lines.map { digest([$0]) }))
     }
 
     /// Lines, whatever order they come in, as 16 bytes of their SHA-256, in hex.
@@ -573,7 +645,7 @@ public enum MissionSplitting {
     /// of missions split off before alone moves nothing. Nil when nothing would move, or when it would move what stays, join
     /// two missions, or join one split off before into this one: what stays is in two groups, a group has two missions
     /// split off before, or the one that keeps the mission has one; or when what keeps the mission would leave it too few
-    /// pull requests to stay one (`MissionSplitQuestion.leastToStay`).
+    /// open pull requests to stay one (`MissionSplitQuestion.leastToStay`).
     public static func plan(_ question: MissionSplitQuestion, grouping: [[Int]]) -> MissionSplitPlan? {
         let parts = question.parts
         guard isGrouping(grouping, parts: parts.count) else { return nil }
@@ -605,7 +677,8 @@ public enum MissionSplitting {
             }), groups[best].splitOff.isEmpty else { return nil }
             kept = best
         }
-        // It has to stay a mission: a story's or the pull requests opened under a session, with one left, would be none.
+        // It has to stay a mission: a story's or the pull requests opened under a session, with one open pull request left,
+        // would be none once Done no longer lists those that merged.
         guard count(kept) + question.othersStaying >= question.leastToStay else { return nil }
         func refs(_ own: [Int]) -> [ItemRef] {
             own.flatMap { parts[$0].refs }
@@ -658,10 +731,11 @@ public enum MissionSplitting {
 // MARK: - Keep Together
 
 /// The suggested splits you kept together, in the preferences by the mission's key, each as digests of what the mission
-/// is made of (`MissionSplitQuestion.Makeup`), one for each way BriefBar has told it, as with Show Links on or off, which
+/// is made of (`MissionSplitQuestion.Contents`), a set for each way BriefBar has told it, as with Show Links on or off, which
 /// only the app writes: never a title. A suggestion you kept together doesn't come back till its mission has been made of
-/// something else for `settleFor`, compared only with what BriefBar told the same way, and counted only while it can tell:
-/// turning Show Links or Copilot off or on changes nothing, nor does a read that fails for a while. One also
+/// something it wasn't for `settleFor`, compared only with what BriefBar told the same way, and counted only while it can
+/// tell: what merged, closed or left it changes nothing, nor does a next you set, turning Show Links or Copilot off or on,
+/// or a read that fails for a while. One also
 /// goes once BriefBar hasn't seen its mission for `forgottenAfter`, counting only while it could have, as the names you
 /// give missions (`MissionNames`). Turning a source off forgets those of its missions, Forget All Orders… all of them;
 /// Pull Request Order off keeps them, their days waiting. At most `mostEntries`: the one seen longest ago goes first,
@@ -670,7 +744,7 @@ public struct KeptTogether: Equatable, Sendable {
     public static let defaultsKey = "order.splits"
     public static let mostEntries = 200
     public static let forgottenAfter: TimeInterval = MissionNames.forgottenAfter
-    /// How long a mission is made of something else, as BriefBar tells it the same way, before what you kept together
+    /// How long a mission is made of something it wasn't, as BriefBar tells it the same way, before what you kept together
     /// goes; and how long it's told a way it wasn't before, made of the same all along, before that way is kept, to compare
     /// with. Counted only while BriefBar can tell what it's made of, at most `mostAtOnce` from one look to the next, as
     /// when the Mac slept: longer than two tries of a read that failed, an hour apart, so that a read that fails, or a
@@ -680,27 +754,29 @@ public struct KeptTogether: Equatable, Sendable {
     public static let mostAtOnce: TimeInterval = 3_600
 
     public struct Entry: Equatable, Sendable {
-        /// What its mission is made of, as a digest for each way BriefBar told it: as you kept it together, unless it
+        /// What its mission is made of, as digests for each way BriefBar told it: as you kept it together, unless it
         /// couldn't tell then, and each other way once told that way for `settleFor`.
-        public var makeups: [MissionSplitQuestion.Makeup.Tells: String]
+        public var contents: [MissionSplitQuestion.Makeup.Tells: Set<String>]
         /// How long BriefBar could have seen its mission without seeing it, since it last did.
         public var unseen: TimeInterval
         /// When you kept it together.
         public var keptAt: Date
 
-        public init(makeups: [MissionSplitQuestion.Makeup.Tells: String] = [:], unseen: TimeInterval = 0, keptAt: Date) {
-            self.makeups = makeups
+        public init(
+            contents: [MissionSplitQuestion.Makeup.Tells: Set<String>] = [:], unseen: TimeInterval = 0, keptAt: Date
+        ) {
+            self.contents = contents
             self.unseen = unseen
             self.keptAt = keptAt
         }
     }
 
-    /// What a mission you kept together has been made of, shown all along, where that isn't what it was made of as
+    /// What a mission you kept together has been made of, shown all along, where that has something it wasn't made of as
     /// BriefBar told it the same way, or BriefBar tells it a way it hadn't; nil for one it no longer looks at, as one
     /// that finished: for how long, counted only while BriefBar could tell, when it last looked, and whether it couldn't
     /// tell then. In memory only.
     public struct Difference: Equatable, Sendable {
-        public var makeup: MissionSplitQuestion.Makeup?
+        public var contents: MissionSplitQuestion.Contents?
         public var counted: TimeInterval
         public var lookedAt: Date
         public var paused = false
@@ -713,7 +789,7 @@ public struct KeptTogether: Equatable, Sendable {
         self.entries = entries
     }
 
-    /// Whether you kept a mission's suggestion together: till its mission has been made of something else for
+    /// Whether you kept a mission's suggestion together: till its mission has been made of something it wasn't for
     /// `settleFor`, as `account` finds.
     public func keeps(_ key: MissionKey) -> Bool {
         entries[key] != nil
@@ -722,7 +798,7 @@ public struct KeptTogether: Equatable, Sendable {
     /// Keep Together: the mission's suggestion doesn't come back while it's made of the same; what it's made of is told once
     /// BriefBar can tell, when it can't now (nil). At the cap, the one BriefBar saw longest ago goes, then the one kept
     /// longest ago.
-    public mutating func keep(_ key: MissionKey, makeup: MissionSplitQuestion.Makeup?, at date: Date) {
+    public mutating func keep(_ key: MissionKey, contents: MissionSplitQuestion.Contents?, at date: Date) {
         if entries[key] == nil, entries.count >= Self.mostEntries,
            let oldest = entries.max(by: { lhs, rhs in
                if lhs.value.unseen != rhs.value.unseen { return lhs.value.unseen < rhs.value.unseen }
@@ -732,26 +808,27 @@ public struct KeptTogether: Equatable, Sendable {
             entries[oldest] = nil
             differences[oldest] = nil
         }
-        entries[key] = Entry(makeups: makeup.map { [$0.tells: $0.digest] } ?? [:], keptAt: date)
+        entries[key] = Entry(contents: contents.map { [$0.tells: $0.digests] } ?? [:], keptAt: date)
         differences[key] = nil
     }
 
     /// Counts `elapsed` against those whose missions BriefBar could have seen, but didn't, forgetting those it hasn't seen
-    /// for `forgottenAfter`; and forgets those whose missions have been made of something else for `settleFor`, as
+    /// for `forgottenAfter`; and forgets those whose missions have been made of something they weren't for `settleFor`, as
     /// BriefBar told them the same way before, keeping a way it hadn't told one before once told that way, the same, for
     /// as long. BriefBar looks again as anything that makes a mission, or tells what it's made of, changes, so what it
     /// told at one look held till the next: that time counts, only if BriefBar could tell then, and at most `mostAtOnce`
-    /// of it, as when the Mac slept. It starts again once it's made of something else again, and once it isn't shown.
+    /// of it, as when the Mac slept. It starts again once it's made of something else it wasn't, but not as something it
+    /// was made of leaves it, and once it isn't shown.
     /// - Parameters:
     ///   - seen: the missions shown now.
-    ///   - makeups: what those whose makeup BriefBar can tell are made of now: none while a source still reads what it
-    ///     shows; nil for one it no longer looks at, as one that finished.
+    ///   - contents: what those BriefBar can tell are made of now: none while a source still reads what it shows; nil for
+    ///     one it no longer looks at, as one that finished.
     ///   - canSee: whether BriefBar could see a mission now, if it were there (`MissionNames.canSee`).
     /// - Returns: whether it changed enough to keep: one forgotten or told more of, a mission seen again, or another hour
     ///   unseen.
     @discardableResult
     public mutating func account(
-        seen: Set<MissionKey>, makeups: [MissionKey: MissionSplitQuestion.Makeup?], canSee: (MissionKey) -> Bool,
+        seen: Set<MissionKey>, contents: [MissionKey: MissionSplitQuestion.Contents?], canSee: (MissionKey) -> Bool,
         elapsed: TimeInterval, at date: Date
     ) -> Bool {
         var changed = false
@@ -765,21 +842,23 @@ public struct KeptTogether: Equatable, Sendable {
                     if was.counted >= Self.settleFor {
                         differences[key] = nil
                         changed = true
-                        guard let made = was.makeup, entry.makeups[made.tells] == nil else {
+                        guard let made = was.contents, entry.contents[made.tells] == nil else {
                             entries[key] = nil
                             continue
                         }
-                        entries[key]?.makeups[made.tells] = made.digest
+                        entries[key]?.contents[made.tells] = made.digests
                     }
                 }
-                if let now = makeups[key] {
-                    if let now, entries[key]?.makeups[now.tells] == now.digest {
+                if let now = contents[key] {
+                    let kept = now.flatMap { entries[key]?.contents[$0.tells] }
+                    if let now, let kept, now.isMadeOf(kept) {
                         differences[key] = nil
-                    } else if differences[key]?.makeup == now, differences[key] != nil {
+                    } else if let was = differences[key], Self.differsAlike(was.contents, now, besides: kept) {
+                        differences[key]?.contents = now
                         differences[key]?.lookedAt = date
                         differences[key]?.paused = false
                     } else {
-                        differences[key] = Difference(makeup: now, counted: 0, lookedAt: date)
+                        differences[key] = Difference(contents: now, counted: 0, lookedAt: date)
                     }
                 } else {
                     // It can't be told now: till it can, that time doesn't count.
@@ -805,6 +884,17 @@ public struct KeptTogether: Equatable, Sendable {
         return changed
     }
 
+    /// Whether a mission differs from what you kept together as it did at the last look, told the same way: by the same
+    /// things it wasn't made of, as what it was made of leaving it changes nothing. Told a way BriefBar hasn't kept, all of
+    /// it is what it wasn't made of.
+    private static func differsAlike(
+        _ was: MissionSplitQuestion.Contents?, _ now: MissionSplitQuestion.Contents?, besides kept: Set<String>?
+    ) -> Bool {
+        guard let was, let now, was.tells == now.tells else { return was == now }
+        let kept = kept ?? []
+        return was.digests.subtracting(kept) == now.digests.subtracting(kept)
+    }
+
     /// A mission's key changed, as the pull requests opened under a session go to their story's mission: what you kept
     /// together goes with it, unless the other has its own; what it's made of decides whether it still holds.
     @discardableResult
@@ -828,15 +918,18 @@ public struct KeptTogether: Equatable, Sendable {
     // MARK: Saving
 
     private struct Record: Codable {
-        /// A makeup's digest, with what BriefBar told of the mission besides its pull requests.
-        struct Makeup: Codable {
+        /// What its mission was made of, as digests, with what BriefBar told of it besides its pull requests.
+        struct Contents: Codable {
             var stories: Bool
             var sessions: Bool
-            var digest: String
+            var digests: [String]?
+            /// What an earlier build wrote instead, one digest of the whole, which can't be compared now: the entry learns
+            /// what its mission is made of again, as one kept together while BriefBar couldn't tell.
+            var digest: String?
         }
 
         var key: String
-        var makeups: [Makeup]
+        var makeups: [Contents]
         /// Whole seconds.
         var unseen: Int?
         var keptAt: Date
@@ -855,13 +948,16 @@ public struct KeptTogether: Equatable, Sendable {
         var entries: [MissionKey: Entry] = [:]
         for record in records.compactMap(\.value) {
             guard entries.count < mostEntries, let key = MissionKey(record.key), entries[key] == nil,
-                  record.makeups.allSatisfy({ isDigest($0.digest) })
+                  record.makeups.allSatisfy({ made in
+                      made.digests.map { $0.allSatisfy(isDigest) } ?? made.digest.map(isDigest) ?? false
+                  })
             else { continue }
-            var makeups: [MissionSplitQuestion.Makeup.Tells: String] = [:]
-            for makeup in record.makeups {
-                makeups[MissionSplitQuestion.Makeup.Tells(stories: makeup.stories, sessions: makeup.sessions)] = makeup.digest
+            var contents: [MissionSplitQuestion.Makeup.Tells: Set<String>] = [:]
+            for made in record.makeups {
+                guard let digests = made.digests else { continue }
+                contents[MissionSplitQuestion.Makeup.Tells(stories: made.stories, sessions: made.sessions)] = Set(digests)
             }
-            entries[key] = Entry(makeups: makeups, unseen: TimeInterval(max(record.unseen ?? 0, 0)), keptAt: record.keptAt)
+            entries[key] = Entry(contents: contents, unseen: TimeInterval(max(record.unseen ?? 0, 0)), keptAt: record.keptAt)
         }
         return KeptTogether(entries: entries)
     }
@@ -874,7 +970,8 @@ public struct KeptTogether: Equatable, Sendable {
         let records = entries.map { key, entry in
             Record(
                 key: key.description,
-                makeups: entry.makeups.map { Record.Makeup(stories: $0.key.stories, sessions: $0.key.sessions, digest: $0.value) }
+                makeups: entry.contents
+                    .map { Record.Contents(stories: $0.key.stories, sessions: $0.key.sessions, digests: $0.value.sorted()) }
                     .sorted { ($0.stories ? 1 : 0, $0.sessions ? 1 : 0) < ($1.stories ? 1 : 0, $1.sessions ? 1 : 0) },
                 unseen: Int(entry.unseen), keptAt: entry.keptAt
             )

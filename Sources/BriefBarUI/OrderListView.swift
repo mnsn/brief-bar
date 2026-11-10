@@ -22,7 +22,8 @@ package struct MissionCard: View {
     @ObservedObject var order: PullRequestOrder
     /// Its lane on the Board, for its next steps under its header; nil where its pull requests have no stages.
     let lane: BoardLane?
-    /// What a next step's click does: what its row's does.
+    /// What a click on a pull request in its next steps or its suggested split does: what its row's does, for one the page
+    /// lists; otherwise where it lives, as on the Map.
     let select: (ItemRef) -> Void
 
     @LocalState private var showsFolded = false

@@ -1221,7 +1221,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
-| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, or can't be reached, offline say, the rest are read at a later refresh, and none of them counts as one that can't be read: the one it couldn't be reached for is tried again at the next refresh, behind the others | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
@@ -1250,8 +1250,9 @@ so a pull request's details (policies and threads, two requests) are fetched on 
 
 Requests honor `Retry-After`, in seconds or as the date to wait until (`RetryAfter`): when Azure DevOps asks to
 slow down, nothing is sent until the time it gave, or for a minute when it doesn't say (`ADOClient.retryAfterUnsaid`).
-When nothing can be read (offline, for example), refreshes back off up to ten minutes, and waking the Mac or getting
-back online refreshes right away.
+When nothing can be read (offline, for example), your organizations' lists or, with none to watch, the pull requests you
+watch or were sent, refreshes say so and back off up to ten minutes, and waking the Mac or getting back online refreshes
+right away.
 
 Each request goes only where it's sent, with the Azure CLI's token: no redirect is followed (`RedirectGuard`). One to
 another host fails with an error that says so (`ADOError.redirected`), and one on the same host is an HTTP error like
@@ -1422,28 +1423,29 @@ yours names a chain by; or one another mission has too, as another order names i
 one as well, with that order's lines: only open Azure DevOps pull requests that this mission alone has and no change of
 yours is about move.
 
-It's asked after the names on screen, one mission at a time, once what the mission is made of has stayed the same for
-five seconds, once the sources have read what they show, and again only when that changes, or BriefBar tells it another
-way, as with Show Links off: its pull requests, their work items and stories, and the sessions that opened them, never a
-title alone. It's asked twice, with the likeliest words: its parts in order after the story or session it's for, then in
-reverse order without it, and only what both answers separate counts; the first answer that sees one piece of work
-settles it. Between one answer and the next, its own or a group's name's, it stops once the mission has left the screen,
-keeping what it found for when it's back and settled, the first question's answer too, so that only the second is asked
-then, as when Apple Intelligence was busy; or once what it finds can't count: the mission changed, or Pull Request Order
-or the source it's from went off. On made-up missions, before this shipped, that suggested splitting none of 40 that
-were one piece of work, also with stacked parts and with their tasks' titles to hand, and caught 6 of 18 that had
-drifted, each grouped right: it's often quiet rather than often wrong. Each title is quoted as data, never a name you
-gave. The answer comes in a set shape, by guided generation (`OnDeviceModel.Shape.split`): whether it's one piece of
-work, then two or three groups of the parts' numbers; one that doesn't place each part once gives no suggestion. Which
-group keeps the mission, its key, its Focus and the name you gave it, BriefBar chooses the same way each time, never the
-model: the one with what stays, else the one with the most open pull requests, then the one opened earliest. Each other
-group goes into the mission split off it before that's in it, else to a new mission of your own when it has two pull
-requests or more, else out of missions. There's no suggestion where what stays is in two groups, a group has two
-missions split off before, or the one that keeps the mission has one: a split never joins missions. Nor is there one
-that would leave a story's mission, or the pull requests opened under a session, with one pull request, merged ones
-counted, as that's no mission. The groups' names, the kept one's unless you named it and each new mission's, are asked
-as a mission's are, and are the names those missions get, Apple Intelligence's, in memory. A suggestion is kept in
-memory only, and none of it goes to the log, but how many groups it has, nor to agents.
+It's asked after the names on screen, one mission at a time, once what it's asked of has stayed the same for five
+seconds, once the sources have read what they show, and again only when that changes, or BriefBar tells it another way,
+as with Show Links off: its parts as they join, their open pull requests, their work items and stories, and the sessions
+that opened them, never a title alone (`MissionSplitQuestion.Makeup`). It's asked twice, with the likeliest words: its
+parts in order after the story or session it's for, then in reverse order without it, and only what both answers
+separate counts; the first answer that sees one piece of work settles it. Between one answer and the next, its own or a
+group's name's, it stops once the mission has left the screen, keeping what it found for when it's back and settled, the
+first question's answer too, so that only the second is asked then, as when Apple Intelligence was busy; or once what it
+finds can't count: the mission changed, or Pull Request Order or the source it's from went off. On made-up missions,
+before this shipped, that suggested splitting none of 40 that were one piece of work, also with stacked parts and with
+their tasks' titles to hand, and caught 6 of 18 that had drifted, each grouped right: it's often quiet rather than often
+wrong. Each title is quoted as data, never a name you gave. The answer comes in a set shape, by guided generation
+(`OnDeviceModel.Shape.split`): whether it's one piece of work, then two or three groups of the parts' numbers; one that
+doesn't place each part once gives no suggestion. Which group keeps the mission, its key, its Focus and the name you
+gave it, BriefBar chooses the same way each time, never the model: the one with what stays, else the one with the most
+open pull requests, then the one opened earliest. Each other group goes into the mission split off it before that's in
+it, else to a new mission of your own when it has two pull requests or more, else out of missions. There's no suggestion
+where what stays is in two groups, a group has two missions split off before, or the one that keeps the mission has one:
+a split never joins missions. Nor is there one that would leave a story's mission, or the pull requests opened under a
+session, with one open pull request, as that's no mission once Done no longer lists those that merged or closed. The
+groups' names, the kept one's unless you named it and each new mission's, are asked as a mission's are, and are the
+names those missions get, Apple Intelligence's, in memory. A suggestion is kept in memory only, and none of it goes to
+the log, but how many groups it has, nor to agents.
 
 **Split** is one change of yours (`OrderEdit.split`), with one **Undo**: each pull request it moves keeps the mission it
 came from (`OrderChange.splitFrom`), and what each waits for doesn't change. It goes by the orders as agents last told
@@ -1454,29 +1456,37 @@ from a story's mission or a session's pull requests, it has no order known. **Ke
 to It or to This Mission, and an order that takes back what a split moved, as a session's later change does one you
 moved, one told while BriefBar was closed too, which BriefBar notes as it starts (`OrderChanges.noteOverrides`), each
 keep the mission it's in together as it's made now, or, while BriefBar can't tell yet, as it's made once it can: in the
-preferences (`KeptTogether`, as `order.splits`), by its key, as digests (SHA-256) of what it's made of, never a title,
-until it has been made of something else for three hours (`KeptTogether.settleFor`), or two weeks after BriefBar last
-saw the mission, counted as names' are. Those three hours count only while BriefBar can tell what the mission is made
-of: it looks again whenever what it reads changes, and every hour, so what it told at one look holds till the next, of
-which at most an hour counts (`KeptTogether.mostAtOnce`), as while the Mac sleeps: so a read that fails, tried again
-each hour, or a source that tells less for a while, as when BriefBar starts before the network's up, doesn't bring a
-suggestion back. How long one has differed is kept in memory, and starts again as it's made of something else again, as
-it isn't shown, or as you keep it together again. What it's made of is what BriefBar can tell: with Show Links off, not
-which story each pull request is for, so those for a story are among the pull requests opened under a session; with
-Copilot off, not who opened them. So it keeps a digest for each way it has told the mission, Show Links and Copilot each
-on or off, and compares each only with what it told the same way: turning either off or on isn't a change, and a way it
-tells the mission, the same for three hours, is kept with it, so a change from then on counts. A change within three
-hours of a way it hadn't told before isn't seen. Nothing counts while a source still reads what it shows, however long
-that takes: till Azure DevOps has read an organization's lists since BriefBar started, Show Links has read what each
-pull request is for, and Copilot has read which pull requests its sessions opened, from the app's database where there
-is one (`OrderFacts.isReading`); nor while Azure DevOps is off, or the latest refresh that tried to read anything read
-nothing, neither an organization's lists nor a pull request sent to you, as offline, signed out, or with every
-organization in a directory the Azure CLI isn't signed in to. A suggestion on screen holds the same way: told another
-way, by its parts alone. Each follows its mission as Focus does (`OrderBoard.successor`); at most 200, the one seen
-longest ago going first, which only brings back a suggestion you can keep together again. Turning a source off forgets
-those of its missions, turning Pull Request Order off keeps them, their days waiting, and **Forget All Orders…** forgets
-them. **Suggested Split…**, in the mission's **⋯**, shows one you kept together again, asking Apple Intelligence again
-if BriefBar restarted since. A split applies whole: to take part of one, Keep Together, then Move to Mission.
+preferences (`KeptTogether`, as `order.splits`), by its key, as digests (SHA-256) of what it's made of
+(`MissionSplitQuestion.Contents`), one for each of its Azure DevOps pull requests and those of the missions split off
+it, whatever became of them, each story, with its task, and each work item one is for, and each session that opened one,
+never a title, until it has been made of something it wasn't for three hours (`KeptTogether.settleFor`), or two weeks
+after BriefBar last saw the mission, counted as names' are. Made of less, as a pull request merged, closed or left it,
+or a link or a session BriefBar no longer tells, it's made of the same, and so it is however its pull requests relate,
+as a next you set or an order's line joins its parts, which its question is asked of. Those three hours count only while
+BriefBar can tell what the mission is made of: it looks again whenever what it reads changes, and every hour, so what it
+told at one look holds till the next, of which at most an hour counts (`KeptTogether.mostAtOnce`), as while the Mac
+sleeps: so a read that fails, tried again each hour, or a source that tells less for a while, as when BriefBar starts
+before the network's up, doesn't bring a suggestion back. How long one has differed is kept in memory, and starts again
+as it's made of something else it wasn't, but not as something it was made of leaves it, as it isn't shown, or as you
+keep it together again. What it's made of is what BriefBar can tell: with Show Links off, not which story each pull
+request is for, so those for a story are among the pull requests opened under a session; with Copilot off, not who
+opened them. So it keeps digests for each way it has told the mission, Show Links and Copilot each on or off, and
+compares each only with what it told the same way: turning either off or on isn't a change, and a way it tells the
+mission, the same for three hours, is kept with it, so a change from then on counts. A change within three hours of a
+way it hadn't told before isn't seen. Nothing counts while a source still reads what it shows, however long that takes:
+till Azure DevOps has read an organization's lists since BriefBar started, Show Links has read what each pull request is
+for, and Copilot has read which pull requests its sessions opened, from the app's database where there is one
+(`OrderFacts.isReading`); nor while Azure DevOps is off, or the latest refresh that tried to read anything read nothing,
+neither an organization's lists nor a pull request sent to you, as offline, signed out, or with every organization in a
+directory the Azure CLI isn't signed in to. A suggestion on screen holds the same way: told another way, by its parts
+alone. Each follows its mission as Focus does (`OrderBoard.successor`); at most 200, the one seen longest ago going
+first, which only brings back a suggestion you can keep together again. Turning a source off forgets those of its
+missions, turning Pull Request Order off keeps them, their days waiting, and **Forget All Orders…** forgets them.
+**Suggested Split…**, in the mission's **⋯**, shows one you kept together again, asking Apple Intelligence again if
+BriefBar restarted since, or its parts changed, as one merged. A split applies whole: to take part of one, Keep
+Together, then Move to Mission. A split's Undo puts back the names Apple Intelligence had given the missions it named,
+with what it had asked them with, so that they aren't asked again (`OrderLastChange.names`); Undo Your Changes to It or
+to This Mission doesn't, and the mission is asked its name again once it shows.
 
 ### A pull request's stage
 

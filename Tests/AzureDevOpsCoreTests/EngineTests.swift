@@ -680,11 +680,10 @@ import BriefBarCore
         #expect(snapshot.readNothing)
     }
 
-    /// With no organization to watch, a refresh that could read none of the pull requests sent to you read nothing, though
-    /// it never backs off for it: one read before stays listed as it was. So do the refreshes after it that try none, as
-    /// each waits an hour after a read that failed, till one is read again; and once nothing's sent to you, there's
-    /// nothing to read.
-    @Test func aRefreshThatCouldReadNoPullRequestSentToYouReadsNothing() async throws {
+    /// With no organization to watch, a refresh that couldn't reach Azure DevOps for any of the pull requests sent to you,
+    /// as offline, read nothing, says so, and backs off, as when no organization's lists can be read: one read before stays
+    /// listed as it was. Back online, the next refresh reads it; and once nothing's sent to you, there's nothing to read.
+    @Test func aRefreshThatCouldReachNoPullRequestSentToYouReadsNothingSaysSoAndBacksOff() async throws {
         let clock = Locked(t(0))
         let server = StubServer()
         server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
@@ -701,6 +700,7 @@ import BriefBarCore
         await engine.setLinkedPullRequests([key])
         await engine.refreshNow()
         #expect(await !engine.currentSnapshot().readNothing)
+        #expect(await engine.nextDelay() == 60)
 
         offline.set(true)
         clock.set(t(minute))
@@ -708,22 +708,146 @@ import BriefBarCore
         let unread = await engine.currentSnapshot()
         #expect(unread.records.map(\.id) == [key])
         #expect(unread.readNothing)
+        #expect(unread.problem == .offline)
+        #expect(await engine.nextDelay() == 120)
+        clock.set(t(3 * minute))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == .offline)
+        #expect(await engine.nextDelay() == 240)
 
-        // Back online, it isn't tried again till an hour after it failed.
+        // Back online, it's read at once, rather than an hour after it couldn't be.
         offline.set(false)
-        clock.set(t(2 * minute))
+        clock.set(t(7 * minute))
         await engine.refreshNow()
-        #expect(await engine.currentSnapshot().readNothing)
-        clock.set(t(minute + hour))
-        await engine.refreshNow()
-        #expect(await !engine.currentSnapshot().readNothing)
+        let read = await engine.currentSnapshot()
+        #expect(!read.readNothing)
+        #expect(read.problem == nil)
+        #expect(read.linkedReadAt[key] == t(7 * minute))
+        #expect(await engine.nextDelay() == 60)
 
         offline.set(true)
-        clock.set(t(2 * minute + hour))
+        clock.set(t(8 * minute))
         await engine.refreshNow()
         #expect(await engine.currentSnapshot().readNothing)
         await engine.setLinkedPullRequests([])
+        let none = await engine.currentSnapshot()
+        #expect(!none.readNothing)
+        #expect(none.problem == .noOrganizations)
+    }
+
+    /// One Azure DevOps answers with an error is tried again an hour later: the refreshes in between try none, and leave
+    /// what the one that failed said, as often as usual.
+    @Test func aPullRequestSentToYouThatFailedIsTriedAgainAnHourLater() async throws {
+        let clock = Locked(t(0))
+        let server = StubServer()
+        server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        let failing = Locked(true)
+        server.on("/contoso/_apis/git/pullrequests/8") { _ in
+            failing.value ? .status(500) : .json(Fixture.pullRequest(8, author: People.alex))
+        }
+        server.on("/_apis/policy/evaluations", json: Fixture.list([]))
+        server.on("/threads", json: Fixture.list([]))
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: []), now: { clock.value }
+        ) { _ in }
+        await engine.setLinkedPullRequests([PRKey(Fixture.org, 8)])
+        await engine.refreshNow()
+        let failed = await engine.currentSnapshot()
+        #expect(failed.readNothing)
+        #expect(failed.problem == nil)
+        #expect(await engine.nextDelay() == 60)
+
+        failing.set(false)
+        clock.set(t(minute))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().readNothing)
+        #expect(await engine.nextDelay() == 60)
+        clock.set(t(hour))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().records.map(\.id.number) == [8])
         #expect(await !engine.currentSnapshot().readNothing)
+    }
+
+    /// Azure DevOps not answering about one pull request sent to you, while it answers about another, is that one's
+    /// failure: tried again an hour later, it doesn't keep the other from being read, nor say Azure DevOps can't be reached.
+    @Test func onePullRequestSentToYouThatAzureDevOpsDoesntAnswerAboutHoldsUpNoOther() async throws {
+        let clock = Locked(t(0))
+        let server = StubServer()
+        server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/contoso/_apis/git/pullrequests/8") { _ in .failure(.timedOut) }
+        server.on("/contoso/_apis/git/pullrequests/9", json: Fixture.pullRequest(9, author: People.alex))
+        server.on("/_apis/policy/evaluations", json: Fixture.list([]))
+        server.on("/threads", json: Fixture.list([]))
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: []), now: { clock.value }
+        ) { _ in }
+        await engine.setLinkedPullRequests([PRKey(Fixture.org, 8), PRKey(Fixture.org, 9)])
+        // 8 first, as neither was read: nothing answered, so it can't be told from Azure DevOps not being reached.
+        await engine.refreshNow()
+        let first = await engine.currentSnapshot()
+        #expect(first.problem == .unreachable(ADOClient.unansweredMessage))
+        #expect(first.readNothing)
+        #expect(await engine.nextDelay() == 120)
+
+        // Then 9 first, behind which 8 went: once 9 is read, 8's is its own failure.
+        clock.set(t(2 * minute))
+        await engine.refreshNow()
+        let second = await engine.currentSnapshot()
+        #expect(second.records.map(\.id.number) == [9])
+        #expect(second.problem == nil)
+        #expect(!second.readNothing)
+        #expect(await engine.nextDelay() == 60)
+        clock.set(t(3 * minute))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == nil)
+        #expect(await engine.currentSnapshot().linkedReadAt[PRKey(Fixture.org, 9)] == t(3 * minute))
+    }
+
+    /// Going offline once Azure DevOps answered about one pull request sent to you isn't the next one's failure: it isn't
+    /// held back an hour, and back online, the next refresh reads it.
+    @Test func goingOfflineAfterOnePullRequestSentToYouWasReadHoldsBackNoOther() async throws {
+        let clock = Locked(t(0))
+        let server = StubServer()
+        server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/contoso/_apis/git/pullrequests/8", json: Fixture.pullRequest(8, author: People.alex))
+        let offline = Locked(true)
+        server.on("/contoso/_apis/git/pullrequests/9") { _ in
+            offline.value ? .failure(.notConnectedToInternet) : .json(Fixture.pullRequest(9, author: People.alex))
+        }
+        server.on("/_apis/policy/evaluations", json: Fixture.list([]))
+        server.on("/threads", json: Fixture.list([]))
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: []), now: { clock.value }
+        ) { _ in }
+        await engine.setLinkedPullRequests([PRKey(Fixture.org, 8), PRKey(Fixture.org, 9)])
+        await engine.refreshNow()
+        let first = await engine.currentSnapshot()
+        #expect(first.records.map(\.id.number) == [8])
+        #expect(!first.readNothing)
+
+        offline.set(false)
+        clock.set(t(minute))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().linkedReadAt[PRKey(Fixture.org, 9)] == t(minute))
+    }
+
+    /// With your organizations' lists read, Azure DevOps not answering in time about a pull request sent to you is that
+    /// one's failure, as any other: the rest are read all the same.
+    @Test func withListsReadAPullRequestSentToYouAzureDevOpsDoesntAnswerAboutHoldsUpNoOther() async throws {
+        let server = StubServer()
+        server.serveOrganization("fabrikam")
+        server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/contoso/_apis/git/pullrequests/8") { _ in .failure(.timedOut) }
+        server.on("/contoso/_apis/git/pullrequests/9", json: Fixture.pullRequest(9, author: People.alex))
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: ["fabrikam"])
+        ) { _ in }
+        await engine.setLinkedPullRequests([PRKey(Fixture.org, 8), PRKey(Fixture.org, 9)])
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.map(\.id) == [PRKey(Fixture.org, 9)])
+        #expect(snapshot.problem == nil)
+        #expect(await engine.nextDelay() == 60)
     }
 
     /// So does one that Azure DevOps asked to slow down before it read any.
