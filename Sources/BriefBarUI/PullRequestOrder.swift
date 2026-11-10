@@ -125,6 +125,13 @@ package final class PullRequestOrder: ObservableObject {
     /// The pull requests a source said it lists only because someone sent them in a chat, while BriefBar runs, until one
     /// lists them otherwise, as yours or one you watch: one that leaves the lists, merged or closed, stays here.
     private var sentInChats: Set<ItemRef> = []
+    /// The sources that have listed what they show since Pull Request Order turned on, as BriefBar started or in Settings,
+    /// and since they last told another account: what you set or chose that no list has had for 30 days goes only once its
+    /// source has (`timePassed()`), as till then no list could note that it has it, as when BriefBar starts after a month
+    /// away and Azure DevOps can't read anything yet. It's for the source as a whole: once Azure DevOps reads some
+    /// organization's lists, one in another, whose lists it can't read yet, counts as before, so that one in an
+    /// organization you no longer watch, whose lists it never reads again, still goes.
+    private var listedSinceOn: Set<SourceID> = []
     /// What each source told it last.
     private var told: [SourceID: Told] = [:] {
         didSet {
@@ -271,6 +278,7 @@ package final class PullRequestOrder: ObservableObject {
             clock?.invalidate()
             clock = nil
             told = [:]
+            listedSinceOn = []
             orders = DeclaredOrders()
             evidence = OrderEvidence()
             focus = nil
@@ -305,6 +313,11 @@ package final class PullRequestOrder: ObservableObject {
         changes = OrderChanges.load(from: defaults).merging(changesInMemory)
         yourNames = MissionNames.load(from: defaults)
         keptPicks = UpNextPicks.Kept.load(from: defaults)
+        // What it can't read goes, such as what builds from main saved before what you chose was kept for each account,
+        // each slot's reference alone, rather than keep Forget Stages… on with nothing to forget.
+        if keptPicks.isEmpty, defaults.object(forKey: UpNextPicks.Kept.defaultsKey) != nil {
+            defaults.removeObject(forKey: UpNextPicks.Kept.defaultsKey)
+        }
         picks = picksNow()
         namesCounted = nil
         keptTogether = KeptTogether.load(from: defaults)
@@ -331,13 +344,15 @@ package final class PullRequestOrder: ObservableObject {
     /// Looks again at what time alone changes, as its clock does every hour: orders that went stale, those that finished
     /// long enough ago to go, the stages you set for pull requests no list has had for 30 days, kept or in memory, and
     /// those sessions set 30 days ago, and what you chose for Up Next's slots that BriefBar keeps, once no list has had its
-    /// pull request for 30 days, with any account.
+    /// pull request for 30 days, with any account. What you set or chose goes so only once its source has listed what it
+    /// shows since Pull Request Order turned on (`listedSinceOn`): till then, no list could note that it has it.
     package func timePassed() {
         guard isOn else { return }
         let date = now()
-        if marks.forgetUnlisted(now: date) { marks.save(to: defaults) }
-        marksInMemory = marksInMemory.filter { !$0.value.isUnlisted(at: date) }
-        if keptPicks.forgetUnlisted(now: date) {
+        let looked = Set(listedSinceOn.flatMap { ItemRef.Kind.of($0) })
+        if marks.forgetUnlisted(now: date, of: looked) { marks.save(to: defaults) }
+        marksInMemory = marksInMemory.filter { !looked.contains($0.key.kind) || !$0.value.isUnlisted(at: date) }
+        if keptPicks.forgetUnlisted(now: date, of: looked) {
             keptPicks.save(to: defaults)
             picks = picksNow()
         }
@@ -388,15 +403,16 @@ package final class PullRequestOrder: ObservableObject {
     /// tell, and since when, which are the sessions whose stages count (`SessionStages`), the pull requests it lists
     /// only because someone sent them in a chat, whose changes stay in memory, whether it reads the stories its pull
     /// requests are for, whether it has listed what it shows since it started, as it hasn't right after BriefBar starts:
-    /// till then, what a mission is made of isn't counted; where it has read in full, with that account, the lists that
-    /// would have a pull request, by scope, such as the Azure DevOps organizations whose lists it read since it started:
-    /// one you chose for Up Next's slots that it doesn't list there has left its lists; and which of the pull requests it
-    /// reads by their links, apart from those lists, as one you watch, it doesn't list yet, as when that read failed: one
-    /// you chose of those waits. It replaces what the source told before. Once it tells another account than the one it
-    /// told last, the stages you set that BriefBar kept in memory for its pull requests go, and so does Undo of one: they
-    /// were the other account's. So does what you chose for Up Next's slots in memory, and since when each choice has been
-    /// away, and what the other account chose that BriefBar keeps waits, unused, until it signs in again. Nothing's kept
-    /// while Pull Request Order is off.
+    /// till then, what a mission is made of isn't counted, nor does what you set or chose of its pull requests that no
+    /// list has had for 30 days go; where it has read in full, with that account, the lists that would have a pull
+    /// request, by scope, such as the Azure DevOps organizations whose lists it read since it started: one you chose for Up
+    /// Next's slots that it doesn't list there has left its lists; and which of the pull requests it reads by their links,
+    /// apart from those lists, as one you watch, it doesn't list yet, as when that read failed: one you chose of those
+    /// waits. It replaces what the source told before. Once it tells another account than the one it told last, the stages
+    /// you set that BriefBar kept in memory for its pull requests go, and so does Undo of one: they were the other
+    /// account's. So does what you chose for Up Next's slots in memory, and since when each choice has been away, and what
+    /// the other account chose that BriefBar keeps waits, unused, until it signs in again; and what no list has had for 30
+    /// days goes only once it has listed what it shows as this account. Nothing's kept while Pull Request Order is off.
     package func publish(
         _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = [],
         working: [ItemRef: [ItemRef]] = [:], stages: [ItemRef: StageFacts] = [:], account: String? = nil,
@@ -428,7 +444,10 @@ package final class PullRequestOrder: ObservableObject {
             if accounts[source] != nil { forgetInMemory(ItemRef.Kind.of(source)) }
             accounts[source] = account
             accountChanged = true
+            // What it listed was another account's lists.
+            listedSinceOn.remove(source)
         }
+        if listed { listedSinceOn.insert(source) }
         told[source] = new
         sentInChats.formUnion(inMemory)
         sentInChats.subtract(Set(pullRequests.map(\.ref)).subtracting(inMemory))
