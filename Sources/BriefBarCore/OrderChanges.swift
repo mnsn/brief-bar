@@ -1388,8 +1388,10 @@ extension OrderChanges {
 
     /// Puts back the changes an edit touched, as `apply` said they were. One a split moved, back where the split put it,
     /// knows the lines its order put it in since (`OrderChange.linedWith`): what it saw there, where it stayed, or all of
-    /// them, where it wasn't there, as none of those crossed the split for it; but not where its order took it back since,
-    /// which Undo doesn't give back: it stays taken back, as its order took it (`splitsTakenBack`).
+    /// them, where it wasn't there, as none of those crossed the split for it, also where its order went against the
+    /// change you made since, as by naming it again where you'd moved it, which went against that change, not the split;
+    /// but not where its order took it back since, which Undo doesn't give back: it stays taken back, as its order took it
+    /// (`splitsTakenBack`).
     /// - Parameter orders: the orders sessions told.
     public mutating func restore(_ touched: [ItemRef: OrderChange?], orders: DeclaredOrders) {
         for (ref, was) in touched {
@@ -1403,7 +1405,7 @@ extension OrderChanges {
                     change.linedWith.formUnion(now.linedWith)
                 } else if let now, SplitGroup(now) == group, let taken = now.overridden, taken.by == group.order {
                     change.overridden = taken
-                } else if now?.overridden?.by != group.order {
+                } else {
                     change.linedWith.formUnion(change.lined(in: orders))
                 }
             }

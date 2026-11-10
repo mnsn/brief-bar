@@ -1473,7 +1473,9 @@ together, which each keeps as it sees them, with the order's lines it had when y
 split moved from that order keeps (`OrderChange.linedWith`), so one that comes to cross later, as a pull request leaves
 them, or goes back to the order's mission, takes nothing back; one that Undo brings back where the split put it knows the
 lines told meanwhile, as Undo is your later change, but not one an order BriefBar forgot that had taken it brings back, as
-the order's line is the later change; and Undo leaves taken back one its order took since. Nor one that holds nothing up,
+the order's line is the later change; and Undo leaves taken back one its order took back since, but not one whose
+change of yours since its order went against, as by naming it again where you'd moved it: that went against your change,
+not the split, so it comes back knowing them. Nor one that holds nothing up,
 to one that merged or closed or from one that merged, which BriefBar sees only once it does again; one BriefBar can't see
 counts, and `--mcp` goes by the same before the app notes it. Put Yours Back on
 one the order took back puts back what it took back with it, or what it went back with, and on one another order took,

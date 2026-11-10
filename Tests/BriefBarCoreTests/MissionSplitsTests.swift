@@ -1338,18 +1338,22 @@ import Testing
         #expect(changes[Self.pr(4401)] == nil)
         #expect(takenBack(changes, Self.across(3, at: 20, after4401.plans[0].entries)).isEmpty)
         // Undo of a Move the order went against since, as it named 4405 again after it had dropped it, brings 4405 back where
-        // the split put it: the order went against your Move, not the split.
+        // the split put it: the order went against your Move, not the split. So it knows the line the order put it in as it
+        // named it again, and the order told again takes nothing back.
         var dropped = try Self.splitAcross()
         let without4405 = Self.across(2, at: 8, without: [Self.pr(4405)])
         dropped.noteOverrides(in: without4405, now: t(8))
         let movedAway = try dropped.apply(
             .move([Self.pr(4405)], to: .into(elsewhere), from: mine), missions: [], orders: without4405, now: t(9)
         )
-        let namedAgain = Self.across(3, at: 10)
+        let namedAgain = Self.across(3, at: 10, [.init(ref: Self.pr(4402), after: [Self.pr(4401), Self.pr(4405)])])
         dropped.noteOverrides(in: namedAgain, now: t(11))
         #expect(dropped[Self.pr(4405)]?.overridden?.by == Self.planID)
         dropped.restore(movedAway, orders: namedAgain)
         #expect(dropped[Self.pr(4405)]?.overridden == nil && dropped[Self.pr(4405)]?.placement == .into(mine))
+        #expect(dropped[Self.pr(4405)]?.linedWith == [Self.pr(4402)])
+        #expect(takenBack(dropped, namedAgain).isEmpty)
+        #expect(takenBack(dropped, Self.across(4, at: 20, namedAgain.plans[0].entries)).isEmpty)
     }
 
     /// Another session's order BriefBar had (`acrossOther`): it names these, at t7 unless said.
