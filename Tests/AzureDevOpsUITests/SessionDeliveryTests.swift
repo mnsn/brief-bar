@@ -196,9 +196,6 @@ private final class TakenAt: Sendable {
     /// The app's database, with the session and the forks it records: each one's ID, the session it was forked from, and
     /// when it was made; and other sessions, which are no forks.
     private func database(at home: URL, forks: [(id: String, original: String, created: String)], others: [String] = []) throws {
-        var handle: OpaquePointer?
-        guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
-        defer { sqlite3_close(handle) }
         let statements = """
             CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL);
             CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, mode TEXT,
@@ -220,7 +217,7 @@ private final class TakenAt: Sendable {
                 INSERT INTO sessions (id, title, session_type, created_at, updated_at)
                     VALUES ('\(id)', 'Something else', 'project', '2026-10-01T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
                 """ }.joined()
-        guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
+        try write(statements, home: home)
     }
 
     @Test func sendsThePromptThroughTheSessionsExtension() async throws {
@@ -345,10 +342,33 @@ private final class TakenAt: Sendable {
 
     /// Runs SQL in the app's database.
     private func sql(_ statements: String, home: URL) throws {
-        var handle: OpaquePointer?
-        guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
-        defer { sqlite3_close(handle) }
-        guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
+        try write(statements, home: home)
+    }
+
+    /// Writes to the app's database, in one transaction. The store reads it, read-only, as it checks whether a turn runs,
+    /// again and again while a delivery waits, and a write in this process while it does fails at once: with
+    /// `SQLITE_BUSY`, or, next to a read-only reader, as macOS's SQLite has it, an I/O error (`SQLITE_IOERR_LOCK`), which
+    /// SQLite doesn't wait out. Such a write is tried again, for up to a minute, as each step waits.
+    private func write(_ statements: String, home: URL) throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while true {
+            var handle: OpaquePointer?
+            guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else {
+                sqlite3_close(handle)
+                throw CocoaError(.fileReadUnknown)
+            }
+            defer { sqlite3_close(handle) }
+            if sqlite3_exec(handle, "BEGIN IMMEDIATE;\n\(statements)\nCOMMIT;", nil, nil, nil) == SQLITE_OK { return }
+            let code = sqlite3_extended_errcode(handle)
+            let says = String(cString: sqlite3_errmsg(handle))
+            sqlite3_exec(handle, "ROLLBACK", nil, nil, nil)
+            // `SQLITE_IOERR_LOCK`, which Swift can't import.
+            let whileItsRead = code & 0xFF == SQLITE_BUSY || code == SQLITE_IOERR | (15 << 8)
+            guard whileItsRead, ContinuousClock.now < deadline else {
+                throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedFailureReasonErrorKey: says])
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
     }
 
     /// The sessions that run a turn now, as the app's database flags them; none of the others.
