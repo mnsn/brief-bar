@@ -48,8 +48,8 @@ struct PullRequestMenuItems: View {
 }
 
 /// The menu of a pull request's details, ⋯ above them, and of its page over a work item's or another pull request's:
-/// opening it, copying it, and what its row's menu has while the list has it, Copilot's actions among them while Send Work
-/// to Copilot is on; or else its links.
+/// opening it, copying it and its branch's name, and what its row's menu has while the list has it, Copilot's actions
+/// among them while Send Work to Copilot is on; or else its links.
 struct PullRequestDetailsMenuItems: View {
     let item: PRSnapshot
     /// The list still has it, and its row.
@@ -63,6 +63,10 @@ struct PullRequestDetailsMenuItems: View {
         Button("Open in Azure DevOps") { store.open(item) }
         Button("Copy Link") { PullRequestDetailsPanel.copy(item.pageURL().absoluteString) }
         Button("Copy Number and Title") { PullRequestDetailsPanel.copy("!\(item.key.number) \(item.title)") }
+        // Its branch, to check it out, while the list has what it read of it.
+        if let branch = store.record(for: item.key)?.pullRequest.sourceBranch, !branch.isEmpty {
+            Button("Copy Branch Name") { PullRequestDetailsPanel.copy(branch) }
+        }
         // The row's own, while there's a row.
         if isListed {
             PullRequestMenuItems(

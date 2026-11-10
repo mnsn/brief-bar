@@ -172,6 +172,9 @@ final class PullRequestDetailsStore: ObservableObject {
     @Published var scope: ChangeScope = .whole
     /// Whether a file's page fills the page, over the list, rather than sharing it with the list. Until they close.
     @Published var fillsPage = false
+    /// Whether the details fill the page, over the list, as Fill the Page asks: their parts, the pages over them and their
+    /// files' pages. Until they close, or Show the List.
+    @Published var detailsFillPage = false
     /// The threads you marked as read while they show the pull request: where each was then, which it stays at while they
     /// show it, rather than folding away, and what Mark as Unread puts back. Until another pull request shows, or they
     /// close.
@@ -424,6 +427,13 @@ final class PullRequestDetailsStore: ObservableObject {
         place = file.from ?? .file(file.id)
     }
 
+    /// Shows the list beside the details again, however they came to fill the page: as Fill the Page asked, or as a file's
+    /// page you made fill it.
+    func showList() {
+        detailsFillPage = false
+        fillsPage = false
+    }
+
     /// The file's page shows the file now at another path, such as one a push renamed: it's that one's from then on.
     func follow(file path: String) {
         file?.path = path
@@ -502,6 +512,7 @@ final class PullRequestDetailsStore: ObservableObject {
         file = nil
         scope = .whole
         fillsPage = false
+        detailsFillPage = false
         markedRead = [:]
     }
 

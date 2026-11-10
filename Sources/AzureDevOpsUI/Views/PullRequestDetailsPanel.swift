@@ -23,6 +23,8 @@ struct PullRequestDetailsPanel: View {
     @LocalState private var isComposing = false
     /// A mission's name is being edited beside them, in By Mission, which takes Esc too.
     @LocalState private var isRenamingMission = false
+    /// Where they are on the page: beside the list, over it, or filling the page.
+    @Environment(\.detailsRoom) private var room
 
     var body: some View {
         if let item = details.selected {
@@ -70,8 +72,26 @@ struct PullRequestDetailsPanel: View {
             .onReceive(services.links.$isOn) { isOn in
                 if !isOn { details.closePages() }
             }
+            // Fill the Page: they cover the list, with the pages over them and their files' pages, until they close or
+            // Show the List; as they do while a file's page in them fills it, as you made it.
+            .environment(\.detailsFilling, filling)
+            .fillsDetailsPage(details.detailsFillPage)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(accessibilityName(item))
+        }
+    }
+
+    /// Fill the Page and Show the List, while they're beside the list or fill the page; not while they're over it in a
+    /// narrow window. Show the List ends a file's page's filling it too, a page's own.
+    private var filling: DetailsFilling? {
+        guard room == .beside || room == .fillingPage else { return nil }
+        return DetailsFilling(isFilling: room == .fillingPage) { fill in
+            if fill {
+                details.detailsFillPage = true
+            } else {
+                details.showList()
+                pageDetails.showList()
+            }
         }
     }
 

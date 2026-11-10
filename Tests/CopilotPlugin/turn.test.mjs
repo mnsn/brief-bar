@@ -8,6 +8,7 @@ import {
     LONGEST_LINE,
     LONGEST_SAID,
     STATES,
+    beginning,
     followTurn,
     line,
     text,
@@ -16,6 +17,9 @@ import {
 const SENT = Date.parse("2026-11-10T06:42:33.000Z");
 const PROMPT = "Fix the comments on !4102. PROMPT-MARKER-7f3e";
 const at = (seconds) => new Date(SENT + seconds * 1000).toISOString();
+/** Half of a character in two UTF-16 units, without its other half: JSON says it as a lone surrogate, which BriefBar can't
+ * read. */
+const LONE_HALF = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 /** An event as the session sends it, `seconds` after the message was sent. */
 function event(seconds, type, data = {}, envelope = {}) {
@@ -423,6 +427,19 @@ describe("its steps and words", () => {
         assert.equal(line("A\nB\u0000  C"), "A B C");
         assert.equal(line("\u202e"), undefined);
         assert.equal(line(undefined), undefined);
+
+        // Never inside a character, such as an emoji, half of which BriefBar can't read: it goes whole, or stays whole.
+        const emoji = "\u{1F600}";
+        const said = text(`${"y".repeat(LONGEST_SAID - 2)}${emoji}and more`);
+        assert.equal(said, `${"y".repeat(LONGEST_SAID - 2)}…`);
+        assert.doesNotMatch(said, LONE_HALF);
+        assert.equal(text(`${"y".repeat(LONGEST_SAID - 3)}${emoji}and more`), `${"y".repeat(LONGEST_SAID - 3)}${emoji}…`);
+        const named = line(`${"n".repeat(LONGEST_LINE - 2)}${emoji}and more`);
+        assert.equal(named, `${"n".repeat(LONGEST_LINE - 2)}…`);
+        assert.doesNotMatch(named, LONE_HALF);
+        assert.equal(line(`${"n".repeat(LONGEST_LINE - 3)}${emoji}and more`), `${"n".repeat(LONGEST_LINE - 3)}${emoji}…`);
+        assert.equal(beginning(`a${emoji}`, 2), "a");
+        assert.equal(beginning(`a${emoji}`, 3), `a${emoji}`);
     });
 
     test("takes nothing that isn't an event, and says every state it can be in", () => {

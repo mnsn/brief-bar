@@ -485,9 +485,11 @@ final class CopilotTasksStore: ObservableObject {
             .sink { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    // Off, nothing will say how the tasks still working end: the notifications that say they're working go.
+                    // Off, nothing will say how the tasks still working end: the notifications that say they're working go;
+                    // and those that say a prompt's turn waits on you, whose reports aren't read while it's off.
                     if !self.isOn {
                         self.notifier?.remove(self.entries.filter(\.status.phase.isActive).map { Self.notificationID($0.id) })
+                        self.withdrawPromptNotifications()
                         self.copiedPrompts = [:]
                         self.fixWords = [:]
                     }
@@ -1091,6 +1093,14 @@ final class CopilotTasksStore: ObservableObject {
         guard prompt.notifiedNeedsYou != nil else { return }
         prompt.notifiedNeedsYou = nil
         if let requestId = prompt.report { notifier?.remove([Self.promptNotificationID(requestId)]) }
+    }
+
+    /// Withdraws every notification that says a prompt's turn waits on you, as Send Work to Copilot is turned off: no report
+    /// is read while it's off, so none would go once its turn goes on. Turned back on, one that still waits says so again.
+    func withdrawPromptNotifications() {
+        var prompts = settings.copilotSentPrompts
+        for index in prompts.indices { withdrawPromptNotification(&prompts[index]) }
+        if prompts != settings.copilotSentPrompts { settings.copilotSentPrompts = prompts }
     }
 
     /// What a notification says of a prompt's turn, as its report says it stands: what its line says, in a sentence, by the

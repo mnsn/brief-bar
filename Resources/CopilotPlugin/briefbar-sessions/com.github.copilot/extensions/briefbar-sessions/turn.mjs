@@ -274,7 +274,7 @@ export function text(value) {
     if (typeof value !== "string") return undefined;
     const kept = value.replace(/\r\n?/g, "\n").replace(/[^\P{Cc}\n\t]|\p{Cf}/gu, "").trim();
     if (kept === "") return undefined;
-    return kept.length > LONGEST_SAID ? `${kept.slice(0, LONGEST_SAID - 1).trimEnd()}…` : kept;
+    return kept.length > LONGEST_SAID ? `${beginning(kept, LONGEST_SAID - 1).trimEnd()}…` : kept;
 }
 
 /** A line of text, without control characters, its spaces collapsed, cut short when it's long; undefined for none. */
@@ -282,5 +282,12 @@ export function line(value) {
     if (typeof value !== "string") return undefined;
     const kept = value.replace(/[\p{Cc}\p{Cf}]+/gu, " ").replace(/\s+/g, " ").trim();
     if (kept === "") return undefined;
-    return kept.length > LONGEST_LINE ? `${kept.slice(0, LONGEST_LINE - 1)}…` : kept;
+    return kept.length > LONGEST_LINE ? `${beginning(kept, LONGEST_LINE - 1)}…` : kept;
+}
+
+/** The first `count` UTF-16 units of a text, or one fewer when the last would be the first half of a character, such
+ * as an emoji: BriefBar can't read a file with half of one, which JSON says as a lone surrogate. */
+export function beginning(value, count) {
+    const last = value.charCodeAt(count - 1);
+    return value.slice(0, last >= 0xd800 && last <= 0xdbff ? count - 1 : count);
 }

@@ -66,7 +66,9 @@ struct SessionChoice: Identifiable, Equatable {
     /// one (`CopilotTasksStore.checkoutKey`): nothing goes to it until that's done, or their work would mix.
     var isFolderBusy = false
 
-    /// The folder one of the app's sessions works in, as BriefBar found it when the composer opened.
+    /// The folder one of the app's sessions works in, as BriefBar found it when the composer opened; or, for one Show Links
+    /// links to a pull request whose details name it, as read while they show it (`PullRequestSessions`); or, for a task
+    /// that went on with one of the app's sessions, the one that session works in, as read with the app's.
     var appFolder: URL?
 
     /// Nothing goes to it now: Copilot works in it, or in its checkout.
@@ -74,6 +76,14 @@ struct SessionChoice: Identifiable, Equatable {
 
     /// The folder it works in: an earlier task's worktree, or the one the app's session works in, as found.
     var folder: URL? { run?.worktree ?? appFolder }
+
+    /// The folder it works in now, as last read, to open it: for a task that went on with one of the app's sessions, the one
+    /// that session works in, which may have moved since the task started (`CopilotTasksStore.currentFolder(of:)`), until
+    /// it's read; else `folder`.
+    var currentFolder: URL? {
+        if let run, run.isAppSession == true { return appFolder ?? run.worktree }
+        return folder
+    }
 
     var id: String {
         switch kind {
@@ -104,7 +114,8 @@ extension CopilotTasksStore {
     /// The sessions a task could go to instead of a new one: BriefBar's own for it, its earlier tasks' and, for a pull
     /// request, the session of its work item's task that opened it, the newest first; then the Copilot app's, those that
     /// go with it first. Read when the composer opens, and only while Send Work to Copilot is on: the app's database,
-    /// read-only, which sessions the app has open, and the folder each of its sessions works in.
+    /// read-only, which sessions the app has open, and the folder each of its sessions works in, and those that tasks that
+    /// went on with them work in now.
     func sessionChoices(for subject: TaskSubject) async -> [SessionChoice] {
         guard canSend, isOn else { return [] }
         let home = appHome
@@ -114,8 +125,11 @@ extension CopilotTasksStore {
         guard canSend, isOn, !Task.isCancelled else { return [] }
         let tasks = taskChoices(for: subject)
         let ids = Set(tasks.map(\.id))
+        // The tasks that went on with one of the app's sessions, which may have moved since they started.
+        let inApp = tasks.filter { $0.run?.isAppSession == true }.map(\.id)
         // In one pass: the app's sessions, which of them and of BriefBar's the app has open, and the folder each of the
-        // app's sessions works in, which may be shared; no more of it once what wanted them is cancelled.
+        // app's sessions works in, which may be shared, and those tasks' sessions too; no more of it once what wanted them is
+        // cancelled.
         let reading = Task.detached(priority: .userInitiated) { () -> (sessions: [AppSession], open: Set<String>, folders: [String: URL]) in
             let sessions = ((try? AppSessions.load(home: home)) ?? []).filter { !ids.contains($0.id) }
             guard !Task.isCancelled else { return ([], [], [:]) }
@@ -123,8 +137,8 @@ extension CopilotTasksStore {
                 AppSessions.isOpen(id, home: home) || (cliHome != home && AppSessions.isOpen(id, home: cliHome))
             })
             guard !Task.isCancelled else { return ([], [], [:]) }
-            let folders = sessions.reduce(into: [String: URL]()) { folders, session in
-                folders[session.id] = AppSessions.folder(of: session.id, home: home)
+            let folders = (sessions.map(\.id) + inApp).reduce(into: [String: URL]()) { folders, id in
+                folders[id] = AppSessions.folder(of: id, home: home)
             }
             return (sessions, open, folders)
         }
@@ -142,7 +156,9 @@ extension CopilotTasksStore {
         var all = tasks + Self.sorted(apps, createdAt: nil)
         for index in all.indices {
             all[index].isOpenInApp = found.open.contains(all[index].id)
-            if all[index].appSession != nil { all[index].appFolder = found.folders[all[index].id] }
+            if all[index].appSession != nil || all[index].run?.isAppSession == true {
+                all[index].appFolder = found.folders[all[index].id]
+            }
         }
         return availability(of: all)
     }
