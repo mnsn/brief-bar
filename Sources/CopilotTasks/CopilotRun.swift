@@ -51,6 +51,10 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// its own (`CopilotLauncher.Request.forking`): its ID, to say so, and not to read anything by, unless it's checked to be
     /// a session's. Nil otherwise, as runs that BriefBar kept before it had this were.
     public var forkedFrom: String?
+    /// For a fork (`forkedFrom`), when it was made, as its first task started: it has what the session it forked had then,
+    /// which a push from it pushes. Kept as it goes on, whatever it takes on or lets go of since; nil otherwise, and for runs
+    /// that BriefBar kept before it had this.
+    public var forkedAt: Date?
     /// What of its pull request it took on, by their IDs, each with when (`PullRequestPart`): a comment thread with Fix, those
     /// that waited on you with Fix Comments, a build with Fix, its failed builds with Fix the Build, its conflicts with
     /// Resolve Conflicts, and what its fixes ship with Push & Reply. Going on with a session whose changes aren't pushed keeps
@@ -69,12 +73,21 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// otherwise: for a task that took on nothing itself, though it went on with a session whose earlier tasks did, and so
     /// keeps only what they took on; and for runs that BriefBar kept before it had this.
     public var workLetGo: Bool?
+    /// A Push & Reply that fixes what it takes on first, as a comment's Fix sent with Push and Reply on does
+    /// (`TakenPart.fixes`), kept apart from what it took on, which Clear lets go of: it pushed only once the list reads its
+    /// pull request's branch at another commit than `head`, however much of what it took on is let go. Nil otherwise, and
+    /// for runs that BriefBar kept before it had this.
+    public var fixes: Bool?
+    /// For one that fixes them first (`fixes`), the commit the pull request's branch was at as it was sent
+    /// (`TakenPart.head`).
+    public var head: String?
 
     public init(
         id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
         ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil,
-        forkedFrom: String? = nil, taken: [TakenPart]? = nil, pushes: [SessionPush]? = nil, workLetGo: Bool? = nil
+        forkedFrom: String? = nil, forkedAt: Date? = nil, taken: [TakenPart]? = nil, pushes: [SessionPush]? = nil,
+        workLetGo: Bool? = nil, fixes: Bool? = nil, head: String? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -90,9 +103,12 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.stoppedByYou = stoppedByYou
         self.isAppSession = isAppSession
         self.forkedFrom = forkedFrom
+        self.forkedAt = forkedAt
         self.taken = taken
         self.pushes = pushes
         self.workLetGo = workLetGo
+        self.fixes = fixes
+        self.head = head
     }
 
     /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a
@@ -147,17 +163,22 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     ///   - target: the pull request's target branch, which the conflicts it takes on are with (`TakenPart.target`).
     ///   - fixing: a Push & Reply that fixes what it takes on first, as a comment's Fix sent with Push and Reply on does
     ///     (`TakenPart.fixes`).
+    ///   - head: for one that fixes them first, the commit the pull request's branch is at now, as BriefBar's list has read
+    ///     it (`TakenPart.head`).
     public static func taken(
         goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?, taking parts: [PullRequestPart],
-        for action: PullRequestAction?, at now: Date, target: String? = nil, fixing: Bool = false
+        for action: PullRequestAction?, at now: Date, target: String? = nil, fixing: Bool = false, head: String? = nil
     ) -> [TakenPart]? {
         var kept: [TakenPart] = []
         if let previous, let before = previous.taken, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true,
            previous.action?.changesCode == true || previous.action == .pushAndReply {
             kept = before.map { taken in
                 var taken = taken
-                // Gone on with, it ended: one BriefBar didn't see end, it stopped.
-                if taken.ended == nil { taken.ended = previous.ended ?? .stopped }
+                // Gone on with, it ended, by now: one BriefBar didn't see end, it stopped.
+                if taken.ended == nil {
+                    taken.ended = previous.ended ?? .stopped
+                    taken.overBy = now
+                }
                 return taken
             }
         }
@@ -168,7 +189,9 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         let ships: Bool? = action == .pushAndReply ? true : nil
         let fixes: Bool? = action == .pushAndReply && fixing ? true : nil
         kept = kept.filter { !taking.contains($0.part) } + taking.map { part in
-            TakenPart(part, since: now, ships: ships, fixes: fixes, target: part == .conflicts ? target : nil)
+            TakenPart(
+                part, since: now, ships: ships, fixes: fixes, target: part == .conflicts ? target : nil, head: fixes == true ? head : nil
+            )
         }
         return keeping(kept, for: action)
     }
@@ -182,12 +205,19 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
 
     /// The Push & Reply tasks that ran in a session before the task that goes on with it, `previous` as BriefBar keeps it,
     /// on `pullRequest` (`pushes`): those `previous` kept, and `previous` itself when it's one, with how it ended, or, not
-    /// seen to end, that it stopped. Only on the same pull request; nil when none did.
+    /// seen to end, that it stopped, and whether it fixed what it took on first, with the commit the branch was at as it
+    /// was sent, as its run keeps them (`fixes`, `head`), or, for one kept before it had those, what it took on does. Only
+    /// on the same pull request; nil when none did.
     public static func pushes(goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?) -> [SessionPush]? {
         guard let previous, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true else { return nil }
         var pushes = previous.pushes ?? []
         if previous.action == .pushAndReply {
-            pushes.append(SessionPush(since: previous.startedAt, ended: previous.ended ?? .stopped))
+            let fixing = previous.taken?.first { $0.ended == nil && $0.fixes == true }
+            let fixes = previous.fixes == true || fixing != nil
+            pushes.append(SessionPush(
+                since: previous.startedAt, ended: previous.ended ?? .stopped, fixes: fixes ? true : nil,
+                head: fixes ? previous.head ?? fixing?.head : nil
+            ))
         }
         return pushes.isEmpty ? nil : pushes
     }

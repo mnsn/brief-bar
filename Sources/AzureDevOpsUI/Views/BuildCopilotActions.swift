@@ -25,14 +25,15 @@ extension Check {
 extension CopilotWork {
     /// Whether it shows on a build: while Copilot is at it, or the build doesn't pass. A rerun, or a push, that passes ends
     /// it; so does a run that failed after Copilot started to push, which built what it pushed, or ran since: the build is
-    /// to fix again.
+    /// to fix again. Not after a fix sent with Push and Reply on whose push isn't seen (`pushSeen`), which may not have
+    /// pushed anything for that run to build.
     func shows(onBuild check: Check?) -> Bool {
         if isActive { return true }
         guard let check else { return true }
         if check.needsNoFix { return false }
         // Failed, or failed and expired since.
-        if purpose == .pushAndReply, case .done = state, check.state == .failed || check.state == .expired, let failedAt = check.completedAt,
-           failedAt > takenAt ?? since {
+        if purpose == .pushAndReply, !fixes || pushSeen, case .done = state, check.state == .failed || check.state == .expired,
+           let failedAt = check.completedAt, failedAt > takenAt ?? since {
             return false
         }
         return true

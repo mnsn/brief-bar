@@ -277,8 +277,8 @@ extension CopilotTasksStore {
     ///     reply may be, in the fork, or in the checkout it works in, once BriefBar took the fork for it, or copies the
     ///     prompt for it; nor while the folder the session works in holds a merge of commits that the branch the prompt
     ///     names, its `targetBranch`, doesn't have, or that can't be checked (`pushProblem`); nor once the pull request
-    ///     merges into another branch, as Azure DevOps says right before git checks, and again after
-    ///     (`freshTargetProblem`), or as the list reads later (`retargetProblem`).
+    ///     merges into another branch, or was completed or abandoned, as Azure DevOps says right before git checks, and
+    ///     again after (`freshTargetProblem`), or as the list reads later (`retargetProblem`, `closedProblem`).
     /// - Returns: sent; forked and sent, with the fork; why it fell back; or why nothing went.
     func deliver(
         _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil,
@@ -371,12 +371,13 @@ extension CopilotTasksStore {
             forkRecord: { id in AppSessions.forkRecord(of: id, home: appHome) },
             forks: { original, since in AppSessions.forks(of: original, since: since, home: appHome) },
             mayGoOn: { [weak self] in
-                // Nor a push while a turn runs in the session or its checkout, or once the pull request merges into another
-                // branch than its prompt names.
+                // Nor a push while a turn runs in the session or its checkout, once the pull request merges into another
+                // branch than its prompt names, or once it was completed or abandoned.
                 let turn = watch?.problem()
                 return await MainActor.run {
                     guard let self else { return false }
-                    return self.maySendToSessions && turn == nil && self.retargetProblem(checkingPush) == nil
+                    return self.maySendToSessions && turn == nil && self.closedProblem(checkingPush) == nil
+                        && self.retargetProblem(checkingPush) == nil
                 }
             },
             reserve: { [weak self] fork in
@@ -439,7 +440,7 @@ extension CopilotTasksStore {
         case .notSent(.cancelled), .forkedNotSent(_, .cancelled):
             return .notSent(SendFailure.cancelled.description)
         case .notSent(.turnedOff), .forkedNotSent(_, .turnedOff):
-            return .notSent(retargetProblem(checkingPush) ?? watch?.lastProblem ?? Self.cantSendNow)
+            return .notSent(closedProblem(checkingPush) ?? retargetProblem(checkingPush) ?? watch?.lastProblem ?? Self.cantSendNow)
         case .notSent(let why):
             Log.app.error("Couldn't send a prompt to a session in the Copilot app: \(why.kind, privacy: .public)")
             guard goesOn else { return .notSent(Self.cantSendNow) }
@@ -470,12 +471,12 @@ extension CopilotTasksStore {
         }
     }
 
-    /// Why a Push & Reply on its way mustn't go now: the list has read that its pull request merges into another branch than
-    /// its prompt names (`retargetProblem`), or Copilot runs a turn in the session, or in its checkout (`turnProblem`). Nil
-    /// when it may, or for anything but a push.
+    /// Why a Push & Reply on its way mustn't go now: the list has read that its pull request was completed or abandoned
+    /// (`closedProblem`), or that it merges into another branch than its prompt names (`retargetProblem`), or Copilot runs a
+    /// turn in the session, or in its checkout (`turnProblem`). Nil when it may, or for anything but a push.
     private func stillGoesProblem(_ push: PushOnItsWay?) async -> String? {
         guard let push else { return nil }
-        if let problem = retargetProblem(push.pullRequest) { return problem }
+        if let problem = closedProblem(push.pullRequest) ?? retargetProblem(push.pullRequest) { return problem }
         let home = appHome
         return await Task.detached(priority: .userInitiated) { Self.turnProblem(push, home: home) }.value
     }

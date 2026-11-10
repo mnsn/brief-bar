@@ -210,9 +210,6 @@ private final class TakenAt: Sendable {
     /// The app's database, with the session and the forks it records: each one's ID, the session it was forked from, and
     /// when it was made; and other sessions, which are no forks.
     private func database(at home: URL, forks: [(id: String, original: String, created: String)], others: [String] = []) throws {
-        var handle: OpaquePointer?
-        guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
-        defer { sqlite3_close(handle) }
         let statements = """
             CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL);
             CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, mode TEXT,
@@ -234,7 +231,7 @@ private final class TakenAt: Sendable {
                 INSERT INTO sessions (id, title, session_type, created_at, updated_at)
                     VALUES ('\(id)', 'Something else', 'project', '2026-10-01T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
                 """ }.joined()
-        guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
+        try write(statements, home: home)
     }
 
     @Test func sendsThePromptThroughTheSessionsExtension() async throws {
@@ -359,10 +356,33 @@ private final class TakenAt: Sendable {
 
     /// Runs SQL in the app's database.
     private func sql(_ statements: String, home: URL) throws {
-        var handle: OpaquePointer?
-        guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
-        defer { sqlite3_close(handle) }
-        guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
+        try write(statements, home: home)
+    }
+
+    /// Writes to the app's database, in one transaction. The store reads it, read-only, as it checks whether a turn runs,
+    /// again and again while a delivery waits, and a write in this process while it does fails at once: with
+    /// `SQLITE_BUSY`, or, next to a read-only reader, as macOS's SQLite has it, an I/O error (`SQLITE_IOERR_LOCK`), which
+    /// SQLite doesn't wait out. Such a write is tried again, for up to a minute, as each step waits.
+    private func write(_ statements: String, home: URL) throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while true {
+            var handle: OpaquePointer?
+            guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else {
+                sqlite3_close(handle)
+                throw CocoaError(.fileReadUnknown)
+            }
+            defer { sqlite3_close(handle) }
+            if sqlite3_exec(handle, "BEGIN IMMEDIATE;\n\(statements)\nCOMMIT;", nil, nil, nil) == SQLITE_OK { return }
+            let code = sqlite3_extended_errcode(handle)
+            let says = String(cString: sqlite3_errmsg(handle))
+            sqlite3_exec(handle, "ROLLBACK", nil, nil, nil)
+            // `SQLITE_IOERR_LOCK`, which Swift can't import.
+            let whileItsRead = code & 0xFF == SQLITE_BUSY || code == SQLITE_IOERR | (15 << 8)
+            guard whileItsRead, ContinuousClock.now < deadline else {
+                throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedFailureReasonErrorKey: says])
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
     }
 
     /// The sessions that run a turn now, as the app's database flags them; none of the others.
@@ -494,6 +514,79 @@ private final class TakenAt: Sendable {
         // While it merges into main still, it goes.
         CopilotSessionPrompts.set(true, in: store.settings.defaults)
         retargetedAt = Int.max
+        ext.start()
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        #expect(ext.received == ["Push and reply"])
+    }
+
+    /// Nor once the list reads that the pull request was completed or abandoned: before git checks, after BriefBar wrote the
+    /// prompt for the session's extension but before the extension took it, which BriefBar takes back, and right before
+    /// BriefBar copies it for you to paste.
+    @Test(.timeLimit(.minutes(5)))
+    func sendsNoPushOnceThePullRequestIsClosed() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        var copied: [String] = []
+        store.showForTests = { _ in true }
+        store.openForTests = { _, text in copied.append(text); return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        try database(at: home, forks: [])
+        try work(session, in: try await resolvedAgainstMain(in: home), home: home)
+        // Open until the list reads it closed: from the given look on, or from when the test says.
+        var looks = 0
+        var closedAt = Int.max
+        var closed = false
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        store.pullRequestIsOpen = { asked in
+            guard asked == key else { return true }
+            looks += 1
+            return !closed && looks < closedAt
+        }
+        store.readTarget = { _ in "main" }
+        let refused = SessionDelivery.notSent(CopilotSending.pullRequestGone)
+
+        // Read before git checks.
+        closedAt = 1
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(looks == 1)
+        #expect(requests(home).isEmpty)
+
+        // Read once the prompt is written for the extension, which hasn't taken it: as it waits, rather than once the
+        // extension didn't take it in time, which BriefBar checks again then, before it copies the prompt.
+        store.deliveryTimingForTests?.claim = 120
+        looks = 0
+        closedAt = Int.max
+        let sending = Task { await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while requests(home).isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!requests(home).isEmpty)
+        closed = true
+        let shut = ContinuousClock.now
+        #expect(await sending.value == refused)
+        #expect(ContinuousClock.now - shut < .seconds(60))
+        #expect(requests(home).isEmpty)
+        store.deliveryTimingForTests?.claim = 60
+
+        // Read right before BriefBar copies it, with Send Prompts to Copilot Sessions off.
+        CopilotSessionPrompts.set(false, in: store.settings.defaults)
+        looks = 0
+        closedAt = 3
+        closed = false
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(looks == 3)
+        #expect(copied.isEmpty)
+        #expect(ext.received.isEmpty)
+        #expect(store.deliveringFolders.isEmpty && store.delivering.isEmpty)
+
+        // While it's open, it goes.
+        CopilotSessionPrompts.set(true, in: store.settings.defaults)
+        closedAt = Int.max
         ext.start()
         #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
         #expect(ext.received == ["Push and reply"])

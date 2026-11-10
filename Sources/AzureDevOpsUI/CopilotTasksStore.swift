@@ -29,6 +29,14 @@ struct CopilotTaskEntry: Identifiable, Equatable {
     var forkedFrom: String? = nil
     /// The Push & Reply tasks that ran in its session before it, as its run keeps them (`CopilotRun.pushes`).
     var pushes: [SessionPush]? = nil
+    /// For one that fixes what it took on first (`fixesFirst`): the list has read its pull request's branch at another
+    /// commit than as it was sent (`fixingHead`, `CopilotTasksStore.seesPush(since:of:)`), which says it pushed. Its prompt
+    /// has it stop before it pushes, as when the tests don't pass, and finish all the same.
+    var pushSeen = false
+    /// Its run fixes what it took on first, with the commit the branch was at as it was sent, as the run keeps them apart
+    /// from what it took on, which Clear lets go of (`CopilotRun.fixes`, `CopilotRun.head`); not a run it goes on with.
+    var runFixes = false
+    var runHead: String? = nil
 
     var workItemURL: URL? {
         workItem.map { ADOEndpoint.workItemPage(organization: $0.organization, project: $0.project, id: $0.id) }
@@ -141,6 +149,29 @@ final class CopilotTasksStore: ObservableObject {
     /// prompt names, which BriefBar checks the session's merges against (`Git.checkPush(in:source:target:)`), however long
     /// its window was open. Nil when the list doesn't have it. The source's.
     var currentTarget: (PRKey) -> String? = { _ in nil }
+    /// The commit a pull request's branch is at, as the list last read it (`PullRequest.sourceCommit`): a fix sent with Push
+    /// and Reply on keeps it as it's sent, and, once it's done, pushed only if the list reads another since
+    /// (`seesPush(since:of:)`). Nil when the list doesn't have it. The source's.
+    var currentHead: (PRKey) -> String? = { _ in nil }
+    /// Whether a pull request is still open in your lists (`CopilotSending.isOpen`): one completed or abandoned, or that
+    /// left them, gets no push from the Send to Copilot window, as from a comment's composer. The source's.
+    var pullRequestIsOpen: (PRKey) -> Bool = { _ in true }
+
+    /// Whether the list has read a pull request's branch at another commit than `head`, the one it was at as a fix sent with
+    /// Push and Reply on was sent: what says it pushed, since its prompt has it stop before it pushes, as when the tests
+    /// don't pass, the pull request was retargeted or closed, or a push was rejected, and end its turn all the same. Any
+    /// push counts, as BriefBar can't tell whose it was. Not while either isn't known.
+    func seesPush(since head: String?, of key: PRKey) -> Bool {
+        guard let head, !head.isEmpty, let now = currentHead(key), !now.isEmpty else { return false }
+        return now != head
+    }
+
+    /// Why nothing that pushes may go to a pull request from the Send to Copilot window: it isn't open in your lists anymore.
+    /// Nil while it is, or for anything but a push.
+    func closedProblem(_ pullRequest: TaskPullRequest?) -> String? {
+        guard let pullRequest, !pullRequestIsOpen(PRKey(pullRequest.organization, pullRequest.id)) else { return nil }
+        return CopilotSending.pullRequestGone
+    }
 
     /// The branch a pull request merges into now (`currentTarget`), or, when the list doesn't have it, the one it merged
     /// into as the window wrote its prompt.
@@ -169,7 +200,7 @@ final class CopilotTasksStore: ObservableObject {
 
     /// Reads the branch a pull request merges into from Azure DevOps, with one request: right before Git checks what a
     /// Push & Reply would push, and again after, since the list may not have read a retarget yet. Throws when it can't be
-    /// read. The source's.
+    /// read, and `PullRequestNotActive` once it was completed or abandoned. The source's.
     var readTarget: @MainActor (PRKey) async throws -> String = { _ in throw TargetUnread() }
 
     /// Nothing reads it, as in the demo.
@@ -192,12 +223,15 @@ final class CopilotTasksStore: ObservableObject {
         return target
     }
 
-    /// Why a Push & Reply mustn't go, by the branch its pull request merges into as Azure DevOps says now (`freshTarget`):
-    /// another than its prompt names, or none BriefBar could read. Nil when it's the one the prompt names.
+    /// Why a Push & Reply mustn't go, by its pull request as Azure DevOps says now (`freshTarget`): it merges into another
+    /// branch than its prompt names, it was completed or abandoned, or BriefBar couldn't read it. Nil when it's open, and
+    /// merges into the branch the prompt names.
     func freshTargetProblem(_ pullRequest: TaskPullRequest) async -> String? {
         do {
             let target = try await freshTarget(of: pullRequest)
             return target == pullRequest.targetBranch ? nil : Self.retargetedMessage(target)
+        } catch let closed as PullRequestNotActive {
+            return "\(closed), so nothing went."
         } catch {
             return "BriefBar couldn't read which branch the pull request merges into, so nothing went: \(error)"
         }
@@ -332,11 +366,15 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     private func entry(for run: CopilotRun, status: RunStatus) -> CopilotTaskEntry {
-        CopilotTaskEntry(
+        var entry = CopilotTaskEntry(
             id: run.id, workItem: run.workItem, onPullRequest: run.onPullRequest, action: run.action, options: run.options,
             startedAt: run.startedAt, status: status, pullRequest: run.pullRequest, run: run, taken: run.taken,
             forkedFrom: run.forkedFrom, pushes: run.pushes
         )
+        entry.runFixes = run.fixes == true
+        entry.runHead = run.head
+        if entry.fixesFirst, let key = entry.pullRequestKey { entry.pushSeen = seesPush(since: entry.fixingHead, of: key) }
+        return entry
     }
 
     private var demoEntries: [CopilotTaskEntry] {
@@ -551,6 +589,7 @@ final class CopilotTasksStore: ObservableObject {
         let now = Date()
         var action: PullRequestAction?
         var target: String?
+        var head: String?
         var entry = CopilotTaskEntry(id: id, workItem: nil, options: options, startedAt: now, status: RunStatus(phase: .preparing, since: now))
         switch subject {
         case .workItem(let item):
@@ -561,17 +600,23 @@ final class CopilotTasksStore: ObservableObject {
             entry.pullRequest = pullRequest.url
             action = what
             target = pullRequest.targetBranch.isEmpty ? nil : pullRequest.targetBranch
+            // Where its branch is as it goes: a fix sent with Push and Reply on pushed once the list reads another.
+            if fixing { head = currentHead(PRKey(pullRequest.organization, pullRequest.id)) }
         }
         // What it keeps, with what the session it goes on with took on before, as that session is kept now.
         let keptRun = continuing.flatMap { continuing in settings.copilotRuns.first { $0.id == continuing.id } }
         let previous = keptRun ?? continuing
         let kept = CopilotRun.taken(
-            goingOnWith: previous, on: entry.onPullRequest, taking: parts, for: action, at: now, target: target, fixing: fixing
+            goingOnWith: previous, on: entry.onPullRequest, taking: parts, for: action, at: now, target: target, fixing: fixing, head: head
         )
         entry.taken = kept
         // The pushes that ran there, as BriefBar kept its runs: not one of the app's sessions' only about to start.
         let pushes = CopilotRun.pushes(goingOnWith: keptRun, on: entry.onPullRequest)
         entry.pushes = pushes
+        // Kept with the run apart from what it took on, which Clear lets go of: it pushed only once the list reads the branch
+        // moved.
+        let fixesFirst = action == .pushAndReply && fixing
+        let fixingHead = fixesFirst ? head : nil
         entry.forkedFrom = forking?.id ?? continuing?.forkedFrom
         pending.removeAll { $0.id == id }
         pending.append(entry)
@@ -591,13 +636,16 @@ final class CopilotTasksStore: ObservableObject {
         // Push & Reply goes only while the pull request merges into the branch its prompt names, which the launcher checks what
         // the session would push against: as Azure DevOps says right before git checks that, and again right before Copilot
         // starts, and as the list has read by the time each answer comes, since a GET may answer from before a retarget the
-        // list has read meanwhile. Either one that says another branch keeps Copilot from starting.
+        // list has read meanwhile. Either one that says another branch, or that it was completed or abandoned, keeps Copilot
+        // from starting.
         let pushing: TaskPullRequest? = if case .pullRequest(let pullRequest, .pushAndReply) = subject { pullRequest } else { nil }
         var askTarget: (@Sendable () async throws -> String)?
         if let pushing {
             askTarget = { [weak self] in
                 guard let self else { throw CancellationError() }
                 let target = try await self.freshTarget(of: pushing)
+                // Completed or abandoned as the list has read meanwhile, though Azure DevOps answered from before.
+                if await self.closedProblem(pushing) != nil { throw PullRequestNotActive(status: "") }
                 guard target == pushing.targetBranch else { return target }
                 return await self.retargeted(pushing) ?? target
             }
@@ -645,6 +693,10 @@ final class CopilotTasksStore: ObservableObject {
                     run.taken = kept
                 }
                 run.pushes = pushes
+                if fixesFirst {
+                    run.fixes = true
+                    run.head = fixingHead
+                }
                 // Going on with one of the Copilot app's sessions: its turn is the next, after any prompt sent it before.
                 if let continuing { overlap(promptsIn: continuing.id, before: now) }
                 startedHere.insert(run.id)
@@ -753,6 +805,7 @@ final class CopilotTasksStore: ObservableObject {
         case .cantCheckPush?: return "couldn't check what it would push"
         case .retargeted?: return "the pull request's target changed"
         case .cantReadTarget?: return "couldn't read the pull request's target"
+        case .notActive?: return "the pull request isn't active"
         case nil: return "unexpected error"
         }
     }
@@ -838,7 +891,11 @@ final class CopilotTasksStore: ObservableObject {
             if !result.status.phase.isActive, run.ended == nil {
                 run.ended = result.status.phase
                 Log.app.info("A task sent to Copilot ended: \(result.status.phase.rawValue, privacy: .public)")
-                notify(entry(for: run, status: result.status), status: result.status)
+                let entry = entry(for: run, status: result.status)
+                notify(entry, status: result.status)
+                // A fix sent with Push and Reply on pushed once the list reads its branch moved: now, rather than at its
+                // next refresh.
+                if entry.fixesFirst, result.status.phase == .finished, let key = entry.pullRequestKey { rereadPullRequest(key) }
             }
             if run != settings.copilotRuns[index] { settings.copilotRuns[index] = run }
         }
@@ -881,7 +938,12 @@ final class CopilotTasksStore: ObservableObject {
             notifier.remove([Self.notificationID(entry.id)])
             return
         }
-        let subject = subject(of: entry)
+        guard let notification = Self.endedNotification(entry, status: status, subject: subject(of: entry)) else { return }
+        notifier.post([notification])
+    }
+
+    /// How a task ended, what it did, and on what; nil while it's at it. Clicking it opens its pull request or work item.
+    static func endedNotification(_ entry: CopilotTaskEntry, status: RunStatus, subject: String) -> BriefBarNotification? {
         let heading: String
         let body: String
         var state = ItemState.done
@@ -889,7 +951,10 @@ final class CopilotTasksStore: ObservableObject {
         case .finished where entry.action != nil:
             switch entry.action {
             case .review?: heading = "Copilot's review is ready"
-            case .pushAndReply? where entry.fixesFirst: heading = "Copilot fixed, pushed and replied"
+            case .pushAndReply? where entry.fixesFirst:
+                // Whether it pushed isn't known yet, until the list reads its branch moved: what Copilot said tells.
+                let fixing = entry.taken?.filter { $0.ended == nil && $0.part.thread != nil }.count
+                heading = fixing == 1 ? "Copilot finished fixing a comment" : "Copilot finished fixing the comments"
             case .pushAndReply?: heading = entry.onlyPushes ? "Copilot pushed" : "Copilot pushed and replied"
             default: heading = "Copilot's changes are ready"
             }
@@ -907,12 +972,12 @@ final class CopilotTasksStore: ObservableObject {
             body = "It stopped before it finished."
             state = .failing
         case .preparing, .working:
-            return
+            return nil
         }
-        notifier.post([BriefBarNotification(
+        return BriefBarNotification(
             id: Self.notificationID(entry.id), source: .azureDevOps, state: state, title: heading, subtitle: subject, body: body,
             thread: "copilot", userInfo: (entry.pullRequest ?? entry.workItemURL).map { ["url": $0.absoluteString] } ?? [:]
-        )])
+        )
     }
 
     nonisolated static func firstLine(_ text: String?) -> String? {

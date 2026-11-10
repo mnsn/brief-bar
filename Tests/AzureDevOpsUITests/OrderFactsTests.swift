@@ -159,6 +159,77 @@ import Testing
         #expect(store.isListing)
     }
 
+    /// It tells which organizations' lists it read since BriefBar started: a pull request you chose for Up Next that they
+    /// no longer have has left them, and goes half an hour later; one of an organization whose lists it hasn't read, as
+    /// while the Azure CLI isn't signed in to its directory, waits.
+    @Test func aChoiceThatLeftTheListsItReadGoesHalfAnHourLater() async throws {
+        let store = await Self.demoStore()
+        #expect(store.listedOrganizations == [DemoData.organization.lowercased()])
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        var now = Date()
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { now })
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+        facts.publish()
+        let slot = try #require(order.board(kinds: [.pullRequest]).upNext.slots.first)
+        let chosen = try #require(slot.cards.last?.ref)
+        #expect(order.pickNext(chosen, in: slot.kind))
+
+        var snapshot = DemoData.snapshot()
+        snapshot.records.removeAll { $0.id.linkRef == chosen }
+        snapshot.organizations.append("Fabrikam")
+        snapshot.firstLoaded = ["Fabrikam": now]
+        store.receive(snapshot)
+        #expect(store.isListing && store.listedOrganizations == ["fabrikam"])
+        facts.publish()
+        now += UpNextPicks.awayFor * 2
+        order.timePassed()
+        #expect(order.picks[slot.kind] == chosen)
+
+        snapshot.firstLoaded[DemoData.organization] = now
+        store.receive(snapshot)
+        facts.publish()
+        now += UpNextPicks.awayFor
+        order.timePassed()
+        #expect(order.picks[slot.kind] == nil)
+    }
+
+    /// One it reads by its link, as one you watch, that it doesn't list waits, though its organization's lists were read,
+    /// as when its read failed, until Azure DevOps says it's closed, gone or not yours to read.
+    @Test func aChoiceItReadsByItsLinkWaitsWhileItIsntListed() async throws {
+        let store = await Self.demoStore()
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        var now = Date()
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { now })
+        let facts = PullRequestOrderFacts(order: order, store: store, settings: AppSettings(defaults: MemoryDefaults()), details: nil)
+        facts.publish()
+        let slot = try #require(order.board(kinds: [.pullRequest]).upNext.slots.first)
+        let chosen = try #require(slot.cards.last?.ref)
+        #expect(order.pickNext(chosen, in: slot.kind))
+        let key = PRKey(DemoData.organization, try #require(Int(chosen.id)))
+        let link = PullRequestLink(organization: DemoData.organization, project: "Shop", repository: "shop", number: key.number)
+        #expect(store.settings.watch(link))
+        #expect(store.unreadLinks.isEmpty)
+
+        var snapshot = DemoData.snapshot()
+        snapshot.records.removeAll { $0.id == key }
+        store.receive(snapshot)
+        #expect(store.unreadLinks == [key] && store.listedOrganizations == [DemoData.organization.lowercased()])
+        facts.publish()
+        now += UpNextPicks.awayFor * 2
+        order.timePassed()
+        #expect(order.picks[slot.kind] == chosen)
+
+        snapshot.closedLinks = [key]
+        store.receive(snapshot)
+        #expect(store.unreadLinks.isEmpty)
+        facts.publish()
+        now += UpNextPicks.awayFor
+        order.timePassed()
+        #expect(order.picks[slot.kind] == nil)
+    }
+
     /// Off, it tells nothing.
     @Test func whileOffItTellsNothing() async throws {
         let store = await Self.demoStore()
