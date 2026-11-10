@@ -1440,7 +1440,7 @@ import Testing
             now: t(13)
         )
         #expect(whileNamed.all.allSatisfy { $0.overridden == nil && $0.placement == .into(mine) })
-        #expect(OrderChanges.putBack(Self.pr(4404), touched: putBackWhileNamed) == [4403, 4404, 4405].map(Self.pr))
+        #expect(OrderChanges.putBack(Self.pr(4404), touched: putBackWhileNamed, orders: named) == [4403, 4404, 4405].map(Self.pr))
         let notedWhileNamed = whileNamed.noteOverrides(in: named, now: t(14))
         #expect(!notedWhileNamed)
         changes.noteOverrides(in: after4402, now: t(14))
@@ -1526,10 +1526,73 @@ import Testing
             .putBack(Self.pr(4407)), missions: StoryMissionsTests.missions(facts4407, taken4407, changes: changes),
             orders: taken4407, now: t(36)
         )
-        #expect(OrderChanges.putBack(Self.pr(4407), touched: putBack4407) == [Self.pr(4407)])
+        #expect(OrderChanges.putBack(Self.pr(4407), touched: putBack4407, orders: taken4407) == [Self.pr(4407)])
         #expect([4403, 4404, 4406].allSatisfy { changes[Self.pr($0)]?.overridden?.by == Self.planID })
         let notedAfterPutBack = changes.noteOverrides(in: taken4407, now: t(37))
         #expect(!notedAfterPutBack)
+        // The order takes 4407 back too, as it puts it after 4402 since: Put Yours Back on it puts back only it, and on 4403
+        // what the order took back with 4403, not 4407, and nothing goes back again.
+        let after4402Too = Self.across(
+            5, at: 40, [.init(ref: Self.pr(4403), after: [Self.pr(4402)]), .init(ref: Self.pr(4407), after: [Self.pr(4402)])],
+            without: [Self.pr(4405)]
+        )
+        changes.noteOverrides(in: after4402Too, now: t(41))
+        #expect(changes[Self.pr(4407)]?.overridden == .init(by: Self.planID, at: t(40)))
+        var only4407 = changes
+        let put4407 = try only4407.apply(.putBack(Self.pr(4407)), missions: [], orders: after4402Too, now: t(42))
+        #expect(OrderChanges.putBack(Self.pr(4407), touched: put4407, orders: after4402Too) == [Self.pr(4407)])
+        let put4403 = try changes.apply(.putBack(Self.pr(4403)), missions: [], orders: after4402Too, now: t(42))
+        #expect(OrderChanges.putBack(Self.pr(4403), touched: put4403, orders: after4402Too) == [4403, 4404, 4406].map(Self.pr))
+        #expect(changes[Self.pr(4407)]?.overridden?.by == Self.planID && changes[Self.pr(4403)]?.splitAt == t(42))
+        let notedAfter4403 = changes.noteOverrides(in: after4402Too, now: t(43))
+        #expect(!notedAfter4403)
+    }
+
+    /// What one of a split's goes back with, as it's back where the split put it, and what Put Yours Back on it puts back,
+    /// go by when its order took each: those it took since the split moved this one there, not those it took before; and
+    /// nothing for one the order dropped, which stays.
+    @Test func whatOneOfASplitsGoesBackWithIsWhatItsOrderTookSinceItWentThere() throws {
+        let mine = MissionKey.mine(Self.otherID)
+        // 4403 and 4404 split off at t5, and taken back at t10; 4405 and 4406 split off to them at t20; another session's
+        // order takes 4405 at t24, and the split's order takes 4406 back at t30.
+        var changes = try Self.splitAcross(moves: [OrderSplitMove([Self.pr(4403), Self.pr(4404)], to: .into(mine))])
+        let after4402 = Self.across(2, at: 10, [.init(ref: Self.pr(4403), after: [Self.pr(4402)]), .init(ref: Self.pr(4406))])
+        changes.noteOverrides(in: after4402, now: t(11))
+        try changes.apply(
+            .split(.plan(Self.planID), [OrderSplitMove([Self.pr(4405), Self.pr(4406)], to: .into(mine))]), missions: [],
+            orders: after4402, now: t(20)
+        )
+        let named = Self.acrossOther(after4402, naming: [4405], at: 24)
+        changes.noteOverrides(in: named, now: t(25))
+        #expect(changes[Self.pr(4405)]?.overridden?.by == Self.otherOrder)
+        let after4402Both = Self.across(
+            3, at: 30, [.init(ref: Self.pr(4403), after: [Self.pr(4402)]), .init(ref: Self.pr(4406), after: [Self.pr(4402)])]
+        )
+        changes.noteOverrides(in: Self.acrossOther(after4402Both, naming: [4405], at: 24), now: t(31))
+        #expect(changes[Self.pr(4406)]?.overridden == .init(by: Self.planID, at: t(30)))
+        #expect(changes[Self.pr(4403)]?.overridden == .init(by: Self.planID, at: t(10)))
+        // Put Yours Back on 4405 puts back 4406 with it, not 4403 and 4404.
+        var putBack = changes
+        let touched = try putBack.apply(
+            .putBack(Self.pr(4405)), missions: [], orders: Self.acrossOther(after4402Both, naming: [4405], at: 24), now: t(32)
+        )
+        #expect(OrderChanges.putBack(Self.pr(4405), touched: touched, orders: after4402Both) == [Self.pr(4405), Self.pr(4406)])
+        #expect(putBack[Self.pr(4403)]?.overridden?.by == Self.planID)
+        // As BriefBar forgets that order instead, 4405 goes back with 4406.
+        changes.noteOverrides(in: after4402Both, now: t(33))
+        #expect(changes[Self.pr(4405)]?.overridden == .init(by: Self.planID, at: t(30), with: Self.pr(4406)))
+
+        // 4405, which the order no longer names, stays as 4403 and 4404 go back: Put Yours Back on it, once another session's
+        // order has it, puts back only it.
+        changes = try Self.splitAcross()
+        let without4405 = Self.across(2, at: 10, [.init(ref: Self.pr(4403), after: [Self.pr(4402)])], without: [Self.pr(4405)])
+        changes.noteOverrides(in: without4405, now: t(11))
+        #expect(changes[Self.pr(4405)]?.overridden == nil && changes[Self.pr(4404)]?.overridden?.by == Self.planID)
+        let taken4405 = Self.acrossOther(without4405, naming: [4405], at: 12)
+        changes.noteOverrides(in: taken4405, now: t(13))
+        let put4405 = try changes.apply(.putBack(Self.pr(4405)), missions: [], orders: taken4405, now: t(14))
+        #expect(OrderChanges.putBack(Self.pr(4405), touched: put4405, orders: taken4405) == [Self.pr(4405)])
+        #expect(changes[Self.pr(4403)]?.overridden?.by == Self.planID && changes[Self.pr(4404)]?.overridden?.by == Self.planID)
     }
 
     /// What a line across a split names goes with its source as you turn it off, and once no order BriefBar keeps names a
@@ -1567,8 +1630,8 @@ import Testing
         #expect(Set(touched.keys) == Set([4403, 4404, 4405].map(Self.pr)))
         #expect(changes.all.allSatisfy { $0.overridden == nil && $0.bySplit && $0.placement == .into(mine) && $0.notAfter.isEmpty })
         #expect(changes[Self.pr(4403)]?.linedWith == [Self.pr(4402), Self.pr(4404)])
-        #expect(OrderChanges.putBack(Self.pr(4404), touched: touched) == [4403, 4404, 4405].map(Self.pr))
-        #expect(OrderText.did(.putBack(Self.pr(4404)), refs: OrderChanges.putBack(Self.pr(4404), touched: touched))
+        #expect(OrderChanges.putBack(Self.pr(4404), touched: touched, orders: after4402) == [4403, 4404, 4405].map(Self.pr))
+        #expect(OrderText.did(.putBack(Self.pr(4404)), refs: OrderChanges.putBack(Self.pr(4404), touched: touched, orders: after4402))
             == "You put your changes to !4403, !4404 and !4405 back")
         #expect(OrderText.did(.putBack(Self.pr(4404))) == "You put your change to !4404 back")
         var own = try #require(missions(after4402, changes).first { $0.key == mine })
@@ -1623,7 +1686,7 @@ import Testing
         #expect(!retoldAfter4405)
         // Put Yours Back on another change lists only that one: not another it's no longer next instead of.
         let next = OrderChange(ref: Self.pr(4401), first: .plan(Self.planID), changedAt: t(1))
-        #expect(OrderChanges.putBack(Self.pr(4402), touched: [Self.pr(4402): next, Self.pr(4401): next]) == [Self.pr(4402)])
+        #expect(OrderChanges.putBack(Self.pr(4402), touched: [Self.pr(4402): next, Self.pr(4401): next], orders: after4405) == [Self.pr(4402)])
         // Once BriefBar forgets the order, what a split moved keeps none of its lines.
         let forgot = again.forgetPlaces(besides: DeclaredOrders(), chatOnly: [])
         #expect(forgot)
@@ -1640,7 +1703,7 @@ import Testing
         changes.noteOverrides(in: seenLate, now: t(12))
         #expect(changes.all.allSatisfy { $0.overridden?.by == Self.planID })
         let late = try changes.apply(.putBack(Self.pr(4405)), missions: missions(seenLate, changes), orders: seenLate, now: t(14))
-        #expect(OrderChanges.putBack(Self.pr(4405), touched: late) == [4403, 4404, 4405].map(Self.pr))
+        #expect(OrderChanges.putBack(Self.pr(4405), touched: late, orders: seenLate) == [4403, 4404, 4405].map(Self.pr))
         #expect(changes.all.allSatisfy { $0.overridden == nil && $0.placement == .into(mine) })
     }
 

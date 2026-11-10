@@ -1199,8 +1199,9 @@ package final class PullRequestOrder: ObservableObject {
         }
         var changed = changes
         let touched: [ItemRef: OrderChange?]
+        let told = orders
         do {
-            touched = try changed.apply(edit, missions: missions, orders: orders, stacked: stacked, now: now())
+            touched = try changed.apply(edit, missions: missions, orders: told, stacked: stacked, now: now())
         } catch {
             let refused = OrderLastChange(
                 said: "\(error)", refs: edit.refs, mission: cardMission(for: edit, source: source), touched: [:],
@@ -1225,7 +1226,7 @@ package final class PullRequestOrder: ObservableObject {
         var made = false
         if case .move(_, .into(let key), _) = edit, case .mine = key { made = !before.contains(key) }
         // Put Yours Back on what a split moved can put back what its order took back with it.
-        let refs = if case .putBack(let ref) = edit { OrderChanges.putBack(ref, touched: touched) } else { edit.refs }
+        let refs = if case .putBack(let ref) = edit { OrderChanges.putBack(ref, touched: touched, orders: told) } else { edit.refs }
         let last = OrderLastChange(
             said: OrderText.did(edit, names: names, newMission: made, refs: refs), refs: refs,
             mission: cardMission(for: edit, source: source), touched: touched, evidence: seen

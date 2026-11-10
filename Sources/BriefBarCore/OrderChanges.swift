@@ -133,9 +133,10 @@ public struct OrderChange: Equatable, Sendable {
     /// goes back with what the split moved with it however that order names it since, where one the order named and no
     /// longer does stays (`OrderChanges.splitsTakenBack`).
     public var splitAttached: Bool
-    /// When a split moved it; nil for any other change, and for one saved without it. No later change of yours changes it:
-    /// back where the split put it since its order took back what the split moved with it, it goes back with them only
-    /// where the split moved it before that (`OrderChanges.takenBack(with:)`).
+    /// When a split moved it, or you put it back where the split put it since (`OrderEdit.putBack`); nil for any other
+    /// change, and for one saved without it. No other change of yours changes it: back where the split put it since its
+    /// order took back what the split moved with it, it goes back with those its order took after that
+    /// (`OrderChanges.takenBack(with:in:)`).
     public var splitAt: Date?
 
     public init(
@@ -776,7 +777,7 @@ public struct OrderChanges: Equatable, Sendable {
     /// the split moved it, and doesn't anymore, stays: it has nowhere to go back to. And one back where the split put it
     /// since its order took back what the split moved with it, as Undo, or an order BriefBar forgot that had taken it, brings
     /// it back, goes back with them, so that the order's lines among them aren't cut either; but not one the split moved
-    /// there since (`takenBack(with:)`).
+    /// there since (`takenBack(with:in:)`).
     /// - Parameter status: where each pull request stands, as BriefBar sees it; open by default.
     /// - Returns: each it takes back, with what its note says: the line its order put across, or the one it went back with.
     public func splitsTakenBack(
@@ -829,7 +830,7 @@ public struct OrderChanges: Equatable, Sendable {
             // Back where the split put it since the order took back the others the split moved with it: it goes back with
             // them, with the one whose line took them, or by its own place in the order where that's it.
             for member in members {
-                let others = takenBack(with: member)
+                let others = takenBack(with: member, in: orders)
                 guard let at = others.compactMap(\.overridden?.at).max() else { continue }
                 let leads = Set(others.compactMap { $0.overridden?.with }).union(others.filter { $0.overridden?.with == nil }.map(\.ref))
                 taken[member.ref] = if leads.contains(member.ref) {
@@ -843,16 +844,21 @@ public struct OrderChanges: Equatable, Sendable {
     }
 
     /// What its order took back of what a split moved with this one, that this one goes back with, back where the split put
-    /// it (`splitsTakenBack`), and that Put Yours Back on it puts back with it: those its order overrides, where it overrides
-    /// this one too, or the split moved this one before its order took them, whoever took it since; none where the split
-    /// moved it there since, as it was no part of what its order took.
-    func takenBack(with change: OrderChange) -> [OrderChange] {
-        guard let group = SplitGroup(change) else { return [] }
-        let others = changes.values.filter { $0.ref != change.ref && SplitGroup($0) == group && $0.overridden?.by == group.order }
-        guard let at = others.compactMap(\.overridden?.at).max(),
-              change.overridden?.by == group.order || change.splitAt.map({ $0 < at }) ?? true
+    /// it (`splitsTakenBack`), and that Put Yours Back on it puts back with it: where its order took this one back too,
+    /// those it took back then; else those it took back since the split moved this one there, or you put it back there,
+    /// whoever took it since, so not one taken before. None for one its order doesn't name anymore that it didn't stack
+    /// with its own, which stays.
+    func takenBack(with change: OrderChange, in orders: DeclaredOrders) -> [OrderChange] {
+        guard let group = SplitGroup(change), let plan = orders.plan(group.order),
+              change.splitAttached || plan.contains(change.ref)
         else { return [] }
-        return others.sorted { $0.ref < $1.ref }
+        let taken = changes.values.filter { $0.ref != change.ref && SplitGroup($0) == group && $0.overridden?.by == group.order }
+        let with = if let own = change.overridden, own.by == group.order {
+            taken.filter { $0.overridden?.at == own.at }
+        } else {
+            taken.filter { other in other.overridden.map { at in change.splitAt.map { $0 < at.at } ?? true } ?? false }
+        }
+        return with.sorted { $0.ref < $1.ref }
     }
 
     /// An order's lines between these pull requests a split moved together and the rest of its own. `across`: those across
@@ -968,7 +974,7 @@ private struct ChangeRecord: Codable {
     var linedWith: [ItemRef]?
     /// A split moved it as one stacked with its order's own that the order didn't name; nil for any other change.
     var splitAttached: Bool?
-    /// When a split moved it; nil for any other change.
+    /// When a split moved it, or you put it back there; nil for any other change.
     var splitAt: Date?
 
     private enum CodingKeys: String, CodingKey {
@@ -1125,16 +1131,18 @@ public enum OrderEdit: Equatable, Sendable {
     /// Undo Your Changes to This Mission: to its pull requests, those you put in it and those you moved out of it.
     case undoMission(MissionKey)
     /// Put Yours Back: your change holds again, over the later one of its orders. A split's pull request goes back with what
-    /// its order took back of what the split moved with it, where it would go back with them (`OrderChanges.takenBack(with:)`).
+    /// its order took back of what the split moved with it, where it would go back with them
+    /// (`OrderChanges.takenBack(with:in:)`).
     case putBack(ItemRef)
 }
 
 extension OrderChanges {
-    /// What Put Yours Back on this one put back, by what it touched (`apply`): with what a split moved that its order took
-    /// back, that it put back with it, those too (`takenBack(with:)`); never another it's no longer next instead of.
-    public static func putBack(_ ref: ItemRef, touched: [ItemRef: OrderChange?]) -> [ItemRef] {
+    /// What Put Yours Back on this one put back, by what it touched (`apply`) and the orders it went by: with what a split
+    /// moved that its order took back, that it put back with it, those too (`takenBack(with:in:)`); never another it's no
+    /// longer next instead of.
+    public static func putBack(_ ref: ItemRef, touched: [ItemRef: OrderChange?], orders: DeclaredOrders) -> [ItemRef] {
         guard let change = touched[ref] ?? nil else { return [ref] }
-        return (OrderChanges(touched.values.compactMap { $0 }).takenBack(with: change).map(\.ref) + [ref]).sorted()
+        return (OrderChanges(touched.values.compactMap { $0 }).takenBack(with: change, in: orders).map(\.ref) + [ref]).sorted()
     }
 
     /// Makes a change, as you asked for it from a menu, and says what each change it touched was before, for Undo. It
@@ -1295,11 +1303,12 @@ extension OrderChanges {
         case .putBack(let ref):
             guard let change = edited.changes[ref] else { break }
             // A split's goes back with what its order took back of what the split moved with it, where it would go back with
-            // them, as one change, each keeping the order's lines it has now (`OrderChanges.takenBack(with:)`); this one
-            // last.
-            let others = edited.takenBack(with: change).map(\.ref)
+            // them, as one change, each keeping the order's lines it has now, and back where the split put it from now on
+            // (`OrderChanges.takenBack(with:in:)`); this one last.
+            let others = edited.takenBack(with: change, in: orders).map(\.ref)
             for ref in others + [ref] {
                 guard var change = edited.changes[ref] else { continue }
+                if change.splitFrom != nil { change.splitAt = now }
                 // What you set in a mission BriefBar worked out, which an order took it out of, is that order's; a next that
                 // went over to an order that no longer names it is back where you set it.
                 change.unfollow(in: orders)

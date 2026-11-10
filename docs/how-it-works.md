@@ -1466,7 +1466,8 @@ mission, as the order's later change (`OrderChanges.splitsTakenBack`), so that n
 why, "‘Checkout flow’ put !4402 after it", or "took it back with !4405", with Put Yours Back; one the order named then
 and no longer does stays, with nowhere to go back to. And as the order takes one of them back, in any way, as by naming
 it again elsewhere in its mission, the rest of what the split moved with it goes back with it, also one that comes back
-to them since, but not one a split moved there since. Only a line that crosses the split as BriefBar first sees it: not
+to them since, but not one a split moved there, or you put back there, since. Only a line that crosses the split as
+BriefBar first sees it: not
 a line you took away, nor one to a pull request you moved elsewhere yourself, nor one among what the split moved
 together, which each keeps as it sees them, with the order's lines it had when you last changed it
 (`OrderChange.linedWith`), so one that comes to cross later, as a pull request leaves them, or goes back to the order's
@@ -1475,8 +1476,8 @@ your later change, but not one an order BriefBar forgot that had taken it brings
 change. Nor one that holds nothing up, to one
 that merged or closed or from one that merged, until
 it does again; one BriefBar can't see counts, and `--mcp` goes by the same before the app notes it. Put Yours Back on
-one puts back all the order took back of what the split moved with it, whoever took that one, where it would go back with
-them, as one change, each keeping the order's lines it has then, so telling
+one the order took back puts back what it took back with it, and on one another order took, what the order took back of
+what the split moved with it since it moved it there, as one change, each keeping the order's lines it has then, so telling
 the same again takes nothing back, but a new line across does. **Keep Together**,
 Undo, Undo Your Changes
 to It or to This Mission, and an order that takes back what a split moved, as a session's later change does one you
