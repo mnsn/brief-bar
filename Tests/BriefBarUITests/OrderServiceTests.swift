@@ -869,7 +869,33 @@ private final class Clock {
         #expect(OrderBoard.mission(of: Self.ref(4130), in: order.missions)?.contains(Self.ref(4102)) == true)
     }
 
-    /// Turning a source off forgets your changes to its pull requests, and what BriefBar saw become of them, for good: the
+    /// Undo reads the orders agents told since first, and puts back what it touched as the missions they make are named:
+    /// one you'd put in a chain goes back to the chain, named by another of its pull requests now that orders name its
+    /// first and its last, not to a mission of its own under the name it had.
+    @Test func undoPutsBackWhatItTouchedAsTheOrdersItReadsFirstNameTheMissions() throws {
+        let defaults = try Self.defaults(on: true, order: [.init(link: Self.link(4200))])
+        let clock = Clock()
+        let order = Self.service(defaults, clock: clock)
+        let chain = [
+            Self.ado(4101, from: "robin/a"), Self.ado(4102, from: "robin/b", into: "robin/a"),
+            Self.ado(4103, from: "robin/c", into: "robin/b"), Self.ado(4104, from: "robin/d", into: "robin/c"),
+        ]
+        order.publish(.azureDevOps, pullRequests: chain + [Self.ado(4130, from: "sam/search")])
+        order.change(.move([Self.ref(4130)], to: .into(.chain(Self.ref(4101))), from: nil))
+        order.change(.move([Self.ref(4130)], to: .into(.mine(UUID())), from: nil))
+        #expect(order.lastOrderChange?.touched[Self.ref(4130)]??.placement == .into(.chain(Self.ref(4101))))
+
+        clock.now = clock.now.addingTimeInterval(60)
+        var unread = DeclaredOrders.load(from: defaults)
+        try unread.apply(OrderRequest(entries: [.init(link: Self.link(4101))]), now: clock.now, newID: UUID())
+        try unread.apply(OrderRequest(entries: [.init(link: Self.link(4104))]), now: clock.now, newID: UUID())
+        unread.save(to: defaults)
+        #expect(order.undo())
+
+        #expect(order.changes[Self.ref(4130)]?.placement == .into(.chain(Self.ref(4102))))
+        let mission = try #require(OrderBoard.mission(of: Self.ref(4130), in: order.missions))
+        #expect(mission.key == .chain(Self.ref(4102)) && mission.contains(Self.ref(4103)))
+    }
     /// rebuild that follows, though one of those changes finished meanwhile, saves none of them back.
     @Test func aSourceTurnedOffForgetsItsChangesForGoodThoughOneFinishesMeanwhile() throws {
         let defaults = try Self.defaults(on: true)

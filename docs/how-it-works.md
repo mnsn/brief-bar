@@ -1364,8 +1364,9 @@ you to check the order. Your changes are a layer, kept by pull request and never
 on telling theirs. Each keeps the place the orders gave the pull request when you made it, and a session's later change
 wins only where it goes against yours: a revision told after yours that names it in another mission than the one you
 moved it to, takes it out of the order you moved it to or changed it in, or puts it after what you took away, or after
-anything where you set it as next, also in a stack, a chain or a session's pull requests that it takes it out of, shows
-instead, says so, and **Put Yours Back** makes yours hold again. One that moves it toward yours, such as an order taking
+anything where you set it as next, also in a stack, a chain or a session's pull requests that it takes it out of, or,
+for what a split moved, puts a line across the split (below), shows instead, says so, and **Put Yours Back** makes yours
+hold again. One that moves it toward yours, such as an order taking
 out what you moved out of it, naming what you moved into its mission, or naming as you had them what you changed among a
 stack's, a chain's or a session's pull requests, where what you set there goes over to that order (your next only while
 no other of yours is next there, and back to where you set it once the order no longer names it), or one that changes
@@ -1401,7 +1402,8 @@ only; a change to a mission shows its Undo in the card you made it in, a Move's,
 to It's in the card you chose it in, though the pull request leaves it, or in its mission's lane on the Board, or at the
 top of the list once that card is gone, or with the Board's Lanes: None. A change BriefBar refuses says why beside it.
 BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never titles, those about a
-pull request sent to you in a chat in memory only; with where the orders put each when you made it, but only of the
+pull request sent to you in a chat in memory only; with where the orders put each when you made it, and, for what a
+split moved, when it did, the lines of its order it knows, and why an order took it back, but only of the
 orders BriefBar still keeps, and not a pull request sent to you only in a chat that none of those names anymore
 (`OrderChanges.forgetPlaces`), so that a session telling an old revision again that named it then goes against yours; at
 most 500, refusing more rather than dropping one; each until two weeks after BriefBar saw its pull requests merge or
@@ -1457,9 +1459,33 @@ came from (`OrderChange.splitFrom`), and what each waits for doesn't change. It 
 them, as every change of yours does: when a revision BriefBar hadn't heard of yet relates what the suggestion separates,
 it doesn't hold, and nothing moves. A mission split off a session's order keeps that order's lines among its pull
 requests, at the order's latest revision, and Any time only where the whole of that order's pull requests went there;
-from a story's mission or a session's pull requests, it has no order known. **Keep Together**, Undo, Undo Your Changes
+from a story's mission or a session's pull requests, it has no order known. A revision of that order told after the
+split that puts a line across it, either way, between one it moved and one of the order's own that it didn't move with
+it, in the order's mission or split off it to another, takes what the split moved together back into the order's
+mission, as the order's later change (`OrderChanges.splitsTakenBack`), so that no split cuts an order's lines: each says
+why, "‘Checkout flow’ put !4402 after it", or "took it back with !4405", with Put Yours Back; one the order named then
+and no longer does stays, with nowhere to go back to. And as the order takes one of them back, in any way, as by naming
+it again elsewhere in its mission, the rest of what the split moved with it goes back with it, also one that comes back
+to them since, but not one a split moved there, or you put back there, since. Only a line that crosses the split as
+BriefBar first sees it: not
+a line you took away, nor one to a pull request you moved elsewhere yourself, nor one among what the split moved
+together, which each keeps as it sees them, with the order's lines it had when you last changed it, and those another the
+split moved from that order keeps (`OrderChange.linedWith`), so one that comes to cross later, as a pull request leaves
+them, or goes back to the order's mission, takes nothing back; one that Undo brings back where the split put it knows the
+lines told meanwhile, as Undo is your later change, but not one an order BriefBar forgot that had taken it brings back, as
+the order's line is the later change; and Undo leaves taken back one its order took back since, but not one whose
+change of yours since its order went against, as by naming it again where you'd moved it: that went against your change,
+not the split, so it comes back knowing them. Nor one that holds nothing up,
+to one that merged or closed or from one that merged, which BriefBar sees only once it does again; one BriefBar can't see
+counts, and `--mcp` goes by the same before the app notes it. Put Yours Back on
+one the order took back puts back what it took back with it, or what it went back with, and on one another order took,
+what the order took back of what the split moved with it since it moved it there, as one change, each keeping the
+order's lines it has then, so telling
+the same again takes nothing back, but a new line across does. **Keep Together**,
+Undo, Undo Your Changes
 to It or to This Mission, and an order that takes back what a split moved, as a session's later change does one you
-moved, one told while BriefBar was closed too, which BriefBar notes as it starts (`OrderChanges.noteOverrides`), each
+moved, one told while BriefBar was closed too, which BriefBar notes as it starts, or as it takes one over from an order
+BriefBar forgot (`OrderChanges.noteOverrides`), each
 keep the mission it's in together as it's made now, or, while BriefBar can't tell yet, as it's made once it can: in the
 preferences (`KeptTogether`, as `order.splits`), by its key, as digests (SHA-256) of what it's made of
 (`MissionSplitQuestion.Contents`), one for each of its Azure DevOps pull requests and those of the missions split off

@@ -1199,8 +1199,9 @@ package final class PullRequestOrder: ObservableObject {
         }
         var changed = changes
         let touched: [ItemRef: OrderChange?]
+        let told = orders
         do {
-            touched = try changed.apply(edit, missions: missions, orders: orders, stacked: stacked, now: now())
+            touched = try changed.apply(edit, missions: missions, orders: told, stacked: stacked, now: now())
         } catch {
             let refused = OrderLastChange(
                 said: "\(error)", refs: edit.refs, mission: cardMission(for: edit, source: source), touched: [:],
@@ -1224,9 +1225,11 @@ package final class PullRequestOrder: ObservableObject {
         keepTogether(splitBack: splitBack)
         var made = false
         if case .move(_, .into(let key), _) = edit, case .mine = key { made = !before.contains(key) }
+        // Put Yours Back on what a split moved can put back what its order took back with it.
+        let refs = if case .putBack(let ref) = edit { OrderChanges.putBack(ref, touched: touched, orders: told) } else { edit.refs }
         let last = OrderLastChange(
-            said: OrderText.did(edit, names: names, newMission: made), refs: edit.refs, mission: cardMission(for: edit, source: source),
-            touched: touched, evidence: seen
+            said: OrderText.did(edit, names: names, newMission: made, refs: refs), refs: refs,
+            mission: cardMission(for: edit, source: source), touched: touched, evidence: seen
         )
         refusal = nil
         lastChange = .order(last)
@@ -1347,12 +1350,14 @@ package final class PullRequestOrder: ObservableObject {
         stacked = OrderBoard.stacked(facts)
         let focused = focus.flatMap(OrderFocus.ref(of:))
         // What an order changed since one of your changes, as BriefBar sees it: that change doesn't hold anymore, though the
-        // order changes back, until you put yours back. A split's that an order took, as one told while BriefBar was closed,
-        // which it notes as it starts, keeps the mission it went back to together, in this look (`keepKeptTogether`).
+        // order changes back, until you put yours back. A split's that an order took since BriefBar last looked, as one told
+        // while BriefBar was closed, which it notes as it starts, or one that took it over from an order BriefBar forgot,
+        // keeps the mission it went to together, in this look (`keepKeptTogether`).
         var noted = changes
         var splitsTakenBack: Set<ItemRef> = []
-        if noted.noteOverrides(in: orders, now: date) {
-            for change in noted.all where change.bySplit && change.overridden != nil && changes[change.ref]?.overridden == nil {
+        if noted.noteOverrides(in: orders, now: date, status: OrderBoard.statuses(facts, evidence: evidence)) {
+            for change in noted.all where change.bySplit {
+                guard let by = change.overridden?.by, changes[change.ref]?.overridden?.by != by else { continue }
                 splitsTakenBack.insert(change.ref)
             }
             keep(noted)
@@ -1626,7 +1631,7 @@ package final class PullRequestOrder: ObservableObject {
     package func undo() -> Bool {
         switch lastChange {
         case .stage(let change)?: undo(change)
-        case .order(let last)?: undo(last)
+        case .order?: undoOrderChange()
         case nil: false
         }
     }
@@ -1667,10 +1672,15 @@ package final class PullRequestOrder: ObservableObject {
     /// Puts back exactly what your last change to a mission touched. Undoing a split keeps the mission together as it's made
     /// again, as Keep Together does, and puts back the names Apple Intelligence had given the missions it named, with what
     /// it had asked them with, so that they aren't asked again.
-    private func undo(_ last: OrderLastChange) -> Bool {
-        guard isOn, last.canUndo else { return false }
+    private func undoOrderChange() -> Bool {
+        guard isOn, lastOrderChange?.canUndo == true else { return false }
+        // Against the orders as agents last told them, as for a change: what a split moved, back where the split put it,
+        // knows the lines they told before. What it puts back is then named as the missions it makes are, as each rebuild
+        // names it (`OrderLastChange.renamingMissions`).
+        reloadOrders()
+        guard let last = lastOrderChange, last.canUndo else { return false }
         var changed = changes
-        changed.restore(last.touched)
+        changed.restore(last.touched, orders: orders)
         // Those a split moved that are back where BriefBar or an order puts them: their split's change gone, or one an order
         // took them from since, as Undo of Put Yours Back, or of a second split, brings back.
         let splitBack = Set(last.touched.keys.filter { ref in
