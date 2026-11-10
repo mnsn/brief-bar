@@ -147,8 +147,9 @@ Fork** to a fork of it, with its history, in a worktree of its own, once you tur
 Copilot Sessions** in **Settings › Agents**; until then, BriefBar copies the prompt and opens the session
 for you to paste. **Run with the CLI** runs it directly on your Mac, when the session is safe to use.
 A new work-item task runs autonomously in its own worktree and can change code, run commands, push
-and open a pull request as you. Pull-request fixes don't push; **Push & Reply** is a separate action.
-Pre-review changes and posts nothing.
+and open a pull request as you. Pull-request fixes don't push; **Push & Reply** is a separate action, unless you
+check **Push and reply once it's fixed** in a comment's **Fix** or **Fix All**: then Copilot also commits, pushes and
+replies on the threads it fixed, as you. Pre-review changes and posts nothing.
 [Copilot actions and their limits →](docs/user-guide.md#sending-to-a-session-thats-already-there)
 
 ## Ask from the Copilot app, too

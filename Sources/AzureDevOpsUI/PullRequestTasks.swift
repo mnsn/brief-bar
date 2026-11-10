@@ -20,17 +20,26 @@ extension PullRequestAction {
         }
     }
 
+    /// What a Push & Reply that fixes the comments it takes on first is called: a comment's Fix, or Fix All, sent with Push
+    /// and Reply on (`TakenPart.fixes`).
+    static let fixPushAndReplyTitle = "Fix, Push & Reply"
+
     /// What it's called for a task that takes on `parts`, what it does: "Push" for a Push & Reply that replies on no thread,
-    /// as one that ships a build's fix alone; else its own title, "Push & Reply".
-    func title(taking parts: [PullRequestPart]) -> String {
-        self == .pushAndReply && !parts.contains(where: { $0.thread != nil }) ? "Push" : title
+    /// as one that ships a build's fix alone; "Fix, Push & Reply" for one that fixes them first; else its own title, "Push &
+    /// Reply".
+    func title(taking parts: [PullRequestPart], fixing: Bool = false) -> String {
+        guard self == .pushAndReply else { return title }
+        if fixing { return Self.fixPushAndReplyTitle }
+        return parts.contains(where: { $0.thread != nil }) ? title : "Push"
     }
 
     /// What a task of it is called, as its run keeps what it takes on (`CopilotRun.taken`): "Push" for a Push & Reply that
-    /// replies on no thread. One that doesn't record what it takes on replies on the threads Fix Comments lists, as it did.
+    /// replies on no thread, "Fix, Push & Reply" for one that fixes them first. One that doesn't record what it takes on
+    /// replies on the threads Fix Comments lists, as it did.
     func title(taken: [TakenPart]?) -> String {
         guard let taken else { return title }
-        return title(taking: taken.filter { $0.ended == nil }.map(\.part))
+        let current = taken.filter { $0.ended == nil }
+        return title(taking: current.map(\.part), fixing: current.contains { $0.fixes == true })
     }
 }
 
@@ -56,14 +65,21 @@ extension CopilotTaskEntry {
         return Set(taken.filter { $0.ended == nil }.map { PRReadiness.Item.Kind($0.part) })
     }
 
-    /// What it does, by name: its action's title, "Push" for a Push & Reply that replies on no thread; nil for a work item's.
+    /// What it does, by name: its action's title, "Push" for a Push & Reply that replies on no thread, "Fix, Push & Reply"
+    /// for one that fixes them first; nil for a work item's.
     var actionTitle: String? {
         action.map { $0.title(taken: taken) }
     }
 
+    /// A Push & Reply that fixes the threads it took on first, as a comment's Fix, or Fix All, sent with Push and Reply on
+    /// does (`TakenPart.fixes`).
+    var fixesFirst: Bool {
+        action == .pushAndReply && taken?.contains { $0.ended == nil && $0.fixes == true } == true
+    }
+
     /// A Push & Reply that replies on no thread, as one that ships a build's fix alone: it only pushes.
     var onlyPushes: Bool {
-        action == .pushAndReply && actionTitle != action?.title
+        action == .pushAndReply && !fixesFirst && actionTitle != action?.title
     }
 }
 

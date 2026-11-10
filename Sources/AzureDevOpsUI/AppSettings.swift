@@ -153,6 +153,12 @@ final class AppSettings: ObservableObject {
     @Published var copilotWorktreesFolder: String? {
         didSet { defaults.set(copilotWorktreesFolder, forKey: Key.copilotWorktreesFolder) }
     }
+    /// Push and Reply, in a comment's Fix and in Fix All, as you last left it: on, a fix then commits, pushes and replies on
+    /// the threads it fixed, as Push & Reply does (`CopilotSending.commentFix`); off, as it starts, it leaves its changes
+    /// for you to check, then push with Push & Reply.
+    @Published var copilotFixesPushAndReply: Bool {
+        didSet { defaults.set(copilotFixesPushAndReply, forKey: Key.copilotFixesPushAndReply) }
+    }
     /// The Copilot session you chose for each pull request's work, or a new session, and when: references only, never names
     /// (`PullRequestSessionChoice`).
     @Published var copilotPullRequestSessions: [PullRequestSessionChoice] {
@@ -241,6 +247,7 @@ final class AppSettings: ObservableObject {
         copilotPullRequestSessions = pullRequestSessions
         copilotRepositories = defaults.dictionary(forKey: Key.copilotRepositories) as? [String: String] ?? [:]
         copilotWorktreesFolder = defaults.string(forKey: Key.copilotWorktreesFolder)
+        copilotFixesPushAndReply = defaults.bool(forKey: Key.copilotFixesPushAndReply)
         // Any program running as you can write the preferences: a run whose ID isn't a session's is left out, and so is a
         // fork's.
         copilotRuns = (Self.load([CopilotRun].self, from: defaults, forKey: Key.copilotRuns) ?? []).filter(\.isValid)
@@ -679,6 +686,8 @@ enum SettingsKey {
     static let copilotPullRequestSessions = "ado.copilot.pullRequestSessions"
     static let copilotRepositories = "ado.copilot.repositories"
     static let copilotWorktreesFolder = "ado.copilot.worktreesFolder"
+    /// Push and Reply in a comment's Fix and in Fix All, as you last left it (`AppSettings.copilotFixesPushAndReply`).
+    static let copilotFixesPushAndReply = "ado.copilot.fixesPushAndReply"
     static let copilotRuns = "ado.copilot.runs"
     static let copilotForksToDelete = "ado.copilot.forksToDelete"
     static let copilotSentPrompts = "ado.copilot.sentPrompts"

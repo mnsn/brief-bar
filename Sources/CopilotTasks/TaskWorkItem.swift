@@ -165,7 +165,8 @@ public enum PullRequestAction: String, Sendable, Codable, CaseIterable {
     case resolveConflicts
     /// Read someone else's change and draft review comments, changing nothing.
     case review
-    /// Commit and push what an earlier task changed, and reply on the threads it addressed.
+    /// Commit and push what an earlier task changed, and reply on the threads it addressed; or, for a comment's Fix, or Fix
+    /// All, sent with Push and Reply on, fix the threads it takes on first, then do so (`TakenPart.fixes`).
     case pushAndReply
 
     /// "Fix Comments", for menus and the composer.
@@ -191,7 +192,8 @@ public enum PullRequestAction: String, Sendable, Codable, CaseIterable {
         }
     }
 
-    /// Whether it changes code that a later Push & Reply ships.
+    /// Whether it changes code that a later Push & Reply ships: not a Push & Reply's own, which ships what it changes, as
+    /// one that fixes comments first does.
     public var changesCode: Bool {
         switch self {
         case .fixComments, .fixBuild, .resolveConflicts: return true

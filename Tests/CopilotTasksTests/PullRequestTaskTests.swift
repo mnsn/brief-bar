@@ -169,6 +169,51 @@ import Testing
         #expect(try String(contentsOf: argumentsFile, encoding: .utf8).contains("Push and reply"))
     }
 
+    /// A comment's fix that pushes and replies, sent to a new session, goes as Push & Reply does: only while Azure DevOps
+    /// says, right before git checks and right before Copilot starts, that the pull request merges into the branch its
+    /// prompt names. When it says another, or can't be read, nothing starts, and the worktree made for it goes.
+    @Test(.timeLimit(.minutes(5)))
+    func aNewSessionThatPushesGoesOnlyWhileThePullRequestMergesIntoItsTarget() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let (launcher, argumentsFile) = try launcher(fixture)
+        let id = "0c5e4f6a-7d8b-4c9d-8e1f-6a7b8c9d0e1f"
+        let worktree = fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071")
+        var reads = TargetReads([])
+        func request(_ targets: [String]) -> CopilotLauncher.Request {
+            let answers = TargetReads(targets)
+            reads = answers
+            return CopilotLauncher.Request(
+                subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Fix the comment, then push and reply",
+                options: CopilotModel.standard, repository: fixture.checkout, worktreesFolder: nil, targetNow: { try answers.next() }
+            )
+        }
+        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(request(["release/x"]), id: id) { _ in } }
+        #expect(reads.read == ["release/x"])
+        await #expect(throws: LaunchError.cantReadTarget("Azure DevOps didn't answer in time.")) {
+            try await launcher.launch(request([]), id: id) { _ in }
+        }
+        #expect(reads.read == ["unread"])
+        // Once git checked the new worktree, which it finds no merge in.
+        await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(request(["main", "release/x"]), id: id) { _ in } }
+        #expect(reads.read == ["main", "release/x"])
+        await #expect(throws: LaunchError.cantReadTarget("Azure DevOps didn't answer in time.")) {
+            try await launcher.launch(request(["main"]), id: id) { _ in }
+        }
+        #expect(reads.read == ["main", "unread"])
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+        #expect(!FileManager.default.fileExists(atPath: worktree.path))
+
+        let ship = try await launch(launcher, request(["main", "main"]), id: id)
+        #expect(reads.read == ["main", "main"])
+        #expect(ship.worktree.path == worktree.path)
+        #expect(ship.action == .pushAndReply)
+        let arguments = try String(contentsOf: argumentsFile, encoding: .utf8).split(separator: "\n").map(String.init)
+        #expect(arguments.contains("Fix the comment, then push and reply"))
+        // It commits and pushes: the CLI denies it nothing.
+        #expect(!arguments.contains("--deny-tool"))
+    }
+
     /// A pull request's prompt has no placeholders, but quotes what others wrote, such as a change suggested in a comment,
     /// which Copilot applies as it's written: it goes as it is, `{baseBranch}` and all, where a work item's prompt has its
     /// base branch filled in (`CopilotLauncherTests`).
@@ -495,6 +540,20 @@ import Testing
         #expect(taken(fixed, [], for: .pushAndReply, at: second) == [
             TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: first, ended: .finished),
         ])
+        // A comment's Fix sent with Push and Reply on is a Push & Reply that fixes what it takes on first: they say so, and
+        // still do once a later task goes on with its session. Only a Push & Reply fixes and ships so.
+        let fixing = try #require(CopilotRun.taken(
+            goingOnWith: fixed, on: pullRequest.reference, taking: [.thread(12)], for: .pushAndReply, at: second, fixing: true
+        ))
+        #expect(fixing == [
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ships: true, fixes: true),
+        ])
+        #expect(taken(run(.pushAndReply, ended: .failed, taken: fixing), [.thread(13)], for: .fixComments, at: second) == [
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ended: .failed, ships: true, fixes: true),
+            TakenPart(.thread(13), since: second),
+        ])
+        #expect(CopilotRun.taken(goingOnWith: nil, on: pullRequest.reference, taking: [.thread(11)], for: .fixComments, at: first, fixing: true)
+            == [TakenPart(.thread(11), since: first)])
         // Once it's done, a later task keeps what it had and didn't ship, still not pushed, and what it shipped, pushed, for
         // an older fix of it, elsewhere, not to be its latest again.
         #expect(taken(run(.pushAndReply, ended: .finished, taken: shipping), [.thread(13)], for: .fixComments, at: second) == [
@@ -520,12 +579,15 @@ import Testing
         // Kept as kinds, IDs and dates, never what they say.
         let kept = run(.pushAndReply, ended: .failed, taken: [
             TakenPart(.thread(11), since: first, ended: .failed), TakenPart(.build(31), since: first, ships: true),
-            TakenPart(.conflicts, since: first),
+            TakenPart(.thread(12), since: first, ships: true, fixes: true), TakenPart(.conflicts, since: first),
         ])
         let text = String(decoding: try JSONEncoder().encode(kept), as: UTF8.self)
         #expect(text.contains(#""taken":[{"#))
         #expect(text.contains(#"{"id":11,"kind":"thread"}"#) || text.contains(#"{"kind":"thread","id":11}"#))
         #expect(try JSONDecoder().decode(CopilotRun.self, from: Data(text.utf8)) == kept)
+        // Kept before a fix could ship, without it: nil, a Push & Reply that didn't fix it.
+        let older = try JSONDecoder().decode(TakenPart.self, from: Data(#"{"part":{"kind":"thread","id":12},"since":0,"ships":true}"#.utf8))
+        #expect(older == TakenPart(.thread(12), since: Date(timeIntervalSinceReferenceDate: 0), ships: true))
         // What isn't one, as another program may write there, isn't read.
         #expect((try? JSONDecoder().decode(PullRequestPart.self, from: Data(#"{"kind":"thread"}"#.utf8))) == nil)
         #expect((try? JSONDecoder().decode(PullRequestPart.self, from: Data(#"{"kind":"review","id":3}"#.utf8))) == nil)

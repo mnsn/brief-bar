@@ -608,6 +608,78 @@ private final class TakenAt: Sendable {
         #expect(shown == [session, session])
     }
 
+    /// A push sent to a fork, as a comment's fix sent to push and reply may be, goes from the fork, which works in a worktree
+    /// of its own: once the app made it, it's the fork, and that worktree, that mustn't run a turn, rather than the session,
+    /// up to the moment the fork's extension takes the prompt; and before BriefBar copies the prompt for the fork, when it
+    /// can't send it. Once neither runs one, it goes.
+    @Test(.timeLimit(.minutes(5)))
+    func sendsNoPushToAForkWhileATurnRunsInTheForkOrItsCheckout() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        store.readTarget = { _ in "main" }
+        var shown: [String] = []
+        var copied: [String] = []
+        store.showForTests = { id in shown.append(id); return true }
+        store.openForTests = { id, text in copied.append("\(id) \(text)"); return true }
+        // The fork's extension would take its prompt at once.
+        let outbox = home.appendingPathComponent("Outbox")
+        let original = ExtensionStandIn(outbox: outbox, sessionId: session)
+        let forked = ExtensionStandIn(outbox: outbox, sessionId: fork)
+        try original.listen()
+        try forked.listen()
+        original.start { [fork] _ in ["ok": true, "forkSessionId": fork] }
+        forked.start()
+        defer {
+            original.stop()
+            forked.stop()
+        }
+        try hold(session, home: home)
+        try hold(fork, home: home)
+        let checkout = try await resolvedAgainstMain(in: home)
+        try work(session, in: checkout, home: home)
+        // The fork works in a worktree of its own, and so does another of the app's sessions.
+        try database(at: home, forkedFrom: session)
+        let worktree = home.appendingPathComponent("checkouts/fork", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        try work(fork, in: worktree, home: home)
+        let other = "c6666666-6666-4666-8666-66666666666d"
+        try sql("""
+            INSERT INTO sessions (id, title, session_type, created_at, updated_at)
+                VALUES ('\(other)', 'Something else', 'project', '2026-10-01T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
+            INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at)
+                VALUES ('w-other', 'shop', '\(other)', 'something-else', 'Something else', '2026-10-27T10:00:00.000Z');
+            """, home: home)
+        try work(other, in: worktree, home: home)
+        let itsOwn = SessionDelivery.notSent(
+            "Copilot is running a turn in a fork of ‘Fix the totals’, so nothing went: what that turn changes would go with the push, unchecked. Send it again once that turn is done."
+        )
+        let another = SessionDelivery.notSent(
+            "Another Copilot session is running a turn in the checkout a fork of ‘Fix the totals’ works in, so nothing went: what that turn changes would go with the push, unchecked. Send it again once that's done."
+        )
+
+        try turns(running: [fork], home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), forking: true, checkingPush: pullRequest) == itsOwn)
+        try turns(running: [other], home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), forking: true, checkingPush: pullRequest) == another)
+        #expect(forked.received.isEmpty)
+        #expect(!requests(home).contains { $0.hasPrefix("\(fork).") })
+        #expect(store.deliveringFolders.isEmpty && store.delivering.isEmpty)
+
+        // Nor copied for the fork, once it can't be sent it: here, as a prompt is on its way to the other session there.
+        store.deliveringFolders[other] = worktree
+        #expect(await store.deliver("Push and reply", to: choice(session), forking: true, checkingPush: pullRequest) == another)
+        #expect(copied.isEmpty)
+        store.deliveringFolders[other] = nil
+
+        try turns(running: [], home: home)
+        #expect(await store.deliver("Push and reply", to: choice(session), forking: true, checkingPush: pullRequest) == .forkedAndSent(fork: fork))
+        #expect(forked.received == ["Push and reply"])
+        #expect(original.received == ["fork", "fork", "fork", "fork"])
+        #expect(shown == [fork])
+        #expect(copied.isEmpty)
+    }
+
     /// Nor does a Push & Reply go when BriefBar can't tell whether a turn runs there: when the app's database can't be read,
     /// or doesn't keep the flag that says which sessions run one, or says it otherwise than as a flag, 0 or 1, as the app
     /// might once it keeps that another way. Anything else goes, as before. Whatever else the app changes of what it keeps
@@ -1226,6 +1298,11 @@ private final class TakenAt: Sendable {
         #expect(!CopilotComposerView.offersFork(choice(session), mustContinue: true))
         #expect(!CopilotComposerView.offersFork(choice(session, isChat: true), mustContinue: false))
         #expect(!CopilotComposerView.offersFork(nil, mustContinue: false))
+        // A comment's fix sent with Push and Reply on ships what it changes itself: it goes wherever a fix goes, a fork too.
+        #expect(CopilotComposerView.mustContinue(.pushAndReply, fixes: false))
+        #expect(!CopilotComposerView.mustContinue(.pushAndReply, fixes: true))
+        #expect(!CopilotComposerView.mustContinue(.fixComments, fixes: false))
+        #expect(!CopilotComposerView.mustContinue(nil, fixes: false))
     }
 
     /// While a prompt is on its way to a session, where it works stays as it is: git removes no task's worktree there, and

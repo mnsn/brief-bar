@@ -615,7 +615,7 @@ struct BuildComposer: View {
         let part = part
         return CopilotAsking(
             ask: ask, part: part, action: .fixBuild, run: investigation.run.id, attempt: attempt, row: line.id,
-            fix: { how, answer in
+            fix: { how, answer, _ in
                 guard let record else { return CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }
                 return CopilotSending.Fix(
                     prompts: (
