@@ -339,8 +339,9 @@ your teammates; **Stage** in a row's Actions and right-click menus, and VoiceOve
 a session set holds until the pull request moves on: new commits, or a session that finishes writing it, end In
 progress, and so does the session that set it finishing; a vote ends Teammate's review, and a Your review a session
 set, someone else's on yours, and yours on someone else's, while a Your review you set lasts until you change it, as
-does a session's that says the same after yours, once it pushed;
-merging or closing it
+does a session's that says the same after yours, once it pushed. A session's In progress shows over your Your review
+only while it lasts. Otherwise, a stage a session sets after yours replaces it: **Put Yours Back** is there while the
+session's lasts, and once that ends, yours goes too. Merging or closing it
 ends any. **Let BriefBar Decide** forgets it, with a session's Your review that followed it, and **Undo**
 puts back your last change. Can merge and Waits come only
 from what Azure DevOps and its order show: nobody, you or a session, can set them. Its details show the whole track

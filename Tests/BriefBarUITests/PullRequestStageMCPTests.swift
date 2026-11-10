@@ -166,7 +166,8 @@ private final class Announcements: Sendable {
         #expect(announcements.total == 3)
     }
 
-    /// The answer says what the user set that it replaces, while it stands: they can put theirs back.
+    /// The answer says what the user set that it replaces, while it stands: they can put theirs back while the
+    /// session's lasts, and theirs goes once it ends.
     @Test func itSaysWhatTheUserSetThatItReplaces() async throws {
         let defaults = Self.settings()
         var marks = StageMarks()
@@ -178,7 +179,8 @@ private final class Announcements: Sendable {
         let one = try await Self.set(tools, #"{"pull_requests": ["\#(Self.link(4093))"], "stage": "in_progress"}"#)
         #expect(one.hasSuffix("""
             change it.
-            The user had set Teammate's review 3m ago; yours replaces it, and they can put theirs back.
+            The user had set Teammate's review 3m ago; yours replaces it. They can put theirs back while yours lasts; \
+            once yours ends, theirs goes too.
             """))
 
         // What the user set on !4094 ended as its votes changed: nothing to put back. The same stage replaces nothing.
@@ -190,8 +192,49 @@ private final class Announcements: Sendable {
         let three = try await Self.set(tools, #"{"pull_requests": [4093, 4094], "organization": "contoso", "stage": "user_review"}"#)
         #expect(three.hasSuffix("""
             change it.
-            The user had set Teammate's review on !4093 in contoso 3m ago; yours replaces it, and they can put theirs back.
+            The user had set Teammate's review on !4093 in contoso 3m ago; yours replaces it. They can put theirs back \
+            while yours lasts; once yours ends, theirs goes too.
             """))
+    }
+
+    /// In progress over a Your review the user set, with nothing else set since, shows over it rather than replace it,
+    /// as theirs lasts until they change it: they can put theirs back while it lasts, and once it ends, theirs shows
+    /// again. What this session set there before, which this replaces, doesn't count; another session's other stage
+    /// after theirs replaced it, so theirs goes once this ends. A Your review it says once it pushed follows theirs
+    /// where theirs outlasts its In progress.
+    @Test func inProgressOverTheUsersYourReviewShowsOverIt() async throws {
+        let other = try #require(ItemRef.session(Self.otherSession))
+        let defaults = Self.settings()
+        var marks = StageMarks()
+        for number in [4093, 4094] {
+            _ = marks.set(StageMark(stage: .yourReview, at: Self.now - 120), of: Self.ref(number), for: "robin@contoso.com", at: Self.now)
+        }
+        marks.save(to: defaults)
+        SessionStages.change(Self.sessionRef, in: defaults, now: Self.now - 60) {
+            $0.set(StageMark(stage: .teammateReview, at: Self.now - 60, by: Self.sessionRef, votes: ""), of: Self.ref(4093))
+        }
+        SessionStages.change(other, in: defaults, now: Self.now - 60) {
+            $0.set(StageMark(stage: .teammateReview, at: Self.now - 60, by: other, votes: "10"), of: Self.ref(4094))
+        }
+        let json = #"{"pull_requests": [4093, 4094], "organization": "contoso", "stage": "in_progress"}"#
+        let answer = try await Self.set(Self.tools(defaults, listedSessions: [Self.sessionRef, other]), json)
+        #expect(answer == """
+            BriefBar shows !4093 and !4094 in contoso in In progress now, set by this session; the user sees who set \
+            it, and can change it.
+            The user had set Your review on !4093 in contoso 2m ago; yours shows over it. They can put theirs back \
+            while yours lasts; once yours ends, theirs shows again.
+            The user had set Your review on !4094 in contoso 2m ago; yours replaces it. They can put theirs back while \
+            yours lasts; once yours ends, theirs goes too.
+            """)
+
+        let later = Self.tools(defaults, listedSessions: [Self.sessionRef, other], now: { Self.now + 60 })
+        let ready = try await Self.set(later, #"{"pull_requests": [4093, 4094], "organization": "contoso", "stage": "user_review"}"#)
+        #expect(ready.hasSuffix("""
+            The user had set Your review on !4093 in contoso 3m ago already; yours lasts as theirs does, and goes with \
+            it, rather than end once someone else votes.
+            """))
+        #expect(Self.kept(defaults)?.marks[Self.ref(4093)]?.votes == nil)
+        #expect(Self.kept(defaults)?.marks[Self.ref(4094)]?.votes == "10")
     }
 
     /// Clear takes away only what this session set.
@@ -217,10 +260,11 @@ private final class Announcements: Sendable {
         #expect(announcements.total == 2)
     }
 
-    /// A Your review where the latest stage set is a Your review the user set keeps no votes, saying so: it lasts as theirs
-    /// does, while theirs is there, rather than end as someone else votes, and theirs with it as the latest set. Its own
-    /// that did so is no later stage. Where a listed session's other stage came after theirs, it keeps its votes, as
-    /// anywhere; so does another stage the user set too, which ends as theirs does anyway.
+    /// A Your review where the user's Your review outlasts what sessions set since, only In progress and Your reviews
+    /// that followed it, keeps no votes, saying so: it lasts as theirs does, while theirs is there, rather than end as
+    /// someone else votes, and theirs with it as the latest set. Its own that did so is no later stage. Where a listed
+    /// session's other stage came after theirs, it keeps its votes, as anywhere; so does another stage the user set
+    /// too, which ends as theirs does anyway.
     @Test func aYourReviewAfterTheUsersLastsAsTheirsDoes() async throws {
         let other = try #require(ItemRef.session(Self.otherSession))
         // You set Your review on both; this session had put !4093 in progress before, another set Teammate's review on
@@ -345,7 +389,10 @@ private final class Announcements: Sendable {
 
         // With nothing else on it, theirs stands: they can put it back.
         let alone = try await Self.set(Self.tools(defaults), json)
-        #expect(alone.hasSuffix("The user had set In progress 2m ago; yours replaces it, and they can put theirs back."))
+        #expect(alone.hasSuffix("""
+            The user had set In progress 2m ago; yours replaces it. They can put theirs back while yours lasts; once \
+            yours ends, theirs goes too.
+            """))
 
         // A Copilot session on it finished writing it since: theirs ended, as in the app, with nothing to put back.
         let other = try #require(ItemRef.session(Self.otherSession))

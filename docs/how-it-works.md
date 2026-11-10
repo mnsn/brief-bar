@@ -1546,17 +1546,20 @@ review does, unlike one you set, which stands until you change it: the session s
 **‘Cart’ finished** does, which gives way once someone else votes, so one a teammate approved moves on to Can merge or
 Waits. It keeps the votes as the session read them as it set it, after its push, so a reset of the votes that push
 caused ends nothing. One that follows a Your review you set before the session read the pull request, with nothing set
-since but such Your reviews, keeps no votes, and lasts as yours does, while yours is there (`OrderKeeper.setStages`,
-`StageMark.follows`): it shows at once, as the session's, also
+since but sessions' In progress and such Your reviews, keeps no votes, and lasts as yours does, while yours is there
+(`OrderKeeper.setStages`, `StageMark.follows`): it shows at once, as the session's, also
 over that session's own work since yours, which would put it in progress, and a Your review you set outlasts the session
 that pushed and says it's ready, as BriefBar's prompts ask, once a teammate approves, kept under it. Its menu has
 **Let BriefBar Decide**, as yours alone would, which forgets both, and Undo of yours takes it with yours, rather than
 leave it lasting on its own, also while the Copilot app doesn't list the session, so that it doesn't come back alone
 once it's listed again, and also one `--mcp` kept since the app last read what sessions keep, as both read that again
 first (`StageReading.followed`). Once yours is gone any other way, as when `--mcp` keeps the session's just as you undo
-yours, it counts no more (`StageRules.counted`). Once a session's
-other stage replaced yours, what it says later counts as any stage does, Undo of yours leaves it, and once the latest
-ends none does, yours neither.
+yours, it counts no more (`StageRules.counted`). A Your review you set also outlasts sessions' In progress over it,
+with nothing else set since but such Your reviews (`StageMark.outlasts`): while that shows, after you, **Put Yours
+Back** is in its menu, and once it ends, as its session finishes or new commits come, yours shows again, with the Your
+reviews that follow it. Once a session's other stage replaced yours, **Put Yours Back** is there only while the latest
+lasts: what the session says later counts as any stage does, Undo of yours leaves it, and once the latest ends none
+does, yours neither.
 Votes and commits end what a session set only as BriefBar read them after it set it, since the
 session read the pull request itself just then, and what it sets is timed as that read ended. BriefBar reads them as the
 refresh that read its organization's lists started, or as it was read by its link, a time a pull request kept as it was
@@ -1566,8 +1569,10 @@ archived one's goes with it: the app's chats and project sessions, and the tasks
 a terminal, which the app's database doesn't have, so `pull_request_stage` keeps nothing for one; where BriefBar has
 never read that database, such as without the Copilot app, every session that worked in the last day instead
 (`SessionStateScanner`). Once the latest of them no longer stands, or the pull request merges or closes, none
-counts: yours goes, and BriefBar takes away from what each session keeps what it set before the latest, or all of it
-once the pull request merged or closed, listed or not (`SessionStages.end`), so an older one never comes back, also once
+counts, but, on one still open, a Your review of yours that outlasts what ended and the Your reviews that follow it:
+yours goes, and BriefBar takes away from what each session keeps what it set before the latest, but those Your
+reviews, or all of it once the pull request merged or closed, listed or not (`SessionStages.end`), so an older one
+never comes back, also once
 an archived session is listed again; **Let BriefBar Decide** takes away, with yours, what sessions set before it, and
 the Your reviews that followed it, listed or not. Can merge, Waits and Merged come only from what BriefBar sees,
 whatever a session says.
@@ -4098,7 +4103,8 @@ While Pull Request Order is on, as the app has it, `needs_me` ends Azure DevOps'
 stage but Merged, what's next first, the pull request you chose for its Up Next slot first of all, as the app keeps it in
 the preferences, each pull request with its number, title and repository and why it's there, in
 BriefBar's words, with who set it; and `pull_request` says its stage, and, where a session's replaced yours, that you
-can put yours back. `--mcp` works them out itself (`AzureDevOpsAgent.stages`, `AgentStages`), as the app does, from what
+can put yours back while the session's lasts, and whether yours goes or shows again once it ends. `--mcp` works them
+out itself (`AzureDevOpsAgent.stages`, `AgentStages`), as the app does, from what
 the lists read, the sessions the Copilot app lists, with the tasks BriefBar sent, as the app lists them, unnamed: those
 you haven't opened there, and, while its database can't be read, every one, by what BriefBar knows of it rather than its
 folder (`MCPRelated.StageSessions.listedByApp`); what you set with the account the lists read with, what sessions set,
@@ -4123,11 +4129,14 @@ DevOps, Copilot and Pull Request Order are still on, as reading takes a while (`
 `MCPStages.refusal`). It answers with what BriefBar shows now, set by that session, from the sessions `--mcp` reads
 that the app lists, as agents' stages count them (`MCPStages.sessions`), or, where it can't tell, as with
 `--source ado`, that BriefBar shows it while the app lists the session; and, where it replaced a stage you set that
-still stood, as the app works it out, with the Copilot app's sessions on it, that you can put yours back; where its
+still stood, as the app works it out, with the Copilot app's sessions on it, that you can put yours back while its own
+lasts, and that yours goes once its own ends, but a Your review of yours under its In progress, which outlasts it and
+shows again; where its
 Your review follows yours, that it lasts as yours does, and goes with it; where you set a stage after it read the pull
 request, that BriefBar shows yours, the later; and names those it didn't set, such as one no list has now, one
 that merged, one that was abandoned, or someone else's to put in progress, which BriefBar never does. It works out
-whether a Your review follows yours as it keeps the stages, in one step (`OrderKeeper.setStages`), as each call runs on
+whether a Your review follows yours, and whether yours outlasts its In progress, as it keeps the stages, in one step
+(`OrderKeeper.setStages`), as each call runs on
 its own, so that another call of the session's that lands in between counts. The order tools' answers also tell
 the session what you changed in its orders that still holds (`OrderText.userChanges`), to keep, and that a later change
 of its that goes against one shows instead of yours, until you put yours back. Their answers name pull requests by

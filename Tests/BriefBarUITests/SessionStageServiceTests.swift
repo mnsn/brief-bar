@@ -510,6 +510,156 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4094))?.isSetByYou == true)
     }
 
+    // MARK: Yours under a session's In progress
+
+    /// A Your review you set outlasts a session's In progress over it, as it lasts until you change it: the session is
+    /// told so, and Put Yours Back is there while its In progress lasts; once the session finishes, yours shows again.
+    @Test func yourYourReviewShowsAgainOnceASessionsInProgressOverItEnds() async throws {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)
+        Self.tell(order, [4093: waiting])
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600, on: [4093])
+        clock.advance(seconds: 60)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+
+        // ‘Cart’ starts fixing it, and says so.
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .working], since: clock.now, on: [4093])
+        clock.advance(seconds: 60)
+        let answer = try await Self.setStage("in_progress", of: [4093], in: defaults, facts: [Self.ref(4093): waiting], at: clock.now)
+        order.agentChanged()
+        #expect(answer.hasSuffix("""
+            The user had set Your review 2m ago; yours shows over it. They can put theirs back while yours lasts; once \
+            yours ends, theirs shows again.
+            """))
+        let over = order.stage(of: Self.ref(4093))
+        #expect(over?.mark?.by == Self.cart && over?.replaced?.stage == .yourReview && over?.replacedOutlasts == true)
+        #expect(StageAction.offered(for: over, canUndo: false).contains(.putYoursBack))
+
+        // Its turn ends: its In progress goes, and yours shows again, with nothing to put back.
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .finished], since: clock.now, on: [4093])
+        let again = order.stage(of: Self.ref(4093))
+        #expect(again?.stage == .yourReview && again?.isSetByYou == true)
+        #expect(!StageAction.offered(for: again, canUndo: false).contains(.putYoursBack))
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .yourReview)
+        #expect(!SessionStages.keepsAny(in: defaults))
+    }
+
+    /// You set Your review; ‘Cart’ says in_progress as it starts fixing it, then user_review once it pushed, as
+    /// BriefBar's prompts ask. Its own In progress is no other stage, so its Your review follows yours, which it's
+    /// told, and lasts as yours does once it finished and a teammate approves, with yours kept.
+    @Test func yourYourReviewOutlastsASessionThatSaidInProgressThenUserReview() async throws {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", readAt: clock.now)
+        let facts = [Self.ref(4093): waiting]
+        Self.tell(order, [4093: waiting])
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600, on: [4093])
+        clock.advance(seconds: 60)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .working], since: clock.now, on: [4093])
+        clock.advance(seconds: 60)
+        _ = try await Self.setStage("in_progress", of: [4093], in: defaults, facts: facts, at: clock.now)
+        order.agentChanged()
+        clock.advance(seconds: 60)
+        let answer = try await Self.setStage("user_review", of: [4093], in: defaults, facts: facts, at: clock.now)
+        order.agentChanged()
+        #expect(answer.hasSuffix("""
+            The user had set Your review 3m ago already; yours lasts as theirs does, and goes with it, rather than end \
+            once someone else votes.
+            """))
+        let afterPush = order.stage(of: Self.ref(4093))
+        #expect(afterPush?.mark?.by == Self.cart && afterPush?.mark?.votes == nil && afterPush?.followed?.stage == .yourReview)
+        #expect(StageAction.offered(for: afterPush, canUndo: false).contains(.letBriefBarDecide))
+
+        // It finishes, and Priya approves.
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .finished], since: clock.now, on: [4093])
+        clock.advance(seconds: 60)
+        Self.tell(order, [4093: StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", readAt: clock.now)])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.cart)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .yourReview)
+    }
+
+    /// The same where the list reads ‘Cart’'s push before it says user_review: the new commit ends its In progress, and
+    /// yours stays, for its Your review to follow.
+    @Test func yourYourReviewOutlastsASessionsInProgressEndingOnItsPush() async throws {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        let before = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", commit: "a1b2c3d", readAt: clock.now)
+        Self.tell(order, [4093: before])
+        Self.list(order, [Self.cart: .finished], since: clock.now - 3_600, on: [4093])
+        clock.advance(seconds: 60)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .working], since: clock.now, on: [4093])
+        clock.advance(seconds: 60)
+        _ = try await Self.setStage("in_progress", of: [4093], in: defaults, facts: [Self.ref(4093): before], at: clock.now)
+        order.agentChanged()
+
+        // It pushes, and the list reads the new commit.
+        clock.advance(seconds: 60)
+        let pushed = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", commit: "e4f5a6b", readAt: clock.now)
+        Self.tell(order, [4093: pushed])
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .yourReview)
+        #expect(!SessionStages.keepsAny(in: defaults))
+
+        clock.advance(seconds: 10)
+        let answer = try await Self.setStage("user_review", of: [4093], in: defaults, facts: [Self.ref(4093): pushed], at: clock.now)
+        order.agentChanged()
+        #expect(answer.contains("already; yours lasts as theirs does"))
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .finished], since: clock.now, on: [4093])
+        clock.advance(seconds: 60)
+        let approved = StageFacts(role: .author, isReady: true, othersVoted: true, votes: "10", commit: "e4f5a6b", readAt: clock.now)
+        Self.tell(order, [4093: approved])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.cart)
+        #expect(StageMarks.load(from: defaults).mark(of: Self.ref(4093), for: Self.account)?.stage == .yourReview)
+    }
+
+    /// Once another session's In progress over a Your review you set, and over a session's that followed yours, ends,
+    /// what followed yours stays, kept, rather than go with what ended.
+    @Test func whatFollowedYoursStaysOnceAnotherSessionsInProgressOverItEnds() async throws {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", commit: "a1b2c3d", readAt: clock.now)
+        Self.tell(order, [4093: waiting])
+        Self.list(order, [Self.cart: .finished, Self.backoff: .finished], since: clock.now - 3_600, on: [4093])
+        clock.advance(seconds: 60)
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        clock.advance(seconds: 60)
+        _ = try await Self.setStage("user_review", of: [4093], in: defaults, facts: [Self.ref(4093): waiting], at: clock.now)
+        order.agentChanged()
+        #expect(order.stage(of: Self.ref(4093))?.followed != nil)
+
+        // ‘Retry backoff’ starts on it, says so, and finishes.
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .finished, Self.backoff: .working], since: clock.now, on: [4093])
+        Self.set(.inProgress, of: 4093, by: Self.backoff, at: clock.now, commit: "a1b2c3d", in: defaults, order)
+        #expect(order.stage(of: Self.ref(4093))?.mark?.by == Self.backoff)
+        clock.advance(seconds: 60)
+        Self.list(order, [Self.cart: .finished, Self.backoff: .finished], since: clock.now, on: [4093])
+
+        // Its In progress went; ‘Cart’'s Your review stays, following yours, also at the list's next read.
+        #expect(SessionStages.load(Self.backoff, from: defaults) == nil)
+        #expect(SessionStages.load(Self.cart, from: defaults)?.marks[Self.ref(4093)] != nil)
+        clock.advance(seconds: 60)
+        Self.tell(order, [4093: StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", commit: "a1b2c3d", readAt: clock.now)])
+        let reading = order.stage(of: Self.ref(4093))
+        #expect(reading?.mark?.by == Self.cart && reading?.followed?.stage == .yourReview)
+    }
+
     private static func link(_ number: Int) -> String {
         "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)"
     }
