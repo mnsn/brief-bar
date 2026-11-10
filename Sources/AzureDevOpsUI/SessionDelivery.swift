@@ -278,7 +278,9 @@ extension CopilotTasksStore {
     ///     prompt for it; nor while the folder the session works in holds a merge of commits that the branch the prompt
     ///     names, its `targetBranch`, doesn't have, or that can't be checked (`pushProblem`); nor once the pull request
     ///     merges into another branch, or was completed or abandoned, as Azure DevOps says right before git checks, and
-    ///     again after (`freshTargetProblem`), or as the list reads later (`retargetProblem`, `closedProblem`).
+    ///     again after (`freshTargetProblem`), or as the list reads later (`retargetProblem`, `closedProblem`). For a
+    ///     comment's fix sent with Push and Reply on, `about` keeps the pull request's branch, and where it was in that
+    ///     folder once git fetched it there, for whether it pushed once its turn is done (`SentPrompt.pushed`).
     /// - Returns: sent; forked and sent, with the fork; why it fell back; or why nothing went.
     func deliver(
         _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil,
@@ -288,13 +290,25 @@ extension CopilotTasksStore {
         // the session, and its turn end, before BriefBar hears it went (`pauseFollowing`). A fork's goes to the fork.
         if !forking { pauseFollowing(choice.id) }
         defer { if !forking { resumeFollowing(choice.id) } }
-        let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff, checkingPush: checkingPush)
+        var branchHead: String?
+        let outcome = await deliverPrompt(
+            prompt, to: choice, forking: forking, handOff: handOff, checkingPush: checkingPush, branchHead: &branchHead
+        )
+        var about = about
+        // Kept only for a fix sent with Push and Reply on (`SentPrompt.source`, `SentPrompt.head`).
+        if let checkingPush {
+            about?.source = checkingPush.sourceBranch
+            about?.head = branchHead
+        }
         keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt, copying: prompt, handOff: handOff)
         return outcome
     }
 
+    /// - Parameter branchHead: for a push (`checkingPush`), where the pull request's branch is in the folder the session
+    ///   works in, once git fetched it there to check what it would push (`pushProblem`).
     private func deliverPrompt(
-        _ prompt: String, to choice: SessionChoice, forking: Bool, handOff: CommentHandOff?, checkingPush: TaskPullRequest?
+        _ prompt: String, to choice: SessionChoice, forking: Bool, handOff: CommentHandOff?, checkingPush: TaskPullRequest?,
+        branchHead: inout String?
     ) async -> SessionDelivery {
         guard canSend, isOn, !hasStopped, ItemRef.session(choice.id) != nil else { return .notSent(Self.cantSendNow) }
         let id = choice.id
@@ -327,7 +341,9 @@ extension CopilotTasksStore {
         if let push {
             if let problem = await stillGoesProblem(push) { return .notSent(problem) }
             if let problem = await freshTargetProblem(push.pullRequest) { return .notSent(problem) }
-            if let problem = await pushProblem(push.pullRequest, in: checkout, name: push.name) { return .notSent(problem) }
+            if let problem = await pushProblem(push.pullRequest, in: checkout, name: push.name, branchHead: &branchHead) {
+                return .notSent(problem)
+            }
             // Again, after git's wait, as after the one above.
             guard canSend, isOn, !hasStopped, sessionPromptsAreOn || !promptsWereOn else { return .notSent(Self.cantSendNow) }
             if let problem = await freshTargetProblem(push.pullRequest) { return .notSent(problem) }
@@ -497,15 +513,20 @@ extension CopilotTasksStore {
     /// names, the pull request's `targetBranch`, doesn't have (`Git.checkPush(in:source:target:)`), as when it was
     /// retargeted after its conflicts were resolved there; or BriefBar couldn't check, as when the folder isn't a clone of
     /// the pull request's repository. Nil when it may go.
-    /// - Parameter name: the session, as a sentence names it.
-    private func pushProblem(_ pullRequest: TaskPullRequest, in folder: URL?, name: String) async -> String? {
+    /// - Parameters:
+    ///   - name: the session, as a sentence names it.
+    ///   - branchHead: once it may go, where the pull request's branch is in the folder, as git just fetched it there
+    ///     (`Git.remoteHead(of:branch:)`): what a push of the session's own adds to.
+    private func pushProblem(_ pullRequest: TaskPullRequest, in folder: URL?, name: String, branchHead: inout String?) async -> String? {
         let target = pullRequest.targetBranch
         guard let folder else { return "BriefBar can't tell which folder \(name) works in, so it couldn't check what it would push, and nothing went." }
         let git = await git()
         do {
             try await git.checkClone(at: folder, of: pullRequest)
             switch try await git.checkPush(in: folder, source: pullRequest.sourceBranch, target: target) {
-            case .clean: return nil
+            case .clean:
+                branchHead = await git.remoteHead(of: folder, branch: pullRequest.sourceBranch)
+                return nil
             case .foreignMerge: return "\(name) holds a merge that \(target) doesn't have, so nothing went. Fix the pull request in a new session."
             }
         } catch {

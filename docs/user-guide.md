@@ -546,10 +546,11 @@ thread, a line above its buttons says so, in its state's color, with since when 
 explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Retry backoff’ · 2m**, **Fixed in ‘Retry
 backoff’, not pushed** or **Couldn't fix it in ‘Retry backoff’**, with what Copilot said under it, such as why it
 couldn't; click it to see the session. A fix sent to push and reply says **Copilot is fixing this in ‘Retry backoff’, to
-push and reply**, then **Fixed, pushed and replied in ‘Retry backoff’** once BriefBar reads the pull request's branch at
-a new commit, which it reads again as the turn ends; until then, and when it stopped before it pushed, as when the tests
-still failed, or the pull request was retargeted, completed or abandoned meanwhile, **Fixed in ‘Retry backoff’, but not
-pushed**, with what Copilot said under it. One of BriefBar's own tasks, named for what it does, is called a task there,
+push and reply**, then, once its turn is done, **Fixed, pushed and replied in ‘Retry backoff’** when the session pushed
+a commit of its own, as git tells in the checkout it works in; when it stopped before it pushed, as when the tests still
+failed, the pull request was retargeted, completed or abandoned meanwhile, or someone else pushed first, **Fixed in
+‘Retry backoff’, but not pushed**, with what Copilot said under it. BriefBar tells once, as the turn ends, so a push
+since, from anywhere, doesn't change it. One of BriefBar's own tasks, named for what it does, is called a task there,
 **Fixed in the ‘Fix Comments’ task, not pushed**. When you send a session something else
 before it's done with what you sent it, BriefBar can't tell from the session which of them ended how, so the earlier
 thread says **Sent to ‘Retry backoff’ · see the session** instead, as it does once a session hasn't finished in twelve
@@ -567,9 +568,10 @@ fixed, from that session, or **Push…** when they fixed no comment; they stay i
 stopped, to try again. A fix sent to push and reply that fails or stops isn't in the bar, since it may not have fixed
 anything: **Try Again** sends it again; nor is one that wasn't pushed, since it may have replied: **Fix** it again. Push & Reply commits all that session changed, so a comment it fixed before that Push & Reply
 doesn't list says **Pushed from ‘Retry backoff’, without a reply**, and stays so after a later push fails; so does one
-fixed before a fix sent to push and reply, once BriefBar reads its push, from that session or from a fork of it made
-since, which has the session's changes, but a fork with the CLI only the conflicts' resolution, which its task
-committed. Any push to the branch counts, as BriefBar can't tell whose it was. What's Left says
+fixed before a fix sent to push and reply that pushed, from that session or from a fork of it made since, which has the
+session's changes, but a fork with the CLI only the conflicts' resolution, which its task committed; and so does a fix
+sent to push and reply that wasn't pushed, once a later push from its session, or from a fork of it made since, takes
+it along. What's Left says
 **Copilot's on it** while Copilot fixes, or pushes, its comments, a build or its conflicts, whether with one of
 BriefBar's tasks or a prompt to one of the Copilot app's sessions, and **Copilot asks you** while that session waits for
 your answer in the app. **Esc** closes a composer, then the details; closing a composer while it sends calls the send

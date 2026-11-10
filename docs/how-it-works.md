@@ -3117,8 +3117,9 @@ Neither source reads anything more for it.
 **What's kept.** Which work items and pull requests you sent, what for, with which model, in which
 repository and worktree, whether you stopped it, whether it went on with one of the Copilot app's sessions,
 which comment threads, builds and conflicts it took on, by their IDs, and the pull request's link go to the preferences
-(`ado.copilot.runs`), without their titles, with, for a comment's fix sent to push and reply, the ID of the commit the
-pull request's branch was at as it went; and so are the prompts about them sent to the app's sessions, by references
+(`ado.copilot.runs`), without their titles, with, for a comment's fix sent to push and reply, the ID of the commit git
+fetched the pull request's branch at as it went, and whether it pushed; and so are the prompts about them sent to the
+app's sessions, by references
 only (`ado.copilot.sentPrompts`); and so
 do your choices and the repository of each project, and the forks BriefBar hasn't deleted yet, by their sessions' IDs
 and their CLI's folder (`ado.copilot.forksToDelete`), which turning Azure DevOps off keeps, to delete them once it's on
@@ -3259,19 +3260,28 @@ reply** (`CopilotWork.replies`); not once it failed or stopped, which pushed not
 paste. A thread whose own Push & Reply failed or stopped is pushed along so too. A comment's fix sent to push and reply
 takes on its threads alone, and says it fixes them first (`CopilotWork.fixes`): "Copilot is fixing this in ‘Retry
 backoff’, to push and reply", then, once it finished, "Fixed, pushed and replied in ‘Retry backoff’", while the session's
-other fixes it pushes along say they're pushed, without a reply, as above: but only once the list reads the pull
-request's branch at another commit than as it was sent, which it keeps with it, a task with its run too, so that clearing
-its threads doesn't make it a plain push (`TakenPart.head`, `CopilotRun.head`, `SentPrompt.head`, `SessionPush.head`,
-`PullRequest.sourceCommit`, `CopilotTasksStore.seesPush(since:of:)`), since its prompt has it stop
-before it pushes, and end its turn all the same, when the tests don't pass, the pull request was retargeted, completed or
-abandoned, a merge brings in another branch, or a push was rejected. Until then it says "Fixed in ‘Retry backoff’, but
-not pushed" (`CopilotWork.pushSeen`), with what Copilot said under it; the session's other fixes stay ready; its task's
-row says "Fixed, but not pushed" (`CopilotTaskEntry.pushSeen`); and the notification as it ends says only that Copilot
-finished fixing, with what it said. BriefBar reads the pull request again as the turn ends
-(`CopilotTasksStore.rereadPullRequest`), rather than at the list's next refresh, so that a push shows in seconds. Any
-push to the branch since counts, as BriefBar can't tell whose it was; one kept from before BriefBar kept the commit, or
-sent while the list didn't have the pull request, isn't known to have pushed. Not seen pushed, it isn't ready to push
-either, since it may have replied, which a Push & Reply would post again: **Fix** it again. One sent to a fork of a
+other fixes it pushes along say they're pushed, without a reply, as above: but only once it pushed a commit of its own,
+since its prompt has it stop before it pushes, and end its turn all the same, when the tests don't pass, the pull request
+was retargeted, completed or abandoned, a merge brings in another branch, or a push was rejected. As it goes, BriefBar
+keeps the pull request's branch, and the commit git fetched it at in the checkout the session works in, as a Push &
+Reply's checks fetch it there (`Git.remoteHead(of:branch:)`, `SentPrompt.source`, `SentPrompt.head`, `CopilotRun.head`).
+As its turn finishes, git there tells, once: it pushed when that branch there, which the session's own push moves, has
+the commit the checkout is at, which the commit kept didn't, and no rebase, merge, cherry-pick or revert stopped partway
+there, which leaves the checkout at what others pushed (`Git.pushedItsOwn(in:branch:since:)`). BriefBar keeps what git
+said with it, a task with its run, and with what it took on as the session goes on, so that clearing its threads
+doesn't make it a plain push (`SentPrompt.pushed`, `CopilotRun.pushed`, `TakenPart.pushed`, `SessionPush.pushed`), and
+nothing since changes it: not another session's push, which had its own rejected; not a later push of the session's,
+which takes its change along but replies on nothing of it; nor one from before it went, which the commit kept has.
+Otherwise it says "Fixed in ‘Retry backoff’, but not pushed" (`CopilotWork.pushSeen`), with what Copilot said under it;
+the session's other fixes stay ready; its task's row says "Fixed, but not pushed" (`CopilotTaskEntry.pushSeen`); and
+the notification as it ends says only that Copilot finished fixing, with what it said. Nor is one known to have pushed
+when git can't tell, as when its checkout is gone, or one kept from before BriefBar kept the commit. What git can't tell
+apart: a commit someone else pushed after BriefBar fetched, which the session checked out as it was, committing nothing,
+from one of its own; and, as the turn is read once BriefBar sees it over (`SessionTurn`), one that ended while BriefBar
+wasn't running, whose session pushed in a turn you sent it there since, from one that pushed. Not seen pushed, it isn't
+ready to push either, since it may have replied, which a Push & Reply would post again: **Fix** it again; a later push
+from its session, or from a fork of it made since, takes its change along, so it says it's pushed, without a reply
+(`CopilotWork.shipsUnpushed`). One sent to a fork of a
 session pushes the session's fixes the fork has (`CopilotTasksStore.pushCarrying`): a fork of one of the app's sessions
 has all the session changed by the time it was made, its changes that aren't committed too, but a fork one of
 BriefBar's tasks makes with the CLI starts at the commit the task's checkout has, so only the conflicts' resolution,
@@ -3292,7 +3302,7 @@ task in the session keeps them so, for an older fix of one of them, elsewhere, n
 (`CopilotRun.taken(goingOnWith:on:taking:for:at:)`). A
 prompt sent to one of the Copilot app's sessions, or copied for you to paste there, is kept by references only, never what
 it says: the pull request, the session that took it and the one it forked, what it took on, what for, and when, and, for a
-fix sent to push and reply, the commit the pull request's branch was at as it went (`SentPrompt`,
+fix sent to push and reply, the pull request's branch, the commit git fetched it at as it went, and whether it pushed (`SentPrompt`,
 `ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows it from the session's log
 since it began to send it, so that a turn that's over before BriefBar hears the prompt went counts too, but only from the
 first message the session got since, the prompt itself as the earliest, sent or pasted: a turn that was under way as it

@@ -29,14 +29,13 @@ struct CopilotTaskEntry: Identifiable, Equatable {
     var forkedFrom: String? = nil
     /// The Push & Reply tasks that ran in its session before it, as its run keeps them (`CopilotRun.pushes`).
     var pushes: [SessionPush]? = nil
-    /// For one that fixes what it took on first (`fixesFirst`): the list has read its pull request's branch at another
-    /// commit than as it was sent (`fixingHead`, `CopilotTasksStore.seesPush(since:of:)`), which says it pushed. Its prompt
-    /// has it stop before it pushes, as when the tests don't pass, and finish all the same.
+    /// For one that fixes what it took on first (`fixesFirst`), finished: it pushed a commit of its own, as its run keeps
+    /// once git in its checkout said so (`CopilotRun.pushed`). Its prompt has it stop before it pushes, as when the tests
+    /// don't pass, and finish all the same.
     var pushSeen = false
-    /// Its run fixes what it took on first, with the commit the branch was at as it was sent, as the run keeps them apart
-    /// from what it took on, which Clear lets go of (`CopilotRun.fixes`, `CopilotRun.head`); not a run it goes on with.
+    /// Its run fixes what it took on first, as the run keeps apart from what it took on, which Clear lets go of
+    /// (`CopilotRun.fixes`); not a run it goes on with.
     var runFixes = false
-    var runHead: String? = nil
 
     var workItemURL: URL? {
         workItem.map { ADOEndpoint.workItemPage(organization: $0.organization, project: $0.project, id: $0.id) }
@@ -146,22 +145,9 @@ final class CopilotTasksStore: ObservableObject {
     /// prompt names, which BriefBar checks the session's merges against (`Git.checkPush(in:source:target:)`), however long
     /// its window was open. Nil when the list doesn't have it. The source's.
     var currentTarget: (PRKey) -> String? = { _ in nil }
-    /// The commit a pull request's branch is at, as the list last read it (`PullRequest.sourceCommit`): a fix sent with Push
-    /// and Reply on keeps it as it's sent, and, once it's done, pushed only if the list reads another since
-    /// (`seesPush(since:of:)`). Nil when the list doesn't have it. The source's.
-    var currentHead: (PRKey) -> String? = { _ in nil }
     /// Whether a pull request is still open in your lists (`CopilotSending.isOpen`): one completed or abandoned, or that
     /// left them, gets no push from the Send to Copilot window, as from a comment's composer. The source's.
     var pullRequestIsOpen: (PRKey) -> Bool = { _ in true }
-
-    /// Whether the list has read a pull request's branch at another commit than `head`, the one it was at as a fix sent with
-    /// Push and Reply on was sent: what says it pushed, since its prompt has it stop before it pushes, as when the tests
-    /// don't pass, the pull request was retargeted or closed, or a push was rejected, and end its turn all the same. Any
-    /// push counts, as BriefBar can't tell whose it was. Not while either isn't known.
-    func seesPush(since head: String?, of key: PRKey) -> Bool {
-        guard let head, !head.isEmpty, let now = currentHead(key), !now.isEmpty else { return false }
-        return now != head
-    }
 
     /// Why nothing that pushes may go to a pull request from the Send to Copilot window: it isn't open in your lists anymore.
     /// Nil while it is, or for anything but a push.
@@ -235,6 +221,10 @@ final class CopilotTasksStore: ObservableObject {
     }
     /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
     var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
+    /// Says whether a session's checkout pushed a commit of its own to a pull request's branch since `start`, in git's place
+    /// (`Git.pushedItsOwn(in:branch:since:)`), in tests.
+    var pushedForTests: PushedItsOwn?
+    typealias PushedItsOwn = @Sendable (_ folder: URL, _ branch: String, _ start: String) async -> Bool?
     /// Stands in for copying a prompt and opening a session in the Copilot app, in tests: whether it opened.
     var openForTests: ((_ sessionId: String, _ prompt: String) -> Bool)?
     /// Whether an app opens `ghapp://` links, in tests.
@@ -369,8 +359,7 @@ final class CopilotTasksStore: ObservableObject {
             forkedFrom: run.forkedFrom, pushes: run.pushes
         )
         entry.runFixes = run.fixes == true
-        entry.runHead = run.head
-        if entry.fixesFirst, let key = entry.pullRequestKey { entry.pushSeen = seesPush(since: entry.fixingHead, of: key) }
+        entry.pushSeen = entry.fixesFirst && run.pushed == true
         return entry
     }
 
@@ -586,7 +575,6 @@ final class CopilotTasksStore: ObservableObject {
         let now = Date()
         var action: PullRequestAction?
         var target: String?
-        var head: String?
         var entry = CopilotTaskEntry(id: id, workItem: nil, options: options, startedAt: now, status: RunStatus(phase: .preparing, since: now))
         switch subject {
         case .workItem(let item):
@@ -597,23 +585,20 @@ final class CopilotTasksStore: ObservableObject {
             entry.pullRequest = pullRequest.url
             action = what
             target = pullRequest.targetBranch.isEmpty ? nil : pullRequest.targetBranch
-            // Where its branch is as it goes: a fix sent with Push and Reply on pushed once the list reads another.
-            if fixing { head = currentHead(PRKey(pullRequest.organization, pullRequest.id)) }
         }
         // What it keeps, with what the session it goes on with took on before, as that session is kept now.
         let keptRun = continuing.flatMap { continuing in settings.copilotRuns.first { $0.id == continuing.id } }
         let previous = keptRun ?? continuing
         let kept = CopilotRun.taken(
-            goingOnWith: previous, on: entry.onPullRequest, taking: parts, for: action, at: now, target: target, fixing: fixing, head: head
+            goingOnWith: previous, on: entry.onPullRequest, taking: parts, for: action, at: now, target: target, fixing: fixing
         )
         entry.taken = kept
         // The pushes that ran there, as BriefBar kept its runs: not one of the app's sessions' only about to start.
         let pushes = CopilotRun.pushes(goingOnWith: keptRun, on: entry.onPullRequest)
         entry.pushes = pushes
-        // Kept with the run apart from what it took on, which Clear lets go of: it pushed only once the list reads the branch
-        // moved.
+        // Kept with the run apart from what it took on, which Clear lets go of, with where the branch was in its checkout as
+        // it started, which the launcher reads, for whether it pushed once it's done.
         let fixesFirst = action == .pushAndReply && fixing
-        let fixingHead = fixesFirst ? head : nil
         entry.forkedFrom = forking?.id ?? continuing?.forkedFrom
         pending.removeAll { $0.id == id }
         pending.append(entry)
@@ -692,7 +677,8 @@ final class CopilotTasksStore: ObservableObject {
                 run.pushes = pushes
                 if fixesFirst {
                     run.fixes = true
-                    run.head = fixingHead
+                } else {
+                    run.head = nil
                 }
                 // Going on with one of the Copilot app's sessions: its turn is the next, after any prompt sent it before.
                 if let continuing { overlap(promptsIn: continuing.id, before: now) }
@@ -818,7 +804,9 @@ final class CopilotTasksStore: ObservableObject {
     private static let exitGrace: TimeInterval = 10
 
     /// Reads the logs of runs still going, and of those whose end BriefBar hasn't looked at yet, while the feature is
-    /// on. Whether a run's process still runs is checked first: once it's gone, its log and output are complete.
+    /// on. Whether a run's process still runs is checked first: once it's gone, its log and output are complete. As one
+    /// that fixed what it took on first, then was to push and reply, finishes, git in its checkout says whether it pushed a
+    /// commit of its own (`pushedItsOwn(_:)`), which its run keeps.
     func refresh() {
         guard mode == .live, isOn else {
             scheduleIfNeeded()
@@ -836,7 +824,7 @@ final class CopilotTasksStore: ObservableObject {
         let monitor = monitor
         Task {
             let copilotHome = CopilotCLI.home(environment: await environment())
-            var results: [(run: CopilotRun, status: RunStatus, pullRequest: URL?)] = []
+            var results: [Ended] = []
             for run in runs {
                 let events = run.events(in: copilotHome)
                 if DetachedProgram.isRunning(run.process) || awaitsExit(of: run) {
@@ -845,7 +833,7 @@ final class CopilotTasksStore: ObservableObject {
                     let status = RunStatus.derive(
                         log: log, startedAt: run.launchedAt, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil
                     )
-                    results.append((run, status, nil))
+                    results.append(Ended(run: run, status: status))
                     continue
                 }
                 let log = await monitor.log(id: run.id, events: events)
@@ -861,7 +849,11 @@ final class CopilotTasksStore: ObservableObject {
                     log: log, startedAt: run.launchedAt, isRunning: false, exitStatus: exitStatuses[run.id],
                     stoppedByYou: wasStoppedByYou(run.id), output: found.0
                 )
-                results.append((run, status, found.1))
+                var pushed: Bool?
+                if run.ended == nil, run.fixes == true, run.action == .pushAndReply, status.phase == .finished {
+                    pushed = await pushedItsOwn(run)
+                }
+                results.append(Ended(run: run, status: status, pullRequest: found.1, pushed: pushed))
             }
             apply(results)
             isRefreshing = false
@@ -878,7 +870,33 @@ final class CopilotTasksStore: ObservableObject {
         return Date().timeIntervalSince(gone) < Self.exitGrace
     }
 
-    private func apply(_ results: [(run: CopilotRun, status: RunStatus, pullRequest: URL?)]) {
+    /// What `refresh` read of a run: its status, the pull request it opened, once found, and, for one that fixed what it
+    /// took on first and finished, whether it pushed a commit of its own (`CopilotRun.pushed`).
+    private struct Ended {
+        var run: CopilotRun
+        var status: RunStatus
+        var pullRequest: URL? = nil
+        var pushed: Bool? = nil
+    }
+
+    /// Whether a task that fixed what it took on first, then was to push and reply, pushed a commit of its own from its
+    /// checkout since it started, as git there says now (`Git.pushedItsOwn(in:branch:since:)`): nil when git can't tell, or
+    /// BriefBar didn't read where the branch was as it started (`CopilotRun.head`).
+    private func pushedItsOwn(_ run: CopilotRun) async -> Bool? {
+        guard let branch = run.onPullRequest?.sourceBranch, let start = run.head else { return nil }
+        return await Self.pushedItsOwn(in: run.worktree, branch: branch, since: start, git: await git(), forTests: pushedForTests)
+    }
+
+    /// Whether a session's checkout pushed a commit of its own to a pull request's branch since `start`
+    /// (`Git.pushedItsOwn(in:branch:since:)`), or what a test says in git's place (`pushedForTests`).
+    nonisolated static func pushedItsOwn(
+        in folder: URL, branch: String, since start: String, git: Git, forTests: PushedItsOwn?
+    ) async -> Bool? {
+        if let forTests { return await forTests(folder, branch, start) }
+        return await git.pushedItsOwn(in: folder, branch: branch, since: start)
+    }
+
+    private func apply(_ results: [Ended]) {
         for result in results {
             if statuses[result.run.id] != result.status { statuses[result.run.id] = result.status }
             // Cleared while it was read.
@@ -887,12 +905,10 @@ final class CopilotTasksStore: ObservableObject {
             if run.pullRequest == nil, let pullRequest = result.pullRequest { run.pullRequest = pullRequest }
             if !result.status.phase.isActive, run.ended == nil {
                 run.ended = result.status.phase
+                // Whether it pushed, as git said in its checkout as it finished: once, whatever moves the branch since.
+                if run.fixes == true, run.startedAt == result.run.startedAt { run.pushed = result.pushed }
                 Log.app.info("A task sent to Copilot ended: \(result.status.phase.rawValue, privacy: .public)")
-                let entry = entry(for: run, status: result.status)
-                notify(entry, status: result.status)
-                // A fix sent with Push and Reply on pushed once the list reads its branch moved: now, rather than at its
-                // next refresh.
-                if entry.fixesFirst, result.status.phase == .finished, let key = entry.pullRequestKey { rereadPullRequest(key) }
+                notify(entry(for: run, status: result.status), status: result.status)
             }
             if run != settings.copilotRuns[index] { settings.copilotRuns[index] = run }
         }
@@ -949,7 +965,7 @@ final class CopilotTasksStore: ObservableObject {
             switch entry.action {
             case .review?: heading = "Copilot's review is ready"
             case .pushAndReply? where entry.fixesFirst:
-                // Whether it pushed isn't known yet, until the list reads its branch moved: what Copilot said tells.
+                // It says only that it fixed, as the line about the thread says whether it pushed: what Copilot said tells.
                 let fixing = entry.taken?.filter { $0.ended == nil && $0.part.thread != nil }.count
                 heading = fixing == 1 ? "Copilot finished fixing a comment" : "Copilot finished fixing the comments"
             case .pushAndReply?: heading = entry.onlyPushes ? "Copilot pushed" : "Copilot pushed and replied"

@@ -251,6 +251,93 @@ import Testing
         #expect(runner.arguments.isEmpty)
     }
 
+    // MARK: Whether a session pushed
+
+    /// Pushes a commit to the pull request's branch from another clone, as a teammate, or another session, would: `text`, in
+    /// a file of its own unless `file` names one.
+    private func pushFromElsewhere(_ text: String, to file: String? = nil, _ fixture: RepositoryFixture) async throws {
+        let other = fixture.folder.appendingPathComponent("elsewhere")
+        if !FileManager.default.fileExists(atPath: other.path) {
+            try await fixture.git(["clone", "--quiet", fixture.origin.path, other.path])
+        }
+        try await fixture.git(["-C", other.path, "fetch", "--quiet", "origin"])
+        try await fixture.git(["-C", other.path, "checkout", "--quiet", "--detach", "origin/\(Self.source)"])
+        try await commit(text, to: file ?? "\(text).txt", in: other, fixture)
+        try await fixture.git(["-C", other.path, "push", "--quiet", "origin", "HEAD:refs/heads/\(Self.source)"])
+    }
+
+    /// Pushes the checkout's HEAD as a fix's prompt has it, by its ID, to origin, which moves the checkout's origin/<branch>.
+    private func pushAsThePromptSays(_ fixture: RepositoryFixture, _ git: Git) async throws {
+        let head = try await git.run(["-C", fixture.checkout.path, "rev-parse", "HEAD"], timeout: 30)
+        try await fixture.git(["-C", fixture.checkout.path, "push", "--quiet", "origin", "\(head):refs/heads/\(Self.source)"])
+    }
+
+    /// Where the branch was as the fix went, once BriefBar fetched it: a commit the checkout pushed of its own since is
+    /// pushed, whatever was pushed after it; nothing committed, or a commit not pushed, or one whose push was rejected as
+    /// someone else pushed first, isn't; nor is a commit others pushed, which the checkout fetched and checked out, or one it
+    /// pushed itself before the fix went; nor what others pushed, where a rebase on it, or a cherry-pick, stopped partway.
+    @Test(.timeLimit(.minutes(5)))
+    func tellsWhetherACheckoutPushedACommitOfItsOwn() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        let checkout = fixture.checkout
+        _ = try await git.checkPush(in: checkout, source: Self.source, target: "main")
+        let start = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        #expect(try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30) == start)
+        #expect(await git.remoteHead(of: checkout, branch: "nowhere") == nil)
+        #expect(await git.remoteHead(of: checkout, branch: "--all") == nil)
+
+        // Nothing committed: the tests failed, say.
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start) == false)
+        // Committed, then stopped before it pushed.
+        try await commit("The fix", to: "fix.txt", in: checkout, fixture)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start) == false)
+        // Pushed.
+        try await pushAsThePromptSays(fixture, git)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start) == true)
+        // Someone pushes on top of it since, which the checkout fetches: it still pushed its own.
+        try await pushFromElsewhere("Theirs", fixture)
+        try await fixture.git(["-C", checkout.path, "fetch", "--quiet", "origin"])
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start) == true)
+
+        // The next fix goes from there: what the checkout pushed before it went isn't its push, nor what it fetches and
+        // checks out of what others pushed.
+        let next = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        try await fixture.git(["-C", checkout.path, "checkout", "--quiet", "--detach", "origin/\(Self.source)"])
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == false)
+        // Someone pushes while it fixes, the same lines: its push is rejected, as the branch moved, and it stops.
+        try await commit("Another fix", to: "another.txt", in: checkout, fixture)
+        let fixed = try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30)
+        try await pushFromElsewhere("First", to: "another.txt", fixture)
+        try await fixture.git(["-C", checkout.path, "fetch", "--quiet", "origin"])
+        await #expect(throws: TestError.self) { try await self.pushAsThePromptSays(fixture, git) }
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == false)
+        // A task's prompt has it rebase on what's pushed then, and stop when that conflicts, which leaves it at their commit
+        // until the rebase is done or called off; a cherry-pick of its fix there, the same.
+        let theirs = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        await #expect(throws: TestError.self) {
+            try await fixture.git(["-C", checkout.path] + Self.identity + ["rebase", "--quiet", "origin/\(Self.source)"])
+        }
+        #expect(try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30) == theirs)
+        #expect(await git.stoppedPartway(checkout) == true)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == false)
+        try await fixture.git(["-C", checkout.path, "rebase", "--abort"])
+        #expect(await git.stoppedPartway(checkout) == false)
+        try await fixture.git(["-C", checkout.path, "checkout", "--quiet", "--detach", theirs])
+        await #expect(throws: TestError.self) { try await fixture.git(["-C", checkout.path] + Self.identity + ["cherry-pick", fixed]) }
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == false)
+        try await fixture.git(["-C", checkout.path, "cherry-pick", "--abort"])
+
+        // What git can't tell: a folder that isn't a checkout, or a start that isn't a commit, or a branch git would read as
+        // something else.
+        let nowhere = fixture.folder.appendingPathComponent("nowhere")
+        try FileManager.default.createDirectory(at: nowhere, withIntermediateDirectories: true)
+        #expect(await git.pushedItsOwn(in: nowhere, branch: Self.source, since: start) == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: "c1") == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: "main..HEAD", since: start) == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: "gone", since: start) == nil)
+    }
+
     @Test func putsWorktreesNextToTheRepositoryEachInAFolderOfItsOwn() {
         let root = URL(fileURLWithPath: "/Users/robin/dev/repos/Storefront")
         let folder = WorktreeLocation.defaultFolder(for: root)

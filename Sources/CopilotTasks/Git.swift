@@ -150,6 +150,65 @@ public struct Git: Sendable {
         return commit
     }
 
+    /// The commit `origin/<branch>` is at in a folder's checkout, as git there last fetched or pushed it: where a push to the
+    /// branch from there starts, once BriefBar fetched it (`checkPush(in:source:target:)`), for `pushedItsOwn(in:branch:since:)`
+    /// to tell what it pushed. Nil when it can't be read.
+    public func remoteHead(of folder: URL, branch: String) async -> String? {
+        guard Self.isBranchName(branch),
+              let commit = try? await run(
+                  ["-C", folder.path, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/\(branch)^{commit}"], timeout: 30
+              ),
+              Self.isCommit(commit)
+        else { return nil }
+        return commit
+    }
+
+    /// Whether a folder's checkout pushed a commit of its own to `branch` since `start`, the commit `origin/<branch>` was at
+    /// there as it started (`remoteHead(of:branch:)`): the commit it has checked out is in `origin/<branch>` now, which its
+    /// push moves, and wasn't in `start`. False when it isn't: when it committed nothing, or only fetched and checked out
+    /// what others pushed, or its push was rejected, or it stopped before it, or partway through a rebase, a merge, a
+    /// cherry-pick or a revert, as when one on what others pushed conflicts, which leaves it at their commit
+    /// (`stoppedPartway`). Nil when git can't tell, as when the folder isn't a checkout any more.
+    public func pushedItsOwn(in folder: URL, branch: String, since start: String) async -> Bool? {
+        guard Self.isBranchName(branch), Self.isCommit(start),
+              let head = try? await run(["-C", folder.path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"], timeout: 30),
+              Self.isCommit(head),
+              let partway = await stoppedPartway(folder)
+        else { return nil }
+        if partway { return false }
+        guard let pushed = await isAncestor(head, of: "refs/remotes/origin/\(branch)", in: folder) else { return nil }
+        guard pushed else { return false }
+        return await isAncestor(head, of: start, in: folder).map { !$0 }
+    }
+
+    /// Whether a folder's checkout stopped partway through a rebase, a merge, a cherry-pick or a revert, as git there keeps
+    /// it until it's done or called off; nil when git can't tell.
+    func stoppedPartway(_ folder: URL) async -> Bool? {
+        let names = ["rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"]
+        guard let paths = try? await run(["-C", folder.path, "rev-parse"] + names.flatMap { ["--git-path", $0] }, timeout: 30) else {
+            return nil
+        }
+        let lines = paths.split(whereSeparator: \.isNewline).map(String.init)
+        guard lines.count == names.count else { return nil }
+        return lines.contains { path in
+            let file = path.hasPrefix("/") ? URL(fileURLWithPath: path) : folder.appendingPathComponent(path)
+            // There, whatever it is, without following a link.
+            return (try? FileManager.default.attributesOfItem(atPath: file.path)) != nil
+        }
+    }
+
+    /// Whether `commit` is in `other`'s history, `other` included; nil when git can't tell, as when either isn't there.
+    private func isAncestor(_ commit: String, of other: String, in folder: URL) async -> Bool? {
+        guard let result = try? await runner.run(
+            executable, arguments: ["-C", folder.path, "merge-base", "--is-ancestor", commit, other], environment: environment, timeout: 120
+        ) else { return nil }
+        switch result.status {
+        case 0: return true
+        case 1: return false
+        default: return nil
+        }
+    }
+
     /// Whether pushing a folder's checkout to a pull request's branch, `source`, would merge in only what the branch it
     /// merges into, `target`, has: what every merge it would push, in what `origin/<source>` doesn't have yet, merged in,
     /// and what a merge still going on merges in, has to be in `origin/<target>`. A merge of the pull request's own branch,

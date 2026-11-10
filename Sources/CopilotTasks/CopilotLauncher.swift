@@ -265,7 +265,9 @@ public struct CopilotLauncher: Sendable {
         // into doesn't have, as when it was retargeted after its conflicts were resolved there. A new session's too, which a
         // comment's fix that pushes and replies may start: its worktree starts at the branch's latest commit, which git
         // finds no merge in, but it pushes what it fixes there, so it goes only while the pull request merges into the
-        // branch its prompt names, as the rest do.
+        // branch its prompt names, as the rest do. Where the branch is, as git just fetched it, is where a push of its own
+        // starts from (`CopilotRun.head`).
+        var branchHead: String?
         if case .pullRequest(let pullRequest, .pushAndReply) = request.subject {
             // Against the branch the prompt names, while the pull request merges into it, as Azure DevOps says now: the
             // list may not have read a retarget yet.
@@ -274,6 +276,8 @@ public struct CopilotLauncher: Sendable {
                 do {
                     if try await git.checkPush(in: worktree, source: pullRequest.sourceBranch, target: pullRequest.targetBranch) == .foreignMerge {
                         refusal = .foreignMerge(target: pullRequest.targetBranch)
+                    } else {
+                        branchHead = await git.remoteHead(of: worktree, branch: pullRequest.sourceBranch)
                     }
                 } catch {
                     refusal = .cantCheckPush((error as? GitError)?.description ?? String(describing: error))
@@ -322,7 +326,7 @@ public struct CopilotLauncher: Sendable {
                 id: id, workItem: request.continuing?.workItem, onPullRequest: pullRequest.reference, action: action,
                 options: request.options, repository: repository.root, worktree: worktree, startedAt: now,
                 process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: pullRequest.url,
-                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom, forkedAt: forkedAt
+                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom, forkedAt: forkedAt, head: branchHead
             )
         }
         do {
