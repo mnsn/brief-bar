@@ -1391,9 +1391,9 @@ extension OrderChanges {
     /// knows the lines of its order it knew then, and those it saw there since, where it stayed (`OrderChange.linedWith`);
     /// not those its order told while it was out, moved, undone or taken by another order: one of those across the split is
     /// later than your change, so it takes what the split moved back (`splitsTakenBack`), as it would have had you never
-    /// changed it. Nor does another the split moved from that order know one of those for it any longer, as it saw it only
-    /// as this one was out, such as moved in with it. Where its order took it back since, it stays taken back, as its order
-    /// took it.
+    /// changed it. One limit: another the split moved from that order that saw one of those while this one was out, as
+    /// you'd moved it in with them, still knows it, as BriefBar doesn't keep when it saw it, and a line either end knows
+    /// takes nothing back. Where its order took it back since, it stays taken back, as its order took it.
     /// - Parameter orders: the orders sessions told.
     public mutating func restore(_ touched: [ItemRef: OrderChange?], orders: DeclaredOrders) {
         for (ref, was) in touched {
@@ -1407,13 +1407,6 @@ extension OrderChanges {
                     change.linedWith.formUnion(now.linedWith)
                 } else if let now, SplitGroup(now) == group, let taken = now.overridden, taken.by == group.order {
                     change.overridden = taken
-                } else {
-                    // What another learned of it that it doesn't know back, it learned while this one was out.
-                    let learned = changes.values.filter { other in
-                        other.ref != ref && other.splitFrom == .plan(group.order) && other.linedWith.contains(ref)
-                            && !change.linedWith.contains(other.ref)
-                    }
-                    for other in learned { changes[other.ref]?.linedWith.remove(ref) }
                 }
             }
             changes[ref] = change

@@ -1475,8 +1475,9 @@ them, or goes back to the order's mission, takes nothing back. Undo puts back ex
 brings back where the split put it knows only the lines it knew then and those it saw there since: a line its order told
 while it was out, moved, undone or taken by another order, that crosses the split is later than your change, and takes
 them back, as it would have had you never changed it, as it does one an order BriefBar forgot that had taken it brings
-back; another the split moved from that order that saw that line only because this one was out, as you'd moved it in
-with them, no longer knows it either; and Undo leaves taken back one its order took back since. Nor one that holds nothing up,
+back; and Undo leaves taken back one its order took back since. One limit: another the split moved from that order that
+saw that line while this one was out, as you'd moved it in with them, still knows it, as BriefBar doesn't keep when it
+saw it, and a line either end knows takes neither back. Nor one that holds nothing up,
 to one that merged or closed or from one that merged, which BriefBar sees only once it does again; one BriefBar can't see
 counts, and `--mcp` goes by the same before the app notes it. Put Yours Back on
 one the order took back puts back what it took back with it, or what it went back with, and on one another order took,
