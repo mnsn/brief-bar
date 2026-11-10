@@ -342,6 +342,12 @@ import Testing
         #expect(last("git push origin {a,b}")?.isLiteral == false)
         #expect(last("git push origin v{1..3}")?.isLiteral == false)
         #expect(last("git push origin 'x[1]'")?.isLiteral == true)
+        // `{` and `}` on their own group commands only where a command starts: after one's words, they're more of them,
+        // as another refspec here.
+        #expect(forms("git push origin \(refspec) {") == [.other])
+        #expect(forms("git push origin \(refspec) }") == [.other])
+        #expect(forms("{ git push origin \(refspec); }") == [exact])
+        #expect(forms("if { true; }; then git push origin \(refspec); fi") == [exact])
     }
 
     /// What only looks like a push, or says it, isn't one.
@@ -424,6 +430,13 @@ import Testing
             // substitution's.
             "echo \"$(case yes in yes) git push --force origin main;; esac)\"",
             "echo \"$(if case $x in\ny) git push -d origin main;; esac; then :; fi)\"",
+            // An alias set right there, whatever the case of its name, or from the environment; and push in a string
+            // whose escapes say it.
+            "git -c ALIAS.p=push p --force origin main",
+            "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.p GIT_CONFIG_VALUE_0=push git p -f origin main",
+            "export GIT_CONFIG_PARAMETERS=\"'alias.p=push'\"; git p -f origin main",
+            "env -S $'git pu\\x73h --force origin main'",
+            "git -c core.sshCommand='git push --force origin main; ssh' fetch",
         ]
         for command in unreadable {
             #expect(PushCommand(command).isUnreadable, "\(command)")
@@ -435,6 +448,14 @@ import Testing
             let read = PushCommand(command)
             #expect(!read.isUnreadable && read.pushes.isEmpty, "\(command)")
         }
+        // Settings that may have git run another command than the one named, which needn't say push: autocorrect, which
+        // runs the command closest to a typo, and an include of a file's settings.
+        for command in [
+            "git -c help.autocorrect=immediate psuh --force origin main", "git -c include.path=/tmp/more.gitconfig p -f origin main",
+            "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=help.autocorrect GIT_CONFIG_VALUE_0=1 git psuh -f origin main",
+        ] {
+            #expect(PushCommand(command).isUnreadable, "\(command)")
+        }
         // A pattern in parentheses, and a `case` that ended, read as they are.
         #expect(forms("echo \"$(case yes in (yes) git push --force origin main;; esac)\"") == [.unsafe(.force)])
         #expect(forms("echo \"$(case $x in (y) echo;; esac; git push -d origin main)\"") == [.unsafe(.delete)])
@@ -445,5 +466,34 @@ import Testing
     @Test func findsEveryPush() {
         let command = "git push origin \(refspec) && git -C /tmp/other push origin main; (git push origin \(refspec))"
         #expect(forms(command) == [.exact(commit: commit), .other, .exact(commit: commit)])
+    }
+
+    /// The pushes in a command another program, or a command of git's, runs: in a string it runs through a shell, as
+    /// `parallel`, `flock -c` and `watch` do; `git submodule foreach`'s, `git rebase --exec`'s and `git bisect run`'s; and
+    /// `git subtree push`, after the options that come before it.
+    @Test func findsThePushesInWhatOthersRun() {
+        let cases: [(String, [PushCommand.Push.Form])] = [
+            ("parallel 'git push --force origin {}' ::: main", [.unsafe(.force)]),
+            ("flock /tmp/push.lock -c 'git push --force origin main'", [.unsafe(.force)]),
+            ("watch -n 5 'git push -d origin main'", [.unsafe(.delete)]),
+            ("git submodule foreach 'git push --force origin main'", [.unsafe(.force)]),
+            ("git submodule --quiet foreach --recursive git push -d origin main", [.unsafe(.delete)]),
+            ("git rebase -x 'git push --force origin main' HEAD~2", [.unsafe(.force)]),
+            ("git rebase --exec='git push -d origin main' origin/main", [.unsafe(.delete)]),
+            ("git bisect run git push --force origin main", [.unsafe(.force)]),
+            ("git subtree --prefix=docs push origin gh-pages", [.other]),
+            ("git subtree -P docs push origin \(refspec)", [.other]),
+        ]
+        for (command, expected) in cases {
+            #expect(forms(command) == expected, "\(command)")
+        }
+        // What they run that pushes nothing, or a string that isn't run.
+        for command in [
+            "git rebase -x 'swift test' origin/main", "git submodule foreach git status", "git bisect run swift test",
+            "find . -name '*.swift' -exec grep -l \"git push\" {} +", "git subtree split --prefix=docs",
+        ] {
+            let read = PushCommand(command)
+            #expect(read.pushes.isEmpty && !read.isUnreadable, "\(command)")
+        }
     }
 }

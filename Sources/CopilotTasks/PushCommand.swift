@@ -73,6 +73,8 @@ public struct PushCommand: Sendable, Equatable {
     ]
     /// Those of them that fill in the words of what they run from their input: their own, or in place of `{}`.
     private static let fillers: Set<String> = ["xargs", "parallel", "find"]
+    /// Those of them that may run a string they're given through a shell, rather than the words after it.
+    private static let runStrings: Set<String> = ["parallel", "flock", "watch", "sudo", "doas", "script"]
     /// What those may run that BriefBar reads: git, its ways to push, shells and `eval`.
     private static let runners: Set<String> = shells.union(["git", "git-push", "git-send-pack", "eval"])
     /// Programs that only print, test or look up what they're given, and run none of it (not `man`, whose `-P` does).
@@ -97,14 +99,18 @@ public struct PushCommand: Sendable, Equatable {
     /// Reads a script, at `depth` in the command, into the pushes: those it finds `wrapped` in another program aren't plain.
     /// `says`: the script it's in says `push`.
     private mutating func read(_ script: String, depth: Int, says: Bool, wrapped: Bool) {
-        let says = says || script.contains("push")
+        var says = says || script.contains("push")
         guard depth <= ShellReader.deepest else {
             if says { isUnreadable = true }
             return
         }
         let before = pushes.count
         let (read, isReadable) = ShellReader.read(script, depth: depth)
+        // What its words say once read, too: `$'pu\x73h'` is `push`.
+        says = says || read.contains { command in (command.words + command.input).contains { $0.value.contains("push") } }
         if !isReadable, says { isUnreadable = true }
+        // git's settings from the environment, which may name an alias or turn on autocorrect, set anywhere in it.
+        if read.contains(where: { $0.words.contains(where: Self.setsGitConfiguration) }) { isUnreadable = true }
         commands += read.count
         for command in read {
             var words = command.words[...]
@@ -126,6 +132,12 @@ public struct PushCommand: Sendable, Equatable {
         }
     }
 
+    /// `GIT_CONFIG_COUNT=…`, `GIT_CONFIG_KEY_<n>=…`, `GIT_CONFIG_VALUE_<n>=…` or `GIT_CONFIG_PARAMETERS=…`: git's settings,
+    /// from the environment, as `-c` gives them.
+    private static func setsGitConfiguration(_ word: Word) -> Bool {
+        word.value.range(of: #"^GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+|PARAMETERS)="#, options: .regularExpression) != nil
+    }
+
     /// What a command runs, by its first word. `filled`: the words that program fills in from its input, in place of
     /// which it runs this (`xargs -I {}`): `{}` and any other it names; nil when it fills in none.
     private mutating func run(_ words: [Word], input: [Word], plain: Bool, depth: Int, says: Bool, filled: Set<String>? = nil) {
@@ -138,7 +150,7 @@ public struct PushCommand: Sendable, Equatable {
         let name = Self.programName(first.value)
         switch name {
         case "git":
-            git(words, plain: plain && first.value == "git", says: says, filled: filled)
+            git(words, plain: plain && first.value == "git", depth: depth, says: says, filled: filled)
         case "git-push", "git-send-pack":
             pushes.append(Push(arguments: Array(words.dropFirst()), isPlain: false))
         case "eval":
@@ -173,6 +185,14 @@ public struct PushCommand: Sendable, Equatable {
             let starts = words.indices.dropFirst().filter { words[$0].isLiteral && Self.runners.contains(Self.programName(words[$0].value)) }
             for start in starts {
                 run(Array(words[start...]), input: input, plain: false, depth: depth, says: says, filled: fills)
+            }
+            // One that runs a string of its own through a shell, as `parallel '<command>' ::: …`, `flock <file> -c
+            // '<command>'` or `watch '<command>'` do: its words with blanks in them, before what it runs, if anything, as
+            // scripts.
+            if Self.runStrings.contains(name) {
+                for word in words[1..<(starts.first ?? words.count)] where word.isLiteral && word.value.contains(where: \.isWhitespace) {
+                    read(word.value, depth: depth + 1, says: says, wrapped: true)
+                }
             }
             if starts.isEmpty, says, words.dropFirst().contains(where: { !$0.isLiteral })
                 || (name == "env" && words.contains(where: { $0.value.hasPrefix("-S") || $0.value.hasPrefix("--split-string") })) {
@@ -225,8 +245,9 @@ public struct PushCommand: Sendable, Equatable {
         return !word.isLiteral || filled.contains(word.value) || word.value.contains("{")
     }
 
-    /// git, past its own options: a push, with them and what follows it.
-    private mutating func git(_ words: [Word], plain: Bool, says: Bool, filled: Set<String>?) {
+    /// git, past its own options: a push, with them and what follows it; or a command of git's that runs one it's given,
+    /// read as a script.
+    private mutating func git(_ words: [Word], plain: Bool, depth: Int, says: Bool, filled: Set<String>?) {
         var index = 1
         var options: [Word] = []
         while index < words.count {
@@ -265,13 +286,20 @@ public struct PushCommand: Sendable, Equatable {
             if says { isUnreadable = true }
             return
         }
-        // An alias of that name, set right there.
+        // Settings set right there that may have git run another command than the one it names: an alias, whatever the
+        // case of its name, as git reads them; autocorrect, which runs the command closest to a typo, such as `psuh`; an
+        // include, of a file's settings; and any whose value says push.
         let settings = zip(options, options.dropFirst()).compactMap { option, value in
             option.value == "-c" || option.value == "--config-env" ? value.value : nil
         } + options.compactMap { $0.value.hasPrefix("--config-env=") ? String($0.value.dropFirst("--config-env=".count)) : nil }
-        if settings.contains(where: { $0.hasPrefix("alias.\(command.value)=") }) {
-            if says { isUnreadable = true }
-            return
+        for setting in settings {
+            let parts = setting.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            let key = parts[0].lowercased()
+            if key.hasPrefix("alias.") || key == "help.autocorrect" || key.hasPrefix("include.") || key.hasPrefix("includeif.")
+                || (parts.count > 1 && parts[1].contains("push")) {
+                isUnreadable = true
+                return
+            }
         }
         let rest = Array(words[(index + 1)...])
         switch command.value {
@@ -279,8 +307,31 @@ public struct PushCommand: Sendable, Equatable {
             pushes.append(Push(options: options, arguments: rest, isPlain: plain))
         case "send-pack":
             pushes.append(Push(options: options, arguments: rest, isPlain: false))
-        case "subtree" where rest.first == Word(value: "push"):
-            pushes.append(Push(options: options, arguments: Array(rest.dropFirst()), isPlain: false))
+        case "subtree":
+            // `git subtree [--prefix=<folder>] push …`: its options come first.
+            if let push = rest.firstIndex(of: Word(value: "push")) {
+                pushes.append(Push(options: options, arguments: Array(rest[(push + 1)...]), isPlain: false))
+            } else if says, rest.contains(where: { !$0.isLiteral }) {
+                isUnreadable = true
+            }
+        case "submodule":
+            // `git submodule foreach '<command>'`, which runs it in each submodule.
+            var at = rest.drop { $0.isLiteral && $0.value.hasPrefix("-") }
+            guard at.first == Word(value: "foreach") else { return }
+            at = at.dropFirst().drop { $0.isLiteral && ["--recursive", "-q", "--quiet", "--"].contains($0.value) }
+            evaluate(Array(at), plain: false, depth: depth, says: says)
+        case "rebase":
+            // `git rebase --exec '<command>'`, which runs it after each commit.
+            for (index, word) in rest.enumerated() {
+                if (word.value == "-x" || word.value == "--exec"), index + 1 < rest.count {
+                    evaluate([rest[index + 1]], plain: false, depth: depth, says: says)
+                } else if word.value.hasPrefix("--exec=") {
+                    evaluate([Word(value: String(word.value.dropFirst("--exec=".count)), isLiteral: word.isLiteral)], plain: false, depth: depth, says: says)
+                }
+            }
+        case "bisect" where rest.first == Word(value: "run"):
+            // `git bisect run <command>`, which runs it at each commit it tries.
+            evaluate(Array(rest.dropFirst()), plain: false, depth: depth, says: says)
         default:
             return
         }

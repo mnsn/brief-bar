@@ -111,8 +111,10 @@ struct ShellReader {
             case let byte:
                 if (byte == .less || byte == .greater) && !startsProcessSubstitution(at: index) {
                     guard redirection(into: current, heredocs: &heredocs) else { return false }
-                } else if (byte == .openBrace || byte == .closeBrace) && endsWord(at: index + 1) {
-                    // `{` and `}` on their own group commands.
+                } else if (byte == .openBrace || byte == .closeBrace) && endsWord(at: index + 1)
+                            && commands[current].words.allSatisfy({ $0.isLiteral && Self.leading.contains($0.value) }) {
+                    // `{` and `}` on their own, where a command starts, group commands; elsewhere, as in
+                    // `git push origin main {`, they're words like any other.
                     index += 1
                     current = begin()
                 } else if let descriptor = descriptorEnd(at: index) {
