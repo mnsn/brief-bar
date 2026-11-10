@@ -76,9 +76,10 @@ import Testing
         #expect(announced.value == 3)
     }
 
-    /// `pull_request` names the branch a pull request merges into as Azure DevOps says as it's asked, with one request each
-    /// time, rather than as the lists read it, up to a minute before, since an agent checks it right before it pushes; and,
-    /// when it can't read it, says it can't tell whether it's still the one the lists read.
+    /// `pull_request` names the branch a pull request merges into, and whether it's still active, as Azure DevOps says as
+    /// it's asked, with one request each time, rather than as the lists read them, up to a minute before, since an agent
+    /// checks them right before it pushes; and, when it can't read them, says it can't tell whether they're still as the
+    /// lists read them.
     @Test func pullRequestReadsTheBranchItMergesIntoAsItsAsked() async throws {
         let now = Date()
         let server = StubServer()
@@ -86,8 +87,12 @@ import Testing
         server.serveOrganization(mine: [mine])
         var retargeted = mine
         retargeted["targetRefName"] = "refs/heads/release/x"
-        // What Azure DevOps answers for it alone: that it merges into main, or into release/x, or nothing it can read.
-        let answers = [StubServer.Reply.json(mine), .json(retargeted), .status(404)]
+        var completed = mine
+        completed["status"] = "completed"
+        completed["closedDate"] = iso(now.addingTimeInterval(-5))
+        // What Azure DevOps answers for it alone: that it merges into main, or into release/x, or nothing it can read, or
+        // that it was completed.
+        let answers = [StubServer.Reply.json(mine), .json(retargeted), .status(404), .json(completed)]
         let answer = Mutex(0)
         server.on("/_apis/git/pullrequests/1") { _ in answers[answer.withLock { $0 }] }
         let agent = AzureDevOpsAgent(reader: reader(server, defaults: defaults()))
@@ -105,9 +110,17 @@ import Testing
         answer.withLock { $0 = 2 }
         let unread = try await agent.pullRequest(.int(1), now: now.addingTimeInterval(20))
         #expect(unread.contains(
-            ", from fix-total into main\n- BriefBar couldn't read which branch it merges into just now, so it can't tell whether that's still main: "
+            ", from fix-total into main\n- BriefBar couldn't read it again just now, so it can't tell whether it's still active, and still merges into main: "
         ))
         #expect(reads() == 3)
+        // Completed in Azure DevOps, within the minute: it says so, and offers no wait on it.
+        answer.withLock { $0 = 3 }
+        let closed = try await agent.pullRequest(.int(1), now: now.addingTimeInterval(30))
+        #expect(closed.contains(", completed, closed "))
+        #expect(!closed.contains("can't tell"))
+        #expect(first.contains("To wait on it"))
+        #expect(!closed.contains("To wait on it"))
+        #expect(reads() == 4)
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
     }
 

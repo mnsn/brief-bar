@@ -263,6 +263,38 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(store.pages.isEmpty)
     }
 
+    /// A pull request in a card's links shows over its work item's details, as from Where It Stands: where you came from
+    /// before is forgotten, and ‹ goes back to the work item. A work item has no page.
+    @Test func showsAPageOverAWorkItemFromItsCard() throws {
+        let store = makeStore()
+        let story = try item(5101)
+        let task = try item(5103)
+        let pullRequest = ItemRef.pullRequest(organization: DemoData.organization, number: 4120)
+        let session = try #require(ItemRef.session("c3e8f1a2-6b4d-4e97-a1c5-2f7d9b0e8a11"))
+        store.show(story)
+        store.open(page: session)
+        store.follow(try item(5110))
+
+        #expect(store.show(page: pullRequest, over: task))
+        #expect(store.selected?.id == 5103)
+        #expect(store.details?.item.id == 5103)
+        #expect(store.pages == [pullRequest])
+        #expect(store.history.isEmpty)
+        store.back()
+        #expect(store.selected?.id == 5103)
+        #expect(store.pages.isEmpty)
+        #expect(!store.canGoBack)
+
+        // Over the work item that shows too, it starts over.
+        store.open(page: session)
+        #expect(store.show(page: pullRequest, over: task))
+        #expect(store.pages == [pullRequest])
+
+        #expect(!store.show(page: .workItem(organization: DemoData.organization, id: 5104), over: story))
+        #expect(store.selected?.id == 5103)
+        #expect(store.pages == [pullRequest])
+    }
+
     @Test func aLinkedWorkItemShowsAsTheSprintKnowsIt() throws {
         let store = makeStore()
         store.show(try item(5101))

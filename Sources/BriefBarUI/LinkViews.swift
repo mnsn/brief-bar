@@ -131,11 +131,14 @@ package struct LinkMenuItems: View {
     }
 }
 
-/// A thing's links, each to open (or its own menu, or, for one BriefBar shows in its window too, both ways to open it), then
+/// A thing's links, each to open (or its own menu, or, for one BriefBar shows too, each way to open it: `openings`), then
 /// Link…, Unlink and Show Hidden Links.
 struct LinksMenuContent: View {
     let ref: ItemRef
     @ObservedObject var links: Links
+
+    /// Where a pull request's details open over a work item's, where there's somewhere: on the Sprint page.
+    @Environment(\.itemNavigation) private var navigation
 
     var body: some View {
         let all = links.connections(of: ref, includingHidden: true)
@@ -144,16 +147,17 @@ struct LinksMenuContent: View {
         ForEach(shown) { connection in
             let title = Self.title(connection)
             let item = connection.item
+            let openings = Self.openings(of: item, navigation: navigation)
             if let menu = item.menu {
                 Menu(title) { menu() }
-            } else if let show = item.show {
-                // One BriefBar shows in its window too, such as one of your pull requests: there, or where it lives.
+            } else if openings.count > 1 {
+                // One BriefBar shows too, such as one of your pull requests, or any pull request on the Sprint page: each
+                // way to it.
                 Menu(title) {
-                    Button(StoryDetails.showTitle) {
-                        if !show() { item.open?() }
+                    ForEach(openings, id: \.title) { opening in
+                        Button(opening.title) { opening.action?() }
+                            .disabled(opening.action == nil)
                     }
-                    Button(item.ref.kind.openTitle) { item.open?() }
-                        .disabled(item.open == nil)
                 }
             } else {
                 Button(title) { item.open?() }
@@ -186,6 +190,33 @@ struct LinksMenuContent: View {
         if let status = connection.item.status { title += " — \(status)" }
         if let via = connection.via { title += " (through \(via.label))" }
         return title
+    }
+
+    /// A way to open a linked thing, for its menu: without an action where it can't, which dims it.
+    struct Opening {
+        let title: String
+        let action: (() -> Void)?
+    }
+
+    /// The ways to open a linked thing, in its menu's order, each going on to the next where it can't: a pull request's
+    /// details, over the details where there's somewhere (`itemNavigation`), such as a sprint card's work item's, as its row
+    /// under Where It Stands opens them; in BriefBar's window, for one that shows there too (`LinkedItem.show`), such as one
+    /// of your pull requests on the Pull Requests page; then where it lives.
+    static func openings(of item: LinkedItem, navigation: ItemNavigation?) -> [Opening] {
+        var openings: [Opening] = []
+        if let navigation, item.ref.kind.isPullRequest {
+            openings.append(Opening(title: "Show Details") {
+                if navigation.open(item.ref) { return }
+                if item.show?() != true { item.open?() }
+            })
+        }
+        if let show = item.show {
+            openings.append(Opening(title: StoryDetails.showTitle) {
+                if !show() { item.open?() }
+            })
+        }
+        openings.append(Opening(title: item.ref.kind.openTitle, action: item.open))
+        return openings
     }
 }
 

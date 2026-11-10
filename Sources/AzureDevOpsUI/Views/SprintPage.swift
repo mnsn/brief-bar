@@ -33,6 +33,11 @@ struct SprintPage: View {
         withAnimation(.easeOut(duration: 0.2)) { details.show(item) }
     }
 
+    /// Shows a pull request linked to a work item over its details, as its row under Where It Stands does.
+    private func showPage(_ ref: ItemRef, over item: WorkItem) -> Bool {
+        withAnimation(.easeOut(duration: 0.2)) { details.show(page: ref, over: item) }
+    }
+
     private var subtitle: String {
         guard let board = sprint.board else { return "Your team's current sprint" }
         var parts = [board.team.name]
@@ -139,7 +144,9 @@ struct SprintPage: View {
                     SectionTitle(column: column, title: column == .inProgress ? "In Progress" : "Not Started", count: rows.count)
                     MasonryLayout(minColumnWidth: 330, spacing: 14) {
                         ForEach(rows) { row in
-                            StoryCard(row: row, me: board.me, selected: details.selected?.key) { select($0) }
+                            StoryCard(
+                                row: row, me: board.me, selected: details.selected?.key, showPage: { showPage($0, over: $1) }
+                            ) { select($0) }
                         }
                     }
                 }
@@ -149,7 +156,9 @@ struct SprintPage: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(symbol: "tray.full.fill", color: .secondary, title: "Not in a Story", count: loose.tasks.count)
                 MasonryLayout(minColumnWidth: 330, spacing: 14) {
-                    StoryCard(row: loose, me: board.me, selected: details.selected?.key) { select($0) }
+                    StoryCard(
+                        row: loose, me: board.me, selected: details.selected?.key, showPage: { showPage($0, over: $1) }
+                    ) { select($0) }
                 }
             }
         }
@@ -173,7 +182,9 @@ struct SprintPage: View {
                 if showDone {
                     MasonryLayout(minColumnWidth: 330, spacing: 14) {
                         ForEach(done) { row in
-                            StoryCard(row: row, me: board.me, selected: details.selected?.key) { select($0) }
+                            StoryCard(
+                                row: row, me: board.me, selected: details.selected?.key, showPage: { showPage($0, over: $1) }
+                            ) { select($0) }
                         }
                     }
                 } else {
@@ -407,6 +418,8 @@ private struct StoryCard: View {
     let me: String
     /// The work item whose details show.
     let selected: WorkItemKey?
+    /// Shows a pull request linked to one of its work items over that work item's details (`SprintPage.showPage`).
+    let showPage: (ItemRef, WorkItem) -> Bool
     let open: (WorkItem) -> Void
 
     @EnvironmentObject private var sprint: SprintStore
@@ -439,7 +452,9 @@ private struct StoryCard: View {
                     let ordered = row.tasksInWorkOrder
                     let shown = showAll ? ordered : Array(ordered.prefix(Self.shownTasks))
                     ForEach(shown) { task in
-                        TaskLine(task: task, isMine: task.isAssigned(to: me), isSelected: task.key == selected) { open(task) }
+                        TaskLine(
+                            task: task, isMine: task.isAssigned(to: me), isSelected: task.key == selected, showPage: { showPage($0, task) }
+                        ) { open(task) }
                     }
                     if ordered.count > Self.shownTasks {
                         Button(showAll ? "Show Fewer" : "Show \(ordered.count - Self.shownTasks) More") {
@@ -515,6 +530,8 @@ private struct StoryCard: View {
                         .lineLimit(1)
                 }
             }
+            // A pull request in its links shows over its details, as from Where It Stands.
+            .environment(\.itemNavigation, ItemNavigation(trail: [parent.linkRef]) { showPage($0, parent) })
         } else {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Tasks without a story")
@@ -534,6 +551,8 @@ private struct TaskLine: View {
     let isMine: Bool
     /// Its details show.
     let isSelected: Bool
+    /// Shows a pull request linked to it over its details.
+    let showPage: (ItemRef) -> Bool
     let open: () -> Void
 
     @EnvironmentObject private var copilot: CopilotTasksStore
@@ -612,6 +631,8 @@ private struct TaskLine: View {
             CopilotSendMenuItems(item: task)
             LinkMenuItems(task.linkRef)
         }
+        // A pull request in its links shows over its details, as from Where It Stands.
+        .environment(\.itemNavigation, ItemNavigation(trail: [task.linkRef]) { showPage($0) })
     }
 }
 

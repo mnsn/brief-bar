@@ -70,8 +70,8 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var lanes: BoardLanes
     /// Whether you folded Up Next.
     @Published package private(set) var isUpNextFolded: Bool
-    /// The pull request you chose for each of Up Next's slots, those kept in memory included (`UpNextPicks`): none while
-    /// it's off.
+    /// The pull request you chose for each of Up Next's slots that applies now: what BriefBar keeps for the account each
+    /// one's source told last (`keptPicks`), and those kept in memory (`UpNextPicks`); none while it's off.
     @Published package private(set) var picks = UpNextPicks()
     /// The column Up Next's "2 more ›" asked the Board to show, until it has.
     @Published package var revealedColumn: PullRequestStage?
@@ -109,13 +109,18 @@ package final class PullRequestOrder: ObservableObject {
     private var changesInMemory = OrderChanges()
     /// What BriefBar saw become of the pull requests that only those changes name, kept in memory as they are.
     private var evidenceInMemory = OrderEvidence()
-    /// The pull requests you chose for Up Next's slots that are listed only because someone sent them in a chat, which never
-    /// go to the preferences: kept while BriefBar runs, Pull Request Order off or on, as your changes about them are.
+    /// The pull requests you chose for Up Next's slots that are listed only because someone sent them in a chat, which
+    /// never go to the preferences, or that you chose before BriefBar knew which account signed in, until it does and
+    /// they're kept with it: kept while BriefBar runs, Pull Request Order off or on, as your changes about them are, until
+    /// another account signs in. They come first, as you chose them since (`picksNow()`).
     private var picksInMemory = UpNextPicks()
+    /// What you chose for Up Next's slots that BriefBar keeps, for each account, as the preferences have it
+    /// (`UpNextPicks.Kept`): what one account chose waits, unused, while another is signed in. None while it's off.
+    private var keptPicks = UpNextPicks.Kept()
     /// Since when each pull request you chose for Up Next's slots has been away from where you chose it, as BriefBar saw it
-    /// (`UpNextPicks.moved`): in memory only, while it's on, as what the sources told is, so that once it's on again, or
-    /// BriefBar starts again, each choice has its half hour again, rather than end on what BriefBar reads before it has
-    /// read everything.
+    /// (`UpNextPicks.moved`): in memory only, while it's on, as what the sources told is, so that once it's on again,
+    /// BriefBar starts again, or another account signs in, each choice has its half hour again, rather than end on what
+    /// BriefBar reads before it has read everything, or on how another account saw it.
     private var picksAway: [UpNextSlot: UpNextPicks.Away] = [:]
     /// The pull requests a source said it lists only because someone sent them in a chat, while BriefBar runs, until one
     /// lists them otherwise, as yours or one you watch: one that leaves the lists, merged or closed, stays here.
@@ -160,7 +165,9 @@ package final class PullRequestOrder: ObservableObject {
     /// What a source told: its pull requests and sessions, how its things look, for what shows them, what each of its
     /// sessions told BriefBar it works on, which the Map shows, what its pull requests' stages are worked out from, with
     /// the account it read them with, which of its pull requests it lists only because someone sent them in a chat,
-    /// whether it reads the stories its pull requests are for, and whether it has listed what it shows since it started.
+    /// whether it reads the stories its pull requests are for, whether it has listed what it shows since it started,
+    /// where it read in full the lists that would have a pull request, by scope, such as Azure DevOps' organizations, and
+    /// which of the pull requests it reads by their links, apart from those lists, it doesn't list yet.
     private struct Told {
         var pullRequests: [OrderPullRequest]
         var sessions: [OrderSession]
@@ -176,6 +183,8 @@ package final class PullRequestOrder: ObservableObject {
         var inMemory: Set<ItemRef> = []
         var readsStories = false
         var listed = true
+        var listsRead: Set<String> = []
+        var unreadLinks: Set<ItemRef> = []
     }
 
     private struct WeakViewer {
@@ -280,6 +289,7 @@ package final class PullRequestOrder: ObservableObject {
             nextsHeldAgain = [:]
             picks = UpNextPicks()
             picksAway = [:]
+            keptPicks = UpNextPicks.Kept()
             marks = StageMarks()
             sessionStages = SessionStages()
             stages = [:]
@@ -294,7 +304,8 @@ package final class PullRequestOrder: ObservableObject {
         marks = StageMarks.load(from: defaults)
         changes = OrderChanges.load(from: defaults).merging(changesInMemory)
         yourNames = MissionNames.load(from: defaults)
-        picks = UpNextPicks.load(from: defaults).merging(picksInMemory)
+        keptPicks = UpNextPicks.Kept.load(from: defaults)
+        picks = picksNow()
         namesCounted = nil
         keptTogether = KeptTogether.load(from: defaults)
         keptCounted = nil
@@ -319,12 +330,17 @@ package final class PullRequestOrder: ObservableObject {
 
     /// Looks again at what time alone changes, as its clock does every hour: orders that went stale, those that finished
     /// long enough ago to go, the stages you set for pull requests no list has had for 30 days, kept or in memory, and
-    /// those sessions set 30 days ago.
+    /// those sessions set 30 days ago, and what you chose for Up Next's slots that BriefBar keeps, once no list has had its
+    /// pull request for 30 days, with any account.
     package func timePassed() {
         guard isOn else { return }
         let date = now()
         if marks.forgetUnlisted(now: date) { marks.save(to: defaults) }
         marksInMemory = marksInMemory.filter { !$0.value.isUnlisted(at: date) }
+        if keptPicks.forgetUnlisted(now: date) {
+            keptPicks.save(to: defaults)
+            picks = picksNow()
+        }
         if !isDemo {
             SessionStages.prune(in: defaults, now: date)
             sessionStages = SessionStages.load(from: defaults, now: date)
@@ -371,16 +387,22 @@ package final class PullRequestOrder: ObservableObject {
     /// it read them with, whose stages you set apply, and how each of the sessions it lists does, or ended, when it can
     /// tell, and since when, which are the sessions whose stages count (`SessionStages`), the pull requests it lists
     /// only because someone sent them in a chat, whose changes stay in memory, whether it reads the stories its pull
-    /// requests are for, and whether it has listed what it shows since it started, as it hasn't right after BriefBar
-    /// starts: till then, what a mission is made of isn't counted. It replaces what the source told before. Once it
-    /// tells another account than the one it told last, the stages you set that BriefBar kept in memory for its pull
-    /// requests go, and so does Undo of one: they were the other account's. Nothing's kept while Pull Request Order is
-    /// off.
+    /// requests are for, whether it has listed what it shows since it started, as it hasn't right after BriefBar starts:
+    /// till then, what a mission is made of isn't counted; where it has read in full, with that account, the lists that
+    /// would have a pull request, by scope, such as the Azure DevOps organizations whose lists it read since it started:
+    /// one you chose for Up Next's slots that it doesn't list there has left its lists; and which of the pull requests it
+    /// reads by their links, apart from those lists, as one you watch, it doesn't list yet, as when that read failed: one
+    /// you chose of those waits. It replaces what the source told before. Once it tells another account than the one it
+    /// told last, the stages you set that BriefBar kept in memory for its pull requests go, and so does Undo of one: they
+    /// were the other account's. So does what you chose for Up Next's slots in memory, and since when each choice has been
+    /// away, and what the other account chose that BriefBar keeps waits, unused, until it signs in again. Nothing's kept
+    /// while Pull Request Order is off.
     package func publish(
         _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = [],
         working: [ItemRef: [ItemRef]] = [:], stages: [ItemRef: StageFacts] = [:], account: String? = nil,
         sessionActivities: [ItemRef: StageSession.Activity] = [:], activitiesSince: [ItemRef: Date] = [:],
-        inMemory: Set<ItemRef> = [], readsStories: Bool = false, listed: Bool = true
+        inMemory: Set<ItemRef> = [], readsStories: Bool = false, listed: Bool = true, listsRead: Set<String> = [],
+        unreadLinks: Set<ItemRef> = []
     ) {
         guard isOn else { return }
         var byRef: [ItemRef: LinkedItem] = [:]
@@ -390,27 +412,32 @@ package final class PullRequestOrder: ObservableObject {
         let new = Told(
             pullRequests: pullRequests, sessions: sessions, items: byRef, working: working, stages: stages,
             account: account?.lowercased(), activities: sessionActivities, activitiesSince: activitiesSince, inMemory: inMemory,
-            readsStories: readsStories, listed: listed
+            readsStories: readsStories, listed: listed, listsRead: Set(listsRead.map { $0.lowercased() }), unreadLinks: unreadLinks
         )
         let old = told[source]
         let sameFacts = old?.pullRequests == new.pullRequests && old?.sessions == new.sessions
             && old?.readsStories == new.readsStories && old?.listed == new.listed
         let sameStages = old?.stages == new.stages && old?.account == new.account && old?.activities == new.activities
-            && old?.activitiesSince == new.activitiesSince
+            && old?.activitiesSince == new.activitiesSince && old?.listsRead == new.listsRead
+            && old?.unreadLinks == new.unreadLinks
         guard !sameFacts || !sameStages || old?.items != new.items || old?.working != new.working
             || old?.inMemory != new.inMemory else { return }
         objectWillChange.send()
-        if let account = new.account {
-            if let was = accounts[source], was != account { forgetInMemory(ItemRef.Kind.of(source)) }
+        var accountChanged = false
+        if let account = new.account, accounts[source] != account {
+            if accounts[source] != nil { forgetInMemory(ItemRef.Kind.of(source)) }
             accounts[source] = account
+            accountChanged = true
         }
         told[source] = new
         sentInChats.formUnion(inMemory)
         sentInChats.subtract(Set(pullRequests.map(\.ref)).subtracting(inMemory))
-        if old?.inMemory != new.inMemory || !sameFacts {
-            keep(changes)
-            keepPicks()
-        }
+        // What the account that's signed in now chose for Up Next's slots applies, and what one chose before BriefBar knew
+        // the account is kept with it, over what it chose before.
+        if accountChanged { picks = picksNow() }
+        let listsChanged = old?.inMemory != new.inMemory || !sameFacts
+        if listsChanged { keep(changes) }
+        if listsChanged || accountChanged { keepPicks() }
         // How a session looks says whether it works now, which stages follow; and what missions are named from, such as a
         // title, can change.
         if sameFacts {
@@ -460,7 +487,7 @@ package final class PullRequestOrder: ObservableObject {
         if together.forget(kinds, keepingPlans: plans) { together.save(to: defaults) }
         var marks = StageMarks.load(from: defaults)
         if marks.forget(kinds) { marks.save(to: defaults) }
-        var picks = UpNextPicks.load(from: defaults)
+        var picks = UpNextPicks.Kept.load(from: defaults)
         if picks.forget(kinds) { picks.save(to: defaults) }
         forgetInMemory(kinds)
         // What sessions set: on its pull requests, or, with GitHub Copilot, everything, as its sessions told it.
@@ -476,7 +503,8 @@ package final class PullRequestOrder: ObservableObject {
             self.changes = changes
             self.focus = kept
             self.marks = marks
-            self.picks = picks.merging(picksInMemory)
+            keptPicks = picks
+            self.picks = picksNow()
             if lastOrderChange != nil { lastChange = nil }
             refusal = nil
             yourNames = names
@@ -569,13 +597,60 @@ package final class PullRequestOrder: ObservableObject {
         Set(picks.refs.filter { $0.value == ref }.keys)
     }
 
-    /// Keeps the pull requests you chose for Up Next's slots: in the preferences, but one listed only because someone sent
-    /// it in a chat, which stays in memory until BriefBar lists it otherwise. Only while it's on, which has them all.
+    /// Keeps the pull requests you chose for Up Next's slots: in the preferences, with the account each one's source told
+    /// last, in place of what that account chose before, but one listed only because someone sent it in a chat, which
+    /// stays in memory until BriefBar lists it otherwise, and one chosen before BriefBar knew the account, until it does.
+    /// One the account chose before stays in the preferences until its source's account lists it only because someone
+    /// sent it in a chat, as a stage you set does: that another account's lists had it only from a chat, as before the
+    /// account's own lists are read, says nothing of it. What another account chose stays as it was. Only while it's on,
+    /// which has them all.
     private func keepPicks() {
         guard isOn else { return }
-        let (inMemory, saved) = picks.split { sentInChats.contains($0) }
-        if saved != UpNextPicks.load(from: defaults) { saved.save(to: defaults) }
+        let sentNow = Set(told.values.flatMap(\.inMemory))
+        let inMemory = UpNextPicks(picks.refs.filter { slot, ref in
+            guard let account = sourceAccount(of: ref) else { return true }
+            return sentNow.contains(ref) || (sentInChats.contains(ref) && keptPicks.picks(for: account)[slot] != ref)
+        })
+        let saved = UpNextPicks(picks.refs.filter { inMemory[$0.key] == nil })
+        var kept = keptPicks
+        for account in Set(accounts.values) {
+            kept.set(saved.split { self.sourceAccount(of: $0) == account }.in, for: account, at: now())
+        }
+        if kept != keptPicks {
+            keptPicks = kept
+            kept.save(to: defaults)
+        }
         picksInMemory = inMemory
+    }
+
+    /// What you chose for Up Next's slots that applies now: what BriefBar keeps for the account each pull request's source
+    /// told last, and what it keeps in memory, which comes first, as you chose it since: before BriefBar knew the account,
+    /// or one sent to you in a chat.
+    private func picksNow() -> UpNextPicks {
+        var kept = UpNextPicks()
+        for account in Set(accounts.values).sorted() {
+            for (slot, ref) in keptPicks.picks(for: account).refs where kept[slot] == nil && sourceAccount(of: ref) == account {
+                kept[slot] = ref
+            }
+        }
+        return picksInMemory.merging(kept)
+    }
+
+    /// The account a pull request's source told last, kept while Pull Request Order is off: the one whose choices for Up
+    /// Next's slots apply to it. Nil while it told none, as before Azure DevOps has read anything, or in the demo.
+    private func sourceAccount(of ref: ItemRef) -> String? {
+        SourceID.allCases.first { ItemRef.Kind.of($0).contains(ref.kind) }.flatMap { accounts[$0] }
+    }
+
+    /// Whether a pull request you chose for one of Up Next's slots, which its source doesn't list now, has left its lists:
+    /// that source has listed what it shows since it started, and read in full the lists that would have it, as its Azure
+    /// DevOps organization's, with the account it told, whose choices these are; and it isn't one the source reads by its
+    /// link, apart from those lists, that it doesn't list yet, as one you watch whose read failed. Until then, it waits.
+    private func hasLeftTheLists(_ ref: ItemRef) -> Bool {
+        SourceID.allCases.contains { source in
+            guard ItemRef.Kind.of(source).contains(ref.kind), let told = told[source] else { return false }
+            return told.listed && told.listsRead.contains(ref.scope) && !told.unreadLinks.contains(ref)
+        }
     }
 
     /// Forget This Order: BriefBar no longer shows it, and an agent that names it is told so. The pull requests you put in
@@ -1462,7 +1537,7 @@ package final class PullRequestOrder: ObservableObject {
     /// off: for Forget Stages… in Settings.
     package var keepsStages: Bool {
         defaults.object(forKey: StageMarks.defaultsKey) != nil || !marksInMemory.isEmpty || SessionStages.keepsAny(in: defaults)
-            || !sessionStages.isEmpty || defaults.object(forKey: UpNextPicks.defaultsKey) != nil || !picksInMemory.isEmpty
+            || !sessionStages.isEmpty || defaults.object(forKey: UpNextPicks.Kept.defaultsKey) != nil || !picksInMemory.isEmpty
     }
 
     /// The stages you set that BriefBar keeps, for each account, as many as there are, whatever lists have them now.
@@ -1599,18 +1674,19 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Forget Stages…: every stage you set, with every account, every one sessions set, and the pull requests you chose for
-    /// Up Next's slots, on or off.
+    /// Up Next's slots, with every account, on or off.
     package func forgetStages() {
         objectWillChange.send()
         StageMarks.forgetAll(in: defaults)
         SessionStages.forgetAll(in: defaults)
-        defaults.removeObject(forKey: UpNextPicks.defaultsKey)
+        defaults.removeObject(forKey: UpNextPicks.Kept.defaultsKey)
         marks = StageMarks()
         marksInMemory = [:]
         sessionStages = SessionStages()
         picks = UpNextPicks()
         picksInMemory = UpNextPicks()
         picksAway = [:]
+        keptPicks = UpNextPicks.Kept()
         if lastStageChange != nil { lastChange = nil }
         restage()
     }
@@ -1671,7 +1747,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Forgets the stages you set that BriefBar kept in memory for pull requests of these kinds, and Undo of one, and the
-    /// pull requests of these kinds you chose for Up Next's slots that it kept in memory.
+    /// pull requests of these kinds you chose for Up Next's slots that it kept in memory, and since when each of those you
+    /// chose has been away: it was away as another account, or a source now off, saw it.
     private func forgetInMemory(_ kinds: Set<ItemRef.Kind>) {
         marksInMemory = marksInMemory.filter { !kinds.contains($0.key.kind) }
         if let change = lastStageChange, kinds.contains(change.ref.kind) { lastChange = nil }
@@ -1680,6 +1757,7 @@ package final class PullRequestOrder: ObservableObject {
         for (slot, ref) in gone.refs where picks[slot] == ref {
             picks[slot] = nil
         }
+        picksAway = picksAway.filter { !kinds.contains($0.value.ref.kind) }
     }
 
     /// Takes away what sessions set on a pull request, once none of it counts: in memory, and from what each session
@@ -1720,8 +1798,9 @@ package final class PullRequestOrder: ObservableObject {
     /// watching it; and what lists have now is noted, for what no list has had for 30 days to go: in memory each time,
     /// and once a day for those kept. Only those a list has show a stage: what was set on one it still reads, but no
     /// list has, still ends as it moves on. A pull request you chose for one of Up Next's slots goes from it once it's been
-    /// away from where you chose it for half an hour (`UpNextPicks.awayFor`), in another stage, off your board, merged or
-    /// closed; one its source reads nothing of now waits (`UpNextPicks.moved(by:known:away:now:)`).
+    /// away from where you chose it for half an hour (`UpNextPicks.awayFor`), in another stage, off your board, out of the
+    /// lists its source read in full, merged or closed; one its source can't tell where it is now waits
+    /// (`UpNextPicks.moved(by:known:away:now:)`); and what lists have now of what's kept of them is noted too, once a day.
     private func restage() {
         guard isOn else {
             if !stages.isEmpty { stages = [:] }
@@ -1786,12 +1865,19 @@ package final class PullRequestOrder: ObservableObject {
             changed = true
         }
         if changed { marks.save(to: defaults) }
-        // What you chose for Up Next's slots stands while its pull request does, where you chose it, or is back there soon.
-        let moved = picks.moved(by: readings, known: Set(all.keys), away: &picksAway, now: now())
+        // What you chose for Up Next's slots stands while its pull request does, where you chose it, or is back there soon;
+        // one the lists its source read in full don't have, as one you reviewed that its author completed, is away too.
+        let left = picks.refs.values.filter { all[$0] == nil && hasLeftTheLists($0) }
+        let moved = picks.moved(by: readings, known: Set(all.keys).union(left), away: &picksAway, now: now())
         if !moved.isEmpty {
             for slot in moved { picks[slot] = nil }
             keepPicks()
         }
+        var picksListed = false
+        for (account, refs) in listed where keptPicks.listed(refs, for: account, at: now()) {
+            picksListed = true
+        }
+        if picksListed { keptPicks.save(to: defaults) }
         if readings != stages { stages = readings }
     }
 
