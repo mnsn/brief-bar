@@ -3269,7 +3269,10 @@ As its turn finishes, git there tells, once, having fetched the branch there aga
 the clone's fetch settings name it, which a clone of one branch's don't, or, when it can't fetch, as offline, by what
 the push moved: it pushed when that branch has the commit the checkout is at, which the commit kept didn't, and no
 rebase, merge, cherry-pick or revert stopped partway there, which leaves the checkout at what others pushed
-(`Git.pushedItsOwn(in:branch:since:)`). For a prompt, git is asked only on the read of its log that ends its turn. BriefBar keeps what git
+(`Git.pushedItsOwn(in:branch:since:)`). For a prompt, git is asked only on the read of its log that ends its turn. The
+fix ends once git has told, each on its own, so that the other tasks' and prompts' reads don't wait on its fetch
+(`CopilotTasksStore.tellWhetherPushed`); a task gone on with meanwhile, which takes its place, isn't told what was read
+of the one before. BriefBar keeps what git
 said with it, a task with its run, and with what it took on as the session goes on, so that clearing its threads
 doesn't make it a plain push (`SentPrompt.pushed`, `CopilotRun.pushed`, `TakenPart.pushed`, `SessionPush.pushed`), and
 nothing since changes it: not another session's push, which had its own rejected; not a later push of the session's,

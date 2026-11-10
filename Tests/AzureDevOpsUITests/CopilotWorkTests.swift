@@ -894,6 +894,23 @@ import Testing
         }
     }
 
+    /// Holds what waits on it until it's opened, as git answering late.
+    private actor Gate {
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+        private var isOpen = false
+
+        func wait() async {
+            if isOpen { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+
+        func open() {
+            isOpen = true
+            waiters.forEach { $0.resume() }
+            waiters = []
+        }
+    }
+
     /// A session's log, in a folder of its own: the task taken up, then done, after `sent`, as a turn of it that finished
     /// writes it; and, given `folder`, the folder it works in (`AppSessions.folder(of:home:)`).
     private func finishedLog(of id: String, in home: URL, after sent: Date, working folder: URL? = nil) throws {
@@ -962,8 +979,8 @@ import Testing
     }
 
     /// A task that goes on with a session takes the place of the one that ran there, with its ID: what a refresh read of the
-    /// earlier one, while it asked git whether that pushed, isn't the later one's, which goes on, neither ended nor told how
-    /// the earlier one did.
+    /// earlier one, while git was asked whether that pushed, isn't the later one's, which goes on, neither ended nor told
+    /// how the earlier one did. Another task's end doesn't wait for git about it.
     @Test func goingOnWhileGitIsAskedLeavesTheLaterTaskGoing() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarCopilotHome-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -989,8 +1006,11 @@ import Testing
             return true
         }
         store.refresh()
-        // The other run's end is kept with what was read of the earlier one, in the same pass.
-        try await settle { settings.copilotRuns.first { $0.id == other }?.ended != nil }
+        // Once git has told about both: the other ends, and you went on with the earlier one's session.
+        try await settle {
+            store.runsBeingTold.isEmpty && settings.copilotRuns.contains { $0.id == other && $0.ended != nil }
+                && settings.copilotRuns.contains { $0.id == task && $0.startedAt == later.startedAt }
+        }
         #expect(settings.copilotRuns.first { $0.id == other }?.pushed == false)
         #expect(settings.copilotRuns.first { $0.id == task } == later)
         #expect(store.statuses[task] == nil)
@@ -998,8 +1018,8 @@ import Testing
 
     /// A prompt sent to one of the Copilot app's sessions that fixes what it took on first, then was to push and reply,
     /// keeps whether it pushed a commit of its own as its turn finishes, as git in the checkout its session works in says,
-    /// from where the branch was there as it went (`SentPrompt.pushed`): once, on the read that ends its turn, which keeps
-    /// how it ended. Nothing asks git for a plain Push & Reply.
+    /// from where the branch was there as it went (`SentPrompt.pushed`): once, from the read that ends its turn, not one
+    /// that's too early to, and it ends once git has told. Nothing asks git for a plain Push & Reply.
     @Test func aPromptThatShipsKeepsWhetherItPushedAsItsTurnFinishes() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -1025,11 +1045,14 @@ import Testing
             store.followSentPrompts(now: date)
             try await settle { !store.isFollowingPrompts }
         }
-        // Over, once: it may be the end of a turn that ran as it was sent, so git isn't asked yet.
+        // Over, once: it may be the end of a turn that ran as it was sent, so git isn't asked yet; nor a second time too
+        // soon after, which doesn't end it.
         try await follow(at: sent.addingTimeInterval(3))
-        #expect(settings.copilotSentPrompts.map(\.pushed) == [nil, nil])
+        try await follow(at: sent.addingTimeInterval(4))
+        #expect(settings.copilotSentPrompts.map(\.ended) == [nil, nil])
         #expect(await answers.asked.isEmpty)
         try await follow(at: sent.addingTimeInterval(6))
+        try await settle { store.promptsBeingTold.isEmpty && settings.copilotSentPrompts.allSatisfy { $0.ended != nil } }
         #expect(settings.copilotSentPrompts.map(\.ended) == [.finished, .finished])
         #expect(settings.copilotSentPrompts.map(\.pushed) == [true, nil])
         #expect(await answers.asked == ["\(checkout.path) payments-retry c1"])
@@ -1037,6 +1060,40 @@ import Testing
         // Over, it isn't followed, nor asked about, any more.
         try await follow(at: sent.addingTimeInterval(9))
         #expect(await answers.asked.count == 1)
+    }
+
+    /// A fix sent with Push and Reply on whose turn doesn't read over any more by the time git tells whether it pushed, as
+    /// when its session took up another message, isn't ended by what git said: the next read tells.
+    @Test func aPromptWhoseTurnGoesOnWhileGitIsAskedIsntEndedByIt() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sent = Date()
+        try finishedLog(of: session, in: home, after: sent, working: home.appendingPathComponent("payments-api", isDirectory: true))
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        store.appHomeForTests = home
+        let gate = Gate()
+        store.pushedForTests = { _, _, _ in
+            await gate.wait()
+            return true
+        }
+        var shipping = about(.pushAndReply, threads: [12])
+        shipping.fixes = true
+        shipping.source = "payments-retry"
+        shipping.head = "c1"
+        settings.copilotSentPrompts = [try #require(SentPrompt(shipping, session: session, sentAt: sent, copied: false))]
+        let id = try #require(settings.copilotSentPrompts.first?.id)
+        for seconds in [3.0, 6.0] {
+            store.followSentPrompts(now: sent.addingTimeInterval(seconds))
+            try await settle { !store.isFollowingPrompts }
+        }
+        #expect(store.promptsBeingTold == [id])
+        // Meanwhile a read finds its turn going on.
+        store.promptsOver[id] = nil
+        await gate.open()
+        try await settle { store.promptsBeingTold.isEmpty }
+        #expect(settings.copilotSentPrompts.first?.ended == nil)
+        #expect(settings.copilotSentPrompts.first?.pushed == nil)
     }
 
     /// Whether a fix sent with Push and Reply on pushed is kept as it finished, so another push since doesn't change it

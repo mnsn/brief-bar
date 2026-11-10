@@ -902,8 +902,9 @@ extension CopilotTasksStore {
     /// turn starts there, and what it takes care of leaves Needs You; another message, sent before it or instead, is the
     /// session's own. One not pasted, or whose fork isn't made, after half an hour, goes, with nothing handed off. One
     /// whose turn hasn't ended after `SentPrompt.followLimit` isn't followed any more, and says BriefBar doesn't know how it
-    /// went (`SentPrompt.lostTrack`). As the turn of a fix sent with Push and Reply on finishes, git in the checkout its
-    /// session works in says whether it pushed a commit of its own, which the prompt keeps (`SentPrompt.pushed`). Only while
+    /// went (`SentPrompt.lostTrack`). A fix sent with Push and Reply on whose turn finished ends once git in the checkout
+    /// its session works in says whether it pushed a commit of its own, which the prompt keeps, on its own
+    /// (`tellWhetherPushed`). Only while
     /// Send Work to Copilot is on, never in the demo, and not while another prompt is being sent to its session
     /// (`pauseFollowing`).
     func followSentPrompts(now: Date = Date()) {
@@ -914,14 +915,10 @@ extension CopilotTasksStore {
         let home = appHome
         let monitor = promptMonitor
         let copied = copiedPrompts.mapValues(\.text)
-        // Seen over once already: this read may end their turns (`applyTurns`), so git is asked about them only now.
-        let seenOver = Set(promptsOver.keys)
         Task {
             // Where the sessions are that prompts go to: the Copilot app's folder, and the CLI's, whose terminal one may
             // have been pasted in.
             let homes = await sessionHomes()
-            let git = await git()
-            let pushedForTests = pushedForTests
             // Turned off, or stopped, while that waited: nothing's read.
             guard canSend, isOn, !hasStopped else {
                 isFollowingPrompts = false
@@ -958,16 +955,14 @@ extension CopilotTasksStore {
                         turn = pastedAt.map { SessionTurn.of(sentAt: $0, log: log, isRunning: isRunning, isOpen: isOpen) }
                             ?? SessionTurn(phase: .waiting, since: prompt.sentAt)
                     }
-                    // A fix sent with Push and Reply on whose turn finished, as this read may end it: whether it pushed a
-                    // commit of its own, as git says in the checkout the session works in.
-                    var pushed: Bool?
-                    if prompt.fixes == true, seenOver.contains(prompt.id), turn.isOver, case .finished = turn.phase,
-                       let branch = prompt.source, let start = prompt.head, let folder = AppSessions.folder(of: session, home: sessionHome) {
-                        pushed = await CopilotTasksStore.pushedItsOwn(
-                            in: folder, branch: branch, since: start, git: git, forTests: pushedForTests
-                        )
+                    // A fix sent with Push and Reply on whose turn finished: where git tells whether it pushed a commit of
+                    // its own, the checkout the session works in, once the read that ends its turn asks (`applyTurns`).
+                    var probe: PushProbe?
+                    if prompt.fixes == true, turn.isOver, case .finished = turn.phase, let branch = prompt.source,
+                       let start = prompt.head, let folder = AppSessions.folder(of: session, home: sessionHome) {
+                        probe = PushProbe(folder: folder, branch: branch, start: start)
                     }
-                    read.append(Read(prompt: prompt, fork: fork, turn: turn, pasted: pasted, pushed: pushed))
+                    read.append(Read(prompt: prompt, fork: fork, turn: turn, pasted: pasted, probe: probe))
                 }
                 return read
             }.value
@@ -980,14 +975,22 @@ extension CopilotTasksStore {
 
     /// What `followSentPrompts` read of a prompt: the fork made for one copied as `/fork`, its turn, and, for one copied
     /// for you to paste, whether a message sent the session since holds what BriefBar copied; nil when BriefBar didn't know
-    /// what it copied as it read. For a fix sent with Push and Reply on whose turn finished, whether it pushed a commit of
-    /// its own (`SentPrompt.pushed`).
+    /// what it copied as it read. For a fix sent with Push and Reply on whose turn finished, where git tells whether it
+    /// pushed a commit of its own (`SentPrompt.pushed`).
     private struct Read: Sendable {
         var prompt: SentPrompt
         var fork: String?
         var turn: SessionTurn?
         var pasted: Bool?
-        var pushed: Bool? = nil
+        var probe: PushProbe? = nil
+    }
+
+    /// Where git tells whether a fix sent with Push and Reply on pushed a commit of its own: the checkout its session works
+    /// in, the pull request's branch, and the commit that branch was at there as the fix went.
+    struct PushProbe: Sendable {
+        var folder: URL
+        var branch: String
+        var start: String
     }
 
     /// What `followSentPrompts` read, on the prompts as they're kept now.
@@ -1021,11 +1024,14 @@ extension CopilotTasksStore {
             if turn?.isOver == true {
                 // Over twice in a row: not the end of a turn that ran as it was sent, which the prompt's own follows.
                 if let first = promptsOver[id], now.timeIntervalSince(first) >= 2 {
-                    prompts[index].ended = Self.phase(of: turn)
-                    // Whether it pushed, as git said in the session's checkout as it finished: once, whatever moves the
-                    // branch since.
-                    if prompts[index].fixes == true, prompts[index].ended == .finished { prompts[index].pushed = item.pushed }
-                    promptsOver[id] = nil
+                    let phase = Self.phase(of: turn)
+                    if prompts[index].fixes == true, phase == .finished, let probe = item.probe {
+                        // It ends once git has told whether it pushed (`tellWhetherPushed`).
+                        tellWhetherPushed(id, probe)
+                    } else {
+                        prompts[index].ended = phase
+                        promptsOver[id] = nil
+                    }
                 } else if promptsOver[id] == nil {
                     promptsOver[id] = now
                 }
@@ -1047,6 +1053,31 @@ extension CopilotTasksStore {
             }
         }
         if prompts != settings.copilotSentPrompts { settings.copilotSentPrompts = prompts }
+    }
+
+    /// Ends a fix sent with Push and Reply on, whose turn finished, once git in the checkout its session works in tells
+    /// whether it pushed a commit of its own, which it keeps (`SentPrompt.pushed`): once, whatever moves the branch since.
+    /// On its own: git fetches the branch first, which may wait on the network, and the other prompts' reads don't wait for
+    /// it. Not once Send Work to Copilot is off, nor once the prompt isn't followed, or its turn isn't over, by then: the
+    /// next read tells. Once, while one is under way.
+    private func tellWhetherPushed(_ id: String, _ probe: PushProbe) {
+        guard promptsBeingTold.insert(id).inserted else { return }
+        let forTests = pushedForTests
+        Task {
+            defer { promptsBeingTold.remove(id) }
+            let git = await git()
+            let pushed = await Self.pushedItsOwn(in: probe.folder, branch: probe.branch, since: probe.start, git: git, forTests: forTests)
+            guard canSend, isOn, !hasStopped, promptsOver[id] != nil,
+                  let index = settings.copilotSentPrompts.firstIndex(where: { $0.id == id }),
+                  settings.copilotSentPrompts[index].isFollowed,
+                  followingPaused[settings.copilotSentPrompts[index].session] == nil
+            else { return }
+            var prompt = settings.copilotSentPrompts[index]
+            prompt.ended = .finished
+            prompt.pushed = pushed
+            promptsOver[id] = nil
+            settings.copilotSentPrompts[index] = prompt
+        }
     }
 
     private static func phase(of turn: SessionTurn?) -> RunPhase {

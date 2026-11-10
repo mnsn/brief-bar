@@ -257,6 +257,11 @@ final class CopilotTasksStore: ObservableObject {
     @Published var promptTurns: [String: SessionTurn] = [:]
     /// When each of those turns was first seen over, to tell an ended turn from one that only paused.
     var promptsOver: [String: Date] = [:]
+    /// The tasks, and the prompts, that fixed what they took on first, then were to push and reply, whose ends wait for git
+    /// to tell whether they pushed a commit of their own, by their IDs (`tellWhetherPushed`): each on its own, since git
+    /// fetches the branch first, which may wait on the network, and the others' reads don't wait for it.
+    var runsBeingTold: Set<String> = []
+    var promptsBeingTold: Set<String> = []
     /// Each prompt copied for you to paste, as BriefBar copied it, with what it takes off Needs You, by the prompt
     /// (`SentPrompt.id`), until it's seen in a message sent the session, which says you pasted it (`followSentPrompts`): in
     /// memory only. One that BriefBar stops following first, or forgets, hands nothing off.
@@ -804,9 +809,9 @@ final class CopilotTasksStore: ObservableObject {
     private static let exitGrace: TimeInterval = 10
 
     /// Reads the logs of runs still going, and of those whose end BriefBar hasn't looked at yet, while the feature is
-    /// on. Whether a run's process still runs is checked first: once it's gone, its log and output are complete. As one
-    /// that fixed what it took on first, then was to push and reply, finishes, git in its checkout says whether it pushed a
-    /// commit of its own (`pushedItsOwn(_:)`), which its run keeps.
+    /// on. Whether a run's process still runs is checked first: once it's gone, its log and output are complete. One that
+    /// fixed what it took on first, then was to push and reply, and finished, ends once git in its checkout says whether it
+    /// pushed a commit of its own, which its run keeps (`tellWhetherPushed`).
     func refresh() {
         guard mode == .live, isOn else {
             scheduleIfNeeded()
@@ -849,11 +854,12 @@ final class CopilotTasksStore: ObservableObject {
                     log: log, startedAt: run.launchedAt, isRunning: false, exitStatus: exitStatuses[run.id],
                     stoppedByYou: wasStoppedByYou(run.id), output: found.0
                 )
-                var pushed: Bool?
+                let ended = Ended(run: run, status: status, pullRequest: found.1)
                 if run.ended == nil, run.fixes == true, run.action == .pushAndReply, status.phase == .finished {
-                    pushed = await pushedItsOwn(run)
+                    tellWhetherPushed(ended)
+                    continue
                 }
-                results.append(Ended(run: run, status: status, pullRequest: found.1, pushed: pushed))
+                results.append(ended)
             }
             apply(results)
             isRefreshing = false
@@ -877,6 +883,20 @@ final class CopilotTasksStore: ObservableObject {
         var status: RunStatus
         var pullRequest: URL? = nil
         var pushed: Bool? = nil
+    }
+
+    /// Ends a task that fixed what it took on first, then was to push and reply, and finished, once git in its checkout
+    /// tells whether it pushed a commit of its own (`pushedItsOwn(_:)`), on its own: git fetches the branch first, which may
+    /// wait on the network, and the other tasks' reads don't wait for it. Until then it stands as it did. Once, while one
+    /// is under way.
+    private func tellWhetherPushed(_ ended: Ended) {
+        guard runsBeingTold.insert(ended.run.id).inserted else { return }
+        Task {
+            var ended = ended
+            ended.pushed = await pushedItsOwn(ended.run)
+            apply([ended])
+            runsBeingTold.remove(ended.run.id)
+        }
     }
 
     /// Whether a task that fixed what it took on first, then was to push and reply, pushed a commit of its own from its
